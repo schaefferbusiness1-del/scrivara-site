@@ -82,6 +82,7 @@ const tests = [
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',
+  'schedule-nonpatient-row-guard.test.js',
   'provider-selector-sanitizer-runtime.test.js',
   'schedule-pull-ui-contract.test.js',
   'manual-history-retry-ui-runtime.test.js',

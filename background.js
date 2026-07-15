@@ -5723,7 +5723,7 @@ function mlsParseName(raw) {
       return m ? SFXMAP[m[1].toLowerCase()] : '';
     }
     var PART = /^(de|del|della|da|di|du|van|von|der|den|la|le|los|st\.?|san|santa)$/i;
-    var STOPX = /^(am|pm|open|est|new|office|visit|tele|telehealth|video|phone|follow|followup|fu|consult|consultation|annual|physical|wellness|exam|sick|nurse|lab|labs|injection|inj|procedure|recheck|min|mins|minute|minutes|room|status|reason|provider|patient|time|type|resource|rendering|department|dept|appt|appts|total|appointments|in|out|pay|self|md|do|np|pa|pac|aprn|fnp|dnp|rn|dpm|dds|dmd|phd|psyd|mbbs|cnm|crna|od|lcsw|lpc|lumbar|cervical|thoracic|sacral|spine|neck|back|knee|hip|shoulder|ankle|foot|wrist|elbow|epidural|facet|joint|block|nerve|steroid|cortisone)$/i;
+    var STOPX = /^(am|pm|open|no|show|hold|blocked|lunch|closed|unavailable|reserved|admin|administrative|est|new|office|visit|tele|telehealth|video|phone|follow|followup|fu|consult|consultation|annual|physical|wellness|exam|sick|nurse|lab|labs|injection|inj|procedure|recheck|min|mins|minute|minutes|room|status|reason|provider|patient|time|type|resource|rendering|department|dept|appt|appts|total|appointments|in|out|pay|self|md|do|np|pa|pac|aprn|fnp|dnp|rn|dpm|dds|dmd|phd|psyd|mbbs|cnm|crna|od|lcsw|lpc|lumbar|cervical|thoracic|sacral|spine|neck|back|knee|hip|shoulder|ankle|foot|wrist|elbow|epidural|facet|joint|block|nerve|steroid|cortisone)$/i;
     var STATE = /^(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|dc)$/i;
     var CRED = /^(md|do|np|pa|pac|aprn|fnp|dnp|rn|dpm|dds|dmd|phd|psyd|mbbs|cnm|crna|od|lcsw|lpc)$/i;
     var TOKRE = /^[A-Za-z][A-Za-z'.\-]*$/;
@@ -5781,6 +5781,10 @@ function mlsParseName(raw) {
       }
       var okTok = function (x) { return !x || /^[A-Za-z][A-Za-z' .\-]*$/.test(x); };
       if (!last || last.replace(/[^A-Za-z]/g, '').length < 2 || !okTok(last)) return null;
+      /* Status/anatomy vocabulary can survive the comma fast path as a whole
+         name (live 2026-07-15: a 'Spine,No' hold row minted patient 'No
+         Spine'). A given or family name is never schedule vocabulary. */
+      if (STOPX.test(last.replace(/[.]/g, '')) || (first && STOPX.test(first.replace(/[.]/g, '')))) return null;
       if (!okTok(first) || (first && first.replace(/[^A-Za-z]/g, '').length < 2)) return null;
       if (!okTok(middle)) middle = '';
       var display = ((first ? first + ' ' : '') + (middle ? middle + ' ' : '') + last).replace(/\s+/g, ' ').trim();
@@ -5962,7 +5966,7 @@ async function mlsSchedDomInline(doc, CFG){
         }
         function _legacySlotL(raw){
           var tail=cl(String(raw||'').replace(RTG,' '));
-          return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|hold|unavailable|lunch|closed|administrative|admin|reserved)(?:\b|\s)/i.test(tail);
+          return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|hold|unavailable|lunch|closed|administrative|admin|reserved|no\b[\s,]*(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?|patients?|add[\s-]?ons?)|(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?)\s*,\s*no)(?:\b|\s|$)/i.test(tail);
         }
         _legacyGridListsL.forEach(function(list){
           var rows=[];try{rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));}catch(_eLRs){}
