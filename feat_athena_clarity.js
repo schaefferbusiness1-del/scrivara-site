@@ -1,4 +1,4 @@
-/* feat_athena_clarity.js  —  window.__mlsAthenaClarity  (v1.0.0)
+/* feat_athena_clarity.js  —  window.__mlsAthenaClarity  (v1.0.2)
  *
  * Makes EVERY Athena button instantly clear for a non-technical user:
  *   - plain, verb-first label
@@ -17,7 +17,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.0.1';
+  var VERSION = '1.0.2';
   if (window.__mlsAthenaClarity && window.__mlsAthenaClarity.installed) return;
 
   var STYLE_ID = 'mlsac-style';
@@ -147,13 +147,46 @@
     }, 46000);
   }
 
-  function toast(msg, kind) {
+  function toast(msg, kind, opts) {
+    opts = opts || {};
     ensureStyle();
     var el = document.createElement('div');
     el.className = 'mlsac-toast ' + (kind || '');
+    if (opts.pullFailure) el.setAttribute('data-mls-athena-pull-failure', '1');
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(function () { safe(function () { el.remove(); }); }, 7000);
+  }
+
+  function localManagedPull(d) {
+    d = d || {};
+    var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
+    var id = String(d.id || d.requestId || r.id || r.requestId || '');
+    if (/^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(id)) return true;
+    if (d.managed === true || d.background === true || d.silent === true ||
+        r.managed === true || r.background === true || r.silent === true) return true;
+    var owner = String(d.initiator || d.origin || d.mode || r.initiator || r.origin || r.mode || '').toLowerCase();
+    return /^(?:background|batch|prefetch|automatic|auto)$/.test(owner);
+  }
+
+  function isManagedPull(d, doctor) {
+    if (doctor && isFn(doctor.isManagedPullResult)) return !!safe(function () { return doctor.isManagedPullResult(d); });
+    return localManagedPull(d);
+  }
+
+  function pullNoticeHandled(d) {
+    try { return !!(d && d.__mlsAthenaPullNoticeHandled); } catch (e) { return false; }
+  }
+
+  function markPullNoticeHandled(d) {
+    try { d.__mlsAthenaPullNoticeHandled = 'clarity'; } catch (e) {}
+  }
+
+  function clearTaggedPullFailures() {
+    safe(function () {
+      var nodes = document.querySelectorAll('[data-mls-athena-pull-failure="1"]');
+      for (var i = 0; i < nodes.length; i++) if (nodes[i] && nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+    });
   }
 
   // Listen for the real extension result and report it clearly, by patient.
@@ -164,16 +197,25 @@
       if (!pendingPull) return;                       // only report a per-patient pull we initiated
       if (Date.now() - pendingPull.at > 45000) { pendingPull = null; return; }
       var D = window.__mlsAthenaDoctor;
+      var resultKind = (D && isFn(D.kindOf)) ? safe(function () { return D.kindOf(d.type); }) : (/AllVisits|Visits/i.test(String(d.type || '')) ? 'pull' : '');
+      if (resultKind !== 'pull' || isManagedPull(d, D)) return;
       var meta = (D && isFn(D.resultMeta)) ? safe(function () { return D.resultMeta(d.resp || d); }) : null;
       var name = pendingPull.name || 'this patient';
       pendingPull = null;
       if (!meta) return;
       if (meta.ok && typeof meta.count === 'number' && meta.count > 0) {
+        if (!(D && D.ownsPullNotices === true)) clearTaggedPullFailures();
         toast('✓ Pulled ' + meta.count + ' real visit' + (meta.count === 1 ? '' : 's') + ' into ' + name + ' — saved in MLS.', 'ok');
       } else if (meta.ok && (meta.count === 0 || meta.count == null)) {
+        if (!(D && D.ownsPullNotices === true)) clearTaggedPullFailures();
         toast('ℹ Athena returned no past visits for ' + name + ' — nothing was added.', 'warn');
       } else {
-        toast('⚠ Couldn’t pull from Athena for ' + name + '. Open the patient’s chart in a signed-in athenaOne tab, then try again.', 'warn');
+        /* Athena Doctor is the one actionable manual-failure owner. It runs in
+           capture phase and marks this exact result; Clarity remains a fallback
+           only when Doctor is genuinely unavailable. */
+        if (pullNoticeHandled(d) || (D && D.ownsPullNotices === true)) return;
+        markPullNoticeHandled(d);
+        toast('⚠ Couldn’t pull from Athena for ' + name + '. Open the patient’s chart in a signed-in athenaOne tab, then try again.', 'warn', { pullFailure: true });
       }
     });
   }

@@ -77,7 +77,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.0.2');
+assert.strictEqual(api.version, '1.0.3');
 
 function dispatch(data) { api._onResultMessage({ data }); }
 function toast() { return document.getElementById('mlsAthenaDoctorToast'); }
@@ -91,6 +91,8 @@ assert.strictEqual(api.isManagedPullResult({ resp: { requestId: 'mlssi-mabc12-ab
 assert.strictEqual(api.isManagedPullResult({ resp: { background: true } }), true, 'explicit background result was not recognized');
 dispatch(managedFail);
 assert.strictEqual(toast(), null, 'managed per-patient failure created a duplicate alarming toast');
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'prefetch-1', background: true, ok: false, reason: 'no-tab' });
+assert.strictEqual(toast(), null, 'explicit background failure created a standalone warning');
 
 const manualFail = {
   source: 'mls-ext', type: 'mlsAppAllVisitsResult',
@@ -105,10 +107,23 @@ assert(firstWarning.innerHTML.includes('Troubleshoot Athena'), 'manual warning l
 dispatch(manualFail);
 assert.strictEqual(toast(), firstWarning, 'duplicate manual failure flashed/recreated an already-visible warning');
 
-// A real success must clear stale failure state even when the richer clarity
+// Unrelated managed success must not erase a real manual warning.
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-success1', ok: true, visits: [{}] });
+assert.strictEqual(toast(), firstWarning, 'managed success erased an unrelated manual failure warning');
+
+// A success for another manual action kind is not correlated either.
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'manual-search-ok', ok: true, results: [{}] });
+assert.strictEqual(toast(), firstWarning, 'unrelated manual search success erased a pull failure warning');
+
+// A different, unlinked manual pull must not erase the active failure either.
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-unlinked', ok: true, visits: [{}] });
+assert.strictEqual(toast(), firstWarning, 'unlinked manual pull success erased the active failure warning');
+
+// A real retry uses a fresh transport ID but links back to failure A. That
+// linked success must clear stale failure state even when the richer clarity
 // module owns the success message and Athena Doctor intentionally stays quiet.
 ctx.__mlsAthenaClarity = { installed: true };
-dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-2', ok: true, visits: [{}] });
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-2', retryOf: 'manual-read-1', parentRequestId: 'manual-read-1', ok: true, visits: [{}] });
 assert.strictEqual(toast(), null, 'successful pull did not retire the stale failure warning');
 
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-next123', ok: true, visits: [] });

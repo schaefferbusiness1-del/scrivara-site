@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.0.2)
+ *  window.__mlsAthenaDoctor (v1.0.3)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -32,7 +32,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.0.2';
+  var VERSION = '1.0.3';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -446,6 +446,21 @@
     return String(d.id || d.requestId || r.id || r.requestId || '');
   }
 
+  function resultCorrelationId(d) {
+    d = d || {};
+    var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
+    return String(d.correlationId || d.retryOf || d.parentRequestId ||
+      r.correlationId || r.retryOf || r.parentRequestId || '');
+  }
+
+  function markPullNoticeHandled(d, owner) {
+    try { d.__mlsAthenaPullNoticeHandled = String(owner || 'doctor'); } catch (e) {}
+  }
+
+  function pullNoticeHandled(d) {
+    try { return !!(d && d.__mlsAthenaPullNoticeHandled); } catch (e) { return false; }
+  }
+
   function isManagedPullResult(d) {
     d = d || {};
     var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
@@ -464,6 +479,37 @@
     return '';
   }
 
+  /* Only a success from the same manual action may retire its warning. A
+     managed/background success is unrelated and must never erase a real
+     manual failure. Request ids win when present; the legacy manual bridge
+     legitimately sends empty ids, so empty-id results correlate by action
+     kind. retryOf/correlationId can explicitly link a newer retry id. */
+  var _activeManualFailure = null;
+  function manualFailureRef(d, kind) {
+    return { kind: kind, requestId: resultRequestId(d), correlationId: resultCorrelationId(d) };
+  }
+  function successMatchesManualFailure(d, kind) {
+    var a = _activeManualFailure;
+    if (!a || a.kind !== kind) return false;
+    var id = resultRequestId(d), corr = resultCorrelationId(d);
+    if (a.requestId) return id === a.requestId || corr === a.requestId || (!!a.correlationId && corr === a.correlationId);
+    if (a.correlationId) return corr === a.correlationId || id === a.correlationId;
+    return !id && !corr;
+  }
+  function clearTaggedPullFailures() {
+    try {
+      var nodes = document.querySelectorAll('[data-mls-athena-pull-failure="1"]');
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i] && nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+      }
+    } catch (e) {}
+  }
+  function clearManualFailure() {
+    clearToast();
+    clearTaggedPullFailures();
+    _activeManualFailure = null;
+  }
+
   function onResultMessage(ev) {
     var d = ev && ev.data;
     if (!d || d.source !== 'mls-ext' || !d.type || !/Result$/.test(d.type)) return;
@@ -479,10 +525,10 @@
        genuine-failure warnings remain ours (clarity does not cover those). */
     var clarityOwnsPull = (kind === 'pull') && !!(W.__mlsAthenaClarity);
     if (m.ok && (m.count == null || m.count > 0)) {
-      // A confirmed success always retires any stale warning, even when the
-      // richer clarity module owns the replacement success message.
-      clearToast();
-      if (managedPull) return;
+      if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
+      var matchesFailure = successMatchesManualFailure(d, kind);
+      if (_activeManualFailure && !matchesFailure) return;
+      if (matchesFailure) clearManualFailure();
       if (!clarityOwnsPull) {
         // honest success line (counts). §58 save-verify separately confirms persistence.
         var noun = kind === 'pull' ? 'visit' : 'result';
@@ -492,8 +538,10 @@
         showToast('ok', '✓ ' + what + ' ' + n + noun + (m.count === 1 ? '' : 's') + (kind === 'pull' ? ' from athenaOne.' : '.') + tail);
       }
     } else if (m.ok && m.count === 0) {
-      clearToast();
-      if (managedPull) return;
+      if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
+      var matchesZeroFailure = successMatchesManualFailure(d, kind);
+      if (_activeManualFailure && !matchesZeroFailure) return;
+      if (matchesZeroFailure) clearManualFailure();
       if (!clarityOwnsPull) {
         showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. The pull opens the chart automatically — re-run it, or this patient may simply have no visits yet.');
       }
@@ -503,11 +551,17 @@
       // Internal per-patient/background failures are summarized by their
       // owning workflow. Suppressing this duplicate does not conceal a
       // manual failure; unmarked standalone pulls still warn immediately.
-      if (managedPull) return;
+      if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
       // genuine failure — show honest line AND auto-open the diagnostic
+      markPullNoticeHandled(d, 'doctor');
+      var ref = manualFailureRef(d, kind);
       showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…', {
-        key: kind + '|' + (m.stage || 'failed')
+        key: kind + '|' + (m.stage || 'failed') + '|' + ref.requestId,
+        pullFailure: true,
+        requestId: ref.requestId,
+        resultKind: kind
       });
+      _activeManualFailure = ref;
       autoTrigger({ ok: false, count: m.count, stage: m.stage });
     }
   }
@@ -551,8 +605,16 @@
       _lastWarnAt = Date.now();
       t.setAttribute('data-mlsdoc-toast-key', warnKey);
     }
+    if (opts.pullFailure) {
+      t.setAttribute('data-mls-athena-pull-failure', '1');
+      t.setAttribute('data-mls-athena-result-kind', String(opts.resultKind || ''));
+      t.setAttribute('data-mls-athena-request-id', String(opts.requestId || ''));
+    }
     t.innerHTML = '<span>' + esc(text) + '</span><span class="mlsdoc-x" aria-label="dismiss">✕</span>';
-    t.querySelector('.mlsdoc-x').addEventListener('click', function () { if (t.parentNode) t.parentNode.removeChild(t); });
+    t.querySelector('.mlsdoc-x').addEventListener('click', function () {
+      if (opts.pullFailure) clearManualFailure();
+      else if (t.parentNode) t.parentNode.removeChild(t);
+    });
     (document.body || document.documentElement).appendChild(t);
     if (kind === 'ok' || kind === 'info') {
       setTimeout(function () { if (t && t.parentNode) t.parentNode.removeChild(t); }, 6500);
@@ -604,7 +666,10 @@
     isPermErr: isPermErr,
     resultMeta: resultMeta,
     resultRequestId: resultRequestId,
+    resultCorrelationId: resultCorrelationId,
     isManagedPullResult: isManagedPullResult,
+    pullNoticeHandled: pullNoticeHandled,
+    ownsPullNotices: true,
     kindOf: kindOf,
     // UI / actions
     open: function (lastResult) { openDiagnostic(lastResult || null); },

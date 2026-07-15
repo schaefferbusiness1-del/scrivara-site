@@ -2699,54 +2699,30 @@
 
   /* ------------------------------ run loop -------------------------------- */
   function run(provider, monthPrefix) {
-    var D = window.__mlsDayHistoryPull;
-    if (!D || !D._pullOne || !D.state) { say('The day-pull engine is not loaded - reload the page.'); return Promise.resolve('no-engine'); }
-    if (api.running || D.state.running) { say('A pull is already running.'); return Promise.resolve('already-running'); }
-    return (async function () {
-      var pre = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 18000);
-      if (pre && pre.__timeout) { say('MLS Assist is not answering - is the extension loaded and an athenaOne tab open?'); return 'needs-ext'; }
-      var roster = rosterFor(provider, monthPrefix);
-      if (!roster.length) { say('No schedule rows found for ' + provider + ' in ' + monthPrefix + '.'); return 'empty-roster'; }
-      var todo = [], skipped = 0;
-      for (var i = 0; i < roster.length; i++) {
-        var p = findPatient(roster[i].name);
-        if (p && hasPulled(p) && (p.visits || []).length) { skipped++; } else { todo.push(roster[i]); }
-      }
-      var S = D.state;
-      S.running = true; S.total = todo.length; S.done = 0; S.ok = 0; S.failed = 0; S.current = ''; S.rows = [];
-      api.running = true; api.stopReq = false;
-      var btn = document.getElementById('mlsDayHistBtn'); if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
-      say('Month pull for ' + provider + ' (' + monthPrefix + '): ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + (skipped ? ' - ' + skipped + ' already pulled.' : '.'));
-      if (!todo.length) {
-        S.running = false; api.running = false;
-        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-        say('Every ' + provider + ' patient in ' + monthPrefix + ' already has chart history.');
-        return 'nothing-to-do';
-      }
-      for (var j = 0; j < todo.length; j++) {
-        if (api.stopReq) { shim.armed = false; shim.day = ''; say('Month pull stopped by user at ' + S.done + '/' + S.total + '.'); break; }
-        var item = todo[j];
-        S.current = item.name + ' (' + item.day + ')';
-        shim.armed = true; shim.day = item.day;
-        var row;
-        try { row = await D._pullOne(item.name, item.day); } catch (e) { row = { name: item.name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
-        shim.armed = false; shim.day = '';
-        row.day = item.day;
-        S.rows.push(row); S.done++;
-        if (row && row.ok) S.ok++; else S.failed++;
-        try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
-        await wait(700);
-      }
-      shim.armed = false; shim.day = '';
-      S.running = false; S.current = '';
-      api.running = false;
-      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-      /* focus back to MLS (same courtesy as the day pull) */
-      try { window.postMessage({ source: 'mls-app', type: 'mlsAppFocusMlsTab' }, '*'); } catch (e) {}
-      api.lastResult = { provider: provider, month: monthPrefix, total: S.total, ok: S.ok, failed: S.failed, skippedAlreadyPulled: skipped, rows: S.rows.slice() };
-      say('Month pull finished for ' + provider + ': ' + S.ok + ' of ' + S.total + ' pulled' + (S.failed ? ' (' + S.failed + ' could not be read - re-run to retry)' : '') + '.');
+    var exact = window.__mlsSI;
+    if (!exact || typeof exact.pullMonth !== 'function' || typeof exact._resolveProviderRequest !== 'function') {
+      say('The verified exact month-pull engine is not loaded - reload MLS.');
+      return Promise.resolve({ ok: false, complete: false, reason: 'no-exact-engine' });
+    }
+    var gate = exact._resolveProviderRequest(provider, { allowAll: true, requireRosterForAll: true });
+    if (!gate || !gate.ok) { say((gate && gate.error) || 'The full Athena provider roster is not verified.'); return Promise.resolve({ ok: false, complete: false, reason: gate && gate.reason || 'provider-unverified' }); }
+    if (api.running) { say('A verified exact month pull is already running.'); return Promise.resolve({ ok: false, complete: false, reason: 'already-running' }); }
+    api.running = true; api.stopReq = false;
+    var label = gate.provider === 'all' ? 'All providers' : gate.provider.name;
+    say('Verified exact month pull for ' + label + ' (' + monthPrefix + ') - schedule, history, and old visits are all required.');
+    return Promise.resolve(exact.pullMonth({
+      month: monthPrefix,
+      provider: gate.provider,
+      includeHistory: true,
+      onStatus: function (m) { if (m) say(String(m)); }
+    })).then(function (res) {
+      api.running = false; api.lastResult = res || { ok: false, complete: false, reason: 'no-result' };
+      say(api.lastResult.complete ? ('Verified exact month complete for ' + label + '.') : ('Month incomplete for ' + label + ' - retry the listed days.'));
       return api.lastResult;
-    })();
+    }, function (err) {
+      api.running = false; api.lastResult = { ok: false, complete: false, reason: 'exception', error: String(err && err.message || err || '') };
+      return api.lastResult;
+    });
   }
 
   /* -------------------------------- UI ------------------------------------ */
@@ -2781,7 +2757,7 @@
       var t = el ? (el.value || el.textContent || '') : '';
       if (t && /\w/.test(t)) return String(t).trim();
     } catch (e) {}
-    return 'Matthew Schaeffer, MD';
+    return '';
   }
   function isSelf(p) { return nrm(p).indexOf(nrm(selfProvider()).split(' ')[0]) >= 0 && nrm(p) === nrm(selfProvider()); }
   function refreshCount() {
@@ -2985,7 +2961,7 @@
   function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); }
   function whoIsMe() {
     try { var el = document.getElementById('provSel'); if (el && el.value) return String(el.value); } catch (e) {}
-    return 'Matthew Schaeffer, MD';
+    return '';
   }
   /* every provider whose surname appears in the question */
   function namedProviders(q) {
@@ -16196,7 +16172,8 @@
     signedAt: 0,                         /* our sign-step marker (reset on regen / new patient) */
     expanded: null, editing: false, lastWarn: '',
     showCount: 5,
-    providerFilter: null,                /* null = follow app "Pulling as"; '' = all; else name */
+    providerFilter: null,                /* null = follow app "Pulling as"; '' = all; else canonical name */
+    providerRef: '',                     /* canonical stableKey; never a fuzzy display-name key */
     staffRange: 'today', customFrom: '', customTo: '',
     advOpen: false, query: '',
 
@@ -16261,16 +16238,51 @@
   /* v3.5: providers = union of what's in the pulled appointments AND the
      re-pulled roster (backend /api/providers + a live extension schedule
      read) — so the dropdown is never stuck on one name. */
-  var PROV_EXTRA = [];
   function providerList() {
-    var seen = {}, out = [];
-    appts().forEach(function (a) { var p = a && a.provider; if (p && !seen[p]) { seen[p] = 1; out.push(p); } });
-    PROV_EXTRA.forEach(function (p) { if (p && !seen[p]) { seen[p] = 1; out.push(p); } });
-    out.sort(); return out;
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    var out = rp && isFn(rp.list) ? (safe(function () { return rp.list(); }, []) || []) : [];
+    return out.slice().sort(function (a, b) { return String(a && a.name || '').localeCompare(String(b && b.name || '')); });
   }
   function activeProvider() { return S.providerFilter != null ? S.providerFilter : resolveAppProvider(); }
+  function activeProviderRequest() {
+    if (S.providerFilter === '') return 'all';
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (!(rp && isFn(rp.resolve))) return activeProvider() || 'all';
+    var ref = S.providerRef || activeProvider();
+    var entry = ref ? safe(function () { return rp.resolve(ref); }, null) : null;
+    return entry || (activeProvider() || 'all');
+  }
+  function providerRosterReceipt() {
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    return rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
+  }
   var provRefreshing = false;
   function refreshProviders() {
+    if (provRefreshing) return;
+    provRefreshing = true;
+    render();
+    var canonical = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (!(canonical && isFn(canonical.list) && isFn(canonical.ingestResp))) {
+      provRefreshing = false; toast('The canonical provider roster is still loading. Reload MLS and try again.'); render(); return;
+    }
+    var accountRoster = fetch(bkBase() + '/api/providers', { headers: { Authorization: 'Bearer ' + bkToken() } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && Array.isArray(d.providers)) { if (isFn(canonical.merge)) canonical.merge(d.providers, 'backend-calendar'); return true; } return false; }, function () { return false; });
+    var athenaRoster = readSchedule().then(function (r) {
+      if (!r || r.ok !== true) return false;
+      var hostName = safe(function () { return r.url ? new URL(r.url).host : ''; }, '');
+      if (hostName && !/athenahealth|athenanet|athenaone/i.test(hostName) && String(r.emr || '').toLowerCase() !== 'athena') return false;
+      canonical.ingestResp(r); return true;
+    }, function () { return false; });
+    Promise.all([accountRoster, athenaRoster]).then(function (sources) {
+      provRefreshing = false;
+      var total = providerList().length, receipt = providerRosterReceipt();
+      if (!sources[0] && !sources[1]) toast('Could not refresh providers - sign in to MLS and keep the Athena Day schedule open.');
+      else if (!(receipt && receipt.complete)) toast('Provider list is still partial (' + total + ' seen). Keep the full Athena Day schedule open and refresh again.');
+      else toast('Verified full Athena provider roster - ' + total + ' provider' + (total === 1 ? '' : 's') + '.');
+      render();
+    });
+    return;
     if (provRefreshing) return;
     provRefreshing = true;
     render(); /* pull panel shows the refreshing state */
@@ -16306,6 +16318,10 @@
       render();
     });
   }
+
+  function onCanonicalRosterUpdated() { if (host && host.parentNode) render(); }
+  safe(function () { window.addEventListener('mls-provider-roster-updated', onCanonicalRosterUpdated); });
+  cleanup.push(function () { safe(function () { window.removeEventListener('mls-provider-roster-updated', onCanonicalRosterUpdated); }); });
 
   /* ---- schedule rows ------------------------------------------------------ */
   function sortKeyOf(a) {
@@ -16794,17 +16810,29 @@
   function provSelectHtml() {
     var list = providerList();
     if (!list.length) return '';
-    var cur = activeProvider();
+    var cur = activeProvider(), counts = {};
+    list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
     var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>All providers</option>';
     list.forEach(function (p) {
-      opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
+      var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
+      if (!key || !name) return;
+      if (counts[name.toLowerCase()] > 1) label += p.id ? (' - ID ' + p.id) : (p.raw && p.raw !== name ? (' - ' + p.raw) : (' - ' + key));
+      var selected = S.providerRef ? S.providerRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
+      opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
            '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
-    sel.onchange = function () { var v = sel.value; S.providerFilter = (v === '__all') ? '' : v; S.showCount = 5; render(); };
+    sel.onchange = function () {
+      var v = sel.value;
+      if (v === '__all') { S.providerFilter = ''; S.providerRef = ''; S.showCount = 5; render(); return; }
+      var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+      var entry = rp && isFn(rp.resolve) ? safe(function () { return rp.resolve(v); }, null) : null;
+      if (!entry) { toast('That provider is no longer uniquely verifiable. Refresh the Athena roster and choose again.'); return; }
+      S.providerFilter = entry.name; S.providerRef = entry.stableKey; S.showCount = 5; render();
+    };
   }
 
   /* =======================================================================
@@ -17390,7 +17418,7 @@
   }
   function wireEmptyToday() {
     on('ez3PullNow', function () { startTodayPull(true); });
-    on('ez3AllProv', function () { S.providerFilter = ''; S.showCount = 5; render(); });
+    on('ez3AllProv', function () { S.providerFilter = ''; S.providerRef = ''; S.showCount = 5; render(); });
   }
 
   /* ---- patient rows (clean, DOB always, expand-in-place) ------------------ */
@@ -18258,6 +18286,34 @@
   }
   function startMonthPull(retryOnly) {
     if (P && P.running) return;
+    var exact = safe(function () { return window.__mlsSI; }, null);
+    var exactMonthEl = $('ez3sMonth'), exactMonth = exactMonthEl ? exactMonthEl.value : prevYm();
+    var exactRange = pullMonthRange(exactMonth);
+    if (!exactRange) { toast(exactMonth > nowYm() ? 'That month has not happened yet - pick a past month.' : 'Pick a month first.'); return; }
+    if (!(exact && isFn(exact.pullMonth) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', 'The verified exact month-pull engine is still loading.'); return; }
+    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: true });
+    if (!exactGate || !exactGate.ok) { pSet('ez3PullNow', (exactGate && exactGate.error) || 'The full Athena provider roster is not verified yet.'); pSet('ez3PullNow2', 'Keep the full Athena Day schedule open, refresh providers, and retry.'); return; }
+    var exactProviderLabel = exactGate.provider === 'all' ? 'all' : exactGate.provider.name;
+    P = freshPull(exactRange, exactProviderLabel); P.running = true; P.cancelled = false;
+    pSet('ez3PullNow', 'Starting verified exact month pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
+    Promise.resolve(exact.pullMonth({
+      month: exactMonth,
+      provider: exactGate.provider,
+      includeHistory: true,
+      onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
+    })).then(function (res) {
+      res = res || {}; var totals = res.totals || {}, retry = res.retry || {};
+      P.found = Number(totals.scheduleAttempted || 0); P.saved = Number(totals.created || 0); P.dups = Number(totals.skipped || 0);
+      P.failedDays = Array.isArray(retry.dates) ? retry.dates.slice() : [];
+      P.emptyDays = []; P.dayStatus = {};
+      (res.days || []).forEach(function (d) { P.dayStatus[d.date] = { status: d.complete ? ((d.reason === 'empty-day' || d.reason === 'provider-empty') ? 'empty' : 'done') : 'failed', error: d.complete ? '' : d.reason }; if (P.dayStatus[d.date].status === 'empty') P.emptyDays.push(d.date); });
+      P.running = false;
+      pSet('ez3PullNow', res.complete ? ('Verified ' + exactRange.label + ' complete.') : ('Month incomplete - ' + P.failedDays.length + ' day' + (P.failedDays.length === 1 ? '' : 's') + ' ready to retry.'));
+      pSet('ez3PullNow2', 'Schedule ' + Number(totals.scheduleAccounted || 0) + '/' + Number(totals.scheduleAttempted || 0) + ' - histories ' + Number(totals.historiesProcessed || 0) + '/' + Number(totals.historiesRequested || 0) + '.');
+      pCounts(); render();
+    }, function (err) { P.running = false; P.failedDays = exactRange.keys.slice(); pSet('ez3PullNow', 'The exact month pull stopped safely.'); pSet('ez3PullNow2', String(err && err.message || err || 'Retry when Athena is ready.')); pCounts(); });
+    return;
+    if (P && P.running) return;
     var ymEl = $('ez3sMonth');
     var ym = ymEl ? ymEl.value : prevYm();
     var range = pullMonthRange(ym);
@@ -18323,6 +18379,29 @@
      progress log the month pull already shows. The month pull itself is
      unchanged. Read-only toward Athena. */
   function startDayPull(retryOnly) {
+    if (P && P.running) return;
+    var exact = safe(function () { return window.__mlsSI; }, null), exactDay = todayLocal();
+    if (!(exact && isFn(exact.pull) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', 'The verified exact day-pull engine is still loading.'); return; }
+    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false });
+    if (!exactGate || !exactGate.ok) { pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.'); return; }
+    var exactRange = { ym: null, from: exactDay, to: exactDay, keys: [exactDay], label: 'Today' };
+    P = freshPull(exactRange, exactGate.provider === 'all' ? 'all' : exactGate.provider.name); P.running = true; P.cancelled = false;
+    pSet('ez3PullNow', 'Starting verified exact day pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
+    Promise.resolve(exact.pull({
+      date: exactDay,
+      provider: exactGate.provider,
+      includeHistory: true,
+      onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
+    })).then(function (res) {
+      res = res || {}; var cr = res.calendarReceipt || {}, hr = res.historyReceipt || {};
+      P.found = Number(cr.attempted || 0); P.saved = Number(res.created || 0); P.dups = Number(res.skipped || 0);
+      P.dayStatus[exactDay] = { status: res.complete ? ((res.reason === 'empty-day' || res.reason === 'provider-empty') ? 'empty' : 'done') : 'failed', error: res.complete ? '' : res.reason };
+      P.emptyDays = P.dayStatus[exactDay].status === 'empty' ? [exactDay] : []; P.failedDays = res.complete ? [] : [exactDay]; P.running = false;
+      pSet('ez3PullNow', res.complete ? 'Verified Today complete.' : 'Today is incomplete and ready to retry.');
+      pSet('ez3PullNow2', 'Schedule ' + Number(cr.accounted || 0) + '/' + Number(cr.attempted || 0) + ' - histories ' + Number(hr.processed || 0) + '/' + Number(hr.requested || 0) + '.');
+      pCounts(); render();
+    }, function (err) { P.running = false; P.failedDays = [exactDay]; pSet('ez3PullNow', 'The exact day pull stopped safely.'); pSet('ez3PullNow2', String(err && err.message || err || 'Retry when Athena is ready.')); pCounts(); });
+    return;
     if (P && P.running) return;
     var today = todayLocal();
     var range = { ym: null, from: today, to: today, keys: [today], label: 'Today' };
@@ -18560,6 +18639,8 @@
     },
     close: function () {},   /* kept for compat — the workspace IS the tab */
     state: function () { return { mode: S.mode, screen: S.screen, phase: S.phase, locked: S.locked, autoPull: S.autoPull, pull: P ? { running: P.running, label: P.range.label, saved: P.saved, failedDays: P.failedDays.length } : null }; },
+    providerTarget: function () { return activeProviderRequest(); },
+    providerRosterReceipt: function () { return providerRosterReceipt(); },
     /* ---- remote API (v3.2, for the phone pair-to-desktop host) ------------
      * A WHITELIST of safe entry points a paired phone may drive THROUGH the
      * desktop (see feat_mls_easy_phone_host.module.js — inert until the
@@ -31288,7 +31369,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b277';
+  window.__MLS_AV = window.__MLS_AV || 'b278';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -38242,7 +38323,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260714vis3r5';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260714vis3r7';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
@@ -38290,7 +38371,7 @@
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=20260714ad102';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=20260714ad103';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();
@@ -38463,8 +38544,8 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260624wi2c1';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst214';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260714si151p3';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.5.1 - exact schedule identity + fresh verified histories */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260714si160p1';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.0 - exact provider/day/month identity + fresh verified histories */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -38498,7 +38579,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260711unify1c1';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 2: unified Copilot conversation store (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260714afx130p1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260714afx131p1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2c1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2115';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
@@ -38531,7 +38612,7 @@
 ;(function(){try{var A="feat_mls_asst_provname.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626pn1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: MLS Assistant doctor-picker shows REAL providers in clean human form ("Kelly Carter, PA-C") instead of raw athenaOne machine usernames ("Carter_Kelly_PA-C"); option.value preserved so schedule pulls are unchanged -- additive, reversible (window.__mlsAsstProvName.revert()) */
 ;(function(){try{var A="feat_mls_dob_format_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626dob1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: unify displayed patient DOB format to canonical MM/DD/YYYY across all card surfaces (picker/assistant/simple/profile/scheduler/timeline) to match context-bar item35; normalizes dash & ISO stored dobs display-only, no patient-data mutation -- additive, reversible (window.__mlsDobFormatUnify.revert()) */
 
-;(function(){try{var A="feat_mls_calendar_polish.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714cal130p1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item67: calendar polish -- cleaner nav, provider roster, and opt-in verified provider-day history pull */
+;(function(){try{var A="feat_mls_calendar_polish.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714cal131p1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item67: calendar polish -- canonical verified provider roster and exact provider-day history pull */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legal_paywidget.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legal_paywidget.js?v=20260629ac1';s.setAttribute('data-mls-asset','feat_mls_legal_paywidget.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{var A="feat_mls_caldedupe_render.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629dd1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item68: calendar/agenda duplicate-appointment fix -- idempotent read-layer dedupe of window._calAppts by stable identity (name|date|time|provider) before each render; display-only, never deletes records (additive, reversible: window.__mlsCalDedupe.revert()) */
@@ -39397,12 +39478,7 @@
     return n;
   }
   function selfProvider() {
-    try {
-      var el = document.getElementById('provSel') || document.querySelector('#mlsProvChip, [data-mls-provider]');
-      var t = el ? (el.value || el.textContent || '') : '';
-      if (t && /\w/.test(t)) return String(t).trim();
-    } catch (e) {}
-    return 'Matthew Schaeffer, MD';
+    try { var easy = window.__mlsEasyV32, target = easy && easy.providerTarget ? easy.providerTarget() : null; return target && target !== 'all' ? String(target.name || '') : ''; } catch (e) { return ''; }
   }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function note(msg) { try { var n = document.getElementById('mlsMpoNote'); if (n) n.innerHTML = msg; } catch (e) {} }
@@ -39421,6 +39497,30 @@
 
   function onClick() {
     api.clicks++;
+    var exact = window.__mlsSI;
+    var easy = window.__mlsEasyV32;
+    if (!exact || typeof exact.pullMonth !== 'function' || typeof exact._resolveProviderRequest !== 'function') { note('The verified exact month-pull engine is still loading - reload MLS and try again.'); return; }
+    var ymExactEl = document.getElementById('ez3sMonth'), ymExact = ymExactEl && ymExactEl.value || '';
+    if (!/^\d{4}-\d{2}$/.test(ymExact)) { note('Pick a month above first.'); return; }
+    var target = easy && typeof easy.providerTarget === 'function' ? easy.providerTarget() : null;
+    var gate = exact._resolveProviderRequest(target, { allowAll: true, requireRosterForAll: true });
+    if (!gate || !gate.ok) { note(esc(gate && gate.error || 'The full Athena provider roster is not verified yet.')); return; }
+    var label = gate.provider === 'all' ? 'All providers' : gate.provider.name;
+    note('Running the verified exact schedule + full-history pull for ' + esc(label) + ' in ' + esc(ymExact) + '. Every day must return complete receipts; retries are idempotent.');
+    var exactPromise = exact.pullMonth({
+      month: ymExact,
+      provider: gate.provider,
+      includeHistory: true,
+      onStatus: function (m) { if (m) note(esc(String(m))); }
+    });
+    api.lastRun = { provider: gate.provider, month: ymExact, started: true, exact: true };
+    if (exactPromise && typeof exactPromise.then === 'function') exactPromise.then(function (res) {
+      var t = res && res.totals || {};
+      note(res && res.complete
+        ? ('Verified complete for ' + esc(label) + ': schedule ' + Number(t.scheduleAccounted || 0) + '/' + Number(t.scheduleAttempted || 0) + '; histories ' + Number(t.historiesProcessed || 0) + '/' + Number(t.historiesRequested || 0) + '; failures 0.')
+        : ('Month incomplete for ' + esc(label) + '. Retry ' + Number(res && res.retry && res.retry.dates && res.retry.dates.length || 0) + ' day(s); nothing partial is reported as complete.'));
+    }, function () { note('The exact month pull stopped safely. Retry when Athena is ready.'); });
+    return;
     var M = window.__mlsProvMonthPull;
     var D = window.__mlsDayHistoryPull;
     if (!M || !M.run || !D) { note('The chart-pull engine is not loaded — reload the page.'); return; }
@@ -39470,13 +39570,13 @@
       if (!card || document.getElementById('mlsMpoBtn')) return;
       var b = document.createElement('button');
       b.id = 'mlsMpoBtn'; b.type = 'button';
-      b.textContent = '📚 Pull chart histories (this doctor, this month)';
-      b.title = 'After the schedule pull above: open each rostered patient’s chart and file their history into MLS. Read-only in athenaOne.';
+      b.textContent = '📚 Verify month schedule + full histories';
+      b.title = 'Runs the exact provider/month pipeline: complete schedule receipts plus verified full history and old visits for every exact patient. Read-only in athenaOne.';
       b.onclick = onClick;
       card.appendChild(b);
       var n = document.createElement('div');
       n.id = 'mlsMpoNote';
-      n.textContent = 'Uses the same month + doctor picked above. Run the schedule pull first if this month isn’t imported yet.';
+      n.textContent = 'Uses the same verified month + canonical provider above. Re-running safely enriches new data and skips exact duplicates.';
       card.appendChild(n);
     } catch (e) {}
   }
@@ -39736,7 +39836,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260712ct100c1';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260714oni221';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: exact procedure-class matching, sticky manual picks, exact-patient history signals, and fail-closed selected-template fidelity */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260714oni222';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: exact procedure-class matching, sticky manual picks, exact-patient history signals, and fail-closed selected-template fidelity */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_label.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_label.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_label.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE canonical provider-name resolver (window.__mlsProviderLabel) + normalizes _calProviders so every dropdown shows real names instead of "Provider undefined"/"[object Object]"/"Provider N" (plbl-1.0.0; revert()) */

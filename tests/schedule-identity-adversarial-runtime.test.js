@@ -147,7 +147,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.5.1');
+assert(api && api.version === 'si-1.6.0');
 
 (async () => {
   assert.strictEqual(api._findPatient([patients[0]], { name: patients[0].name }), null,

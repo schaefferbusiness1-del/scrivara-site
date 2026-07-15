@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsCalPolish && window.__mlsCalPolish.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cp-1.3.0';
+  var VERSION = 'cp-1.3.1';
   var STYLE_ID = 'mlsCalPolishStyle';
   var ROSTER_ID = 'mlsCalRoster';
   var EMPTY_ID = 'mlsCalEmpty';
@@ -49,6 +49,7 @@
   var HISTORY_PREF = 'providerDayIncludeHistoryV1';
   var _pullRunning = false;
   var _origRender = null;
+  var _rosterListener = null;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function $(id) { return document.getElementById(id); }
@@ -147,16 +148,30 @@
   // fval is dropped into #calProvFilter: real numeric id -> String(id) (filters by
   // doctor_user_id); id-less name -> "nm:<raw>" (matches no appt -> honest empty).
   function normProviders() {
-    var p = safe(function () { return window._calProviders; }, null);
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var p = roster && typeof roster.list === 'function'
+      ? safe(function () { return roster.list(); }, [])
+      : safe(function () { return window._calProviders; }, null);
     if (!p || !p.length) return [];
-    var out = [];
+    var out = [], counts = {};
+    p.forEach(function (x) { if (x && typeof x === 'object') { var n0 = humanize(x.name || x.displayName || ''); counts[n0.toLowerCase()] = (counts[n0.toLowerCase()] || 0) + 1; } });
     p.forEach(function (x) {
       if (typeof x === 'string') {
         var raw = x.trim(); if (!raw) return;
         out.push({ fval: 'nm:' + raw, name: humanize(raw), checked_in: false, hasId: false });
       } else if (x && typeof x === 'object') {
         var nm = x.name ? humanize(x.name) : ('Provider ' + (x.id != null ? x.id : '?'));
-        out.push({ fval: (x.id != null ? String(x.id) : 'nm:' + nm), name: nm, checked_in: !!x.checked_in, hasId: x.id != null });
+        var stableKey = String(x.stableKey || x.stable_key || '');
+        var label = nm;
+        if (counts[nm.toLowerCase()] > 1) label += x.id != null && String(x.id) ? (' - ID ' + x.id) : (x.raw && x.raw !== nm ? (' - ' + x.raw) : (' - ' + stableKey));
+        out.push({
+          fval: (x.id != null && String(x.id) ? String(x.id) : (stableKey ? ('pv:' + encodeURIComponent(stableKey)) : 'nm:' + nm)),
+          stableKey: stableKey,
+          name: label,
+          checked_in: !!x.checked_in,
+          hasId: x.id != null && String(x.id) !== '',
+          rosterVerified: x.rosterVerified === true
+        });
       }
     });
     return out;
@@ -260,6 +275,9 @@
 
     var cur = pf ? String(pf.value || '') : '';
     var html = '<span class="mlsRosLabel">Providers</span>';
+    var rosterApi = safe(function () { return window.__mlsProviderRoster; }, null);
+    var rosterReceipt = rosterApi && typeof rosterApi.getReceipt === 'function' ? safe(function () { return rosterApi.getReceipt(); }, null) : null;
+    if (!(rosterReceipt && rosterReceipt.complete)) html += '<span title="Finish a full Athena Day-schedule sweep before a selected-provider pull" style="font-size:11px;color:#8A5A22;margin-right:6px">Roster still verifying</span>';
     html += '<span class="mlsRosChip' + (cur === '' ? ' mlsRosOn' : '') + '" data-prov="" title="Show every provider">All providers</span>';
     prov.forEach(function (p) {
       var on = cur !== '' && p.fval === cur;
@@ -374,6 +392,10 @@
 
   function boot() {
     injectCSS();
+    if (!_rosterListener) {
+      _rosterListener = function () { safe(enhance); };
+      safe(function () { window.addEventListener('mls-provider-roster-updated', _rosterListener); });
+    }
     if (wrapRender()) { safe(enhance); return; }
     var n = 0, t = setInterval(function () {
       n++;
@@ -392,6 +414,7 @@
     safe(function () { var r = $(ROSTER_ID); if (r && r.parentNode) r.parentNode.removeChild(r); });
     safe(function () { var e = $(EMPTY_ID); if (e && e.parentNode) e.parentNode.removeChild(e); });
     safe(function () { var pf = filterEl(); if (pf) pf.style.display = ''; });
+    safe(function () { if (_rosterListener) window.removeEventListener('mls-provider-roster-updated', _rosterListener); _rosterListener = null; });
     safe(function () { if (typeof window.renderCalendar === 'function') window.renderCalendar(); });
     safe(function () { window.__mlsCalPolish.installed = false; });
   }

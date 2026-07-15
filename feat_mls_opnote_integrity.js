@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.2.0
+ * MLS op-note integrity  oni-2.2.1
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.2.0';
+  var VERSION = 'oni-2.2.1';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -118,9 +118,41 @@
     var found = pts.filter(function (p2) { return normText(p2 && p2.name) === nm && dobKey(p2 && p2.dob) === dk; });
     return found.length === 1 ? found[0] : null;
   }
+  function historyVisitBelongsTo(p, v) {
+    if (!p || !v) return false;
+    var pid=S(p.id).trim(), binding=S(v.identityBinding).trim();
+    var owner=S(binding||v.patientId||v.patientExternalId||v.patient_external_id||v._mlsTargetPatientId).trim();
+    var remote=/athena|legacy|grab|pullrec/i.test(S(v.source));
+    /* Athena-derived history may influence procedure matching only when the
+       encounter carries the same immutable patient binding and its reader
+       marked that binding verified. A row merely stored in p.visits is not
+       identity proof. Local/manual history remains usable unless it declares a
+       conflicting owner or patient identity. */
+    if(remote){if(!pid||binding!==pid||v.identityVerified!==true)return false;}
+    else if(binding&&binding!==pid)return false;
+    if(owner&&owner!==pid)return false;
+    if(S(v.patientDob).trim()&&dobKey(v.patientDob)!==dobKey(p.dob))return false;
+    if(S(v.patientName).trim()&&normText(v.patientName)!==normText(p.name))return false;
+    return true;
+  }
+  function verifiedHistoryVisits(p) {
+    if(!p)return [];
+    var visits=[], raw=Array.isArray(p.visits)?p.visits:[];
+    try{
+      var hist=window.__mlsOpNoteHistory, internal=hist&&hist._internal;
+      if(internal&&isFn(internal.getVisitsFor))visits=internal.getVisitsFor(p)||[];
+      else if(window.__mlsVisitModel&&isFn(window.__mlsVisitModel.usableVisits))visits=window.__mlsVisitModel.usableVisits(p)||[];
+      else visits=raw;
+    }catch(e){visits=[];}
+    /* A verified-Athena accessor may intentionally omit clinician-authored
+       local rows. Add back only non-remote rows; the common ownership checks
+       below still reject any row that declares a conflicting patient. */
+    raw.forEach(function(v){if(!/athena|legacy|grab|pullrec/i.test(S(v&&v.source))&&visits.indexOf(v)<0)visits.push(v);});
+    return (Array.isArray(visits)?visits:[]).filter(function(v){return historyVisitBelongsTo(p,v);});
+  }
   function historySignal(p) {
     if (!p) return '';
-    var visits = Array.isArray(p.visits) ? p.visits.slice() : [];
+    var visits = verifiedHistoryVisits(p).slice();
     visits.sort(function (a,b) { return S(b && (b.date || b.created)).localeCompare(S(a && (a.date || a.created))); });
     var parts = [];
     for (var i=0; i<Math.min(4, visits.length); i++) {
@@ -359,6 +391,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,generate:generate};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

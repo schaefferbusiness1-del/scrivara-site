@@ -55,6 +55,16 @@
   }
   function say(msg) { var el = statusEl(); if (el && msg) el.textContent = '🗂 ' + msg; }
 
+  var cohortRequestSeq = 0;
+  function nextCohortRequestId() {
+    cohortRequestSeq = (cohortRequestSeq + 1) % 1000000;
+    return ('mlscohort-' + Date.now().toString(36) + '-' + cohortRequestSeq.toString(36) + '-' + Math.floor(Math.random() * 0x100000000).toString(36)).slice(0, 100);
+  }
+  function responseRequestId(d) {
+    if (!d || typeof d !== 'object') return '';
+    return String(d.requestId || d.id || (d.resp && (d.resp.requestId || d.resp.id)) || '').slice(0, 100);
+  }
+
   /* ---------- bridge: read every visit for the OPEN athena chart ----------
      Reuse __mlsCopyVisits._driveRequest so we inherit the §42 source:'mls-app'
      handshake fix and the live, event-driven progress. Falls back to its own
@@ -64,7 +74,7 @@
     if (cv && isFn(cv._driveRequest)) {
       return cv._driveRequest(
         'mlsAppReadAllVisits',
-        { hint: hint || {} },
+        { hint: hint || {}, managed: true, background: true, initiator: 'batch' },
         'mlsAppAllVisitsResult',
         ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
         function (m) { if (m && onStatus) onStatus(m); },
@@ -73,15 +83,17 @@
     }
     // minimal fallback poster (still uses source:'mls-app' — never regress §42)
     return new Promise(function (resolve, reject) {
+      var requestId = nextCohortRequestId();
       var done = false, engaged = false, eng = null, lng = null;
       function fin(fn, a) { if (done) return; done = true; window.removeEventListener('message', on); if (eng) clearTimeout(eng); if (lng) clearTimeout(lng); fn(a); }
       function on(ev) {
         var d = ev.data; if (!d || !d.type) return;
+        if (d.source !== 'mls-ext' || responseRequestId(d) !== requestId) return;
         if (d.type === 'mlsAppVisitsProgress' || d.type === 'mlsAppSearchProgress') { engaged = true; if (lng) { clearTimeout(lng); } lng = setTimeout(function () { fin(reject, new Error('timeout')); }, 180000); if (onStatus) onStatus(d.message || d.status || d.text || ''); return; }
         if (d.type === 'mlsAppAllVisitsResult') { if (d.ok === false || d.error) fin(reject, new Error(d.error || 'ext-error')); else fin(resolve, d); }
       }
       window.addEventListener('message', on);
-      safe(function () { window.postMessage({ type: 'mlsAppReadAllVisits', source: 'mls-app', from: 'mls-app', hint: hint || {} }, '*'); });
+      safe(function () { window.postMessage({ type: 'mlsAppReadAllVisits', source: 'mls-app', from: 'mls-app', id: requestId, requestId: requestId, hint: hint || {}, managed: true, background: true, initiator: 'batch' }, '*'); });
       eng = setTimeout(function () { if (!engaged) fin(reject, new Error('no-ext')); }, 6000);
     });
   }

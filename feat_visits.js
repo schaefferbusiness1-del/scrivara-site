@@ -1178,10 +1178,51 @@
     });
   }
 
-  // post a request, stream progress to onStatus, resolve on the result type.
-  // engagedTypes mark the extension as "handling" so we don't fall back.
-  function driveRequest(reqType, payload, resultType, progressTypes, onStatus, onEngaged, timeout, engageTimeout) {
+  var bridgeRequestSeq = 0;
+  var manualRetryParents = Object.create(null);
+  function nextBridgeRequestId(reqType) {
+    bridgeRequestSeq = (bridgeRequestSeq + 1) % 1000000;
+    var kind = String(reqType || 'request').replace(/^mlsApp/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 18) || 'request';
+    var random = '';
+    try {
+      if (window.crypto && isFn(window.crypto.getRandomValues)) {
+        var words = new Uint32Array(2); window.crypto.getRandomValues(words);
+        random = words[0].toString(36) + words[1].toString(36);
+      }
+    } catch (e) {}
+    if (!random) random = Math.floor(Math.random() * 0x100000000).toString(36);
+    return ('mlscv-' + kind + '-' + Date.now().toString(36) + '-' + bridgeRequestSeq.toString(36) + '-' + random).slice(0, 100);
+  }
+  function bridgeResponseId(d) {
+    if (!d || typeof d !== 'object') return '';
+    return String(d.requestId || d.id || (d.resp && (d.resp.requestId || d.resp.id)) || '').slice(0, 100);
+  }
+
+  /* A retry is linked only inside one frozen local-patient/action lifecycle.
+     This lets the notification owner retire failure A after successful retry B
+     without letting an unrelated patient, background batch, or stale result
+     clear the warning. The linkage is short-lived and contains no PHI. */
+  function manualRetryLifecycleKey(reqType, lifecycle) {
+    if (!lifecycle || lifecycle.manual !== true) return '';
+    var patientId = S(lifecycle.patientId).trim();
+    if (!patientId) return '';
+    return (S(lifecycle.action || reqType).toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'request') + '|' + patientId.slice(0, 100);
+  }
+  function retryParentFor(key) {
+    var rec = key && manualRetryParents[key];
+    if (!rec) return '';
+    if ((Date.now() - Number(rec.at || 0)) > 15 * 60 * 1000) { delete manualRetryParents[key]; return ''; }
+    return S(rec.requestId).slice(0, 100);
+  }
+
+  // Post one uniquely-correlated request, stream only its progress to onStatus,
+  // and resolve only its result. A late callback/progress event from an earlier
+  // patient can never engage or finish this run.
+  function driveRequest(reqType, payload, resultType, progressTypes, onStatus, onEngaged, timeout, engageTimeout, lifecycle) {
     return new Promise(function (resolve, reject) {
+      var requestId = nextBridgeRequestId(reqType);
+      var lifecycleKey = manualRetryLifecycleKey(reqType, lifecycle);
+      var retryOf = retryParentFor(lifecycleKey);
       var done = false, engaged = false, longTid = null, engTid = null;
       function clearTimers() { if (engTid) clearTimeout(engTid); if (longTid) clearTimeout(longTid); }
       function fin(fn, arg) { if (done) return; done = true; window.removeEventListener('message', on); clearTimers(); fn(arg); }
@@ -1193,16 +1234,30 @@
       }
       function on(ev) {
         var d = ev.data; if (!d || !d.type) return;
+        if (bridgeResponseId(d) !== requestId) return;
         if (progressTypes.indexOf(d.type) >= 0) { markEngaged(); if (onStatus) try { onStatus(d.message || d.status || d.text || '', d); } catch (e) {} return; }
         if (d.type === resultType) {
           markEngaged();
-          if (d.ok === false || d.error) fin(reject, new Error(d.error || d.message || 'extension error'));
-          else fin(resolve, d);
+          if (d.ok === false || d.error) {
+            if (lifecycleKey) manualRetryParents[lifecycleKey] = { requestId: requestId, at: Date.now() };
+            var err = new Error(d.error || d.message || 'extension error');
+            err.requestId = requestId; err.retryOf = retryOf;
+            fin(reject, err);
+          } else {
+            if (lifecycleKey && retryOf && manualRetryParents[lifecycleKey] && manualRetryParents[lifecycleKey].requestId === retryOf) delete manualRetryParents[lifecycleKey];
+            fin(resolve, d);
+          }
         }
       }
       window.addEventListener('message', on);
-      try { window.postMessage(Object.assign({ type: reqType, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
       engTid = setTimeout(function () { if (!engaged) fin(reject, new Error('no-ext')); }, engageTimeout || 6000);
+      try {
+        var outbound = Object.assign({}, payload || {}, {
+          type: reqType, source: 'mls-app', from: 'mls-app', id: requestId, requestId: requestId
+        });
+        if (retryOf) { outbound.retryOf = retryOf; outbound.parentRequestId = retryOf; }
+        window.postMessage(outbound, '*');
+      } catch (e) { fin(reject, e); }
     });
   }
 
@@ -1238,35 +1293,64 @@
     if (running) return Promise.resolve();
     var p = patientOverride || activeP();
     if (!p) { onStatus && onStatus('Open a patient first.'); return Promise.resolve(); }
+    /* Freeze the same immutable local-patient target used by the schedule pull.
+       The manual profile button must never ask the encounter reader to guess a
+       patient from whichever Athena surface happens to be visible. */
+    var targetRef = null;
+    try {
+      if (isFn(window._athenaHistoryTargetSnapshot)) {
+        targetRef = window._athenaHistoryTargetSnapshot({
+          patientId: S(p.id), name: S(p.name), dob: S(p.dob),
+          mrn: S(p.mrn || p.athenaId || p.athenaPatientId || '')
+        }, false);
+      }
+    } catch (eTarget) { targetRef = null; }
     running = true;
     var engaged = false;
     var st = function (m) { try { onStatus && onStatus(m); } catch (e) {} };
     st('Connecting to MLS Assist…');
     return ping(1800).then(function (ok) {
       if (!ok) throw new Error('MLS Assist isn’t responding. If it’s installed, reload it at chrome://extensions (or get the latest from MLS Settings → Get the extension). If it isn’t installed yet, install it there, then try again.');
-      st('Reading every visit from athenaOne… (read-only)');
-      return driveRequest(
-        'mlsAppReadAllVisits',
-        { hint: { name: p.name, dob: p.dob, mrn: p.mrn || p.athenaId || p.athenaPatientId || '' } },
-        'mlsAppAllVisitsResult',
-        ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
-        function (msg) { if (msg) st(msg); },
-        function () { engaged = true; },
-        240000, 6000
-      ).catch(function (err) {
-        // older extension (no all-visits handler): fall back to single-chart read
-        if (engaged) throw err;
-        st('Reading the open chart… (basic capture)');
+      if (!targetRef || !S(targetRef.patientId) || (!S(targetRef.dob) && !S(targetRef.mrn || targetRef.athenaId))) {
+        throw new Error('Choose one MLS patient with a verified DOB or MRN before copying visits. Name alone is not safe, so nothing was saved.');
+      }
+      if (!isFn(window._assistReadChart)) {
+        throw new Error('The exact-patient Athena chart reader is not available. Refresh MLS and update MLS Assist before retrying. Nothing was saved.');
+      }
+      st('Opening and verifying the exact patient chart in athenaOne… (read-only)');
+      return Promise.resolve(window._assistReadChart(targetRef, function (msg) { if (msg) st(msg); })).then(function (chartReceipt) {
+        if (!chartReceipt || S(chartReceipt.targetPatientId) !== S(targetRef.patientId)) {
+          throw new Error('Safety stop — Athena did not prove the selected patient chart before the visit read. Nothing was saved.');
+        }
+        st('Exact patient chart verified. Reading every visit from athenaOne… (read-only)');
         return driveRequest(
-          'mlsAppReadChart', {},
-          'mlsAppChartResult',
-          ['mlsAppChartProgress'],
+          'mlsAppReadAllVisits',
+          { hint: { name: targetRef.name, dob: targetRef.dob, mrn: targetRef.mrn || targetRef.athenaId || '' } },
+          'mlsAppAllVisitsResult',
+          ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
           function (msg) { if (msg) st(msg); },
           function () { engaged = true; },
-          120000, 6000
-        ).then(function (d) {
-          var chart = d.chart || d.result || d;
-          return { identity: { name: chart.name || p.name, dob: chart.dob }, visits: (chart.visits || chart.history || []), _fallback: true, _chart: chart };
+          240000, 6000,
+          { manual: true, action: 'patient-history', patientId: targetRef.patientId }
+        ).catch(function (err) {
+          // Older extension without all-visits support: repeat the exact chart request.
+          if (engaged) throw err;
+          st('Reading the verified chart… (basic capture)');
+          return driveRequest(
+            'mlsAppReadChart', {
+              patient: targetRef.name, patientDob: targetRef.dob,
+              patientMrn: targetRef.mrn || targetRef.athenaId || '', patientId: targetRef.patientId
+            },
+            'mlsAppChartResult',
+            ['mlsAppChartProgress'],
+            function (msg) { if (msg) st(msg); },
+            function () { engaged = true; },
+            120000, 6000
+          ).then(function (d) {
+            var chart = d.resp || d.chart || d.result || d;
+            if (!chart || chart.ok === false || chart.error) throw new Error((chart && chart.error) || 'Could not re-read the verified chart.');
+            return { identity: { name: chart.name || targetRef.name, dob: chart.dob || targetRef.dob, mrn: chart.mrn || chart.athenaId || targetRef.mrn || '' }, visits: (chart.visits || chart.history || []), _fallback: true, _chart: chart };
+          });
         });
       });
     }).then(function (res) {

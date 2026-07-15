@@ -7626,13 +7626,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { sectionContainer = document.getElementById('SECTIONCONTAINER'); } catch (eSection) {}
       if (!sectionContainer) return { raw: '', len: 0, fullDetail: false, reason: 'encounter-section-missing', binding: expectedBinding || null };
       var frameRaw = txt(sectionContainer);
-      if (!clinicalBody(frameRaw)) return { raw: '', len: 0, fullDetail: false, reason: 'encounter-section-incomplete', binding: expectedBinding || null };
+      var normalizedFrameRaw = String(frameRaw || '').replace(/\s+/g, ' ').trim();
+      var observedLen = normalizedFrameRaw.length;
+      var minMinimalBodyLen = Math.max(8, Math.min(40, Number(cfg.minMinimalBodyLen || 8)));
+      var frameReady = String(document.readyState || '').toLowerCase();
+      var sectionBusy = false;
+      try { sectionBusy = String(sectionContainer.getAttribute && sectionContainer.getAttribute('aria-busy') || '').toLowerCase() === 'true'; } catch (eBusy) {}
+      var loadingOnly = /^(?:loading|please wait|retrieving|fetching|working)(?:\s+(?:the|encounter|visit|clinical|content|summary|data))*[.…!\s-]*$/i.test(normalizedFrameRaw);
+      var bodyMinimal = false, minimalComplete = false;
+      if (!clinicalBody(frameRaw)) {
+        /* Live 2026-07-14 contract: some REAL prior visits carry a genuinely
+           brief/non-narrative encounter summary. When the ORCHESTRATOR proved
+           this frame is URL-BOUND to the row's frozen data-encounter-id, the
+           complete section text — however short — IS this visit's honest full
+           detail; capture it flagged bodyMinimal instead of failing the whole
+           patient. Rows proven only by the content-delta fallback keep the
+           strict clinical floor. Never fabricated, never another row's text. */
+        if (cfg.allowMinimalBody === true) {
+          minimalComplete = frameReady === 'complete' && !sectionBusy && !loadingOnly && observedLen >= minMinimalBodyLen;
+          if (!minimalComplete) return {
+            raw: '', len: observedLen, observedLen: observedLen, minAcceptedLen: minMinimalBodyLen,
+            fullDetail: false, frameContract: true, bodyMinimal: false, sectionComplete: false,
+            reason: loadingOnly || sectionBusy || frameReady !== 'complete' ? 'encounter-section-loading' : 'encounter-section-empty',
+            binding: expectedBinding || null
+          };
+          bodyMinimal = true;
+        } else return { raw: '', len: observedLen, observedLen: observedLen, minAcceptedLen: minMinimalBodyLen, fullDetail: false, reason: 'encounter-section-incomplete', binding: expectedBinding || null };
+      }
       var frameDate = frameRaw.match(DATE_RE);
       return {
         date: (frameDate && frameDate[1]) || (expectedBinding && expectedBinding.date) || '', type: '', raw: frameRaw,
         cpt: codes(frameRaw, CPT_RE), icd10: codes(frameRaw, ICD_RE), len: frameRaw.length,
+        observedLen: observedLen, minAcceptedLen: bodyMinimal ? minMinimalBodyLen : Math.max(60, Number(cfg.minRealLen || 60)),
         fullDetail: true, indexOnly: false, binding: expectedBinding || null,
-        frameContract: true
+        frameContract: true, bodyMinimal: bodyMinimal, sectionComplete: bodyMinimal ? minimalComplete : true
       };
     }
     if (op === 'detail') {
@@ -7710,7 +7737,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // ---- orchestrator (background scope; chrome.* + closures OK) ---------------
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-  function emit(tabId, message, n, total) { try { if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'mlsAppVisitsProgress', message: message, n: n, total: total }); } catch (e) {} }
+  function emit(tabId, requestId, message, n, total) {
+    try {
+      if (tabId != null) chrome.tabs.sendMessage(tabId, {
+        type: 'mlsAppVisitsProgress', requestId: String(requestId || '').slice(0, 100),
+        message: message, n: n, total: total
+      });
+    } catch (e) {}
+  }
 
   function pickEmrTab(hint) {
     return new Promise(function (resolve) {
@@ -7795,7 +7829,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return Number(frame && frame.parentFrameId) === Number(parentFrameId) &&
           /athenahealth/i.test(u) && /encounter/i.test(u) && /summary/i.test(u) &&
           /(?:\?|&)FROMSTREAMLINED=/i.test(u) && /(?:\?|&)CROSSFRAMEID=/i.test(u);
-      }).map(function (frame) { return { frameId: Number(frame.frameId), parentFrameId: Number(frame.parentFrameId), documentId: String(frame.documentId || '') }; });
+      }).map(function (frame) { return { frameId: Number(frame.frameId), parentFrameId: Number(frame.parentFrameId), documentId: String(frame.documentId || ''), url: String(frame.url || '') }; });
     } catch (e) { return []; }
   }
   async function waitForEncounterDetailFrames(tabId, parentFrameId, wantCount, timeoutMs, pollMs) {
@@ -7807,13 +7841,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } while (Date.now() < deadline);
     return frames;
   }
-  async function waitForDetailSurface(tabId, parentFrameId, wantOpen, timeoutMs, pollMs) {
+  async function waitForDetailSurface(tabId, parentFrameId, wantOpen, timeoutMs, pollMs, hardDeadline) {
     var deadline = Date.now() + Math.max(200, Number(timeoutMs || 1800)), state = null;
+    if (Number.isFinite(Number(hardDeadline))) deadline = Math.min(deadline, Number(hardDeadline));
     do {
+      if (Date.now() >= deadline) break;
       var states = await exec(tabId, [parentFrameId], ['detailSurfaceState', {}]);
       state = bestResult(states, function (r) { return r && typeof r.open === 'boolean' ? 1 : 0; }).result || null;
-      if (state && state.open === wantOpen) return state;
-      await sleep(Math.max(60, Math.min(250, Number(pollMs || 120))));
+      /* Cold-chart live finding 2026-07-14: the slideout CONTAINER flips open
+         ~100-200ms after the trigger click, but its encounter iframe is created
+         later (up to several seconds on a first-open chart). Waiting for OPEN
+         must therefore also wait for the iframe contract; returning early made
+         the caller's one-shot contract check fail every cold row. The close
+      wait and the timeout/fail-closed behavior are unchanged. */
+      if (state && state.open === wantOpen && (!wantOpen || state.iframeContract === true)) return state;
+      var remaining = Math.max(0, deadline - Date.now());
+      if (!remaining) break;
+      await sleep(Math.min(remaining, Math.max(60, Math.min(250, Number(pollMs || 120)))));
     } while (Date.now() < deadline);
     return state;
   }
@@ -7878,12 +7922,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   /* v2.9.22 r4: exact-patient, exact-encounter, full-body reader. This
      implementation fails closed unless the complete index and all
      encounter-scoped clinical bodies are proven. */
-  function runAllVisits(appTabId, hint, cfg) {
+  function runAllVisits(appTabId, hint, cfg, requestId) {
     var identity = {}, listFrame = 0, enumRes = null, diag = null;
     var qpOwnedByThisRead = false, frozenHint = freezeVisitHint(hint);
+    var frozenRequestId = String(requestId || '').slice(0, 100);
     var minLen = Math.max(60, Number(cfg.minRealLen || 60));
+    /* One absolute budget begins before tab selection/navigation. Encounter
+       retries, final identity proof, and cleanup therefore cannot silently add
+       another full row budget after the advertised maxReadMs window. */
+    var readStartedAt = Date.now();
+    var readBudgetMs = Math.max(30000, Math.min(180000, Number(cfg.maxReadMs || 165000)));
+    var readDeadline = readStartedAt + readBudgetMs;
     return pickEmrTab(frozenHint).then(async function (emr) {
-      if (!emr) return { ok: false, reason: 'no-athena-tab', visits: [], error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
+      if (!emr) return { ok: false, reason: 'no-athena-tab', visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
       var emrId = emr.id;
       /* Quiet-pull visibility lease: make Athena render without focusing it or
          changing the clinician's selected tab. No reload, URL navigation,
@@ -7894,7 +7945,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         qpOwnedByThisRead = !qpWasActive && !!(self.__mlsQp && self.__mlsQp.active && self.__mlsQp.athenaTabId === emrId);
       } catch (e) {}
 
-      emit(appTabId, 'Reading every encounter from athenaOne… (read-only)');
+      emit(appTabId, frozenRequestId, 'Reading every encounter from athenaOne… (read-only)');
       await exec(emrId, null, ['openVisits', cfg]);
       await sleep(cfg.visitTabWaitMs || 2200);
       await sleep(cfg.initialWaitMs || 1000);
@@ -7948,33 +7999,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          the normal path fast, but allow one same-row, same-binding cold retry
          with a longer bounded wait. No identity, frame, or stable-key gate is
          weakened by this retry. */
-      var coldRetryWaitMs = Math.max(detailWaitMs, Math.min(5000, Number(cfg.coldRetryWaitMs || Math.max(4000, detailWaitMs + 2600))));
-      var readBudgetMs = Math.max(30000, Math.min(180000, Number(cfg.maxReadMs || 165000)));
-      var readDeadline = Date.now() + readBudgetMs;
-      var maxByBudget = Math.max(1, Math.floor((readBudgetMs - 15000) / ((detailWaitMs * 2) + 700)));
+      /* Live 2026-07-14 cold evidence (patients with 1/7/11 prior visits): the
+         FIRST slideout + iframe hydration on a cold chart takes ~5-8s, so a 4s
+         retry ceiling still loses its only row. The retry stays bounded by
+         readDeadline; only this ceiling changes. */
+      var coldRetryWaitMs = Math.max(detailWaitMs, Math.min(10000, Number(cfg.coldRetryWaitMs || Math.max(8000, detailWaitMs + 6600))));
+      var coldRetryPauseMs = Math.max(120, Math.min(500, Number(cfg.coldRetryPauseMs || 300)));
+      var remainingReadBudgetMs = Math.max(0, readDeadline - Date.now());
+      /* Admission reserves one full cold hydration retry in addition to the
+         fixed navigation/final-proof margin. More than one cold miss still
+         fails closed at the absolute deadline; it can never overrun it. */
+      var coldRetryReserveMs = coldRetryWaitMs + coldRetryPauseMs + 700;
+      var normalEncounterBudgetMs = (detailWaitMs * 2) + 700;
+      var maxByBudget = Math.max(0, Math.floor((remainingReadBudgetMs - 15000 - coldRetryReserveMs) / normalEncounterBudgetMs));
       if (total > maxByBudget) {
         return {
           ok: false, reason: 'visits-time-budget-exceeded', identity: identity, visits: [], diag: diag,
-          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, timeBudgetMs: readBudgetMs, maxEncountersByBudget: maxByBudget, identityVerified: true },
+          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, timeBudgetMs: readBudgetMs, remainingBudgetMs: remainingReadBudgetMs, coldRetryReserveMs: coldRetryReserveMs, maxEncountersByBudget: maxByBudget, identityVerified: true },
           error: 'Athena exposed ' + total + ' encounters, which cannot all be verified inside this pull\'s bounded read budget. Nothing was opened or reported as complete.'
         };
       }
 
-      var visits = [], failures = [], retryCount = 0;
+      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0;
+      async function sleepWithinReadDeadline(ms) {
+        var remaining = Math.max(0, readDeadline - Date.now());
+        if (!remaining) return false;
+        await sleep(Math.min(remaining, Math.max(0, Number(ms || 0))));
+        return Date.now() < readDeadline;
+      }
       for (var i = 0; i < total; i++) {
+        if (Date.now() >= readDeadline) { failures.push({ index: i, reason: 'read-deadline-exceeded' }); break; }
         var snap = rows[i] || {}, expected = snap.binding || null;
         if (!expected || Number(expected.index) !== i || !expected.rowKey) {
           failures.push({ index: i, reason: 'index-binding-missing' });
           continue;
         }
-        emit(appTabId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
+        attemptedCount++;
+        emit(appTabId, frozenRequestId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
         var twoStageAthena = enumRes.selector === 'li.encounter-list-item';
         var runBoundAttempt = async function (rowWaitMs) {
           var preDetailFrames = [], preDetailProbes = {};
+          if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
           try {
             if (twoStageAthena) {
               await exec(emrId, [listFrame], ['closeDetailFrame', cfg]);
-              var closedSurface = await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs);
+              if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
+              var closedSurface = await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs, readDeadline);
               if (!closedSurface || closedSurface.open !== false) return { failure: { reason: 'stale-encounter-surface-open' } };
               /* Athena may retain one hidden cached iframe after closing. Freeze
                  its document id and redacted content fingerprint; a reused
@@ -7982,19 +8052,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               preDetailFrames = await encounterDetailFrames(emrId, listFrame);
               if (preDetailFrames.length > 1) return { failure: { reason: 'ambiguous-cached-encounter-frames' } };
               for (var pf0 = 0; pf0 < preDetailFrames.length; pf0++) {
+                if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
                 var preProbeR = await exec(emrId, [preDetailFrames[pf0].frameId], ['detailFrameProbe', cfg]);
                 preDetailProbes[String(preDetailFrames[pf0].frameId)] = bestResult(preProbeR, function (r) { return r && r.frameContract ? 1 : 0; }).result || null;
               }
             }
 
+            if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
             var clickR = await exec(emrId, [listFrame], ['click', cfg, i, expected]);
             var clicked = bestResult(clickR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
             if (!clicked.clicked) return { failure: { reason: clicked.reason || 'click-failed', d2: clicked.d2 || null } };
 
             if (!twoStageAthena) {
-              var legacyDeadline = Date.now() + rowWaitMs, legacyDetail = {}, legacyR;
+              var legacyDeadline = Math.min(readDeadline, Date.now() + rowWaitMs), legacyDetail = {}, legacyR;
               do {
-                await sleep(Math.max(80, Math.min(300, Number(cfg.detailPollMs || 180))));
+                if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(300, Number(cfg.detailPollMs || 180)))))) break;
                 legacyR = await exec(emrId, [listFrame], ['detail', cfg, i, expected]);
                 legacyDetail = bestResult(legacyR, function (r) { return (r && r.fullDetail === true && r.raw) ? r.raw.length : 0; }).result || {};
                 if (legacyDetail.fullDetail === true && legacyDetail.raw) break;
@@ -8005,19 +8077,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             /* Stage 2: after the exact row accordion opens, click only that
                row's visible slideout trigger. This creates one new child frame
                under the verified Visits frame. */
-            var openDeadline = Date.now() + rowWaitMs, opened = {}, openR;
+            var openDeadline = Math.min(readDeadline, Date.now() + rowWaitMs), opened = {}, openR;
             do {
-              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
+              if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180)))))) break;
               openR = await exec(emrId, [listFrame], ['openDetailFrame', cfg, i, expected]);
               opened = bestResult(openR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
               if (opened.clicked) break;
             } while (Date.now() < openDeadline && (opened.reason === 'accordion-not-open' || opened.reason === 'slideout-trigger-missing' || !opened.reason));
             if (!opened.clicked) return { failure: { reason: opened.reason || 'slideout-open-failed' } };
 
-            var openedSurface = await waitForDetailSurface(emrId, listFrame, true, rowWaitMs, cfg.detailPollMs);
+            var openedSurface = await waitForDetailSurface(emrId, listFrame, true, rowWaitMs, cfg.detailPollMs, readDeadline);
             if (!openedSurface || openedSurface.open !== true || openedSurface.iframeContract !== true) return { failure: { reason: 'encounter-surface-not-open' } };
 
-            var frameProofDeadline = Date.now() + rowWaitMs, detailFrames = [], detailFrame = null, frameProven = false;
+            var frameProofDeadline = Math.min(readDeadline, Date.now() + rowWaitMs), detailFrames = [], detailFrame = null, frameProven = false, frameUrlBound = false;
             do {
               detailFrames = await encounterDetailFrames(emrId, listFrame);
               if (detailFrames.length === 1 && Number.isFinite(detailFrames[0].frameId)) {
@@ -8029,31 +8101,65 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 var probe = bestResult(probeR, function (r) { return r && r.frameContract && r.sectionPresent && r.contentHash ? r.len || 1 : 0; }).result || null;
                 var priorProbe = preDetailProbes[String(detailFrame.frameId)] || null;
                 var contentChanged = !!(probe && (!priorProbe || probe.contentHash !== priorProbe.contentHash || Number(probe.len) !== Number(priorProbe.len)));
-                if (probe && (documentChanged || contentChanged)) { frameProven = true; break; }
+                /* Live 2026-07-14: the chart-open PRE-CACHES an iframe already
+                   showing the MOST RECENT encounter, so clicking that row can
+                   never produce a document/content delta. Athena's own URL is
+                   the direct binder: when the frame URL carries this row's
+                   FROZEN data-encounter-id (non-alphanumeric boundaries), the
+                   frame IS this encounter — caching cannot spoof it and a
+                   different row's id can never match. Delta proof remains the
+                   fallback for id-less rows. */
+                var urlBound = false;
+                try {
+                  var eidRaw = String(expected.encounterId || '');
+                  if (eidRaw && /^[A-Za-z0-9_-]{2,}$/.test(eidRaw)) {
+                    var eidRe = new RegExp('(?:^|[^0-9A-Za-z])' + eidRaw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:[^0-9A-Za-z]|$)');
+                    urlBound = eidRe.test(String(detailFrame.url || ''));
+                  }
+                } catch (eUrlBind) {}
+                if (probe && (urlBound || documentChanged || contentChanged)) { frameProven = true; frameUrlBound = urlBound; break; }
               }
-              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
+              if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180)))))) break;
             } while (Date.now() < frameProofDeadline);
-            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed' } };
+            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId) } } };
 
             /* Re-prove the parent patient after the child frame opens. A tab or
                chart switch during the two clicks invalidates this encounter. */
+            if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
             var rowIds = await exec(emrId, [listFrame], ['identity', cfg]);
             var rowIdentity = bestResult(rowIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
             var rowGate = visitIdentityGate(frozenHint, rowIdentity);
             if (!rowGate.ok) return { failure: { reason: 'identity-changed-before-detail' } };
 
-            var detailDeadline = Date.now() + rowWaitMs, frameDetail = {}, detailR;
+            /* Give the section its normal chance to render a rich clinical body
+               first; only near the deadline may the PROVEN frame return its
+               complete-but-brief section text flagged bodyMinimal. The frame
+               proof above (URL-id binding or document/content delta after our
+               bound click) is the same trust anchor rich bodies rely on, so a
+               brief body under that proof is no weaker — it is simply a real
+               visit with little documentation. Live 2026-07-14: some case-backed
+               encounters bind by delta with a different frame-id namespace. */
+            var detailDeadline = Math.min(readDeadline, Date.now() + rowWaitMs), frameDetail = {}, detailR;
+            var completeFrameDetail = function (r) {
+              if (!r || r.fullDetail !== true || r.frameContract !== true) return false;
+              if (r.bodyMinimal !== true) return !!r.raw;
+              var observed = Number(r.observedLen || String(r.raw || '').replace(/\s+/g, ' ').trim().length);
+              var required = Math.max(1, Number(r.minAcceptedLen || 1));
+              return r.sectionComplete === true && !!String(r.raw || '').trim() && observed >= required;
+            };
             do {
-              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
-              detailR = await exec(emrId, [detailFrame.frameId], ['detailFrame', cfg, i, expected]);
-              frameDetail = bestResult(detailR, function (r) { return (r && r.fullDetail === true && r.frameContract === true && r.raw) ? r.raw.length : 0; }).result || {};
-              if (frameDetail.fullDetail === true && frameDetail.frameContract === true && frameDetail.raw) break;
+              if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180)))))) break;
+              var minimalWindow = (Date.now() + 600) >= detailDeadline;
+              var detailCfg = minimalWindow ? Object.assign({}, cfg, { allowMinimalBody: true }) : cfg;
+              detailR = await exec(emrId, [detailFrame.frameId], ['detailFrame', detailCfg, i, expected]);
+              frameDetail = bestResult(detailR, function (r) { return completeFrameDetail(r) ? String(r.raw || '').length : 0; }).result || {};
+              if (completeFrameDetail(frameDetail)) break;
             } while (Date.now() < detailDeadline);
             return { detail: frameDetail };
           } finally {
-            if (twoStageAthena) {
+            if (twoStageAthena && Date.now() < readDeadline) {
               try { await exec(emrId, [listFrame], ['closeDetailFrame', cfg]); } catch (eClose) {}
-              try { await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs); } catch (eWaitClose) {}
+              try { await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs, readDeadline); } catch (eWaitClose) {}
             }
           }
         };
@@ -8062,8 +8168,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
         if (coldRetryable && Date.now() + 1000 < readDeadline) {
           retryCount++;
-          emit(appTabId, 'Finishing cold encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
-          await sleep(Math.max(120, Math.min(500, Number(cfg.coldRetryPauseMs || 300))));
+          emit(appTabId, frozenRequestId, 'Finishing cold encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
+          await sleepWithinReadDeadline(coldRetryPauseMs);
           attempt = await runBoundAttempt(coldRetryWaitMs);
         }
         if (attempt.failure) {
@@ -8078,22 +8184,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           patientName: identity.name || '', patientDob: identity.dob || '', patientMrn: identity.mrn || identity.athenaId || '',
           indexOnly: false, fullDetail: d.fullDetail === true, encounterIndex: i,
           encounterId: expected.encounterId || '', sourceVisitKey: expected.rowKey,
-          rowKey: expected.rowKey
+          rowKey: expected.rowKey, bodyMinimal: d.bodyMinimal === true
         };
-        if (!bound || !realVisit(visit, minLen)) {
+        /* A URL-bound frame's complete-but-brief section is this visit's honest
+           full detail (bodyMinimal). It is counted transparently in the receipt
+           and never substitutes for a rich body when one exists. */
+        var minimalObservedLen = Number(d.observedLen || String(d.raw || '').replace(/\s+/g, ' ').trim().length);
+        var minimalRequiredLen = Math.max(1, Number(d.minAcceptedLen || 1));
+        var acceptedMinimal = d.bodyMinimal === true && visit.fullDetail === true && d.sectionComplete === true && !!String(d.raw || '').trim() && minimalObservedLen >= minimalRequiredLen;
+        if (!bound || !(realVisit(visit, minLen) || acceptedMinimal)) {
           failures.push({ index: i, reason: d.reason || (!bound ? 'detail-binding-mismatch' : 'clinical-body-incomplete'), d2: d.d2 || null });
           continue;
         }
+        if (acceptedMinimal) minimalBodies++;
         visits.push(visit);
-        emit(appTabId, 'Read full encounter ' + (i + 1) + ' of ' + total + '…', i + 1, total);
+        emit(appTabId, frozenRequestId, 'Read full encounter ' + (i + 1) + ' of ' + total + '…', i + 1, total);
       }
 
       /* Refuse a batch if the chart changed while encounter rows were open. */
-      var finalIds = await exec(emrId, [listFrame], ['identity', cfg]);
-      var finalIdentity = bestResult(finalIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
-      var finalGate = visitIdentityGate(frozenHint, finalIdentity);
-      if (!finalGate.ok) failures.push({ index: -1, reason: 'identity-changed-during-read' });
-      else identity = finalIdentity;
+      var finalIdentity = {}, finalGate = { ok: false, reason: 'read-deadline-exceeded' };
+      if (Date.now() < readDeadline) {
+        var finalIds = await exec(emrId, [listFrame], ['identity', cfg]);
+        finalIdentity = bestResult(finalIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
+        if (Date.now() >= readDeadline) {
+          finalGate = { ok: false, reason: 'read-deadline-exceeded' };
+          if (!failures.some(function (failure) { return failure && failure.reason === 'read-deadline-exceeded'; })) failures.push({ index: -1, reason: 'read-deadline-exceeded' });
+        } else {
+          finalGate = visitIdentityGate(frozenHint, finalIdentity);
+          if (!finalGate.ok) failures.push({ index: -1, reason: 'identity-changed-during-read' });
+          else identity = finalIdentity;
+        }
+      } else if (!failures.some(function (failure) { return failure && failure.reason === 'read-deadline-exceeded'; })) {
+        failures.push({ index: -1, reason: 'read-deadline-exceeded' });
+      }
 
       var sourceKeys = {}, stableKeysComplete = visits.length === total;
       for (var sk = 0; sk < visits.length; sk++) {
@@ -8106,8 +8229,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
         fullDetail: bodyComplete, expected: total, parsed: visits.length,
-        attempted: total, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
-        identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete,
+        attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
+        timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
+        identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
         authoritativeEmpty: total === 0 && authoritativeEmptyIndex
       };
       if (!bodyComplete) {
@@ -8117,7 +8241,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           error: 'Athena exposed ' + total + ' encounters, but only ' + visits.length + ' had full clinical detail bound to the exact encounter row. Nothing was reported as complete or saved.'
         };
       }
-      emit(appTabId, 'Read all ' + visits.length + ' full encounter(s).', visits.length, total);
+      emit(appTabId, frozenRequestId, 'Read all ' + visits.length + ' full encounter(s).', visits.length, total);
       return { ok: true, identity: identity, visits: visits, diag: diag, strategy: 'bound-click', found: total, receipt: receipt };
     }).catch(function (e) {
       return { ok: false, identity: identity, visits: [], diag: diag, receipt: { complete: false, indexComplete: !!enumRes, bodyComplete: false, fullDetail: false }, error: String((e && e.message) || e) };
@@ -8129,6 +8253,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       res.receipt.complete = proven;
       res.receipt.fullDetail = proven;
       res.receipt.readerVersion = res.readerVersion;
+      if (frozenRequestId) res.requestId = frozenRequestId;
       if (enumRes) {
         res.selected = { selector: enumRes.selector || '', count: enumRes.count || 0,
           uniqueDates: enumRes.uniqueDates || 0, strongRows: enumRes.strongRows || 0 };
@@ -8150,9 +8275,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
     var appTabId = sender && sender.tab && sender.tab.id;
+    var transportRequestId = String(msg.requestId || '').slice(0, 100);
     if (activeAllVisitsPromise) {
       sendResponse({
-        ok: false, reason: 'busy', readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
+        ok: false, reason: 'busy', requestId: transportRequestId, readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
         receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false },
         error: 'A verified history read is already running. Wait for it to finish, then retry.'
       });
@@ -8164,11 +8290,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var cfg = {}; var stored = (st && st.mlsAthenaVisitsCfg) || {};
         for (var k in ORCH_DEFAULT) cfg[k] = (stored[k] != null ? stored[k] : ORCH_DEFAULT[k]);
         for (var k2 in stored) if (cfg[k2] == null) cfg[k2] = stored[k2];
-        var thisRead = runAllVisits(appTabId, msg.hint || {}, cfg);
+        var thisRead = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId);
         activeAllVisitsPromise = thisRead;
-        thisRead.then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }).finally(function () { if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null; });
+        thisRead.then(sendResponse, function (e) { sendResponse({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); }).finally(function () { if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null; });
       });
-    } catch (e) { activeAllVisitsPromise = null; sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    } catch (e) { activeAllVisitsPromise = null; sendResponse({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); }
     return true; // async response
   });
 
@@ -8461,7 +8587,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      Save/Sign/orders. Runs from the TOP frame (which never navigates) so the
      driver survives the content frame's two navigations. The result row shows
      name + DOB, so the match is verified BEFORE the chart is opened. */
-  async function mlsFindPatientOpenDriverFn(name, dob) {
+  async function mlsFindPatientOpenDriverFn(name, dob, mrn) {
     try {
       function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
       /* v1.90 name-shape fix: strip "(Bob)" nicknames for the SEARCH string only;
@@ -8482,7 +8608,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var fq = (fname.split(/\s+/)[0] || '');
       var searchStr = fq ? (lname + ',' + fq) : lname;
       function nrmDob(s) { var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3].length === 2 ? ((Number(m[3]) > 26 ? '19' : '20') + m[3]) : m[3]; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
+      function nrmMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+      function mrnCellMatches(value, wanted) {
+        var raw = String(value || ''), labeled = null;
+        if (!wanted) return false;
+        try { labeled = /(?:\bmrn\b|medical\s+record(?:\s+(?:number|id))?|patient\s+(?:id|number|#))\s*[:#-]?\s*([a-z0-9][a-z0-9._-]*)/i.exec(raw); } catch (e0) {}
+        if (labeled && nrmMrn(labeled[1]) === wanted) return true;
+        /* An unlabeled Athena result cell commonly contains only the MRN. Match
+           the complete token, never a substring; short numbers and date cells
+           are excluded so a year/age cannot masquerade as an MRN. */
+        if (wanted.length < 5 || /[01]?\d[\/\-.][0-3]?\d[\/\-.]\d{2,4}/.test(raw)) return false;
+        var tokens = raw.match(/[a-z0-9][a-z0-9._-]*/ig) || [];
+        for (var ti = 0; ti < tokens.length; ti++) if (nrmMrn(tokens[ti]) === wanted) return true;
+        return false;
+      }
       var wantDob = nrmDob(dob);
+      var wantMrn = nrmMrn(mrn);
       /* locate the main content frame: deepest big same-origin frame, skipping
          nav/status/messaging frames (prefers the proven /f1/f2/f2 slot). */
       var SKIP = /globalnav|statusbar|stm\.esp|schedulenavclose|coordinator\/enterprise|blank\.html/i;
@@ -8623,7 +8764,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (rowT.indexOf(lnorm) < 0) continue;
         var rowDob = '';
         for (var cd = 0; cd < cells.length; cd++) { var dm2 = /([01]?\d)\/([0-3]?\d)\/(\d{4})/.exec(cells[cd]); if (dm2) { rowDob = Number(dm2[1]) + '/' + Number(dm2[2]) + '/' + dm2[3]; break; } }
-        var m = { a: chartAs[c], dob: rowDob };
+        var rowMrnMatched = false;
+        if (wantMrn) {
+          for (var cm = 0; cm < cells.length; cm++) {
+            if (mrnCellMatches(cells[cm], wantMrn)) { rowMrnMatched = true; break; }
+          }
+        }
+        var m = { a: chartAs[c], dob: rowDob, mrnMatched: rowMrnMatched };
         var isExact = false, isPrefix = false;
         if (!fnorm) { isPrefix = true; }
         else {
@@ -8656,6 +8803,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (vetoedAny) return { opened: false, reason: 'dob-mismatch', count: vetoedAny, tier: vetoedExact.length ? 'exact' : 'prefix', rowDob: '' };
         return { opened: false, reason: 'no-name-match' };
       }
+      /* MRN is an additional exact discriminator only after the existing name
+         tier and DOB veto have passed. A positive exact-token match narrows an
+         ambiguous pool; an Athena layout that does not expose MRN falls back to
+         the unchanged name+DOB behavior and the chart reader re-verifies MRN. */
+      var mrnNarrowed = false;
+      if (wantMrn) {
+        var mrnPool = pool.filter(function (candidate) { return candidate.mrnMatched === true; });
+        if (mrnPool.length) { mrnNarrowed = mrnPool.length < pool.length; pool = mrnPool; }
+      }
       if (pool.length > 1) return { opened: false, reason: 'ambiguous', count: pool.length, tier: exact.length ? 'exact' : 'prefix' };
       pool[0].a.click();
       /* v1.82: return IMMEDIATELY after the Chart click - same contract as the
@@ -8663,7 +8819,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          side's chart-ready gate (52s budget, shadow-aware from round 2) is the
          component designed to wait for the chart to load. The v1.81 settle loop
          here pushed every open past the app's budget -> empty in-place reads. */
-      return { opened: true, via: 'findpatient', rowDob: pool[0].dob || '' };
+      return { opened: true, via: 'findpatient', rowDob: pool[0].dob || '', rowMrnMatched: pool[0].mrnMatched === true, mrnNarrowed: mrnNarrowed };
     } catch (e) { return { opened: false, error: String((e && e.message) || e) }; }
   }
 
@@ -8727,6 +8883,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'mlsAppSearchOpenRequest') {
       (async function () {
         var senderTab = sender && sender.tab && sender.tab.id;
+        var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '').trim().slice(0, 40);
         try {
           var all = await chrome.tabs.query({});
           var tab = (await mlsPickAthenaTab(all, { athenaOnly: true })) || pickEmrTab(all); /* v1.90 unified verified pick; legacy scorer (3711) stays the non-athena fallback */
@@ -8760,7 +8917,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              verifies name+DOB on the result row BEFORE opening. The schedule
              scan is the fallback (it depends on the right department's schedule
              being displayed and can phantom-click name-bearing inbox rows). */
-          var order = (self.__mlsOpenPref === 'schedule') ? ['sched', 'find'] : ['find', 'sched'];
+          var order = frozenMrn ? ['find', 'sched'] : ((self.__mlsOpenPref === 'schedule') ? ['sched', 'find'] : ['find', 'sched']);
           var sched = null, findRes = null;
           for (var oi = 0; oi < order.length; oi++) {
             if (order[oi] === 'sched') {
@@ -8778,7 +8935,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 /* v1.60: remember WHO we just opened - the follow-up bare chart read
                    uses this to wait for the RIGHT patient's banner instead of
                    accepting a stale/lurking frame's identity. */
-                try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
                 sendResponse({ ok: true, opened: true, via: 'schedule-click', candidates: sched.candidates, diag: sched.diag }); return;
               }
             } else {
@@ -8796,7 +8953,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  (ambiguous / no-results / no-name-match) never trigger a retry. */
               var fx = null;
               for (var fpTry = 0; fpTry < 2; fpTry++) {
-                fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', msg.dob || ''], func: mlsFindPatientOpenDriverFn }, 42000);
+                fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', msg.dob || '', frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
                 findRes = (fx && fx.r && fx.r[0] && fx.r[0].result) || null;
                 if (findRes && findRes.opened) break;
                 var rzn = (findRes && findRes.reason) || '';
@@ -8817,12 +8974,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  stay refused (ambiguous) exactly as before. */
               if (findRes && findRes.reason === 'dob-mismatch' && findRes.count === 1 && findRes.tier === 'exact') {
                 if (senderTab) progress(senderTab, 'DOB on file differs from athena for “' + (msg.name || '') + '” — opening the single exact name match (read-only)…');
-                var fxo = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', ''], func: mlsFindPatientOpenDriverFn }, 42000);
+                var fxo = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', '', frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
                 var fro = (fxo && fxo.r && fxo.r[0] && fxo.r[0].result) || null;
                 if (fro && fro.opened) {
                   try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
-                  try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                  sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0 } }); return;
+                  try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+                  sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', rowMrnMatched: fro.rowMrnMatched === true, diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0, rowMrnMatched: fro.rowMrnMatched === true } }); return;
                 }
                 findRes = fro || findRes;
               }
@@ -8843,15 +9000,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 if (cTok.length >= 3) {
                   var cName = cTok.slice(-2).join(' ') + ', ' + cTok.slice(0, -2).join(' ');
                   if (senderTab) progress(senderTab, 'No match for “' + (msg.name || '') + '” — retrying with compound last name “' + cName + '”…');
-                  var fxc = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [cName, msg.dob || ''], func: mlsFindPatientOpenDriverFn }, 42000);
+                  var fxc = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [cName, msg.dob || '', frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
                   var frc = (fxc && fxc.r && fxc.r[0] && fxc.r[0].result) || null;
                   if (frc && (frc.opened || /^(ambiguous|dob-mismatch)$/.test(frc.reason || ''))) findRes = frc;
                 }
               }
               if (findRes && findRes.opened) {
                 try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
-                try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, rowDob: findRes.rowDob || '', diag: { route: 'findpatient', rowDobKnown: findRes.rowDob ? 1 : 0 } }); return;
+                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+                sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, rowDob: findRes.rowDob || '', rowMrnMatched: findRes.rowMrnMatched === true, diag: { route: 'findpatient', rowDobKnown: findRes.rowDob ? 1 : 0, rowMrnMatched: findRes.rowMrnMatched === true, mrnNarrowed: findRes.mrnNarrowed === true } }); return;
               }
               /* v1.84: if the search RAN and left its RESULTS page on screen
                  (ambiguous / no match), do NOT fall through to the schedule
@@ -8861,7 +9018,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  that the app gate had to refuse). Fail honestly instead. */
               if (findRes && /^(ambiguous|no-results|no-name-match|blank-error|rows-not-rendered|dob-mismatch)$/.test(findRes.reason || '')) {
                 sendResponse({ ok: false, opened: false, candidates: (findRes.count || 0),
-                  error: findRes.reason === 'ambiguous' ? ('Found ' + (findRes.count || 'several') + ' possible matches for ' + (msg.name || '') + ' — refusing to open any of them without a DOB to disambiguate.')
+                  error: findRes.reason === 'ambiguous' ? ('Found ' + (findRes.count || 'several') + ' possible matches for ' + (msg.name || '') + ' — refusing to open any of them without a matching DOB or MRN to disambiguate.')
                     : findRes.reason === 'dob-mismatch' ? ('athenaOne has ' + (findRes.count || 1) + ' name match(es) for ' + (msg.name || '') + ' but the DOB on file does not match any of them — check the stored DOB.')
                     : 'athenaOne patient search found no matching patient.',
                   findReason: findRes.reason }); return;
@@ -8882,7 +9039,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var openRes = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open'] });
           var opened = bestFrameResult(openRes, 'open');
           if (opened && opened.opened) {
-            try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+            try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
             sendResponse({ ok: true, opened: true, candidates: opened.candidates, diag: opened.diag });
           } else {
             var cands = (openRes || []).map(function (r) { return r && r.result; }).filter(Boolean).reduce(function (a, r) { return a + ((r && r.candidates) || 0); }, 0);

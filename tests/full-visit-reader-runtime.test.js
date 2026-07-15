@@ -11,9 +11,9 @@ const visitsSource = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 const productionLoader = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const stagingLoader = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 
-const visitCacheKey = 'feat_visits.js?v=20260714vis3r5';
-assert(productionLoader.includes(visitCacheKey), 'production must load the r4 visit model cache key');
-assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r4 visit model cache key');
+const visitCacheKey = 'feat_visits.js?v=20260714vis3r7';
+assert(productionLoader.includes(visitCacheKey), 'production must load the r7 visit model cache key');
+assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r7 visit model cache key');
 
 const start = background.indexOf('/* === MLS Assist visit-reader lineage (active: v2.9.22 r4)');
 const end = background.indexOf('\n})();', start);
@@ -26,7 +26,10 @@ for (const invariant of [
   "exec(emrId, [listFrame], ['identity', cfg])",
   "['click', cfg, i, expected]",
   "['openDetailFrame', cfg, i, expected]",
-  "['detailFrame', cfg, i, expected]",
+  "['detailFrame', detailCfg, i, expected]",
+  'allowMinimalBody: true',
+  'var minimalWindow = (Date.now() + 600) >= detailDeadline',
+  'minimalBodies: minimalBodies',
   "['closeDetailFrame', cfg]",
   'encounterDetailFrames(emrId, listFrame)',
   'waitForDetailSurface(emrId, listFrame, true',

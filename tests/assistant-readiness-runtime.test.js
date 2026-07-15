@@ -31,7 +31,7 @@ function testIncompleteAssistantMarkerSelfHeals() {
   vm.runInNewContext(read('feat_mls_asst_fix.js'), context, { filename: 'feat_mls_asst_fix.js' });
   assert.notStrictEqual(context.__mlsAsstFix, poisoned, 'an incomplete extension-version marker still blocked the real assistant bridge');
   assert.strictEqual(context.__mlsAsstFix.installed, true);
-  assert.strictEqual(context.__mlsAsstFix.version, '1.3.0');
+  assert.strictEqual(context.__mlsAsstFix.version, '1.3.1');
   assert.strictEqual(typeof context.__mlsAsstFix._handleSend, 'function');
   assert.strictEqual(typeof context.__mlsAsstFix.registerIntent, 'function');
 }

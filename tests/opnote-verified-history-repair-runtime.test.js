@@ -199,6 +199,35 @@ async function main() {
   for (const visit of bounded.exact.visits) assert(built.text.includes(visit.date), `bounded context omitted verified visit ${visit.date}`);
   assert(built.text.includes('VERY OLD BUT PROCEDURE-RELEVANT'), 'bounded selection dropped a clinically relevant old visit');
 
+  const matcher = harness();
+  matcher.context.getTemplates = () => [
+    { id: 'tpl-tfesi', name: 'Lumbar TFESI', keywords: ['tfesi'], text: 'PROCEDURE: Lumbar TFESI' },
+    { id: 'tpl-si', name: 'SI joint injection', keywords: ['si joint injection'], text: 'PROCEDURE: SI joint injection' }
+  ];
+  matcher.exact.visits = [{
+    date: '2026-07-14', type: 'Left L5-S1 TFESI', source: 'athena-copy',
+    identityVerified: true, identityBinding: 'wrong-b'
+  }, {
+    date: '2026-07-13', type: 'Left SI joint injection', source: 'athena-copy',
+    identityVerified: false, identityBinding: 'exact-a'
+  }, {
+    date: '2026-07-12', type: 'Left L5-S1 TFESI', source: 'pullrec',
+    patientId: 'exact-a', identityVerified: false, identityBinding: ''
+  }];
+  const blockedHistoryMatch = matcher.context.__mlsOpNoteIntegrity.bestFor(
+    'Exact One', 'Routine follow-up', '01/02/1970', 'exact-a'
+  );
+  assert.strictEqual(blockedHistoryMatch.source, 'unmatched',
+    'wrong-bound or unverified Athena history influenced template selection');
+  matcher.exact.visits.push({
+    date: '2026-07-11', type: 'Left L5-S1 TFESI', source: 'manual', patientId: 'exact-a'
+  });
+  const safeLocalMatch = matcher.context.__mlsOpNoteIntegrity.bestFor(
+    'Exact One', 'Routine follow-up', '01/02/1970', 'exact-a'
+  );
+  assert.strictEqual(safeLocalMatch.source, 'history', 'safe exact-patient manual history was discarded');
+  assert.strictEqual(safeLocalMatch.tplId, 'tpl-tfesi');
+
   console.log('PASS op-note verified history: rich raw detail, >6 visits, exact identity, repair retention, and mid-flight fail-closed binding');
 }
 

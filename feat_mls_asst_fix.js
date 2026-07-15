@@ -47,7 +47,7 @@
 ;(function () {
   "use strict";
   var NS = "__mlsAsstFix";
-  var VERSION = "1.3.0";
+  var VERSION = "1.3.1";
   /* Task 2: the shared Copilot conversation store (feat_mls_copilot_unify.js).
      When present, the panel's history reads/writes go through it so Studio and
      this panel are ONE conversation. Absent -> fall back to the private chatLog. */
@@ -782,7 +782,7 @@
     try { el.classList.toggle("ok", !!ok); } catch (e) {}
   }
   function curSelDateProv() {
-    var p = panel(), ds = todayStr(), pv = "All doctors", ref = "all", entry = null;
+    var p = panel(), ds = todayStr(), pv = "all", ref = "all", entry = null;
     if (p) {
       var di = p.querySelector(".as-date"); if (di && di.value) ds = di.value;
       var pr = p.querySelector(".as-prov"); if (pr && pr.value) ref = pr.value;
@@ -806,6 +806,15 @@
       setPullStatus("That provider selection is no longer verifiable. Choose the clinician again; MLS will not silently pull everyone.", false);
       safe(syncProviders);
       return;
+    }
+    if (isFn(si._resolveProviderRequest)) {
+      var gate = safe(function () { return si._resolveProviderRequest(sel.provider, { allowAll: true, requireRosterForAll: false }); }, null);
+      if (!gate || !gate.ok) {
+        setPullStatus((gate && gate.error) || "The full Athena provider roster is not verified yet. Re-pull the Day schedule before pulling one provider.", false);
+        safe(syncProviders);
+        return;
+      }
+      sel.provider = gate.provider;
     }
     pullBusy = true; if (btn) btn.disabled = true;
     setPullStatus("Reading your athenaOne Day schedule...", false);

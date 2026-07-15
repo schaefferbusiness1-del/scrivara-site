@@ -33,8 +33,8 @@ assert(calSource.includes("HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck'")
 assert(calSource.includes("(includeHistory() ? ' checked' : '')"), 'history checkbox must default from the safe default-on preference');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
-assert(loaderSource.includes('20260714si151p3'), 'production loader must cache-bust the exact-identity six-card history importer');
-assert(loaderSource.includes('20260714cal130p1'), 'production loader must cache-bust the calendar provider pull UI');
+assert(loaderSource.includes('20260714si160p1'), 'production loader must cache-bust the exact provider/day/month history importer');
+assert(loaderSource.includes('20260714cal131p1'), 'production loader must cache-bust the canonical calendar provider pull UI');
 
 // Every roster normalizer runs before a provider-day pull. None may erase a
 // stable identity merely because two clinicians share the same display name.
@@ -101,6 +101,16 @@ const context = {
   postMessage: () => {}
 };
 context.window = context;
+context.__mlsProviderRoster = {
+  list: () => context._calProviders.map(p => Object.assign({ stableKey: `backend:${p.id}`, rosterVerified: true }, p)),
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: ref => {
+    let raw = ref && typeof ref === 'object' ? (ref.stableKey || ref.id || ref.name || '') : String(ref || '');
+    if (String(raw).startsWith('pv:')) raw = decodeURIComponent(String(raw).slice(3));
+    const hits = context._calProviders.filter(p => String(p.id) === String(raw) || `backend:${p.id}` === String(raw) || String(p.name).toLowerCase() === String(raw).toLowerCase());
+    return hits.length === 1 ? Object.assign({ stableKey: `backend:${hits[0].id}`, rosterVerified: true }, hits[0]) : null;
+  }
+};
 vm.runInNewContext(siSource, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 
 const api = context.__mlsSI;
@@ -171,11 +181,28 @@ const noReceipt = api._scopeProviderRows(mixedRows, 'Matthew Schaeffer, MD', { p
 assert.strictEqual(noReceipt.complete, false);
 assert.strictEqual(noReceipt.reason, 'provider-unverified');
 
-const all = api._scopeProviderRows(mixedRows, 'all', null);
+const all = api._scopeProviderRows(mixedRows, 'all', { receipt: { complete: true }, providers: fullResponse.providers });
 assert.strictEqual(all.complete, true);
 assert.strictEqual(all.rows.length, mixedRows.length);
 assert.strictEqual(all.rows[0].provider, 'Schaeffer_Matthew_MD');
 assert.strictEqual(all.rows[1].provider, 'Michael Schaeffer, MD');
+const allUnverified = api._scopeProviderRows(mixedRows, 'all', null);
+assert.strictEqual(allUnverified.complete, false, 'all-provider day scope requires a complete schedule receipt');
+
+// Stable provider ids must remain authoritative even when two clinicians have
+// the exact same display name. A name-token match may never widen one selected
+// provider into the other provider's patients.
+const duplicateNameProvider = { id: '7', stableKey: 'backend:7', name: 'Alex Morgan, MD', raw: 'Morgan_Alex_MD', rosterVerified: true };
+const duplicateNameRows = [
+  { name: 'Provider Seven Patient', provider: 'Alex Morgan, MD', providerId: '7' },
+  { name: 'Provider Eight Patient', provider: 'Alex Morgan, MD', providerId: '8' }
+];
+const duplicateNameScoped = api._scopeProviderRows(duplicateNameRows, duplicateNameProvider, { receipt: { complete: true }, providers: ['Alex Morgan, MD'] });
+assert.strictEqual(duplicateNameScoped.complete, true);
+assert.deepStrictEqual(Array.from(duplicateNameScoped.rows, row => row.name), ['Provider Seven Patient'], 'same-name provider id isolation widened to the wrong clinician');
+const duplicateNameMissingId = api._scopeProviderRows([{ name: 'Unproven Patient', provider: 'Alex Morgan, MD' }], duplicateNameProvider, { receipt: { complete: true }, providers: ['Alex Morgan, MD'] });
+assert.strictEqual(duplicateNameMissingId.complete, false, 'id-less same-name row was guessed into a stable-id provider pull');
+assert.strictEqual(duplicateNameMissingId.reason, 'provider-incomplete');
 
 let selection = api.calendarSelection();
 assert.strictEqual(selection.ok, true);
@@ -290,6 +317,16 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     }
   };
   rt.window = rt;
+  rt.__mlsProviderRoster = {
+    list: () => rt._calProviders.map(p => Object.assign({ stableKey: `backend:${p.id}`, rosterVerified: true }, p)),
+    getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+    resolve: ref => {
+      let raw = ref && typeof ref === 'object' ? (ref.stableKey || ref.id || ref.name || '') : String(ref || '');
+      if (String(raw).startsWith('pv:')) raw = decodeURIComponent(String(raw).slice(3));
+      const hits = rt._calProviders.filter(p => String(p.id) === String(raw) || `backend:${p.id}` === String(raw) || String(p.name).toLowerCase() === String(raw).toLowerCase());
+      return hits.length === 1 ? Object.assign({ stableKey: `backend:${hits[0].id}`, rosterVerified: true }, hits[0]) : null;
+    }
+  };
   rt.addEventListener = (_type, fn) => listeners.add(fn);
   rt.removeEventListener = (_type, fn) => listeners.delete(fn);
   const emit = (type, resp, id) => {

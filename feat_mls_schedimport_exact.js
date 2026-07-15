@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.5.1";
+  var VERSION = "si-1.6.0";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -121,9 +121,50 @@
     var obj = raw && typeof raw === "object" ? raw : null;
     var name = String(obj ? (obj.name || obj.displayName || obj.provider || "") : (raw || "")).trim();
     var id = obj && obj.id != null ? String(obj.id) : "";
-    var rosterVerified = !!(obj && obj.rosterVerified === true && id);
-    if (!name || /^all(?:\s+providers?)?$/i.test(name)) return { mode: "all", name: name || "All providers", id: id, key: "", rosterVerified: rosterVerified };
-    return { mode: "selected", name: name, id: id, key: providerKey(name), rosterVerified: rosterVerified };
+    var stableKey = obj ? String(obj.stableKey || obj.stable_key || "") : "";
+    var providerRaw = obj ? String(obj.raw || obj.provider_raw || obj.provider || name || "") : String(raw || "");
+    var rosterVerified = !!(obj && obj.rosterVerified === true && (id || stableKey));
+    if (!name || /^all(?:\s+(?:providers?|doctors?))?$/i.test(name)) return { mode: "all", name: "All providers", id: id, stableKey: stableKey, raw: providerRaw, key: "", rosterVerified: rosterVerified };
+    return { mode: "selected", name: name, id: id, stableKey: stableKey, raw: providerRaw, key: providerKey(name), rosterVerified: rosterVerified };
+  }
+  /* Every selected-provider route shares this one gate. A display name or an
+     appointment-derived provider list is never a roster. The canonical roster
+     must carry a complete Athena sweep receipt, then the selected stable
+     identity must resolve exactly. All-provider day pulls are the sole
+     exception: they are permitted to read the day, but scopeProviderRows below
+     still requires the complete two-dimensional schedule receipt and provider
+     attribution on every returned row. Month-wide All requires the canonical
+     roster too because it spans multiple independently navigated days. */
+  function resolveProviderRequest(raw, opts) {
+    opts = opts || {};
+    var req = providerRequest(raw);
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var receipt = roster && isFn(roster.getReceipt) ? safe(function () { return roster.getReceipt(); }, null) : null;
+    function no(reason, error) { return { ok: false, complete: false, reason: reason, error: error, request: req, provider: null, receipt: receipt }; }
+    if (req.mode === "all") {
+      if (opts.allowAll !== true) return no("provider-required", "Choose one verified provider first.");
+      if (opts.requireRosterForAll === true && !(receipt && receipt.complete === true)) {
+        return no("provider-roster-incomplete", "The full Athena provider roster is not verified yet. Re-pull the Day schedule and retry.");
+      }
+      return { ok: true, complete: true, request: req, provider: "all", receipt: receipt };
+    }
+    if (!(roster && isFn(roster.resolve) && receipt && receipt.complete === true)) {
+      return no("provider-roster-incomplete", "The full Athena provider roster is not verified yet. Re-pull the Day schedule before pulling one provider.");
+    }
+    var entry = safe(function () { return roster.resolve(raw); }, null);
+    if (!entry || !entry.name || !entry.stableKey) {
+      return no("provider-unverified", "That provider is not uniquely present in the verified Athena roster. Choose the clinician again.");
+    }
+    var resolved = {
+      id: entry.id != null ? String(entry.id) : "",
+      stableKey: String(entry.stableKey),
+      raw: String(entry.raw || entry.name),
+      name: String(entry.name),
+      key: providerKey(entry.name),
+      rosterVerified: true
+    };
+    if (!providerKey(resolved.name)) return no("provider-unverified", "That provider identity is incomplete or ambiguous.");
+    return { ok: true, complete: true, request: providerRequest(resolved), provider: resolved, receipt: receipt };
   }
   function providerDiagLabels(resp, rows) {
     var labels = [], seen = {};
@@ -148,6 +189,7 @@
       mode: req.mode,
       requested: req.name,
       requestedId: req.id,
+      requestedStableKey: req.stableKey,
       requestedKey: req.key,
       rosterVerified: req.rosterVerified,
       complete: false,
@@ -161,21 +203,49 @@
       discoveredProviders: providerDiagLabels(resp, rows)
     };
     if (req.mode === "all") {
-      receipt.complete = true; receipt.reason = "all-providers";
       receipt.providerTaggedRows = rows.filter(function (r) { return !!providerKey(r && r.provider); }).length;
       receipt.unattributedRows = rows.length - receipt.providerTaggedRows;
-      return { complete: true, reason: "all-providers", rows: rows, receipt: receipt };
+      var verifiedEmpty = !!(resp && resp.receipt && resp.receipt.complete === true && resp.receipt.authoritativeEmpty === true && rows.length === 0);
+      receipt.complete = receipt.scheduleComplete && (verifiedEmpty || receipt.unattributedRows === 0);
+      receipt.reason = receipt.complete ? "all-providers" : (receipt.scheduleComplete ? "provider-incomplete" : "provider-unverified");
+      return { complete: receipt.complete, reason: receipt.reason, rows: receipt.complete ? rows : [], receipt: receipt };
     }
     if (!req.key || !receipt.scheduleComplete) {
       receipt.reason = "provider-unverified";
       return { complete: false, reason: receipt.reason, rows: [], receipt: receipt };
     }
     var matching = [];
+    var requireStableId = !!(req.id && req.rosterVerified);
+    var canonicalNameFallback = false;
+    if (requireStableId) {
+      var canonicalRoster = safe(function () {
+        var api = window.__mlsProviderRoster;
+        return api && isFn(api.list) ? (api.list() || []) : [];
+      }, []) || [];
+      var canonicalSameName = canonicalRoster.filter(function (entry) { return providerKey(entry && entry.name) === req.key; });
+      canonicalNameFallback = canonicalSameName.length === 1 && (
+        (req.id && String(canonicalSameName[0].id || "").trim().toLowerCase() === String(req.id).trim().toLowerCase()) ||
+        (req.stableKey && String(canonicalSameName[0].stableKey || canonicalSameName[0].stable_key || "") === req.stableKey)
+      );
+    }
     rows.forEach(function (r) {
-      var k = providerKey(r && r.provider);
-      if (!k) { receipt.unattributedRows++; return; }
+      var k = providerKey(r && r.provider), rowId = String(rowProviderId(r) || "").trim().toLowerCase();
+      var wantId = String(req.id || "").trim().toLowerCase();
+      if (!k && !rowId) { receipt.unattributedRows++; return; }
       receipt.providerTaggedRows++;
-      if (k === req.key) matching.push(r); else receipt.mismatchedRows++;
+      /* A canonical provider id is the selected-provider identity. Never fall
+         back to a display-name token set when the row exposes an id: two real
+         clinicians may have the same name/credentials. If the selected name
+         appears on an id-less row, the row is unresolved rather than guessed;
+         the complete provider pull must be retried with structured ids. */
+      if (requireStableId) {
+        if (rowId) {
+          if (rowId === wantId) matching.push(r); else receipt.mismatchedRows++;
+        } else if (k === req.key && canonicalNameFallback) matching.push(r);
+        else if (k === req.key) receipt.unattributedRows++;
+        else receipt.mismatchedRows++;
+      } else if (k === req.key) matching.push(r);
+      else receipt.mismatchedRows++;
     });
     receipt.matchingRows = matching.length;
     var targetSeen = matching.length > 0 || req.rosterVerified || receipt.discoveredProviders.some(function (p) { return providerKey(p) === req.key; });
@@ -510,6 +580,7 @@
     appts = (appts || []).filter(function (a) { return a && String(a.name || "").trim(); });
     var providerResp = opts.providerResponse || lastResp || null;
     var requestedProvider = providerRequest(opts.provider);
+    var requireProviderCoverage = requestedProvider.mode === "selected" || opts.requireProviderCoverage === true;
 
     function emptyResult(reason, providerReceipt, wrongDay, invalidDate) {
       return { created: 0, repaired: 0, enrichedFields: 0, skipped: 0, failed: 0, attempted: 0,
@@ -528,11 +599,12 @@
       if (dom.length) appts = dom;
     }
     if (!appts.length) {
-      if (requestedProvider.mode === "selected") {
-        var emptyScope = scopeProviderRows([], opts.provider, providerResp);
-        return Promise.resolve(emptyResult(emptyScope.complete ? "provider-empty" : emptyScope.reason, emptyScope.receipt));
-      }
-      return Promise.resolve(emptyResult("empty", null));
+      if (!requireProviderCoverage) return Promise.resolve(emptyResult("empty", null));
+      var emptyScope = scopeProviderRows([], opts.provider, providerResp);
+      return Promise.resolve(emptyResult(
+        emptyScope.complete ? (requestedProvider.mode === "selected" ? "provider-empty" : "empty") : emptyScope.reason,
+        emptyScope.receipt
+      ));
     }
 
     /* target day: explicit -> page-printed date. No unproven today fallback. */
@@ -598,7 +670,9 @@
        read, but only exact provider-token matches are imported. Any untagged
        schedule row means the selected provider's subset cannot be proven
        complete, so nothing is changed and the user can safely retry. */
-    var providerScope = scopeProviderRows(appts, opts.provider, providerResp);
+    var providerScope = requireProviderCoverage
+      ? scopeProviderRows(appts, opts.provider, providerResp)
+      : { complete: true, reason: "direct-import", rows: appts, receipt: { mode: "all", complete: true, reason: "direct-import", sourceRows: appts.length, providerTaggedRows: appts.filter(function (a0) { return !!providerKey(a0 && a0.provider); }).length, unattributedRows: appts.filter(function (a0) { return !providerKey(a0 && a0.provider); }).length } };
     if (!providerScope.complete) {
       return Promise.resolve(emptyResult(providerScope.reason, providerScope.receipt, wrongDay, invalidDate));
     }
@@ -1044,13 +1118,26 @@
    * refuse missing/ambiguous names. Month/week views must have an explicitly
    * opened day; Day view uses its visible reference date. */
   function calendarProviderRows() {
-    var raw = safe(function () { return window._calProviders || []; }, []) || [], out = [];
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var raw = roster && isFn(roster.list)
+      ? (safe(function () { return roster.list(); }, []) || [])
+      : (safe(function () { return window._calProviders || []; }, []) || []);
+    var out = [];
     raw.forEach(function (p) {
       if (typeof p === "string") {
         var rs = String(p || "").trim(); if (rs) out.push({ fval: "nm:" + rs, id: "", name: rs, key: providerKey(rs) });
       } else if (p && typeof p === "object") {
         var n = String(p.name || p.displayName || "").trim();
-        if (n) out.push({ fval: p.id != null ? String(p.id) : ("nm:" + n), id: p.id != null ? String(p.id) : "", name: n, key: providerKey(n) });
+        var stableKey = String(p.stableKey || p.stable_key || "");
+        if (n) out.push({
+          fval: p.id != null && String(p.id) ? String(p.id) : (stableKey ? ("pv:" + encodeURIComponent(stableKey)) : ("nm:" + n)),
+          id: p.id != null ? String(p.id) : "",
+          stableKey: stableKey,
+          raw: String(p.raw || p.provider || n),
+          name: n,
+          key: providerKey(n),
+          rosterVerified: p.rosterVerified === true
+        });
       }
     });
     return out;
@@ -1059,6 +1146,11 @@
     var pf = safe(function () { return document.getElementById("calProvFilter"); }, null);
     var fval = pf ? String(pf.value || "") : "";
     if (!fval) return { ok: false, complete: false, reason: "provider-required", error: "Choose one provider in Calendar first." };
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var rosterReceipt = roster && isFn(roster.getReceipt) ? safe(function () { return roster.getReceipt(); }, null) : null;
+    if (!(rosterReceipt && rosterReceipt.complete === true)) {
+      return { ok: false, complete: false, reason: "provider-roster-incomplete", error: "The full Athena provider roster is not verified yet. Re-pull the Day schedule before selecting one provider.", providerRosterReceipt: rosterReceipt };
+    }
     var entries = calendarProviderRows();
     var matches = entries.filter(function (p) { return p.fval === fval; });
     if (matches.length !== 1 || !matches[0].key) return { ok: false, complete: false, reason: "provider-unverified", error: "The selected calendar provider could not be verified." };
@@ -1075,7 +1167,9 @@
       if (panelOpen) date = normDate(safe(function () { return window._calSelDay; }, ""));
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, complete: false, reason: "date-required", error: "Open the calendar day you want to pull first." };
-    return { ok: true, complete: true, date: date, source: "calendar", provider: { id: chosen.id, name: chosen.name, key: chosen.key, rosterVerified: true } };
+    var providerGate = resolveProviderRequest({ id: chosen.id, stableKey: chosen.stableKey, raw: chosen.raw, name: chosen.name, rosterVerified: chosen.rosterVerified }, { allowAll: false });
+    if (!providerGate.ok) return { ok: false, complete: false, reason: providerGate.reason, error: providerGate.error, providerRosterReceipt: providerGate.receipt || rosterReceipt };
+    return { ok: true, complete: true, date: date, source: "calendar", provider: providerGate.provider, providerRosterReceipt: rosterReceipt };
   }
 
   /* ---- exact-patient history + old-visits batch -------------------------
@@ -1251,8 +1345,10 @@
     var date = opts.date || estTodayKey();
     var includeHistory = opts.includeHistory !== false; /* safe default: full verified workflow */
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    var providerGate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: false });
+    var providerTarget = providerGate.ok ? providerGate.provider : opts.provider;
     function fail(reason, extra) {
-      var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, created: 0, repaired: 0, skipped: 0, failed: 0, target: date, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
+      var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, created: 0, repaired: 0, skipped: 0, failed: 0, target: date, providerRosterReceipt: providerGate.receipt || null, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
       extra = extra || {}; for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
       return out;
     }
@@ -1260,6 +1356,7 @@
        the extension bridge has no request ids, so probe replies and pull replies can cross. */
     window.__mlsPullBusyAt = Date.now();
     if (!signedIn()) { onStatus("Sign in to import the schedule.", "err"); return Promise.resolve(fail("signin")); }
+    if (!providerGate.ok) { onStatus(providerGate.error || "The selected provider could not be verified.", "err"); return Promise.resolve(fail(providerGate.reason, { error: providerGate.error || "", retry: { providerRoster: true } })); }
 
     onStatus("Looking for MLS Assist...", "");
     return bridge("mlsPong", "mlsPing", 3500).then(function (pong) {
@@ -1299,7 +1396,11 @@
           return fail("wrong-day", { observedDay: readDay, scheduleReceipt: r.receipt, retry: { schedule: true } });
         }
         lastResp = r;
-        safe(function () { window.__schedRaw = { text: r.text || "", url: r.url || "", frames: r.frames, appts: r.appts || [], schedDate: readDay }; });
+        safe(function () { window.__schedRaw = {
+          text: r.text || "", url: r.url || "", frames: r.frames, appts: r.appts || [], schedDate: readDay,
+          providers: r.providers || [], providerRoster: r.providerRoster || [], providerRosterReceipt: r.providerRosterReceipt || null,
+          providerDiag: r.providerDiag || null, receipt: r.receipt || null
+        }; });
         onStatus("Finding patients on " + date + "...", "");
         /* Exact structured DOM rows are authoritative for time. The prior AI-first path
            could turn a real appointment into a guessed time (including the repeated 6 PM
@@ -1325,15 +1426,15 @@
             reason: a.reason || "",
             provider: a.provider || ""
           }; });
-          return importAppts(rows, { date: date, scopeDate: date, provider: opts.provider, providerResponse: r }).then(async function (res) {
+          return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true }).then(async function (res) {
             res = res || {};
-            var selectedProvider = providerRequest(opts.provider);
-            if (selectedProvider.mode === "selected" && (!res.providerReceipt || res.providerReceipt.complete !== true)) {
+            var selectedProvider = providerRequest(providerTarget);
+            if (!res.providerReceipt || res.providerReceipt.complete !== true) {
               var providerReason = res.reason || (res.providerReceipt && res.providerReceipt.reason) || "provider-unverified";
               onStatus(providerReason === "provider-incomplete"
                 ? "Some Athena schedule rows did not identify their provider. Nothing was imported; retry after the full day grid finishes loading."
-                : "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers.", "err");
-              return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.name } });
+                : (selectedProvider.mode === "selected" ? "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers." : "MLS could not prove complete provider coverage for this Athena day. Nothing was imported."), "err");
+              return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.mode === "selected" ? selectedProvider.name : "all" } });
             }
             var attempted = Number(res.attempted != null ? res.attempted : rows.length), accounted = Number(res.created || 0) + Number(res.repaired || 0) + Number(res.skipped || 0);
             var mappings = Array.isArray(res.resolvedAppointments) ? res.resolvedAppointments : [];
@@ -1344,7 +1445,7 @@
             });
             var mappingComplete = mappings.length === attempted && Object.keys(uniqueSources).length === attempted && Object.keys(uniqueBackend).length === attempted && !(res.unresolvedMappings && res.unresolvedMappings.length);
             var calendarReceipt = { complete: Number(res.failed || 0) === 0 && Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0 && accounted === attempted && mappingComplete, attempted: attempted, accounted: accounted, mapped: mappings.length, uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length, mappingComplete: mappingComplete, unresolvedMappings: Number(res.unresolvedMappings && res.unresolvedMappings.length || 0), created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0), failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0) };
-            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: opts.provider, scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
+            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
             calendarReceipt.snapshotPublished = snapshotReceipt.published === true;
             calendarReceipt.snapshotReason = snapshotReceipt.reason;
             if (calendarReceipt.complete && !calendarReceipt.snapshotPublished) calendarReceipt.complete = false;
@@ -1384,6 +1485,98 @@
     });
   }
 
+  var monthPullRunning = false;
+  function monthDateKeys(month) {
+    var m = /^(\d{4})-(\d{2})$/.exec(String(month || ""));
+    if (!m) return null;
+    var y = Number(m[1]), mo = Number(m[2]);
+    if (mo < 1 || mo > 12) return null;
+    var today = estTodayKey(), first = m[1] + "-" + m[2] + "-01";
+    if (first > today) return null;
+    var lastDay = new Date(y, mo, 0).getDate();
+    var last = m[1] + "-" + m[2] + "-" + (lastDay < 10 ? "0" : "") + lastDay;
+    if (last > today) last = today;
+    var out = [];
+    for (var d = 1; d <= lastDay; d++) {
+      var key = m[1] + "-" + m[2] + "-" + (d < 10 ? "0" : "") + d;
+      if (key > last) break;
+      out.push(key);
+    }
+    return out;
+  }
+
+  /* One exact month route for Staff prep and the chart-history continuation.
+     It deliberately reuses pull() for every frozen day: same two-dimensional
+     schedule receipt, same exact provider/appointment/patient identity, same
+     idempotent importer, and the same default-on verified history batch. */
+  function pullMonth(opts) {
+    opts = opts || {};
+    var month = String(opts.month || "");
+    var dates = monthDateKeys(month);
+    var includeHistory = opts.includeHistory !== false;
+    var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true });
+    function failed(reason, error) {
+      return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
+    }
+    if (!dates || !dates.length) return Promise.resolve(failed("invalid-month", "Choose the current or a past month."));
+    if (!gate.ok) { onStatus(gate.error || "The provider roster is incomplete.", "err"); return Promise.resolve(failed(gate.reason, gate.error)); }
+    if (monthPullRunning) return Promise.resolve(failed("pull-in-flight", "Another exact month pull is already running."));
+    var frozenProvider = gate.provider === "all" ? "all" : {
+      id: String(gate.provider.id || ""), stableKey: String(gate.provider.stableKey || ""), raw: String(gate.provider.raw || gate.provider.name || ""),
+      name: String(gate.provider.name || ""), rosterVerified: true
+    };
+    var result = {
+      ok: false, complete: false, reason: "month-partial", month: month, includeHistory: includeHistory,
+      provider: frozenProvider, providerRosterReceipt: gate.receipt || null, days: [],
+      totals: { days: dates.length, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, created: 0, repaired: 0, skipped: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 },
+      retry: { dates: [] }
+    };
+    monthPullRunning = true;
+    var chain = Promise.resolve();
+    dates.forEach(function (date, index) {
+      chain = chain.then(function () {
+        onStatus("Month pull " + (index + 1) + "/" + dates.length + ": " + date, "");
+        return pull({
+          date: date,
+          provider: frozenProvider,
+          includeHistory: includeHistory,
+          onStatus: function (message, kind) { onStatus(date + ": " + String(message || ""), kind); }
+        }).then(function (day) {
+          day = day || { ok: false, complete: false, reason: "no-result" };
+          result.days.push({ date: date, ok: day.ok === true, complete: day.complete === true, reason: day.reason || "", receipt: day });
+          var cr = day.calendarReceipt || {}, hr = day.historyReceipt || {};
+          result.totals.scheduleAttempted += Number(cr.attempted || 0);
+          result.totals.scheduleAccounted += Number(cr.accounted || 0);
+          result.totals.created += Number(day.created || 0);
+          result.totals.repaired += Number(day.repaired || 0);
+          result.totals.skipped += Number(day.skipped || 0);
+          result.totals.historiesRequested += Number(hr.requested || 0);
+          result.totals.historiesProcessed += Number(hr.processed || 0);
+          if (day.ok === true && day.complete === true) result.totals.completeDays++;
+          else { result.totals.failures++; result.retry.dates.push(date); }
+        }, function (err) {
+          result.days.push({ date: date, ok: false, complete: false, reason: "exception", error: String(err && err.message || err || "") });
+          result.totals.failures++; result.retry.dates.push(date);
+        });
+      });
+    });
+    return chain.then(function () {
+      monthPullRunning = false;
+      result.complete = result.totals.completeDays === dates.length && result.retry.dates.length === 0;
+      result.ok = result.complete;
+      result.reason = result.complete ? "complete" : "month-partial";
+      onStatus(result.complete
+        ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0.")
+        : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + "."), result.complete ? "ok" : "err");
+      return result;
+    }, function (err) {
+      monthPullRunning = false;
+      result.reason = "month-exception"; result.error = String(err && err.message || err || "");
+      result.totals.failures++; return result;
+    });
+  }
+
   function pullCalendarSelection(opts) {
     opts = opts || {};
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
@@ -1394,14 +1587,14 @@
     }
     /* Freeze the exact selection before any async navigation. Changing calendar
        filters while Athena is loading cannot redirect an in-flight pull. */
-    var frozenProvider = { id: sel.provider.id, name: sel.provider.name, key: sel.provider.key, rosterVerified: sel.provider.rosterVerified === true };
+    var frozenProvider = { id: sel.provider.id, stableKey: sel.provider.stableKey || "", raw: sel.provider.raw || sel.provider.name, name: sel.provider.name, key: sel.provider.key, rosterVerified: sel.provider.rosterVerified === true };
     var frozenDate = sel.date;
     onStatus("Pulling " + frozenProvider.name + " on " + frozenDate + "...", "");
     var includeHistory = opts.includeHistory !== false;
     return pull({ date: frozenDate, provider: frozenProvider, includeHistory: includeHistory, onStatus: onStatus }).then(function (res) {
       res = res || {};
       res.source = "calendar";
-      res.requestedProvider = { id: frozenProvider.id, name: frozenProvider.name, key: frozenProvider.key, rosterVerified: frozenProvider.rosterVerified };
+      res.requestedProvider = { id: frozenProvider.id, stableKey: frozenProvider.stableKey, name: frozenProvider.name, key: frozenProvider.key, rosterVerified: frozenProvider.rosterVerified };
       return res;
     });
   }
@@ -1437,9 +1630,12 @@
     asset: "feat_mls_schedimport_exact.js",
     importAppts: importAppts,
     pull: pull,
+    pullMonth: pullMonth,
     pullCalendarSelection: pullCalendarSelection,
     calendarSelection: calendarSelection,
     _providerKey: providerKey,
+    _resolveProviderRequest: resolveProviderRequest,
+    _monthDateKeys: monthDateKeys,
     _scopeProviderRows: scopeProviderRows,
     _patientIdentity: patientIdentity,
     _appointmentIdentity: appointmentIdentity,

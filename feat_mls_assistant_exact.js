@@ -48,13 +48,21 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.1.4";
+  var VERSION = "asst-2.1.5";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
-  /* ---------- self-gate: staging page OR prod staging-marker (active on both) ---------- */
+  /* ---------- self-gate: the real ScribeFlow app (production or staging) ----------
+     Production loads this asset from mls-connect.js, so requiring a staging
+     marker here leaves the visible assistant FAB/panel permanently absent and
+     makes the top Visit proxy report "still loading" forever. Keep the gate
+     narrow: the production MLS host must also be on the ScribeFlow app path;
+     unrelated marketing/settings pages remain untouched. */
   function gateOn() {
     try {
-      if (/staging/i.test(location.pathname)) return true;
+      var host = String(location.hostname || "");
+      var path = String(location.pathname || "");
+      if (/(^|\.)mlsscribe\.com$/i.test(host) && /(^|\/)ScribeFlow(?:-staging)?\.html$/i.test(path)) return true;
+      if (/staging/i.test(path)) return true;
       if (document.querySelector('script[src*="mls-connect.staging.js"]')) return true;
     } catch (e) {}
     return false;

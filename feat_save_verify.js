@@ -1,5 +1,5 @@
 /* feat_save_verify.js  —  MLS Save-Integrity Verification layer
- * window.__mlsSaveVerify (v1.0.0)
+ * window.__mlsSaveVerify (v1.0.2)
  *
  * PURPOSE (Michael's ask): every time data is saved/restored, automatically
  * SCAN the persisted store and HONESTLY confirm it actually landed — or flag
@@ -32,7 +32,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.0.2';
   var ASSET = 'feat_save_verify.js';
 
   if (window.__mlsSaveVerify && window.__mlsSaveVerify.installed) { return; }
@@ -298,6 +298,7 @@
       injectStyle();
       var card = document.createElement('div');
       card.className = 'mls-sv-card mls-sv-' + (kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : 'info');
+      if (opts.pullFailure) card.setAttribute('data-mls-athena-pull-failure', '1');
       var icon = document.createElement('div'); icon.className = 'mls-sv-icon';
       icon.textContent = kind === 'ok' ? '✓' : kind === 'warn' ? '⚠' : 'ℹ';
       var body = document.createElement('div'); body.className = 'mls-sv-body';
@@ -385,7 +386,65 @@
     d = d || {};
     var nested = d.resp || d.result || d.payload || {};
     var requestId = String(d.id || d.requestId || nested.id || nested.requestId || '');
-    return /^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(requestId);
+    if (/^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(requestId)) return true;
+    if (d.managed === true || d.background === true || d.silent === true ||
+        nested.managed === true || nested.background === true || nested.silent === true) return true;
+    var owner = String(d.initiator || d.origin || d.mode || nested.initiator || nested.origin || nested.mode || '').toLowerCase();
+    return /^(?:background|batch|prefetch|automatic|auto)$/.test(owner);
+  }
+
+  function pullNoticeHandled(d) {
+    try { return !!(d && d.__mlsAthenaPullNoticeHandled); } catch (e) { return false; }
+  }
+
+  function markPullNoticeHandled(d) {
+    try { d.__mlsAthenaPullNoticeHandled = 'save-verify'; } catch (e) {}
+  }
+
+  var _manualReadFailureRef = null;
+  function resultRef(d) {
+    d = d || {};
+    var nested = d.resp || d.result || d.payload || {};
+    return {
+      requestId: String(d.id || d.requestId || nested.id || nested.requestId || ''),
+      correlationId: String(d.correlationId || d.retryOf || d.parentRequestId || nested.correlationId || nested.retryOf || nested.parentRequestId || '')
+    };
+  }
+  function successMatchesManualReadFailure(d) {
+    var a = _manualReadFailureRef;
+    if (!a) return false;
+    var b = resultRef(d);
+    if (a.requestId) return b.requestId === a.requestId || b.correlationId === a.requestId || (!!a.correlationId && b.correlationId === a.correlationId);
+    if (a.correlationId) return b.correlationId === a.correlationId || b.requestId === a.correlationId;
+    return !b.requestId && !b.correlationId;
+  }
+  function clearManualReadFailureCards() {
+    try {
+      var nodes = document.querySelectorAll('[data-mls-athena-pull-failure="1"]');
+      for (var i = 0; i < nodes.length; i++) if (nodes[i] && nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+    } catch (e) {}
+    _manualReadFailureRef = null;
+  }
+
+  function showManualReadFailure(d) {
+    if (pullNoticeHandled(d)) return;
+    var doctor = safe(function () { return window.__mlsAthenaDoctor; });
+    if (doctor && doctor.ownsPullNotices === true) return;
+    markPullNoticeHandled(d);
+    _manualReadFailureRef = resultRef(d);
+    banner('info', 'No visits were saved',
+      ['athenaOne returned no readable visits, or the name/DOB safety check stopped the save.',
+        'Nothing was stored — this is the honest result, not an error to retry blindly.'],
+      { ttl: 9000, pullFailure: true });
+  }
+
+  function routeManualReadFailure(d) {
+    /* Save Verify can be registered before Athena Doctor's capture listener.
+       Defer only when another notice owner is present so the same event can be
+       claimed first; the standalone module keeps its immediate honest fallback. */
+    var hasPeer = !!safe(function () { return window.__mlsAthenaDoctor || window.__mlsAthenaClarity; });
+    if (!hasPeer) { showManualReadFailure(d); return; }
+    setTimeout(function () { showManualReadFailure(d); }, 0);
   }
 
   function onResultMessage(ev) {
@@ -398,14 +457,19 @@
       var ok = (d.ok != null) ? !!d.ok : (d.result ? !!d.result.ok : true);
       var ref = fn('activePatient') ? safe(fn('activePatient')) : null;
       _lastPull = { visits: arr(visits), ok: ok, ts: Date.now(), ref: ref, handled: false };
-      if (ok === false) {
+      if (isManagedHistoryBatchResult(d)) {
+        /* The provider/day owner supplies one aggregate receipt for both
+           failures and successes. Per-patient save banners would reintroduce
+           the same noise through the success-verification timer. */
         _lastPull.handled = true;
-        if (isManagedHistoryBatchResult(d)) return;
-        banner('info', 'No visits were saved',
-          ['athenaOne returned no readable visits, or the name/DOB safety check stopped the save.',
-            'Nothing was stored — this is the honest result, not an error to retry blindly.'], { ttl: 9000 });
         return;
       }
+      if (ok === false) {
+        _lastPull.handled = true;
+        routeManualReadFailure(d);
+        return;
+      }
+      if (successMatchesManualReadFailure(d)) clearManualReadFailureCards();
       // Fallback: if no upsert-triggered verify fires, verify once the save settles.
       (function (p) {
         setTimeout(function () { if (_lastPull === p && !p.handled) handlePullVerify(p); }, 3500);

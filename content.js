@@ -267,7 +267,7 @@
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
         if (chartPatient) {
-          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob }, function (opened) {
+          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
               finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
@@ -318,7 +318,7 @@
                that state; recover ONCE through the already-proven, DOB-gated
                patient opener, then repeat the identity-gated read. */
             if (canOpen && visitPatient && /^(wrong-chart|unverified|unverified-patient)$/.test(String(resp.reason || ''))) {
-              chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob }, function (opened) {
+              chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId }, function (opened) {
                 var openErr = chrome.runtime.lastError;
                 if (openErr || !opened || !opened.opened) {
                   finishVisits({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient before reading history.' });
@@ -1370,7 +1370,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsAllVisitsBridge) return; window.__mlsAllVisitsBridge = 1; } catch (e) { return; }
-  var activeOrigin = '', activeUntil = 0;
+  var pendingById = Object.create(null);
   function trusted(origin) {
     if (!origin || typeof origin !== 'string') return false;
     try {
@@ -1382,24 +1382,67 @@
   function post(origin, type, payload) {
     try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), origin); } catch (e) {}
   }
+  function finishPending(requestId) {
+    var pending = pendingById[requestId];
+    if (!pending) return null;
+    if (pending.timer) clearTimeout(pending.timer);
+    delete pendingById[requestId];
+    return pending;
+  }
+  function pendingMeta(pending, payload) {
+    var out = Object.assign({}, payload || {});
+    if (!pending) return out;
+    if (pending.retryOf) { out.retryOf = pending.retryOf; out.parentRequestId = pending.retryOf; }
+    if (pending.managed) out.managed = true;
+    if (pending.background) out.background = true;
+    if (pending.silent) out.silent = true;
+    if (pending.initiator) out.initiator = pending.initiator;
+    return out;
+  }
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits' || d.source !== 'mls-app' || !trusted(ev.origin)) return;
     var origin = ev.origin;
     var requestId = String(d.id || d.requestId || '').slice(0, 100);
-    activeOrigin = origin; activeUntil = Date.now() + 300000;
+    var retryOf = String(d.retryOf || d.parentRequestId || d.correlationId || '').slice(0, 100);
+    var pending = {
+      origin: origin, timer: null, retryOf: retryOf,
+      managed: d.managed === true, background: d.background === true,
+      silent: d.silent === true, initiator: String(d.initiator || '').slice(0, 32)
+    };
+    if (!requestId) {
+      post(origin, 'mlsAppAllVisitsResult', pendingMeta(pending, { id: '', requestId: '', ok: false, error: 'History request correlation id is required.' }));
+      return;
+    }
+    if (pendingById[requestId]) {
+      post(origin, 'mlsAppAllVisitsResult', pendingMeta(pending, { id: requestId, requestId: requestId, ok: false, error: 'Duplicate history request correlation id.' }));
+      return;
+    }
+    pending.timer = setTimeout(function () { finishPending(requestId); }, 300000);
+    pendingById[requestId] = pending;
+    /* Correlated acceptance keeps the page on its long timeout while Athena is
+       being located. Runtime progress below is still accepted only when the
+       background echoes this exact id. */
+    post(origin, 'mlsAppVisitsProgress', pendingMeta(pending, { id: requestId, requestId: requestId, message: 'MLS Assist accepted the history request...' }));
     try {
-      chrome.runtime.sendMessage({ type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId }, function (res) {
+      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId }), function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { post(origin, 'mlsAppAllVisitsResult', { id: requestId, ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
-        var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult'; out.id = requestId;
-        post(origin, 'mlsAppAllVisitsResult', out);
+        var target = finishPending(requestId);
+        if (!target) return;
+        if (err || !res) { post(target.origin, 'mlsAppAllVisitsResult', pendingMeta(target, { id: requestId, requestId: requestId, ok: false, error: (err && err.message) || 'No response from MLS Assist' })); return; }
+        var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult'; out.id = requestId; out.requestId = requestId;
+        post(target.origin, 'mlsAppAllVisitsResult', pendingMeta(target, out));
       });
-    } catch (e) { post(origin, 'mlsAppAllVisitsResult', { id: requestId, ok: false, error: String((e && e.message) || e) }); }
+    } catch (e) {
+      var target = finishPending(requestId);
+      if (target) post(target.origin, 'mlsAppAllVisitsResult', pendingMeta(target, { id: requestId, requestId: requestId, ok: false, error: String((e && e.message) || e) }));
+    }
   }, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
       if (msg && msg.type === 'mlsAppVisitsProgress') {
-        if (activeOrigin && Date.now() < activeUntil) post(activeOrigin, 'mlsAppVisitsProgress', { message: msg.message, n: msg.n, total: msg.total });
+        var requestId = String(msg.requestId || msg.id || '').slice(0, 100);
+        var pending = requestId && pendingById[requestId];
+        if (pending) post(pending.origin, 'mlsAppVisitsProgress', pendingMeta(pending, { id: requestId, requestId: requestId, message: msg.message, n: msg.n, total: msg.total }));
       }
     });
   } catch (e) {}
@@ -1518,6 +1561,7 @@
          Dunnes, different DOBs). A wrong-twin dob cannot misfile: the pull's
          read gate still verifies the roster row against the opened chart. */
       var dobHint = d.dob || '';
+      var mrnHint = String(d.mrn || d.patientMrn || d.athenaId || '').trim().slice(0, 40);
       if (!dobHint) {
         try {
           var nrmN = function (s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); };
@@ -1537,7 +1581,7 @@
           }
         } catch (e1) {}
       }
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, noReload: d.noReload === true }, function (res) {
+      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, noReload: d.noReload === true }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(activeOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true }); return; }
         var out = {}; for (var k in res) out[k] = res[k];

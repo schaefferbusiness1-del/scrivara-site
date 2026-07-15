@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '2.0.0';
+  var VERSION = '2.0.1';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -271,6 +271,20 @@
   function mergeProviders(list) { return mergeEntries(list, 'legacy-structured'); }
   function renderDropdown() { var pk = picker(); if (pk && isFn(pk.renderDropdown)) safe(pk.renderDropdown); }
   function setLastResp(r) { var pk = picker(); if (pk && isFn(pk._setLastResp)) safe(function () { pk._setLastResp(r); }); }
+  function notifyRosterUpdated(entries, receipt) {
+    var detail = { entries: (entries || []).slice(), receipt: receipt || null, version: VERSION };
+    safe(function () {
+      var ev = null;
+      if (typeof root.CustomEvent === 'function') ev = new root.CustomEvent('mls-provider-roster-updated', { detail: detail });
+      else if (root.document && isFn(root.document.createEvent)) { ev = root.document.createEvent('CustomEvent'); ev.initCustomEvent('mls-provider-roster-updated', false, false, detail); }
+      else ev = { type: 'mls-provider-roster-updated', detail: detail };
+      if (isFn(root.dispatchEvent)) root.dispatchEvent(ev);
+    });
+    /* Immediate same-turn refresh for pages where a synthetic test/event shim
+       does not implement dispatchEvent. This is UI-only and never starts a
+       pull. */
+    safe(function () { if (root.__mlsCalPolish && isFn(root.__mlsCalPolish.enhance)) root.__mlsCalPolish.enhance(); });
+  }
 
   var lastReceipt = safe(function () { var r = JSON.parse(unsGet(RECEIPT_KEY) || 'null'); return r && typeof r === 'object' ? r : null; }, null);
   function normalizeReceipt(receipt, observed, reason) {
@@ -382,6 +396,7 @@
       // Re-render only if we actually added real names (avoid needless churn /
       // fighting the picker's glitch-fix signature guard).
       if (diag.added > 0 || structuredRoster.length || r.providerRosterReceipt) renderDropdown();
+      notifyRosterUpdated(afterList, receipt);
       return diag;
     }, null);
   }
@@ -451,6 +466,7 @@
     resolve: resolveProvider,
     getReceipt: function () { return lastReceipt || normalizeReceipt(null, listEntries().length, 'not-yet-verified'); },
     getDiag: function () { return lastDiag; },
+    notify: function () { notifyRosterUpdated(listEntries(), lastReceipt); },
     _makeEntry: makeEntry,
     _looksLikeProviderHeader: looksLikeProviderHeader,
     _cleanProvider: cleanProvider,
