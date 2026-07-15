@@ -936,8 +936,17 @@
         for (var li = 0; li < ledgerIdentities.length; li++) indexExisting(ledgerIdentities[li], x);
         /* Yield between bounded archive chunks so the recording/transcript UI,
            pull progress, and browser controls remain responsive.  The source
-           snapshot and all exact-identity maps stay frozen for this scan. */
-        if (eri > 0 && eri % 200 === 0) await new Promise(function (resolveChunk) { setTimeout(resolveChunk, 0); });
+           snapshot and all exact-identity maps stay frozen for this scan.
+           2026-07-15: a hidden MLS tab clamps main-thread setTimeout to ~one
+           tick per MINUTE, so a bare setTimeout(0) yield froze the import for
+           up to a minute per chunk (the live "stuck mid-pull" report). Yield
+           through the worker-backed deadline scheduler, which is immune to
+           background-tab throttling; its terminal/failure paths resolve
+           immediately instead of parking the pull. */
+        if (eri > 0 && eri % 200 === 0) await new Promise(function (resolveChunk) {
+          var cancelYield = safe(function () { return absoluteDeadlines.arm(Date.now() + 1, resolveChunk); }, null);
+          if (!cancelYield || (isFn(cancelYield.isTerminal) && cancelYield.isTerminal())) resolveChunk();
+        });
       }
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};

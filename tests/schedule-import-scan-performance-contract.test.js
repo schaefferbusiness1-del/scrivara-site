@@ -98,10 +98,14 @@ function hasPerDayLedgerCache(scan) {
 }
 
 function hasBoundedYield(scan) {
-  const chunk = scan.match(/%\s*(\d+)\s*={2,3}\s*0[\s\S]{0,180}?\bawait\b/);
+  const chunk = scan.match(/%\s*(\d+)\s*={2,3}\s*0[\s\S]{0,320}?\bawait\b/);
   if (!chunk) return false;
   const size = Number(chunk[1]);
-  const yieldsToBrowser = /\bawait\b[\s\S]{0,180}?(?:setTimeout|requestAnimationFrame)\s*\(/.test(scan);
+  /* 2026-07-15: a hidden MLS tab clamps bare setTimeout to ~one tick per
+     minute, freezing the import mid-pull. The yield must run through the
+     worker-backed deadline scheduler (throttle-immune); a bare main-thread
+     timer no longer satisfies this contract. */
+  const yieldsToBrowser = /\bawait\b[\s\S]{0,320}?absoluteDeadlines\.arm\s*\(/.test(scan);
   return size >= 16 && size <= 1000 && yieldsToBrowser;
 }
 
