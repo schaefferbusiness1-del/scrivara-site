@@ -93,26 +93,24 @@
     if(typeof i==='number'&&i>=0)return i;}}catch(e){}return -1;}
   function shortName(nm){var p=String(nm||'').trim().split(/\s+/);if(!p.length||!p[0])return 'patient';
     if(p.length===1)return p[0];return p[0]+' '+(p[p.length-1][0]||'')+'.';}
-  /* Bare times like "4:00" carry no meridian and used to default to AM
-     ("Next 4:00 AM" for a 4:00 PM appointment, owner-visible 2026-07-13).
-     Prefer the pulled record's own time_display / start_local. */
-  function h12(hm){var m=String(hm||'').match(/^(\d\d?):(\d\d)/);if(!m)return '';var h=+m[1],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m[2]+' '+ap;}
+  /* The label must use the same practice-timezone instant as nextIdx(). Thin
+     hero rows are resolved only through the site's exact identity matcher; a
+     duplicate-name schedule is never resolved with a first/prefix guess. */
+  function h12(hm){var m=String(hm||'').match(/(?:^|T|\s)(\d\d?):(\d\d)/);if(!m)return '';var h=+m[1],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m[2]+' '+ap;}
   function apptTime(a){
     try{
-      if(a&&a.time_display)return String(a.time_display);
-      if(a&&a.start_local){var s=h12(a.start_local);if(s)return s;}
-      var t=String((a&&a.time)||'');
-      if((/^\d\d?:\d\d$/.test(t.trim())||!t.trim())&&a&&a.name){
-        var key=String(a.name).toUpperCase().slice(0,12);
-        var today=new Date();var iso=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
-        var hit=(window._calAppts||[]).filter(function(x){
-          var d=String(x.appt_date||String(x.start_at||'').slice(0,10));
-          return d===iso&&String(x.name||'').toUpperCase().indexOf(key)===0&&(x.time_display||x.start_local);
-        })[0];
-        if(hit){ if(hit.time_display)return String(hit.time_display); var s2=h12(hit.start_local); if(s2)return s2; }
-      }
+      a=a||{};
+      var day=(typeof window._acctTodayKey==='function')?window._acctTodayKey():'';
+      var rows=(typeof window._apptScheduleCandidates==='function')?window._apptScheduleCandidates(a,window._calAppts||[],day):[];
+      var hit=(typeof window._findCanonicalScheduleAppt==='function')?window._findCanonicalScheduleAppt(a,window._calAppts||[],day):null;
+      var source=hit||a;
+      if(!hit && rows.length>1 && !a.start_at && !a.start_local && !/[ap]\.?\s*\.?m/i.test(String(a.time||''))) return '';
+      if(typeof window._apptDisplayTime==='function')return window._apptDisplayTime(source)||'';
+      if(source.start_at&&typeof window._fmtApptTime==='function'){var z=window._fmtApptTime(source.start_at);if(z)return z;}
+      if(source.start_local){var s=h12(source.start_local);if(s)return s;}
+      var t=String(source.time_display||source.time||'');
       if(typeof window._fmtApptTime==='function')return window._fmtApptTime(t)||'';
-      return t;
+      return h12(t)||t;
     }catch(e){return String((a&&a.time)||'');}
   }
 
@@ -177,7 +175,7 @@
   function boot(){injectCss();wrapRenderBar();render();if(!timer)timer=setInterval(render,15000);}
 
   window.__mlsDayProgress={
-    __booted:true, rerender:render,
+    __booted:true, rerender:render, _displayTime:apptTime,
     revert:function(){
       try{if(timer){clearInterval(timer);timer=null;}}catch(e){}
       try{detachObs();}catch(e){}

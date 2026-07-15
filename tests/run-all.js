@@ -21,6 +21,8 @@ const tests = [
   'athena-confirmed-billing-contract.test.js',
   'athena-adversarial-contract.test.js',
   'primary-workflow-contract.test.js',
+  'day-progress-time-runtime.test.js',
+  'easy-transcript-continuity.test.js',
   'async-artifact-binding-contract.test.js',
   'async-artifact-source-guard.test.js',
   'note-editor-binding-contract.test.js',

@@ -7104,6 +7104,42 @@ function _fmtApptTime(v){
   var mx=v.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(mx){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
   var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
 }
+/* One display-time truth for every site schedule surface. start_at is the
+   authoritative instant and is always rendered in the saved practice timezone;
+   start_local is the next-best account wall clock. time_display/time are legacy
+   fallbacks only. This prevents a UTC-looking 12:40 PM label beside an 8:40 AM
+   practice appointment. */
+function _apptDisplayTime(a){
+  a=a||{};
+  try{
+    if(a.start_at){ var d=new Date(a.start_at); if(!isNaN(d.getTime())){ var z=_fmtApptTime(a.start_at); if(z) return z; } }
+    if(a.start_local && /(?:^|T|\s)\d{1,2}:\d{2}/.test(String(a.start_local))){ var l=_fmtApptTime(a.start_local); if(l) return l; }
+    if(a.time_display){ var td=_fmtApptTime(a.time_display); if(td) return td; }
+    if(a.time){ var t=_fmtApptTime(a.time); if(t) return t; }
+  }catch(e){}
+  return '';
+}
+function _apptScheduleId(a){ a=a||{}; return String(a.appointment_id||a.appt_id||a.athena_appointment_id||a.id||'').trim(); }
+function _apptScheduleDate(a, fallback){
+  a=a||{}; var k=String(a.day_local||a.appt_date||a.date||'').slice(0,10); if(k) return k;
+  try{ if(a.start_at && typeof _acctDateKeyOf==='function'){ var d=new Date(a.start_at); if(!isNaN(d.getTime())) return _acctDateKeyOf(d); } }catch(e){}
+  return String(fallback||'').slice(0,10);
+}
+/* Resolve only an exact appointment identity. A unique full-name+practice-date
+   match is safe; duplicate names require an appointment id. Never pick the first
+   prefix match, which can show another patient's time. */
+function _apptScheduleCandidates(a,list,dateKey){
+  a=a||{}; list=Array.isArray(list)?list:[];
+  var id=_apptScheduleId(a), nm=String(a.name||a.patient||'').trim().toLowerCase().replace(/\s+/g,' ');
+  var day=_apptScheduleDate(a,dateKey||(typeof _acctTodayKey==='function'?_acctTodayKey():''));
+  return list.filter(function(x){
+    if(!x) return false;
+    if(day && _apptScheduleDate(x,day)!==day) return false;
+    if(id) return _apptScheduleId(x)===id;
+    return !!nm && String(x.name||x.patient||'').trim().toLowerCase().replace(/\s+/g,' ')===nm;
+  });
+}
+function _findCanonicalScheduleAppt(a,list,dateKey){ var rows=_apptScheduleCandidates(a,list,dateKey); return rows.length===1?rows[0]:null; }
 /* Convert a wall-clock time (YYYY-MM-DD + "HH:MM") in the ACCOUNT time zone to a correct UTC ISO
    string — so saving/rescheduling an appointment stores the right instant regardless of the
    doctor's browser zone. */
@@ -12348,22 +12384,18 @@ function _heroNextChip(a, origIdx, isCur, manual){
    Built to stay light with 100+ patients a day — never renders the whole list. */
 function _renderTodayPatients(appts){
   var box=document.getElementById('heroToday'); if(!box) return;
-  /* b242 (b211 family, fixed at the SHARED source): hero rows can arrive with a bare
-     meridian-less "4:00" in .time, and every consumer then defaults it to AM. Enrich
-     from trustworthy fields — the row's own time_display / start_local, else the
-     matching pulled _calAppts record — before anything renders. Truly unknown times
-     stay bare (never guess). */
+  /* Keep the shared hero rows on the same account-timezone truth as Calendar and
+     the next-patient selector. A unique exact schedule match may repair a thin hero
+     row; duplicate names are intentionally left unmatched rather than guessed. */
   try{
     var _todayK=_acctTodayKey();
-    function _m12(sl){ var m=String(sl||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return ''; var h=+m[1]; return ((h%12)||12)+':'+m[2]+' '+(h<12?'AM':'PM'); }
     (appts||[]).forEach(function(a){
-      if(!a) return; var t=String(a.time||'');
-      if(!t || /[ap]\.?\s*\.?m/i.test(t)) return;                   /* empty or already carries AM/PM */
-      if(a.time_display){ a.time=String(a.time_display); return; }
-      var fromLocal=_m12(a.start_local); if(fromLocal){ a.time=fromLocal; return; }
-      var nm2=String(a.name||'').trim().toLowerCase(); if(!nm2) return;
-      var ca=(window._calAppts||[]).find(function(x){ return x && String(x.name||'').trim().toLowerCase()===nm2 && String(x.day_local||x.appt_date||'').slice(0,10)===_todayK; });
-      if(ca){ if(ca.time_display) a.time=String(ca.time_display); else { var f2=_m12(ca.start_local); if(f2) a.time=f2; } }
+      if(!a) return;
+      var ca=_findCanonicalScheduleAppt(a,window._calAppts||[],_todayK);
+      if(ca && ca!==a){
+        ['start_at','start_local','time_display','day_local','appt_date','appointment_id','appt_id','athena_appointment_id','id'].forEach(function(k){ if(a[k]==null||a[k]==='') a[k]=ca[k]; });
+      }
+      var shown=_apptDisplayTime(ca||a); if(shown) a.time=shown;
     });
   }catch(e){}
   window._heroTodayList=appts||[];
@@ -12415,7 +12447,7 @@ function _heroPickTomorrow(j){
    load them into the hero so the doctor just hits record. */
 function _calApptMins(a){
   try{ if(a&&a.start_at&&typeof _apptMinsTz==='function'){ var z=_apptMinsTz(a.start_at); if(z!=null) return z; } }catch(e){}
-  var t=String((a&&(a.time_display||a.time||a.start_local))||'').trim();
+  var t=String((a&&(a.start_local||a.time_display||a.time))||'').trim();
   var m=t.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(m){ var h=parseInt(m[1],10)%12; if(/[Pp]/.test(m[3])) h+=12; return h*60+parseInt(m[2],10); }
   m=t.match(/(?:^|T|\s)(\d{1,2}):(\d{2})/); if(m){ var hh=parseInt(m[1],10), mm=parseInt(m[2],10); if(hh>=0&&hh<24&&mm>=0&&mm<60) return hh*60+mm; }
   return null;
@@ -23049,6 +23081,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b290";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b291";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>

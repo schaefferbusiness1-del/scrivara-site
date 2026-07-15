@@ -5653,7 +5653,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.4.0';
+  var VERSION = 'fl-1.5.0';
   var _obs = null, _deb = null, _iv = null, _laneIv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
@@ -5711,13 +5711,6 @@
       if (typeof window.getActivePtId === 'function' && String(window.getActivePtId() || '') !== String(p.id)) return null;
       return p;
     } catch (e) { return null; }
-  }
-  function nativeDoctorScreen() {
-    try {
-      var api = window.__mlsEasyV32 || window.__mlsEasyV31 || window.__mlsEasyV3;
-      var s = api && typeof api.state === 'function' ? api.state() : null;
-      return !!(s && s.mode === 'doctor' && s.screen === 'doctor');
-    } catch (e) { return false; }
   }
   function segmentApi() {
     try { return window.__mlsRecSegments && window.__mlsRecSegments.installed ? window.__mlsRecSegments : null; } catch (e) { return null; }
@@ -5915,11 +5908,16 @@
     if (!staff) {
       /* (1a) Complete primary workflow: record, stop/resume, edit transcript,
          generate and edit the note without opening the optional workspace. */
-      var nativeDoctor = nativeDoctorScreen();
-      if (nativeDoctor) {
-        try { body.querySelectorAll('.ez3fl-record').forEach(function (n0) { n0.remove(); }); } catch (e0) {}
-      }
-      if (!nativeDoctor && !body.querySelector('.ez3fl-record')) {
+      /* fl-1.5.0: this top lane is the canonical easy workflow. The engine's
+         doctor-screen state is briefly inconsistent during its own renders;
+         removing the lane on that transient flag made the whole transcript
+         flash out and back every reconciliation cycle. Preserve the first
+         mounted lane (including textarea value, selection and focus), remove
+         only accidental extras, and create it only when it truly is absent. */
+      var mountedLanes = body.querySelectorAll('.ez3fl-record');
+      var mountedLane = mountedLanes.length ? mountedLanes[0] : null;
+      for (var laneIndex = 1; laneIndex < mountedLanes.length; laneIndex++) mountedLanes[laneIndex].remove();
+      if (!mountedLane) {
         var wrap = body.querySelector('#ez3Wrap');
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
@@ -6012,8 +6010,8 @@
           wrap.insertBefore(rec, row2);
           syncTopLane(rec);
         }
-      } else if (!nativeDoctor) {
-        syncTopLane(body.querySelector('.ez3fl-record'));
+      } else {
+        syncTopLane(mountedLane);
       }
       /* (1a1b) the home status line duplicated the banner strip's seen-count
          ("0/0 seen today") - keep provider + guards, drop the duplicate */
@@ -27754,6 +27752,7 @@
   function $(id) { return document.getElementById(id); }
   function S(x) { return x == null ? '' : String(x); }
   function todayLocal() {
+    try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {}
     var d = new Date();
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
@@ -28336,6 +28335,7 @@
 
   /* ---------- shared helpers ---------- */
   function todayLocal() {
+    try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {}
     var d = new Date();
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
@@ -28510,8 +28510,8 @@
      The top "X / Y seen" strip (feat_mls_dayprogress.js) hides itself because
      window._heroTodayList went EMPTY after the Who's-Next takeover churn — the meter's
      source of truth dried up while the same data still sits in _calAppts. Repopulate the
-     SAME shared source honestly from today's pulled schedule (name/time/provider only,
-     dedup by name+time). The strip then mounts by itself, and the b40 R3 pack keeps its
+     SAME shared source honestly from today's pulled schedule (including authoritative
+     start_at/start_local identity, deduped by appointment). The strip then mounts by itself, and the b40 R3 pack keeps its
      text provider-scoped ("X / Y seen", scoped to the selected doctor, honest
      "all providers" fallback). Data-refill only — no new UI, no duplicate strip. */
   function refillHeroToday() {
@@ -28522,13 +28522,16 @@
       var out = [], dupes = {};
       A.forEach(function (a) {
         if (!a) return;
-        var dt = String(a.date || a.appt_date || '');
+        var dt = String(a.day_local || a.date || a.appt_date || '');
         if (dt.indexOf(td) < 0) return;
         var nm = String(a.patient || a.name || '').trim(); if (!nm) return;
-        var k = nm.toLowerCase() + '|' + String(a.time || '');
+        var k = nm.toLowerCase() + '|' + String(a.appointment_id || a.appt_id || a.id || a.start_at || a.start_local || a.time || '');
         if (dupes[k]) return; dupes[k] = 1;
         try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(nm)) return; } catch (eSm) {} /* b253 */
-        out.push({ name: nm, time: a.time || '', provider: a.provider || a.doctor || '' });
+        out.push({ name: nm, time: a.time || '', time_display: a.time_display || '', start_local: a.start_local || '',
+          start_at: a.start_at || '', day_local: a.day_local || '', appt_date: a.appt_date || a.date || '',
+          appointment_id: a.appointment_id || '', appt_id: a.appt_id || '', athena_appointment_id: a.athena_appointment_id || '', id: a.id || '',
+          provider: a.provider || a.doctor || '' });
       });
       if (out.length) window._heroTodayList = out;
     } catch (e) {}
@@ -31488,7 +31491,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b290';
+  window.__MLS_AV = window.__MLS_AV || 'b291';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31821,7 +31824,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b290';
+  var MLS_APP_BUILD='2026-07-15-b291';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -34049,6 +34052,38 @@
     return '';
   }
 
+  /* Return only the one stored record that exactly represents the reviewed
+     patient. This uses the same namespace-aware identity rules as the send
+     guard; equal raw values in different ID namespaces never match. */
+  function storedPatient(ap){
+    try{
+      var list=patientList();
+      if(!list) return null;
+      var matches=list.filter(function(p){ return p&&samePatientIdentity(p,ap); });
+      return matches.length===1?matches[0]:null;
+    }catch(e){ return null; }
+  }
+  function portalChartData(ap,email){
+    var src=storedPatient(ap), data={}, k;
+    if(src&&typeof src==='object') for(k in src){ if(Object.prototype.hasOwnProperty.call(src,k)) data[k]=src[k]; }
+    data.id=ap.externalId;
+    data.name=ap.name||data.name||'';
+    data.dob=ap.dob||data.dob||'';
+    data.mrn=ap.mrn||data.mrn||'';
+    data.email=email;
+    return data;
+  }
+  function jsonResponse(r){
+    return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; });
+  }
+  function invitePatient(body,tk){
+    return fetch(API+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify(body)}).then(jsonResponse);
+  }
+  function syncPortalChart(ap,email,tk){
+    var data=portalChartData(ap,email);
+    return fetch(API+'/api/patients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify({external_id:ap.externalId,label:'',data:data})}).then(jsonResponse);
+  }
+
   function openModal(ap){
     if(document.getElementById('mlsPiBack')) return;
     var proof=patientIdentity(ap);
@@ -34102,13 +34137,27 @@
       if(!tk){ showMsg('You’re signed out — sign back into MLS and try again.',false); return; }
       var btn=box.querySelector('#mlsPiSend'); btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…';
       var body={ email:em, name:ap.name, dob:ap.dob, external_id:ap.externalId, mrn:ap.mrn };
-      fetch(API+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify(body)})
-        .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+      invitePatient(body,tk)
+        .then(function(res){
+          /* Patient saves mirror to the cloud best-effort. If that background
+             request was still in flight (or failed while offline), the invite
+             endpoint correctly returns 404 because no chart exists. Repair
+             this one exact frozen chart, then retry the invite exactly once. */
+          if(res.status!==404) return res;
+          btn.textContent='Saving patient...';
+          return syncPortalChart(ap,em,tk).then(function(saved){
+            if(!saved.ok) return {ok:false,status:saved.status,j:saved.j,chartSync:true};
+            btn.textContent='Sending...';
+            return invitePatient(body,tk);
+          });
+        })
         .then(function(res){
           if(res.ok && res.j && res.j.sent===false){
             showMsg('Portal access was created, but the email could not be sent. Ask your MLS admin to check the mail service, then resend.',false);
           }
           else if(res.ok){ showMsg('✓ Portal login sent to '+em+'.',true); setTimeout(close,1900); }
+          else if(res.chartSync && res.status===402){ showMsg('Patient portal invites require active MLS access. Enter an access code or ask the account owner to activate this login.',false); }
+          else if(res.chartSync){ showMsg((res.j&&(res.j.message||res.j.error))||'The selected patient could not be saved to your MLS cloud. Try again shortly.',false); }
           else if(res.status===401||res.status===403){ showMsg('This account isn’t authorized to send invites (needs admin). Ask the owner to send it.',false); }
           else if(res.status===409){ showMsg((res.j&&res.j.error)||'A portal account already exists for this patient or email.',false); }
           else if(res.status===502){ showMsg('The invite was created, but the email service could not send it. Try again shortly or ask your MLS admin to check mail setup.',false); }
@@ -38757,7 +38806,7 @@
 ;/* === item69,70,72,73,77,78 promoted staging->prod 2026-06-30 (item74 snapshot & item76 allergy SKIPPED: already present in prod, no duplicates) === */
 ;(function(){try{var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629os1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
 ;(function(){try{var A="feat_mls_pervisit_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629pvu1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item70: unify copy-every-visit + per-visit records into one coherent timeline/detail surface + verify single model; additive, reversible: window.__mlsPerVisitUnify.revert() */
-;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714dp5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
+;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260715dp6";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
 ;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714rp2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
 ;(function(){try{var A="feat_mls_ptsnapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714ps2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient snapshot chip: stable, deduplicated header rendering */
 ;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714ag-stable1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
