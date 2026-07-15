@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '2.2.0';
+  var VERSION = '2.2.1';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -387,6 +387,15 @@
     if (cleaned.length !== arr.filter(hasProviderSignal).length || cleaned.some(function (e) { return e.providerEligible === false; })) _cacheSanitized = true;
     return cleaned;
   }
+  /* A string-derived `athena:*` stable key is a punctuation echo of its own
+     display text only when the key body reduces to the SAME letters as the
+     clinician's canonical identity. Opaque supplied keys (e.g. athena:alex-1)
+     carry information beyond the display string and stay distinct identities. */
+  function stringEchoEquivalent(e) {
+    if (!e || e.id || !/^athena:/.test(String(e.stableKey || '')) || !e.equivalentKey) return '';
+    var body = String(e.stableKey).slice(7).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return body && body === String(e.equivalentKey).toLowerCase().replace(/[^a-z0-9]/g, '') ? e.equivalentKey : '';
+  }
   var _lastMergeIdentityConflict = false;
   function mergeEntries(list, source) {
     var have = storedEntries(), byKey = {}, order = [], conflicted = {};
@@ -421,6 +430,45 @@
       byKey[k] = chosen;
     });
     var candidates = order.map(function (k) { return byKey[k]; }).filter(Boolean);
+    /* String-derived `athena:*` stable keys are display evidence, never real
+       Athena identities (a display name alone is never an identity). Two
+       id-less string keys naming the SAME canonical clinician are punctuation
+       echoes of one person, not two providers (live 2026-07-15: the comma
+       variant "athena:matthew schaeffer, md" beside "athena:matthew schaeffer
+       md" contradicted the sweep receipt count and failed every pull).
+       Collapse them into the strongest entry — or into the UNIQUE id-bearing
+       entry for that clinician — keeping dropped keys as aliases so an old
+       dropdown selection still resolves. Entries with distinct real backend
+       ids remain independently routable. */
+    (function collapseStringEchoes() {
+      var groups = {};
+      candidates.forEach(function (e) {
+        if (e.equivalentKey) (groups[e.equivalentKey] = groups[e.equivalentKey] || []).push(e);
+      });
+      Object.keys(groups).forEach(function (eq) {
+        var group = groups[eq];
+        var stringOnly = group.filter(function (e) { return stringEchoEquivalent(e) === eq; });
+        if (!stringOnly.length) return;
+        var idBearing = group.filter(function (e) { return !!e.id; });
+        var keep = null;
+        if (idBearing.length === 1) keep = idBearing[0];
+        else if (idBearing.length === 0 && stringOnly.length >= 2) {
+          keep = stringOnly.reduce(function (a, b) { return providerEntryStrength(b) > providerEntryStrength(a) ? b : a; });
+        }
+        if (!keep) return; /* multiple real ids share the name: ambiguous echoes stay untouched and resolution fails closed */
+        var aliasSeen = {};
+        (keep.aliases || []).forEach(function (a) { if (a) aliasSeen[a] = 1; });
+        stringOnly.forEach(function (e) {
+          if (e === keep) return;
+          (e.aliases || []).concat([e.stableKey, e.raw]).forEach(function (a) { if (a) aliasSeen[a] = 1; });
+          keep.rosterVerified = keep.rosterVerified || e.rosterVerified;
+          e.__mlsEchoDrop = true;
+          _cacheSanitized = true; /* a fresh clean exact sweep in the same ingest resets this */
+        });
+        keep.aliases = Object.keys(aliasSeen);
+      });
+      candidates = candidates.filter(function (e) { return e.__mlsEchoDrop !== true; });
+    })();
     /* Drop an id-less legacy echo whenever one or more exact canonical strong
        identities already exist. Distinct real IDs/stable Athena identities are
        deliberately retained; same-name clinicians remain independently routable. */
@@ -712,8 +760,20 @@
       var requestEchoConflict = !!(extensionReceiptRequestId && respRequestId && extensionReceiptRequestId !== respRequestId) ||
         !!(extensionReceiptRequestId && boundOperation && extensionReceiptRequestId !== boundOperation.requestId);
       if (receiptInput && receiptInput.complete === true) {
-        var uniqueStructured = {}, uniqueCount = 0;
-        structuredRoster.forEach(function (e) { if (!uniqueStructured[e.stableKey]) { uniqueStructured[e.stableKey] = 1; uniqueCount++; } });
+        /* Count unique CLINICIANS with the same collapse semantics the merge
+           applies: string-derived athena:* keys are punctuation echoes, not
+           identities — they fold into a unique same-clinician id entry, or
+           collapse together when no id exists. Distinct real ids each count. */
+        var uniqueStructured = {}, uniqueCount = 0, idEqCounts = {};
+        structuredRoster.forEach(function (e) { if (e.id && e.equivalentKey) idEqCounts[e.equivalentKey] = (idEqCounts[e.equivalentKey] || 0) + 1; });
+        structuredRoster.forEach(function (e) {
+          var echoEq = stringEchoEquivalent(e);
+          var key;
+          if (echoEq && idEqCounts[echoEq] === 1) return;
+          if (echoEq && !idEqCounts[echoEq]) key = 'echo|' + echoEq;
+          else key = e.stableKey;
+          if (!uniqueStructured[key]) { uniqueStructured[key] = 1; uniqueCount++; }
+        });
         var declaredObserved = receiptInput.observedCount == null ? null : Number(receiptInput.observedCount);
         var declaredExpected = receiptInput.expectedCount == null ? null : Number(receiptInput.expectedCount);
         /* Exact duplicate stable identities are harmless and are intentionally

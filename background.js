@@ -6317,8 +6317,12 @@ async function mlsSchedDomInline(doc, CFG){
         }
         (((pick && pick.s && pick.s.providerRoster) || [])).forEach(__addProviderRosterEntry);
         /* Older structure lanes do not yet emit structured entries. Preserve
-           exact raw header identity as an explicitly unverified fallback. */
-        (__mlsM.providers || []).forEach(__addProviderRosterEntry);
+           exact raw header identity as an explicitly unverified fallback -
+           ONLY when the picked lane supplied no structured roster. Appending
+           merged display-string echoes beside a lane roster mints a phantom
+           comma-variant twin of the same clinician and contradicts the sweep
+           receipt count, failing every pull (live 2026-07-15). */
+        if (!__providerRoster.length) (__mlsM.providers || []).forEach(__addProviderRosterEntry);
         var __providerRosterReceipt = (pick && pick.s && pick.s.providerRosterReceipt) || {
           complete: false, partial: true, reason: __providerRoster.length ? 'legacy-unverified' : 'no-provider-headers',
           expectedCount: null, observedCount: __providerRoster.length, horizontalScrollable: null,

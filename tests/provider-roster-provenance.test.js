@@ -25,6 +25,8 @@ assert(backgroundSrc.includes("{ requestId: __schedRequestId, targetDate: (pick 
   'extension provider-roster receipt must be stamped with request id and served date');
 assert(backgroundSrc.includes("expectedCount:(_declProvS&&_provObservedS===_declProvS)?_declProvS:null"),
   'a weak text-declared provider count may only corroborate an exactly matching observed sweep, never masquerade as the expected total (live 2026-07-15: body text "1 provider" vs 2 proven headers failed every pull)');
+assert(backgroundSrc.includes("if (!__providerRoster.length) (__mlsM.providers || []).forEach(__addProviderRosterEntry);"),
+  'merged display-string providers may only backfill the roster when the picked lane supplied no structured entries (live 2026-07-15: a comma-variant echo of the same clinician contradicted the sweep receipt count)');
 assert(siSrc.includes('schedule-request-unbound'), 'importer must fail closed on an unbound schedule receipt');
 assert(siSrc.includes('provider-roster-unbound'), 'importer must fail closed on an unbound roster receipt');
 assert(siSrc.includes('roster.beginOperation') || siSrc.includes('beginOperation(rosterOperation)'),
@@ -109,6 +111,45 @@ function reply(requestId, extra) {
   assert.strictEqual(receipt.providerMode, 'all');
   assert.strictEqual(receipt.requestedProviderId, '');
   assert.strictEqual(receipt.requestedProviderStableKey, '');
+}
+
+/* 2b. Live 2026-07-15 regression: a punctuation echo of the SAME clinician on
+   two string-derived athena:* keys is one person, not two. It must collapse
+   (with aliases preserved) instead of contradicting the sweep receipt count,
+   while distinct real backend ids keep same-name clinicians separately
+   routable. */
+{
+  const api = freshRoster();
+  api.beginOperation({ targetDate: '2026-07-15', requestId: 'rq-echo', providerMode: 'all', requestedProviderId: '', requestedProviderStableKey: '' });
+  api.ingestResp({
+    ok: true, requestId: 'rq-echo', id: 'rq-echo',
+    providerRoster: [
+      { stableKey: 'athena:matthew schaeffer md', raw: 'Matthew Schaeffer MD', name: 'Matthew Schaeffer, MD', source: 'athena-schedule-header' },
+      { stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD', name: 'Matthew Schaeffer, MD', source: 'athena-schedule-header' }
+    ],
+    providerRosterReceipt: Object.assign(completeSweep(), { expectedCount: 1, observedCount: 1, requestId: 'rq-echo', targetDate: '2026-07-15' })
+  });
+  const entries = api.list().filter(e => /matthew/i.test(e.name || ''));
+  assert.strictEqual(entries.length, 1, 'a comma-variant string echo must collapse into ONE clinician entry');
+  const resolved = api.resolve('athena:matthew schaeffer, md');
+  assert(resolved && resolved.stableKey === entries[0].stableKey, 'the dropped echo key must still resolve to the surviving clinician via aliases');
+  const receipt = api.getReceipt();
+  assert.strictEqual(receipt.complete, true, 'a clean single-provider sweep with a collapsed echo must stay complete');
+  assert.strictEqual(receipt.requestId, 'rq-echo', 'the collapsed-echo receipt must stay batch-bound');
+}
+{
+  const api = freshRoster();
+  api.beginOperation({ targetDate: '2026-07-15', requestId: 'rq-two-real', providerMode: 'all', requestedProviderId: '', requestedProviderStableKey: '' });
+  api.ingestResp({
+    ok: true, requestId: 'rq-two-real', id: 'rq-two-real',
+    providerRoster: [
+      { stableKey: 'backend:7', id: '7', raw: 'Same_Alex_MD', name: 'Alex Same, MD', source: 'athena-schedule-header' },
+      { stableKey: 'backend:8', id: '8', raw: 'Same_Alex_MD', name: 'Alex Same, MD', source: 'athena-schedule-header' }
+    ],
+    providerRosterReceipt: Object.assign(completeSweep(), { expectedCount: 2, observedCount: 2, requestId: 'rq-two-real', targetDate: '2026-07-15' })
+  });
+  const entries = api.list().filter(e => /alex same/i.test(e.name || ''));
+  assert.strictEqual(entries.length, 2, 'two REAL same-name clinicians with distinct backend ids must both survive');
 }
 
 /* 3. Weakly typed / contradictory operations refuse to arm. */
