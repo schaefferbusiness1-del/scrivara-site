@@ -40,7 +40,10 @@
       }
       api.stats.misses++;
       var v;
-      try { v = JSON.parse(s) || []; } catch (e) { v = []; }
+      /* 2026-07-15: the patients blob may be LZ-packed ('MLSZ1|' prefix); the
+         base app exposes the decoder. Cache identity still keys on the RAW
+         stored string, so packed writes invalidate exactly like plain ones. */
+      try { v = JSON.parse(typeof window.__mlsPtsDecode === 'function' ? window.__mlsPtsDecode(s) : s) || []; } catch (e) { v = []; }
       if (!Array.isArray(v)) return v;
       cache.key = k; cache.str = s; cache.val = v; cache.at = now;
       return v.slice();
@@ -31493,7 +31496,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b296';
+  window.__MLS_AV = window.__MLS_AV || 'b297';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31784,7 +31787,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b296';
+  var MLS_APP_BUILD='2026-07-15-b297';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
