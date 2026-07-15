@@ -102,7 +102,11 @@ function makeReader(options = {}) {
   const listeners = [];
   const context = {
     console, Promise, Date, Math, Object, Array, String, Number, RegExp, JSON,
-    setTimeout: (fn) => { queueMicrotask(fn); return 1; }, clearTimeout: () => {},
+    /* Hydration/poll sleeps stay immediate, while absolute-deadline timers stay
+       pending. Making every timeout immediate lets the new hard-deadline race
+       beat even an already-resolved browser operation, which is not a browser
+       timing model and masks the reader behavior this fixture is testing. */
+    setTimeout: (fn, ms) => { if (Number(ms || 0) < 10000) queueMicrotask(fn); return 1; }, clearTimeout: () => {},
     setInterval: () => 1, clearInterval: () => {},
     mlsReadChartIdentity: function identityReader() {},
     mlsReadChartIdentityShadow: function identityShadowReader() {},

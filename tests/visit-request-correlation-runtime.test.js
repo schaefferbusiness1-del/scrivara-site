@@ -235,11 +235,11 @@ function testBackgroundRequestIdPlumbing() {
   const end = backgroundSource.indexOf('\n})();', start);
   assert(start >= 0 && end > start, 'all-visits background reader IIFE missing');
   const reader = backgroundSource.slice(start, end);
-  assert(reader.includes('function runAllVisits(appTabId, hint, cfg, requestId)'), 'reader did not accept the frozen request id');
+  assert(reader.includes('function runAllVisits(appTabId, hint, cfg, requestId, callerDeadlineAt)'), 'reader did not accept the frozen request id and caller deadline');
   assert(reader.includes("type: 'mlsAppVisitsProgress', requestId: String(requestId || '').slice(0, 100)"), 'background progress omitted request correlation');
   assert(reader.includes('var frozenRequestId = String(requestId || \'\').slice(0, 100)'), 'request id was not frozen at read start');
   assert(reader.includes('var transportRequestId = String(msg.requestId || \'\').slice(0, 100)'), 'runtime request id was not frozen at bridge entry');
-  assert(reader.includes('runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId)'), 'runtime request id was not threaded into the reader');
+  assert(reader.includes('runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt)'), 'runtime request id and caller deadline were not threaded into the reader');
   const emitLines = reader.split(/\r?\n/).filter(line => line.includes('emit(appTabId'));
   assert(emitLines.length >= 5, 'expected all visit progress milestones were not found');
   assert(emitLines.every(line => line.includes('frozenRequestId')), 'one or more reader progress milestones is uncorrelated');

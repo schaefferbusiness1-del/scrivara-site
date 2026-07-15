@@ -18,7 +18,7 @@ for (const marker of [
   'viewportCoverage=_coverageS',
   '_coverageS.positionsReached===_coverageS.cellsPlanned',
   'mlsParseName(t0)',
-  "var logicalKey=anchor.appointmentId?('appt:'",
+  "logicalKey=anchor.appointmentId?('appt:'",
   'out.diag.candidateCount=out.appts.length+_unmS',
   'out.diag.duplicateRowsRemoved=',
   'if(out.appts.length||_unmS)return out'

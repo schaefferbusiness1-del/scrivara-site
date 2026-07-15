@@ -25,7 +25,7 @@ let chartSaves = 0;
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
   encodeURIComponent, queueMicrotask,
-  setTimeout: () => 1, clearTimeout: () => {}, setInterval: () => 1, clearInterval: () => {},
+  setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
   location: { pathname: '/ScribeFlow-staging.html' },
   localStorage: {
     getItem: key => store.has(key) ? store.get(key) : null,
@@ -84,9 +84,10 @@ context.postMessage = msg => {
   queueMicrotask(() => {
     const target = patients.find(p => (msg.hint.athenaId && p.mrn === msg.hint.athenaId) || (p.name === msg.hint.name && p.dob === msg.hint.dob));
     assert(target, 'history request must carry Athena MRN or name+DOB, never rely on a local patient ID');
-    const event = { data: {
-      source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
-      identity: { name: target.name, dob: target.dob, mrn: target.mrn },
+     const event = { data: {
+       source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
+       id: msg.id, requestId: msg.requestId,
+       identity: { name: target.name, dob: target.dob, mrn: target.mrn },
       visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'A substantive verified encounter body used only by this regression test.', patientName: target.name, patientDob: target.dob, patientMrn: target.mrn, fullDetail: true, sourceVisitKey: 'row:schedule-identity-1' }],
       receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
       readerVersion: '2.9.22-visits-r4-two-stage'
@@ -113,19 +114,22 @@ context._parsePatientChart = () => Promise.resolve({
   coverage: { problems: 'found', meds: 'found', allergies: 'found', summary: 'found', vitals: 'found', history: 'found' }
 });
 context._athenaChartProfileCoverage = () => ({ complete: true });
-context._savePatientChart = ref => {
+context._athenaChartSnapshotFromChart = chart => ({ problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] });
+context._athenaChartSnapshotProof = snapshot => JSON.stringify(snapshot || {});
+context._savePatientChart = (ref, _row, chart) => {
   chartSaves++;
   const p = patients.find(one => one.id === ref.patientId);
-  p.athenaProfileCoverage = { complete: true, exactIdentityVerified: true, patientId: p.id, cards: {
+  p.athenaChartSnapshot = context._athenaChartSnapshotFromChart(chart);
+  p.athenaProfileCoverage = { complete: true, exactIdentityVerified: true, patientId: p.id, capturedAt: new Date().toISOString(), saveRequestId: String(ref.requestId || ''), cards: {
     problems: { populated: true }, meds: { populated: true }, allergies: { populated: true }, summary: { populated: true }, vitals: { populated: true }, history: { populated: true }
   } };
   return true;
 };
 context._patientHistoryCardCoverage = id => (patients.find(p => p.id === id) || {}).athenaProfileCoverage || null;
-context._assistReadChart = target => {
+context._assistReadChart = (target, _onStatus, request) => {
   assistCalls++;
   const text = 'Verified problems medications allergies and longitudinal clinical history';
-  const requestId = `chart-${assistCalls}`;
+  const requestId = String(request && request.requestId || `chart-${assistCalls}`);
   const base = { text, requestId, chartName: target.name, chartDob: target.dob, chartMrn: target.mrn };
   if (assistMode === 'missing-coverage') return Promise.resolve(base);
   base.coverageReceipt = {
@@ -138,16 +142,33 @@ context._assistReadChart = target => {
 context.__mlsVisitModel = {
   addVisit: (id, raw) => { patients.find(p => p.id === id).visits.push(raw); return raw; },
   getVisits: patient => patient.visits,
+  reconcileVerifiedAthenaVisits: id => {
+    const patient = patients.find(p => p.id === id);
+    const seen = new Set();
+    const before = patient.visits.length;
+    patient.visits = patient.visits.filter(v => {
+      const key = String(v.encounterId || v.sourceVisitKey || '');
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    return { complete: true, removed: before - patient.visits.length, retained: patient.visits.length };
+  },
   organizePatientHistory: id => ({ ok: true, verifiedVisits: patients.find(p => p.id === id).visits.length })
 };
 context.__mlsCopyVisits = {
-  _saveVisits: (patient, _identity, visits) => { visits.forEach(v => patient.visits.push(v)); return visits.length; },
+  _saveVisits: (patient, _identity, visits) => {
+    visits.forEach(v => patient.visits.push(Object.assign({}, v, {
+      source: 'athena-schedule-history', identityVerified: true, identityBinding: patient.id,
+      indexOnly: false, fullDetail: true, bodyComplete: true
+    })));
+    return visits.length;
+  },
   _visitIdentityAgrees: () => true
 };
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.6.0');
+assert(api && api.version === 'si-1.6.1');
 
 (async () => {
   assert.strictEqual(api._findPatient([patients[0]], { name: patients[0].name }), null,
@@ -197,6 +218,94 @@ assert(api && api.version === 'si-1.6.0');
   assert.strictEqual(postedBodies[0].athena_provider_id, 'provider-1', 'source provider id was not persisted on create');
   assert.strictEqual(nameOnlyResult.historyTargets.length, 0, 'name-only row entered the history reader');
   assert.strictEqual(nameOnlyResult.historyUnresolved[0].reason, 'patient-not-resolved');
+
+  /* A source appointment id is exact enough to preserve/idempotently recognize
+     the schedule row, but it is not current patient identity proof. In
+     particular, an old backend row's DOB/MRN must not leak into a fresh
+     name-only row and launch a history read for that bound patient. */
+  backendRows = [{
+    id: 'backend-reused-name-only', athena_appointment_id: 'reused-name-only-source-id',
+    name: patients[1].name, dob: patients[1].dob, mrn: patients[1].mrn,
+    patient_external_id: patients[1].id, appt_date: '2026-07-17', start_at: '2026-07-17T10:10:00.000Z',
+    provider: 'Doctor One', athena_provider_id: 'provider-1'
+  }];
+  postedBodies.length = 0; mutations.length = 0;
+  const reusedNameOnly = await api.importAppts([{
+    appointmentId: 'reused-name-only-source-id', name: patients[0].name,
+    date: '2026-07-17', time: '10:10', provider: 'Doctor One', providerId: 'provider-1'
+  }], { date: '2026-07-17', scopeDate: '2026-07-17' });
+  assert.strictEqual(reusedNameOnly.created, 0, 'name-only exact appointment was duplicated');
+  assert.strictEqual(reusedNameOnly.skipped, 1, 'existing exact appointment did not remain schedule-visible');
+  assert.strictEqual(reusedNameOnly.failed, 0, 'schedule reconciliation failed only because current identity proof was absent');
+  assert.strictEqual(postedBodies.length, 0, 'name-only exact appointment created or updated a backend binding');
+  assert.strictEqual(mutations.length, 0, 'name-only exact appointment mutated the old backend row');
+  assert.strictEqual(backendRows[0].patient_external_id, patients[1].id, 'existing schedule row was destructively unbound');
+  assert.strictEqual(reusedNameOnly.historyTargets.length, 0, 'old appointment DOB/MRN was copied into a current history target');
+  assert(reusedNameOnly.historyUnresolved.some(row => row.patientId === patients[1].id && row.reason === 'missing-source-dob-mrn-proof'),
+    'current name-only row was not retained as history-unresolved');
+  const historyCallsBeforeNameOnly = assistCalls;
+  const reusedNameOnlyHistory = await api._runHistoryBatch(reusedNameOnly.historyTargets, reusedNameOnly.historyUnresolved, () => {});
+  assert.strictEqual(reusedNameOnlyHistory.requested, 1, 'unresolved current row was omitted from the honest history receipt');
+  assert.strictEqual(reusedNameOnlyHistory.processed, 0, 'current name-only row was processed as an exact history target');
+  assert.strictEqual(assistCalls, historyCallsBeforeNameOnly, 'current name-only row launched a chart/history pull');
+
+  backendRows = [];
+  postedBodies.length = 0;
+  const newDuplicateResult = await api.importAppts([{
+    appointmentId: 'new-duplicate-a', name: 'Brand New Duplicate', dob: '02/03/1971', mrn: 'NEW-MRN-A',
+    date: '2026-07-16', time: '10:20', provider: 'Doctor One', providerId: 'provider-1'
+  }, {
+    appointmentId: 'new-duplicate-b', name: 'Brand New Duplicate', dob: '04/05/1982', mrn: 'NEW-MRN-B',
+    date: '2026-07-16', time: '10:20', provider: 'Doctor One', providerId: 'provider-1'
+  }], { date: '2026-07-16', scopeDate: '2026-07-16' });
+  assert.strictEqual(newDuplicateResult.created, 2, 'two brand-new same-name patients with different proof were collapsed');
+  assert.strictEqual(newDuplicateResult.historyTargets.length, 2, 'brand-new proven schedule patients did not become exact history targets');
+  assert.strictEqual(new Set(Array.from(newDuplicateResult.historyTargets, row => row._mlsTargetPatientId)).size, 2,
+    'different DOB/MRN rows shared one local patient id');
+  assert.deepStrictEqual(Array.from(newDuplicateResult.historyTargets, row => row._mlsTargetDob).sort(), ['02/03/1971', '04/05/1982']);
+  assert.deepStrictEqual(Array.from(newDuplicateResult.historyTargets, row => row._mlsTargetMrn).sort(), ['NEW-MRN-A', 'NEW-MRN-B']);
+
+  backendRows = [{
+    id: 'bound-missing', athena_appointment_id: 'bound-missing-proof', name: patients[0].name,
+    dob: '', patient_external_id: patients[0].id, appt_date: '2026-07-18', start_at: '2026-07-18T12:00:00.000Z',
+    provider: 'Doctor One', athena_provider_id: 'provider-1'
+  }, {
+    id: 'bound-exact', athena_appointment_id: 'bound-later-proof', name: patients[0].name,
+    dob: '', patient_external_id: patients[0].id, appt_date: '2026-07-18', start_at: '2026-07-18T12:20:00.000Z',
+    provider: 'Doctor One', athena_provider_id: 'provider-1'
+  }];
+  postedBodies.length = 0;
+  const laterProof = await api.importAppts([{
+    appointmentId: 'bound-missing-proof', name: patients[0].name,
+    date: '2026-07-18', time: '12:00', provider: 'Doctor One', providerId: 'provider-1'
+  }, {
+    appointmentId: 'bound-later-proof', name: patients[0].name, dob: patients[0].dob, mrn: patients[0].mrn,
+    date: '2026-07-18', time: '12:20', provider: 'Doctor One', providerId: 'provider-1'
+  }], { date: '2026-07-18', scopeDate: '2026-07-18' });
+  assert.deepStrictEqual(Array.from(laterProof.historyTargets, row => row._mlsTargetPatientId), [patients[0].id],
+    'a provisional missing-proof row blocked a later exact row for the same patient');
+  assert.strictEqual(laterProof.historyUnresolved.some(row => row.patientId === patients[0].id && row.reason === 'missing-source-dob-mrn-proof'), false,
+    'superseded missing-proof history result remained in the batch receipt');
+
+  backendRows = [{
+    id: 'bound-good', athena_appointment_id: 'bound-good-proof', name: patients[0].name,
+    dob: '', patient_external_id: patients[0].id, appt_date: '2026-07-19', start_at: '2026-07-19T12:00:00.000Z',
+    provider: 'Doctor One', athena_provider_id: 'provider-1'
+  }, {
+    id: 'bound-conflict', athena_appointment_id: 'bound-conflicting-proof', name: patients[0].name,
+    dob: '', patient_external_id: patients[0].id, appt_date: '2026-07-19', start_at: '2026-07-19T12:20:00.000Z',
+    provider: 'Doctor One', athena_provider_id: 'provider-1'
+  }];
+  const laterConflict = await api.importAppts([{
+    appointmentId: 'bound-good-proof', name: patients[0].name, dob: patients[0].dob, mrn: patients[0].mrn,
+    date: '2026-07-19', time: '12:00', provider: 'Doctor One', providerId: 'provider-1'
+  }, {
+    appointmentId: 'bound-conflicting-proof', name: patients[0].name, dob: '09/09/1999', mrn: 'WRONG-MRN-9',
+    date: '2026-07-19', time: '12:20', provider: 'Doctor One', providerId: 'provider-1'
+  }], { date: '2026-07-19', scopeDate: '2026-07-19' });
+  assert.strictEqual(laterConflict.historyTargets.length, 0, 'a later conflicting row left an earlier exact history target queued');
+  assert(laterConflict.historyUnresolved.some(row => row.patientId === patients[0].id && row.reason === 'source-proof-conflict'),
+    'genuine later identity conflict was not retained as a fail-closed result');
 
   const partialPatient = patients[2];
   backendRows = [{

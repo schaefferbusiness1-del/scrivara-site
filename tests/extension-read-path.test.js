@@ -31,8 +31,8 @@ assert(
 const busyRefusals = background.match(/reason:\s*'athena-navigation-busy'/g) || [];
 assert.strictEqual(busyRefusals.length, 2, 'both GotoDate and GoHome must refuse overlap after the bounded wait');
 assert(
-  /while \(self\.__mlsGroundBusy[\s\S]{0,260}if \(self\.__mlsGroundBusy\) return sendResponse\(\{ ok: false, supported: true, reason: 'athena-navigation-busy'/.test(background),
-  'GotoDate must check the lock again before claiming it'
+  /while \(self\.__mlsGroundBusy[\s\S]{0,420}if \(self\.__mlsGroundBusy\) return __gotoRespond\(\{ ok: false, supported: true, reason: 'athena-navigation-busy'/.test(background),
+  'GotoDate must re-check the lock inside the caller deadline before claiming it'
 );
 assert(
   /while \(self\.__mlsGroundBusy[\s\S]{0,260}if \(self\.__mlsGroundBusy\) return sendResponse\(\{ ok: false, reason: 'athena-navigation-busy'/.test(background),
@@ -59,9 +59,13 @@ const gotoDateHandler = background.slice(
   background.indexOf("if (msg.type === 'mlsAppGotoDateRequest')"),
   background.indexOf("if (msg.type === 'mlsAppGoHomeRequest')")
 );
-assert(gotoDateHandler.includes('const initX = await mlsExecTO('));
-assert(gotoDateHandler.includes('const chk2X = await mlsExecTO('));
-assert(gotoDateHandler.includes('const chkX = await mlsExecTO('));
+assert(gotoDateHandler.includes('const initX = await __gotoExec('));
+assert(gotoDateHandler.includes('const chk2X = await __gotoExec('));
+assert(gotoDateHandler.includes('const chkX = await __gotoExec('));
+assert(gotoDateHandler.includes('Math.min(__gotoDeadlineAt, __gotoCallerDeadline)'), 'GotoDate lost the caller-clamped deadline');
+assert(gotoDateHandler.includes('args: [date, !!msg.probe, __gotoGuard]'), 'initial GotoDate injection lost its immutable action guard');
+assert(gotoDateHandler.includes('args: [date, false, __gotoGuard]'), 'recovery GotoDate injection lost its immutable action guard');
+assert(gotoDateHandler.includes("__gotoCleanup('goto-date-terminal', false)"), 'GotoDate response cleanup is not detached/token-owned');
 assert(!gotoDateHandler.includes('await chrome.scripting.executeScript('), 'GotoDate must not contain an unbounded renderer injection');
 
 // The current extension owns the patient open + banner identity gate. The old
@@ -69,12 +73,13 @@ assert(!gotoDateHandler.includes('await chrome.scripting.executeScript('), 'Goto
 // the page's 30-second timeout. A slow verified read now gets the extension's
 // full bounded budget and responses are correlated to their initiating call.
 const chartRead = between(app, 'function _assistReadChart(patientRef, onStatus)', '/* ===== Pull a PATIENT');
-assert(chartRead.includes("requestId='chart-"));
+assert(chartRead.includes("var requestId=suppliedRequestId||('chart-'"), 'chart read lost its correlated request id (supplied-or-generated)');
+assert(chartRead.includes('__mlsAbsoluteDeadline'), 'chart read lost its absolute-deadline scheduler');
 assert(chartRead.includes('requestId:requestId'));
 assert(chartRead.includes("patientDob:String(target.dob||'')"));
 assert(chartRead.includes("patientMrn:String(target.mrn||target.athenaId||'')"));
 assert(chartRead.includes("patientId:String(target.patientId||target.id||'')"));
-assert(chartRead.includes('e.data.requestId!==requestId'));
+assert(chartRead.includes("!e.data.requestId||String(e.data.requestId)!==requestId"), 'ID-less chart responses must not settle a correlated read');
 assert(chartRead.includes('100000'));
 assert(!chartRead.includes("new Error('OLDEXT')"));
 const pullPatient = between(app, 'async function pullPatientChartViaAssist(btn, opts)', '/* Save a parsed Athena chart');

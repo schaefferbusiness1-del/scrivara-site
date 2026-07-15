@@ -167,6 +167,11 @@ async function main() {
   dispatch('message', { data: { source: 'mls-ext', type: 'mlsPong' } });
   let request = posted.filter(x => x.type === 'mlsAppReadChart').pop();
   assert(request && request.patientId === 'same-a' && request.patientDob === '01/02/1970', 'chart request omitted its immutable target identity');
+  let idlessSettled = false;
+  read.then(() => { idlessSettled = true; }, () => { idlessSettled = true; });
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: true, requestId: request.requestId, text: 'idless stale chart', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'idless stale chart') } } });
+  await Promise.resolve();
+  assert.strictEqual(idlessSettled, false, 'an ID-less chart response settled a stateful exact-patient read');
   dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, resp: { ok: true, requestId: request.requestId, text: 'wrong duplicate chart', chartName: 'Alex Same', chartDob: '03/04/1980', chartMrn: '222', receipt: chartReceipt(request.requestId, 'wrong duplicate chart') } } });
   await assert.rejects(read, /matching DOB\/MRN proof/, 'same-name patient B response was accepted for patient A');
 
@@ -176,6 +181,29 @@ async function main() {
   dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, resp: { ok: true, requestId: request.requestId, text: 'verified chart A', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'verified chart A') } } });
   const verifiedRead = await read;
   assert.strictEqual(verifiedRead.targetPatientId, 'same-a');
+
+  const nestedIdlessRead = context._assistReadChart(targetA, () => {});
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsPong' } });
+  const nestedIdlessRequest = posted.filter(x => x.type === 'mlsAppReadChart').pop();
+  const nestedIdlessText = 'outer-only correlated chart';
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: nestedIdlessRequest.requestId, resp: { ok: true, text: nestedIdlessText, chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(nestedIdlessRequest.requestId, nestedIdlessText) } } });
+  await assert.rejects(nestedIdlessRead, /every patient chart frame/, 'a success response without its own exact requestId passed the chart receipt gate');
+
+  // If the shared absolute scheduler cannot arm a deadline at all, the chart
+  // read is already terminal and must not emit a ping or a stateful chart read.
+  const postedBeforeTerminalArm = posted.length;
+  context.__mlsAbsoluteDeadline = {
+    arm(deadlineAt, callback) {
+      callback();
+      const cancel = () => {};
+      cancel.isTerminal = () => true;
+      return cancel;
+    }
+  };
+  const terminalArmRead = context._assistReadChart(targetA, () => {}, { requestId: 'chart-terminal-arm', deadlineAt: Date.now() + 60000 });
+  await assert.rejects(terminalArmRead, /chart-read-deadline-exceeded/);
+  assert.strictEqual(posted.length, postedBeforeTerminalArm, 'chart bridge dispatched after its deadline arm was terminal');
+  delete context.__mlsAbsoluteDeadline;
 
   async function expectFrameRefusal(overrides, label) {
     const pending = context._assistReadChart(targetA, () => {});

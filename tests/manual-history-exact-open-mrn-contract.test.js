@@ -23,7 +23,7 @@ const visitsBridge = between(content, "if (d.type === 'mlsAppReadVisits')", '// 
 const genericOpenBridge = between(content, '/* (2) Search-and-navigate relay', '/* =========================================================================\n * MLS Assist v1.50');
 const findDriver = between(background, 'async function mlsFindPatientOpenDriverFn', "chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse)");
 const searchHandler = between(background, "if (msg.type === 'mlsAppSearchOpenRequest')", '// not ours — let other listeners handle it');
-const allVisits = between(background, 'function runAllVisits(appTabId, hint, cfg, requestId)', '// --- v1.40: publish the PROVEN read-all-visits engine');
+const allVisits = between(background, 'function runAllVisits(appTabId, hint, cfg, requestId, callerDeadlineAt)', '// --- v1.40: publish the PROVEN read-all-visits engine');
 
 // The profile button must establish a fresh exact-chart receipt before asking
 // the encounter reader to touch the Visits UI.
@@ -38,7 +38,8 @@ assert(manualRun.includes('patientMrn: targetRef.mrn') && manualRun.includes('pa
 assert(chartBridge.includes("type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn"), 'chart SearchOpen drops the frozen MRN');
 assert(visitsBridge.includes("type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId"), 'Visits recovery SearchOpen drops the frozen MRN');
 assert(genericOpenBridge.includes('mrn: mrnHint'), 'generic SearchOpen bridge drops its MRN hint');
-assert(findDriver.startsWith('async function mlsFindPatientOpenDriverFn(name, dob, mrn)'), 'findpatient driver does not accept MRN');
+assert(findDriver.startsWith('async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn)'), 'findpatient driver does not accept a separate immutable guard and MRN');
+assert(findDriver.includes('deadline: Number(__guardArg.deadline || 0)') && findDriver.includes('token: String(__guardArg.token || \'\')'), 'findpatient driver does not freeze the action guard');
 assert(findDriver.includes('var wantMrn = nrmMrn(mrn)'), 'findpatient driver does not freeze/normalize MRN');
 assert(findDriver.includes('mrnCellMatches(cells[cm], wantMrn)'), 'findpatient rows are not checked for exact MRN evidence');
 
@@ -53,6 +54,7 @@ assert(searchHandler.includes("var frozenMrn = String(msg.mrn || msg.patientMrn 
 assert(searchHandler.includes("var order = frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');
 const driverCalls = searchHandler.match(/args: \[[^\]]*frozenMrn[^\]]*\], func: mlsFindPatientOpenDriverFn/g) || [];
 assert(driverCalls.length >= 3, 'one or more findpatient retry routes drop the frozen MRN');
+assert(driverCalls.every(call => call.includes('findGuard, frozenMrn')), 'findpatient routes do not keep the action guard and MRN in separate argument slots');
 assert(searchHandler.includes('mrn: frozenMrn, tabId: tab.id'), 'the verified-open/write target leases drop MRN');
 assert(searchHandler.includes('matching DOB or MRN to disambiguate'), 'ambiguous picker wording still claims DOB is the only discriminator');
 

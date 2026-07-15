@@ -39,7 +39,7 @@ assert(background.includes("r = Object.assign({}, r, { frameId: m.frameId })"), 
 assert(chartHandler.includes("identityFrameResults.push({ frameId: sIdent.frameId, result: sIdent })"), 'shadow banner identity is not bound to its supplying clinical frame');
 assert(chartHandler.includes('globalframeset\\.esp|globaliframe\\.esp|framecontent\\.esp'), 'Athena wrapper frames can still be misclassified as unbound clinical frames');
 
-assert(allVisits.includes('return pickEmrTab(frozenHint)'), 'AllVisits does not use its frozen identity to select the exact tab lease');
+assert(allVisits.includes('pickEmrTab(frozenHint)'), 'AllVisits does not use its frozen identity to select the exact tab lease');
 assert(allVisits.includes('self.__mlsVerifiedReadTarget'), 'AllVisits ignores the verified chart tab lease');
 assert(allVisits.includes('Number(t.id) === Number(lease.tabId)'), 'AllVisits can silently switch to another Athena tab');
 assert(allVisits.includes('var gate = visitIdentityGate(frozenHint, identity)'), 'same-frame name+DOB/MRN gate was removed');

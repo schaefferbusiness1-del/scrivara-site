@@ -81,12 +81,13 @@ assert(firstNote, 'first pull did not create its one Athena import note');
 patients.find(p => p.id === 'patient-a').summary += '\n\nClinician added this after the first pull.';
 patients.find(p => p.id === 'patient-a').problems += '; Clinician-added problem';
 
-assert.strictEqual(context._savePatientChart(exact, null, covered({
+const secondChart = covered({
   problems: 'A, C, none recorded', meds: 'M2, M3, N/A', allergies: 'Penicillin, not recorded',
   summary: 'Second verified Athena summary.',
   vitals: { bp: '130/84', hr: '74', takenAt: '2026-02-02' },
   history: { pmh: 'Second imported history', social: 'Never smoker' }, visits: ['02/02/2026 — Second imported visit']
-})), true, 'repeat exact-patient chart save failed');
+});
+assert.strictEqual(context._savePatientChart({ ...exact, requestId: 'refresh-op-2' }, null, secondChart), true, 'repeat exact-patient chart save failed');
 
 const patient = patients.find(p => p.id === 'patient-a');
 function canonicalItems(value) {
@@ -120,6 +121,12 @@ assert(!/First imported history/i.test(patient.history.pmh) && /Second imported 
 assert(/Never smoker/i.test(patient.history.social), 'structured social history did not populate');
 assert.strictEqual(patient.athenaProfileCoverage.complete, true, 'six-card profile coverage was not receipted');
 assert.strictEqual(patient.athenaProfileCoverage.patientId, 'patient-a', 'six-card receipt was not bound to the exact patient id');
+assert.strictEqual(patient.athenaProfileCoverage.saveRequestId, 'refresh-op-2', 'six-card receipt was not bound to the exact save operation');
+assert.strictEqual(
+  context._athenaChartSnapshotProof(patient.athenaChartSnapshot),
+  context._athenaChartSnapshotProof(context._athenaChartSnapshotFromChart(secondChart)),
+  'stored Athena-owned chart snapshot differs from the exact parsed chart payload'
+);
 assert(!patient.summary.includes('First verified Athena summary.'), 'stale verified summary remained in the normal profile summary');
 assert.strictEqual((patient.summary.match(/Pulled from Athena/g) || []).length, 1, 'repeat pull created duplicate daily summary blocks');
 assert.strictEqual(patient.athenaChartSummaryBlock.includes('Second verified Athena summary.'), true, 'latest display-summary ownership marker was not replaced');

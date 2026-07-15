@@ -66,6 +66,9 @@ const exactHistoryFunctions = [
   '_athenaChartHistoryObject',
   '_athenaChartVitalsObject',
   '_athenaChartProfileCoverage',
+  '_athenaChartSnapshotList',
+  '_athenaChartSnapshotFromChart',
+  '_athenaChartSnapshotProof',
   '_savePatientChart',
   '_hasImportedHistory',
   '_pullAllHistories',
@@ -81,6 +84,9 @@ for (const name of exactHistoryFunctions) {
 
 const readChart = extractFunction(staging, '_assistReadChart');
 assert(/requestId/.test(readChart) && /patientDob/.test(readChart) && /patientMrn/.test(readChart), 'chart request is not bound to exact identity and request id');
+assert(/!e\.data\.requestId\|\|String\(e\.data\.requestId\)!==requestId/.test(readChart), 'ID-less chart responses can still settle a stateful exact-patient read');
+assert(/String\(r\.requestId\|\|'\'\)===requestId/.test(readChart), 'successful chart payload can omit its exact request id');
+assert(/cancelDeadline\.isTerminal\(\)/.test(readChart), 'chart bridge can dispatch after its absolute deadline arm is already terminal');
 assert(/athena-chart-coverage/.test(readChart) && /2\.9\.19-chart-r3/.test(readChart), 'chart read does not require the complete 2.9.19 receipt');
 assert(/expectedClinicalFrames/.test(readChart) && /readClinicalFrames/.test(readChart) && /truncated===true/.test(readChart), 'chart read does not verify complete frame coverage');
 

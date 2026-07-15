@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'),
 
 assert(!/_pullAllHistories\s*\(\s*false\s*\)/.test(source), 'day pull must never call history with false');
 for (const marker of [
-  'historyTargets.push({',
+  'historyTargets.push(targetRow)',
   '_mlsTargetPatientId: patientId',
   '? await runHistoryBatch',
   'historyReceipt.exactIdentityVerified === true',
@@ -28,6 +28,9 @@ for (const marker of [
 const listeners = new Set();
 const patient = { id: 'p-exact-1', name: 'Exact Patient', dob: '01/02/1960', visits: [] };
 let assistReadCalls = 0;
+let managedLockCalls = 0;
+let grantManagedLock = true;
+let managedReleaseSignals = 0;
 
 const context = {
   console,
@@ -46,7 +49,17 @@ const context = {
   clearTimeout,
   setInterval: () => 1,
   clearInterval: () => {},
-  location: { pathname: '/ScribeFlow-staging.html' },
+  location: { pathname: '/ScribeFlow-staging.html', origin: 'https://mlsscribe.com' },
+  navigator: {
+    locks: {
+      request(name, options, callback) {
+        managedLockCalls++;
+        assert.strictEqual(name, 'mls-managed-athena-pull');
+        assert.strictEqual(options.ifAvailable, true);
+        return Promise.resolve(callback(grantManagedLock ? { name } : null));
+      }
+    }
+  },
   localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   document: {
     readyState: 'complete',
@@ -61,9 +74,16 @@ context.window = context;
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
+  if (msg && msg.type === 'mlsAppFocusMlsTab') { managedReleaseSignals++; return; }
   if (!msg || msg.type !== 'mlsAppReadAllVisits') return;
   queueMicrotask(() => {
+    /* A legacy/id-less response from an older request must never settle this
+       managed history bridge. */
+    const stale = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: false, reason: 'stale-idless-result' } };
+    Array.from(listeners).forEach(fn => fn(stale));
+    queueMicrotask(() => {
     const event = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult',
+      id: msg.id, requestId: msg.requestId,
       ok: true,
       visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'Verified old visit with substantive clinical detail for the regression.', fullDetail: true, sourceVisitKey: 'row:schedule-history-1' }],
       receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
@@ -71,6 +91,7 @@ context.postMessage = msg => {
       identity: { name: patient.name, dob: patient.dob, mrn: '' }
     } };
     Array.from(listeners).forEach(fn => fn(event));
+    });
   });
 };
 context.getPatients = () => [patient];
@@ -103,15 +124,44 @@ context._parsePatientChart = () => Promise.resolve({
 });
 context._athenaChartProfileCoverage = () => profileCoverage;
 context._athenaHistoryVerifiedRef = target => ({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob });
-context._savePatientChart = () => { patient.athenaProfileCoverage = profileCoverage; return true; };
+context._athenaChartSnapshotFromChart = chart => ({
+  problems: String(chart && chart.problems || ''), meds: String(chart && chart.meds || ''),
+  allergies: String(chart && chart.allergies || ''), summary: String(chart && chart.summary || ''),
+  vitals: Object.assign({}, chart && chart.vitals || {}), history: Object.assign({}, chart && chart.history || {}), visits: []
+});
+context._athenaChartSnapshotProof = snapshot => JSON.stringify(snapshot || {});
+context._savePatientChart = (ref, _row, chart) => {
+  profileCoverage.capturedAt = new Date().toISOString();
+  profileCoverage.saveRequestId = String(ref && ref.requestId || '');
+  patient.athenaProfileCoverage = profileCoverage;
+  patient.athenaChartSnapshot = context._athenaChartSnapshotFromChart(chart);
+  return true;
+};
 context._patientHistoryCardCoverage = () => patient.athenaProfileCoverage;
+function storeVerifiedVisit(_id, raw, opts) {
+  opts = opts || {};
+  const stored = Object.assign({}, raw, {
+    source: opts.source || 'athena-copy',
+    identityVerified: opts.identityVerified === true,
+    identityBinding: opts.identityBinding || patient.id,
+    bodyComplete: opts.bodyComplete === true && raw.fullDetail === true
+  });
+  const key = stored.encounterId || stored.sourceVisitKey;
+  const prior = patient.visits.findIndex(v => (v.encounterId || v.sourceVisitKey) === key);
+  if (prior >= 0) patient.visits[prior] = stored; else patient.visits.push(stored);
+  return stored;
+}
 context.__mlsVisitModel = {
-  addVisit: (_id, raw) => { patient.visits.push(raw); return raw; },
+  addVisit: storeVerifiedVisit,
   getVisits: () => patient.visits,
+  reconcileVerifiedAthenaVisits: () => ({ complete: true, removed: 0, kept: patient.visits.length }),
   organizePatientHistory: () => ({ ok: true, verifiedVisits: patient.visits.length })
 };
 context.__mlsCopyVisits = {
-  _saveVisits: (_p, _identity, visits) => { visits.forEach(v => patient.visits.push(v)); return visits.length; },
+  _saveVisits: (_p, _identity, visits) => {
+    visits.forEach(v => storeVerifiedVisit(patient.id, v, { source: 'athena-copy', identityVerified: true, identityBinding: patient.id, bodyComplete: true }));
+    return visits.length;
+  },
   _visitIdentityAgrees: () => true
 };
 context.loadPatients = () => {};
@@ -137,10 +187,146 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   assert.strictEqual(receipt.patients[0].chartCoverage.complete, true);
   assert.strictEqual(receipt.patients[0].visitsCoverageComplete, true);
 
+  const originalSavePatientChart = context._savePatientChart;
+  const originalParsePatientChart = context._parsePatientChart;
+  context._savePatientChart = (ref, _row, chart) => {
+    profileCoverage.capturedAt = new Date().toISOString();
+    profileCoverage.saveRequestId = 'different-operation-id';
+    patient.athenaProfileCoverage = profileCoverage;
+    patient.athenaChartSnapshot = context._athenaChartSnapshotFromChart(chart);
+    return true;
+  };
+  const wrongOperationSink = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  assert.strictEqual(wrongOperationSink.complete, false, 'a fresh six-card receipt from a different operation became green');
+  assert.strictEqual(wrongOperationSink.patients[0].organized, false);
+  assert.strictEqual(wrongOperationSink.patients[0].chartReason, 'six-card-save-request-unproven');
+
+  context._parsePatientChart = () => Promise.resolve({
+    problems: 'New current problem', meds: 'New current med', allergies: 'New current allergy', summary: 'New current summary',
+    vitals: { bp: '130/90' }, history: { pmh: 'New current PMH' },
+    coverage: { problems: 'found', meds: 'found', allergies: 'found', summary: 'found', vitals: 'found', history: 'found' }
+  });
+  context._savePatientChart = ref => {
+    profileCoverage.capturedAt = new Date().toISOString();
+    profileCoverage.saveRequestId = String(ref && ref.requestId || '');
+    patient.athenaProfileCoverage = profileCoverage;
+    return true; // deliberately drops the newly parsed chart snapshot
+  };
+  const freshMetadataOnlySink = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  assert.strictEqual(freshMetadataOnlySink.complete, false, 'fresh receipt metadata hid a dropped current chart payload');
+  assert.strictEqual(freshMetadataOnlySink.patients[0].organized, false);
+  assert.strictEqual(freshMetadataOnlySink.patients[0].chartReason, 'six-card-persistence-unproven');
+  assert.strictEqual(freshMetadataOnlySink.patients[0].visitsComplete, true, 'visit-body proof should remain independently visible');
+
+  context._parsePatientChart = originalParsePatientChart;
+  context._savePatientChart = originalSavePatientChart;
+  profileCoverage.capturedAt = '2026-01-01T00:00:00.000Z';
+  context._savePatientChart = () => true;
+  const staleSuccessfulSink = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  context._savePatientChart = originalSavePatientChart;
+  assert.strictEqual(staleSuccessfulSink.complete, false, 'a successful sink result with yesterday\'s six-card receipt became green');
+  assert.strictEqual(staleSuccessfulSink.patients[0].organized, false);
+  assert.strictEqual(staleSuccessfulSink.patients[0].profileCoverageFresh, false);
+  assert.strictEqual(staleSuccessfulSink.patients[0].visitsComplete, true, 'current r4 visits should remain independently proven');
+  assert.strictEqual(staleSuccessfulSink.patients[0].chartReason, 'six-card-profile-freshness-unproven');
+  assert.strictEqual(staleSuccessfulSink.patients[0].visitsReason, 'six-card-profile-freshness-unproven');
+
+  const originalAssistReadChart = context._assistReadChart;
+  profileCoverage.capturedAt = new Date(Date.now() - 1000).toISOString();
+  context._assistReadChart = () => Promise.reject(new Error('chart-profile-route-failed'));
+  const nearStaleProfileRefused = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  context._assistReadChart = originalAssistReadChart;
+  assert.strictEqual(nearStaleProfileRefused.complete, false, 'a profile captured immediately before this operation masked a failed current chart read');
+  assert.strictEqual(nearStaleProfileRefused.patients[0].organized, false);
+  assert.strictEqual(nearStaleProfileRefused.patients[0].profileCoverageFresh, false);
+  assert.strictEqual(nearStaleProfileRefused.patients[0].visitsComplete, true);
+  assert.strictEqual(nearStaleProfileRefused.patients[0].visitsReason, 'six-card-profile-freshness-unproven');
+
+  profileCoverage.capturedAt = '2026-01-01T00:00:00.000Z';
+  context._assistReadChart = () => Promise.reject(new Error('chart-profile-route-failed'));
+  const staleProfileRefused = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  context._assistReadChart = originalAssistReadChart;
+  assert.strictEqual(staleProfileRefused.complete, false, 'yesterday’s six-card receipt masked a failed current chart-profile read');
+  assert.strictEqual(staleProfileRefused.patients[0].organized, false);
+  assert.strictEqual(staleProfileRefused.patients[0].profileCoverageFresh, false);
+  assert.strictEqual(staleProfileRefused.patients[0].organizationComplete, true, 'current r4 visits should still organize even though current profile coverage failed');
+  assert.strictEqual(staleProfileRefused.patients[0].visitsComplete, true);
+  assert.strictEqual(staleProfileRefused.patients[0].chartReason, 'chart-profile-route-failed');
+  assert.strictEqual(staleProfileRefused.patients[0].visitsReason, 'six-card-profile-freshness-unproven');
+
+  const originalReconcile = context.__mlsVisitModel.reconcileVerifiedAthenaVisits;
+  context.__mlsVisitModel.reconcileVerifiedAthenaVisits = () => ({ complete: false, reason: 'stable-key-collision' });
+  const refusedReconcile = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  context.__mlsVisitModel.reconcileVerifiedAthenaVisits = originalReconcile;
+  assert.strictEqual(refusedReconcile.complete, false, 'a failed exact-visit reconciliation must never become a green history receipt');
+  assert.strictEqual(refusedReconcile.patients[0].visitsComplete, false);
+  assert.strictEqual(refusedReconcile.patients[0].visitsReason, 'visits-reconcile-unproven');
+
+  const originalSaveVisits = context.__mlsCopyVisits._saveVisits;
+  patient.visits = [];
+  context.__mlsCopyVisits._saveVisits = () => 1;
+  const missingStoredBody = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+  context.__mlsCopyVisits._saveVisits = originalSaveVisits;
+  assert.strictEqual(missingStoredBody.complete, false, 'an optimistic save count without the exact stored body must fail closed');
+  assert.strictEqual(missingStoredBody.patients[0].visitsComplete, false);
+  assert.strictEqual(missingStoredBody.patients[0].visitsReason, 'visits-persistence-count-unproven');
+
   const partial = await context.__mlsSI._runHistoryBatch([], [{ patientId: 'p-unresolved', reason: 'missing-dob-mrn-proof' }], () => {});
   assert.strictEqual(partial.complete, false);
   assert.strictEqual(partial.reason, 'history-partial');
   assert.strictEqual(partial.retry[0].patientId, 'p-unresolved');
+
+  const beforeManualRetryCalls = assistReadCalls;
+  const manualPartial = await context.__mlsSI.retryFailedHistory({
+    historyReceipt: {
+      requestId: 'history-original-partial', reason: 'history-partial',
+      retry: [
+        { patientId: patient.id, reason: 'chart-read-deadline-exceeded', frozenDob: '19600102' },
+        { patientId: patient.id, reason: 'duplicate-receipt-entry', frozenDob: '19600102' },
+        { patientId: 'missing-local-patient', reason: 'deferred-after-timeout', frozenDob: '19610101' }
+      ]
+    }
+  }, () => {});
+  assert.strictEqual(manualPartial.manualRetry, true);
+  assert.strictEqual(manualPartial.retryOf, 'history-original-partial');
+  assert.strictEqual(manualPartial.requested, 2, 'manual retry must dedupe immutable patient ids while retaining unresolved ids');
+  assert.strictEqual(manualPartial.processed, 1, 'manual retry must run only the one exact local patient target');
+  assert.strictEqual(assistReadCalls, beforeManualRetryCalls + 1, 'duplicate retry entries re-read the exact patient more than once');
+  assert.strictEqual(manualPartial.complete, false);
+  assert.strictEqual(manualPartial.retry.length, 1);
+  assert.strictEqual(manualPartial.retry[0].patientId, 'missing-local-patient');
+  assert.strictEqual(manualPartial.retry[0].reason, 'retry-target-unavailable');
+  assert.strictEqual(managedLockCalls, 1, 'manual history retry did not acquire the managed cross-tab lock');
+  assert.strictEqual(managedReleaseSignals, 1, 'completed manual history retry did not release the quiet Athena workspace');
+
+  const manualComplete = await context.__mlsSI.retryFailedHistory({
+    requestId: 'history-one-patient-partial', reason: 'history-partial',
+    retry: [{ patientId: patient.id, reason: 'visits-read-deadline-exceeded', frozenDob: '19600102' }]
+  }, () => {});
+  assert.strictEqual(manualComplete.complete, true);
+  assert.strictEqual(manualComplete.manualRetry, true);
+  assert.strictEqual(manualComplete.retryOf, 'history-one-patient-partial');
+  assert.strictEqual(manualComplete.retry.length, 0);
+  assert.strictEqual(managedLockCalls, 2);
+  assert.strictEqual(managedReleaseSignals, 2);
+
+  grantManagedLock = false;
+  const beforeContendedReadCalls = assistReadCalls;
+  const contendedRetry = await context.__mlsSI.retryFailedHistory({
+    requestId: 'history-contended-partial', reason: 'history-partial',
+    retry: [{ patientId: patient.id, reason: 'visits-read-deadline-exceeded', frozenDob: '19600102' }]
+  }, () => {});
+  grantManagedLock = true;
+  assert.strictEqual(contendedRetry.complete, false);
+  assert.strictEqual(contendedRetry.blockedReason, 'pull-in-flight');
+  assert.strictEqual(contendedRetry.retry.length, 1, 'lock contention discarded the human retry queue');
+  assert.strictEqual(assistReadCalls, beforeContendedReadCalls, 'lock contention still started an Athena history read');
+  assert.strictEqual(managedLockCalls, 3);
+  assert.strictEqual(managedReleaseSignals, 2, 'a tab that did not acquire the lock released another tab\'s quiet workspace');
+
+  const malformedEmpty = await context.__mlsSI.retryFailedHistory({ reason: 'history-partial', complete: false, retry: [] }, () => {});
+  assert.strictEqual(malformedEmpty.complete, false, 'an empty malformed partial receipt must not be reported complete');
+  assert.strictEqual(malformedEmpty.reason, 'retry-receipt-invalid');
 
   console.log('PASS exact-patient awaited history and old-visits receipt pipeline');
 })().catch(err => { console.error(err); process.exit(1); });

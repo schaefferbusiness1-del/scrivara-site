@@ -38545,7 +38545,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260714si160p1';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.0 - exact provider/day/month identity + fresh verified histories */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260714si161p2';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.1 - exact provider/day/month identity + fresh verified histories */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -40166,7 +40166,7 @@
   function todayKey() { return keyOf(new Date()); }
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
-  var DS = { day: todayKey(), pulling: false };
+  var DS = { day: todayKey(), pulling: false, retrying: false, lastResult: null };
 
   var st = document.createElement('style'); st.id = 'mlsDsCss';
   st.textContent = [
@@ -40179,6 +40179,9 @@
     '#mlsDsStrip .ds-pull{margin-left:auto;display:inline-flex;align-items:center;gap:8px;border:0;background:#204034;color:#fff;font:700 12.5px system-ui;border-radius:9px;padding:9px 15px;cursor:pointer;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);}',
     '#mlsDsStrip .ds-pull:hover{background:#28503f;}',
     '#mlsDsStrip .ds-pull[disabled]{opacity:.85;cursor:default;}',
+    '#mlsDsRetryHistoryBtn{display:none;border:1px solid #D8C997;background:#FFF9E8;color:#68551E;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
+    '#mlsDsRetryHistoryBtn:hover{background:#FFF3CC;}',
+    '#mlsDsRetryHistoryBtn[disabled]{opacity:.7;cursor:default;}',
     '#mlsDsStrip .ds-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:mlsDsSpin .8s linear infinite;flex:none;display:inline-block;}',
     '@keyframes mlsDsSpin{to{transform:rotate(360deg)}}',
     '@media (prefers-reduced-motion: reduce){#mlsDsStrip .ds-spin{animation-duration:2s;}}',
@@ -40267,8 +40270,67 @@
   }
   api.classifyPullResult = pullOutcome;
 
+  function retryItems(source) {
+    var history = source && source.historyReceipt ? source.historyReceipt : source;
+    var partial = !!(source && source.reason === 'history-partial') || !!(history && history.reason === 'history-partial');
+    return partial && history && Array.isArray(history.retry) ? history.retry : [];
+  }
+  function syncRetryControl(source) {
+    var items = retryItems(source), retryBtn = $('mlsDsRetryHistoryBtn');
+    DS.lastResult = items.length ? source : null;
+    if (!retryBtn) return items.length;
+    retryBtn.style.display = items.length ? '' : 'none';
+    retryBtn.disabled = !!(DS.pulling || DS.retrying);
+    retryBtn.textContent = items.length ? ('\u21bb Retry failed histories only (' + items.length + ')') : '\u21bb Retry failed histories only';
+    return items.length;
+  }
+
+  function retryFailedHistories() {
+    if (DS.pulling || DS.retrying || !DS.lastResult) return;
+    var importer = window.MLSScheduleImporter || window.__mlsSI;
+    var retryBtn = $('mlsDsRetryHistoryBtn'), pullBtn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
+    if (!importer || typeof importer.retryFailedHistory !== 'function') {
+      try { if (typeof window.toast === 'function') window.toast('History retry is not available on this build. Reload MLS and try again.', 'err'); } catch (e) {}
+      return;
+    }
+    DS.retrying = true;
+    if (retryBtn) retryBtn.disabled = true;
+    if (pullBtn) pullBtn.disabled = true;
+    if (stat) { stat.style.display = 'block'; stat.textContent = 'Retrying only the incomplete patient histories...'; }
+    var source = DS.lastResult, closed = false;
+    function finish(receipt, err) {
+      if (closed) return; closed = true; DS.retrying = false;
+      if (pullBtn) pullBtn.disabled = false;
+      if (err) {
+        syncRetryControl(source);
+        if (stat) { stat.style.display = 'block'; stat.textContent = 'The history retry did not finish. The incomplete patients are still ready to retry.'; }
+        try { if (typeof window.toast === 'function') window.toast('History retry did not finish. No history was reported as complete.', 'err'); } catch (e0) {}
+        return;
+      }
+      var remaining = receipt && Array.isArray(receipt.retry) ? receipt.retry.length : 0;
+      if (receipt && receipt.complete === true && remaining === 0) {
+        syncRetryControl(null);
+        if (stat) { stat.style.display = 'block'; stat.textContent = 'Patient history is complete for every retried patient.'; }
+        try { if (typeof window.toast === 'function') window.toast('Patient history retry complete.', 'ok'); } catch (e1) {}
+        return;
+      }
+      var fallbackCount = retryItems(source).length;
+      var partial = remaining ? { reason: 'history-partial', historyReceipt: receipt } : source;
+      if (!remaining) remaining = fallbackCount;
+      syncRetryControl(partial);
+      if (stat) { stat.style.display = 'block'; stat.textContent = 'History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '. Only those patients remain queued.'; }
+      try { if (typeof window.toast === 'function') window.toast('History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '.', 'err'); } catch (e2) {}
+    }
+    try {
+      var p = importer.retryFailedHistory(source, function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} });
+      if (p && typeof p.then === 'function') p.then(function (receipt) { finish(receipt, null); }, function (err) { finish(null, err || new Error('history-retry-failed')); });
+      else finish(null, new Error('history-retry-unverified'));
+    } catch (e3) { finish(null, e3); }
+  }
+
   function startPull() {
-    if (DS.pulling) return;                               /* duplicate-click guard */
+    if (DS.pulling || DS.retrying) return;                /* duplicate-click guard */
+    syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* b257: NO extension here (a phone) -> route the SAME button through the
        relay: the office computer runs the pull, this device shows live status
        and syncs the result. Same UI, zero extra steps. */
@@ -40301,18 +40363,22 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
     if (stat) { stat.style.display = 'block'; stat.textContent = 'Starting the Athena pull for ' + fmtDay(day) + '...'; }
     var closed = false;
-    function done(ok, msg) {
+    function done(ok, msg, keepStatus) {
       if (closed) return; closed = true;
       DS.pulling = false;
+      syncRetryControl(DS.lastResult);
       if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
-      if (stat) { stat.style.display = 'none'; }
+      if (stat) { stat.style.display = keepStatus ? 'block' : 'none'; if (keepStatus) stat.textContent = msg; }
       try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
       renderList();
     }
     try {
       var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} } });
       if (p && typeof p.then === 'function') {
-        p.then(function (result) { var outcome = pullOutcome(result, day); done(outcome.ok, outcome.message); },
+        p.then(function (result) {
+          var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
+          done(outcome.ok, outcome.message, retryCount > 0);
+        },
                function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
       } else {
         done(false, 'The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.');
@@ -40332,6 +40398,7 @@
         '<button type="button" class="ds-nav" id="mlsDsNext" title="Next day">&#8250;</button>' +
         '<button type="button" class="ds-today" id="mlsDsTodayBtn">Back to Today</button>' +
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
+        '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<span id="mlsDsStatus"></span>';
       var anchor = body.querySelector('.ez3fl-record');
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(strip, anchor);
@@ -40340,6 +40407,8 @@
       $('mlsDsNext').onclick = function () { shift(1); };
       $('mlsDsTodayBtn').onclick = function () { setDay(todayKey()); };
       $('mlsDsPullBtn').onclick = startPull;
+      $('mlsDsRetryHistoryBtn').onclick = retryFailedHistories;
+      syncRetryControl(DS.lastResult);
       syncStrip(); renderList();
     } catch (e) {}
   }

@@ -11527,24 +11527,41 @@ function _athenaHistoryVerifiedRef(target, observed){
    current extension can open and identity-verify that exact chart. Never falls back to
    reading arbitrary schedule text as a patient chart. */
 function _assistReadChart(patientRef, onStatus){
+  var requestOptions=arguments[2]||{};
   return new Promise(function(resolve,reject){
     var target=_athenaHistoryTargetSnapshot(patientRef,false);
     if(!target){ reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
     var patientName=String(target.name||'').trim();
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
-    var ponged=false, tries=0, iv=null, got=false, deadline=null;
+    var ponged=false, tries=0, iv=null, got=false, cancelDeadline=null;
     var readStartedAt=Date.now();
-    var requestId='chart-'+readStartedAt.toString(36)+'-'+Math.random().toString(36).slice(2,8);
-    function cleanup(){ if(iv) clearInterval(iv); if(deadline) clearTimeout(deadline); iv=null; deadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
+    var suppliedRequestId=String(requestOptions.requestId||'').slice(0,100);
+    var requestId=suppliedRequestId||('chart-'+readStartedAt.toString(36)+'-'+Math.random().toString(36).slice(2,8));
+    var suppliedDeadline=Number(requestOptions.deadlineAt||0);
+    var deadlineAt=isFinite(suppliedDeadline)&&suppliedDeadline>0?suppliedDeadline:(readStartedAt+100000);
+    function cleanup(){ if(iv) clearInterval(iv); if(cancelDeadline) cancelDeadline(); iv=null; cancelDeadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
     function fail(err){ if(got) return; got=true; cleanup(); reject(err); }
+    function armDeadline(){
+      var scheduler=window.__mlsAbsoluteDeadline;
+      if(scheduler&&typeof scheduler.arm==='function') return scheduler.arm(deadlineAt,function(){ fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.')); });
+      var tid=null;
+      var cancel=function(){if(tid!==null){clearTimeout(tid);tid=null;}};
+      cancel.isTerminal=function(){return got||deadlineAt<=Date.now();};
+      if(deadlineAt<=Date.now()){ fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.')); return cancel; }
+      tid=setTimeout(function(){ fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.')); },Math.max(0,deadlineAt-Date.now()));
+      return cancel;
+    }
     function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
     window.addEventListener('message',onPong);
+    cancelDeadline=armDeadline();
+    if(cancelDeadline&&typeof cancelDeadline.isTerminal==='function'&&cancelDeadline.isTerminal()) return;
+    if(Date.now()>=deadlineAt){fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.'));return;}
     var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
     say('Looking for MLS Assist…'); ping();
     iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); iv=null; return; } if(tries>8){ fail(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
     function onResult(e){
       if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
-      if(e.data.requestId && e.data.requestId!==requestId) return;
+      if(!e.data.requestId||String(e.data.requestId)!==requestId) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
       if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
@@ -11553,7 +11570,7 @@ function _assistReadChart(patientRef, onStatus){
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
       var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000);
       var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
-      var receiptBound=!!(rawReceipt&&String(rawReceipt.requestId||'')===requestId&&String(r.requestId||requestId)===requestId);
+      var receiptBound=!!(rawReceipt&&String(rawReceipt.requestId||'')===requestId&&String(r.requestId||'')===requestId);
       if(!rawReceipt||rawReceipt.kind!=='athena-chart-coverage'||rawReceipt.complete!==true||rawReceipt.truncated===true||String(rawReceipt.readerVersion||'')!=='2.9.19-chart-r3'||rawReceipt.identityObserved!==true||!receiptFresh||!receiptFrames||!receiptBound||Number(rawReceipt.textChars||0)!==String(r.text||'').length){ reject(new Error('MLS Assist could not prove that every patient chart frame finished loading and belonged to the selected patient. Nothing was saved; update the extension and retry.')); return; }
       var receipt=r.receipt&&typeof r.receipt==='object'?{
         kind:String(r.receipt.kind||''),
@@ -11579,11 +11596,7 @@ function _assistReadChart(patientRef, onStatus){
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
       window.addEventListener('message',onResult);
-      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',patientDob:String(target.dob||''),patientMrn:String(target.mrn||target.athenaId||''),patientId:String(target.patientId||target.id||''),requestId:requestId},'*'); }catch(e){ fail(e); return; }
-      /* The extension's bounded chart-ready + text-read budget can legitimately
-         exceed 30 seconds on a heavy Athena renderer. Leave relay overhead and
-         fail honestly without issuing a second/bare read. */
-      deadline=setTimeout(function(){ fail(new Error('Athena took too long to open and verify this chart. Nothing was captured; check the Athena tab, then try again.')); }, 100000);
+      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',patientDob:String(target.dob||''),patientMrn:String(target.mrn||target.athenaId||''),patientId:String(target.patientId||target.id||''),requestId:requestId,deadlineAt:deadlineAt},'*'); }catch(e){ fail(e); return; }
     }
   });
 }
@@ -11680,6 +11693,38 @@ function _athenaChartProfileCoverage(chart,history,vitals){
   });
   return {complete:invalid.length===0,cards:cards,invalid:invalid};
 }
+/* Build one canonical Athena-owned chart snapshot. The managed history pull
+   compares this exact payload with the patient record after save, so a sink
+   cannot turn a pull green by updating only receipt metadata. */
+function _athenaChartSnapshotList(value){
+  var src=Array.isArray(value)?value:[value],out=[],seen={};
+  src.forEach(function(part){
+    String(part==null?'':part).split(/[\r\n;,]+/).forEach(function(item){
+      item=String(item||'').replace(/^\s*[\u2022\-*]+\s*/,'').replace(/\s+/g,' ').trim();
+      var key=item.toLowerCase().replace(/[.\s]+$/,'').trim();
+      if(item&&key&&!/^(?:none(?: recorded| on file)?|not recorded|unknown|n\s*\/\s*a|na|not available|not applicable|no data)$/i.test(key)&&!seen[key]){seen[key]=1;out.push(item);}
+    });
+  });
+  return out;
+}
+function _athenaChartSnapshotFromChart(chart){
+  chart=chart||{};
+  var history=_athenaChartHistoryObject(chart),vitals=_athenaChartVitalsObject(chart);
+  var visits=Array.isArray(chart.visits)?chart.visits.map(function(x){
+    if(x&&typeof x==='object')return [x.date,x.type||x.summary||x.raw].filter(Boolean).join(' — ');
+    return String(x||'').trim();
+  }).filter(Boolean):[];
+  return {problems:_athenaChartSnapshotList(chart.problems),meds:_athenaChartSnapshotList(chart.meds),allergies:_athenaChartSnapshotList(chart.allergies),summary:String(chart.summary||'').trim(),vitals:vitals,history:history,visits:visits};
+}
+function _athenaChartSnapshotProof(snapshot){
+  snapshot=snapshot||{};
+  var history=snapshot.history&&typeof snapshot.history==='object'?snapshot.history:{};
+  var vitals=snapshot.vitals&&typeof snapshot.vitals==='object'?snapshot.vitals:{};
+  var orderedHistory={},orderedVitals={};
+  ['pmh','psh','social','family','smoking','immunizations','lmp','codeStatus','pcp','pharmacy'].forEach(function(k){orderedHistory[k]=String(history[k]||'').trim();});
+  ['bp','hr','temp','rr','spo2','heightIn','weightLb','bmi','takenAt'].forEach(function(k){orderedVitals[k]=String(vitals[k]||'').trim();});
+  return JSON.stringify({problems:_athenaChartSnapshotList(snapshot.problems),meds:_athenaChartSnapshotList(snapshot.meds),allergies:_athenaChartSnapshotList(snapshot.allergies),summary:String(snapshot.summary||'').trim(),vitals:orderedVitals,history:orderedHistory,visits:Array.isArray(snapshot.visits)?snapshot.visits.map(function(v){return String(v||'').trim();}).filter(Boolean):[]});
+}
 function _patientHistoryCardCoverage(patientOrId){
   var p=(patientOrId&&typeof patientOrId==='object')?patientOrId:null, id=p&&p.id;
   if(!p&&patientOrId!=null){id=String(patientOrId);try{p=typeof findPatient==='function'?findPatient(id):null;}catch(e){}}
@@ -11725,9 +11770,6 @@ function _savePatientChart(name, appt, chart){
     candidates.forEach(function(item){ var k=listKey(item); if(k&&!seen[k]){seen[k]=1;out.push(item);} });
     return out.join('; ');
   };
-  var snapshotList=function(value){
-    var out=[],seen={}; listItems(value).forEach(function(item){var k=listKey(item);if(k&&!isNoData(item)&&!seen[k]){seen[k]=1;out.push(item);}});return out;
-  };
   /* Replace the prior Athena-owned slice on every verified refresh. Facts entered
      manually remain; facts that disappeared from Athena (including an explicit
      not_documented result) must not survive forever as stale clinical data. */
@@ -11736,7 +11778,7 @@ function _savePatientChart(name, appt, chart){
     var manual=listItems(current).filter(function(item){return !owned[listKey(item)];});
     return merge(manual,fresh);
   };
-  var structuredHistory=_athenaChartHistoryObject(chart), structuredVitals=_athenaChartVitalsObject(chart);
+  var structuredHistory=_athenaChartHistoryObject(chart), structuredVitals=_athenaChartVitalsObject(chart), currentAthenaSnapshot=_athenaChartSnapshotFromChart(chart);
   var profileCoverage=_athenaChartProfileCoverage(chart,structuredHistory,structuredVitals);
   /* A fully-read frame set is not enough: every visible patient-profile card
      must be explicitly classified as populated or genuinely absent. */
@@ -11760,24 +11802,15 @@ function _savePatientChart(name, appt, chart){
   var importedAt=new Date(), importedAtIso=importedAt.toISOString(), importedAtMs=importedAt.getTime();
   var stamp='— Pulled from Athena '+importedAt.toLocaleDateString()+' —';
   var historyLines=[]; Object.keys(structuredHistory).forEach(function(k){if(structuredHistory[k])historyLines.push(k.toUpperCase()+': '+structuredHistory[k]);});
-  var visitLines=Array.isArray(chart.visits)?chart.visits.map(function(x){if(x&&typeof x==='object')return [x.date,x.type||x.summary||x.raw].filter(Boolean).join(' — ');return String(x||'').trim();}).filter(Boolean):[];
+  var visitLines=currentAthenaSnapshot.visits;
   var block=stamp+'\n'+(chart.summary||'');
   if(historyLines.length){ block+='\n\nPrior history:\n• '+historyLines.join('\n• '); }
   if(visitLines.length){ block+='\n\nRecent visits:\n• '+visitLines.join('\n• '); }
   /* The latest exact-patient pull replaces the prior snapshot. Keep the source
      fields structured so normal chart/profile and op-note consumers see the same
      current facts, rather than an ever-growing series of stale daily snapshots. */
-  p.athenaChartSnapshot={
-    capturedAt:importedAtIso,
-    problems:snapshotList(chart.problems),
-    meds:snapshotList(chart.meds),
-    allergies:snapshotList(chart.allergies),
-    summary:String(chart.summary||'').trim(),
-    vitals:structuredVitals,
-    history:structuredHistory,
-    visits:visitLines
-  };
-  profileCoverage.patientId=String(p.id||''); profileCoverage.exactIdentityVerified=true; profileCoverage.capturedAt=importedAtIso;
+  p.athenaChartSnapshot=Object.assign({capturedAt:importedAtIso},currentAthenaSnapshot);
+  profileCoverage.patientId=String(p.id||''); profileCoverage.exactIdentityVerified=true; profileCoverage.capturedAt=importedAtIso; profileCoverage.saveRequestId=String(ref.requestId||'');
   p.athenaProfileCoverage=profileCoverage;
   p.athenaChartImportedAt=importedAtIso;
 
@@ -11864,10 +11897,11 @@ async function _pullAllHistories(appts){
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
 }
 async function _parsePatientChart(text){
+  var opts=arguments[1]||{};
   var sys='You extract ONE exact patient’s clinical chart from a COMPLETE raw Athena frame-set read. Return ONLY JSON (no prose/code fence) with this exact shape: {"name":"","dob":"MM/DD/YYYY or empty","mrn":"","problems":"active problems with ICD-10 when shown, separated by semicolons or empty","meds":"current medications with dose/route/frequency when shown, separated by semicolons or empty","allergies":"allergies/reactions, or NKDA when explicitly documented, or empty","summary":"2-4 factual sentences summarizing this patient and main clinical issues, or empty only when no clinical facts are documented","vitals":{"bp":"","hr":"","temp":"","rr":"","spo2":"","heightIn":"","weightLb":"","bmi":"","takenAt":"latest measurement date/time or empty"},"history":{"pmh":"","psh":"","social":"","family":"","smoking":"","immunizations":"","lmp":"","codeStatus":"","pcp":"","pharmacy":""},"visits":["MM/DD/YYYY — brief reason/diagnoses"],"coverage":{"problems":"found|not_documented","meds":"found|not_documented","allergies":"found|not_documented","summary":"found|not_documented","vitals":"found|not_documented","history":"found|not_documented"}}. RULES: use only this patient’s facts; ignore navigation, buttons, provider/department names, billing menus/codes, and other patients. Scan the ENTIRE supplied frame text. For each coverage field use found only when its matching output contains real data; use not_documented only after confirming that category is absent from the supplied chart. Never guess, copy another patient, or call an unparsed/uncertain field not_documented. Prefer the latest vitals and current medication/problem lists. Keep visits concise (max 15) because full encounter bodies are captured separately.';
   var page=String(text||'');
   if(page.length>90000) throw new Error('The chart read was too large to verify every profile section in one pass. Nothing was saved as complete; retry with the latest extension.');
-  var raw=await aiCallRaw(sys, 'COMPLETE EMR CHART FRAME TEXT:\n'+page, (typeof getKey==='function'?getKey():''), {freeform:true});
+  var raw=await aiCallRaw(sys, 'COMPLETE EMR CHART FRAME TEXT:\n'+page, (typeof getKey==='function'?getKey():''), {freeform:true,signal:opts.signal});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var o=JSON.parse(s); if(o&&typeof o==='object') return o; }catch(e){}
   try{ var m=s.match(/\{[\s\S]*\}/); if(m) return JSON.parse(m[0]); }catch(e){}
@@ -13324,7 +13358,8 @@ async function aiCallRaw(sys,user,key,opts){
       const r=await fetch(bkBase()+'/api/complete',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined})
+        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined}),
+        signal:opts.signal
       });
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
       if(r.status===402){
@@ -13341,7 +13376,8 @@ async function aiCallRaw(sys,user,key,opts){
     const res=await fetch(bkBase()+'/api/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():'')})
+      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():'')}),
+      signal:opts.signal
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }
     if(res.status===402){
@@ -13368,6 +13404,7 @@ async function aiCallRaw(sys,user,key,opts){
   const res=await fetch('https://api.openai.com/v1/chat/completions',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    signal:opts.signal,
     body:JSON.stringify({
       model:'gpt-4o-mini',
       temperature:0.2,

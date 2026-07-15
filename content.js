@@ -160,21 +160,61 @@
     // Pull TODAY'S SCHEDULE from the EMR tab (Athena) so MLS can pre-load the day's patients.
     if (d.type === 'mlsAppPullSchedule') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest', id: mlsStr(d.id, 80) }, function (resp) {
-          var out = resp || { error: 'no response' }; if (d.id && !out.id) { out = Object.assign({}, out, { id: mlsStr(d.id, 80) }); }
-          reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: mlsStr(d.id, 80), resp: out });
+        var scheduleRequestId = mlsStr(d.requestId || d.id, 100) || ('mlssched-' + Date.now().toString(36));
+        var scheduleCallerDeadline = Number(d.deadlineAt || 0);
+        var scheduleDeadlineAt = isFinite(scheduleCallerDeadline) && scheduleCallerDeadline > 0 ? scheduleCallerDeadline : Date.now() + 27000;
+        var scheduleGuard = Object.freeze({ requestId: scheduleRequestId, deadlineAt: scheduleDeadlineAt });
+        var scheduleFinished = false, scheduleTimer = null;
+        var finishSchedule = function (resp) {
+          if (scheduleFinished) return;
+          scheduleFinished = true;
+          if (scheduleTimer != null) { try { clearTimeout(scheduleTimer); } catch (eClearSchedule) {} }
+          var out = resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' };
+          if (!out.id || !out.requestId || !out.deadlineAt) out = Object.assign({}, out, { id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt });
+          reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt, resp: out });
+        };
+        scheduleTimer = setTimeout(function () {
+          finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read did not finish before its immutable request deadline.' });
+        }, Math.max(0, scheduleGuard.deadlineAt - Date.now()));
+        chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt }, function (resp) {
+          var runtimeErr = chrome.runtime.lastError;
+          if (Date.now() >= scheduleGuard.deadlineAt) {
+            finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read returned after its immutable request deadline.' });
+            return;
+          }
+          finishSchedule(runtimeErr ? { ok: false, reason: 'extension-error', error: runtimeErr.message || 'Extension error' } : resp);
         });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: mlsStr(d.id, 80), resp: { id: mlsStr(d.id, 80), error: 'extension error' } }); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: mlsStr(d.requestId || d.id, 100), requestId: mlsStr(d.requestId || d.id, 100), resp: { id: mlsStr(d.requestId || d.id, 100), requestId: mlsStr(d.requestId || d.id, 100), ok: false, reason: 'extension-error', error: 'extension error' } }); }
     }
     // v1.51: navigate the athena schedule to a specific DATE (read-only navigation;
     // probe:true just reports whether hands-free date-nav is available on this view).
     if (d.type === 'mlsAppGotoDate') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: mlsStr(d.id, 80) }, function (resp) {
-          var out = resp || { error: 'no response' }; if (d.id && !out.id) { out = Object.assign({}, out, { id: mlsStr(d.id, 80) }); }
-          reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: mlsStr(d.id, 80), resp: out });
+        var gotoRequestId = mlsStr(d.requestId || d.id, 100) || ('mlsgoto-' + Date.now().toString(36));
+        var gotoCallerDeadline = Number(d.deadlineAt || 0);
+        var gotoDeadlineAt = isFinite(gotoCallerDeadline) && gotoCallerDeadline > 0 ? gotoCallerDeadline : Date.now() + (d.probe ? 5000 : 57000);
+        var gotoGuard = Object.freeze({ requestId: gotoRequestId, deadlineAt: gotoDeadlineAt });
+        var gotoFinished = false, gotoTimer = null;
+        var finishGoto = function (resp) {
+          if (gotoFinished) return;
+          gotoFinished = true;
+          if (gotoTimer != null) { try { clearTimeout(gotoTimer); } catch (eClearGoto) {} }
+          var out = resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' };
+          if (!out.id || !out.requestId || !out.deadlineAt) out = Object.assign({}, out, { id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt });
+          reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt, resp: out });
+        };
+        gotoTimer = setTimeout(function () {
+          finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation did not finish before its immutable request deadline.' });
+        }, Math.max(0, gotoGuard.deadlineAt - Date.now()));
+        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt }, function (resp) {
+          var runtimeErr = chrome.runtime.lastError;
+          if (Date.now() >= gotoGuard.deadlineAt) {
+            finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation returned after its immutable request deadline.' });
+            return;
+          }
+          finishGoto(runtimeErr ? { ok: false, supported: false, reason: 'extension-error', error: runtimeErr.message || 'Extension error' } : resp);
         });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: mlsStr(d.id, 80), resp: { id: mlsStr(d.id, 80), error: 'extension error' } }); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: mlsStr(d.requestId || d.id, 100), requestId: mlsStr(d.requestId || d.id, 100), resp: { id: mlsStr(d.requestId || d.id, 100), requestId: mlsStr(d.requestId || d.id, 100), ok: false, supported: false, reason: 'extension-error', error: 'extension error' } }); }
     }
     // v1.55: return athenaOne to the CLINICAL SCHEDULE (home) by clicking the athenaOne
     // Home logo. Read-only navigation. Lets the app-side day/month orchestrator re-ground
@@ -248,18 +288,27 @@
         var chartPatient = mlsStr(d.patient, 200);
         var chartDob = mlsStr(d.patientDob || d.dob, 20);
         var chartMrn = mlsStr(d.patientMrn || d.mrn || d.athenaId, 40);
+        var chartDeadlineAt = Number(d.deadlineAt || 0);
+        if (!isFinite(chartDeadlineAt) || chartDeadlineAt <= 0) chartDeadlineAt = Date.now() + 100000;
+        var chartFinished = false;
         var chartMessage = {
           type: 'mlsAppChartRequest',
           patient: chartPatient,
           patientDob: chartDob,
           patientMrn: chartMrn,
           patientId: mlsStr(d.patientId, 100),
-          requestId: chartRequestId
+          requestId: chartRequestId,
+          deadlineAt: chartDeadlineAt
         };
         function finishChart(resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, resp: resp || { error: 'no response' } });
+          if (chartFinished) return;
+          chartFinished = true;
+          var runtimeErr = chrome.runtime && chrome.runtime.lastError;
+          var out = runtimeErr ? { ok: false, reason: 'extension-error', error: runtimeErr.message || 'MLS Assist runtime error.' } : (resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' });
+          reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, deadlineAt: chartDeadlineAt, resp: out });
         }
         function readPreopenedChart() {
+          if (Date.now() >= chartDeadlineAt) { finishChart({ ok: false, reason: 'chart-deadline-exceeded', error: 'The exact chart request expired before the read began.' }); return; }
           chartMessage.preopened = true;
           chrome.runtime.sendMessage(chartMessage, finishChart);
         }
@@ -267,7 +316,7 @@
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
         if (chartPatient) {
-          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn }, function (opened) {
+          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
               finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
@@ -1371,6 +1420,87 @@
   'use strict';
   try { if (window.__mlsAllVisitsBridge) return; window.__mlsAllVisitsBridge = 1; } catch (e) { return; }
   var pendingById = Object.create(null);
+  var deadlineTimer = (function () {
+    var seq = 0, callbacks = Object.create(null), worker = null, workerUrl = '';
+    function armWindowFallback(entry) {
+      if (!entry || !entry.active || entry.fallback != null) return !!(entry && entry.active);
+      if (entry.deadlineAt <= Date.now()) { entry.fire(); return false; }
+      try {
+        entry.fallback = setTimeout(entry.fire, Math.max(0, entry.deadlineAt - Date.now()));
+        if (entry.active && entry.deadlineAt <= Date.now()) {
+          try { clearTimeout(entry.fallback); } catch (e) {}
+          entry.fallback = null; entry.fire(); return false;
+        }
+        return true;
+      } catch (e) {
+        /* A failed compatibility timer is terminal now. arm() reports this
+           state so the relay cannot send the browser operation afterward. */
+        entry.fire();
+        return false;
+      }
+    }
+    function failWorker() {
+      /* Worker failure is not a request timeout. Re-arm every live request on
+         a window timer at its ORIGINAL absolute deadline. Firing callbacks
+         here would settle early and the relay could still dispatch after its
+         arm() call returned. */
+      var failedWorker = worker;
+      worker = null;
+      try { if (failedWorker) failedWorker.onerror = null; } catch (e) {}
+      try { if (failedWorker) failedWorker.terminate(); } catch (e) {}
+      Object.keys(callbacks).forEach(function (id) {
+        var entry = callbacks[id];
+        if (entry && entry.active) armWindowFallback(entry);
+      });
+    }
+    try {
+      if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && URL.createObjectURL) {
+        workerUrl = URL.createObjectURL(new Blob([
+          "var t={};onmessage=function(e){var d=e.data||{},id=String(d.id||'');" +
+          "if(d.action==='cancel'){if(t[id]){clearTimeout(t[id]);delete t[id];}return;}" +
+          "if(d.action!=='arm'||!id)return;if(t[id])clearTimeout(t[id]);" +
+          "t[id]=setTimeout(function(){delete t[id];postMessage({id:id});},Math.max(0,Number(d.deadlineAt||0)-Date.now()));};"
+        ], { type: 'text/javascript' }));
+        worker = new Worker(workerUrl);
+        worker.onmessage = function (event) {
+          var id = String(event && event.data && event.data.id || ''), entry = callbacks[id];
+          if (!entry) return;
+          entry.fire();
+        };
+        worker.onerror = failWorker;
+      }
+    } catch (e) { worker = null; }
+    return {
+      arm: function (deadlineAt, callback) {
+        var at = Number(deadlineAt || 0);
+        if (!isFinite(at) || at <= 0) at = Date.now();
+        var id = 'all-visits-deadline-' + (++seq) + '-' + Date.now().toString(36);
+        var entry = { id: id, deadlineAt: at, fallback: null, active: true, fire: null };
+        function fire() {
+          if (!entry.active) return;
+          entry.active = false; delete callbacks[id];
+          if (entry.fallback != null) { try { clearTimeout(entry.fallback); } catch (e) {} entry.fallback = null; }
+          callback();
+        }
+        function cancel() {
+          if (!entry.active) return;
+          entry.active = false; delete callbacks[id];
+          if (entry.fallback != null) { try { clearTimeout(entry.fallback); } catch (e) {} entry.fallback = null; }
+          if (worker) { try { worker.postMessage({ action: 'cancel', id: id }); } catch (e) {} }
+        }
+        cancel.isTerminal = function () { return !entry.active; };
+        entry.fire = fire; callbacks[id] = entry;
+        if (at <= Date.now()) {
+          fire();
+        } else if (worker) {
+          try { worker.postMessage({ action: 'arm', id: id, deadlineAt: deadlineAt }); }
+          catch (e) { failWorker(); }
+        } else armWindowFallback(entry);
+        return cancel;
+      },
+      workerBacked: function () { return !!worker; }
+    };
+  })();
   function trusted(origin) {
     if (!origin || typeof origin !== 'string') return false;
     try {
@@ -1385,7 +1515,7 @@
   function finishPending(requestId) {
     var pending = pendingById[requestId];
     if (!pending) return null;
-    if (pending.timer) clearTimeout(pending.timer);
+    if (pending.cancelDeadline) pending.cancelDeadline();
     delete pendingById[requestId];
     return pending;
   }
@@ -1397,6 +1527,7 @@
     if (pending.background) out.background = true;
     if (pending.silent) out.silent = true;
     if (pending.initiator) out.initiator = pending.initiator;
+    if (pending.deadlineAt) out.deadlineAt = pending.deadlineAt;
     return out;
   }
   window.addEventListener('message', function (ev) {
@@ -1404,8 +1535,10 @@
     var origin = ev.origin;
     var requestId = String(d.id || d.requestId || '').slice(0, 100);
     var retryOf = String(d.retryOf || d.parentRequestId || d.correlationId || '').slice(0, 100);
+    var requestedDeadline = Number(d.deadlineAt || 0);
+    var deadlineAt = isFinite(requestedDeadline) && requestedDeadline > 0 ? requestedDeadline : Date.now() + 300000;
     var pending = {
-      origin: origin, timer: null, retryOf: retryOf,
+      origin: origin, cancelDeadline: null, deadlineAt: deadlineAt, retryOf: retryOf,
       managed: d.managed === true, background: d.background === true,
       silent: d.silent === true, initiator: String(d.initiator || '').slice(0, 32)
     };
@@ -1417,14 +1550,28 @@
       post(origin, 'mlsAppAllVisitsResult', pendingMeta(pending, { id: requestId, requestId: requestId, ok: false, error: 'Duplicate history request correlation id.' }));
       return;
     }
-    pending.timer = setTimeout(function () { finishPending(requestId); }, 300000);
+    if (deadlineAt <= Date.now()) {
+      post(origin, 'mlsAppAllVisitsResult', pendingMeta(pending, { id: requestId, requestId: requestId, ok: false, complete: false, reason: 'content-deadline-exceeded', error: 'The correlated history request expired before MLS Assist could start it.' }));
+      return;
+    }
     pendingById[requestId] = pending;
+    pending.cancelDeadline = deadlineTimer.arm(deadlineAt, function () {
+      var expired = finishPending(requestId);
+      if (!expired) return;
+      post(expired.origin, 'mlsAppAllVisitsResult', pendingMeta(expired, { id: requestId, requestId: requestId, ok: false, complete: false, reason: 'content-deadline-exceeded', error: 'MLS Assist did not finish this exact history request before its immutable deadline.' }));
+    });
+    if (pending.cancelDeadline && typeof pending.cancelDeadline.isTerminal === 'function' && pending.cancelDeadline.isTerminal()) return;
+    if (Date.now() >= deadlineAt) {
+      var elapsed = finishPending(requestId);
+      if (elapsed) post(elapsed.origin, 'mlsAppAllVisitsResult', pendingMeta(elapsed, { id: requestId, requestId: requestId, ok: false, complete: false, reason: 'content-deadline-exceeded', error: 'The correlated history request deadline elapsed before dispatch.' }));
+      return;
+    }
     /* Correlated acceptance keeps the page on its long timeout while Athena is
        being located. Runtime progress below is still accepted only when the
        background echoes this exact id. */
     post(origin, 'mlsAppVisitsProgress', pendingMeta(pending, { id: requestId, requestId: requestId, message: 'MLS Assist accepted the history request...' }));
     try {
-      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId }), function (res) {
+      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId, deadlineAt: deadlineAt }), function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         var target = finishPending(requestId);
         if (!target) return;
@@ -1533,7 +1680,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsSearchOpenBridge) return; window.__mlsSearchOpenBridge = 1; } catch (e) { return; }
-  var activeOrigin = '', activeUntil = 0;
+  var activeOrigin = '', activeUntil = 0, activeRequestId = '';
   function trusted(origin) {
     if (!origin || typeof origin !== 'string') return false;
     try {
@@ -1551,7 +1698,12 @@
     var d = ev && ev.data;
     if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppSearchOpenPatient') return;
     if (!trusted(ev.origin)) return;
-    activeOrigin = ev.origin; activeUntil = Date.now() + 120000;
+    var requestOrigin = ev.origin;
+    var requestId = String(d.requestId || d.id || '').slice(0, 100);
+    var requestedDeadline = Number(d.deadlineAt || 0);
+    var deadlineAt = isFinite(requestedDeadline) && requestedDeadline > 0 ? requestedDeadline : Date.now() + 120000;
+    activeOrigin = requestOrigin; activeUntil = deadlineAt; activeRequestId = requestId;
+    if (deadlineAt <= Date.now()) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, complete: false, reason: 'search-deadline-exceeded', error: 'The patient-open request expired before it began.', requestId: requestId, deadlineAt: deadlineAt }); return; }
     try {
       /* v1.78: forward the app's DOB when it sends one - the findpatient route
          verifies the result row's DOB BEFORE opening the chart. Optional.
@@ -1581,18 +1733,20 @@
           }
         } catch (e1) {}
       }
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, noReload: d.noReload === true }, function (res) {
+      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { post(activeOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true }); return; }
+        if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
-        post(activeOrigin, 'mlsAppSearchOpenResult', out);
+        out.requestId = requestId; out.deadlineAt = deadlineAt;
+        post(requestOrigin, 'mlsAppSearchOpenResult', out);
       });
-    } catch (e) { post(activeOrigin, 'mlsAppSearchOpenResult', { ok: false, error: String((e && e.message) || e) }); }
+    } catch (e) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: String((e && e.message) || e), requestId: requestId, deadlineAt: deadlineAt }); }
   }, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
       if (msg && msg.type === 'mlsAppSearchOpenProgress') {
-        if (activeOrigin && Date.now() < activeUntil) post(activeOrigin, 'mlsAppSearchOpenProgress', { message: msg.message });
+        var progressId = String(msg.requestId || msg.id || '').slice(0, 100);
+        if (activeOrigin && Date.now() < activeUntil && progressId && activeRequestId && progressId === activeRequestId) post(activeOrigin, 'mlsAppSearchOpenProgress', { message: msg.message, requestId: activeRequestId, deadlineAt: activeUntil });
       }
     });
   } catch (e) {}

@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..');
 const siSource = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const calSource = fs.readFileSync(path.join(root, 'feat_mls_calendar_polish.js'), 'utf8');
 const loaderSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const stagingLoaderSource = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 const providerLabelSource = fs.readFileSync(path.join(root, 'feat_mls_provider_label.js'), 'utf8');
 const findDoctorsSource = fs.readFileSync(path.join(root, 'feat_mls_find_doctors.js'), 'utf8');
 
@@ -33,7 +34,8 @@ assert(calSource.includes("HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck'")
 assert(calSource.includes("(includeHistory() ? ' checked' : '')"), 'history checkbox must default from the safe default-on preference');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
-assert(loaderSource.includes('20260714si160p1'), 'production loader must cache-bust the exact provider/day/month history importer');
+assert(loaderSource.includes('20260714si161p2'), 'production loader must cache-bust the exact provider/day/month history importer');
+assert(stagingLoaderSource.includes('20260714si161p2'), 'staging loader must cache-bust the exact provider/day/month history importer');
 assert(loaderSource.includes('20260714cal131p1'), 'production loader must cache-bust the canonical calendar provider pull UI');
 
 // Every roster normalizer runs before a provider-day pull. None may erase a
@@ -237,6 +239,13 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   const store = new Map();
   const posted = [];
   const savedBodies = [];
+  function withWatchdog(promise, label, ms = 10000) {
+    let timer = null;
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms`)), ms); })
+    ]).finally(() => { if (timer != null) clearTimeout(timer); });
+  }
   const patient = { id: 'p-provider-1', name: 'Exact Patient', dob: '01/02/1960', visits: [] };
   const runtimeNodes = {
     calProvFilter: { value: '7' },
@@ -296,25 +305,45 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
       coverage: { problems: 'found', meds: 'found', allergies: 'found', summary: 'found', vitals: 'found', history: 'found' }
     }),
     _athenaChartProfileCoverage: () => ({ complete: true }),
+    _athenaChartSnapshotFromChart: chart => ({ problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }),
+    _athenaChartSnapshotProof: snapshot => JSON.stringify(snapshot || {}),
     _athenaHistoryVerifiedRef: target => ({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob }),
-    _savePatientChart: () => { patient.athenaProfileCoverage = { complete: true, exactIdentityVerified: true, patientId: patient.id, cards: {
+    _savePatientChart: (ref, _row, chart) => { patient.athenaChartSnapshot = { problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }; patient.athenaProfileCoverage = { complete: true, exactIdentityVerified: true, patientId: patient.id, capturedAt: new Date().toISOString(), saveRequestId: String(ref.requestId || ''), cards: {
       problems: { populated: true }, meds: { populated: true }, allergies: { populated: true }, summary: { populated: true }, vitals: { populated: true }, history: { populated: true }
     } }; return true; },
     _patientHistoryCardCoverage: () => patient.athenaProfileCoverage,
-    __mlsVisitModel: {
-      addVisit: (_id, raw) => { patient.visits.push(raw); return raw; },
-      getVisits: () => patient.visits,
-      organizePatientHistory: () => ({ ok: true, verifiedVisits: patient.visits.length })
-    },
-    __mlsCopyVisits: {
-      _saveVisits: (_p, _identity, visits) => { visits.forEach(v => patient.visits.push(v)); return visits.length; },
-      _visitIdentityAgrees: () => true
-    },
+    __mlsVisitModel: null,
+    __mlsCopyVisits: null,
     fetch: async (_url, init) => {
       if (!init || !init.method) return { ok: true, json: async () => ({ appointments: [] }) };
       savedBodies.push(JSON.parse(init.body));
       return { ok: true, status: 200, json: async () => ({ ok: true, id: `provider-day-backend-${savedBodies.length}` }) };
     }
+  };
+  function storeVerifiedVisit(_id, raw, opts) {
+    opts = opts || {};
+    const stored = Object.assign({}, raw, {
+      source: opts.source || 'athena-copy', identityVerified: opts.identityVerified === true,
+      identityBinding: opts.identityBinding || patient.id,
+      bodyComplete: opts.bodyComplete === true && raw.fullDetail === true
+    });
+    const key = stored.encounterId || stored.sourceVisitKey;
+    const prior = patient.visits.findIndex(v => (v.encounterId || v.sourceVisitKey) === key);
+    if (prior >= 0) patient.visits[prior] = stored; else patient.visits.push(stored);
+    return stored;
+  }
+  rt.__mlsVisitModel = {
+    addVisit: storeVerifiedVisit,
+    getVisits: () => patient.visits,
+    reconcileVerifiedAthenaVisits: () => ({ complete: true, removed: 0, kept: patient.visits.length }),
+    organizePatientHistory: () => ({ ok: true, verifiedVisits: patient.visits.length })
+  };
+  rt.__mlsCopyVisits = {
+    _saveVisits: (_p, _identity, visits) => {
+      visits.forEach(v => storeVerifiedVisit(patient.id, v, { source: 'athena-copy', identityVerified: true, identityBinding: patient.id, bodyComplete: true }));
+      return visits.length;
+    },
+    _visitIdentityAgrees: () => true
   };
   rt.window = rt;
   rt.__mlsProviderRoster = {
@@ -351,7 +380,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     });
     if (msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
       const event = { data: {
-        source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
+        source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id, requestId: msg.id, ok: true,
         visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'Verified old visit with substantive clinical detail for the regression.', fullDetail: true, sourceVisitKey: 'row:provider-day-1' }],
         receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
         readerVersion: '2.9.22-visits-r4-two-stage', identity: { name: patient.name, dob: patient.dob, mrn: '' }
@@ -365,8 +394,8 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   // Mutate the live calendar immediately; the in-flight request must retain its snapshot.
   runtimeNodes.calProvFilter.value = '8';
   rt._calRefDate = '2026-07-20';
-  const result = await promise;
-  assert.strictEqual(result.ok, true);
+  const result = await withWatchdog(promise, 'provider-day history pull');
+  assert.strictEqual(result.ok, true, JSON.stringify({ reason: result.reason, error: result.error, historyReceipt: result.historyReceipt }));
   assert.strictEqual(result.complete, true);
   assert.strictEqual(result.target, '2026-07-15');
   assert.strictEqual(result.requestedProvider.id, '7');
@@ -384,7 +413,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   const visitsBeforeScheduleOnly = posted.filter(m => m.type === 'mlsAppReadAllVisits').length;
   runtimeNodes.calProvFilter.value = '7';
   rt._calMode = 'day'; rt._calRefDate = '2026-07-15'; runtimeNodes.calDayPanel.style.display = 'block';
-  const scheduleOnly = await rt.__mlsSI.pullCalendarSelection({ includeHistory: false, onStatus: () => {} });
+  const scheduleOnly = await withWatchdog(rt.__mlsSI.pullCalendarSelection({ includeHistory: false, onStatus: () => {} }), 'provider-day schedule-only pull');
   assert.strictEqual(scheduleOnly.ok, true);
   assert.strictEqual(scheduleOnly.complete, true);
   assert.strictEqual(scheduleOnly.includeHistory, false);
@@ -393,7 +422,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   assert.strictEqual(scheduleOnly.historyReceipt.reason, 'not-requested');
   assert.strictEqual(posted.filter(m => m.type === 'mlsAppReadAllVisits').length, visitsBeforeScheduleOnly, 'schedule-only mode must not read Athena history/visits');
 
-  const blockedNameOnly = await rt.__mlsSI._runHistoryBatch([{ name: patient.name }], [], () => {});
+  const blockedNameOnly = await withWatchdog(rt.__mlsSI._runHistoryBatch([{ name: patient.name }], [], () => {}), 'provider-day name-only rejection');
   assert.strictEqual(blockedNameOnly.complete, false);
   assert.strictEqual(blockedNameOnly.exactIdentityVerified, false);
   assert.strictEqual(blockedNameOnly.retry[0].reason, 'identity-target-unresolved', 'name-only history targets remain blocked');

@@ -192,7 +192,17 @@ function makeDriver(rootEl, options = {}) {
   };
   ctx.window = ctx;
   vm.runInNewContext(driverSource + '\nthis.__driver = mlsVisitsDriverFn;', ctx, { filename: 'visit-accordion-driver.js', timeout: 2000 });
-  return (op, cfg, idx, expected) => ctx.__driver(op, cfg || {}, idx, expected);
+  return (op, cfg, idx, expected) => {
+    const guarded = Object.assign({}, cfg || {});
+    /* Production sends one immutable guard on every click-capable operation.
+       Keep this DOM fixture faithful to that contract while read-only enumerate
+       and detail probes remain intentionally guard-free. */
+    if (/^(?:openVisits|click|openDetailFrame|closeDetailFrame)$/.test(op) && !guarded.__requestToken) {
+      guarded.__requestToken = 'accordion-runtime';
+      guarded.__readDeadline = Date.now() + 60000;
+    }
+    return ctx.__driver(op, guarded, idx, expected);
+  };
 }
 
 // ---- scenario 1: fresh accordion — descendant path AND exact-row fallback ----

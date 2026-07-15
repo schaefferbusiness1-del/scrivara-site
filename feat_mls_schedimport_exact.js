@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.0";
+  var VERSION = "si-1.6.1";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -53,6 +53,103 @@
   var knownDays = {};
   var authoritativeMemory = { v: 1, days: {} };
   var historyBatchRunning = false;
+  var pullRunning = false;
+  var lastPullResult = null;
+
+  /* A hidden MLS tab can have its window timers throttled to effectively zero.
+     Keep pull deadlines in one dedicated Worker when the browser permits it;
+     the window-timer branch is only a compatibility fallback. Every caller
+     supplies an absolute timestamp, so no relay can accidentally extend a
+     patient read by starting a fresh relative timeout. */
+  function makeAbsoluteDeadlineScheduler() {
+    var seq = 0, pending = {}, worker = null, workerUrl = "";
+    function armWindowFallback(entry) {
+      if (!entry || !entry.active || entry.timer != null) return !!(entry && entry.active);
+      if (entry.deadlineAt <= Date.now()) { entry.fire(); return false; }
+      try {
+        entry.timer = setTimeout(entry.fire, Math.max(0, entry.deadlineAt - Date.now()));
+        if (entry.active && entry.deadlineAt <= Date.now()) {
+          try { clearTimeout(entry.timer); } catch (e) {}
+          entry.timer = null; entry.fire(); return false;
+        }
+        return true;
+      } catch (e) {
+        /* If even the compatibility timer cannot be armed, fail this request
+           synchronously. arm() exposes that terminal state so its caller can
+           refuse to dispatch the stateful browser operation afterward. */
+        entry.fire();
+        return false;
+      }
+    }
+    function failWorker() {
+      /* A Worker transport failure is not itself the request deadline. Move
+         every live arm to a window timer using its ORIGINAL absolute time;
+         firing callbacks here would settle a request early and its caller
+         could still dispatch the stateful operation after arm() returned. */
+      var failedWorker = worker;
+      worker = null;
+      try { if (failedWorker) failedWorker.onerror = null; } catch (e) {}
+      try { if (failedWorker) failedWorker.terminate(); } catch (e) {}
+      Object.keys(pending).forEach(function (id) {
+        var entry = pending[id];
+        if (entry && entry.active) armWindowFallback(entry);
+      });
+    }
+    try {
+      if (typeof Worker === "function" && typeof Blob === "function" && window.URL && isFn(window.URL.createObjectURL)) {
+        workerUrl = window.URL.createObjectURL(new Blob([
+          "var t={};onmessage=function(e){var d=e.data||{},id=String(d.id||'');" +
+          "if(d.action==='cancel'){if(t[id]){clearTimeout(t[id]);delete t[id];}return;}" +
+          "if(d.action!=='arm'||!id)return;if(t[id])clearTimeout(t[id]);" +
+          "var ms=Math.max(0,Number(d.deadlineAt||0)-Date.now());" +
+          "t[id]=setTimeout(function(){delete t[id];postMessage({id:id});},ms);};"
+        ], { type: "text/javascript" }));
+        worker = new Worker(workerUrl);
+        worker.onmessage = function (event) {
+          var id = String(event && event.data && event.data.id || ""), entry = pending[id];
+          if (!entry) return;
+          try { entry.fire(); } catch (e) {}
+        };
+        worker.onerror = failWorker;
+      }
+    } catch (e) { worker = null; }
+    function arm(deadlineAt, callback) {
+      var at = Number(deadlineAt || 0);
+      if (!isFinite(at) || at <= 0) at = Date.now();
+      var id = "mls-deadline-" + (++seq) + "-" + Date.now().toString(36);
+      var entry = { id: id, deadlineAt: at, timer: null, active: true, fire: null, cancel: null };
+      function fire() {
+        if (!entry.active) return;
+        entry.active = false; delete pending[id];
+        if (entry.timer != null) { try { clearTimeout(entry.timer); } catch (e) {} entry.timer = null; }
+        callback();
+      }
+      function cancel() {
+        if (!entry.active) return;
+        entry.active = false; delete pending[id];
+        if (entry.timer != null) { try { clearTimeout(entry.timer); } catch (e) {} entry.timer = null; }
+        if (worker) { try { worker.postMessage({ action: "cancel", id: id }); } catch (e) {} }
+      }
+      cancel.isTerminal = function () { return !entry.active; };
+      entry.fire = fire; entry.cancel = cancel; pending[id] = entry;
+      if (at <= Date.now()) {
+        fire();
+      } else if (worker) {
+        try { worker.postMessage({ action: "arm", id: id, deadlineAt: at }); }
+        catch (e) { failWorker(); }
+      } else armWindowFallback(entry);
+      return cancel;
+    }
+    function destroy() {
+      Object.keys(pending).forEach(function (id) { var entry = pending[id]; if (entry && entry.cancel) entry.cancel(); });
+      if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
+      if (workerUrl && window.URL && isFn(window.URL.revokeObjectURL)) { try { window.URL.revokeObjectURL(workerUrl); } catch (e) {} }
+      workerUrl = "";
+    }
+    return { arm: arm, destroy: destroy, workerBacked: function () { return !!worker; } };
+  }
+  var absoluteDeadlines = makeAbsoluteDeadlineScheduler();
+  safe(function () { window.__mlsAbsoluteDeadline = absoluteDeadlines; });
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
@@ -433,6 +530,15 @@
     var expected = Number(calendarReceipt && calendarReceipt.attempted);
     var out = { published: false, complete: false, date: date || "", scope: req.mode, providerKey: req.key || "", expected: isFinite(expected) ? expected : 0, mapped: mappings.length, reason: "unverified" };
     if (!date || !scheduleReceipt || scheduleReceipt.complete !== true) { out.reason = "schedule-unverified"; return out; }
+    var emptyContract = authoritativeEmptyContract({
+      scheduleReceipt: scheduleReceipt,
+      returnedAppointments: input.returnedAppointments,
+      diag: input.diag,
+      providerDiag: input.providerDiag,
+      calendarReceipt: calendarReceipt,
+      resolvedAppointments: mappings
+    });
+    if (!emptyContract.ok) { out.reason = emptyContract.reason; out.contradiction = emptyContract; return out; }
     if (req.mode === "selected" && (!providerReceipt || providerReceipt.complete !== true)) { out.reason = "provider-unverified"; return out; }
     if (!calendarReceipt || calendarReceipt.complete !== true || !isFinite(expected) || expected < 0) { out.reason = "calendar-unverified"; return out; }
     if (expected > 0 && (!providerReceipt || providerReceipt.complete !== true)) { out.reason = "provider-unverified"; return out; }
@@ -535,13 +641,76 @@
     return null;
   }
 
+  /* An explicit Athena empty-state marker is only authoritative when every
+     independent appointment count agrees that the day is empty. A reader bug
+     must not turn "authoritativeEmpty: true" into a success while its own
+     candidate/parsed/canonical evidence (or returned rows) says otherwise. */
+  function authoritativeEmptyContract(input) {
+    input = input || {};
+    var receipt = input.scheduleReceipt || input.receipt || null;
+    var out = { applicable: !!(receipt && receipt.authoritativeEmpty === true), ok: true, reason: "not-empty", field: "", value: null };
+    if (!out.applicable) return out;
+    function reject(field, value) {
+      out.ok = false; out.reason = "authoritative-empty-contradiction";
+      out.field = field; out.value = value;
+      return out;
+    }
+    function exactZero(obj, key, required, prefix) {
+      var owns = !!(obj && Object.prototype.hasOwnProperty.call(obj, key));
+      if (!owns) return required ? reject((prefix || "receipt") + "." + key, "missing") : null;
+      var raw = obj[key];
+      if (raw === null || raw === "" || typeof raw === "boolean") return reject((prefix || "receipt") + "." + key, raw);
+      var n = Number(raw);
+      return isFinite(n) && n === 0 ? null : reject((prefix || "receipt") + "." + key, raw);
+    }
+    if (receipt.complete !== true) return reject("receipt.complete", receipt.complete);
+    var required = ["expectedCount", "candidateCount", "parsedCount"];
+    for (var i = 0; i < required.length; i++) if (exactZero(receipt, required[i], true, "receipt")) return out;
+    var evidenceKeys = [
+      "declaredCount", "unnamedCount", "domValidRows", "textValidRows", "mergedRows",
+      "canonicalCount", "canonicalRowCount", "reconciledCount", "reconciledRowCount",
+      "returnedCount", "returnedRowCount", "appointmentCount", "apptCount"
+    ];
+    var evidence = [
+      { value: receipt, name: "receipt" },
+      { value: input.diag, name: "diag" },
+      { value: input.providerDiag, name: "providerDiag" }
+    ];
+    for (var e = 0; e < evidence.length; e++) {
+      for (var j = 0; j < evidenceKeys.length; j++) {
+        if (exactZero(evidence[e].value, evidenceKeys[j], false, evidence[e].name)) return out;
+      }
+    }
+    var returned = Object.prototype.hasOwnProperty.call(input, "returnedAppointments")
+      ? input.returnedAppointments : input.appts;
+    if (!Array.isArray(returned)) return reject("returnedAppointments", "missing");
+    if (returned.length !== 0) return reject("returnedAppointments.length", returned.length);
+    if (input.resolvedAppointments != null) {
+      if (!Array.isArray(input.resolvedAppointments)) return reject("resolvedAppointments", "invalid");
+      if (input.resolvedAppointments.length !== 0) return reject("resolvedAppointments.length", input.resolvedAppointments.length);
+    }
+    if (input.calendarReceipt != null) {
+      var calendarKeys = [
+        "attempted", "accounted", "mapped", "uniqueSources", "uniqueBackend",
+        "unresolvedMappings", "created", "repaired", "skipped", "failed", "wrongDay", "invalidDate"
+      ];
+      for (var c = 0; c < calendarKeys.length; c++) {
+        if (exactZero(input.calendarReceipt, calendarKeys[c], false, "calendarReceipt")) return out;
+      }
+    }
+    out.reason = "authoritative-empty";
+    return out;
+  }
+
   /* ---- read-only capture of the latest schedule read (for DOM-scrape fallback) ---- */
   var lastResp = null;
   function onSchedMsg(e) {
     safe(function () {
       var d = e && e.data;
       if (!d || d.source !== "mls-ext" || d.type !== "mlsAppScheduleResult") return;
-      lastResp = d.resp || null;   // kept in memory only; never logged or forwarded
+      var response = d.resp || null;
+      if (!authoritativeEmptyContract(response).ok) return;
+      lastResp = response;   // kept in memory only; never logged or forwarded
     });
   }
 
@@ -774,28 +943,59 @@
       /* Bind every imported/skipped appointment to one immutable MLS patient
          before any asynchronous chart work begins. The history pipeline uses
          these IDs (plus DOB/MRN proof), never a later name-only lookup. */
-      var historyTargets = [], historyTargetSeen = {}, historyUnresolved = [];
-      function queueHistory(a, p, date, exactOldRow) {
+      var historyTargets = [], historyTargetState = {}, historyUnresolved = [];
+      function supersedeMissingHistory(patientId) {
+        historyUnresolved.forEach(function (item) {
+          if (item && item.patientId === patientId && item.reason === "missing-source-dob-mrn-proof") item._superseded = true;
+        });
+      }
+      function removeHistoryTarget(patientId) {
+        for (var hi = historyTargets.length - 1; hi >= 0; hi--) if (String(historyTargets[hi] && historyTargets[hi]._mlsTargetPatientId || "") === patientId) historyTargets.splice(hi, 1);
+      }
+      function blockHistoryPatient(patientId, reason) {
+        patientId = String(patientId || "").trim();
+        if (!patientId) return;
+        var state = historyTargetState[patientId] || null;
+        if (!state || state.status !== "conflict") historyUnresolved.push({ patientId: patientId, reason: String(reason || "source-proof-conflict") });
+        supersedeMissingHistory(patientId);
+        removeHistoryTarget(patientId);
+        historyTargetState[patientId] = { status: "conflict" };
+      }
+      function queueHistory(a, p, date) {
         var patientId = String(p && p.id || "").trim();
         if (!patientId) { historyUnresolved.push({ patientId: "", reason: "patient-not-resolved" }); return; }
-        if (historyTargetSeen[patientId]) return;
         var rowProof = sourceProof(a), dob = rowProof.dob ? String(a && a.dob || "").trim() : "", mrn = rowProof.mrn ? String(a && (a.mrn || a.athenaId || a.athena_id) || "").trim() : "";
-        /* Only the frozen Athena row may normally supply proof. The one safe
-           fallback is an existing appointment already bound to this exact local
-           patient; even then the proof must live on that appointment, never be
-           borrowed from the local patient record by display name. */
-        if (!dob && !mrn && exactOldRow && String(exactOldRow.patient_external_id || "") === patientId) {
-          var oldProof = sourceProof(exactOldRow);
-          if (oldProof.dob) dob = String(exactOldRow.dob || "").trim();
-          if (oldProof.mrn) mrn = String(exactOldRow.mrn || exactOldRow.athenaId || exactOldRow.athena_id || "").trim();
-        }
-        if ((!dob && !mrn) || (dob && normDob(p && p.dob) !== normDob(dob)) || (mrn && rowMrn(p) !== normMrn(mrn))) {
-          historyTargetSeen[patientId] = 1;
-          historyUnresolved.push({ patientId: patientId, reason: (!dob && !mrn) ? "missing-source-dob-mrn-proof" : "source-proof-conflict" });
+        /* History proof belongs to this frozen Athena schedule row. An old
+           backend appointment may keep the schedule idempotent, but its stored
+           DOB/MRN can be stale or belong to a same-name patient and therefore
+           must never upgrade a current name-only row into a chart read. */
+        var state = historyTargetState[patientId] || null;
+        if (!dob && !mrn) {
+          /* A later appointment row for this same immutable patient may carry
+             explicit proof. Keep this provisional missing-proof result
+             replaceable; an exact target or a genuine conflict is terminal. */
+          if (!state) {
+            historyTargetState[patientId] = { status: "missing" };
+            historyUnresolved.push({ patientId: patientId, reason: "missing-source-dob-mrn-proof" });
+          }
           return;
         }
-        historyTargetSeen[patientId] = 1;
-        historyTargets.push({
+        var proofConflict = (dob && normDob(p && p.dob) !== normDob(dob)) || (mrn && rowMrn(p) !== normMrn(mrn));
+        if (proofConflict) {
+          blockHistoryPatient(patientId, "source-proof-conflict");
+          return;
+        }
+        if (state && state.status === "conflict") return;
+        if (state && state.status === "exact" && state.target) {
+          /* Separate exact rows can expose complementary proof (DOB on one,
+             MRN on another). Merge only after each value independently agrees
+             with the already-resolved local patient. */
+          if (dob && !state.target._mlsTargetDob) { state.target._mlsTargetDob = dob; state.target.dob = dob; }
+          if (mrn && !state.target._mlsTargetMrn) { state.target._mlsTargetMrn = mrn; state.target.mrn = mrn; state.target.athenaId = mrn; }
+          return;
+        }
+        supersedeMissingHistory(patientId);
+        var targetRow = {
           patient_external_id: patientId,
           _mlsTargetPatientId: patientId,
           _mlsTargetDob: dob,
@@ -806,7 +1006,9 @@
            athenaId: mrn,
            date: String(date || ""),
            source: "athena-schedule-history"
-         });
+         };
+        historyTargets.push(targetRow);
+        historyTargetState[patientId] = { status: "exact", target: targetRow };
       }
       var onEach = isFn(opts.onEach) ? opts.onEach : null;   /* task-1: per-appointment status callback */
       var chain = Promise.resolve();
@@ -836,6 +1038,8 @@
             var frozenProof = sourceProof(a);
             var proofConflict = !!(boundPatient && ((frozenProof.dob && normDob(boundPatient.dob) && normDob(boundPatient.dob) !== frozenProof.dob) || (frozenProof.mrn && rowMrn(boundPatient) && rowMrn(boundPatient) !== frozenProof.mrn)));
             if (proofConflict || (existing && String(existing.id || "") !== String(oldRow.patient_external_id || ""))) {
+              if (boundPatient && boundPatient.id) blockHistoryPatient(boundPatient.id, "source-proof-conflict");
+              if (existing && existing.id && (!boundPatient || String(existing.id) !== String(boundPatient.id))) blockHistoryPatient(existing.id, "source-proof-conflict");
               failed++;
               if (onEach) safe(function () { onEach("error", { name: name, error: "appointment-patient-identity-conflict" }); });
               return;
@@ -905,7 +1109,7 @@
             }
             /* The calendar row already exists, so its exact patient is eligible
                for history even if an optional missing-time repair later fails. */
-            queueHistory(a, existing, date, oldRow);
+            queueHistory(a, existing, date);
             /* A repeat pull is idempotent enrichment, not a blind skip. Fill only
                fields that are still empty on this exact existing appointment;
                conflicting nonempty values are preserved for human review. */
@@ -954,7 +1158,7 @@
             if (ledgerState && ledgerState.state === "done") {
               var ledgerBackendId = String(ledgerState.backendAppointmentId || ""), ledgerBackend = backendById[ledgerBackendId] || null;
               if (ledgerBackend && localDayOf(ledgerBackend) === date) {
-                queueHistory(a, existing, date, ledgerBackend);
+                queueHistory(a, existing, date);
                 if (recordResolution(ledgerKey, ledgerBackendId, date, "ledger-existing")) {
                   skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); });
                 } else failed++;
@@ -1009,7 +1213,7 @@
                   if (saved && typeof saved === "object") for (var rk in saved) if (saved.hasOwnProperty(rk)) savedRow[rk] = saved[rk];
                   savedRow.id = backendAppointmentId; backendById[backendAppointmentId] = savedRow; existingRows[ledgerKey] = savedRow;
                   recordResolution(ledgerKey, backendAppointmentId, date, "created");
-                  queueHistory(a, existing, date, null); created++; days[date] = (days[date] || 0) + 1;
+                  queueHistory(a, existing, date); created++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("saved", { name: name }); });
                 });
               })
@@ -1061,6 +1265,7 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
+          historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
           return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, providerReceipt: providerScope.receipt };
         });
       });
@@ -1105,27 +1310,35 @@
 
   /* ---- day-scoped pull (Today / Tomorrow / any date) for items 2 & 3 ---- */
   function bridge(type, reqType, timeoutMs, payload) {
+    payload = payload || {};
     return new Promise(function (res) {
-      var done = false, tid = null;
-      var requestId = "mlssi-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
-      function finish(v) { if (done) return; done = true; if (tid) clearTimeout(tid); window.removeEventListener("message", on); res(v); }
+      var done = false, cancelDeadline = null;
+      var requestId = String(payload.requestId || ("mlssi-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9))).slice(0, 100);
+      var requestedDeadline = Number(payload.deadlineAt || 0);
+      var deadlineAt = isFinite(requestedDeadline) && requestedDeadline > 0 ? requestedDeadline : Date.now() + Number(timeoutMs || 12000);
+      function finish(v) { if (done) return; done = true; if (cancelDeadline) cancelDeadline(); window.removeEventListener("message", on); res(v); }
       function on(e) {
         if (!(e.data && e.data.source === "mls-ext") || e.data.type !== type) return;
-        var gotId = String((e.data.resp && e.data.resp.id) || e.data.id || "");
-        /* New extension builds echo the request id. Older builds do not, so
-           retain compatibility; whenever an id is present, a stale/probe
-           reply can no longer satisfy this pull. */
-        if (gotId && gotId !== requestId) return;
+        var gotId = String((e.data.resp && (e.data.resp.requestId || e.data.resp.id)) || e.data.requestId || e.data.id || "");
+        /* Every stateful managed reply must prove it belongs to this exact
+           request. Only the passive version ping intentionally has no ID.
+           Accepting ID-less schedule/history traffic lets a late old result
+           settle a newer pull. */
+        if (type === "mlsPong") { if (gotId && gotId !== requestId) return; }
+        else if (gotId !== requestId) return;
         finish(e.data.resp || e.data || null);
       }
       window.addEventListener("message", on);
+      cancelDeadline = absoluteDeadlines.arm(deadlineAt, function () {
+        finish({ ok: false, complete: false, reason: "bridge-deadline-exceeded", error: "MLS Assist did not finish before the immutable request deadline.", requestId: requestId, deadlineAt: deadlineAt });
+      });
+      if (cancelDeadline && isFn(cancelDeadline.isTerminal) && cancelDeadline.isTerminal()) return;
+      if (Date.now() >= deadlineAt) { finish({ ok: false, complete: false, reason: "bridge-deadline-exceeded", error: "MLS Assist deadline elapsed before dispatch.", requestId: requestId, deadlineAt: deadlineAt }); return; }
       safe(function () {
-        var msg = { source: "mls-app", type: reqType, id: requestId };
-        payload = payload || {};
+        var msg = { source: "mls-app", type: reqType, id: requestId, requestId: requestId, deadlineAt: deadlineAt };
         for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; }
         window.postMessage(msg, "*");
       });
-      tid = setTimeout(function () { finish(null); }, timeoutMs || 12000);
     });
   }
 
@@ -1199,18 +1412,21 @@
    * Schedule import returns immutable patient IDs. Process those IDs one at
    * a time, keep every Athena operation read-only, and return an honest
    * per-patient receipt. A partial/timeout never becomes a completed pull. */
-  function bounded(promise, ms, label) {
+  function boundedUntil(promise, deadlineAt, label, onTimeout) {
     return new Promise(function (resolve, reject) {
-      var done = false, tid = setTimeout(function () {
-        if (done) return; done = true; reject(new Error(label || "timeout"));
-      }, ms);
+      var done = false, cancelDeadline = absoluteDeadlines.arm(deadlineAt, function () {
+        if (done) return; done = true;
+        try { if (isFn(onTimeout)) onTimeout(); } catch (e) {}
+        var err = new Error(label || "deadline-exceeded"); err.code = "MLS_DEADLINE_EXCEEDED"; err.deadlineAt = Number(deadlineAt || 0); reject(err);
+      });
       Promise.resolve(promise).then(function (v) {
-        if (done) return; done = true; clearTimeout(tid); resolve(v);
+        if (done) return; done = true; cancelDeadline(); resolve(v);
       }, function (e) {
-        if (done) return; done = true; clearTimeout(tid); reject(e);
+        if (done) return; done = true; cancelDeadline(); reject(e);
       });
     });
   }
+  function bounded(promise, ms, label, onTimeout) { return boundedUntil(promise, Date.now() + Number(ms || 0), label, onTimeout); }
   function patientById(id) {
     var pts = (callG("getPatients") || []) || [], sid = String(id || "");
     for (var i = 0; i < pts.length; i++) if (String(pts[i] && pts[i].id || "") === sid) return pts[i];
@@ -1233,6 +1449,15 @@
     if (normMrn(ref.mrn) && normMrn(snap.mrn || snap.athenaId) !== normMrn(ref.mrn)) return null;
     return snap;
   }
+  function frozenRetryEntry(row, target, reason) {
+    row = row || {}; target = target || {};
+    return {
+      patientId: String(target.patientId || row._mlsTargetPatientId || row.patient_external_id || row.patientId || ""),
+      reason: String(reason || row.reason || "history-partial").slice(0, 120),
+      frozenDob: normDob(target.dob || row._mlsTargetDob || row.dob || row.frozenDob || ""),
+      frozenMrn: normMrn(target.mrn || target.athenaId || row._mlsTargetMrn || row.mrn || row.athenaId || row.frozenMrn || "")
+    };
+  }
   function verifiedChartCoverage(rd, readStartedAt) {
     rd = rd || {};
     var receipt = rd.coverageReceipt || null;
@@ -1245,16 +1470,40 @@
     if (!(expected >= 1) || read !== expected || Number(receipt.boundClinicalFrames) !== expected || Number(receipt.unboundClinicalFrames || 0) !== 0 || Number(receipt.oversizeClinicalFrames || 0) !== 0 || Number(receipt.unreadFrames || 0) !== 0 || Number(receipt.omittedForCap || 0) !== 0 || receipt.truncated === true || textChars !== String(rd.text || "").length) return null;
     return receipt;
   }
-  function saveOrganizedHistory(target, row, rd, readStartedAt) {
+  function saveOrganizedHistory(target, row, rd, readStartedAt, deadlineAt, requestId) {
     var coverage = verifiedChartCoverage(rd, readStartedAt);
     if (!coverage) return Promise.reject(new Error("chart-coverage-unproven"));
-    return bounded(Promise.resolve(safe(function () { return window._parsePatientChart(rd.text); }, null)), 120000, "chart-parse-timeout").then(function (chart) {
+    var aborter = typeof AbortController === "function" ? new AbortController() : null;
+    var parsePromise = Promise.resolve(safe(function () { return window._parsePatientChart(rd.text, { signal: aborter && aborter.signal, deadlineAt: deadlineAt, requestId: requestId }); }, null));
+    return boundedUntil(parsePromise, deadlineAt, "chart-parse-deadline-exceeded", function () { if (aborter) aborter.abort(); }).then(function (chart) {
       var parsedCoverage=safe(function(){return isFn(window._athenaChartProfileCoverage)?window._athenaChartProfileCoverage(chart):null;},null);
       if (!chart || !parsedCoverage || parsedCoverage.complete!==true) throw new Error("clinical-field-coverage-unproven");
       var saveRef = safe(function () { return window._athenaHistoryVerifiedRef(target, rd); }, null);
-      if (!saveRef || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
+      requestId=String(requestId||"");
+      if(saveRef&&requestId) saveRef.requestId=requestId;
+      if (!saveRef || !requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
       var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
       if(!storedCoverage||storedCoverage.complete!==true||storedCoverage.exactIdentityVerified!==true) throw new Error("clinical-field-save-unproven");
+      /* A sink reporting success is not proof that this operation replaced the
+         six-card profile. Without a current timestamp, yesterday's exact but
+         stale receipt can mask a dropped save and make the patient green. The
+         chart sink stamps capturedAt locally after this read begins, so require
+         it to fall inside this exact operation before accepting the cards. */
+      var profileCapturedRaw=storedCoverage.capturedAt;
+      var profileCapturedAt=Number(profileCapturedRaw||0);
+      if(!isFinite(profileCapturedAt)||profileCapturedAt<=0) profileCapturedAt=Date.parse(String(profileCapturedRaw||""))||0;
+      if(!profileCapturedAt||profileCapturedAt<Number(readStartedAt||0)||profileCapturedAt>Date.now()+5000) throw new Error("six-card-profile-freshness-unproven");
+      /* Timestamp freshness alone is not persistence proof: a failed sink could
+         stamp a new receipt while leaving yesterday's clinical fields in place.
+         Bind the receipt to this exact operation and compare the canonical
+         Athena-owned snapshot actually stored for the patient with the snapshot
+         derived from this operation's parsed chart. */
+      if(String(storedCoverage.saveRequestId||"")!==requestId) throw new Error("six-card-save-request-unproven");
+      var storedPatient=patientById(target.patientId);
+      var expectedSnapshot=safe(function(){return isFn(window._athenaChartSnapshotFromChart)?window._athenaChartSnapshotFromChart(chart):null;},null);
+      var expectedProof=safe(function(){return expectedSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(expectedSnapshot):"";},"");
+      var storedProof=safe(function(){return storedPatient&&storedPatient.athenaChartSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(storedPatient.athenaChartSnapshot):"";},"");
+      if(!expectedProof||!storedProof||storedProof!==expectedProof) throw new Error("six-card-persistence-unproven");
       var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(storedCoverage.cards&&storedCoverage.cards[k]&&storedCoverage.cards[k].populated?1:0);},0);
       return {chartCoverage:coverage,profileCoverage:storedCoverage,clinicalFieldCount:clinicalFieldCount};
     });
@@ -1273,79 +1522,174 @@
     if (visits.length !== parsed) throw new Error("visits-count-mismatch");
     var sourceKeys = {};
     for (var vk = 0; vk < visits.length; vk++) {
-      var sourceKey = String(visits[vk] && (visits[vk].encounterId || visits[vk].sourceVisitKey) || "");
-      if (!sourceKey || sourceKeys[sourceKey]) throw new Error("visits-source-key-unproven");
-      sourceKeys[sourceKey] = 1;
+      var sourceKey = String(visits[vk] && (visits[vk].encounterId || visits[vk].sourceVisitKey) || "").trim().toLowerCase();
+      var sourceSlot = "visit|" + sourceKey;
+      if (!sourceKey || sourceKeys[sourceSlot]) throw new Error("visits-source-key-unproven");
+      sourceKeys[sourceSlot] = 1;
     }
     if (!p || !vm || !isFn(vm.addVisit) || !cv) throw new Error("visit-model-unavailable");
     /* Prefer the established strict name+DOB ingest. MRN-verified charts may
        legitimately lack DOB; in that case retain the same per-row veto and
        write through the one visit model with immutable patient binding. */
+    var savedCount = 0, reconcileReceipt = null;
     if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
-      cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt);
+      savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt));
     } else {
       if (!target.mrn || !observed.chartMrn || normMrn(target.mrn) !== normMrn(observed.chartMrn)) throw new Error("visits-dob-mrn-proof-missing");
       for (var i = 0; i < visits.length; i++) {
         if (isFn(cv._visitIdentityAgrees) && !cv._visitIdentityAgrees(p, visits[i], true)) throw new Error("visit-row-identity-mismatch");
       }
-      visits.forEach(function (raw) { vm.addVisit(p.id, raw, { source: "athena-schedule-history", identityVerified: true, identityBinding: String(p.id), bodyComplete: true }); });
-      if (isFn(vm.reconcileVerifiedAthenaVisits)) vm.reconcileVerifiedAthenaVisits(p.id, visits);
+      visits.forEach(function (raw) {
+        if (vm.addVisit(p.id, raw, { source: "athena-schedule-history", identityVerified: true, identityBinding: String(p.id), bodyComplete: true })) savedCount++;
+      });
+    }
+    /* Saving without proving the exact stable encounter set can produce a
+       dangerous false green: an inner wrapper may reject a row, or stored
+       aliases may collide while older verified rows make the profile look
+       populated. Reconcile once more and then prove that every r4 encounter is
+       represented by exactly one body-complete row bound to this patient, with
+       no extra verified Athena rows left behind. Manual/unverified rows are
+       intentionally outside this check and are never deleted. */
+    if (!isFn(vm.reconcileVerifiedAthenaVisits)) throw new Error("visits-reconcile-unavailable");
+    reconcileReceipt = vm.reconcileVerifiedAthenaVisits(p.id, visits);
+    if (!reconcileReceipt || reconcileReceipt.complete !== true) throw new Error("visits-reconcile-unproven");
+    var fresh = patientById(target.patientId) || p;
+    var storedVisits = safe(function () { return vm.getVisits(fresh); }, []) || [];
+    function stableAliases(v) {
+      var out = [], encounter = String(v && (v.encounterId || v.encounterID) || "").trim().toLowerCase(), source = String(v && (v.sourceVisitKey || v.rowKey) || "").trim().toLowerCase();
+      if (encounter) out.push("encounter|" + encounter);
+      if (source) out.push("source|" + source);
+      return out;
+    }
+    function sourceBody(v) {
+      return String(v && (v.raw || v.text || v.note || v.detail) || "").trim();
+    }
+    function sharesAlias(a, b) {
+      for (var ai = 0; ai < a.length; ai++) if (b.indexOf(a[ai]) >= 0) return true;
+      return false;
+    }
+    var acceptedAliases = visits.map(stableAliases);
+    var acceptedBodies = visits.map(sourceBody);
+    if (acceptedAliases.some(function (aliases) { return !aliases.length; })) throw new Error("visits-source-key-unproven");
+    if (acceptedBodies.some(function (body) { return !body; })) throw new Error("visits-full-detail-unproven");
+    var persisted = storedVisits.filter(function (v) {
+      return !!(v && /athena|legacy|grab|pullrec/i.test(String(v.source || "")) && v.identityVerified === true &&
+        String(v.identityBinding || "") === String(p.id) && v.indexOnly !== true && v.fullDetail === true &&
+        v.bodyComplete === true && String(v.raw || "").trim() && stableAliases(v).length);
+    });
+    if (persisted.length !== parsed) throw new Error("visits-persistence-count-unproven");
+    for (var pa = 0; pa < acceptedAliases.length; pa++) {
+      var matches = 0, matchedIndex = -1;
+      for (var ps = 0; ps < persisted.length; ps++) if (sharesAlias(acceptedAliases[pa], stableAliases(persisted[ps]))) { matches++; matchedIndex = ps; }
+      if (matches !== 1) throw new Error("visits-persistence-alias-unproven");
+      /* Stable aliases prove which encounter survived reconciliation, but not
+         that this pull's clinical body survived. An optimistic inner save can
+         otherwise leave yesterday's exact-alias row in place and still turn
+         the current r4 receipt green. The visit model preserves the reader's
+         trimmed body verbatim for a verified refresh, so equality is a strict
+         postcondition rather than a fuzzy clinical-text comparison. */
+      if (sourceBody(persisted[matchedIndex]) !== acceptedBodies[pa]) throw new Error("visits-persistence-body-unproven");
+    }
+    for (var pv = 0; pv < persisted.length; pv++) {
+      var owners = 0, persistedAliases = stableAliases(persisted[pv]);
+      for (var po = 0; po < acceptedAliases.length; po++) if (sharesAlias(persistedAliases, acceptedAliases[po])) owners++;
+      if (owners !== 1) throw new Error("visits-persistence-alias-collision");
     }
     var organization=safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
     if(!organization||organization.ok!==true) throw new Error("history-organization-unproven");
-    var fresh = patientById(target.patientId) || p;
     var refreshedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
+    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
   async function runHistoryBatch(rows, unresolved, onStatus) {
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
-    var receipt = { requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.slice(), failures: unresolved.length };
+    var batchStartedAt = Date.now();
+    var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+    /* A normal 18-patient day has ample time, while no single stuck renderer
+       can make the batch immortal. This timestamp is frozen once and is never
+       reset by progress, navigation, parsing, or retries. */
+    var batchBudgetMs = Math.max(15 * 60 * 1000, Math.min(75 * 60 * 1000, Math.max(1, rows.length) * 5 * 60 * 1000));
+    var batchDeadlineAt = batchStartedAt + batchBudgetMs;
+    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
-      rows.forEach(function (r) { receipt.retry.push({ patientId: String(r && (r._mlsTargetPatientId || r.patient_external_id) || ""), reason: "history-batch-busy" }); });
+      rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
     }
     historyBatchRunning = true;
     var stopAfterTimeout = false;
     try {
       for (var i = 0; i < rows.length; i++) {
+        if (Date.now() >= batchDeadlineAt) {
+          receipt.timedOut = true; stopAfterTimeout = true;
+          for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
+          break;
+        }
         var row = rows[i] || {}, target = exactHistoryTarget(row), one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
         if (!target) {
-          one.reason = "identity-target-unresolved"; receipt.patients.push(one); receipt.retry.push({ patientId: one.patientId, reason: one.reason }); receipt.processed++; continue;
+          one.reason = "identity-target-unresolved"; receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
         }
         one.patientId = String(target.patientId || one.patientId);
         one.identityVerified = true;
         one.identityProof = target.mrn ? "mrn" : (target.dob ? "dob" : "");
+        var patientRequestId = batchRequestId + "-p" + (i + 1);
+        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 7 * 60 * 1000);
+        var patientReadStartedAt = Date.now();
+        one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (i + 1) + " of " + rows.length + "...", "");
         /* An explicit pull always performs a fresh chart read. A legacy
            "Pulled from Athena" marker is not a coverage receipt and may be
            stale or partial, so it can never short-circuit this batch. */
         one.organized = false;
         try {
-          var chartReadStartedAt = Date.now();
-          var rd = await bounded(window._assistReadChart(target, function () {}), 110000, "chart-read-timeout");
-          var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt);
+          var chartReadStartedAt = patientReadStartedAt;
+          var chartRequestId = patientRequestId + "-chart";
+          var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
+          var rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
+          var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
+          var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse");
           one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount;
           one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
-        } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (/timeout/i.test(one.chartReason)) stopAfterTimeout = true; }
+        } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
         if (!stopAfterTimeout) {
           try {
-            var vr = await bounded(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), 195000, "visits-read-timeout");
+            var visitsRequestId = patientRequestId + "-visits";
+            var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
+            var vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
             if (!vr || !vr.ok) throw new Error((vr && (vr.reason || vr.error)) || "visits-read-failed");
             var savedVisits = saveVerifiedVisits(target, vr);
-            one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
-            if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true){one.profileCoverage=savedVisits.profileCoverage;one.clinicalFieldCount=savedVisits.clinicalFieldCount;}
-          } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout/i.test(one.visitsReason)) stopAfterTimeout = true; }
+            one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
+            if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
+              var profileCapturedRaw=savedVisits.profileCoverage.capturedAt;
+              var profileCapturedAt=Number(profileCapturedRaw||0);
+              if(!isFinite(profileCapturedAt)||profileCapturedAt<=0) profileCapturedAt=Date.parse(String(profileCapturedRaw||""))||0;
+              var currentProfile=profileCapturedAt>=patientReadStartedAt&&profileCapturedAt<=Date.now()+5000;
+              one.profileCoverageFresh=currentProfile;
+              /* Full r4 encounter bodies prove visits, not the current chart's
+                 problem/med/allergy/profile shell. Never let an older complete
+                 six-card receipt mask a failed fresh chart-profile read. A
+                 current exact receipt may still be accepted when another
+                 current route saved it during this same patient operation. */
+              if(currentProfile&&one.organized){
+                one.profileCoverage=savedVisits.profileCoverage;one.clinicalFieldCount=savedVisits.clinicalFieldCount;
+              }else if(!one.organized){
+                /* Full encounter bodies may organize longitudinal facts, but
+                   they cannot replace proof that this operation saved the
+                   current chart shell. Never let visit persistence recover a
+                   failed or metadata-only six-card save. */
+                one.visitsReason=one.visitsReason||(currentProfile?"six-card-current-chart-unproven":"six-card-profile-freshness-unproven");
+              }
+            }
+          } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
         }
         if(one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
         one.complete = !!(one.identityVerified && one.organized && one.organizationComplete && one.visitsComplete);
         if (!one.complete) {
           one.reason = one.chartReason || one.visitsReason || "history-partial";
-          receipt.retry.push({ patientId: one.patientId, reason: one.reason });
+          receipt.retry.push(frozenRetryEntry(row, target, one.reason));
         }
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
-          for (var j = i + 1; j < rows.length; j++) receipt.retry.push({ patientId: String(rows[j] && (rows[j]._mlsTargetPatientId || rows[j].patient_external_id) || ""), reason: "deferred-after-timeout" });
+          for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
           break;
         }
       }
@@ -1363,7 +1707,120 @@
     return receipt;
   }
 
-  function pull(opts) {
+  /* Manual continuation for an honest partial receipt. It rebuilds targets
+     only from immutable local patient ids in that receipt; names alone never
+     enter the reader. This is deliberately not called automatically after a
+     timeout because the prior injected operation may finish late. */
+  function releaseManagedAthenaWorkspace() {
+    /* The quiet-pull lease is owned by the whole managed workflow, not by one
+       individual background handler. Signal the extension at every terminal
+       managed outcome so it restores Athena's original window immediately.
+       In quiet-pull mode there is no focus debt, so this releases the work
+       strip without activating or yanking either tab. */
+    safe(function () {
+      var targetOrigin = safe(function () { return String(window.location && window.location.origin || ""); }, "");
+      window.postMessage({ source: "mls-app", type: "mlsAppFocusMlsTab", from: "mls-managed-pull" }, /^https?:\/\//i.test(targetOrigin) ? targetOrigin : "*");
+    });
+  }
+
+  function runManagedAthenaOperation(task, busyFactory) {
+    function busy(scope) {
+      return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
+    }
+    if (pullRunning) return Promise.resolve(busy("same-tab"));
+    pullRunning = true;
+    var operationStarted = false;
+    function start() {
+      operationStarted = true;
+      safe(function () { window.__mlsPullBusyAt = Date.now(); });
+      return Promise.resolve().then(task);
+    }
+    var operation;
+    try {
+      if (safe(function () { return !!(navigator && navigator.locks && isFn(navigator.locks.request)); }, false)) {
+        operation = navigator.locks.request("mls-managed-athena-pull", { mode: "exclusive", ifAvailable: true }, function (lock) {
+          return lock ? start() : busy("other-tab");
+        });
+      } else operation = start();
+    } catch (lockError) {
+      operation = Promise.reject(lockError);
+    }
+    return Promise.resolve(operation).then(function (value) {
+      pullRunning = false;
+      safe(function () { window.__mlsPullBusyAt = 0; });
+      if (operationStarted) releaseManagedAthenaWorkspace();
+      return value;
+    }, function (error) {
+      pullRunning = false;
+      safe(function () { window.__mlsPullBusyAt = 0; });
+      if (operationStarted) releaseManagedAthenaWorkspace();
+      throw error;
+    });
+  }
+
+  function retryFailedHistory(source, onStatus) {
+    var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
+    var retry = Array.isArray(history.retry) ? history.retry : [];
+    var seen = {}, rows = [], unresolved = [];
+    retry.forEach(function (item) {
+      var patientId = String(item && item.patientId || "");
+      if (!patientId || seen[patientId]) return;
+      seen[patientId] = true;
+      var patient = patientById(patientId);
+      var frozenDob = normDob(item && item.frozenDob || ""), frozenMrn = normMrn(item && item.frozenMrn || "");
+      var currentDob = normDob(patient && patient.dob || ""), currentMrn = rowMrn(patient);
+      if (!frozenDob && !frozenMrn) {
+        unresolved.push({ patientId: patientId, reason: "retry-proof-missing", frozenDob: "", frozenMrn: "" });
+        return;
+      }
+      if (!patient) {
+        unresolved.push({ patientId: patientId, reason: "retry-target-unavailable", frozenDob: frozenDob, frozenMrn: frozenMrn });
+        return;
+      }
+      if ((frozenDob && currentDob !== frozenDob) || (frozenMrn && currentMrn !== frozenMrn)) {
+        unresolved.push({ patientId: patientId, reason: "retry-identity-changed", frozenDob: frozenDob, frozenMrn: frozenMrn });
+        return;
+      }
+      rows.push({
+        patient_external_id: patientId,
+        _mlsTargetPatientId: patientId,
+        _mlsTargetDob: frozenDob,
+        _mlsTargetMrn: frozenMrn,
+        name: String(patient.name || ""),
+        dob: frozenDob,
+        mrn: frozenMrn,
+        athenaId: frozenMrn
+      });
+    });
+    if (!retry.length) {
+      var alreadyComplete = history && history.complete === true && history.exactIdentityVerified === true && Number(history.failures || 0) === 0;
+      return Promise.resolve({
+        requestId: "history-retry-empty-" + Date.now().toString(36),
+        retryOf: String(history.requestId || ""), requested: 0, processed: 0,
+        complete: alreadyComplete, exactIdentityVerified: alreadyComplete, patients: [], retry: [], failures: alreadyComplete ? 0 : 1,
+        reason: alreadyComplete ? "nothing-to-retry" : "retry-receipt-invalid"
+      });
+    }
+    function retryBusy(scope) {
+      return {
+        requestId: "history-retry-busy-" + Date.now().toString(36), retryOf: String(history.requestId || ""),
+        requested: retry.length, processed: 0, complete: false, exactIdentityVerified: false,
+        patients: [], retry: retry.slice(), failures: retry.length, reason: "history-partial",
+        blockedReason: "pull-in-flight", error: scope === "other-tab"
+          ? "Another MLS tab is already running an explicit pull. No retry was started."
+          : "Another explicit pull is still running in this MLS tab. No retry was started."
+      };
+    }
+    return runManagedAthenaOperation(function () {
+      return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {});
+    }, retryBusy).then(function (receipt) {
+      receipt.retryOf = String(history.requestId || "");
+      receipt.manualRetry = true;
+      return receipt;
+    });
+  }
+
+  function pullUnlocked(opts) {
     opts = opts || {};
     var date = opts.date || estTodayKey();
     var includeHistory = opts.includeHistory !== false; /* safe default: full verified workflow */
@@ -1383,7 +1840,7 @@
 
     onStatus("Looking for MLS Assist...", "");
     return bridge("mlsPong", "mlsPing", 3500).then(function (pong) {
-      if (!pong) { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return fail("no-ext"); }
+      if (!pong || pong.reason === "bridge-deadline-exceeded") { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return fail("no-ext"); }
       onStatus("Opening " + date + " in athenaOne...", "");
       return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
@@ -1404,6 +1861,12 @@
         if (!r.receipt || r.receipt.complete !== true) {
           onStatus((r && r.error) || "Athena's schedule was only partly readable. Nothing was imported; keep that day open and retry.", "err");
           return fail("schedule-incomplete", { error: r && r.error || "", scheduleReceipt: r && r.receipt || null, retry: { schedule: true } });
+        }
+        var emptyContract = authoritativeEmptyContract(r);
+        if (!emptyContract.ok) {
+          var emptyError = "Athena's empty-day receipt disagreed with its schedule rows (" + emptyContract.field + "). Nothing was imported; retry after the full day grid finishes loading.";
+          onStatus(emptyError, "err");
+          return fail(emptyContract.reason, { error: emptyError, scheduleReceipt: r.receipt, emptyContract: emptyContract, retry: { schedule: true } });
         }
         if (!String(r.text || "").trim() && !(r.appts && r.appts.length) && !r.receipt.authoritativeEmpty) {
           onStatus("Athena returned no verifiable schedule rows. Nothing was imported.", "err");
@@ -1468,7 +1931,7 @@
             });
             var mappingComplete = mappings.length === attempted && Object.keys(uniqueSources).length === attempted && Object.keys(uniqueBackend).length === attempted && !(res.unresolvedMappings && res.unresolvedMappings.length);
             var calendarReceipt = { complete: Number(res.failed || 0) === 0 && Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0 && accounted === attempted && mappingComplete, attempted: attempted, accounted: accounted, mapped: mappings.length, uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length, mappingComplete: mappingComplete, unresolvedMappings: Number(res.unresolvedMappings && res.unresolvedMappings.length || 0), created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0), failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0) };
-            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
+            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, returnedAppointments: r.appts, providerDiag: r.providerDiag, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
             calendarReceipt.snapshotPublished = snapshotReceipt.published === true;
             calendarReceipt.snapshotReason = snapshotReceipt.reason;
             if (calendarReceipt.complete && !calendarReceipt.snapshotPublished) calendarReceipt.complete = false;
@@ -1480,8 +1943,8 @@
               onStatus(parts.join(" and ") + " for " + date + ".", "ok");
             }
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
-            else if (res.reason === "provider-empty" && selectedProvider.mode === "selected") onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
-            else if (r.receipt.authoritativeEmpty) onStatus("Athena verified that " + date + " has no appointments.", "ok");
+            else if (res.reason === "provider-empty" && selectedProvider.mode === "selected" && calendarReceipt.snapshotPublished) onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
+            else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments.", "ok");
             else onStatus("No verified patients could be imported for " + date + ".", "err");
             var historyReceipt = includeHistory
               ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus)
@@ -1505,6 +1968,23 @@
         });
         });
       });
+    });
+  }
+
+  /* Hold one origin-scoped Web Lock for the managed pull lifetime. The lock is
+     released by the platform when the returned promise settles, including all
+     deadline failures. ifAvailable prevents an old/other MLS tab from queuing
+     a surprise pull later; the user must explicitly retry instead. */
+  function pull(opts) {
+    opts = opts || {};
+    var run = function () { return Promise.resolve().then(function () { return pullUnlocked(opts); }); };
+    return runManagedAthenaOperation(run, function (scope) {
+      return { ok: false, complete: false, reason: "pull-in-flight", error: scope === "other-tab"
+        ? "Another MLS tab is already running an explicit pull. Nothing else was started."
+        : "Another explicit pull is still running in this MLS tab.", includeHistory: opts.includeHistory !== false, retry: {} };
+    }).then(function (value) {
+      lastPullResult = value || null;
+      return value;
     });
   }
 
@@ -1625,6 +2105,7 @@
   function revert() {
     safe(function () { window.removeEventListener("message", onSchedMsg); });
     safe(function () { if (window._importPulledSchedule && window._importPulledSchedule.__mlsSIReplaced && _prevImport) window._importPulledSchedule = _prevImport; });
+    safe(function () { absoluteDeadlines.destroy(); if (window.__mlsAbsoluteDeadline === absoluteDeadlines) delete window.__mlsAbsoluteDeadline; });
     window.__mlsSI.installed = false;
   }
 
@@ -1660,6 +2141,7 @@
     _resolveProviderRequest: resolveProviderRequest,
     _monthDateKeys: monthDateKeys,
     _scopeProviderRows: scopeProviderRows,
+    _authoritativeEmptyContract: authoritativeEmptyContract,
     _patientIdentity: patientIdentity,
     _appointmentIdentity: appointmentIdentity,
     _findPatient: findPatient,
@@ -1673,6 +2155,10 @@
     _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
+    retryFailedHistory: retryFailedHistory,
+    _boundedUntil: boundedUntil,
+    _deadlineScheduler: absoluteDeadlines,
+    _lastPullResult: function () { return lastPullResult; },
     _lastResp: function () { return lastResp; },
     revert: revert
   };

@@ -1,5 +1,5 @@
 {
-  "version": "2.9.22",
+  "version": "2.9.23",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.22 - Named history reads now use the proven DOB-gated Athena patient opener before chart capture, bind chart and full-visit reads to the same exact Athena tab, retain name plus DOB/MRN fail-closed verification, and suppress repetitive per-patient zero-visit warnings during managed day/provider batches while preserving one honest final receipt."
+  "notes": "v2.9.23 - Managed day, provider, and month pulls now use absolute deadlines and one foreground-safe work lease; accept history only from current row-scoped DOB/MRN proof; require every r4 encounter body and six-card chart snapshot to be exactly persisted for the current operation; and reject contradictory empty schedules, stale responses, duplicate bindings, and partial receipts."
 }

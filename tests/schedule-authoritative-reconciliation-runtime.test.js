@@ -184,7 +184,11 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
   assert.strictEqual(unverifiedEmpty.published, false);
   assert.strictEqual(api.authoritativeRowsForDay(day).length, 19, 'unverified empty cleared a prior exact snapshot');
   const verifiedEmpty = api._publishAuthoritativeSnapshot({
-    date: emptyDay, scheduleReceipt: { complete: true, authoritativeEmpty: true },
+    date: emptyDay, scheduleReceipt: {
+      complete: true, authoritativeEmpty: true,
+      expectedCount: 0, candidateCount: 0, parsedCount: 0,
+      declaredCount: 0, domValidRows: 0, textValidRows: 0, mergedRows: 0
+    }, returnedAppointments: [],
     calendarReceipt: { complete: true, attempted: 0 }, resolvedAppointments: []
   });
   assert.strictEqual(verifiedEmpty.published, true);

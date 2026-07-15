@@ -64,7 +64,7 @@ assert.strictEqual(brief.sectionComplete, true);
 assert.strictEqual(brief.observedLen, 'No acute changes.'.length);
 assert.strictEqual(brief.minAcceptedLen, 8);
 
-const runStart = reader.indexOf('function runAllVisits(appTabId, hint, cfg, requestId)');
+const runStart = reader.indexOf('function runAllVisits(appTabId, hint, cfg, requestId, callerDeadlineAt)');
 const runEnd = reader.indexOf('// --- v1.40: publish the PROVEN read-all-visits engine', runStart);
 assert(runStart >= 0 && runEnd > runStart, 'runAllVisits body missing');
 const run = reader.slice(runStart, runEnd);

@@ -154,7 +154,7 @@ function createHarness() {
       providerDiag: { providerNames: [providerAlpha.name, providerNear.name] },
       receipt: {
         complete: true, authoritativeEmpty: appts.length === 0,
-        parsedCount: appts.length, expectedCount: appts.length
+        parsedCount: appts.length, candidateCount: appts.length, expectedCount: appts.length
       }
     };
   }
@@ -162,7 +162,7 @@ function createHarness() {
   const rt = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
     encodeURIComponent, decodeURIComponent, queueMicrotask,
-    setTimeout: () => 1, clearTimeout: () => {}, setInterval: () => 1, clearInterval: () => {},
+    setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
     CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
     location: { pathname: '/ScribeFlow-staging.html' },
     localStorage: {
@@ -205,8 +205,8 @@ function createHarness() {
     },
     _hasImportedHistory: target => !!(target && target.patientId === patient.id),
     _athenaHistoryProofMatches: (target, observed) => target.patientId === patient.id && observed.chartName === patient.name && observed.chartDob === patient.dob && observed.chartMrn === patient.mrn,
-    _assistReadChart: () => {
-      const requestId = `chart-${historyRefs.length}`;
+    _assistReadChart: (_target, _onStatus, options) => {
+      const requestId = String(options && options.requestId || `chart-${historyRefs.length}`);
       const text = 'Verified chart problems medications allergies and clinical history';
       return Promise.resolve({
         text, requestId, chartName: patient.name, chartDob: patient.dob, chartMrn: patient.mrn,
@@ -225,13 +225,16 @@ function createHarness() {
       coverage: { problems: 'found', meds: 'found', allergies: 'found', summary: 'found', vitals: 'found', history: 'found' }
     }),
     _athenaChartProfileCoverage: () => ({ complete: true }),
+    _athenaChartSnapshotFromChart: chart => ({ problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }),
+    _athenaChartSnapshotProof: snapshot => JSON.stringify(snapshot || {}),
     _athenaHistoryVerifiedRef: target => ({
       patientId: target.patientId, name: target.name, dob: target.dob, mrn: target.mrn,
       verifiedName: target.name, verifiedDob: target.dob, verifiedMrn: target.mrn
     }),
-    _savePatientChart: () => {
+    _savePatientChart: (ref, _row, chart) => {
+      patient.athenaChartSnapshot = { problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] };
       patient.athenaProfileCoverage = {
-        complete: true, exactIdentityVerified: true, patientId: patient.id,
+        complete: true, exactIdentityVerified: true, patientId: patient.id, capturedAt: new Date().toISOString(), saveRequestId: String(ref.requestId || ''),
         cards: {
           problems: { populated: true }, meds: { populated: true }, allergies: { populated: true },
           summary: { populated: true }, vitals: { populated: true }, history: { populated: true }
@@ -246,13 +249,20 @@ function createHarness() {
         return raw;
       },
       getVisits: () => patient.visits,
+      reconcileVerifiedAthenaVisits: () => ({ complete: true, removed: 0, retained: patient.visits.length }),
       organizePatientHistory: () => ({ ok: true, complete: true, verifiedVisits: patient.visits.length })
     },
     __mlsCopyVisits: {
       _saveVisits: (_p, _identity, visits) => {
         let added = 0;
         visits.forEach(v => {
-          if (!patient.visits.some(old => old.sourceVisitKey === v.sourceVisitKey)) { patient.visits.push(v); added++; }
+          if (!patient.visits.some(old => old.sourceVisitKey === v.sourceVisitKey)) {
+            patient.visits.push(Object.assign({}, v, {
+              source: 'athena-schedule-history', identityVerified: true, identityBinding: patient.id,
+              indexOnly: false, fullDetail: true, bodyComplete: true
+            }));
+            added++;
+          }
         });
         return added;
       },
@@ -290,7 +300,8 @@ function createHarness() {
     });
     if (msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
       const event = { data: {
-        source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
+        source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id,
+        requestId: msg.requestId, ok: true,
         visits: [{
           date: '2025-12-01', type: 'Office visit',
           raw: 'Verified old visit with substantive clinical detail for the month regression.',
@@ -410,7 +421,7 @@ async function main() {
   inputProvider.id = '8'; inputProvider.name = h.providerNear.name; inputProvider.raw = h.providerNear.raw;
   h.nodes.calProvFilter.value = '8'; h.rt._calRefDate = '2026-07-30';
   const first = await firstPromise;
-  assert.strictEqual(first.ok, true);
+  assert.strictEqual(first.ok, true, JSON.stringify({ reason: first.reason, error: first.error, days: first.days && first.days.filter(day => !day.complete).slice(0, 2) }));
   assert.strictEqual(first.complete, true);
   assert.strictEqual(first.month, '2026-02');
   assert.strictEqual(first.provider.id, '7', 'in-flight month pull followed a mutated provider object');
@@ -457,4 +468,12 @@ async function main() {
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 
-main().catch(error => { console.error(error); process.exit(1); });
+const watchdog = setTimeout(() => {
+  console.error(new Error('provider/month exact-routing regression did not settle'));
+  process.exit(1);
+}, 45000);
+main().then(() => clearTimeout(watchdog), error => {
+  clearTimeout(watchdog);
+  console.error(error);
+  process.exit(1);
+});
