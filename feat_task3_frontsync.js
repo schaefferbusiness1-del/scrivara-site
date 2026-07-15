@@ -274,7 +274,25 @@
     },
     setScope: function (pk, label) {
       lsSet('mlsProvScope3', pk ? (pk + '|' + (label || pk)) : '');
-      safe(function () { var pf = $('calProvFilter'); if (pf && pf.value !== '') { pf.value = ''; } });
+      /* Keep the EXACT verified-pull selection in lockstep with the visible
+         scope chips (2026-07-15): the chips are the only provider control the
+         user can see, so choosing one must also arm the hidden legacy filter
+         that drives the verified provider-day pull. The clinician is resolved
+         through the canonical roster; an ambiguous or unresolvable scope
+         clears the filter so the pull button honestly asks for a provider. */
+      safe(function () {
+        var pf = $('calProvFilter'); if (!pf) return;
+        var next = '';
+        if (pk) {
+          var roster = window.__mlsProviderRoster;
+          var entry = roster && isFn(roster.resolve) ? safe(function () { return roster.resolve(label || pk); }, null) : null;
+          if (entry && entry.stableKey) next = (entry.id != null && String(entry.id)) ? String(entry.id) : ('pv:' + encodeURIComponent(String(entry.stableKey)));
+        }
+        if (next && !Array.prototype.some.call(pf.options || [], function (o) { return String(o.value) === next; })) {
+          var opt = document.createElement('option'); opt.value = next; opt.textContent = String(label || pk); pf.appendChild(opt);
+        }
+        if (String(pf.value || '') !== next) { pf.value = next; try { pf.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+      });
       rerenderAll('scope');
     },
     matches: function (x, scope, useSn) {
@@ -656,9 +674,13 @@
       '#mlsT3PickEmpty{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0;padding:10px 13px;border-radius:11px;background:rgba(255,255,255,.10);border:1px solid rgba(160,190,255,.35);color:#eef4ff;font:600 12.5px/1.4 system-ui,sans-serif}',
       '#mlsT3PickEmpty .t3pe-all{font:700 12px/1 system-ui,sans-serif;background:rgba(255,255,255,.92);color:#204034;border:0;border-radius:8px;padding:7px 12px;cursor:pointer}',
       '.t3p-tag{display:block;font-size:10px;opacity:.75;margin-top:2px;font-weight:600}',
-      /* retire the duplicated surfaces (reversible: remove this style tag) */
+      /* retire the duplicated surfaces (reversible: remove this style tag).
+         2026-07-15: only the DUPLICATED provider chips/label of the exact-pull
+         roster row are retired - the verified provider-day pull button, its
+         history checkbox, and its status line must stay visible, or the
+         selected-provider + full-history route has no user control at all. */
       '#mlsQpAll{display:none!important}',
-      '#mlsCalRoster{display:none!important}',
+      '#mlsCalRoster .mlsRosChip,#mlsCalRoster .mlsRosLabel{display:none!important}',
       '#mlsCalEmpty{display:none!important}',
       '#mlsWhosNextBox{display:none!important}',
       /* mobile */
