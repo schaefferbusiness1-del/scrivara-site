@@ -44,6 +44,7 @@
   var EMPTY_ID = 'mlsCalEmpty';
   var PULL_ID = 'mlsCalProviderPull';
   var PULL_STATUS_ID = 'mlsCalProviderPullStatus';
+  var PULL_BAR_ID = 'mlsCalProviderPullBar';
   var HISTORY_ID = 'mlsCalProviderPullHistory';
   var HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck';
   var HISTORY_PREF = 'providerDayIncludeHistoryV1';
@@ -88,6 +89,8 @@
         + 'font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 2px 7px rgba(32,64,52,.18)}',
       '#' + PULL_ID + ':disabled{cursor:not-allowed;background:#dce5e0;color:#62726a;box-shadow:none}',
       '#' + PULL_STATUS_ID + '{flex:1 1 100%;font-size:12px;line-height:1.35;color:var(--muted,#5f7168);min-height:16px}',
+      '#' + PULL_BAR_ID + '{flex:1 1 100%;display:none;height:18px;border-radius:9px;background:#E8EFEA;border:1px solid #CFE0D6;overflow:hidden}',
+      '#' + PULL_BAR_ID + ' i{display:block;height:100%;width:0;min-width:24px;background:#2E6A4B;color:#fff;font:700 11px/18px system-ui,sans-serif;font-style:normal;text-align:center;border-radius:8px;transition:width .5s ease;white-space:nowrap;padding:0 6px}',
       '#' + PULL_STATUS_ID + '[data-kind="err"]{color:#8b2525}',
       '#' + PULL_STATUS_ID + '[data-kind="ok"]{color:#23603f;font-weight:700}',
       '#' + EMPTY_ID + '{margin:0 0 12px;background:#f7faff;border:1px solid #dbe7f7;border-radius:12px;'
@@ -212,6 +215,30 @@
     var st = $(PULL_STATUS_ID); if (!st) return;
     st.textContent = String(msg || '');
     st.setAttribute('data-kind', kind || '');
+    /* 2026-07-15: the pull runs for many minutes across every patient; the
+       doctor needs visible progress, not a silent button. The importer's
+       status stream carries exact "X of N" counts for both phases (identity
+       verification, then verified history). Paint them as a real bar. */
+    safe(function () {
+      var bar = $(PULL_BAR_ID), fill = bar && bar.firstElementChild;
+      if (!bar || !fill) return;
+      var m = String(msg || '').match(/(\d+)\s+of\s+(\d+)/);
+      if (_pullRunning && m && Number(m[2]) > 0) {
+        var phase = /identity/i.test(String(msg || '')) ? 'Identity' : (/history/i.test(String(msg || '')) ? 'History' : 'Working');
+        var pct = Math.max(3, Math.min(100, Math.round((Number(m[1]) / Number(m[2])) * 100)));
+        bar.style.display = 'block';
+        bar.setAttribute('data-phase', phase);
+        fill.style.width = pct + '%';
+        fill.textContent = phase + ' ' + m[1] + '/' + m[2];
+      } else if (!_pullRunning) {
+        bar.style.display = 'none';
+        fill.style.width = '0%';
+        fill.textContent = '';
+      } else if (_pullRunning && bar.style.display !== 'block') {
+        bar.style.display = 'block';
+        if (!fill.style.width || fill.style.width === '0%') { fill.style.width = '3%'; fill.textContent = 'Starting…'; }
+      }
+    });
   }
   function historyPrefKey() {
     return safe(function () { return typeof window.uns === 'function' ? window.uns(HISTORY_PREF) : ''; }, '') || '';
@@ -304,6 +331,13 @@
       if (String(pf.value || '') !== next) pf.value = next;
     });
 
+    /* 2026-07-15: every calendar re-render used to rebuild this row's
+       innerHTML, wiping the live status line and progress mid-pull — the
+       doctor saw a silent button for the whole run. While a pull is running
+       the controls are frozen: keep the existing nodes and only refresh the
+       button paint. */
+    if (_pullRunning && ros.__wired && $(PULL_ID) && $(PULL_STATUS_ID)) { safe(paintProviderPull); return; }
+
     var cur = pf ? String(pf.value || '') : '';
     var html = '<span class="mlsRosLabel">Providers</span>';
     var rosterApi = safe(function () { return window.__mlsProviderRoster; }, null);
@@ -320,6 +354,7 @@
       + '<input type="checkbox" id="' + HISTORY_CHECK_ID + '"' + (includeHistory() ? ' checked' : '') + '> Also pull &amp; verify full history/visits</label>';
     html += '<button type="button" id="' + PULL_ID + '">Choose a provider to pull</button>';
     html += '<span id="' + PULL_STATUS_ID + '" aria-live="polite"></span>';
+    html += '<div id="' + PULL_BAR_ID + '" role="progressbar"><i></i></div>';
     ros.innerHTML = html;
     if (!ros.__wired) {
       ros.addEventListener('click', function (e) {

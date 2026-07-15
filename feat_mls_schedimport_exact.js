@@ -1169,7 +1169,11 @@
             if (!storedProviderId2) addMissing("athena_provider_id", incomingProviderId2);
             addMissing("reason", String(a.reason || ""));
             addMissing("patient_external_id", ext || "");
-            if (desiredStart && !String(oldRow.start_at || "").trim()) { enrich.appt_date = date; enrich.start_at = desiredStart; enrichKeys.push("start_at"); }
+            /* 2026-07-15: the verified Athena wall time is the truth for an
+               identity-matched imported row. Heal a stored instant that
+               disagrees with it (e.g. start_at saved under a wrong practice
+               timezone), not only a missing one. */
+            if (desiredStart && String(oldRow.start_at || "").trim() !== desiredStart) { enrich.appt_date = date; enrich.start_at = desiredStart; enrichKeys.push("start_at"); }
             if (oldRow && oldRow.id != null && enrichKeys.length) {
               if (onEach) safe(function () { onEach("repair", { name: name }); });
               return fetch(base + "/api/appointments/" + encodeURIComponent(oldRow.id) + "/update", {

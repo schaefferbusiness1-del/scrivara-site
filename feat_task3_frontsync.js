@@ -255,6 +255,40 @@
         Cal._removedDups = Cal._removedDups.concat(removed);
         Cal._dupCount = Cal._removedDups.length;
       }
+      /* 2026-07-15: retire stale Athena imports on any day with a complete
+         published exact snapshot. Older imports (different identity keys, or
+         a start_at saved under a wrong practice timezone) linger beside the
+         verified rows as visible time-shifted duplicates that the exact
+         name+day+time dedupe above cannot catch. Rows carrying Athena import
+         markers that are absent from the day's authoritative backend-id set
+         are display-retired; manual rows (no import markers) are never
+         touched, and nothing is deleted from the backend. */
+      safe(function () {
+        var si = window.__mlsSI;
+        if (!si || !isFn(si.authoritativeRowsForDay)) return;
+        var byDate = {};
+        for (var di = 0; di < a.length; di++) { var dkey = a[di] && a[di].appt_date; if (dkey) byDate[dkey] = 1; }
+        var retire = [];
+        Object.keys(byDate).forEach(function (day) {
+          var rows = safe(function () { return si.authoritativeRowsForDay(day); }, null);
+          if (!rows) return;
+          var ids = {};
+          rows.forEach(function (r) { var id = String(r && r.id || ''); if (id) ids[id] = 1; });
+          if (!Object.keys(ids).length && rows.length) return; /* id-less snapshot rows: no safe trim basis */
+          for (var ai = 0; ai < a.length; ai++) {
+            var row = a[ai]; if (!row || row.appt_date !== day) continue;
+            if (ids[String(row.id || '')]) continue;
+            var athenaMarked = !!String(row.athena_appointment_id || '') || /^p_sched_/.test(String(row.patient_external_id || ''));
+            if (athenaMarked) retire.push(row);
+          }
+        });
+        if (retire.length) {
+          var keep2 = a.filter(function (row) { return retire.indexOf(row) < 0; });
+          a.length = 0; for (var ki = 0; ki < keep2.length; ki++) a.push(keep2[ki]);
+          Cal._removedDups = Cal._removedDups.concat(retire);
+          Cal._dupCount = Cal._removedDups.length;
+        }
+      });
       for (i = 0; i < a.length; i++) {
         x = a[i]; if (!x || !x.__t3pk || !x.appt_date) continue;
         if (!provIdx[x.__t3pk]) provIdx[x.__t3pk] = { pk: x.__t3pk, label: x.provider, total: 0, byDate: {} };
