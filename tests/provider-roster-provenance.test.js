@@ -23,6 +23,8 @@ assert(backgroundSrc.includes("requestId: __schedRequestId, complete: !!__comple
   'extension schedule receipt must be stamped with the frozen request id');
 assert(backgroundSrc.includes("{ requestId: __schedRequestId, targetDate: (pick && pick.s && pick.s.schedDate) || '' }"),
   'extension provider-roster receipt must be stamped with request id and served date');
+assert(backgroundSrc.includes("expectedCount:(_declProvS&&_provObservedS===_declProvS)?_declProvS:null"),
+  'a weak text-declared provider count may only corroborate an exactly matching observed sweep, never masquerade as the expected total (live 2026-07-15: body text "1 provider" vs 2 proven headers failed every pull)');
 assert(siSrc.includes('schedule-request-unbound'), 'importer must fail closed on an unbound schedule receipt');
 assert(siSrc.includes('provider-roster-unbound'), 'importer must fail closed on an unbound roster receipt');
 assert(siSrc.includes('roster.beginOperation') || siSrc.includes('beginOperation(rosterOperation)'),
