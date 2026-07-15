@@ -665,3 +665,19 @@ Per the user's directive, Claude now solely owns this release. Changes on top of
 - **Digest-bearing build.** `manifest.version_name = 2.9.25+core-sha256:e13b86aa12c342c98d9c357029e322b4922d0e934c74f503b3c6cabe27050936` (SHA-256 over the 16 non-manifest release files in release order, name+NUL+bytes+NUL; `scripts/extension-core-digest.js`). The live mlsPong/mlsExtVersion buildId now carries the digest; `tests/extension-package.test.js` recomputes and enforces it.
 - All **87** local regression suites pass; `git diff --check` clean; deterministic package contract passes.
 - Next: publish exact assets, HTTP byte-verify production, mirror/reload the pinned unpacked folder, then the live Matthew-Schaeffer Wednesday acceptance (collector-gated, read-only).
+
+### 2026-07-15 ~16:20 (Claude Fable): live iteration checkpoint — identity chain GREEN 16/16; residual failures narrowed to 4 exact classes
+
+Live graded runs on the exact published stack (ext 2.9.25 core-sha256:26d61913…46b53, si-1.6.5, b291, collector 3.4.10 frozen 8ac678a3…7df8):
+
+**GREEN live (collector-verified):** schedule 16/16 dynamic; provider selected-scope 16/16; batch-bound roster receipt; request-bound schedule receipt; calendar mapping 16 unique tuples; identity bootstrap complete 16/16 (alreadyProven path); versions/buildDigest/date gates all pass; exactIdentity 16/16, processed 16/16, no timeouts; run settles ~13 min.
+
+**Fixed this session (each live-reproduced, then regression-tested):** dual-b289 merge races (settings/portal + transcript lanes preserved, b290/b291); phantom patient "Spine,No" (parser stop-vocab veto + slot filter — tests/schedule-nonpatient-row-guard.test.js); ms.note TypeError voiding every save (tests/status-notifier-guard.test.js); frozen saveRef no-op stamp (six-card-save-request-unproven, si-1.6.5); calendar route bypassing the public pull seam (si-1.6.4); polish exact-filter self-heal (b285/b286); roster expectedCount weak-text corroboration + display-echo collapse (b283); T3 hid the provider-day pull control (b284).
+
+**Residual live failure classes (16 patients, latest run):**
+1. `visits-persistence-count-unproven` ×6 — six-card save SUCCEEDS; visits save via cv._saveVisits/addVisit leaves stored rows whose flags don't satisfy si's strict persisted filter (suspect: _normVisit/addVisit not stamping bodyComplete on dedupe-refresh; investigating verifiedAthenaRefresh gate — v.bodyComplete propagation from opts in _normVisit).
+2. `visit-bodies-incomplete` ×4 — extension r4 reader: some encounter rows fail body binding (failedIndexes carries per-row reasons; need one live failedIndexes capture).
+3. `chart-identity-save-refused` ×3 — base _savePatientChart: _athenaChartProfileCoverage(chart, structuredHistory, structuredVitals).complete false for these charts (parse/classification gap; probe one with card statuses).
+4. `same-frame-name-mismatch` ×2 + 1 open-timeout — chart open lane (same-name pair or slow open).
+
+Working set: MLS tab 256587204 (my MCP tab), collector server 127.0.0.1:8777 (task bt29bllre), Athena tab moved to QP work-strip window (untouched, signed in). Roster prime = `__mlsSI.pull({date,provider:'all',includeHistory:false})` then resolve('Matthew Schaeffer, MD') for the selected run. Both Athena tabs stayed signed in all session; zero Athena writes.
