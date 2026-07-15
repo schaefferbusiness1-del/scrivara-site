@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.5";
+  var VERSION = "si-1.6.6";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1970,15 +1970,21 @@
         unresolved.push({ patientId: patientId, reason: "retry-identity-changed", frozenDob: frozenDob, frozenMrn: frozenMrn });
         return;
       }
+      /* The frozen proofs are normDob/normMrn tokens (YYYYMMDD digits). The
+         base app's _athenaHistoryTargetSnapshot only accepts the patient's
+         stored separator form, so a retry built from the tokens resolved NO
+         target (identity-target-unresolved x N). Equality with the stored
+         patient was just proven above; hand downstream the stored form. */
+      var storedDob = String(patient.dob || ""), storedMrn = String(patient.mrn || patient.athenaId || "");
       rows.push({
         patient_external_id: patientId,
         _mlsTargetPatientId: patientId,
-        _mlsTargetDob: frozenDob,
-        _mlsTargetMrn: frozenMrn,
+        _mlsTargetDob: frozenDob ? storedDob : "",
+        _mlsTargetMrn: frozenMrn ? storedMrn : "",
         name: String(patient.name || ""),
-        dob: frozenDob,
-        mrn: frozenMrn,
-        athenaId: frozenMrn
+        dob: frozenDob ? storedDob : "",
+        mrn: frozenMrn ? storedMrn : "",
+        athenaId: frozenMrn ? storedMrn : ""
       });
     });
     if (!retry.length) {
