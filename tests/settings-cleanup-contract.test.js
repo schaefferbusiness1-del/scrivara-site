@@ -6,6 +6,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_athena_tooltip_dedupe.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 new Function(source); // eslint-disable-line no-new-func
 
@@ -47,7 +48,15 @@ assert(ui.includes("var dedicated = key === 'legal' || key === 'integrations' ||
 assert(ui.includes("primary.style.display = dedicated ? 'none' : ''"), 'global save must be hidden where it cannot save the visible controls');
 assert(ui.includes("var closeLabel = dedicated ? 'Done' : 'Cancel'") && ui.includes('if (close.textContent !== closeLabel)'), 'specialized settings need an honest, idempotent close action');
 assert(ui.includes("/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/"), 'settings navigation must support keyboard movement');
-assert(ui.includes("settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] })"), 'settings reconciliation must remain scoped to the settings modal');
+assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] })"), 'settings observer must watch only modal open/close state');
+assert(ui.includes("settingsObserver.observe(settingsBody, { childList: true })"), 'settings observer may watch only direct section additions');
+assert(!ui.includes("settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true"), 'settings observer must not feed descendant class changes back into a rebuild');
+assert(ui.includes('ensureSettingsScrollGuard()'), 'settings must install one stable wheel/touch scroll owner');
+assert(ui.includes("if (safe(function () { return !!target.closest('#settingsModal'); }, false)) return;"), 'settings clicks must not trigger whole-site reconciliation');
+assert(ui.includes('overflow-anchor:none!important') && ui.includes('touch-action:pan-y!important'), 'settings scroll container must disable anchoring and allow touch scrolling');
+assert(appSource.includes("where:'Settings -> Notes & AI -> AI personalization'") && appSource.includes("route:'settings:notes'"), 'Help/Search must route AI personalization through the real Notes & AI tab');
+assert(appSource.includes("where:'Settings -> Features & navigation -> App tabs'"), 'Help/Search must name the real App tabs destination');
+assert(appSource.includes("where:'Settings -> Account & security -> Security & privacy'"), 'Help/Search must name the real security destination');
 
 assert(ui.includes("settingsIntro.style.removeProperty('display')"), 'cleanup must restore the original settings introduction');
 assert(ui.includes("button.style.removeProperty('display')"), 'cleanup must restore footer actions');

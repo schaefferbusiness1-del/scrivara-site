@@ -551,12 +551,25 @@
         seen['v:' + lbl] = 1;
         out.push({ g: 'Screens & menu', label: lbl, sub: '', go: function () { try { el.click(); } catch (e) {} } });
       });
+      /* Use the same canonical feature locations as Help. */
+      try {
+        (window.__mlsFeatureDirectory || []).forEach(function (feature) {
+          if (!feature || !feature.name) return;
+          out.push({
+            g: 'Features',
+            label: '✦ ' + String(feature.name),
+            sub: String(feature.where || ''),
+            search: String(feature.k || '') + ' ' + String(feature.how || ''),
+            go: function () { try { if (typeof window.mlsOpenFeature === 'function') window.mlsOpenFeature(feature); } catch (e) {} }
+          });
+        });
+      } catch (e) {}
       /* quick actions */
       var acts = [
         ['📥 Pull this day’s patients from Athena', function () { var b = document.querySelector('button[onclick^="pullScheduleViaAssist"]'); if (b) b.click(); else safeToast('Open the Visit screen first.', ''); }],
         ['💉 Prep op note', function () { if (typeof openOpPrepSmart === 'function') openOpPrepSmart(); }],
         ['🗓 Today’s agenda', function () { var c = $('mlsAgendaChip'); if (c) c.click(); }],
-        ['⚙️ Settings', function () { if (typeof showView === 'function') showView('settings'); }],
+        ['⚙️ Settings', function () { if (typeof openSettings === 'function') openSettings(); }],
         ['📅 Calendar — today', function () { try { if (typeof showView === 'function') showView('calendar'); if (typeof calToday === 'function') calToday(); } catch (e) {} }]
       ];
       acts.forEach(function (a) { out.push({ g: 'Actions', label: a[0], sub: '', go: a[1] }); });
@@ -612,7 +625,7 @@
       q = String(q || '').trim().toLowerCase();
       var scored = [];
       qfIndex.forEach(function (it) {
-        var s = score(q, it.label + ' ' + (it.sub || ''));
+        var s = score(q, it.label + ' ' + (it.sub || '') + ' ' + (it.search || ''));
         if (s > 0) scored.push([s, it]);
       });
       scored.sort(function (a, b) { return b[0] - a[0]; });
