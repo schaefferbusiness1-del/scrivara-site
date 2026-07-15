@@ -51,7 +51,10 @@ assert(ui.includes("/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/"), 'se
 assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] })"), 'settings observer must watch only modal open/close state');
 assert(ui.includes("settingsObserver.observe(settingsBody, { childList: true })"), 'settings observer may watch only direct section additions');
 assert(!ui.includes("settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true"), 'settings observer must not feed descendant class changes back into a rebuild');
-assert(ui.includes('ensureSettingsScrollGuard()'), 'settings must install one stable wheel/touch scroll owner');
+assert(ui.includes('ensureSettingsScrollGuard()'), 'settings must install one stable native scroll observer');
+const scrollOwner = ui.slice(ui.indexOf('function ensureSettingsScrollGuard()'), ui.indexOf('function selectSettingsGroup'));
+assert(scrollOwner.includes("body.addEventListener('scroll', rememberNativeScroll, { passive: true })"), 'settings must remember compositor-owned native scrolling passively');
+assert(!scrollOwner.includes("addEventListener('wheel'") && !scrollOwner.includes("addEventListener('touchmove'") && !scrollOwner.includes('preventDefault'), 'settings must not replace native wheel/touch scrolling with synchronous JavaScript');
 assert(ui.includes("if (safe(function () { return !!target.closest('#settingsModal'); }, false)) return;"), 'settings clicks must not trigger whole-site reconciliation');
 assert(ui.includes('overflow-anchor:none!important') && ui.includes('touch-action:pan-y!important'), 'settings scroll container must disable anchoring and allow touch scrolling');
 assert(appSource.includes("where:'Settings -> Notes & AI -> AI personalization'") && appSource.includes("route:'settings:notes'"), 'Help/Search must route AI personalization through the real Notes & AI tab');
