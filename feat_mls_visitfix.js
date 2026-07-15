@@ -221,6 +221,7 @@
             prevMap = {};
             try {
               var rawLs = (typeof window.uns === 'function') ? localStorage.getItem(window.uns('patients')) : null;
+              if (rawLs && typeof window.__mlsPtsDecode === 'function') rawLs = window.__mlsPtsDecode(rawLs);
               var prev = rawLs ? JSON.parse(rawLs) : [];
               for (var k = 0; k < prev.length; k++) { if (prev[k] && prev[k].id) prevMap[prev[k].id] = prev[k]; }
             } catch (eL) { prevMap = {}; }

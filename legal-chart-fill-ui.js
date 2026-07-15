@@ -38,7 +38,12 @@
     try { localStorage.setItem(uns(NS), JSON.stringify(o)); } catch (e) {}
   }
   function patients() {
-    try { return JSON.parse(localStorage.getItem(uns('patients')) || '[]') || []; }
+    try {
+      if (typeof window.getPatients === 'function') return window.getPatients() || [];
+      var raw = localStorage.getItem(uns('patients')) || '[]';
+      if (typeof window.__mlsPtsDecode === 'function') raw = window.__mlsPtsDecode(raw);
+      return JSON.parse(raw) || [];
+    }
     catch (e) { return []; }
   }
   function patientById(id) {

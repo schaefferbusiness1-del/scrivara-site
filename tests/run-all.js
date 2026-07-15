@@ -68,6 +68,7 @@ const tests = [
   'voice-dock-layout-contract.test.js',
   'portal-invite-placement-runtime.test.js',
   'patient-card-contrast-contract.test.js',
+  'patient-store-compression-runtime.test.js',
   'schedule-time-contract.test.js',
   'schedule-pull-integrity.test.js',
   'schedule-packaged-reader-regression.test.js',

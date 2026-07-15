@@ -91,7 +91,10 @@
       }
       api.stats.misses++;
       var v;
-      try { v = JSON.parse(s) || []; } catch (e) { v = []; }
+      /* 2026-07-15: the patients blob may be LZ-packed ('MLSZ1|' prefix); the
+         base app exposes the decoder. Cache identity still keys on the RAW
+         stored string, so packed writes invalidate exactly like plain ones. */
+      try { v = JSON.parse(typeof window.__mlsPtsDecode === 'function' ? window.__mlsPtsDecode(s) : s) || []; } catch (e) { v = []; }
       if (!Array.isArray(v)) return v; /* never cache non-array shapes; preserve base behavior */
       cache.key = k; cache.str = s; cache.val = v; cache.at = now;
       return v.slice();
