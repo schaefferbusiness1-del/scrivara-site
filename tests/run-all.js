@@ -73,6 +73,7 @@ const tests = [
   'portal-invite-placement-runtime.test.js',
   'patient-card-contrast-contract.test.js',
   'patient-store-compression-runtime.test.js',
+  'visit-shell-merge-alias-survival.test.js',
   'schedule-time-contract.test.js',
   'schedule-pull-integrity.test.js',
   'schedule-packaged-reader-regression.test.js',

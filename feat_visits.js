@@ -323,7 +323,22 @@
       } else if (existing.indexOnly === true && v.indexOnly !== true && v.fullDetail === true) {
         existing.indexOnly = false;
         existing.fullDetail = true;
+        /* The shell upgrade must also carry the batch row's completeness: an
+           upgraded row without bodyComplete can never satisfy the verified
+           persistence proof even though its body just arrived. */
+        existing.bodyComplete = v.bodyComplete === true;
+        existing.textHead = existing.textHead || v.textHead || '';
       }
+      /* Stable Athena aliases are identity-neutral payload metadata and are the
+         ONLY thing reconcileVerifiedAthenaVisits can match on. A schedule shell
+         has none, so a verified row merged into it used to lose its
+         encounterId/sourceVisitKey and be DELETED by the very next reconcile as
+         an unmatched verified row (live: every athena-copy body vanished and
+         visits-persistence-count-unproven fired for the whole day). Carry them
+         on every merge path. */
+      existing.encounterId = existing.encounterId || v.encounterId || '';
+      existing.sourceVisitKey = existing.sourceVisitKey || v.sourceVisitKey || '';
+      if (existing.encounterIndex == null && v.encounterIndex != null) existing.encounterIndex = v.encounterIndex;
       if (verifiedAthenaRefresh) existing.aiSummary = v.aiSummary || '';
       else if (v.aiSummary && v.aiSummary.length > S(existing.aiSummary).length) existing.aiSummary = v.aiSummary;
       if (v.identityVerified) {

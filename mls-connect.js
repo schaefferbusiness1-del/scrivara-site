@@ -31496,7 +31496,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b298';
+  window.__MLS_AV = window.__MLS_AV || 'b299';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31787,7 +31787,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b298';
+  var MLS_APP_BUILD='2026-07-15-b299';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;

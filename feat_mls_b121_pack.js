@@ -291,15 +291,18 @@
         api.state.depthTrip = true;
         throw new Error(ARMED_MSG);
       }
-      /* (b) TWO-ARG call ON PURPOSE - byte-for-byte parity with the live
-         b120 honest wrapper (`return orig(patient, visit)`), the surface
-         every live caller has been running against. Parity is the sole
-         rationale; see header note 3 for the open chart-structure
-         persist:false investigation. Do not pass opts through. */
+      /* (b) 2026-07-15: the old TWO-ARG "b120 parity" call silently dropped
+         opts on EVERY filing. That stripped {source:'athena-copy',
+         identityVerified, identityBinding, bodyComplete} from every verified
+         history save, so _normVisit re-tagged them as unverified 'import'
+         rows and the whole day failed visits-persistence-count-unproven.
+         feat_visits_honest fixed this same defect for its own wrapper long
+         ago ("the old 2-arg call dropped callers' opts"); the guard must
+         pass ALL arguments through exactly like the rest of the chain. */
       var r;
       depth++;
       try {
-        r = inner.call(M, patientId, visit);
+        r = inner.apply(M, arguments);
       } finally {
         depth--;
       }
