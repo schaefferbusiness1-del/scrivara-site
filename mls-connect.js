@@ -16811,13 +16811,20 @@
     var list = providerList();
     if (!list.length) return '';
     var cur = activeProvider(), counts = {};
+    var canonicalSelectedRef = '';
+    if (S.providerRef) {
+      var selectedRoster = safe(function () { return window.__mlsProviderRoster; }, null);
+      var selectedEntry = selectedRoster && isFn(selectedRoster.resolve) ? safe(function () { return selectedRoster.resolve(S.providerRef); }, null) : null;
+      canonicalSelectedRef = String(selectedEntry && selectedEntry.stableKey || S.providerRef || '');
+      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = selectedEntry.name; }
+    }
     list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
     var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>All providers</option>';
     list.forEach(function (p) {
       var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
       if (!key || !name) return;
       if (counts[name.toLowerCase()] > 1) label += p.id ? (' - ID ' + p.id) : (p.raw && p.raw !== name ? (' - ' + p.raw) : (' - ' + key));
-      var selected = S.providerRef ? S.providerRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
+      var selected = canonicalSelectedRef ? canonicalSelectedRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
       opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
@@ -31369,7 +31376,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b278';
+  window.__MLS_AV = window.__MLS_AV || 'b279';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{

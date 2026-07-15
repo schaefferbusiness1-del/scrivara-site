@@ -1389,6 +1389,13 @@
     }
     var entries = calendarProviderRows();
     var matches = entries.filter(function (p) { return p.fval === fval; });
+    /* Provider cleanup may collapse a legacy echo into one exact strong roster
+       identity. Preserve an already-selected old value only through the
+       canonical roster's unique alias resolution; ambiguity still fails. */
+    if (!matches.length && roster && isFn(roster.resolve)) {
+      var aliased = safe(function () { return roster.resolve(fval); }, null);
+      if (aliased && aliased.stableKey) matches = entries.filter(function (p) { return p.stableKey === String(aliased.stableKey); });
+    }
     if (matches.length !== 1 || !matches[0].key) return { ok: false, complete: false, reason: "provider-unverified", error: "The selected calendar provider could not be verified." };
     var chosen = matches[0];
     var collisions = entries.filter(function (p) { return p.key && p.key === chosen.key && p.fval !== chosen.fval; });

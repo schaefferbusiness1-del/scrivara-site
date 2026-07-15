@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsCalPolish && window.__mlsCalPolish.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cp-1.3.1';
+  var VERSION = 'cp-1.3.2';
   var STYLE_ID = 'mlsCalPolishStyle';
   var ROSTER_ID = 'mlsCalRoster';
   var EMPTY_ID = 'mlsCalEmpty';
@@ -149,18 +149,24 @@
   // doctor_user_id); id-less name -> "nm:<raw>" (matches no appt -> honest empty).
   function normProviders() {
     var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var labelApi = safe(function () { return window.__mlsProviderLabel; }, null);
     var p = roster && typeof roster.list === 'function'
       ? safe(function () { return roster.list(); }, [])
       : safe(function () { return window._calProviders; }, null);
     if (!p || !p.length) return [];
     var out = [], counts = {};
-    p.forEach(function (x) { if (x && typeof x === 'object') { var n0 = humanize(x.name || x.displayName || ''); counts[n0.toLowerCase()] = (counts[n0.toLowerCase()] || 0) + 1; } });
+    function validName(x) {
+      var n = labelApi && typeof labelApi === 'function' ? safe(function () { return labelApi(x); }, '') : '';
+      if (!n && roster && typeof roster._canonicalName === 'function') n = safe(function () { var trusted = !!(x && typeof x === 'object' && (x.id || x.stableKey || x.rosterVerified)); return roster._canonicalName(x && typeof x === 'object' ? (x.name || x.raw || x.provider || '') : x, trusted, trusted); }, '');
+      return n || '';
+    }
+    p.forEach(function (x) { var n0 = validName(x); if (n0) counts[n0.toLowerCase()] = (counts[n0.toLowerCase()] || 0) + 1; });
     p.forEach(function (x) {
       if (typeof x === 'string') {
-        var raw = x.trim(); if (!raw) return;
-        out.push({ fval: 'nm:' + raw, name: humanize(raw), checked_in: false, hasId: false });
+        var raw = x.trim(), cleanName = validName(x); if (!raw || !cleanName) return;
+        out.push({ fval: 'nm:' + raw, name: cleanName, checked_in: false, hasId: false });
       } else if (x && typeof x === 'object') {
-        var nm = x.name ? humanize(x.name) : ('Provider ' + (x.id != null ? x.id : '?'));
+        var nm = validName(x); if (!nm) return;
         var stableKey = String(x.stableKey || x.stable_key || '');
         var label = nm;
         if (counts[nm.toLowerCase()] > 1) label += x.id != null && String(x.id) ? (' - ID ' + x.id) : (x.raw && x.raw !== nm ? (' - ' + x.raw) : (' - ' + stableKey));

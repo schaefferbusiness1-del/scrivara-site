@@ -64,7 +64,9 @@ ctx.window.__mlsProviderRoster.ingestResp({
   providerRosterReceipt: { complete: true, partial: false, reason: 'complete', observedCount: 2, reachedEnd: true, restored: true }
 });
 roster = ctx.window.__mlsProviderRoster.list();
-assert.strictEqual(roster.filter(x => x.name === 'Alex Same').length, 4, 'distinct stable identities with the same display name must all survive');
+assert.strictEqual(roster.length, 4, 'distinct stable identities must all survive canonical display cleanup');
+assert(roster.some(x => x.stableKey === 'athena:same_alex_md' && x.name === 'Alex Same, MD'), 'machine identity credential should survive in the canonical label');
+assert(roster.some(x => x.stableKey === 'athena:same_alex_do' && x.name === 'Alex Same, DO'), 'distinct MD/DO variants must not collapse');
 assert.strictEqual(roster.filter(x => x.stableKey === 'athena:same_alex_md').length, 1, 'only the identical stable identity is deduped');
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().complete, true);
 

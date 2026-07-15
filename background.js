@@ -3340,7 +3340,9 @@ async function mlsRecoverAthenaTab(tabId) {
   }
   if (!mlsIsAthenaTab(recoverTab)) return { ok: false, skipped: 'non-athena-tab' };
   if (mlsAthIsLoginish(recoverTab)) return { ok: false, skipped: 'athena-signed-out', manualSignIn: true };
-  try { await mlsArmKeepAlive(tabId, true); } catch (eKa) {}
+  var sessionHealth = await mlsAthPing(tabId, 1500);
+  if (sessionHealth && sessionHealth.signedOut) return { ok: false, skipped: 'athena-signed-out', manualSignIn: true, timedOut: !!sessionHealth.timedOut };
+  try { await mlsArmKeepAlive(tabId, true, sessionHealth); } catch (eKa) {}
   __mlsReadsSinceReload = 0;
   return { ok: false, skipped: 'automatic-reload-disabled', manualRefresh: true, tabUntouched: true };
 }
@@ -3352,13 +3354,23 @@ function mlsKeepAlivePageFn() {
   try { window.__mlsKeepAlive = { armed: false, disabled: 'athena-session-policy', by: 'mls-ext', stop: function () {} }; } catch (e) {}
   return 'session-owned-by-athena';
 }
-async function mlsArmKeepAlive(tabId, force) {
+async function mlsArmKeepAlive(tabId, force, verifiedHealth) {
   try {
+    /* A globalframeset URL remains unchanged when Athena renders its timeout
+       page in a child frame, so a URL-only keep-alive decision is unsafe. */
+    var tab = null; try { tab = await chrome.tabs.get(tabId); } catch (eTab) { tab = null; }
+    if (!tab || mlsAthTabHost(tab) !== 'athenanet.athenahealth.com' || mlsAthIsLoginish(tab)) {
+      try { mlsAthRejectSignedOut(tabId); } catch (eReject) {}
+      return { armed: false, signedOut: !!tab };
+    }
+    var health = verifiedHealth && typeof verifiedHealth === 'object' ? verifiedHealth : await mlsAthPing(tabId, 1500);
+    if (!health || !health.alive || health.signedOut) return { armed: false, signedOut: !!(health && health.signedOut) };
     var last = self.__mlsKaArmAt[tabId] || 0;
-    if (!force && Date.now() - last < 8000) return; /* dedupe the load+pageshow hello burst; arming is idempotent ('already'), so stay aggressive - a 60s throttle left KA dead after back-to-back navs (live: CSRF-Continue right after a reload) */
+    if (!force && Date.now() - last < 8000) return { armed: true, deduped: true }; /* dedupe the load+pageshow hello burst; arming is idempotent ('already'), so stay aggressive - a 60s throttle left KA dead after back-to-back navs (live: CSRF-Continue right after a reload) */
     self.__mlsKaArmAt[tabId] = Date.now();
     await mlsExecTO({ target: { tabId: tabId }, world: 'MAIN', func: mlsKeepAlivePageFn }, 5000);
-  } catch (e) {}
+    return { armed: true };
+  } catch (e) { return { armed: false }; }
 }
 /* ===================== end v1.59 helpers ===================== */
 
@@ -3902,8 +3914,8 @@ function mlsPickEmrTab(all) {
  *  3) EXCLUDE identity./login hosts — raw athenanet.athenahealth.com only;
  *  4) fall back to legacy scoring (and, when opts.athenaOnly is falsy, to a
  *     generic non-athena EMR pick).
- * Never throws. <300ms typical: single candidate = no ping; verified result
- * cached 10s (bulk pulls fire many bridge messages back-to-back).
+ * Never throws. Every candidate, including a single/cached/pinned one, receives
+ * a fresh all-frame session probe; the 10s cache preserves preference only.
  * Revert: delete this block and restore the per-site old_strings in §3.3.
  * ========================================================================== */
 self.__mlsAthReg = self.__mlsAthReg || {};            /* tabId -> last hello (ms) */
@@ -3915,20 +3927,20 @@ try {
     try {
       var h = ''; try { h = new URL(sender.tab.url || '').host.toLowerCase(); } catch (e0) {}
       if (h !== 'athenanet.athenahealth.com') return; /* registration = raw product host ONLY */
-      self.__mlsAthReg[sender.tab.id] = Date.now();
-      try { chrome.storage.session.set({ mlsAthReg: self.__mlsAthReg }); } catch (e1) {}
-      /* v1.95: self-heal the page keep-alive whenever MLS is in use (an app tab
-         exists). Throttled inside mlsArmKeepAlive; never on login/identity hosts
-         (this handler already returned for those). */
-      try {
-        var __kaTid = sender.tab.id;
-        chrome.tabs.query({ url: '*://mlsscribe.com/*' }, function (apps) {
-          /* v1.99: a PINNED tab keeps its keep-alive even with no app tab open -
-             the pin IS the user's standing walk-away instruction. */
-          var pinnedHere = false; try { pinnedHere = !!(self.__mlsAthPin && self.__mlsAthPin.tabId === __kaTid); } catch (e4) {}
-          try { if (((apps && apps.length) || pinnedHere) && typeof mlsArmKeepAlive === 'function') mlsArmKeepAlive(__kaTid); } catch (e2) {}
-        });
-      } catch (e3) {}
+      /* A content-script hello proves only that the outer document can run JS.
+         Register/label/arm it only after the exact all-frame session probe. */
+      (async function (__kaTid) {
+        try {
+          var pr = await mlsAthPing(__kaTid, 1500);
+          if (!pr.alive || pr.signedOut) return;
+          self.__mlsAthReg[__kaTid] = Date.now();
+          try { chrome.storage.session.set({ mlsAthReg: self.__mlsAthReg }); } catch (e1) {}
+          chrome.tabs.query({ url: '*://mlsscribe.com/*' }, function (apps) {
+            var pinnedHere = false; try { pinnedHere = !!(self.__mlsAthPin && self.__mlsAthPin.tabId === __kaTid); } catch (e4) {}
+            try { if (((apps && apps.length) || pinnedHere) && typeof mlsArmKeepAlive === 'function') mlsArmKeepAlive(__kaTid, false, pr); } catch (e2) {}
+          });
+        } catch (e3) {}
+      })(sender.tab.id);
     } catch (e) {}
     /* passive: no sendResponse -> port not held (v1.42 rule) */
   });
@@ -3951,14 +3963,74 @@ function mlsAthScore(t) {
   if (t && (t.discarded || t.status === 'unloaded')) s -= 300;
   return s;
 }
-function mlsAthPing(tabId, ms) { /* READ-ONLY reachability probe: must return >=1 real frame result */
-  return mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: function () {
-    try { return { p: 1, cal: !!document.querySelector('.calendar-nav'), fs: !!document.querySelector('frameset,frame,iframe') }; } catch (e) { return { p: 1 }; }
-  } }, ms || 1200).then(function (x) {
+/* Injected independently into every current frame. This is deliberately an
+   exact, visible-session probe rather than a generic search for "login" or
+   "timed out"; clinical/chart text can legitimately contain those words. */
+function mlsAthSessionProbeFn() {
+  try {
+    function norm(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); }
+    var body = document.body;
+    var rawText = String(body ? (body.innerText || body.textContent || '') : '');
+    var text = norm(rawText);
+    var title = norm(document.title || '');
+    var combined = (title + ' ' + text).slice(0, 160000);
+    var visible = true;
+    try {
+      if (window.top !== window) visible = Number(window.innerWidth || 0) >= 80 && Number(window.innerHeight || 0) >= 50;
+      if (visible && body && typeof body.getBoundingClientRect === 'function') {
+        var br = body.getBoundingClientRect();
+        if (window.top !== window && (Number(br.width || 0) < 40 || Number(br.height || 0) < 20)) visible = false;
+      }
+    } catch (eVisible) {}
+    var firstVisibleLine = '';
+    try { firstVisibleLine = (rawText.split(/[\r\n]+/).map(norm).filter(Boolean)[0] || ''); } catch (eLine) {}
+    var timeoutHeading = title === 'refresh timed out' || firstVisibleLine === 'refresh timed out';
+    try {
+      if (!timeoutHeading) timeoutHeading = Array.prototype.some.call(document.querySelectorAll('h1,h2,h3,[role="heading"]'), function (el) { return norm(el && el.textContent) === 'refresh timed out'; });
+    } catch (eHeading) {}
+    var timedOut = visible
+      && timeoutHeading
+      && /your session has timed out[.\s\u2013\u2014-]*please log in\b/.test(combined);
+    var hasPassword = false;
+    try { hasPassword = !!document.querySelector('input[type="password"]'); } catch (ePassword) {}
+    var exactAthenaLogin = visible && hasPassword
+      && /(?:^|\s)(?:log in|sign in) to athena(?:one)?(?:\s|$)/.test(combined)
+      && /(?:^|\s)(?:username|user id|email)(?:\s|$)/.test(combined);
+    return {
+      p: 1,
+      cal: !!document.querySelector('.calendar-nav'),
+      fs: !!document.querySelector('frameset,frame,iframe'),
+      timedOut: !!timedOut,
+      login: !!exactAthenaLogin,
+      visible: !!visible
+    };
+  } catch (e) { return { p: 1, cal: false, fs: false, timedOut: false, login: false, visible: false }; }
+}
+function mlsAthRejectSignedOut(tabId) {
+  try { delete (self.__mlsAthReg || {})[tabId]; } catch (e0) {}
+  try { if (self.__mlsAthPickCache && Number(self.__mlsAthPickCache.tabId) === Number(tabId)) self.__mlsAthPickCache = { tabId: null, at: 0 }; } catch (e1) {}
+  try { if (self.__mlsAthPin && Number(self.__mlsAthPin.tabId) === Number(tabId)) mlsPinSet(null); } catch (e2) {}
+  try { chrome.storage.session.set({ mlsAthReg: self.__mlsAthReg || {} }); } catch (e3) {}
+}
+function mlsAthPing(tabId, ms) { /* READ-ONLY all-frame probe; one exact expired frame vetoes the shell */
+  return mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsAthSessionProbeFn }, ms || 1200).then(function (x) {
     var fr = ((x && x.r) || []).map(function (m) { return m && m.result; }).filter(Boolean);
-    if (!fr.length) return { alive: false };
-    return { alive: true, cal: fr.some(function (f) { return f.cal; }), fs: fr.some(function (f) { return f.fs; }) };
-  }).catch(function () { return { alive: false }; });
+    if (!fr.length) return { alive: false, reachable: false, signedOut: false, timedOut: false, login: false, frames: 0 };
+    var timedOut = fr.some(function (f) { return f.timedOut === true; });
+    var login = fr.some(function (f) { return f.login === true; });
+    var signedOut = timedOut || login;
+    if (signedOut) mlsAthRejectSignedOut(tabId);
+    return {
+      alive: !signedOut,
+      reachable: true,
+      signedOut: signedOut,
+      timedOut: timedOut,
+      login: login,
+      frames: fr.length,
+      cal: !signedOut && fr.some(function (f) { return f.cal; }),
+      fs: !signedOut && fr.some(function (f) { return f.fs; })
+    };
+  }).catch(function () { return { alive: false, reachable: false, signedOut: false, timedOut: false, login: false, frames: 0 }; });
 }
 function mlsPickGenericEmrTab(all) { /* non-athena EMR fallback (athena candidates were already considered+rejected) */
   try {
@@ -3979,8 +4051,12 @@ async function mlsPickAthenaTab(all, opts) {
     if (pin && pin.tabId != null) {
       var pt = null; try { pt = await chrome.tabs.get(pin.tabId); } catch (eP) { pt = null; }
       if (!pt) { try { mlsPinSet(null); } catch (eP2) {} }
-      else if (mlsAthTabHost(pt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(pt)) return pt;
-      else return null;
+      else if (mlsAthTabHost(pt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(pt)) {
+        var pinnedHealth = await mlsAthPing(pt.id, 1500);
+        if (pinnedHealth.alive && !pinnedHealth.signedOut) return pt;
+        if (pinnedHealth.signedOut) mlsAthRejectSignedOut(pt.id);
+        return null;
+      } else { mlsAthRejectSignedOut(pt.id); return null; }
     }
     if (!all) { try { all = await chrome.tabs.query({}); } catch (e0) { all = []; } }
     var http = (all || []).filter(function (t) { return t && t.id != null && /^https?:/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''); });
@@ -3989,37 +4065,40 @@ async function mlsPickAthenaTab(all, opts) {
     known.sort(function (a, b) { return (mlsAthScore(b) - mlsAthScore(a)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)); });
     if (mlsAthScore(known[0]) < 0) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http); /* every athena tab is an identity/login page */
     var C = self.__mlsAthPickCache;
-    if (C.tabId != null && (Date.now() - C.at) < 10000) { var cached = known.find(function (t) { return t.id === C.tabId; }); if (cached && mlsAthScore(cached) >= 0) return cached; }
-    var pick = known[0];
-    if (known.length > 1 && !opts.noPing) {
-      var alive = null, shell = null;
-      for (var i = 0; i < known.length && i < 3; i++) {
-        if (mlsAthScore(known[i]) < 0) break;           /* never ping login pages */
-        var pr = await mlsAthPing(known[i].id, 1200);
-        if (!pr.alive) continue;
-        if (!alive) alive = known[i];
-        if (pr.cal || pr.fs) { shell = known[i]; break; } /* signed-in athenanet shell */
-      }
-      /* nothing alive: KEEP the top-scored pick — go-home freeze recovery must
-         still receive the stalled tab so mlsRecoverAthenaTab can report that
-         manual attention is required without reloading Athena. */
-      pick = shell || alive || known[0];
+    /* Cache preserves preference, never health. A fresh all-frame probe vetoes
+       a cached globalframeset whose child frame has since timed out. */
+    if (C.tabId != null && (Date.now() - C.at) < 10000) {
+      var ci = known.findIndex(function (t) { return t.id === C.tabId; });
+      if (ci > 0) known.unshift(known.splice(ci, 1)[0]);
     }
+    var probeBudget = opts.noPing ? 1000 : 1200; /* legacy noPing is only a shorter budget, never a session-check bypass */
+    var checked = await Promise.all(known.map(async function (t) {
+      if (mlsAthScore(t) < 0) { mlsAthRejectSignedOut(t.id); return { tab: t, probe: { alive: false, signedOut: true } }; }
+      return { tab: t, probe: await mlsAthPing(t.id, probeBudget) };
+    }));
+    checked.forEach(function (x) { if (x.probe && x.probe.signedOut) mlsAthRejectSignedOut(x.tab.id); });
+    var usable = checked.filter(function (x) { return x.probe && x.probe.alive && !x.probe.signedOut; });
+    var selectedShell = usable.find(function (x) { return x.probe.cal || x.probe.fs; });
+    var pick = (selectedShell || usable[0] || {}).tab || null;
+    if (!pick) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
+    C = self.__mlsAthPickCache || (self.__mlsAthPickCache = { tabId: null, at: 0 });
     C.tabId = pick.id; C.at = Date.now();
     return pick;
   } catch (e) {
-    try { return (typeof mlsPickEmrTab === 'function') ? mlsPickEmrTab(all || []) : null; } catch (e2) { return null; }
+    try { return opts.athenaOnly ? null : mlsPickGenericEmrTab(all || []); } catch (e2) { return null; }
   }
 }
 self.__mlsPickAthenaTab = mlsPickAthenaTab; /* console/diag handle */
 
 /* ===================== v1.99 ATHENA TAB PIN (tab-picker backend) ==============
  * The user hands MLS an already-open athena tab from the in-app picker chip.
- * Pinned tab: wins every pick; keep-alive armed immediately and re-checked by a
+ * Pinned tab: wins every pick only after a fresh all-frame session check;
+ * keep-alive is armed only after that proof and re-checked by a
  * 5-minute alarm (idempotent, gentle - the same 55s Worker keep-alive, never
  * setInterval, no heavy scans); never navigated except during a pull the user
  * started; if its session drops (login page) athena-side work pauses and the
- * picker shows 'signed out' - NEVER re-auth. Survives SW restarts (storage.session). */
+ * picker shows 'signed out' - NEVER re-auth. Exact child-frame timeout/login
+ * evidence clears the pin. Survives SW restarts (storage.session). */
 self.__mlsAthPin = self.__mlsAthPin || { tabId: null, at: 0 };
 try { chrome.storage.session.get(['mlsAthPin'], function (st) { try { var p = st && st.mlsAthPin; if (p && p.tabId != null && self.__mlsAthPin.tabId == null) self.__mlsAthPin = p; } catch (e) {} }); } catch (e) {}
 function mlsPinSet(tabId) {
@@ -4029,14 +4108,19 @@ function mlsPinSet(tabId) {
 }
 async function mlsPinInfo() {
   var pin = self.__mlsAthPin || {};
-  var out = { pinned: pin.tabId != null, tabId: pin.tabId == null ? null : pin.tabId, alive: false, signedOut: false, ka: '', title: '' };
+  var out = { pinned: pin.tabId != null, tabId: pin.tabId == null ? null : pin.tabId, alive: false, connected: false, signedOut: false, timedOut: false, ka: '', title: '' };
   if (!out.pinned) return out;
   var t = null; try { t = await chrome.tabs.get(pin.tabId); } catch (e) { t = null; }
   if (!t) { mlsPinSet(null); out.pinned = false; out.tabId = null; return out; }
   out.title = String(t.title || '').slice(0, 70);
-  if (mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com') { out.signedOut = true; return out; }
+  if (mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com') { out.signedOut = true; mlsAthRejectSignedOut(t.id); out.pinned = false; out.tabId = null; return out; }
   var pr = await mlsAthPing(t.id, 1500);
   out.alive = !!pr.alive;
+  out.connected = !!(pr.alive && !pr.signedOut);
+  out.signedOut = !!pr.signedOut;
+  out.timedOut = !!pr.timedOut;
+  if (pr.signedOut) { mlsAthRejectSignedOut(t.id); out.pinned = false; out.tabId = null; return out; }
+  if (!pr.alive) return out;
   try {
     var kx = await mlsExecTO({ target: { tabId: t.id }, world: 'MAIN', func: function () { try { return { armed: !!(window.__mlsKeepAlive && window.__mlsKeepAlive.armed), ticks: (window.__mlsKeepAlive && window.__mlsKeepAlive.ticks) || 0 }; } catch (e) { return { armed: false, ticks: 0 }; } } }, 2500);
     var kr = kx && kx.r && kx.r[0] && kx.r[0].result;
@@ -4054,8 +4138,10 @@ try {
         if (!pin || pin.tabId == null) { try { chrome.alarms.clear('mlsPinWatch'); } catch (e) {} return; }
         var t = null; try { t = await chrome.tabs.get(pin.tabId); } catch (e) { t = null; }
         if (!t) { mlsPinSet(null); return; }
-        if (mlsAthIsLoginish(t)) return; /* session dropped: surface via pin state only - NEVER re-auth */
-        await mlsArmKeepAlive(pin.tabId); /* idempotent gentle re-arm (walk-away guarantee) */
+        if (mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com') { mlsAthRejectSignedOut(t.id); return; }
+        var pr = await mlsAthPing(pin.tabId, 1500);
+        if (!pr.alive || pr.signedOut) return;
+        await mlsArmKeepAlive(pin.tabId, false, pr); /* idempotent gentle re-arm (walk-away guarantee) */
       } catch (e) {}
     })();
   });
@@ -5110,20 +5196,32 @@ var mlsProv = (function () {
     (async () => {
       try {
         const all = await chrome.tabs.query({});
-        const rows = [];
+        const candidates = [];
         for (const t of all) {
           if (!t || t.id == null || !/^https?:/i.test(t.url || '')) continue;
           const athena = /athenahealth|athenanet|athenaone/i.test(t.url || '') || mlsTabTitleAthena(t);
           if (!athena) continue;
-          rows.push({
+          candidates.push(t);
+        }
+        const rows = await Promise.all(candidates.map(async (t) => {
+          const urlSignedOut = mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com';
+          if (urlSignedOut) mlsAthRejectSignedOut(t.id);
+          const pr = urlSignedOut ? { alive: false, signedOut: true, timedOut: false } : await mlsAthPing(t.id, 1500);
+          const signedOut = urlSignedOut || !!pr.signedOut;
+          if (signedOut) mlsAthRejectSignedOut(t.id);
+          return {
             id: t.id,
             title: String(t.title || t.url || '').slice(0, 80),
-            loginish: mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com',
+            loginish: signedOut,
+            signedOut: signedOut,
+            timedOut: !!pr.timedOut,
+            alive: !!pr.alive,
+            connected: !!(pr.alive && !signedOut),
             active: !!t.active,
-            hello: !!((self.__mlsAthReg || {})[t.id] && Date.now() - self.__mlsAthReg[t.id] < 300000),
+            hello: !!(pr.alive && !signedOut && (self.__mlsAthReg || {})[t.id] && Date.now() - self.__mlsAthReg[t.id] < 300000),
             pinned: !!(self.__mlsAthPin && self.__mlsAthPin.tabId === t.id)
-          });
-        }
+          };
+        }));
         rows.sort((a, b) => (a.loginish - b.loginish) || (b.pinned - a.pinned) || (b.hello - a.hello));
         sendResponse({ ok: true, tabs: rows.slice(0, 12) });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
@@ -5137,11 +5235,13 @@ var mlsProv = (function () {
         if (tid == null) { mlsPinSet(null); return sendResponse({ ok: true, pinned: false, note: 'auto tab selection restored' }); }
         let t = null; try { t = await chrome.tabs.get(tid); } catch (e) { t = null; }
         if (!t) return sendResponse({ ok: false, error: 'That tab no longer exists — refresh the list.' });
-        if (mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com') return sendResponse({ ok: false, error: 'That tab is on a sign-in page — sign in to athenaOne there first, then pick it.' });
+        if (mlsAthIsLoginish(t) || mlsAthTabHost(t) !== 'athenanet.athenahealth.com') { mlsAthRejectSignedOut(t.id); return sendResponse({ ok: false, error: 'That tab is on a sign-in page — sign in to athenaOne there first, then pick it.' }); }
         const pr = await mlsAthPing(t.id, 2000);
+        if (pr.signedOut) return sendResponse({ ok: false, signedOut: true, timedOut: !!pr.timedOut, error: 'That athenaOne session has timed out — sign in there first, then pick it.' });
+        if (!pr.alive) return sendResponse({ ok: false, error: 'MLS Assist could not verify a live signed-in athenaOne session in that tab. Refresh the list and try again.' });
         mlsPinSet(t.id);
         try { self.__mlsAthReg[t.id] = Date.now(); chrome.storage.session.set({ mlsAthReg: self.__mlsAthReg }); } catch (e) {}
-        await mlsArmKeepAlive(t.id, true);
+        await mlsArmKeepAlive(t.id, true, pr);
         const info = await mlsPinInfo();
         sendResponse({ ok: true, pinned: true, tabId: t.id, alive: !!pr.alive, ka: info.ka, title: info.title });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }

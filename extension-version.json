@@ -1,5 +1,5 @@
 {
-  "version": "2.9.23",
+  "version": "2.9.24",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.23 - Managed day, provider, and month pulls now use absolute deadlines and one foreground-safe work lease; accept history only from current row-scoped DOB/MRN proof; require every r4 encounter body and six-card chart snapshot to be exactly persisted for the current operation; and reject contradictory empty schedules, stale responses, duplicate bindings, and partial receipts."
+  "notes": "v2.9.24 - Detect signed-out athenaOne sessions inside nested frames before a pull, pin, keepalive, or recovery can use them; sanitize every provider selector through one identity-aware roster; quarantine conflicting provider identities; preserve safe provider aliases; and keep all exact history, six-card, idempotency, and operation-scoped persistence gates from v2.9.23."
 }

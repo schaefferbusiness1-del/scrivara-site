@@ -48,10 +48,15 @@
   'use strict';
   try { if (window.__mlsProviderLabel && window.__mlsProviderLabel.installed) return; } catch (e) { return; }
 
-  var VERSION = 'plbl-1.2.0';
+  var VERSION = 'plbl-1.3.0';
 
   /* labels that carry no real identity -> treat as unnameable ('') */
   var JUNK = /^(provider\s*(#?\s*\d+|undefined|null)?|no provider|unassigned|\[object object\]|undefined|null|n\/?a|all doctors|all providers|no preference)$/i;
+  var CRED_END = /(?:,\s*|\s+)(MD|M\.?D\.?|DO|D\.?O\.?|DPM|PA-?C?|P\.?A\.?-?C\.?|NP-?C?|N\.?P\.?-?C\.?|APRN|CRNP|FNP|DNP|AGNP|WHNP|PMHNP|RN|LPN|DDS|DMD|PHD|PH\.?D\.?|PSY\.?D|MBBS|CNM|CRNA|OD|LCSW|LPC|DC|DPT|PT|OT|OTR|PHARMD|RPH)\s*$/i;
+  var LABEL_PREFIX = /^(?:(?:rendering|performing|ordering|referring|supervising|scheduled|assigned)\s+provider|provider|doctor|physician|clinician|performed\s+by|seen\s+by|rendered\s+by|ordered\s+by|referred\s+by|scheduled\s+with|assigned\s+to)\b\s*(?::|[-–—])?\s*/i;
+  var NOISE = /\b(?:appointment|appt|encounter|patient|reason|chief\s+complaint|insurance|insurer|policy|member\s*id|subscriber|copay|authorization|facility|location|department|resource|room|address|phone|fax|email|status|scheduled|confirmed|cancelled|canceled|no\s*show|checked\s*in|arrived|office\s+visit|follow\s*-?\s*up|new\s+patient|procedure|injection|imaging|mri|x-?ray|referral|therapy|therapist|diagnosis|allerg(?:y|ies)|medication|pharmacy|billing|claim|aetna|cigna|medicare|medicaid|anthem|united\s*health|uhc|blue\s+cross|blue\s+shield|independence\s+blue|posm|clinic|hospital|health\s*system|medical\s+center|street|avenue|road|boulevard|suite|square|clearwater|low\s+back\s+pain|back\s+pain|neck\s+pain|radiculopathy|sciatica|stenosis|spondylosis|cervicalgia|lumbar|thoracic|west\s+chester|king\s+of\s+prussia)\b/i;
+  var DATE_WORD = /\b(?:sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i;
+  var DATE_WORD_G = /\b(?:sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/ig;
 
   function humanize(raw) {
     raw = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
@@ -69,6 +74,44 @@
     return raw.replace(/\s+/g, ' ').trim();
   }
 
+  function normCred(v) {
+    var c = cleanRaw(v).replace(/[.\s]/g, '').toUpperCase();
+    if (c === 'PAC' || c === 'PA-C') return 'PA-C';
+    if (c === 'NPC' || c === 'NP-C') return 'NP-C';
+    if (c === 'PSYD') return 'PsyD';
+    if (c === 'PHD') return 'PhD';
+    if (c === 'PHARMD') return 'PharmD';
+    return c;
+  }
+  function fallbackCanonical(raw, trustedPlainPA, allowUncredentialed) {
+    var v = cleanRaw(raw); if (!v) return '';
+    var explicit = LABEL_PREFIX.test(v);
+    var machine = /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’.-]*_[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’. -]*(?:_[A-Za-z-]+)?$/.test(v);
+    for (var n = 0; n < 2 && LABEL_PREFIX.test(v); n++) v = cleanRaw(v.replace(LABEL_PREFIX, ''));
+    v = v.replace(/^(?:(?:sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?)\s+)?(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})|\d{4}-\d{2}-\d{2})(?:\s+\d{1,2}:\d{2}\s*(?:am|pm)?)?\s*(?:[-–—|:]\s*)?/i, '');
+    v = v.replace(/^\d{1,2}:\d{2}\s*(?:am|pm)\s*(?:[-–—|:]\s*)?/i, '');
+    v = v.replace(/\s+(?:[-–—|]\s*)?(?:athena|provider)(?::|=)[A-Za-z0-9_.:-]+\s*$/i, '');
+    v = v.replace(/\s*(?:\||[-–—])\s*\d+\s+appointments?\b.*$/i, '').replace(/\s+Close\s*$/i, '');
+    v = humanize(v);
+    if (!v || v.length < 3 || v.length > 72 || /\d|[@/\\|]|https?:|www\./i.test(v)) return '';
+    var dateWords = v.match(DATE_WORD_G) || [];
+    if (JUNK.test(v) || NOISE.test(v) || dateWords.length > 1 || /^(?:sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?)\b/i.test(v) || /\b(?:am|pm)\b/i.test(v)) return '';
+    var cm = v.match(CRED_END), cred = '';
+    if (cm) {
+      cred = normCred(cm[1]);
+      if (cred === 'PA' && trustedPlainPA !== true && !explicit) return '';
+      v = cleanRaw(v.slice(0, cm.index).replace(/[,]\s*$/, '')) + ', ' + cred;
+    }
+    if (!cred && dateWords.length && allowUncredentialed !== true) return '';
+    if (!cred && !explicit && !machine && allowUncredentialed !== true) return '';
+    var body = v.replace(/^Dr\.?\s+/i, '').replace(/,\s*[^,]+$/, '').replace(/\s+(?:staff|team)$/i, '');
+    var words = body.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 6) return '';
+    for (var i = 0; i < words.length; i++) if (!/^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’.-]*$/.test(words[i])) return '';
+    if (!cred && words.filter(function (w) { return /^[A-Z]{2,}$/.test(w.replace(/[.]/g, '')); }).length > 1) return '';
+    return cleanRaw(v);
+  }
+
   function isCharSpread(o) {
     if (!o || typeof o !== 'object') return false;
     var keys = Object.keys(o);
@@ -81,23 +124,30 @@
   function labelOf(entry) {
     try {
       if (entry == null) return '';
-      var raw = '';
+      var candidates = [], trusted = false, allowUncredentialed = false;
       if (typeof entry === 'string') {
-        raw = entry;
+        candidates.push(entry);
       } else if (typeof entry === 'object') {
         if (isCharSpread(entry)) {
-          raw = Object.keys(entry).sort(function (a, b) { return (+a) - (+b); })
-            .map(function (k) { return entry[k]; }).join('');
+          candidates.push(Object.keys(entry).sort(function (a, b) { return (+a) - (+b); })
+            .map(function (k) { return entry[k]; }).join(''));
         } else {
-          raw = entry.name || entry.provider_raw || entry.provider_key ||
-                entry.provider || entry.displayName || entry.label || '';
+          allowUncredentialed = !!(entry.id || entry.providerId || entry.provider_id || entry.doctor_user_id || entry.user_id);
+          trusted = allowUncredentialed || !!(entry.stableKey || entry.stable_key || entry.rosterVerified === true);
+          candidates.push(entry.name || entry.displayName || entry.label || '');
+          candidates.push(entry.raw || entry.provider_raw || entry.provider_key || entry.provider || '');
         }
       } else {
         return '';
       }
-      var h = humanize(raw);
-      if (!h || JUNK.test(h)) return '';
-      return h;
+      var roster = window.__mlsProviderRoster, canonical = roster && typeof roster._canonicalName === 'function' ? roster._canonicalName : null;
+      var best = '';
+      for (var c = 0; c < candidates.length; c++) {
+        var h = canonical ? canonical(candidates[c], trusted, allowUncredentialed) : fallbackCanonical(candidates[c], trusted, allowUncredentialed);
+        if (!h) continue;
+        if (!best || (!CRED_END.test(best) && CRED_END.test(h))) best = h;
+      }
+      return best;
     } catch (e) { return ''; }
   }
 
@@ -109,8 +159,8 @@
     try {
       if (entry == null) return '';
       if (typeof entry === 'string') {
-        var rs = String(entry).replace(/\s+/g, ' ').trim();
-        return rs ? ('athena:' + rs.toLowerCase()) : '';
+        var eqs = equivalentKey(entry);
+        return eqs ? ('legacy-name:' + eqs) : '';
       }
       if (typeof entry !== 'object') return '';
       var explicit = entry.stableKey || entry.stable_key;
@@ -120,7 +170,25 @@
       var raw = entry.raw || entry.provider_raw || entry.provider_key || entry.provider;
       if (raw) return 'athena:' + String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
       var nm = labelOf(entry);
-      return nm ? ('legacy-name:' + nm.toLowerCase()) : '';
+      return nm ? ('legacy-name:' + equivalentKey(nm)) : '';
+    } catch (e) { return ''; }
+  }
+
+  function equivalentKey(entry) {
+    try {
+      var allowUncredentialed = !!(entry && typeof entry === 'object' && (entry.id || entry.providerId || entry.provider_id || entry.doctor_user_id || entry.user_id));
+      var trusted = allowUncredentialed || !!(entry && typeof entry === 'object' && (entry.stableKey || entry.stable_key || entry.rosterVerified === true));
+      var roster = window.__mlsProviderRoster;
+      if (roster && typeof roster._equivalentKey === 'function') return roster._equivalentKey(typeof entry === 'string' ? entry : labelOf(entry), trusted, allowUncredentialed);
+      var v = typeof entry === 'string' ? fallbackCanonical(entry, trusted, allowUncredentialed) : labelOf(entry);
+      if (!v) return '';
+      var staff = /\s+(?:staff|team)$/i.test(v) ? '|staff' : '';
+      v = v.replace(/^Dr\.?\s+/i, '').replace(/\s+(?:staff|team)$/i, '');
+      var cm = v.match(CRED_END), cred = cm ? normCred(cm[1]).toLowerCase() : '';
+      if (cm) v = v.slice(0, cm.index);
+      try { if (v.normalize) v = v.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+      var base = v.toLowerCase().replace(/[^a-z]/g, '');
+      return base ? (base + '|' + cred + staff) : '';
     } catch (e) { return ''; }
   }
 
@@ -187,6 +255,8 @@
   api.asset = 'feat_mls_provider_label.js';
   api.label = labelOf;
   api.humanize = humanize;
+  api.isProviderName = function (entry) { return !!labelOf(entry); };
+  api.equivalentKey = equivalentKey;
   api.stableIdentity = stableIdentity;
   api.normalize = normalizeCalProviders;
   api.revert = revert;

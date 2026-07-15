@@ -47,7 +47,7 @@
 ;(function () {
   "use strict";
   var NS = "__mlsAsstFix";
-  var VERSION = "1.3.1";
+  var VERSION = "1.3.2";
   /* Task 2: the shared Copilot conversation store (feat_mls_copilot_unify.js).
      When present, the panel's history reads/writes go through it so Studio and
      this panel are ONE conversation. Absent -> fall back to the private chatLog. */
@@ -685,7 +685,9 @@
       var made = safe(function () { return rp._makeEntry(p, source); }, null);
       if (made) return made;
     }
-    var nm = cleanProviderName(provName(p)), key = providerStableKey(p);
+    var labelApi = safe(function () { return window.__mlsProviderLabel; }, null);
+    var nm = labelApi && isFn(labelApi) ? safe(function () { return labelApi(p); }, "") : cleanProviderName(provName(p));
+    var key = providerStableKey(p);
     if (!nm || !key || /^all doctors$/i.test(nm)) return null;
     var obj = p && typeof p === "object" ? p : {};
     return { stableKey: key, id: String(obj.id || obj.providerId || obj.provider_id || ""), raw: String(obj.raw || obj.provider_raw || obj.provider || nm), name: nm, source: source || "legacy", rosterVerified: obj.rosterVerified === true };
@@ -703,7 +705,7 @@
       var canonical = safe(function () { return rp.list(); }, []) || [];
       for (var r = 0; r < canonical.length; r++) add(canonical[r], "canonical", false);
     }
-    var cal = providers(); for (var k = 0; k < cal.length; k++) add(cal[k], "calendar", false);
+    var cal = providers(); for (var k = 0; k < cal.length; k++) add(cal[k], "calendar", !(rp && isFn(rp._makeEntry)));
     /* Compatibility only: older pages may not have the structured roster yet. */
     if (!(rp && isFn(rp.list))) {
       var pk = safe(function () { return window.__mlsProviderPicker; }, null);
@@ -752,7 +754,7 @@
     var cur = sel.value;
     sel.innerHTML = html;
     try { sel.setAttribute("data-mlsfix-prov", html); } catch (e) {}
-    if (cur && cur !== "all" && cur.indexOf("pv:") !== 0) { var old = resolveProviderValue(cur); if (old) cur = providerValue(old); }
+    if (cur && cur !== "all") { var old = resolveProviderValue(cur); if (old) cur = providerValue(old); }
     var opts = sel.options, restored = false;
     for (var j = 0; j < opts.length; j++) { if (opts[j].value === cur) { sel.value = cur; restored = true; break; } }
     if (!restored) sel.value = "all";
