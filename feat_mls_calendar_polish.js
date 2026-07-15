@@ -279,6 +279,31 @@
     }
     var pf = filterEl(); if (pf) pf.style.display = 'none'; // hide redundant dropdown (value still filters)
 
+    /* 2026-07-15: the visible Task-3 scope chips are the only provider control
+       the user can see, and the app rebuilds this select on every calendar
+       render (wiping any injected option). Re-adopt the persisted chip scope
+       into the exact hidden filter here, after every render, by resolving the
+       scoped clinician through the canonical roster. An ambiguous or
+       unresolvable scope leaves the filter empty so the verified pull button
+       honestly asks for a provider. */
+    safe(function () {
+      if (!pf) return;
+      var rawScope = '';
+      try { rawScope = isFn(window.uns) ? String(localStorage.getItem(window.uns('mlsProvScope3')) || '') : ''; } catch (e) {}
+      var sep = rawScope.indexOf('|');
+      var scopeLabel = sep >= 0 ? rawScope.slice(sep + 1) : '';
+      var next = '';
+      if (scopeLabel) {
+        var rosterApi2 = safe(function () { return window.__mlsProviderRoster; }, null);
+        var entry = rosterApi2 && isFn(rosterApi2.resolve) ? safe(function () { return rosterApi2.resolve(scopeLabel); }, null) : null;
+        if (entry && entry.stableKey) next = (entry.id != null && String(entry.id)) ? String(entry.id) : ('pv:' + encodeURIComponent(String(entry.stableKey)));
+      }
+      if (next && !Array.prototype.some.call(pf.options || [], function (o) { return String(o.value) === next; })) {
+        var opt = document.createElement('option'); opt.value = next; opt.textContent = scopeLabel; pf.appendChild(opt);
+      }
+      if (String(pf.value || '') !== next) pf.value = next;
+    });
+
     var cur = pf ? String(pf.value || '') : '';
     var html = '<span class="mlsRosLabel">Providers</span>';
     var rosterApi = safe(function () { return window.__mlsProviderRoster; }, null);

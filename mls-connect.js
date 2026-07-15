@@ -31345,7 +31345,7 @@
   var n=0, iv=setInterval(function(){ wrap('sfShowGateLoading',start); wrap('sfHideGateLoading',schedHide); var g=document.getElementById('sfGateLoading'); if(g&&!g.__mlsBLobs){ g.__mlsBLobs=true; try{ var mo=new MutationObserver(function(){ var vis=getComputedStyle(g).display!=='none'; if(vis){ clearTimeout(hideT); if(!g.__on){g.__on=true;start();} } else if(g.__on){ schedHide(); } }); mo.observe(g,{attributes:true,attributeFilter:['style','class']}); }catch(e){} if(getComputedStyle(g).display!=='none'){g.__on=true;start();} } if(++n>60)clearInterval(iv); },150);
 })();
 
-;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714t3time1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
+;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
 
 /* ============================================================================
  * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
@@ -31379,7 +31379,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b284';
+  window.__MLS_AV = window.__MLS_AV || 'b285';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31705,7 +31705,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b284';
+  var MLS_APP_BUILD='2026-07-15-b285';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
