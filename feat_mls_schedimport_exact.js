@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.4";
+  var VERSION = "si-1.6.5";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1636,7 +1636,17 @@
       if (!chart || !parsedCoverage || parsedCoverage.complete!==true) throw new Error("clinical-field-coverage-unproven");
       var saveRef = safe(function () { return window._athenaHistoryVerifiedRef(target, rd); }, null);
       requestId=String(requestId||"");
-      if(saveRef&&requestId) saveRef.requestId=requestId;
+      if (saveRef && requestId) {
+        /* _athenaHistoryVerifiedRef freezes its proof object. Stamping the
+           operation id on the frozen object silently no-ops, so the sink could
+           never bind the six-card receipt to this exact request (live
+           2026-07-15: six-card-save-request-unproven on 10/16 patients). Bind
+           the request on an unfrozen copy of the same verified proof. */
+        var boundRef = {};
+        for (var brk in saveRef) if (Object.prototype.hasOwnProperty.call(saveRef, brk)) boundRef[brk] = saveRef[brk];
+        boundRef.requestId = requestId;
+        saveRef = boundRef;
+      }
       if (!saveRef || !requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
       var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
       if(!storedCoverage||storedCoverage.complete!==true||storedCoverage.exactIdentityVerified!==true) throw new Error("clinical-field-save-unproven");

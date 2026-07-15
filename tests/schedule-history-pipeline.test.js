@@ -123,7 +123,7 @@ context._parsePatientChart = () => Promise.resolve({
   coverage: { problems: 'found', meds: 'found', allergies: 'found', summary: 'found', vitals: 'found', history: 'found' }
 });
 context._athenaChartProfileCoverage = () => profileCoverage;
-context._athenaHistoryVerifiedRef = target => ({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob });
+context._athenaHistoryVerifiedRef = target => Object.freeze({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob });
 context._athenaChartSnapshotFromChart = chart => ({
   problems: String(chart && chart.problems || ''), meds: String(chart && chart.meds || ''),
   allergies: String(chart && chart.allergies || ''), summary: String(chart && chart.summary || ''),

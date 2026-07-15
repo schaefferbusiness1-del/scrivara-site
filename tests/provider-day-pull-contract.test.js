@@ -307,7 +307,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     _athenaChartProfileCoverage: () => ({ complete: true }),
     _athenaChartSnapshotFromChart: chart => ({ problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }),
     _athenaChartSnapshotProof: snapshot => JSON.stringify(snapshot || {}),
-    _athenaHistoryVerifiedRef: target => ({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob }),
+    _athenaHistoryVerifiedRef: target => Object.freeze({ patientId: target.patientId, name: target.name, dob: target.dob, verifiedName: target.name, verifiedDob: target.dob }),
     _savePatientChart: (ref, _row, chart) => { patient.athenaChartSnapshot = { problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }; patient.athenaProfileCoverage = { complete: true, exactIdentityVerified: true, patientId: patient.id, capturedAt: new Date().toISOString(), saveRequestId: String(ref.requestId || ''), cards: {
       problems: { populated: true }, meds: { populated: true }, allergies: { populated: true }, summary: { populated: true }, vitals: { populated: true }, history: { populated: true }
     } }; return true; },

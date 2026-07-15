@@ -233,7 +233,7 @@ function createHarness() {
     _athenaChartProfileCoverage: () => ({ complete: true }),
     _athenaChartSnapshotFromChart: chart => ({ problems: String(chart.problems || ''), meds: String(chart.meds || ''), allergies: String(chart.allergies || ''), summary: String(chart.summary || ''), vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] }),
     _athenaChartSnapshotProof: snapshot => JSON.stringify(snapshot || {}),
-    _athenaHistoryVerifiedRef: target => ({
+    _athenaHistoryVerifiedRef: target => Object.freeze({
       patientId: target.patientId, name: target.name, dob: target.dob, mrn: target.mrn,
       verifiedName: target.name, verifiedDob: target.dob, verifiedMrn: target.mrn
     }),

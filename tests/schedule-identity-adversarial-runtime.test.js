@@ -134,8 +134,8 @@ context._athenaHistoryProofMatches = (target, observed) =>
   (observed.chartMrn === target.mrn || observed.chartDob === target.dob);
 context._athenaHistoryVerifiedRef = (target, observed) =>
   context._athenaHistoryProofMatches(target, observed)
-    ? { patientId: target.patientId, name: target.name, dob: target.dob, mrn: target.mrn,
-        verifiedName: observed.chartName, verifiedDob: observed.chartDob, verifiedMrn: observed.chartMrn }
+    ? Object.freeze({ patientId: target.patientId, name: target.name, dob: target.dob, mrn: target.mrn,
+        verifiedName: observed.chartName, verifiedDob: observed.chartDob, verifiedMrn: observed.chartMrn })
     : null;
 context._hasImportedHistory = () => true; // deliberately stale legacy marker
 context._parsePatientChart = () => Promise.resolve({
@@ -198,7 +198,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.6.4');
+assert(api && api.version === 'si-1.6.5');
 
 (async () => {
   const bootstrapDate = '2026-07-22';
