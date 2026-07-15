@@ -289,13 +289,13 @@
     safe(function () {
       if (!pf) return;
       var rawScope = '';
-      try { rawScope = isFn(window.uns) ? String(localStorage.getItem(window.uns('mlsProvScope3')) || '') : ''; } catch (e) {}
+      try { rawScope = typeof window.uns === "function" ? String(localStorage.getItem(window.uns('mlsProvScope3')) || '') : ''; } catch (e) {}
       var sep = rawScope.indexOf('|');
       var scopeLabel = sep >= 0 ? rawScope.slice(sep + 1) : '';
       var next = '';
       if (scopeLabel) {
         var rosterApi2 = safe(function () { return window.__mlsProviderRoster; }, null);
-        var entry = rosterApi2 && isFn(rosterApi2.resolve) ? safe(function () { return rosterApi2.resolve(scopeLabel); }, null) : null;
+        var entry = rosterApi2 && typeof rosterApi2.resolve === "function" ? safe(function () { return rosterApi2.resolve(scopeLabel); }, null) : null;
         if (entry && entry.stableKey) next = (entry.id != null && String(entry.id)) ? String(entry.id) : ('pv:' + encodeURIComponent(String(entry.stableKey)));
       }
       if (next && !Array.prototype.some.call(pf.options || [], function (o) { return String(o.value) === next; })) {
