@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.3";
+  var VERSION = "si-1.6.4";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -2328,7 +2328,16 @@
     var frozenDate = sel.date;
     onStatus("Pulling " + frozenProvider.name + " on " + frozenDate + "...", "");
     var includeHistory = opts.includeHistory !== false;
-    return pull({ date: frozenDate, provider: frozenProvider, includeHistory: includeHistory, onStatus: onStatus }).then(function (res) {
+    /* si-1.6.4: every explicit user pull flows through the ONE public entry
+       (window.__mlsSI.pull). The calendar route previously invoked the
+       module-internal pull, so external observers wrapping the public seam
+       (e.g. the PHI-free acceptance collector) never saw the run. The month
+       route intentionally keeps its internal per-day calls: its own public
+       pullMonth result carries the per-day receipts. */
+    var publicPull = safe(function () {
+      return window.__mlsSI && isFn(window.__mlsSI.pull) ? window.__mlsSI.pull : null;
+    }, null) || pull;
+    return publicPull({ date: frozenDate, provider: frozenProvider, includeHistory: includeHistory, onStatus: onStatus }).then(function (res) {
       res = res || {};
       res.source = "calendar";
       res.requestedProvider = { id: frozenProvider.id, stableKey: frozenProvider.stableKey, name: frozenProvider.name, key: frozenProvider.key, rosterVerified: frozenProvider.rosterVerified };
