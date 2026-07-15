@@ -34,9 +34,9 @@ assert(calSource.includes("HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck'")
 assert(calSource.includes("(includeHistory() ? ' checked' : '')"), 'history checkbox must default from the safe default-on preference');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
-assert(loaderSource.includes('20260714si161p2'), 'production loader must cache-bust the exact provider/day/month history importer');
-assert(stagingLoaderSource.includes('20260714si161p2'), 'staging loader must cache-bust the exact provider/day/month history importer');
-assert(loaderSource.includes('20260714cal131p1'), 'production loader must cache-bust the canonical calendar provider pull UI');
+assert(loaderSource.includes("feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now())"), 'production loader must use the shared cache-buster for the exact provider/day/month history importer');
+assert(stagingLoaderSource.includes("feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now())"), 'staging loader must use the shared cache-buster for the exact provider/day/month history importer');
+assert(loaderSource.includes('A+"?v="+(window.__MLS_AV||Date.now())'), 'production loader must use the shared cache-buster for the canonical calendar provider pull UI');
 
 // Every roster normalizer runs before a provider-day pull. None may erase a
 // stable identity merely because two clinicians share the same display name.
