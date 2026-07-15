@@ -21,6 +21,7 @@ function makeHarness(options = {}) {
   const byId = Object.create(null);
   const observers = [];
   const fetches = [];
+  const fetchResponses = Array.isArray(options.fetchResponses) ? options.fetchResponses.slice() : [];
   const alerts = [];
   let pendingMutations = 0;
   let observing = false;
@@ -192,6 +193,15 @@ function makeHarness(options = {}) {
     setTimeout() { return 1; }, clearTimeout() {},
     fetch(url, init) {
       fetches.push({ url, init, body: JSON.parse(init.body) });
+      if (fetchResponses.length) {
+        const spec = fetchResponses.shift();
+        const status = Number(spec.status || (spec.ok === false ? 500 : 200));
+        return Promise.resolve({
+          ok: Object.prototype.hasOwnProperty.call(spec, 'ok') ? !!spec.ok : (status >= 200 && status < 300),
+          status,
+          json() { return Promise.resolve(spec.body || {}); }
+        });
+      }
       return new Promise(() => {});
     },
     alert(message) { alerts.push(message); }
@@ -218,7 +228,7 @@ function makeHarness(options = {}) {
   };
 }
 
-function main() {
+async function main() {
   const h = makeHarness();
   const fallback = h.document.getElementById('mlsPortalInviteBtn');
   assert(fallback, 'portal button was not created for the active patient');
@@ -348,7 +358,41 @@ function main() {
   assert.strictEqual(stableDemographicConflict.document.getElementById('mlsPiEmail').value, '', 'stable patient fell back to demographics on a different stable-id record');
   assert.strictEqual(stableDemographicConflict.fetches.length, 0, 'stable demographic conflict sent without explicit review');
 
-  console.log('PASS patient portal placement: reconciliation settles, identity namespaces stay distinct, and explicit sends use one frozen patient identity');
+  /* A locally saved patient can beat its best-effort background cloud mirror.
+     A 404 must sync this exact chart and retry the same frozen invite once. */
+  const repair = makeHarness({
+    active: { id: 'LOCAL-17', name: 'Repair Patient', dob: '10/11/1977', mrn: 'MRN-17', email: 'repair@example.test', problems: ['lumbar pain'] },
+    patients: [{ id: 'LOCAL-17', name: 'Repair Patient', dob: '10/11/1977', mrn: 'MRN-17', email: 'repair@example.test', problems: ['lumbar pain'] }],
+    fetchResponses: [
+      { status: 404, ok: false, body: { error: 'no such patient chart in your practice' } },
+      { status: 200, ok: true, body: { id: 17, external_id: 'LOCAL-17' } },
+      { status: 200, ok: true, body: { ok: true, sent: false } }
+    ]
+  });
+  repair.document.getElementById('mlsPortalInviteBtn').click();
+  repair.document.getElementById('mlsPiSend').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(repair.fetches.length, 3, 'missing cloud chart was not repaired and retried exactly once');
+  assert(/\/api\/patient\/admin\/send-portal-invite$/.test(repair.fetches[0].url), 'first request was not the explicit invite');
+  assert(/\/api\/patients$/.test(repair.fetches[1].url), '404 recovery did not use the authenticated patient upsert');
+  assert.strictEqual(repair.fetches[1].body.external_id, 'LOCAL-17', 'chart recovery changed the frozen patient ID');
+  assert.deepStrictEqual(repair.fetches[1].body.data.problems, ['lumbar pain'], 'chart recovery dropped stored patient history');
+  assert.strictEqual(repair.fetches[2].body.external_id, 'LOCAL-17', 'retry changed the reviewed patient identity');
+  assert(/could not be sent/i.test(repair.document.getElementById('mlsPiMsg').textContent), 'sent:false was reported as success after chart repair');
+
+  const blockedRepair = makeHarness({
+    fetchResponses: [
+      { status: 404, ok: false, body: { error: 'no such patient chart in your practice' } },
+      { status: 402, ok: false, body: { error: 'no_access' } }
+    ]
+  });
+  blockedRepair.document.getElementById('mlsPortalInviteBtn').click();
+  blockedRepair.document.getElementById('mlsPiSend').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(blockedRepair.fetches.length, 2, 'failed chart sync incorrectly retried the invite');
+  assert(/active MLS access/i.test(blockedRepair.document.getElementById('mlsPiMsg').textContent), 'inactive account did not receive the correct portal access explanation');
+
+  console.log('PASS patient portal placement: identity is frozen, missing charts repair once, and unsent/access failures stay honest');
 }
 
-main();
+main().catch(error => { console.error(error); process.exit(1); });
