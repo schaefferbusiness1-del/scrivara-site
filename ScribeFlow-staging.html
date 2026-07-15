@@ -11489,7 +11489,9 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
   if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
   if(wantDob&&p.dob&&_athenaHistoryDigits(wantDob)!==_athenaHistoryDigits(p.dob)) return null;
   if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
-  var out={patientId:String(p.id),name:String(p.name||wantName),dob:String(p.dob||wantDob),mrn:String(p.mrn||p.athenaId||wantMrn)};
+  var appointmentId=String(ref.appointmentId||ref.athenaAppointmentId||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
+  var scheduleDate=/^\d{4}-\d{2}-\d{2}$/.test(String(ref.scheduleDate||ref.date||''))?String(ref.scheduleDate||ref.date):'';
+  var out={patientId:String(p.id),name:String(p.name||wantName),dob:String(p.dob||wantDob),mrn:String(p.mrn||p.athenaId||wantMrn),appointmentId:appointmentId,scheduleDate:scheduleDate};
   if(!out.dob&&!out.mrn) return null;
   try{Object.freeze(out);}catch(e2){}
   return out;
@@ -11596,7 +11598,7 @@ function _assistReadChart(patientRef, onStatus){
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
       window.addEventListener('message',onResult);
-      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',patientDob:String(target.dob||''),patientMrn:String(target.mrn||target.athenaId||''),patientId:String(target.patientId||target.id||''),requestId:requestId,deadlineAt:deadlineAt},'*'); }catch(e){ fail(e); return; }
+      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',patientDob:String(target.dob||''),patientMrn:String(target.mrn||target.athenaId||''),patientId:String(target.patientId||target.id||''),appointmentId:String(target.appointmentId||''),scheduleDate:String(target.scheduleDate||''),requestId:requestId,deadlineAt:deadlineAt},'*'); }catch(e){ fail(e); return; }
     }
   });
 }

@@ -61,7 +61,7 @@ ctx.window.__mlsProviderRoster.ingestResp({
     { stableKey: 'athena:same_alex_do', raw: 'Same_Alex_DO', name: 'Alex Same' },
     { stableKey: 'athena:same_alex_md', raw: 'Same_Alex_MD', name: 'Alex Same' }
   ],
-  providerRosterReceipt: { complete: true, partial: false, reason: 'complete', observedCount: 2, reachedEnd: true, restored: true }
+  providerRosterReceipt: { complete: true, partial: false, reason: 'complete', observedCount: 2, reachedEnd: true, capReached: false, budgetExpired: false, restored: true, boundsStable: true }
 });
 roster = ctx.window.__mlsProviderRoster.list();
 assert.strictEqual(roster.length, 4, 'distinct stable identities must all survive canonical display cleanup');
@@ -69,6 +69,8 @@ assert(roster.some(x => x.stableKey === 'athena:same_alex_md' && x.name === 'Ale
 assert(roster.some(x => x.stableKey === 'athena:same_alex_do' && x.name === 'Alex Same, DO'), 'distinct MD/DO variants must not collapse');
 assert.strictEqual(roster.filter(x => x.stableKey === 'athena:same_alex_md').length, 1, 'only the identical stable identity is deduped');
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().complete, true);
+assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().boundsStable, true, 'normalized roster receipt dropped the full-sweep bounds proof');
+assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().expectedCount, 2, 'complete full sweep did not bind its exact observed provider count');
 
 ctx.window.__mlsProviderRoster.ingestResp({ providers: ['Legacy_Doctor_MD'] });
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().complete, false, 'legacy provider lists never claim complete coverage');

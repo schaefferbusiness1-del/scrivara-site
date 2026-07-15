@@ -161,8 +161,28 @@ function parseZip(buffer) {
   return entries;
 }
 
+const crypto = require('crypto');
+
 const manifest = readJson('manifest.json');
 const published = readJson('extension-version.json');
+
+/* The digest-bearing version_name must always equal the freshly recomputed
+   deterministic core digest (SHA-256 over the 16 non-manifest release files
+   in release order, name+NUL+bytes+NUL each). The live mlsPong buildId
+   exposes this exact string, so a stale or hand-edited stamp is a release
+   blocker, not a cosmetic drift. */
+{
+  const coreHash = crypto.createHash('sha256');
+  for (const name of EXPECTED_FILES.filter(name => name !== 'manifest.json')) {
+    coreHash.update(name, 'utf8');
+    coreHash.update(Buffer.from([0]));
+    coreHash.update(fs.readFileSync(path.join(ROOT, name)));
+    coreHash.update(Buffer.from([0]));
+  }
+  const expectedVersionName = `${manifest.version}+core-sha256:${coreHash.digest('hex')}`;
+  assert.strictEqual(manifest.version_name, expectedVersionName,
+    'manifest.version_name must carry the exact current deterministic core digest (rerun scripts/extension-core-digest.js --stamp after removing the stale value)');
+}
 const checker = read('feat_mls_checker.js');
 const checkerMatch = checker.match(/SERVER_EXT_VERSION\s*=\s*['"]([^'"]+)['"]/);
 assert(checkerMatch, 'feat_mls_checker.js must declare SERVER_EXT_VERSION');

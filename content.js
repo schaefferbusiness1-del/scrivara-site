@@ -124,7 +124,7 @@
     if (!mlsTrustedOrigin(e.origin)) return;
     var origin = e.origin;
     var reply = function (payload) { try { window.postMessage(payload, origin); } catch (err) {} };
-    if (d.type === 'mlsPing') { var __v = ''; try { __v = chrome.runtime.getManifest().version; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true } }); return; }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true } }); return; }
     if (d.type === 'mlsAppCapture') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
@@ -288,6 +288,9 @@
         var chartPatient = mlsStr(d.patient, 200);
         var chartDob = mlsStr(d.patientDob || d.dob, 20);
         var chartMrn = mlsStr(d.patientMrn || d.mrn || d.athenaId, 40);
+        var chartAppointmentId = mlsStr(d.appointmentId || d.athenaAppointmentId, 40).replace(/[^A-Za-z0-9_-]/g, '');
+        var chartBootstrapIdentity = d.bootstrapIdentity === true;
+        var chartScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(mlsStr(d.scheduleDate, 10)) ? mlsStr(d.scheduleDate, 10) : '';
         var chartDeadlineAt = Number(d.deadlineAt || 0);
         if (!isFinite(chartDeadlineAt) || chartDeadlineAt <= 0) chartDeadlineAt = Date.now() + 100000;
         var chartFinished = false;
@@ -297,6 +300,9 @@
           patientDob: chartDob,
           patientMrn: chartMrn,
           patientId: mlsStr(d.patientId, 100),
+          appointmentId: chartAppointmentId,
+          bootstrapIdentity: chartBootstrapIdentity,
+          scheduleDate: chartScheduleDate,
           requestId: chartRequestId,
           deadlineAt: chartDeadlineAt
         };
@@ -316,10 +322,22 @@
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
         if (chartPatient) {
-          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
+          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
               finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
+              return;
+            }
+            if (chartBootstrapIdentity && !(opened.appointmentIdBound === true && opened.appointmentId === chartAppointmentId)) {
+              finishChart({ ok: false, reason: 'appointment-navigation-unverified', error: 'The exact Athena appointment navigation was not proven. Nothing was read.' });
+              return;
+            }
+            chartMessage.athenaTabId = opened.athenaTabId;
+            chartMessage.appointmentNavigationFrameIds = Array.isArray(opened.appointmentNavigationFrameIds)
+              ? opened.appointmentNavigationFrameIds.map(function (value) { return Number(value); }).filter(function (value) { return Number.isInteger(value) && value >= 0; }).slice(0, 24)
+              : [];
+            if (chartBootstrapIdentity && !chartMessage.appointmentNavigationFrameIds.length) {
+              finishChart({ ok: false, reason: 'appointment-navigation-unverified', error: 'The exact Athena appointment did not return a changed-frame proof. Nothing was read.' });
               return;
             }
             readPreopenedChart();
@@ -1714,7 +1732,7 @@
          read gate still verifies the roster row against the opened chart. */
       var dobHint = d.dob || '';
       var mrnHint = String(d.mrn || d.patientMrn || d.athenaId || '').trim().slice(0, 40);
-      if (!dobHint) {
+      if (!dobHint && d.bootstrapIdentity !== true) {
         try {
           var nrmN = function (s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); };
           var wantN = nrmN(d.name || d.raw);
@@ -1733,7 +1751,7 @@
           }
         } catch (e1) {}
       }
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
+      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
@@ -1763,9 +1781,9 @@
   'use strict';
   try {
     if (!/(^|\.)mlsscribe\.com$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)) return;
-    var VER = ''; try { VER = chrome.runtime.getManifest().version; } catch (e) {}
+    var VER = '', BUILD = ''; try { var MANIFEST = chrome.runtime.getManifest(); VER = MANIFEST.version || ''; BUILD = MANIFEST.version_name || VER; } catch (e) {}
     if (!VER) return;
-    var say = function () { try { window.postMessage({ source: 'mls-ext', type: 'mlsExtVersion', version: VER }, location.origin); } catch (e) {} };
+    var say = function () { try { window.postMessage({ source: 'mls-ext', type: 'mlsExtVersion', version: VER, buildId: BUILD }, location.origin); } catch (e) {} };
     window.addEventListener('message', function (ev) {
       var d = ev && ev.data;
       if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppGetVersion') return;

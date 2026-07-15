@@ -375,9 +375,15 @@
   function injectIntoUser(user, histBlock) {
     var u = S(user);
     if (!histBlock) return u;
-    var at = u.indexOf('\n\nTEMPLATE (');
+    /* The legacy generator labels its section `TEMPLATE (...)`; the final
+       integrity owner labels it `SELECTED TEMPLATE ...`. Keep verified
+       patient context ahead of either line-level anchor (including repair
+       prompts where SELECTED TEMPLATE is the first line). */
+    var anchor = u.match(/(?:^|\n\n)(?:SELECTED TEMPLATE(?:\s|:)|TEMPLATE \()/);
+    var at = anchor ? anchor.index : -1;
     var insert = '\n\n' + histBlock;
-    if (at >= 0) return u.slice(0, at) + insert + u.slice(at);
+    if (at === 0) return histBlock + '\n\n' + u;
+    if (at > 0) return u.slice(0, at) + insert + u.slice(at);
     return u + insert;
   }
 
@@ -424,6 +430,9 @@
     };
     var built = buildHistoryContext(identity.name, { patientId: identity.patientId, dob: identity.dob, procedure: identity.procedure });
     if (!built.ok) return { ok: false, reason: built.reason || 'identity-check-failed' };
+    /* The compact fingerprint is a diagnostic/binding aid, not equality.
+       Full normalized context equality is the fail-closed authorization gate. */
+    if (S(built.text) !== S(binding.context)) return { ok: false, reason: 'patient-or-visit-context-changed' };
     var currentToken = bindingToken(identity, built);
     var frozenToken = bindingToken(identity, { text: S(binding.context) });
     if (binding.token !== currentToken || binding.token !== frozenToken) return { ok: false, reason: 'patient-or-visit-context-changed' };
@@ -711,7 +720,7 @@
     lastInjectionReceipt: lastInjectionReceipt,
     readyState: readyState,
     renderChip: renderChip,
-    _internal: { ai: ai, load: load, resolvePatient: resolvePatient, verifyPatientIdentity: verifyPatientIdentity, visitMatchesPatient: visitMatchesPatient, getVisitsFor: getVisitsFor, visitFull: visitFull, visitOneLine: visitOneLine, detailedVisitCandidates: detailedVisitCandidates, buildProfileBlock: buildProfileBlock, buildAthenaSnapshotBlock: buildAthenaSnapshotBlock, buildHistoryContext: buildHistoryContext },
+    _internal: { ai: ai, load: load, resolvePatient: resolvePatient, verifyPatientIdentity: verifyPatientIdentity, visitMatchesPatient: visitMatchesPatient, getVisitsFor: getVisitsFor, visitFull: visitFull, visitOneLine: visitOneLine, detailedVisitCandidates: detailedVisitCandidates, buildProfileBlock: buildProfileBlock, buildAthenaSnapshotBlock: buildAthenaSnapshotBlock, buildHistoryContext: buildHistoryContext, bindingToken: bindingToken, injectIfOpNote: injectIfOpNote },
     rewire: wire,
     revert: revert
   };

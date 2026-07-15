@@ -36,7 +36,7 @@ assert(chartHandler.includes('if (want && !preopened)'), 'preopened chart is sti
 assert(chartHandler.includes('self.__mlsVerifiedReadTarget = { tabId: tab.id'), 'a complete chart receipt does not lease its exact tab to AllVisits');
 assert(!chartHandler.includes('chrome.tabs.update(tab.id, { active: true })'), 'history chart reads reintroduced tab focus yanking');
 assert(background.includes("r = Object.assign({}, r, { frameId: m.frameId })"), 'shadow/light-DOM identity lost its exact frame provenance');
-assert(chartHandler.includes("identityFrameResults.push({ frameId: sIdent.frameId, result: sIdent })"), 'shadow banner identity is not bound to its supplying clinical frame');
+assert(chartHandler.includes("identityFrameResults.push({ frameId: candidate.frameId, result: candidate })"), 'shadow banner identity is not bound to its supplying clinical frame');
 assert(chartHandler.includes('globalframeset\\.esp|globaliframe\\.esp|framecontent\\.esp'), 'Athena wrapper frames can still be misclassified as unbound clinical frames');
 
 assert(allVisits.includes('pickEmrTab(frozenHint)'), 'AllVisits does not use its frozen identity to select the exact tab lease');

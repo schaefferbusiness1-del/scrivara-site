@@ -21,6 +21,9 @@ const mutations = [];
 let assistMode = 'missing-coverage';
 let assistCalls = 0;
 let chartSaves = 0;
+const bootstrapCalls = [];
+const gotoCalls = [];
+const bootstrapResponses = new Map();
 
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
@@ -80,6 +83,33 @@ context.window = context;
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
+  if (msg && msg.type === 'mlsAppGotoDate') {
+    gotoCalls.push({ date: msg.date, requestId: msg.requestId });
+    queueMicrotask(() => {
+      const resp = { ok: true, schedDate: msg.date, requestId: msg.requestId, id: msg.requestId };
+      const event = { data: { source: 'mls-ext', type: 'mlsAppGotoDateResult', requestId: msg.requestId, resp } };
+      Array.from(listeners).forEach(fn => fn(event));
+    });
+    return;
+  }
+  if (msg && msg.type === 'mlsAppReadChart' && msg.bootstrapIdentity === true) {
+    bootstrapCalls.push({ appointmentId: msg.appointmentId, patient: msg.patient, scheduleDate: msg.scheduleDate, requestId: msg.requestId });
+    const planned = bootstrapResponses.get(msg.appointmentId) || { ok: false, reason: 'appointment-id-not-found' };
+    queueMicrotask(() => {
+      const resp = Object.assign({ requestId: msg.requestId }, planned);
+      /* The real extension binds its bootstrap receipt to the exact open
+         request and asserts the navigation/banner proofs; the importer must
+         refuse any receipt missing them, so the faithful mock supplies them. */
+      if (resp.identityBootstrapReceipt) {
+        resp.identityBootstrapReceipt = Object.assign({
+          navigationProven: true, bannerIdentity: true, dobVerified: true
+        }, resp.identityBootstrapReceipt, { requestId: msg.requestId });
+      }
+      const event = { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: msg.requestId, resp } };
+      Array.from(listeners).forEach(fn => fn(event));
+    });
+    return;
+  }
   if (!msg || msg.type !== 'mlsAppReadAllVisits') return;
   queueMicrotask(() => {
     const target = patients.find(p => (msg.hint.athenaId && p.mrn === msg.hint.athenaId) || (p.name === msg.hint.name && p.dob === msg.hint.dob));
@@ -168,9 +198,48 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.6.1');
+assert(api && api.version === 'si-1.6.3');
 
 (async () => {
+  const bootstrapDate = '2026-07-22';
+  bootstrapResponses.set('bootstrap-a', {
+    ok: true, opened: true, appointmentId: 'bootstrap-a', chartName: 'Alex Same', chartDob: '01/02/1970',
+    identityBootstrapReceipt: { complete: true, appointmentIdBound: true, exactNameMatched: true, appointmentId: 'bootstrap-a', scheduleDate: bootstrapDate }
+  });
+  bootstrapResponses.set('bootstrap-b', {
+    ok: true, opened: true, appointmentId: 'bootstrap-b', chartName: 'Alex Same', chartDob: '03/04/1980',
+    identityBootstrapReceipt: { complete: true, appointmentIdBound: true, exactNameMatched: true, appointmentId: 'bootstrap-b', scheduleDate: bootstrapDate }
+  });
+  const bootstrapRows = [
+    { appointmentId: 'bootstrap-a', name: 'Alex Same', date: bootstrapDate, dob: '' },
+    { appointmentId: 'bootstrap-b', name: 'Alex Same', date: bootstrapDate, mrn: 'MRN-B' }
+  ];
+  const hydrated = await api._hydrateMissingScheduleProof(bootstrapRows, () => {}, bootstrapDate);
+  assert.strictEqual(hydrated.receipt.complete, true, 'two exact appointment/banner identities did not hydrate completely');
+  assert.strictEqual(hydrated.receipt.appointmentBound, 2);
+  assert.deepStrictEqual(Array.from(bootstrapRows, row => row.dob), ['01/02/1970', '03/04/1980'], 'same-name appointment ids exchanged or lost banner DOBs');
+  assert.deepStrictEqual(Array.from(bootstrapCalls, call => call.appointmentId), ['bootstrap-a', 'bootstrap-b'], 'identity bootstrap cached by name instead of appointment id');
+  assert.strictEqual(gotoCalls.length, 1, 'the day grid was not restored exactly once between two chart opens');
+  assert.strictEqual(gotoCalls[0].date, bootstrapDate, 'day restoration was hard-coded or used the wrong date');
+
+  const callsBeforeDuplicate = bootstrapCalls.length;
+  const duplicateBootstrap = await api._hydrateMissingScheduleProof([
+    { appointmentId: 'duplicate-id', name: 'First Same', date: bootstrapDate },
+    { appointmentId: 'duplicate-id', name: 'Second Same', date: bootstrapDate }
+  ], () => {}, bootstrapDate);
+  assert.strictEqual(duplicateBootstrap.receipt.complete, false, 'duplicate source appointment id was accepted');
+  assert.strictEqual(duplicateBootstrap.receipt.reasons['appointment-id-duplicate'], 2);
+  assert.strictEqual(bootstrapCalls.length, callsBeforeDuplicate, 'duplicate appointment id launched a chart open');
+
+  bootstrapResponses.set('invalid-dob-row', {
+    ok: true, opened: true, appointmentId: 'invalid-dob-row', chartName: 'Invalid Dob', chartDob: '05/06/1975',
+    identityBootstrapReceipt: { complete: true, appointmentIdBound: true, exactNameMatched: true, appointmentId: 'invalid-dob-row', scheduleDate: bootstrapDate }
+  });
+  const invalidDobRow = { appointmentId: 'invalid-dob-row', name: 'Invalid Dob', date: bootstrapDate, dob: '88y' };
+  const invalidDobHydrated = await api._hydrateMissingScheduleProof([invalidDobRow], () => {}, bootstrapDate);
+  assert.strictEqual(invalidDobHydrated.receipt.complete, true, 'malformed DOB incorrectly skipped exact appointment bootstrap');
+  assert.strictEqual(invalidDobRow.dob, '05/06/1975');
+
   assert.strictEqual(api._findPatient([patients[0]], { name: patients[0].name }), null,
     'one local same-name patient must not upgrade a name-only Athena row');
   assert.strictEqual(api._patientIdentity({ name: patients[0].name }), '',
@@ -217,6 +286,7 @@ assert(api && api.version === 'si-1.6.1');
   assert.strictEqual(postedBodies[0].athena_appointment_id, 'exact-name-only-appointment', 'source appointment id was not persisted on create');
   assert.strictEqual(postedBodies[0].athena_provider_id, 'provider-1', 'source provider id was not persisted on create');
   assert.strictEqual(nameOnlyResult.historyTargets.length, 0, 'name-only row entered the history reader');
+  assert.strictEqual(nameOnlyResult.historyUnresolved.length, 1, 'name-only schedule-only row emitted duplicate unresolved history entries');
   assert.strictEqual(nameOnlyResult.historyUnresolved[0].reason, 'patient-not-resolved');
 
   /* A source appointment id is exact enough to preserve/idempotently recognize
@@ -264,6 +334,27 @@ assert(api && api.version === 'si-1.6.1');
     'different DOB/MRN rows shared one local patient id');
   assert.deepStrictEqual(Array.from(newDuplicateResult.historyTargets, row => row._mlsTargetDob).sort(), ['02/03/1971', '04/05/1982']);
   assert.deepStrictEqual(Array.from(newDuplicateResult.historyTargets, row => row._mlsTargetMrn).sort(), ['NEW-MRN-A', 'NEW-MRN-B']);
+
+  /* Deterministic FNV collision regression: these two distinct exact MRN
+     identities intentionally hash to the same compact local id. The second
+     patient must fail closed, never overwrite or borrow the first patient. */
+  backendRows = [];
+  postedBodies.length = 0;
+  const collisionPatientsBefore = patients.length;
+  const stableIdCollision = await api.importAppts([{
+    appointmentId: 'stable-collision-a', name: 'Collision Alpha', dob: '01/02/1970', mrn: 'mrn1uacaok154ts46',
+    date: '2026-07-18', time: '08:00', provider: 'Doctor One', providerId: 'provider-1'
+  }, {
+    appointmentId: 'stable-collision-b', name: 'Collision Beta', dob: '03/04/1980', mrn: 'mrn1kg9zyr0h0ljm4',
+    date: '2026-07-18', time: '08:20', provider: 'Doctor One', providerId: 'provider-1'
+  }], { date: '2026-07-18', scopeDate: '2026-07-18', includeHistory: true, requirePatientBinding: true });
+  assert.strictEqual(stableIdCollision.created, 1, 'both colliding exact identities were persisted');
+  assert.strictEqual(stableIdCollision.failed, 1, 'the second colliding exact identity did not fail closed');
+  assert.strictEqual(patients.length, collisionPatientsBefore + 1, 'a compact-id collision created or overwrote a second local patient');
+  const collisionStored = patients.filter(patient => patient.id === 'p_sched_oi9qit');
+  assert.strictEqual(collisionStored.length, 1, 'the deterministic collision produced an aliased local patient set');
+  assert.strictEqual(collisionStored[0].name, 'Collision Alpha', 'the second collision overwrote the first exact patient');
+  assert.strictEqual(stableIdCollision.historyTargets.length, 1, 'the colliding patient entered exact history targets');
 
   backendRows = [{
     id: 'bound-missing', athena_appointment_id: 'bound-missing-proof', name: patients[0].name,

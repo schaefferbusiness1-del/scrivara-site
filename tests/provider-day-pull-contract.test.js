@@ -346,9 +346,19 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     _visitIdentityAgrees: () => true
   };
   rt.window = rt;
+  let armedRosterOperation = null;
   rt.__mlsProviderRoster = {
     list: () => rt._calProviders.map(p => Object.assign({ stableKey: `backend:${p.id}`, rosterVerified: true }, p)),
-    getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+    beginOperation: op => { armedRosterOperation = Object.assign({}, op); return armedRosterOperation; },
+    getReceipt: () => Object.assign(
+      { complete: true, partial: false, reason: 'complete' },
+      armedRosterOperation ? {
+        targetDate: armedRosterOperation.targetDate, requestId: armedRosterOperation.requestId,
+        providerMode: armedRosterOperation.providerMode,
+        requestedProviderId: armedRosterOperation.requestedProviderId,
+        requestedProviderStableKey: armedRosterOperation.requestedProviderStableKey
+      } : {}
+    ),
     resolve: ref => {
       let raw = ref && typeof ref === 'object' ? (ref.stableKey || ref.id || ref.name || '') : String(ref || '');
       if (String(raw).startsWith('pv:')) raw = decodeURIComponent(String(raw).slice(3));
@@ -372,8 +382,8 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     if (msg.type === 'mlsAppPullSchedule') queueMicrotask(() => {
       emit('mlsAppScheduleResult', { id: 'stale-request', ok: true, schedDate: '2026-07-15', receipt: { complete: true }, appts: [{ name: 'Wrong Patient', time: '8:00 AM', provider: 'Michael Schaeffer, MD' }], providers: ['Michael Schaeffer, MD'] }, 'stale-request');
       emit('mlsAppScheduleResult', {
-        id: msg.id, ok: true, schedDate: '2026-07-15', text: 'Wednesday July 15 2026',
-        receipt: { complete: true, authoritativeEmpty: false, parsedCount: 1, expectedCount: 1 },
+        id: msg.id, requestId: msg.requestId || msg.id, ok: true, scheduleVerified: true, schedDate: '2026-07-15', text: 'Wednesday July 15 2026',
+        receipt: { complete: true, authoritativeEmpty: false, parsedCount: 1, expectedCount: 1, requestId: msg.requestId || msg.id },
         appts: [{ name: patient.name, dob: patient.dob, date: '2026-07-15', time: '9:20 AM', provider: 'Schaeffer_Matthew_MD' }],
         providers: ['Matthew Schaeffer, MD'], providerDiag: { providerNames: ['Matthew Schaeffer, MD'] }
       }, msg.id);
@@ -397,6 +407,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   const result = await withWatchdog(promise, 'provider-day history pull');
   assert.strictEqual(result.ok, true, JSON.stringify({ reason: result.reason, error: result.error, historyReceipt: result.historyReceipt }));
   assert.strictEqual(result.complete, true);
+  assert.strictEqual(result.scheduleVerified, true, 'verified schedule provenance was not retained on the final pull receipt');
   assert.strictEqual(result.target, '2026-07-15');
   assert.strictEqual(result.requestedProvider.id, '7');
   assert.strictEqual(result.requestedProvider.name, 'Matthew Schaeffer, MD');

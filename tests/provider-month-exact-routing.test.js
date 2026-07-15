@@ -153,7 +153,7 @@ function createHarness() {
       providerRosterReceipt: clone(rosterReceipt),
       providerDiag: { providerNames: [providerAlpha.name, providerNear.name] },
       receipt: {
-        complete: true, authoritativeEmpty: appts.length === 0,
+        complete: true, authoritativeEmpty: appts.length === 0, requestId: requestId,
         parsedCount: appts.length, candidateCount: appts.length, expectedCount: appts.length
       }
     };
@@ -181,7 +181,13 @@ function createHarness() {
     _calProviders: roster,
     __mlsProviderRoster: {
       list: () => clone(roster), resolve: resolveProvider,
-      getReceipt: () => clone(rosterReceipt)
+      beginOperation: op => { rt.__armedRosterOperation = Object.assign({}, op); return rt.__armedRosterOperation; },
+      getReceipt: () => Object.assign(clone(rosterReceipt), rt.__armedRosterOperation ? {
+        targetDate: rt.__armedRosterOperation.targetDate, requestId: rt.__armedRosterOperation.requestId,
+        providerMode: rt.__armedRosterOperation.providerMode,
+        requestedProviderId: rt.__armedRosterOperation.requestedProviderId,
+        requestedProviderStableKey: rt.__armedRosterOperation.requestedProviderStableKey
+      } : {})
     },
     backendMode: () => true, bkToken: () => 'test-token', bkBase: () => 'https://local.invalid',
     uns: key => `provider-month-test::${key}`,

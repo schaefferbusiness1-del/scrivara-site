@@ -105,6 +105,10 @@ assert.strictEqual(mergedIds.appts[0].reason, 'Follow-up');
 // parsed row, while zero rows need explicit empty-state proof.
 assert(background.includes('var __authoritativeEmpty = __parsedCount === 0'));
 assert(background.includes('__parsedCount > 0 && __parsedCount >= __expectedCount'));
+assert(background.includes("countStrategy: __countStrategy"), 'schedule receipt lost exact count provenance');
+assert(background.includes('declaredCountAuthoritative: __declaredCountAuthoritative'), 'schedule receipt does not distinguish authoritative declarations');
+assert(background.includes("'multi-provider-column-count-not-total'"), 'multi-provider per-column declarations can masquerade as a day total');
+assert(background.includes("'legacy-header-may-include-capacity'"), 'legacy capacity headers can masquerade as appointment totals');
 assert(background.includes("reason: 'schedule-incomplete'"));
 assert(background.includes('receipt: __receipt'));
 

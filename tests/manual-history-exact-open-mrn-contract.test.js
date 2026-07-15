@@ -51,7 +51,7 @@ assert(findDriver.includes('if (mrnPool.length)') && findDriver.includes('pool =
 assert(!findDriver.includes('if (!mrnPool.length) return'), 'missing MRN text in an Athena layout incorrectly weakens the safe name+DOB fallback');
 
 assert(searchHandler.includes("var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '')"), 'SearchOpen does not freeze the incoming MRN');
-assert(searchHandler.includes("var order = frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');
+assert(searchHandler.includes("frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');
 const driverCalls = searchHandler.match(/args: \[[^\]]*frozenMrn[^\]]*\], func: mlsFindPatientOpenDriverFn/g) || [];
 assert(driverCalls.length >= 3, 'one or more findpatient retry routes drop the frozen MRN');
 assert(driverCalls.every(call => call.includes('findGuard, frozenMrn')), 'findpatient routes do not keep the action guard and MRN in separate argument slots');

@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '2.1.0';
+  var VERSION = '2.2.0';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -500,25 +500,95 @@
   }
 
   var lastReceipt = safe(function () { var r = JSON.parse(unsGet(RECEIPT_KEY) || 'null'); return r && typeof r === 'object' ? r : null; }, null);
-  function normalizeReceipt(receipt, observed, reason) {
+  /* ---- batch-bound operation provenance (v2.2.0) ----------------------
+     A roster receipt is trustworthy for ONE exact pull only. The importer
+     arms the batch context (exact requested date, the frozen schedule
+     requestId, and the exact requested provider scope) BEFORE dispatching
+     the schedule read; the receipt then carries that provenance only when
+     the ingested schedule reply proves it belongs to that exact request.
+     Anything else - a stale replayed reply, a probe, a reload sweep, a
+     weakly typed or contradictory operation - yields EMPTY provenance so
+     every downstream batch-binding gate fails closed. */
+  var OPERATION_TTL_MS = 10 * 60 * 1000;
+  var _armedOperation = null;
+  function normalizeOperation(op) {
+    if (!op || typeof op !== 'object') return null;
+    var targetDate = typeof op.targetDate === 'string' ? clean(op.targetDate) : '';
+    var requestId = typeof op.requestId === 'string' ? clean(op.requestId) : '';
+    var providerMode = typeof op.providerMode === 'string' ? clean(op.providerMode).toLowerCase() : '';
+    var requestedProviderId = typeof op.requestedProviderId === 'string' ? clean(op.requestedProviderId) : '';
+    var requestedProviderStableKey = typeof op.requestedProviderStableKey === 'string' ? clean(op.requestedProviderStableKey) : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return null;
+    if (!requestId || requestId.length > 100) return null;
+    if (providerMode !== 'all' && providerMode !== 'selected') return null;
+    if (providerMode === 'all' && (requestedProviderId || requestedProviderStableKey)) return null;
+    if (providerMode === 'selected' && !requestedProviderId && !requestedProviderStableKey) return null;
+    return {
+      targetDate: targetDate,
+      requestId: requestId,
+      providerMode: providerMode,
+      requestedProviderId: requestedProviderId,
+      requestedProviderStableKey: requestedProviderStableKey,
+      armedAt: Date.now()
+    };
+  }
+  function beginOperation(op) {
+    _armedOperation = normalizeOperation(op);
+    if (!_armedOperation) return null;
+    return {
+      targetDate: _armedOperation.targetDate,
+      requestId: _armedOperation.requestId,
+      providerMode: _armedOperation.providerMode,
+      requestedProviderId: _armedOperation.requestedProviderId,
+      requestedProviderStableKey: _armedOperation.requestedProviderStableKey
+    };
+  }
+  function operationForResponse(resp) {
+    var respRequestId = clean(resp && (resp.requestId || resp.id) || '');
+    if (!_armedOperation || !respRequestId) return null;
+    if (respRequestId !== _armedOperation.requestId) return null;
+    if ((Date.now() - Number(_armedOperation.armedAt || 0)) > OPERATION_TTL_MS) return null;
+    return _armedOperation;
+  }
+  function operationFromReceipt(r) {
+    if (!r || typeof r !== 'object') return null;
+    return normalizeOperation({
+      targetDate: typeof r.targetDate === 'string' ? r.targetDate : '',
+      requestId: typeof r.requestId === 'string' ? r.requestId : '',
+      providerMode: typeof r.providerMode === 'string' ? r.providerMode : '',
+      requestedProviderId: typeof r.requestedProviderId === 'string' ? r.requestedProviderId : '',
+      requestedProviderStableKey: typeof r.requestedProviderStableKey === 'string' ? r.requestedProviderStableKey : ''
+    });
+  }
+  function normalizeReceipt(receipt, observed, reason, operation) {
     var r = receipt && typeof receipt === 'object' ? receipt : {};
+    var op = operation && typeof operation === 'object' ? normalizeOperation(operation) : null;
     var complete = r.complete === true && r.partial !== true;
+    var observedCount = r.observedCount == null ? Number(observed || 0) : Number(r.observedCount);
+    var fullSweep = complete && r.reachedEnd === true && r.capReached === false &&
+      r.budgetExpired === false && r.restored === true && r.boundsStable === true;
     return {
       complete: complete,
       partial: !complete,
       reason: clean(r.reason || reason || (complete ? 'complete' : 'legacy-unverified')),
-      expectedCount: r.expectedCount == null ? null : Number(r.expectedCount),
-      observedCount: r.observedCount == null ? Number(observed || 0) : Number(r.observedCount),
+      expectedCount: r.expectedCount == null ? (fullSweep ? observedCount : null) : Number(r.expectedCount),
+      observedCount: observedCount,
       reachedEnd: r.reachedEnd === true,
       capReached: r.capReached === true,
       budgetExpired: r.budgetExpired === true,
       restored: r.restored == null ? null : r.restored === true,
+      boundsStable: r.boundsStable === true,
       steps: Number(r.steps || 0),
+      targetDate: op ? op.targetDate : '',
+      requestId: op ? op.requestId : '',
+      providerMode: op ? op.providerMode : '',
+      requestedProviderId: op ? op.requestedProviderId : '',
+      requestedProviderStableKey: op ? op.requestedProviderStableKey : '',
       updatedAt: Date.now()
     };
   }
-  function setReceipt(receipt, observed, reason) {
-    lastReceipt = normalizeReceipt(receipt, observed, reason);
+  function setReceipt(receipt, observed, reason, operation) {
+    lastReceipt = normalizeReceipt(receipt, observed, reason, operation);
     unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt));
     return lastReceipt;
   }
@@ -529,10 +599,18 @@
        roster contained non-provider rows. Keep the clean entries visible, but
        require a fresh exact Athena sweep before selected-provider pulls. */
     if (_cacheSanitized && lastReceipt && lastReceipt.complete === true) {
-      lastReceipt = normalizeReceipt({ complete: false, partial: true, reason: 'cached-roster-sanitized', observedCount: cleanList.length }, cleanList.length, 'cached-roster-sanitized');
+      lastReceipt = normalizeReceipt({ complete: false, partial: true, reason: 'cached-roster-sanitized', observedCount: cleanList.length }, cleanList.length, 'cached-roster-sanitized', operationFromReceipt(lastReceipt));
       unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt));
     }
     return cleanList.filter(function (e) { return e.providerEligible !== false; }).map(function (e) { var c = {}; Object.keys(e).forEach(function (k) { c[k] = e[k]; }); return c; });
+  }
+  function receiptSnapshot() {
+    var base=lastReceipt||normalizeReceipt(null,listEntries().length,'not-yet-verified');
+    var out={};Object.keys(base||{}).forEach(function(k){out[k]=base[k];});
+    var entries=listEntries(),keys=[],seen={};
+    entries.forEach(function(entry){var key=clean(entry&&entry.stableKey);if(key&&!seen[key]){seen[key]=1;keys.push(key);}});
+    keys.sort();out.listedCount=entries.length;out.identityKeys=keys;
+    return out;
   }
   function resolveProvider(ref) {
     var entries = listEntries(), raw = ref;
@@ -624,6 +702,15 @@
       var mergeIdentityConflict = _lastMergeIdentityConflict;
       var receiptReason = r.error ? 'schedule-read-error' : (structuredRoster.length ? 'structured-roster-unverified' : (afterList.length ? 'legacy-unverified' : 'no-provider-headers'));
       var receiptInput = r.providerRosterReceipt;
+      /* Batch binding: this reply's provenance is accepted only when the reply
+         itself carries the exact armed schedule requestId. A raw extension
+         receipt claiming a DIFFERENT requestId than its own reply is stale or
+         replayed evidence and voids completeness outright. */
+      var respRequestId = clean(r.requestId || r.id || '');
+      var boundOperation = operationForResponse(r);
+      var extensionReceiptRequestId = clean(receiptInput && receiptInput.requestId || '');
+      var requestEchoConflict = !!(extensionReceiptRequestId && respRequestId && extensionReceiptRequestId !== respRequestId) ||
+        !!(extensionReceiptRequestId && boundOperation && extensionReceiptRequestId !== boundOperation.requestId);
       if (receiptInput && receiptInput.complete === true) {
         var uniqueStructured = {}, uniqueCount = 0;
         structuredRoster.forEach(function (e) { if (!uniqueStructured[e.stableKey]) { uniqueStructured[e.stableKey] = 1; uniqueCount++; } });
@@ -634,9 +721,10 @@
         var contaminated = structuredRosterRaw.length !== structuredRoster.length || !structuredRosterRaw.length || structuredIdentityConflict || mergeIdentityConflict;
         if (declaredObserved != null && isFinite(declaredObserved) && declaredObserved !== uniqueCount) contaminated = true;
         if (declaredExpected != null && isFinite(declaredExpected) && declaredExpected !== uniqueCount) contaminated = true;
+        if (requestEchoConflict) contaminated = true;
         if (contaminated) {
           receiptInput = {
-            complete: false, partial: true, reason: 'provider-roster-contaminated',
+            complete: false, partial: true, reason: requestEchoConflict ? 'provider-roster-request-mismatch' : 'provider-roster-contaminated',
             expectedCount: receiptInput.expectedCount == null ? null : receiptInput.expectedCount,
             observedCount: uniqueCount, reachedEnd: receiptInput.reachedEnd === true,
             capReached: receiptInput.capReached === true, budgetExpired: receiptInput.budgetExpired === true,
@@ -644,7 +732,7 @@
           };
         } else _cacheSanitized = false; /* a fresh exact clean sweep supersedes an old polluted cache */
       }
-      var receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason);
+      var receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason, requestEchoConflict ? null : boundOperation);
       diag.providerNames = afterList.map(function (e) { return e.name; }).slice(0, 50);
       diag.added = afterList.length - before;
       diag.receipt = receipt;
@@ -732,7 +820,8 @@
     providers: function () { return listEntries().map(function (e) { return e.name; }); },
     merge: mergeEntries,
     resolve: resolveProvider,
-    getReceipt: function () { return lastReceipt || normalizeReceipt(null, listEntries().length, 'not-yet-verified'); },
+    beginOperation: beginOperation,
+    getReceipt: receiptSnapshot,
     getDiag: function () { return lastDiag; },
     notify: function () { notifyRosterUpdated(listEntries(), lastReceipt); },
     _makeEntry: makeEntry,

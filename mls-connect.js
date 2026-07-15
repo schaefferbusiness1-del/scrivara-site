@@ -391,16 +391,18 @@
    * ------------------------------------------------------------------------- */
   function pingExtension(cb, timeoutMs, win) {
     win = win || window;
-    var done = false, version = '';
+    var done = false, version = '', buildId = '';
     function finish(ok) {
       if (done) return; done = true;
       try { win.removeEventListener('message', onMsg); } catch (e) {}
-      try { cb(ok, version); } catch (e) {}
+      try { cb(ok, version, buildId); } catch (e) {}
     }
     function onMsg(ev) {
       var d = ev && ev.data;
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return;
       version = d.version || '';
+      buildId = d.buildId || '';
+      try { win.__mlsExtensionBuildId = buildId; } catch (e2) {}
       finish(true);
     }
     try { win.addEventListener('message', onMsg, false); } catch (e) {}
@@ -28489,6 +28491,7 @@
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsExtVersion' || !d.version) return;
       if (ev.origin !== location.origin) return;
       window.__mlsExtReportedVersion = String(d.version).slice(0, 20);
+      window.__mlsExtensionBuildId = String(d.buildId || '').slice(0, 100);
       verState.installed = window.__mlsExtReportedVersion;
     } catch (e) {}
   }
@@ -31376,7 +31379,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b280';
+  window.__MLS_AV = window.__MLS_AV || 'b282';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31702,7 +31705,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-14-b277';
+  var MLS_APP_BUILD='2026-07-15-b282';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38552,7 +38555,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.1 - exact provider/day/month identity + fresh verified histories */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.3 - exact provider/day/month identity + fresh verified histories + batch-bound roster provenance */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */

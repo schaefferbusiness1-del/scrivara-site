@@ -73,6 +73,17 @@ proof = rowContext.proof(node('Duplicate Patient DOB: 01/02/1970 DOB: 03/04/1980
 assert.strictEqual(proof.dob, '', 'conflicting explicit DOB values selected an arbitrary winner');
 assert.strictEqual(proof.dobConflict, true);
 
+// Archive-proven legacy age-chip: "NNyo M|F … MM-DD-YYYY" is self-validating —
+// the printed age must equal the age computed from the date (±1 yr).
+proof = rowContext.proof(node('3:20 PM 20min Chip Patient 51yo F | 07-16-1974 Follow-up Check-out'));
+assert.strictEqual(proof.dob, '07/16/1974', 'valid age-chip DOB was rejected');
+proof = rowContext.proof(node('3:20 PM Chip Mismatch 34yo F | 07-16-1974 Follow-up'));
+assert.strictEqual(proof.dob, '', 'age-mismatched chip date became DOB');
+proof = rowContext.proof(node('3:20 PM No Chip Here 07-16-1974 Follow-up'));
+assert.strictEqual(proof.dob, '', 'a bare date without the age+sex chip became DOB');
+proof = rowContext.proof(node('9:00 AM Chip Appt Trap 51yo F | appointment 07/15/2026 recheck 07-16-1974'));
+assert.strictEqual(proof.dob, '', 'a chip followed by a non-matching nearby date leaked the wrong value');
+
 const activeReader = between('async function mlsSchedDomInline(doc, CFG){', "if (/stm\\.esp|\\/coordinator\\/|messaging");
 assert((activeReader.match(/_scheduleRowProofD\(/g) || []).length >= 6,
   'not every active schedule DOM lane propagates row-scoped demographics');

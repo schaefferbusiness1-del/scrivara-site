@@ -2958,7 +2958,7 @@ function mlsReadChartIdentity() {
      patient NAME from the same frame - a name-less frame's labeled date (the
      live '6-23-1942' garbage) must yield a fully blank identity. */
   if (!name) { dob = ''; mrn = ''; }
-  return { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH };
+  return { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
 }
 
 /* ---- schedule demographic normalization (worker-scope, pure, testable) ----
@@ -3099,7 +3099,7 @@ function mlsBestIdentityFrom(idr) {
  * nothing acceptable - the working pull path is untouched when the classic
  * banner is readable. Identity is only emitted with BOTH name and DOB. */
 function mlsReadChartIdentityShadow() {
-  var blank = { name: '', dob: '', mrn: '', score: 0, via: '', w: 0, h: 0 };
+  var blank = { name: '', dob: '', mrn: '', score: 0, via: '', w: 0, h: 0, candidates: [] };
   try {
     var els = document.querySelectorAll('*');
     var hosts = [];
@@ -3162,7 +3162,7 @@ function mlsReadChartIdentityShadow() {
       for (var i2 = 0; i2 < lines.length - 1; i2++) { if (re.test(lines[i2])) return lines[i2 + 1]; }
       return '';
     }
-    var bestR = null;
+    var bestR = null, allR = [];
     for (var h = 0; h < hosts.length; h++) {
       var out = { items: [], n: 0 };
       collect(hosts[h].shadowRoot, out, 0);
@@ -3212,9 +3212,11 @@ function mlsReadChartIdentityShadow() {
       var bodyW = 0, bodyH = 0;
       try { var brc = document.body.getBoundingClientRect(); bodyW = Math.round(brc.width); bodyH = Math.round(brc.height); } catch (e) {}
       if (bodyW < 60 || bodyH < 60) score -= 6;
-      var r = { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH };
+      var r = { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
+      allR.push(r);
       if (!bestR || (via === 'shadow-labels' && bestR.via !== 'shadow-labels') || (r.score > bestR.score && !(bestR.via === 'shadow-labels' && via !== 'shadow-labels'))) bestR = r;
     }
+    if (bestR) bestR = Object.assign({}, bestR, { candidates: allR });
     return bestR || blank;
   } catch (e) { return blank; }
 }
@@ -3222,7 +3224,8 @@ function mlsReadChartIdentityShadow() {
  * FULL identity (name+dob, non-negative score) or null. Call sites use it only
  * after mlsReadChartIdentity found nothing acceptable. */
 var __mlsShadowTryLast = new Map(); /* v1.89: tabId -> { ts, found } - shadow-scan cooldown state */
-async function mlsShadowIdentityTry(tabId) {
+async function mlsShadowIdentityTry(tabId, options) {
+  options = options || {};
   /* v1.89 cooldown (review finding 8): the 8s race below ABANDONS but cannot
      CANCEL the injected querySelectorAll('*')-over-20k-elements scan, and the
      chart-ready gate re-invokes this every poll round - abandoned scans stack
@@ -3233,7 +3236,7 @@ async function mlsShadowIdentityTry(tabId) {
      NOTHING, skip and return null (no re-scan). After 6s, scan normally. */
   try {
     var prev = __mlsShadowTryLast.get(tabId);
-    if (prev && (Date.now() - prev.ts) < 6000) return prev.found || null;
+    if (!options.noCache && prev && (Date.now() - prev.ts) < 6000) return options.all ? (prev.all || []) : (prev.found || null);
   } catch (eCd) {}
   var found = null;
   try {
@@ -3244,13 +3247,27 @@ async function mlsShadowIdentityTry(tabId) {
       chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, func: mlsReadChartIdentityShadow }).then(function (r) { return { r: r }; }, function () { return { r: null }; }),
       new Promise(function (res) { setTimeout(function () { res({ timeout: true }); }, 8000); })
     ]);
+    var allFound = [];
     if (raced && !raced.timeout && raced.r) {
-      var sb = mlsBestIdentityFrom(raced.r);
+      (raced.r || []).forEach(function (entry) {
+        var sb0 = entry && entry.result;
+        if (!sb0) return;
+        var frameId = (entry && typeof entry.frameId === 'number') ? entry.frameId : null;
+        var frameCandidates = Array.isArray(sb0.candidates) && sb0.candidates.length ? sb0.candidates : [sb0];
+        frameCandidates.forEach(function (candidate) {
+          if (!candidate || !candidate.name || !candidate.dob || (candidate.score || 0) < 0) return;
+          var copy = Object.assign({}, candidate);
+          delete copy.candidates;
+          if (frameId != null) copy.frameId = frameId;
+          allFound.push(copy);
+        });
+      });
+      var sb = mlsBestIdentityFrom(allFound.map(function (candidate) { return { frameId: candidate.frameId, result: candidate }; }));
       if (sb && sb.name && sb.dob && (sb.score || 0) >= 0) found = sb;
     }
   } catch (e) {}
-  try { __mlsShadowTryLast.set(tabId, { ts: Date.now(), found: found }); } catch (eC2) {}
-  return found;
+  try { if (!options.noCache) __mlsShadowTryLast.set(tabId, { ts: Date.now(), found: found, all: allFound || [] }); } catch (eC2) {}
+  return options.all ? (allFound || []) : found;
 }
 /* Injected (read-only nav): detect the exam-prep/briefing state and click ONLY a
  * safe "load the real clinical chart" control - the "REFRESH CHART" prompt or a
@@ -4041,12 +4058,31 @@ function mlsPickGenericEmrTab(all) { /* non-athena EMR fallback (athena candidat
 async function mlsPickAthenaTab(all, opts) {
   opts = opts || {};
   try {
+    /* QUIET-WORK LEASE FIRST (v2.9.25): a managed pull may span many read-only
+       chart navigations. Once its quiet workspace is established, every patient
+       operation in that cohort stays on the EXACT leased Athena tab - never hop
+       to a second signed-in tab because recency scores changed, and never for a
+       mutable explicit pin that changed mid-run. The active lease outranks the
+       pin; the pin is consulted only when no active lease exists. Health is
+       still re-probed on every selection: a signed-out or dead leased tab fails
+       closed (returns null) instead of hopping the cohort to another tab. */
+    var qpLease = self.__mlsQp;
+    if (qpLease && qpLease.active && qpLease.athenaTabId != null) {
+      var qt = null; try { qt = await chrome.tabs.get(qpLease.athenaTabId); } catch (eQpTab) { qt = null; }
+      if (qt && mlsAthTabHost(qt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(qt)) {
+        var qpHealth = await mlsAthPing(qt.id, opts.noPing ? 1000 : 1500);
+        if (qpHealth.alive && !qpHealth.signedOut) return qt;
+        if (qpHealth.signedOut) mlsAthRejectSignedOut(qt.id);
+      }
+      return null;
+    }
     /* v1.99 TAB PIN: the user explicitly handed this athena tab to MLS via the
-       tab picker - it wins over every heuristic below. A pinned tab sitting on a
-       login/identity page means the SESSION DROPPED: return null so athenaOnly
-       callers fail honestly and the picker surfaces 'signed out' - NEVER re-auth,
-       never silently fall back to some other tab the user didn't choose. A
-       CLOSED pinned tab auto-unpins (also handled by onRemoved). */
+       tab picker - with no active quiet-work lease it wins over every heuristic
+       below. A pinned tab sitting on a login/identity page means the SESSION
+       DROPPED: return null so athenaOnly callers fail honestly and the picker
+       surfaces 'signed out' - NEVER re-auth, never silently fall back to some
+       other tab the user didn't choose. A CLOSED pinned tab auto-unpins (also
+       handled by onRemoved). */
     var pin = self.__mlsAthPin;
     if (pin && pin.tabId != null) {
       var pt = null; try { pt = await chrome.tabs.get(pin.tabId); } catch (eP) { pt = null; }
@@ -5832,7 +5868,21 @@ async function mlsSchedDomInline(doc, CFG){
       function dobD(value){var raw=cl(value),m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(raw);if(!m){var iso=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);if(iso)m=[iso[0],iso[2],iso[3],iso[1]];}if(!m)return '';var y=+m[3],mo=+m[1],d=+m[2],now=new Date(),exact=new Date(Date.UTC(y,mo-1,d));if(y<1900||exact.getUTCFullYear()!==y||exact.getUTCMonth()!==mo-1||exact.getUTCDate()!==d||exact.getTime()>now.getTime())return '';return('0'+mo).slice(-2)+'/'+('0'+d).slice(-2)+'/'+y;}
       function mrnD(value){var v=cl(value);if(!v||v.length>48||!/[0-9]/.test(v)||!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v))return '';if(/^\d{4}-\d{1,2}-\d{1,2}$/.test(v)||/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}$/.test(v))return '';return v;}
       function putD(kind,value){var v=kind==='dob'?dobD(value):mrnD(value),conflict=kind+'Conflict';if(!v||outD[conflict])return;if(outD[kind]&&outD[kind].toLowerCase()!==v.toLowerCase()){outD[kind]='';outD[conflict]=true;}else outD[kind]=v;}
-      function labelsD(value){var s=cl(value);s.replace(/\b(?:DOB|Date\s+of\s+Birth|Birth\s+Date)\s*(?:is\s*)?[:#-]?\s*(\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4})\b/gi,function(whole,v){putD('dob',v);return whole;});s.replace(/\b(?:MRN|Medical\s+Record(?:\s+(?:Number|No\.?|#|ID))?)\s*(?:is\s*)?[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,47})\b/gi,function(whole,v){putD('mrn',v);return whole;});}
+      function labelsD(value){var s=cl(value);s.replace(/\b(?:DOB|Date\s+of\s+Birth|Birth\s+Date)\s*(?:is\s*)?[:#-]?\s*(\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4})\b/gi,function(whole,v){putD('dob',v);return whole;});s.replace(/\b(?:MRN|Medical\s+Record(?:\s+(?:Number|No\.?|#|ID))?)\s*(?:is\s*)?[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,47})\b/gi,function(whole,v){putD('mrn',v);return whole;});
+        /* Archive-proven legacy chip (every classic grid, live receipts 44/52 and
+           30/38): "NNyo M|F … MM-DD-YYYY" renders DOB UNLABELED next to age+sex.
+           The pair is SELF-VALIDATING — accept the date only when the printed
+           age equals the age computed from it (±1 yr, handles the birthday
+           straddle). Appointment/reason dates never ride an age+sex chip, so
+           the bare-date fail-close is preserved. */
+        s.replace(/\b(\d{1,3})\s*(?:yo|y\/o|yrs?\.?|years?(?:\s*old)?)\s*[MF]\b[^0-9A-Za-z]{0,12}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}|\d{4}-\d{1,2}-\d{1,2})/gi,function(whole,age,v){
+          var norm=dobD(v);if(!norm)return whole;
+          var pm=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(norm);if(!pm)return whole;
+          var now=new Date(),born=new Date(Date.UTC(+pm[3],+pm[1]-1,+pm[2]));
+          var years=Math.floor((now.getTime()-born.getTime())/31557600000);
+          if(Math.abs(years-(+age))<=1)putD('dob',v);
+          return whole;
+        });}
       if(!root)return outD;
       var nodes=[root];try{nodes=nodes.concat([].slice.call(root.querySelectorAll('[data-patient-dob],[data-dob],[data-date-of-birth],[data-birth-date],[data-patient-mrn],[data-mrn],[data-medical-record-number],[aria-label],[data-testid]')).slice(0,80));}catch(_eDn){}
       nodes.forEach(function(node){function attrD(name){try{return node.getAttribute&&node.getAttribute(name);}catch(_eDa){return '';}}['data-patient-dob','data-dob','data-date-of-birth','data-birth-date'].forEach(function(name){var v=attrD(name);if(v!=null&&cl(v))putD('dob',v);});['data-patient-mrn','data-mrn','data-medical-record-number'].forEach(function(name){var v=attrD(name);if(v!=null&&cl(v))putD('mrn',v);});var aria=attrD('aria-label');if(aria)labelsD(aria);var testId=cl(attrD('data-testid'));if(/(?:^|[-_])(patient[-_]?)?(?:dob|date[-_]?of[-_]?birth|birth[-_]?date)$/i.test(testId))putD('dob',tx(node)||attrD('value'));if(/(?:^|[-_])(patient[-_]?)?(?:mrn|medical[-_]?record[-_]?(?:number|id))$/i.test(testId))putD('mrn',tx(node)||attrD('value'));});
@@ -6273,6 +6323,10 @@ async function mlsSchedDomInline(doc, CFG){
           expectedCount: null, observedCount: __providerRoster.length, horizontalScrollable: null,
           reachedEnd: false, capReached: false, budgetExpired: false, restored: null, steps: 0
         };
+        /* Batch provenance at the source (v2.9.25): bind this sweep receipt to
+           the exact schedule request and the served date, so a stale or
+           replayed roster receipt can never satisfy a later batch. */
+        __providerRosterReceipt = Object.assign({}, __providerRosterReceipt, { requestId: __schedRequestId, targetDate: (pick && pick.s && pick.s.schedDate) || '' });
         /* Completeness receipt: a verified surface is not enough to claim a
            verified result. Reconcile every appointment-shaped candidate the
            virtualized sweep observed with the validated merged rows. A real
@@ -6302,16 +6356,24 @@ async function mlsSchedDomInline(doc, CFG){
            Its free-text header count can include capacity slots, so the
            reconciled class-specific candidate count is authoritative here. */
         var __legacyExactCount = __dd.strategy === 'legacy-day-grid' || __dd.via === 'legacy-day-grid';
-        var __expectedCount = __legacyExactCount ? __candidateCount : Math.max(__candidateCount, __providerCount <= 1 ? __declaredCount : 0);
+        var __declaredCountAuthoritative = !__legacyExactCount && __providerCount <= 1 && __declaredCount > 0;
+        var __countStrategy = __legacyExactCount
+          ? 'legacy-grid-candidate-rows'
+          : (__declaredCountAuthoritative ? 'single-provider-declared-total' : ((__dd.strategy === 'structure-id' || __dd.via === 'structure-id') ? 'verified-viewport-candidates' : 'verified-rendered-candidates'));
+        var __declaredCountReason = __declaredCountAuthoritative
+          ? 'single-provider-surface-total'
+          : (__legacyExactCount ? 'legacy-header-may-include-capacity' : (__providerCount > 1 && __declaredCount > 0 ? 'multi-provider-column-count-not-total' : 'no-authoritative-declared-total'));
+        var __expectedCount = __legacyExactCount ? __candidateCount : Math.max(__candidateCount, __declaredCountAuthoritative ? __declaredCount : 0);
         var __authoritativeEmpty = __parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; });
         var __viewportCoverage = __dd.viewportCoverage || null;
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
         var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
         var __complete = __coverageComplete && (__authoritativeEmpty || (__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0));
         var __receipt = {
-          scheduleVerified: true, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
+          scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount,
-          declaredCount: __declaredCount, unnamedCount: __unnamedCount,
+          countStrategy: __countStrategy,
+          declaredCount: __declaredCount, declaredCountAuthoritative: __declaredCountAuthoritative, declaredCountReason: __declaredCountReason, unnamedCount: __unnamedCount,
           domValidRows: Number(__pd.domValidRows || 0), textValidRows: Number(__pd.textValidRows || 0),
           mergedRows: Number(__pd.mergedRows || __parsedCount), invalidRowsRemoved: Number(__pd.invalidRowsRemoved || 0),
           viewportCoverage: __viewportCoverage, viewportCoverageComplete: __coverageComplete
@@ -6550,7 +6612,14 @@ async function mlsSchedDomInline(doc, CFG){
         const wantDob = String(msg.patientDob || '').trim();
         const wantMrn = String(msg.patientMrn || '').trim();
         const preopened = msg.preopened === true;
-        let tab = null;
+        const bootstrapIdentity = msg.bootstrapIdentity === true;
+        const expectedAppointmentId = String(msg.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+        const expectedScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(String(msg.scheduleDate || '')) ? String(msg.scheduleDate) : '';
+        const expectedAthenaTabId = Number(msg.athenaTabId);
+        const expectedNavigationFrameIds = Array.isArray(msg.appointmentNavigationFrameIds)
+          ? msg.appointmentNavigationFrameIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0).slice(0, 24)
+          : [];
+        let tab = null, exactOpenLease = null;
         if (preopened) {
           /* The DOB-gated findpatient opener records the exact Athena tab it
              navigated. Bind this read to that tab; generic re-picking can cross
@@ -6560,6 +6629,15 @@ async function mlsSchedDomInline(doc, CFG){
           if (!lease || !lease.tabId || (Date.now() - Number(lease.at || 0)) > 180000 || leaseNameKey(lease.name) !== leaseNameKey(want)) {
             return chartRespond({ ok: false, reason: 'preopened-tab-unverified', error: 'The exact Athena chart-open receipt was missing or stale. Nothing was read.' });
           }
+          if (bootstrapIdentity && (!expectedAppointmentId || lease.appointmentIdBound !== true ||
+              String(lease.requestId || '') !== chartRequestId || String(lease.appointmentId || '') !== expectedAppointmentId ||
+              (expectedScheduleDate && String(lease.scheduleDate || '') !== expectedScheduleDate) ||
+              (!Number.isFinite(expectedAthenaTabId) || Number(lease.tabId) !== expectedAthenaTabId) ||
+              !expectedNavigationFrameIds.length ||
+              JSON.stringify((lease.appointmentNavigationFrameIds || []).slice().sort((a, b) => a - b)) !== JSON.stringify(expectedNavigationFrameIds.slice().sort((a, b) => a - b)))) {
+            return chartRespond({ ok: false, reason: 'appointment-open-lease-mismatch', error: 'The exact appointment, date, tab, and request receipt did not match. Nothing was read.' });
+          }
+          exactOpenLease = Object.freeze({ tabId: Number(lease.tabId), requestId: String(lease.requestId || ''), appointmentId: String(lease.appointmentId || ''), scheduleDate: String(lease.scheduleDate || ''), appointmentIdBound: lease.appointmentIdBound === true, appointmentNavigationFrameIds: expectedNavigationFrameIds.slice() });
           const leaseTab = await chartSettle(chrome.tabs.get(Number(lease.tabId)), 8000);
           tab = (leaseTab && leaseTab.ok) ? leaseTab.value : null;
           if (chartExpired()) { chartFailDeadline('the exact-tab lease'); return; }
@@ -6730,6 +6808,35 @@ async function mlsSchedDomInline(doc, CFG){
            whatever identity some stale/lurking frame still carries. */
         const expectName = want || ((self.__mlsExpectOpen && (Date.now() - self.__mlsExpectOpen.at) < 180000) ? self.__mlsExpectOpen.name : '');
         const nmm = (a, b) => { const nz = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); const ta = nz(a).split(' ').filter(x => x.length > 1), tb = nz(b).split(' ').filter(x => x.length > 1); const o = ta.filter(x => tb.indexOf(x) >= 0).length; return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1); };
+        const bootstrapTokens = (value) => {
+          const suffix = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/i;
+          return String(value || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token && !suffix.test(token) && token.length > 1);
+        };
+        const exactBootstrapName = (observed, expected) => {
+          const have = bootstrapTokens(observed), need = bootstrapTokens(expected);
+          if (have.length < 2 || need.length < 2) return false;
+          const counts = {}; have.forEach((token) => { counts[token] = Number(counts[token] || 0) + 1; });
+          for (let index = 0; index < need.length; index++) { if (!counts[need[index]]) return false; counts[need[index]]--; }
+          return true;
+        };
+        const validBootstrapDob = (value) => {
+          const match = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(value || '').trim());
+          if (!match) return false;
+          const month = Number(match[1]), day = Number(match[2]), year = Number(match[3]);
+          if (year < 1900 || year > new Date().getFullYear() || month < 1 || month > 12 || day < 1 || day > 31) return false;
+          const parsed = new Date(Date.UTC(year, month - 1, day));
+          return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day && parsed.getTime() <= Date.now();
+        };
+        const bootstrapIdentityReady = (selected, frames) => {
+          if (!bootstrapIdentity || !exactOpenLease || !selected || !/^(?:banner|shadow-labels|shadow-banner)$/.test(String(selected.via || '')) || !exactBootstrapName(selected.name, want) || !validBootstrapDob(selected.dob)) return false;
+          const selectedDob = String(selected.dob || '').replace(/\D/g, '');
+          const visible = (frames || []).map((entry) => {
+            const raw = entry && entry.result; if (!raw) return null;
+            const copy = Object.assign({}, raw); if (copy.frameId == null && entry && typeof entry.frameId === 'number') copy.frameId = entry.frameId; return copy;
+          }).filter((candidate) => candidate && candidate.name && (candidate.score || 0) >= 0 && Number(candidate.w || 0) >= 60 && Number(candidate.h || 0) >= 60 && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(candidate.via || '')));
+          if (!visible.length || !visible.every((candidate) => exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && String(candidate.dob || '').replace(/\D/g, '') === selectedDob)) return false;
+          return visible.some((candidate) => typeof candidate.frameId === 'number' && exactOpenLease.appointmentNavigationFrameIds.indexOf(candidate.frameId) >= 0);
+        };
         while (!chartExpired() && Date.now() - T0 < BUDGET_MS) {
           polls++;
           /* v1.63: 15s -> 20s. A heavy-but-alive chart load could eat two 15s injection
@@ -6758,7 +6865,7 @@ async function mlsSchedDomInline(doc, CFG){
              round - when the nudge can load the full clinical chart, its light-DOM
              banner is the best surface for BOTH identity and the text read; accept
              a shadow identity only from round 2, or once a nudge was clicked. */
-          if ((polls >= 2 || navClicked) && (!cand || !cand.name || (cand.score || 0) < 0
+          if (bootstrapIdentity || ((polls >= 2 || navClicked) && (!cand || !cand.name || (cand.score || 0) < 0
               /* v1.86: ...or the classic identity is a WEAK non-banner grep that is
                  NOT the expected patient - on shadow-banner charts the classic
                  reader can only find care-team/provider names in the light DOM
@@ -6766,20 +6873,24 @@ async function mlsSchedDomInline(doc, CFG){
                  via lastfirst, so the shadow fallback never ran and the gate
                  refused her every pull). A banner-grade shadow identity beats a
                  lastfirst guess; if shadow finds nothing, behavior is unchanged. */
-              || (cand.via !== 'banner' && expectName && !nmm(cand.name, expectName)))) {
-            const shadowSettled = await chartSettle(mlsShadowIdentityTry(tab.id), 8000);
+              || (cand.via !== 'banner' && expectName && !nmm(cand.name, expectName))))) {
+            const shadowSettled = await chartSettle(mlsShadowIdentityTry(tab.id, bootstrapIdentity ? { noCache: true, all: true } : null), 8000);
             if (!shadowSettled || !shadowSettled.ok) {
               if (chartExpired()) { chartFailDeadline('shadow patient identity verification'); return; }
             }
-            const sIdent = shadowSettled && shadowSettled.ok ? shadowSettled.value : null;
-            if (sIdent) {
-              cand = sIdent;
-              if (typeof sIdent.frameId === 'number') identityFrameResults.push({ frameId: sIdent.frameId, result: sIdent });
-              identDiag.push({ via: sIdent.via || 'shadow', named: true, sc: Math.round((sIdent.score || 0) * 10) / 10, w: sIdent.w || 0, h: sIdent.h || 0 });
+            const shadowValue = shadowSettled && shadowSettled.ok ? shadowSettled.value : null;
+            const shadowCandidates = bootstrapIdentity ? (Array.isArray(shadowValue) ? shadowValue : []) : (shadowValue ? [shadowValue] : []);
+            if (shadowCandidates.length) {
+              shadowCandidates.forEach((candidate) => {
+                identityFrameResults.push({ frameId: candidate.frameId, result: candidate });
+                identDiag.push({ via: candidate.via || 'shadow', named: true, sc: Math.round((candidate.score || 0) * 10) / 10, w: candidate.w || 0, h: candidate.h || 0 });
+              });
+              const sIdent = mlsBestIdentityFrom(shadowCandidates.map((candidate) => ({ frameId: candidate.frameId, result: candidate })));
+              if (sIdent && (!cand || cand.via !== 'banner' || (sIdent.score || 0) > (cand.score || 0))) cand = sIdent;
             }
           }
           /* the RIGHT patient found (any via) -> done */
-          if (cand && cand.name && expectName && nmm(cand.name, expectName)) { ident = cand; try { self.__mlsExpectOpen = null; } catch (e) {} break; }
+          if (cand && cand.name && expectName && nmm(cand.name, expectName) && (!bootstrapIdentity || (polls >= 2 && bootstrapIdentityReady(cand, identityFrameResults)))) { ident = cand; if (!bootstrapIdentity) try { self.__mlsExpectOpen = null; } catch (e) {} break; }
           /* no expectation: a banner IS the open chart -> done (pre-v1.60 behavior, banner-only) */
           if (cand && cand.name && !expectName && cand.via === 'banner') { ident = cand; break; }
           /* catch-all: budget nearly spent - return the best we have; the app-side
@@ -6789,7 +6900,7 @@ async function mlsSchedDomInline(doc, CFG){
              refused 5 of 15 on the 7/07 pull). Returning NO identity lets the app
              gate fall back to name-tokens-in-chart-text + schedule-DOB, which SAVES
              correctly when the real chart is on screen. */
-          if (Date.now() - T0 > 42000 && cand && cand.name && (cand.score || 0) >= 0) { ident = cand; break; }
+          if (Date.now() - T0 > 42000 && cand && cand.name && (cand.score || 0) >= 0 && (!bootstrapIdentity || bootstrapIdentityReady(cand, identityFrameResults))) { ident = cand; break; }
           if (Date.now() - T0 > 42000) { ident = null; break; }
           /* not the right identity yet: is this the exam-prep/briefing view? nudge it. */
           const ex = await chartExec({ target: { tabId: tab.id, allFrames: true }, func: mlsEnsureClinicalChartFn, args: [chartRequestGuard] }, 10000);
@@ -6834,6 +6945,46 @@ async function mlsSchedDomInline(doc, CFG){
           __mlsReadsSinceReload++;
           await restoreFocus();
           return chartRespond({ ok: false, reason: 'exam-prep-stuck', opened: opened, briefing: true, navClicked: navClicked, polls: polls, identDiag: identDiag, version: V59, error: 'athenaOne stayed on the appointment exam-prep view (no patient banner) - the clinical chart never loaded, so nothing was captured.' });
+        }
+        if (bootstrapIdentity) {
+          var bannerGrade = !!(ident && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(ident.via || '')));
+          var exactNameMatched = !!(bannerGrade && exactBootstrapName(ident.name, want));
+          var validBannerDob = !!(bannerGrade && validBootstrapDob(ident.dob));
+          var chosenDobKey = String(ident && ident.dob || '').replace(/\D/g, '');
+          var bannerCandidates = (identityFrameResults || []).map(function (entry) {
+            var candidate = entry && entry.result;
+            if (!candidate) return null;
+            var copy = Object.assign({}, candidate);
+            if (copy.frameId == null && entry && typeof entry.frameId === 'number') copy.frameId = entry.frameId;
+            return copy;
+          }).filter(function (candidate) {
+            return candidate && candidate.name && (candidate.score || 0) >= 0 && Number(candidate.w || 0) >= 60 && Number(candidate.h || 0) >= 60 && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(candidate.via || ''));
+          });
+          var bannerCandidatesAgree = bannerCandidates.length > 0 && bannerCandidates.every(function (candidate) {
+            var candidateDobKey = String(candidate.dob || '').replace(/\D/g, '');
+            return exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && candidateDobKey === chosenDobKey;
+          });
+          var routeBoundBannerSeen = !!(exactOpenLease && bannerCandidates.some(function (candidate) {
+            return typeof candidate.frameId === 'number' && exactOpenLease.appointmentNavigationFrameIds.indexOf(candidate.frameId) >= 0;
+          }));
+          if (!(exactOpenLease && exactOpenLease.appointmentIdBound && exactOpenLease.requestId === chartRequestId && exactOpenLease.appointmentId === expectedAppointmentId && exactNameMatched && validBannerDob && bannerCandidatesAgree && routeBoundBannerSeen)) {
+            try { self.__mlsExpectOpen = null; } catch (eClearBootstrapLease) {}
+            return chartRespond({ ok: false, reason: !bannerGrade ? 'banner-identity-unverified' : (!exactNameMatched ? 'banner-name-mismatch' : (!validBannerDob ? 'banner-dob-unverified' : (!bannerCandidatesAgree ? 'banner-identity-conflict' : 'banner-navigation-frame-unverified'))), opened: opened, error: 'The exact appointment opened, but its changed Athena frame did not prove one consistent expected name and DOB. Nothing was stored.' });
+          }
+          try { self.__mlsExpectOpen = null; } catch (eClearBootstrapLease2) {}
+          return chartRespond({
+            ok: true, opened: true, bootstrapIdentity: true,
+            appointmentId: expectedAppointmentId, athenaTabId: exactOpenLease.tabId,
+            chartName: String(ident.name || ''), chartDob: String(ident.dob || ''), chartMrn: String(ident.mrn || ''), via: String(ident.via || ''),
+            identityBootstrapReceipt: {
+              kind: 'athena-appointment-banner-identity', complete: true,
+              requestId: chartRequestId, appointmentId: expectedAppointmentId,
+              scheduleDate: expectedScheduleDate, athenaTabId: exactOpenLease.tabId,
+              appointmentIdBound: true, navigationProven: true,
+              navigationFrameIds: exactOpenLease.appointmentNavigationFrameIds.slice(),
+              exactNameMatched: true, bannerIdentity: true, dobVerified: true
+            }
+          });
         }
         let results = [];
         {
@@ -9163,7 +9314,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // --- the page-side driver (self-contained; serialized to the tab) ---
-  async function mlsSearchOpenDriverFn(name, phase, requestGuard) {
+  async function mlsSearchOpenDriverFn(name, phase, requestGuard, appointmentId, requireAppointmentId) {
     try {
       var __openGuard = Object.freeze({ deadline: Number(requestGuard && requestGuard.deadline || 0), token: String(requestGuard && requestGuard.token || '') });
       function openAllowed() { return !!__openGuard.token && Number.isFinite(__openGuard.deadline) && Date.now() < __openGuard.deadline; }
@@ -9321,9 +9472,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (clickT !== row && openAllowed()) { try { realClick(row); } catch (e5) {} }
           return true;
         }
-        // fast path: the row is already rendered
-        var hit = scanOnce();
-        if (hit.el) { if (!clickRow(hit.el)) return deadlineOut(); return { phase: 'open', opened: true, via: 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc } }; }
+        /* v2.9.25: exact appointment-id row binding for day-grid variants that
+           render NO demographics (live 2026-07-15: 17/17 rows carried only
+           name/time/reason plus a data appointment id). The id selects the ONE
+           exact row; the row must still contain the expected LAST NAME, and the
+           follow-up chart read's banner identity remains the proof gate. In
+           bootstrap mode a missing id row NEVER falls back to a name scan. */
+        function apptIdRow() {
+          var wantId = String(appointmentId || '').trim();
+          if (!wantId || !/^[A-Za-z0-9_-]{2,40}$/.test(wantId)) return null;
+          var holders = [];
+          try { holders = [].slice.call(document.querySelectorAll('[data-appointment-id="' + wantId + '"],[data-appt-id="' + wantId + '"],[data-appointmentid="' + wantId + '"],[appointmentid="' + wantId + '"]')); } catch (eIdSel) {}
+          if (!holders.length) {
+            try {
+              var escId = wantId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              var idRe = new RegExp('[?&#/](?:appointmentid|appointment_id|appointment|apptid)[=/:]' + escId + '(?![A-Za-z0-9])', 'i');
+              holders = [].slice.call(document.querySelectorAll('a[href*="appointment"]')).filter(function (a) { return idRe.test(String(a.getAttribute('href') || '')); });
+            } catch (eIdHref) {}
+          }
+          var matchedRows = [];
+          for (var hi = 0; hi < holders.length && hi < 24; hi++) {
+            var row = holders[hi];
+            var matchedRow = null;
+            for (var up = 0; up < 5 && row; up++) {
+              if (vis(row)) {
+                var t = rowText(row).toLowerCase();
+                if (t && t.length < 700 && lname && t.indexOf(lname) !== -1 && (!fname || t.indexOf(fname) !== -1)) { matchedRow = row; break; }
+              }
+              row = row.parentElement;
+            }
+            if (!matchedRow) continue;
+            var sameRow = matchedRows.some(function (existing) {
+              try { return existing === matchedRow || existing.contains(matchedRow) || matchedRow.contains(existing); } catch (eSame) { return existing === matchedRow; }
+            });
+            if (!sameRow) matchedRows.push(matchedRow);
+          }
+          if (matchedRows.length > 1) return { el: null, sc: 99, scanned: holders.length, viaApptId: true, ambiguous: true, matches: matchedRows.length };
+          return matchedRows.length === 1 ? { el: matchedRows[0], sc: 99, scanned: holders.length, viaApptId: true, matches: 1 } : null;
+        }
+        // fast path: exact id only in bootstrap mode; ordinary opens retain the
+        // proven name scan as a compatibility fallback.
+        var hit = apptIdRow() || (requireAppointmentId === true ? { el: null, sc: 0, scanned: 0 } : scanOnce());
+        if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
+        if (hit.el) { if (!clickRow(hit.el)) return deadlineOut(); return { phase: 'open', opened: true, via: hit.viaApptId ? 'appt-id' : 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: hit.viaApptId === true, apptIdMatches: hit.matches || 1 } }; }
         // v1.61: SCROLL the virtualized schedule + re-scan. athenaOne renders only the
         // rows in the viewport, so a below-the-fold patient (e.g. Ruth Gehrman) was never
         // found by the old single-scan opener - "open-failed". The reader already scrolls
@@ -9356,23 +9547,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (!openAllowed()) return deadlineOut();
             try { sc0.scrollTop = y; sc0.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e) {}
             await new Promise(function (r) { setTimeout(r, 320); });
-            var h2 = scanOnce(); if (h2.scanned > scannedTotal) scannedTotal = h2.scanned;
-            if (h2.el) { if (!clickRow(h2.el)) return deadlineOut(); return { phase: 'open', opened: true, via: 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc } }; }
+            var h2 = requireAppointmentId === true ? (apptIdRow() || { el: null, sc: 0, scanned: 0 }) : scanOnce(); if (h2.scanned > scannedTotal) scannedTotal = h2.scanned;
+            if (h2.ambiguous) return { phase: 'open', opened: false, candidates: h2.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 2 } };
+            if (h2.el) { if (!clickRow(h2.el)) return deadlineOut(); return { phase: 'open', opened: true, via: h2.viaApptId ? 'appt-id-scroll' : 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: h2.viaApptId === true, apptIdMatches: h2.matches || 1 } }; }
           }
           if (openAllowed()) try { sc0.scrollTop = orig; } catch (e) {}
         }
         /* v1.62: report a real topScore so bestFrameResult surfaces the SCHEDULE frame's
            diag instead of the empty top frame's (v1.61 dropped it and masked the truth). */
-        return { phase: 'open', opened: false, candidates: 0, diag: { frame: location.hostname, scanned: scannedTotal, scrollers: scrollers.length, topScore: scannedTotal > 0 ? 0 : -1 } };
+        return { phase: 'open', opened: false, candidates: 0, reason: requireAppointmentId === true ? 'appointment-id-not-found' : 'name-not-found', diag: { frame: location.hostname, scanned: scannedTotal, scrollers: scrollers.length, topScore: scannedTotal > 0 ? 0 : -1, apptIdBound: false } };
       }
       return { phase: phase, error: 'unknown phase' };
     } catch (e) { return { phase: phase, error: String((e && e.message) || e) }; }
   }
 
+  /* The exact appointment click is only a candidate until Athena proves a
+     TRUE before/after navigation delta on the same frozen tab. Comparing one
+     clicked frame with every post-click frame let an unchanged cached target
+     iframe falsely prove a no-op click; truncating its URL could do the same.
+     This worker-side verifier compares complete URLs by frameId and accepts
+     only a newly-created or changed frame whose post-click URL carries the
+     exact appointment id. */
+  function mlsAppointmentNavigationDelta(appointmentId, beforeFrames, afterFrames) {
+    try {
+      var want = String(appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+      if (!want) return { matched: false, changedFrameIds: [] };
+      var esc = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var re = new RegExp('(?:appointment|appointmentid|appointment_id|apptid)(?:\\/|=|:)' + esc + '(?![A-Za-z0-9_-])', 'i');
+      var beforeById = new Map();
+      (beforeFrames || []).forEach(function (frame) { if (frame && typeof frame.frameId === 'number') beforeById.set(frame.frameId, String(frame.url || '')); });
+      var changed = [];
+      (afterFrames || []).forEach(function (frame) {
+        if (!frame || typeof frame.frameId !== 'number') return;
+        var url = String(frame.url || ''), existed = beforeById.has(frame.frameId), prior = existed ? beforeById.get(frame.frameId) : '';
+        if ((!existed || prior !== url) && re.test(url)) changed.push(frame.frameId);
+      });
+      changed = Array.from(new Set(changed));
+      return { matched: changed.length > 0, changedFrameIds: changed };
+    } catch (e) { return { matched: false, changedFrameIds: [] }; }
+  }
+
   function bestFrameResult(results, key) {
     // results: array of {result} from executeScript allFrames. Pick the frame
     // whose driver reports success / highest score.
-    var rs = (results || []).map(function (r) { return r && r.result; }).filter(Boolean);
+    var rs = (results || []).map(function (r) {
+      var x = r && r.result;
+      if (x && typeof r.frameId === 'number') try { x.__frameId = r.frameId; } catch (e) {}
+      return x;
+    }).filter(Boolean);
     var hit = rs.filter(function (r) { return r && (r.filled || r.opened); });
     if (hit.length) {
       hit.sort(function (a, b) { return ((b.diag && b.diag.topScore) || 0) - ((a.diag && a.diag.topScore) || 0); });
@@ -9711,6 +9933,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       (async function () {
         var senderTab = sender && sender.tab && sender.tab.id;
         var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '').trim().slice(0, 40);
+        var frozenApptId = String(msg.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+        var bootstrapIdentity = msg.bootstrapIdentity === true;
+        var frozenScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(String(msg.scheduleDate || '')) ? String(msg.scheduleDate) : '';
         var rawSendResponse = sendResponse, responseSent = false;
         var openStartedAt = Date.now();
         var openBudgetMs = Math.max(15000, Math.min(90000, Number(msg.maxOpenMs || 70000)));
@@ -9727,6 +9952,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         function openExpired() { return Date.now() >= openGuard.deadline; }
         function failOpenDeadline(stage) {
           sendResponse({ ok: false, opened: false, reason: 'open-deadline-exceeded', requestToken: openGuard.token, error: 'The Athena patient open reached its one absolute deadline during ' + (stage || 'navigation') + '. No retry or fallback was dispatched after the timeout.' });
+        }
+        if (bootstrapIdentity && !frozenApptId) {
+          sendResponse({ ok: false, opened: false, reason: 'appointment-id-missing', error: 'The exact Athena appointment identity was missing. Nothing was opened.' });
+          return;
         }
         async function settleOpen(promise) {
           var left = Math.max(0, openGuard.deadline - Date.now());
@@ -9786,6 +10015,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (openExpired()) { failOpenDeadline('freeze-guard recovery'); return; }
             if (senderTab) progress(senderTab, 'Giving athenaOne a breather (freeze-guard reload)…', openGuard.token);
             await mlsRecoverAthenaTab(tab.id);
+            /* Reload recovery returns Athena to its default/current day. An
+               exact appointment-id bootstrap for a non-today or month route
+               must re-ground the SAME frozen requested date before scanning;
+               otherwise the id is honestly absent and history silently drops.
+               Never substitute today. */
+            if (bootstrapIdentity) {
+              if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The requested schedule date was missing after Athena recovery. Nothing was opened.' }); return; }
+              var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
+              if (regroundX.timeout) { failOpenDeadline('post-recovery date restoration'); return; }
+              var regroundOk = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).some(function (value) { return value.done === true && String(value.schedDate || '') === frozenScheduleDate; });
+              if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'Athena recovered, but the exact requested date could not be restored. No appointment was opened.' }); return; }
+            }
           }
           // === v1.53 ROUTE 1 — SCHEDULE/CALENDAR CLICK-OPEN (reliable on athenaOne v26.3) ===
           // The synthetic search-box 'fill' path below does NOT register a query on
@@ -9810,7 +10051,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              terminal deadline response. Never continue into another injected
              find/schedule action after that response. */
           if (responseSent) return;
-          var order = frozenMrn ? ['find', 'sched'] : ((self.__mlsOpenPref === 'schedule') ? ['sched', 'find'] : ['find', 'sched']);
+          /* v2.9.25: a row-bound appointment id (grids that render no
+             demographics) makes the schedule row the STRONGEST opener — the id
+             selects the exact clicked row, and the chart banner supplies the
+             identity proof afterward. findpatient stays first only when the
+             caller proved DOB/MRN. */
+          var order = bootstrapIdentity ? ['sched'] : (frozenMrn ? ['find', 'sched'] : (frozenApptId ? ['sched', 'find'] : ((self.__mlsOpenPref === 'schedule') ? ['sched', 'find'] : ['find', 'sched'])));
           var sched = null, findRes = null;
           for (var oi = 0; oi < order.length; oi++) {
             if (order[oi] === 'sched') {
@@ -9826,17 +10072,53 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                   if (dismissX.timeout) { failOpenDeadline('schedule preparation'); return; }
                 }
               } catch (eDm) {}
-              var schedX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open', openGuard] }, 42000);
+              var beforeAppointmentFrames = [];
+              if (bootstrapIdentity) {
+                var beforeFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
+                if (!beforeFramesSettled || !beforeFramesSettled.ok) {
+                  sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-snapshot-unavailable', error: 'Athena frame state could not be frozen before the exact appointment click. Nothing was opened.' }); return;
+                }
+                beforeAppointmentFrames = beforeFramesSettled.value || [];
+              }
+              var schedX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open', openGuard, frozenApptId, bootstrapIdentity] }, 42000);
               if (schedX.timeout) { failOpenDeadline('schedule-row open'); return; }
               var schedRes = schedX.r || [];
-              sched = bestFrameResult(schedRes, 'open');
+              if (bootstrapIdentity) {
+                var exactOpenResults = schedRes.map(function (entry) {
+                  var value = entry && entry.result;
+                  if (value && typeof entry.frameId === 'number') try { value.__frameId = entry.frameId; } catch (eFrameTag) {}
+                  return value;
+                }).filter(Boolean);
+                var exactAmbiguous = exactOpenResults.some(function (value) { return value && (value.reason === 'appointment-id-ambiguous' || (value.diag && Number(value.diag.apptIdMatches || 0) > 1)); });
+                var exactSuccesses = exactOpenResults.filter(function (value) { return value && value.opened === true && value.diag && value.diag.apptIdBound === true; });
+                if (exactAmbiguous || exactSuccesses.length > 1) {
+                  sendResponse({ ok: false, opened: false, reason: 'appointment-id-ambiguous', error: 'More than one visible Athena row claimed the exact appointment id. Nothing was opened.' }); return;
+                }
+                sched = exactSuccesses[0] || bestFrameResult(schedRes, 'open');
+              } else sched = bestFrameResult(schedRes, 'open');
               if (sched && sched.opened) {
+                var appointmentNavigationProven = !bootstrapIdentity;
+                var appointmentNavigationFrameIds = [];
+                if (bootstrapIdentity && sched.diag && sched.diag.apptIdBound === true) {
+                  var proofUntil = Math.min(openGuard.deadline, Date.now() + 12000);
+                  while (!appointmentNavigationProven && Date.now() < proofUntil) {
+                    if (!(await waitOpen(500))) break;
+                    var afterFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
+                    if (!afterFramesSettled || !afterFramesSettled.ok) { failOpenDeadline('appointment navigation proof'); return; }
+                    var navigationDelta = mlsAppointmentNavigationDelta(frozenApptId, beforeAppointmentFrames, afterFramesSettled.value || []);
+                    appointmentNavigationProven = navigationDelta.matched === true;
+                    appointmentNavigationFrameIds = navigationDelta.changedFrameIds || [];
+                  }
+                  if (!appointmentNavigationProven) {
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.' }); return;
+                  }
+                }
                 try { self.__mlsOpenPref = 'schedule'; } catch (e0) {}
                 /* v1.60: remember WHO we just opened - the follow-up bare chart read
                    uses this to wait for the RIGHT patient's banner instead of
                    accepting a stale/lurking frame's identity. */
-                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                sendResponse({ ok: true, opened: true, via: 'schedule-click', candidates: sched.candidates, diag: sched.diag }); return;
+                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now(), requestId: openGuard.token, appointmentId: frozenApptId, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), scheduleDate: frozenScheduleDate }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+                sendResponse({ ok: true, opened: true, via: bootstrapIdentity ? 'appointment-id' : 'schedule-click', candidates: sched.candidates, appointmentId: bootstrapIdentity ? frozenApptId : '', appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), athenaTabId: tab.id, diag: sched.diag }); return;
               }
             } else {
               if (senderTab) progress(senderTab, 'Searching athenaOne patients for “' + (msg.name || '') + '”…', openGuard.token);
@@ -9929,6 +10211,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                   findReason: findRes.reason }); return;
               }
             }
+          }
+          if (bootstrapIdentity) {
+            sendResponse({ ok: false, opened: false, reason: (sched && sched.reason) || 'appointment-id-not-found', error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.' });
+            return;
           }
           // === legacy fallback: synthetic global-search (kept for off-schedule patients; may fail on v26.3) ===
           if (senderTab) progress(senderTab, 'Not on the current view — trying the Athena patient search…', openGuard.token);

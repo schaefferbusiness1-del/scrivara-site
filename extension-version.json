@@ -1,5 +1,5 @@
 {
-  "version": "2.9.24",
+  "version": "2.9.25",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.24 - Detect signed-out athenaOne sessions inside nested frames before a pull, pin, keepalive, or recovery can use them; sanitize every provider selector through one identity-aware roster; quarantine conflicting provider identities; preserve safe provider aliases; and keep all exact history, six-card, idempotency, and operation-scoped persistence gates from v2.9.23."
+  "notes": "v2.9.25 - Resolve demographics-free Athena schedules through the exact appointment id, prove a true same-tab navigation delta, bind a freshly read all-frame patient banner name and DOB to that navigation, restore the requested date after recovery, preserve exact provider/day/month and repeat-pull identity, and fail closed on duplicate ids, stale banners, collisions, or incomplete history evidence."
 }

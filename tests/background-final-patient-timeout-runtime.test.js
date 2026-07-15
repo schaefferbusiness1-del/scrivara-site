@@ -46,7 +46,7 @@ const visitDriver = sliceBetween(
 const searchIife = extractIife(background, '/* === MLS Assist v1.36');
 const searchDriver = sliceBetween(
   searchIife,
-  'async function mlsSearchOpenDriverFn(name, phase, requestGuard)',
+  'async function mlsSearchOpenDriverFn(name, phase',
   'function bestFrameResult(results, key)'
 );
 const findDriver = sliceBetween(
@@ -64,12 +64,12 @@ const searchHandler = sliceBetween(
    request deadline even if that route is hard to reach in a DOM fixture. */
 assert(searchHandler.includes('openDeadline = Math.min(openDeadline, callerDeadline)'), 'SearchOpen does not clamp to the caller deadline');
 assert(searchHandler.includes("reason: 'open-deadline-exceeded'"), 'SearchOpen lost its one terminal deadline reason');
-assert(searchHandler.includes("args: [msg.name || '', 'open', openGuard]"), 'schedule-row injection lost the immutable guard');
+assert(searchHandler.includes("args: [msg.name || '', 'open', openGuard, frozenApptId, bootstrapIdentity]"), 'exact schedule-row injection lost the immutable appointment/bootstrap guard');
 assert(searchHandler.includes("args: [msg.name || '', 'fill', openGuard]"), 'legacy fill injection lost the immutable guard');
 assert(searchHandler.includes('findGuard, frozenMrn], func: mlsFindPatientOpenDriverFn'), 'find-patient injection lost the immutable guard');
 assert(!searchHandler.includes('chrome.scripting.executeScript'), 'SearchOpen still contains a raw unbounded injection');
 assert(!searchHandler.includes('settleOpen(mlsRecoverAthenaTab('), 'SearchOpen recovery is wrapped twice and can outlive its deadline');
-assert(searchHandler.indexOf('if (responseSent) return;') < searchHandler.indexOf('var order = frozenMrn'), 'SearchOpen can continue to a click route after a terminal recovery response');
+assert(searchHandler.indexOf('if (responseSent) return;') < searchHandler.indexOf('var order = bootstrapIdentity'), 'SearchOpen can continue to a click route after a terminal recovery response');
 
 assert(visitIife.includes("fireVisitCleanup('all-visits-ensure-timeout', true)"), 'quiet-work ensure timeout lacks immediate cleanup');
 assert(visitIife.includes("qpEnsurePromise.finally(function () { fireVisitCleanup('all-visits-late-ensure', true); })"), 'quiet-work ensure timeout lacks a late-settlement cleanup backstop');

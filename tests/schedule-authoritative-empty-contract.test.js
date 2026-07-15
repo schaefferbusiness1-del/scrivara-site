@@ -53,7 +53,7 @@ context.postMessage = message => {
   if (message.type === 'mlsAppPullSchedule') queueMicrotask(() => emit('mlsAppScheduleResult', {
     id: message.id, requestId: message.id, ok: true, schedDate: day, text: '', appts: [],
     receipt: {
-      complete: true, authoritativeEmpty: true,
+      complete: true, authoritativeEmpty: true, requestId: message.requestId || message.id,
       expectedCount: 0, candidateCount: 1, parsedCount: 0,
       declaredCount: 0, domValidRows: 0, textValidRows: 0, mergedRows: 0
     },

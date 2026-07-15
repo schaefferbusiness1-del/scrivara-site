@@ -80,6 +80,12 @@ function harness() {
 
 async function main() {
   const h = harness();
+  const legacyAnchored = h.context.__mlsOpNoteHistory.injectIntoUser(
+    'PATIENT: Exact One\n\nTEMPLATE (legacy):\nPROCEDURE:',
+    '=== MLS VERIFIED EXACT-PATIENT CONTEXT BEGIN ===\nlegacy-safe\n=== MLS VERIFIED EXACT-PATIENT CONTEXT END ==='
+  );
+  assert(legacyAnchored.indexOf('=== MLS VERIFIED EXACT-PATIENT CONTEXT BEGIN ===') < legacyAnchored.indexOf('TEMPLATE (legacy)'),
+    'verified history was not inserted before the legacy template anchor');
   const result = await h.context._genOpNote('Exact One', '2026-07-14', 'Left L5-S1 TFESI', tpl, {
     patientId: 'exact-a', dob: '01/02/1970', history: 'UNVERIFIED CALLER-SUPPLIED HISTORY MUST NOT SURVIVE'
   });
@@ -88,6 +94,21 @@ async function main() {
 
   const first = h.calls[0].user;
   const repair = h.calls[1].user;
+  const historyMarker = '=== MLS VERIFIED EXACT-PATIENT CONTEXT BEGIN ===';
+  assert(first.indexOf(historyMarker) >= 0 && first.indexOf(historyMarker) < first.indexOf('SELECTED TEMPLATE'),
+    'initial exact-patient history was not inserted before the current selected-template anchor');
+  assert(repair.indexOf(historyMarker) >= 0 && repair.indexOf(historyMarker) < repair.indexOf('SELECTED TEMPLATE:'),
+    'repair exact-patient history was not inserted before its selected-template anchor');
+  assert(repair.includes('=== MLS VERIFIED EXACT-PATIENT CONTEXT END ===\n\nSELECTED TEMPLATE:'),
+    'repair history and selected template were not separated cleanly');
+  assert.strictEqual(h.calls[0].opts.mlsVerifiedHistoryBinding.patientId, 'exact-a',
+    'initial request lost its immutable exact-patient history binding');
+  assert.strictEqual(h.calls[1].opts.mlsVerifiedHistoryBinding.patientId, 'exact-a',
+    'repair request lost its immutable exact-patient history binding');
+  assert.strictEqual(h.calls[1].opts.mlsVerifiedHistoryBinding.token, h.calls[0].opts.mlsVerifiedHistoryBinding.token,
+    'repair request did not retain the frozen initial history token');
+  assert.strictEqual(h.context.__mlsOpNoteHistory.validateBinding(h.calls[1].opts).ok, true,
+    'repair request binding no longer validates against the exact patient history');
   assert(first.includes('ALL 8 known verified visit(s)'), 'the first pass did not account for every visit beyond six');
   for (let day = 7; day <= 14; day++) assert(first.includes(`2026-07-${String(day).padStart(2, '0')}`), `verified visit dated July ${day} disappeared from the complete index`);
   assert(first.includes('OLDER RELEVANT RAW BODY'), 'an older procedure-relevant raw body was displaced by six newer visits');
@@ -122,6 +143,36 @@ async function main() {
     'a visit change between first pass and repair did not fail closed'
   );
   assert.strictEqual(blocked.calls.length, 1, 'changed history reached the repair transport');
+
+  const collision = harness();
+  const bodyA = 'COLLISION BODY 000000000ha6';
+  const bodyB = 'COLLISION BODY 000000000l78';
+  collision.exact.visits = [{
+    date: '2026-07-14', type: 'Collision regression', source: 'athena-copy',
+    identityVerified: true, identityBinding: 'exact-a', raw: bodyA
+  }];
+  const collisionIdentity = { patientId: 'exact-a', name: 'Exact One', dob: '01/02/1970', procedure: 'Left L5-S1 TFESI' };
+  const builtA = collision.context.__mlsOpNoteHistory._internal.buildHistoryContext('Exact One', {
+    patientId: 'exact-a', dob: '01/02/1970', procedure: 'Left L5-S1 TFESI'
+  });
+  const tokenA = collision.context.__mlsOpNoteHistory._internal.bindingToken(collisionIdentity, builtA);
+  collision.exact.visits[0].raw = bodyB;
+  const builtB = collision.context.__mlsOpNoteHistory._internal.buildHistoryContext('Exact One', {
+    patientId: 'exact-a', dob: '01/02/1970', procedure: 'Left L5-S1 TFESI'
+  });
+  const tokenB = collision.context.__mlsOpNoteHistory._internal.bindingToken(collisionIdentity, builtB);
+  assert.notStrictEqual(builtA.text, builtB.text, 'collision fixture did not change the full verified history context');
+  assert.strictEqual(tokenA, tokenB, 'known equal-length FNV collision no longer exercises the binding-token collision path');
+  const forgedCollision = {
+    mlsOpNotePatientId: 'exact-a',
+    mlsVerifiedHistoryBinding: {
+      patientId: 'exact-a', patientName: 'Exact One', patientDob: '01/02/1970', procedure: 'Left L5-S1 TFESI',
+      context: builtA.text, token: tokenA
+    }
+  };
+  const collisionVerdict = collision.context.__mlsOpNoteHistory.validateBinding(forgedCollision);
+  assert.strictEqual(collisionVerdict.ok, false, 'different verified history with the same compact token passed binding validation');
+  assert.strictEqual(collisionVerdict.reason, 'patient-or-visit-context-changed', 'collision rejection used the wrong reason');
 
   const switched = harness();
   switched.context.aiCallRaw = async function (sys, user, key, opts) {
