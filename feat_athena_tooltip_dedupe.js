@@ -433,7 +433,7 @@
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.1';
   var STYLE_ID = 'mlsUiUnificationStyle';
   var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
   var retryTimer = null;
@@ -446,6 +446,10 @@
   var activeSettingsGroup = 'account';
   var settingsWasOpen = false;
   var settingsMoves = [];
+  var settingsScrollBindings = [];
+  var settingsScrollToken = 0;
+  var settingsDesiredTop = 0;
+  var settingsApplyingScroll = false;
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -477,7 +481,10 @@
       '.mls-account-action.danger{color:#9B3030;}',
       '.mls-password-standard{display:none;margin:-6px 0 14px;color:#66726A;font:500 12px/1.4 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}',
       '.mls-password-standard.is-visible{display:block;}',
-      '#settingsModal.mls-settings-clean .modal{padding:28px 32px 92px 258px!important;background:#FBFAF7!important;}',
+      '#settingsModal.mls-settings-clean .modal{padding:28px 32px 92px 258px!important;background:#FBFAF7!important;box-sizing:border-box!important;overflow-y:scroll!important;overflow-x:hidden!important;overflow-anchor:none!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;scrollbar-width:thin!important;scrollbar-color:#879A8E #ECEDE8!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar{display:block!important;width:10px!important;height:10px!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-track{background:#ECEDE8!important;border-radius:10px!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-thumb{background:#879A8E!important;border:2px solid #ECEDE8!important;border-radius:10px!important;}',
       '#settingsModal.mls-settings-clean #settingsTabBar{left:18px!important;right:auto!important;width:214px!important;padding:0 14px 0 0!important;border-left:0!important;border-right:1px solid #E7E5DD!important;background:transparent!important;}',
       '#settingsModal.mls-settings-clean #settingsTabBar .set-tab{border-radius:9px!important;padding:10px 12px!important;color:#55605A!important;font-weight:650!important;}',
       '#settingsModal.mls-settings-clean #settingsTabBar .set-tab:hover{background:#F4F2EC!important;color:#1A211C!important;}',
@@ -493,7 +500,7 @@
       '.mls-intake-remove{height:38px;border:1px solid #E3D6D3;border-radius:9px;background:#fff;color:#9B3030;font-size:17px;cursor:pointer;}',
       '.mls-intake-remove:hover{background:#FFF4F2;}',
       '.mls-intake-add{justify-self:start;margin-top:2px;}',
-      '@media(max-width:820px){#settingsModal.mls-settings-clean .modal{padding:24px 24px 88px!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:static!important;width:auto!important;max-height:none!important;display:flex!important;flex-flow:row nowrap!important;overflow-x:auto!important;border-right:0!important;border-bottom:1px solid #E7E5DD!important;padding:0 0 10px!important;margin:10px 0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;}#settingsModal.mls-settings-clean .modal>.row{bottom:-88px;margin:18px -24px -88px;padding:13px 24px 17px;}}',
+      '@media(max-width:820px){#settingsModal.mls-settings-clean{padding:8px!important;align-items:flex-start!important;}#settingsModal.mls-settings-clean .modal{padding:24px 24px 88px!important;max-height:calc(100dvh - 16px)!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:static!important;width:auto!important;max-height:none!important;display:flex!important;flex-flow:row nowrap!important;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain!important;border-right:0!important;border-bottom:1px solid #E7E5DD!important;padding:0 0 10px!important;margin:10px 0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;}#settingsModal.mls-settings-clean .modal>.row{bottom:-88px;margin:18px -24px -88px;padding:13px 24px 17px;}}',
       '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
@@ -914,9 +921,87 @@
     if (modal) modal.setAttribute('data-mls-settings-active', key);
   }
 
-  function selectSettingsGroup(key, focusTab) {
+  function settingsScrollBody() {
+    var modal = byId('settingsModal');
+    return modal && safe(function () { return modal.querySelector('.modal'); }, null);
+  }
+
+  function preserveSettingsScroll(body, top, token) {
+    if (!body) return;
+    var max = Math.max(0, body.scrollHeight - body.clientHeight);
+    var wanted = Math.max(0, Math.min(Number(top) || 0, max));
+    settingsDesiredTop = wanted;
+    function again() {
+      var modal = byId('settingsModal');
+      if (token !== settingsScrollToken || !modal || !modal.classList.contains('show')) return;
+      var cap = Math.max(0, body.scrollHeight - body.clientHeight);
+      settingsApplyingScroll = true;
+      body.scrollTop = Math.max(0, Math.min(settingsDesiredTop, cap));
+      requestAnimationFrame(function () { settingsApplyingScroll = false; });
+    }
+    /* Keep restoration inside the same layout transaction. Long delayed writes
+       fight real wheel/trackpad gestures and were the snap-to-top source. */
+    again();
+    safe(function () { requestAnimationFrame(function () { again(); requestAnimationFrame(again); }); });
+  }
+
+  function nestedScrollerOwns(target, delta) {
+    var el = safe(function () { return target && target.closest && target.closest('textarea,[data-settings-own-scroll]'); }, null);
+    if (!el || el.scrollHeight <= el.clientHeight + 1) return false;
+    if (delta < 0 && el.scrollTop > 0) return true;
+    if (delta > 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+    return false;
+  }
+
+  /* Several late modules can add a Settings section. Own only the scroll
+     gesture while that short reconciliation happens, without delayed writes. */
+  function ensureSettingsScrollGuard() {
+    var body = settingsScrollBody(); if (!body || body.__mlsSettingsScrollGuard) return;
+    body.__mlsSettingsScrollGuard = true;
+    var touchX = 0, touchY = 0;
+    settingsDesiredTop = body.scrollTop || 0;
+    function rememberNativeScroll() {
+      if (settingsApplyingScroll) return;
+      settingsDesiredTop = body.scrollTop || 0;
+      settingsScrollToken++;
+    }
+    function drive(delta) {
+      var max = Math.max(0, body.scrollHeight - body.clientHeight);
+      if (!max || !delta) return false;
+      var next = Math.max(0, Math.min(body.scrollTop + delta, max));
+      if (Math.abs(next - body.scrollTop) < 0.5) return false;
+      var token = ++settingsScrollToken;
+      preserveSettingsScroll(body, next, token);
+      return true;
+    }
+    function wheel(ev) {
+      if (!ev || Math.abs(ev.deltaY || 0) <= Math.abs(ev.deltaX || 0)) return;
+      if (nestedScrollerOwns(ev.target, ev.deltaY)) return;
+      if (drive(ev.deltaY)) ev.preventDefault();
+    }
+    function touchStart(ev) {
+      var t = ev && ev.touches && ev.touches[0]; if (!t) return;
+      touchX = t.clientX; touchY = t.clientY;
+    }
+    function touchMove(ev) {
+      var t = ev && ev.touches && ev.touches[0]; if (!t) return;
+      var dx = touchX - t.clientX, dy = touchY - t.clientY;
+      touchX = t.clientX; touchY = t.clientY;
+      if (Math.abs(dy) <= Math.abs(dx) || nestedScrollerOwns(ev.target, dy)) return;
+      if (drive(dy)) ev.preventDefault();
+    }
+    body.addEventListener('wheel', wheel, { passive: false });
+    body.addEventListener('touchstart', touchStart, { passive: true });
+    body.addEventListener('touchmove', touchMove, { passive: false });
+    body.addEventListener('scroll', rememberNativeScroll, { passive: true });
+    settingsScrollBindings.push({ body: body, wheel: wheel, touchStart: touchStart, touchMove: touchMove, scroll: rememberNativeScroll });
+  }
+
+  function selectSettingsGroup(key, focusTab, resetScroll) {
     var modal = byId('settingsModal'), bar = byId('settingsTabBar');
     if (!modal || !bar || !allowedSettingsGroup(key)) return;
+    var body = modal.querySelector('.modal');
+    var previousScroll = body ? body.scrollTop : 0;
     activeSettingsGroup = key;
     directSettingsSections().forEach(function (section) {
       var show = settingsGroupFor(section) === key && allowedSettingsGroup(key);
@@ -932,7 +1017,16 @@
     var intro = byId('settingsIntro');
     if (intro) intro.style.display = key === 'account' && text(intro) ? '' : 'none';
     updateSettingsFooter(key);
-    var body = modal.querySelector('.modal'); if (body) body.scrollTop = 0;
+    /* Background rebuilds preserve the user's position. Only an explicit tab
+       change intentionally returns the newly selected section to its top. */
+    if (body && resetScroll === true) {
+      settingsScrollToken++;
+      settingsDesiredTop = 0;
+      body.scrollTop = 0;
+    } else if (body) {
+      preserveSettingsScroll(body, previousScroll, settingsScrollToken);
+    }
+    ensureSettingsScrollGuard();
   }
 
   function settingsTabKeydown(ev) {
@@ -944,7 +1038,7 @@
     if (key === 'Home') idx = 0;
     else if (key === 'End') idx = tabs.length - 1;
     else idx = (idx + (/Right|Down/.test(key) ? 1 : -1) + tabs.length) % tabs.length;
-    var target = tabs[idx]; if (target) selectSettingsGroup(target.getAttribute('data-mls-settings-group'), true);
+    var target = tabs[idx]; if (target) selectSettingsGroup(target.getAttribute('data-mls-settings-group'), true, true);
   }
 
   function buildCleanSettingsTabs(sections) {
@@ -965,12 +1059,12 @@
       var btn = document.createElement('button');
       btn.type = 'button'; btn.className = 'set-tab'; btn.setAttribute('role', 'tab');
       btn.setAttribute('data-mls-settings-group', group.key); btn.textContent = group.label;
-      btn.addEventListener('click', function () { selectSettingsGroup(group.key, false); });
+      btn.addEventListener('click', function () { selectSettingsGroup(group.key, false, true); });
       btn.addEventListener('keydown', settingsTabKeydown);
       bar.appendChild(btn);
     });
     bar.setAttribute('data-mls-settings-clean', '1');
-    selectSettingsGroup(activeSettingsGroup, false);
+    selectSettingsGroup(activeSettingsGroup, false, false);
   }
 
   function reconcileSettings() {
@@ -984,7 +1078,8 @@
     if (bar && (!bar.querySelector('[data-mls-settings-group]') || bar.querySelectorAll('[data-mls-settings-group]').length !== SETTINGS_GROUPS.filter(function (group) {
       return sections.some(function (section) { return settingsGroupFor(section) === group.key; }) && allowedSettingsGroup(group.key);
     }).length)) buildCleanSettingsTabs(sections);
-    else selectSettingsGroup(activeSettingsGroup, false);
+    else selectSettingsGroup(activeSettingsGroup, false, false);
+    ensureSettingsScrollGuard();
     if (open && !settingsWasOpen) {
       var provider = byId('providerName'), legacy = byId('docName');
       if (provider && legacy) {
@@ -1031,7 +1126,11 @@
     }
     if (settings && !settingsObserver) {
       settingsObserver = new MutationObserver(function () { scheduleReconcile(false); });
-      settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      /* Do not observe descendant classes: selected-tab classes are our own
+         output and previously fed back into another rebuild and scroll reset. */
+      settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] });
+      var settingsBody = settings.querySelector('.modal');
+      if (settingsBody) settingsObserver.observe(settingsBody, { childList: true });
     }
   }
 
@@ -1068,6 +1167,9 @@
       syncProviderIdentity();
       syncIntakeQuestions();
     }
+    /* Settings controls own their own work; do not launch a whole-site
+       reconciliation after every checkbox, select, or button click. */
+    if (safe(function () { return !!target.closest('#settingsModal'); }, false)) return;
     var trigger = safe(function () { return target.closest('.ez3fl-openws'); }, null);
     if (trigger) {
       if (closeAdvancedFromEasy(ev)) return;
@@ -1118,6 +1220,16 @@
       if (move.el) { move.el.removeAttribute('data-mls-settings-move'); move.el.classList.remove('mls-settings-moved'); }
     }
     settingsMoves = [];
+    settingsScrollToken++;
+    settingsScrollBindings.forEach(function (binding) {
+      if (!binding || !binding.body) return;
+      binding.body.removeEventListener('wheel', binding.wheel, false);
+      binding.body.removeEventListener('touchstart', binding.touchStart, false);
+      binding.body.removeEventListener('touchmove', binding.touchMove, false);
+      binding.body.removeEventListener('scroll', binding.scroll, false);
+      try { delete binding.body.__mlsSettingsScrollGuard; } catch (e) { binding.body.__mlsSettingsScrollGuard = false; }
+    });
+    settingsScrollBindings = [];
     var settingsModal = byId('settingsModal');
     if (settingsModal) {
       settingsModal.classList.remove('mls-settings-clean'); settingsModal.removeAttribute('data-mls-settings-active');
@@ -1149,6 +1261,7 @@
     installed: true,
     version: VERSION,
     reconcile: reconcileAll,
+    reconcileSettings: reconcileSettings,
     closeAccountMenu: closeAccountMenu,
     revert: revert
   };

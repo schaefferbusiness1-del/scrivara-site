@@ -11731,7 +11731,12 @@
       body.insertBefore(rc, footer);
 
       rc.setAttribute('data-scv-tidied', '1');
-      safe(function () { if (typeof window.mlsBuildSettingsTabs === 'function') window.mlsBuildSettingsTabs(); });
+      /* Once the unified owner is installed it alone updates the tab model.
+         The legacy builder resets the active tab and scroll position. */
+      safe(function () {
+        if (window.__mlsUiUnification && typeof window.__mlsUiUnification.reconcileSettings === 'function') window.__mlsUiUnification.reconcileSettings();
+        else if (typeof window.mlsBuildSettingsTabs === 'function') window.mlsBuildSettingsTabs();
+      });
       return true;
     });
   }
@@ -28660,6 +28665,109 @@
 
 
 /* =========================================================================
+ * Canonical MLS feature directory
+ * Shared by Find and Help so both point to the current easy/single-owner UI.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsFeatureDirectory && window.__mlsFeatureDirectory.length) return;
+  var DIR = [
+    { k:'record start stop pause resume transcript easy visit', name:'Record a patient visit', where:'Visit tab -> easy recorder at the top', how:'Select the patient, press Start recording, talk naturally, then stop and generate one combined note.', route:'view:visit', common:true },
+    { k:'switch choose select active patient appointment', name:'Select or switch patient', where:'Active-patient bar at the top -> Switch patient', how:'Choose the patient there. The header, agenda, recording, chart, and generated work all follow that same selected patient.', route:'view:visit', common:true },
+    { k:'pull today schedule history athena chart context', name:'Pull today\'s patients and history', where:'Visit tab -> top workflow card -> Pull today\'s patients & their history', how:'Use the explicit pull button when you are ready; MLS does not silently read Athena.', route:'view:visit' },
+    { k:'patient portal invite send login link intake', name:'Send the patient portal', where:'Active-patient bar at the top -> Patient portal', how:'Select the patient first, then use the single Patient portal action in the top patient bar.', route:'patient:portal', common:true },
+    { k:'op note operative template prep generator surgery', name:'Prepare an operative note', where:'Visit tab -> top workflow card -> Prep op note', how:'Select the patient, open Prep op note, and MLS auto-matches the closest operative template while keeping your manual template choice sticky.', route:'patient:opnote', common:true },
+    { k:'generate note soap apso narrative focus summary', name:'Generate the clinical note', where:'Visit tab -> easy recorder -> Generate one note', how:'Record or paste the visit, choose style and length if needed, then generate and review the draft.', route:'view:visit', common:true },
+    { k:'templates upload note operative auto match test', name:'Manage note and op-note templates', where:'Top bar -> Templates', how:'Upload, edit, test matching, and set standard lines in the one Templates workspace.', route:'templates', common:true },
+    { k:'review sign edit regenerate draft', name:'Review and sign a note', where:'Visit tab -> generated note -> Review & Sign', how:'Edit the draft, verify it, then sign it in MLS.', route:'view:visit' },
+    { k:'athena emr send write billing save receipt', name:'Review Athena actions', where:'Visit tab -> generated note -> Review Athena actions', how:'Review the exact encounter and every destination; write, billing, and Save remain separate confirmations.', route:'view:visit' },
+    { k:'orders prescription imaging lab add manage final review', name:'Orders for the visit', where:'Visit tab -> Orders for this visit -> Add / manage', how:'Build and review orders for the selected patient. Incomplete items remain blocked for manual review.', route:'view:visit' },
+    { k:'chart snapshot problems medications allergies vitals background', name:'Patient chart and snapshot', where:'Active-patient bar at the top -> Snapshot or Chart', how:'Open the selected patient\'s current chart context without leaving the patient workflow.', route:'view:patients' },
+    { k:'after visit summary avs patient instructions', name:'After-visit summary', where:'Active-patient bar at the top -> After-visit summary', how:'Create patient-facing instructions for the current visit and review them before sending.', route:'view:visit' },
+    { k:'history prior notes drafts reopen copy resend timeline', name:'Patient and note history', where:'Top navigation -> History', how:'Find prior notes and drafts under the exact patient, then reopen, copy, or resend.', route:'view:history' },
+    { k:'recommendations coding clinical suggestions', name:'Recommendations', where:'Top navigation -> Recommendations', how:'Open recommendations for the selected patient and current documentation.', route:'view:recs' },
+    { k:'copilot ask assistant chat draft email letter action', name:'Ask MLS Copilot', where:'Top bar -> Ask', how:'Ask a question or draft an artifact. Copilot stays bound to the patient and visit that started the request.', route:'copilot', common:true },
+    { k:'find search command palette feature patient screen', name:'Find anything', where:'Top bar -> Find (or press /)', how:'Search patients, screens, and every feature in this directory from one place.', route:'find', common:true },
+    { k:'help where how guide question tour', name:'Help and guided tour', where:'Top navigation -> Help', how:'Open the guided tour, or ask a feature-specific question answered from this same directory.', route:'help' },
+    { k:'studio ai custom tool widget builder', name:'AI Studio and custom tools', where:'Top navigation -> AI Studio', how:'Use the simple builder at the top to ask Copilot, build a custom tool, or run a study.', route:'view:studio', common:true },
+    { k:'study cohort research outcomes custom study build procedure', name:'Build and run a custom study', where:'AI Studio -> study builder at the top -> Build custom study', how:'Define the cohort, measures, date range, and outputs instead of being limited to prebuilt study types.', route:'view:studio' },
+    { k:'custom widget card tool build', name:'Build a custom widget', where:'Top bar -> Custom widget (also at the top of AI Studio)', how:'Describe the tool, review the generated widget, then pin it if useful.', route:'widget' },
+    { k:'calendar schedule appointment new booking', name:'Calendar and appointments', where:'Calendar tab (enable it in Settings -> App tabs if hidden)', how:'View the schedule or create a new appointment.', route:'view:calendar' },
+    { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
+    { k:'reviews reputation google business profile', name:'Reviews and reputation', where:'Staff prep -> Reviews & reputation', how:'Manage review requests and reputation tools from Staff prep.', route:'view:visit' },
+    { k:'legal report ime records review attorney request expert', name:'Legal reports and attorney requests', where:'Selected patient chart -> legal report tools; incoming work -> Legal requests', how:'Generate from the exact patient record and review every report before release.', route:'view:legalreq' },
+    { k:'settings account access api key name specialty', name:'Account and access settings', where:'Settings -> Account & security -> Account & access', how:'Manage account identity and AI access in the first Settings section.', route:'settings:account' },
+    { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Practice & provider', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
+    { k:'note defaults format model comment style', name:'Note defaults', where:'Settings -> Notes & AI -> Note defaults', how:'Set the default note format, model, comment, and documentation style.', route:'settings:notes' },
+    { k:'ai personalization preferences instructions', name:'AI personalization', where:'Settings -> Notes & AI -> AI personalization', how:'Control the instructions and defaults used when MLS drafts clinical work.', route:'settings:notes' },
+    { k:'display theme text size compact layout', name:'Display settings', where:'Settings -> Display', how:'Change theme, text size, and layout density.', route:'settings:display' },
+    { k:'provider preferences signature followup intake questions', name:'Provider preferences', where:'Settings -> Notes & AI -> Provider preferences', how:'Set signature, follow-up, and patient-intake preferences.', route:'settings:notes' },
+    { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Features & navigation -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
+    { k:'app tabs navigation enable calendar analysis team admin', name:'App tab settings', where:'Settings -> Features & navigation -> App tabs', how:'Choose which advanced navigation tabs are visible.', route:'settings:features' },
+    { k:'security privacy password change two factor 2fa logout idle', name:'Security and privacy', where:'Settings -> Account & security -> Security & privacy', how:'Change password, manage two-factor authentication, logout confirmation, and idle timeout.', route:'settings:account', common:true },
+    { k:'expert profile attorney legal specialty license fees', name:'Legal expert profile settings', where:'Settings -> Legal expert profile', how:'Edit the public attorney-facing expert profile and engagement details.', route:'settings:legal' },
+    { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
+    { k:'team doctors providers admin supervision', name:'Team and provider management', where:'Team tab (enable it in Settings -> App tabs if hidden)', how:'Review provider activity and team-level tools without changing the active patient.', route:'view:team' },
+    { k:'analysis reports productivity outcomes metrics', name:'Practice analysis', where:'Analysis tab (enable it in Settings -> App tabs if hidden)', how:'Review practice and provider-level metrics with the displayed data scope.', route:'view:analysis' },
+    { k:'phone microphone qr mobile recording', name:'Phone microphone', where:'Visit easy recorder -> phone microphone option', how:'Open the QR code, scan it with the phone, and keep recording bound to the same patient visit.', route:'view:visit' },
+    { k:'dot phrases shortcuts normal exam ros precautions', name:'Dot phrases', where:'Visit easy recorder -> transcript -> Dot phrases', how:'Insert or manage reusable phrases while recording or editing the transcript.', route:'view:visit' },
+    { k:'outcomes pain function odi score trend', name:'Patient outcomes', where:'Visit tab -> Outcomes card below the note', how:'Save pain and function measures to the selected patient and follow them over time.', route:'view:visit' }
+  ];
+  function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  var STOP = { how:1, where:1, what:1, when:1, the:1, and:1, for:1, with:1, from:1, that:1, this:1, open:1, find:1, use:1, does:1, into:1 };
+  function score(entry, query) {
+    var q = norm(query); if (!q) return entry.common ? 1 : 0;
+    var hay = norm(entry.k + ' ' + entry.name + ' ' + entry.where + ' ' + entry.how);
+    var s = hay.indexOf(q) >= 0 ? 30 : 0;
+    q.split(' ').forEach(function (w) { if (w.length > 2 && !STOP[w] && hay.indexOf(w) >= 0) s += 4; });
+    return s;
+  }
+  function matches(query, limit) {
+    return DIR.map(function (entry) { return { entry:entry, score:score(entry, query) }; })
+      .filter(function (row) { return row.score > 0; })
+      .sort(function (a,b) { return b.score-a.score; })
+      .slice(0, limit || 8).map(function (row) { return row.entry; });
+  }
+  function helpAnswer(query) {
+    var hit = matches(query, 3); if (!hit.length) return '';
+    var first = hit[0], out = first.name + ': ' + first.where + '. ' + first.how;
+    if (hit.length > 1) out += ' Related: ' + hit.slice(1).map(function (x) { return x.name + ' (' + x.where + ')'; }).join('; ') + '.';
+    return out;
+  }
+  function visibleButton(re) {
+    var nodes = document.querySelectorAll('button,a');
+    for (var i=0;i<nodes.length;i++) if (re.test(nodes[i].textContent || '') && nodes[i].offsetParent !== null) return nodes[i];
+    return null;
+  }
+  function openFeature(entry) {
+    if (!entry) return false;
+    var route = entry.route || '';
+    try {
+      if (route.indexOf('view:') === 0) { if (typeof window.showView === 'function') window.showView(route.slice(5)); return true; }
+      if (route.indexOf('settings:') === 0) {
+        if (typeof window.openSettings === 'function') window.openSettings();
+        var key = route.slice(9);
+        setTimeout(function () { var tab=document.querySelector('#settingsTabBar [data-mls-settings-group="'+key+'"]'); if(tab) tab.click(); }, 80);
+        return true;
+      }
+      if (route === 'templates') { if (typeof window.openTemplates === 'function') window.openTemplates(); return true; }
+      if (route === 'copilot') { if (typeof window.openCopilotDock === 'function') window.openCopilotDock(); else if (typeof window.openCopilot === 'function') window.openCopilot(); return true; }
+      if (route === 'widget') { if (typeof window.openWidgetBuilder === 'function') window.openWidgetBuilder(); return true; }
+      if (route === 'help') { if (typeof window.openMlsHelp === 'function') window.openMlsHelp(); return true; }
+      if (route === 'find') { if (typeof window.mlsQuickFind === 'function') window.mlsQuickFind(); return true; }
+      if (route === 'patient:portal') { var p=visibleButton(/patient portal/i); if(p){p.click();return true;} if(typeof window.showView==='function')window.showView('patients'); return true; }
+      if (route === 'patient:opnote') { var o=visibleButton(/prep op note|operative note/i); if(o){o.click();return true;} if(typeof window.showView==='function')window.showView('visit'); return true; }
+    } catch (e) {}
+    return false;
+  }
+  window.__mlsFeatureDirectory = DIR;
+  window.__mlsFeatureMatches = matches;
+  window.mlsFeatureHelpAnswer = helpAnswer;
+  window.mlsOpenFeature = openFeature;
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b44 "Round 4"  (__mlsRound4B44)  2026-07-06
  * Additive, guarded, reversible IIFE. UI + self-serve GBP. Athena READ-ONLY.
  *
@@ -31377,15 +31485,17 @@
 (function(){
   "use strict";
   if(window.__mlsT6Stab) return;
-  var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
+  var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b289';
+  window.__MLS_AV = window.__MLS_AV || 'b290';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
     window.__mlsCalmBootDone=1; /* supersede the late b18 veil cleanly */
-    if(!document.getElementById('mlsBootVeil') && !document.hidden){
+    var gate=document.getElementById('sfGateLoading');
+    var gateOwnsBoot=!!(gate && getComputedStyle(gate).display!=='none');
+    if(!document.getElementById('mlsBootVeil') && !gateOwnsBoot && !document.hidden){
       var frz=document.createElement('style'); frz.id='mlsBootFreeze';
       frz.textContent='html.mls-booting *{transition-duration:0s!important;animation-duration:0s!important}#mlsBootBar{width:100%!important;transform-origin:0 50%;transform:scaleX(.08);animation:mlsBootProg 7s cubic-bezier(.25,.6,.35,1) forwards!important;animation-duration:7s!important}#mlsBootVeil{animation:mlsBootGone .5s ease 10s forwards!important;animation-duration:.5s!important}@keyframes mlsBootProg{0%{transform:scaleX(.08)}30%{transform:scaleX(.52)}65%{transform:scaleX(.74)}100%{transform:scaleX(.93)}}@keyframes mlsBootGone{to{opacity:0;visibility:hidden}}';
       (document.head||document.documentElement).appendChild(frz);
@@ -31410,7 +31520,9 @@
         try{ mo.disconnect(); }catch(_){ }
         window.removeEventListener('load',onRes,true); window.removeEventListener('error',onRes,true);
         document.documentElement.classList.remove('mls-booting');
-        try{ pulseAll('boot-settle'); }catch(_){ }
+        /* Each feature performs its own initial apply. Replaying the complete
+           interval registry here caused a second main-thread stall. */
+        try{ lastSig=viewSig(); }catch(_){ }
         if(bar){ try{ bar.style.setProperty('animation','none','important'); bar.style.transform='scaleX(1)'; }catch(_){ } bar.style.width='100%'; }
         setTimeout(function(){ veil.style.opacity='0'; setTimeout(function(){ try{ veil.remove(); frz.remove(); }catch(_){ } },260); },70);
       };
@@ -31422,18 +31534,21 @@
           var delta=muts-lastMuts; lastMuts=muts;
           var loaderQuiet=(total>0 && loaded>=total-2) || (Date.now()-lastLoadAt>1200);
           var login=false; try{ var lv=document.getElementById('loginView'); login=!!(lv&&lv.offsetParent!==null); }catch(_){ }
+          var coreReady=!!(document.getElementById('appScreen') && document.getElementById('settingsModal') && document.getElementById('mlsEz3') && typeof window.showView==='function' && typeof window.openSettings==='function' && typeof window.mlsQuickFind==='function');
           if(login && dt>=500) return release();
-          if(dt>=600 && loaderQuiet && delta<40) return release();
-          if(dt>=8000) return release();
+          if(dt>=2800 && coreReady && loaderQuiet && delta<40) return release();
+          if(dt>=5200) return release();
         }catch(_){ release(); }
       },200);
-      setTimeout(release,8200); /* hard cap */
-      setTimeout(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); document.documentElement.classList.remove('mls-booting'); }catch(_){ } },9500); /* absolute failsafe */
+      setTimeout(release,5400); /* hard cap */
+      setTimeout(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); document.documentElement.classList.remove('mls-booting'); }catch(_){ } },6200); /* absolute failsafe */
     }
   }catch(e){ try{ document.documentElement.classList.remove('mls-booting'); var v0=document.getElementById('mlsBootVeil'); if(v0) v0.remove(); }catch(_){ } }
 
   /* ================= RC3: TICK REGISTRY + VIEW PULSE ================= */
-  var VIEWS=['intakeView','patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','calendarView','analysisView','legalReqView','studioView','settingsModal','viewModal'];
+  /* Settings/view dialogs are overlays, not route switches. Opening either
+     must not replay every registered background UI job. */
+  var VIEWS=['intakeView','patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','calendarView','analysisView','legalReqView','studioView'];
   var reg=[], seen={}, idKey={}, origSetInterval=window.setInterval, origClearInterval=window.clearInterval;
   var wrapped=function(fn,delay){
     var args=Array.prototype.slice.call(arguments,2);
@@ -31466,7 +31581,7 @@
   };
   try{ window.setInterval=wrapped; window.clearInterval=wrappedClear; }catch(_){ }
 
-  var lastSig='', lastPulse=0;
+  var lastSig=viewSig(), lastPulse=0;
   function viewSig(){
     var s='';
     for(var i=0;i<VIEWS.length;i++){ var el=document.getElementById(VIEWS[i]); s+=(el&&el.offsetParent!==null)?'1':'0'; }
@@ -31706,7 +31821,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b289';
+  var MLS_APP_BUILD='2026-07-15-b290';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -33954,7 +34069,7 @@
     box.style.cssText='background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 12px 44px rgba(0,0,0,.32)';
     box.innerHTML=''
       +'<div style="font-weight:800;font-size:17px;color:#204034;margin-bottom:4px">📧 Send portal login</div>'
-      +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">'+esc(nm)+' will get a secure email with a one-time link to view their records and chat with them.</div>'
+      +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">'+esc(nm)+' will get a secure email with a one-time link to view their records and ask questions about their care.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin-bottom:5px">Patient email</label>'
       +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
       +'<div id="mlsPiMsg" style="font-size:13px;margin-top:12px;display:none"></div>'
@@ -33970,6 +34085,10 @@
     back.addEventListener('click',function(e){ if(e.target===back) close(); });
     box.querySelector('#mlsPiSend').onclick=function(){
       var em=(box.querySelector('#mlsPiEmail').value||'').trim();
+      if(em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){
+        showMsg('Please enter a valid patient email address.',false);
+        return;
+      }
       if(!em){ showMsg('Please enter the patient’s email.',false); return; }
       /* Keep the invite bound to the patient for whom this modal opened. A
          background/patient switch must never turn a stale dialog into a send
@@ -33986,8 +34105,13 @@
       fetch(API+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify(body)})
         .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
         .then(function(res){
-          if(res.ok){ showMsg('✓ Portal login sent to '+em+'.',true); setTimeout(close,1900); }
+          if(res.ok && res.j && res.j.sent===false){
+            showMsg('Portal access was created, but the email could not be sent. Ask your MLS admin to check the mail service, then resend.',false);
+          }
+          else if(res.ok){ showMsg('✓ Portal login sent to '+em+'.',true); setTimeout(close,1900); }
           else if(res.status===401||res.status===403){ showMsg('This account isn’t authorized to send invites (needs admin). Ask the owner to send it.',false); }
+          else if(res.status===409){ showMsg((res.j&&res.j.error)||'A portal account already exists for this patient or email.',false); }
+          else if(res.status===502){ showMsg('The invite was created, but the email service could not send it. Try again shortly or ask your MLS admin to check mail setup.',false); }
           else { showMsg((res.j&&(res.j.error||res.j.message))||('Could not send (error '+res.status+').'),false); }
         })
         .catch(function(){ showMsg('Network error — please try again.',false); })
@@ -39403,7 +39527,7 @@
   };
 })();
 
-;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701fp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- pull progress panel + any-day pull clarity, op-prep procedure autodetect (removes "No procedure entered yet"), note model gpt-5o with honest fallback cascade, today-button blink cap, agenda chip primary + full label, day/week honest fallback list, Find-anything Pro (screens+menus+templates+patients), formatted note preview in text boxes, op-note fill-in-the-blanks restore. Revert: window.__mlsFixpack.revert() */
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- pull progress panel + any-day pull clarity, op-prep procedure autodetect (removes "No procedure entered yet"), note model gpt-5o with honest fallback cascade, today-button blink cap, agenda chip primary + full label, day/week honest fallback list, Find-anything Pro (screens+menus+templates+patients), formatted note preview in text boxes, op-note fill-in-the-blanks restore. Revert: window.__mlsFixpack.revert() */
 
 ;(function(){try{var A="feat_mls_staging_pack1.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701sp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item80 PROMOTED to prod (Michael picked 1+2+3, 2026-07-01): Templates suite + Simple-mode tunnel + MLS Agent dock. Same module as staging. Revert: window.__mlsPack1.revert() */
 
@@ -41279,6 +41403,12 @@
     'html body.mls-phone #mlsEz3 .ez3-clockbar, html body.mls-phone .ez3-clockbar,',
     'html body.mls-phone #mlsEz3 .ez3fl-record, html body.mls-phone .ez3fl-record,',
     'html body.mls-phone #mlsFab, html body.mls-phone #mlsFabMenu, html body.mls-phone #mlsDaDock{ display:none !important; }',
+    /* Keep the two essential selected-patient actions reachable on phones.
+       The exact portal action remains bound to the active chart; every other
+       secondary action stays hidden so the patient bar does not become busy. */
+    'html body.mls-phone #mlsCtxBar .mlsctx-actions{ display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; width:100%; }',
+    'html body.mls-phone #mlsCtxBar .mlsctx-actions>*{ display:none !important; }',
+    'html body.mls-phone #mlsCtxBar .mlsctx-actions>#mlsPortalInviteBtn, html body.mls-phone #mlsCtxBar .mlsctx-actions>.mlsctx-switch{ display:inline-flex !important; align-items:center; justify-content:center; min-height:44px; width:100%; margin:0 !important; }',
     'body.mls-phone #mlsDsStrip{ padding:7px 9px; gap:6px; }',
     'body.mls-phone #mlsDsStrip .ds-pull{ padding:8px 12px; }',
     'body.mls-phone #mlsPhExit{ display:block; }',

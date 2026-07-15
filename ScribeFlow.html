@@ -438,14 +438,17 @@
   .modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.32);max-height:90vh;overflow:auto}
   /* Settings — WIDE layout: section nav pinned to the RIGHT, content on the left,
      sized so a single section fits with no visible scrollbar (user preference). */
-  #settingsModal .modal{ max-width:1060px; width:96vw; max-height:94vh; padding-right:268px; position:relative; scrollbar-width:none; -ms-overflow-style:none; }
-  #settingsModal .modal::-webkit-scrollbar{ width:0;height:0;display:none; }
+  #settingsModal .modal{ max-width:1060px; width:96vw; max-height:min(94vh,calc(100dvh - 40px)); padding-right:268px; position:relative; box-sizing:border-box; overflow-y:scroll; overflow-x:hidden; overflow-anchor:none; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y; scrollbar-width:thin; scrollbar-color:#9AABA0 #F1F0EB; }
+  #settingsModal .modal::-webkit-scrollbar{ width:10px; }
+  #settingsModal .modal::-webkit-scrollbar-track{ background:#F1F0EB;border-radius:10px; }
+  #settingsModal .modal::-webkit-scrollbar-thumb{ background:#9AABA0;border:2px solid #F1F0EB;border-radius:10px; }
   #settingsModal .modal-x{ position:absolute; top:16px; right:18px; z-index:3; }
   #settingsModal #settingsTabBar{ position:absolute; top:54px; right:18px; width:230px; display:flex; flex-direction:column; gap:5px; align-items:stretch; max-height:calc(94vh - 74px); overflow-y:auto; scrollbar-width:none; padding-left:14px; border-left:1px solid var(--line); }
   #settingsModal #settingsTabBar::-webkit-scrollbar{ display:none; }
   #settingsModal #settingsTabBar .set-tab{ text-align:left; width:100%; box-sizing:border-box; }
   @media (max-width:820px){
-    #settingsModal .modal{ padding-right:24px; max-width:600px; }
+    #settingsModal{padding:8px;align-items:flex-start;}
+    #settingsModal .modal{ padding-right:24px; max-width:600px; max-height:calc(100dvh - 16px); }
     #settingsModal #settingsTabBar{ position:static; width:auto; flex-direction:row; flex-wrap:wrap; max-height:none; margin-bottom:10px; border-left:none; padding-left:0; }
   }
   .modal h3{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
@@ -5397,10 +5400,13 @@ function openSettings(){
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
-  mlsBuildSettingsTabs();
+  /* The unified Settings owner keeps one tab model. Re-running the legacy
+     builder here wiped the bar and reset the scroll position during opening. */
+  if(!(window.__mlsUiUnification&&window.__mlsUiUnification.installed)) mlsBuildSettingsTabs();
   if(typeof loadLegalProfile==='function') loadLegalProfile();
   try{ if(typeof backendMode==='function'&&backendMode()&&bkToken()){ if(typeof loadApiKeys==='function') loadApiKeys(); if(typeof loadEmrSync==='function') loadEmrSync(); } }catch(e){}
   document.getElementById('settingsModal').classList.add('show');
+  try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcileSettings==='function') window.__mlsUiUnification.reconcileSettings(); }catch(e){}
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
 /* MLS — Clear saved data on THIS device only.
@@ -7639,12 +7645,18 @@ async function calToggleCheckin(btn){
     var res=document.getElementById('mlsQfResults'); if(!res) return;
     var items=[];
     VIEWS.forEach(function(v){ if(!q || v.label.toLowerCase().indexOf(q)>=0 || v.k.indexOf(q)>=0){ items.push({type:'view',k:v.k,label:v.label}); } });
+    try{
+      var feats=typeof window.__mlsFeatureMatches==='function'?window.__mlsFeatureMatches(q,12):(window.__mlsFeatureDirectory||[]).filter(function(f){return !q&&f.common;}).slice(0,12);
+      feats.forEach(function(f){ items.push({type:'feature',f:f}); });
+    }catch(e){}
     var pts=[]; try{ pts=(typeof getPatients==='function'?getPatients():[])||[]; }catch(e){}
     pts.forEach(function(p){ var hay=(String(p.name||'')+' '+String(p.mrn||'')+' '+String(p.dob||'')).toLowerCase(); if(!q || hay.indexOf(q)>=0){ items.push({type:'patient',p:p}); } });
+    if(!items.length&&q) items.push({type:'ask',q:q});
     items=items.slice(0,40); _qfItems=items; _qfSel=0;
-    if(!items.length){ res.innerHTML='<div style="padding:18px;text-align:center;color:var(--muted);font-size:14px">No matches.</div>'; return; }
     res.innerHTML=items.map(function(it,i){
       if(it.type==='view'){ return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:14px"><span style="width:30px;text-align:center;font-size:16px">'+it.label.split(' ')[0]+'</span><span style="flex:1">Go to '+esc(it.label.replace(/^\S+\s/,''))+'</span><span style="font-size:11px;color:var(--muted)">screen</span></div>'; }
+      if(it.type==='feature'){ var f=it.f; return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer"><span style="width:30px;text-align:center;font-size:16px">✦</span><span style="flex:1"><div style="font-weight:650;font-size:14px">'+esc(f.name)+'</div><div style="font-size:12px;color:var(--muted)">'+esc(f.where)+'</div></span><span style="font-size:11px;color:var(--muted)">feature →</span></div>'; }
+      if(it.type==='ask'){ return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:13px 12px;border-radius:9px;cursor:pointer"><span style="width:30px;text-align:center;font-size:16px">?</span><span style="flex:1"><b>Ask MLS Help</b><div style="font-size:12px;color:var(--muted)">No direct match — ask where or how to do this</div></span></div>'; }
       var p=it.p; var sub=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
       return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer"><span style="width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">'+_qfInitials(p.name)+'</span><span style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name||'Patient')+'</div>'+(sub?('<div style="font-size:12px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</span><span style="font-size:11px;color:var(--muted)">open chart →</span></div>';
     }).join('');
@@ -7653,7 +7665,9 @@ async function calToggleCheckin(btn){
   }
   function _qfHighlight(){ var res=document.getElementById('mlsQfResults'); if(!res) return; [].forEach.call(res.querySelectorAll('.mlsQfRow'), function(row){ var on=parseInt(row.getAttribute('data-i'),10)===_qfSel; row.style.background=on?'var(--soft)':'transparent'; if(on){ try{ row.scrollIntoView({block:'nearest'}); }catch(e){} } }); }
   function _qfChoose(i){ var it=_qfItems[i]; if(!it) return; mlsQuickFindClose(); try{
-    if(it.type==='view'){
+    if(it.type==='feature'){ if(typeof window.mlsOpenFeature==='function') window.mlsOpenFeature(it.f); }
+    else if(it.type==='ask'){ if(typeof openMlsHelp==='function') openMlsHelp(); setTimeout(function(){var q=document.getElementById('helpQ');if(q)q.value=it.q||'';},60); }
+    else if(it.type==='view'){
       if(it.k==='__copilot'){ if(typeof openCopilotDock==='function') openCopilotDock(); else if(typeof openCopilot==='function') openCopilot(); }
       else if(it.k==='__settings'){ if(typeof openSettings==='function') openSettings(); }
       else if(it.k==='__help'){ if(typeof openMlsHelp==='function') openMlsHelp(); }
@@ -8066,11 +8080,13 @@ async function askMlsHelp(){
   var a=document.getElementById('helpAnswer');
   var setA=(m,c)=>{ if(a){ a.textContent=m; a.style.color=c||'var(--ink,#1E2B24)'; } };
   if(!q){ setA('Type a question first.','#b4231e'); return; }
+  try{ var localAnswer=typeof window.mlsFeatureHelpAnswer==='function'?window.mlsFeatureHelpAnswer(q):''; if(localAnswer){setA(localAnswer);return;} }catch(e){}
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ setA('Sign in to your MLS account to use Help.','#b4231e'); return; }
   var btn=document.getElementById('helpAskBtn'); if(btn){ btn.disabled=true; btn.textContent='…'; }
   setA('Thinking…','var(--muted)');
   try{
-    var r=await fetch(bkBase()+'/api/assist/help',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q})});
+    var featureMap=(window.__mlsFeatureDirectory||[]).map(function(f){return {name:f.name,where:f.where,how:f.how};});
+    var r=await fetch(bkBase()+'/api/assist/help',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q,featureMap:featureMap})});
     var d=await r.json().catch(()=>({}));
     if(!r.ok||!d.answer){ setA((d&&d.error)||'Could not get an answer — try again.','#b4231e'); return; }
     setA(d.answer);
@@ -19063,6 +19079,10 @@ function agSyncSignState(){
    while the agreements gate decision resolves, so the app underneath is never
    visible/touchable before we know whether to gate it. z-index sits just below
    the gate (9999) so the gate can still cover it if shown. */
+var sfGateLoadingStarted=0, sfGateHideToken=0;
+/* One readiness-based first-session cover: long enough for critical controls
+   to settle, but bounded so a failed optional module cannot trap the user. */
+const SF_GATE_MIN_MS=2800;
 function sfShowGateLoading(){
   let el=document.getElementById('sfGateLoading');
   if(!el){
@@ -19073,6 +19093,14 @@ function sfShowGateLoading(){
     el.textContent='Loading…';
     document.body.appendChild(el);
   }
+  sfGateLoadingStarted=Date.now();
+  sfGateHideToken++;
+  const app=document.getElementById('appScreen'); if(app) app.setAttribute('aria-busy','true');
+  /* The compliance/session gate is the single boot-screen owner. If the
+     feature bundle painted its fallback veil first, retire it immediately. */
+  const bootVeil=document.getElementById('mlsBootVeil'); if(bootVeil) bootVeil.remove();
+  const bootFreeze=document.getElementById('mlsBootFreeze'); if(bootFreeze) bootFreeze.remove();
+  document.documentElement.classList.remove('mls-booting');
   el.style.display='flex';
 }
 /* Remove the loading overlay. If gated===true the gate (z-9999) is already
@@ -19080,7 +19108,23 @@ function sfShowGateLoading(){
    under the gate; otherwise the app is revealed normally. */
 function sfHideGateLoading(gated){
   const el=document.getElementById('sfGateLoading');
-  if(el) el.style.display='none';
+  const app=document.getElementById('appScreen');
+  if(gated){ if(el) el.style.display='none'; if(app) app.removeAttribute('aria-busy'); return Promise.resolve(); }
+  const token=++sfGateHideToken;
+  const minWait=Math.max(0,SF_GATE_MIN_MS-(Date.now()-sfGateLoadingStarted));
+  const bundleReady=new Promise(resolve=>{
+    if(window.__mlsUiBundleReady){ resolve(); return; }
+    let done=false;
+    const finish=()=>{ if(done) return; done=true; window.removeEventListener('mls:ui-ready',finish); resolve(); };
+    window.addEventListener('mls:ui-ready',finish,{once:true});
+    setTimeout(finish,4800);
+  });
+  return Promise.all([new Promise(resolve=>setTimeout(resolve,minWait)),bundleReady]).then(()=>new Promise(resolve=>{
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      if(token===sfGateHideToken){ if(el) el.style.display='none'; if(app) app.removeAttribute('aria-busy'); }
+      resolve();
+    }));
+  }));
 }
 function showAgreementsGate(){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
@@ -23005,6 +23049,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader (cache-busted external feature bundle) */(function(){try{var s=document.createElement("script");s.src="mls-connect.js?cb="+Date.now();s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b289";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>

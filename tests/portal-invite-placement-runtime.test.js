@@ -11,6 +11,11 @@ const start = fullSource.indexOf('/* feat_portal_invite');
 const end = fullSource.indexOf('/* ===== feat: MLS active-patient prominence', start);
 assert(start >= 0 && end > start, 'patient portal feature boundary was not found');
 const source = fullSource.slice(start, end);
+assert(source.includes("if(em && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(em))"), 'portal dialog must reject malformed email addresses before sending');
+assert(source.includes('res.j && res.j.sent===false'), 'portal dialog must not report an unsent email as a successful send');
+assert(fullSource.includes("#mlsCtxBar .mlsctx-actions>#mlsPortalInviteBtn"), 'phone layout must keep the selected-patient portal action visible');
+assert(fullSource.includes("#mlsCtxBar .mlsctx-actions>.mlsctx-switch"), 'phone layout must keep patient switching beside the portal action');
+assert(fullSource.includes('min-height:44px'), 'phone patient actions must remain touch-sized');
 
 function makeHarness(options = {}) {
   const byId = Object.create(null);
