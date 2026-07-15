@@ -868,8 +868,8 @@
 /* BROKEN-3 fix (2026-07-09): the LIVE redesigned header is #appHeader.mlsRdHdr (class added at runtime by the bundle); the b104 .mainnav z-index bump missed it, so fixed full-page views (z-index:5000) painted over the open Menu dropdown. 6000 stays below #_patientFace (9500) and #toast (99999). */
 #appHeader.mlsRdHdr{z-index:6000!important}
 </style>
-<!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="legal-connect-ui.js?v=20260617c1"></script><script src="legal-tracker.js?v=20260713lt1"></script>
+<!-- Legal helpers are deferred; optional PDF.js loads only when a PDF is chosen. -->
+<script defer src="legal-connect-ui.js?v=20260617c1"></script><script defer src="legal-tracker.js?v=20260713lt1"></script>
 <style id="mls-redesign">
 #visitView .mls-more-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:2px 0 12px;padding:11px 14px;cursor:pointer;background:var(--soft);border:1.5px dashed var(--line);color:var(--brand-dk);font-weight:700;font-size:14px;border-radius:11px}
 #visitView .mls-more-toggle:hover{border-color:var(--brand);background:var(--soft2)}
@@ -4171,7 +4171,6 @@ async function doAuth(){
       }
       startSession(email);
       toast(authMode==='signup'?'Account created. Welcome!':'Welcome back.','ok');
-      refreshMe();
     } finally {
       if(btn){ btn.disabled=false; btn.textContent=origLabel; }
     }
@@ -4278,7 +4277,6 @@ async function doTwofaLogin(){
     twofaPending=''; twofaEmail=''; twofaRecoveryMode=false;
     startSession(email);
     toast('Welcome back.','ok');
-    refreshMe();
   } finally {
     if(btn){ btn.disabled=false; btn.textContent=orig; }
   }
@@ -4362,7 +4360,14 @@ function regTwofaFinish(){
   regTwofaRecoveryCodes=[]; regTwofaEmail='';
   startSession(email);
   toast('Account created. Welcome!','ok');
-  refreshMe();
+}
+
+var sfSessionStartupId=0, sfActiveStartupController=null;
+function sfStartupValid(opts){
+  if(!opts) return true;
+  if(opts.cancelled) return false;
+  if(opts.signal&&opts.signal.aborted) return false;
+  return !opts.startupId||opts.startupId===sfSessionStartupId;
 }
 
 function startSession(email){
@@ -4375,7 +4380,15 @@ function startSession(email){
   // (no gate) we reveal immediately as before.
   const _gateMode = backendMode() && bkToken();
   document.getElementById('appScreen').style.display='block';
-  if(_gateMode && typeof sfShowGateLoading==='function') sfShowGateLoading();
+  let _startupId=0, _startupController=null;
+  let _sessionReady=null;
+  if(_gateMode){
+    _startupId=++sfSessionStartupId;
+    try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
+    try{ _startupController=typeof AbortController==='function'?new AbortController():null; }catch(e){ _startupController=null; }
+    sfActiveStartupController=_startupController;
+    if(typeof sfShowGateLoading==='function') sfShowGateLoading();
+  }
   document.getElementById('whoLabel').textContent='👤 '+email;
   document.getElementById('histWho').textContent=email;
   // clear sensitive auth fields
@@ -4405,14 +4418,37 @@ function startSession(email){
     // sign or log out. On resolve: gate shown → leave app hidden under it;
     // not gated (signed, or network error) → reveal the app. A network error
     // never traps the user (checkAgreementsGate returns false → app opens).
-    Promise.resolve(refreshMe())
-      .then(()=>checkAgreementsGate())
-      .then(gated=>{ if(typeof sfHideGateLoading==='function') sfHideGateLoading(!!gated); })
-      .catch(()=>{ if(typeof sfHideGateLoading==='function') sfHideGateLoading(false); });
+    let _identityResolve;
+    const _identityReady=new Promise(resolve=>{ _identityResolve=resolve; });
+    const _startupOpts={startupId:_startupId,signal:_startupController&&_startupController.signal,deferRender:true,cancelled:false,onIdentity:_identityResolve};
+    let _deadlineTimer=0;
+    let _gateDecision=null;
+    const _gateCheck=_identityReady.then(()=>checkAgreementsGate(_startupOpts)).then(value=>{ _gateDecision=!!value; return _gateDecision; }).catch(()=>false);
+    const _hydrate=Promise.all([
+      Promise.resolve(refreshMe(_startupOpts)).catch(()=>false),
+      _gateCheck
+    ]).then(results=>sfStartupValid(_startupOpts)?!!results[1]:false).catch(()=>false);
+    /* An optional or unreachable endpoint must never leave the user trapped.
+       Every participant checks the same generation before applying results, so
+       a timed-out response cannot repaint the app after it becomes interactive. */
+    const _deadline=new Promise(resolve=>{
+      _deadlineTimer=setTimeout(()=>{ _startupOpts.cancelled=true; try{ if(_startupController) _startupController.abort(); }catch(e){} resolve(_gateDecision===true); },7200);
+    });
+    _sessionReady=Promise.race([_hydrate,_deadline]).then(gated=>{
+      clearTimeout(_deadlineTimer);
+      if(_startupId!==sfSessionStartupId) return;
+      return typeof sfHideGateLoading==='function'?sfHideGateLoading(!!gated):undefined;
+    }).catch(()=>{
+      if(_startupId===sfSessionStartupId&&typeof sfHideGateLoading==='function') return sfHideGateLoading(false);
+    }).finally(()=>{
+      if(sfActiveStartupController===_startupController) sfActiveStartupController=null;
+    });
+    window.__mlsSessionReady=_sessionReady;
   }
   if(!hasAI()){
     setTimeout(()=>toast('Add your OpenAI key in Settings to start generating notes.',''),700);
   }
+  return _sessionReady||Promise.resolve();
 }
 
 function logout(force){
@@ -4421,6 +4457,10 @@ function logout(force){
   if(force!==true && typeof getQolConfirmLogout==='function' && getQolConfirmLogout()){
     if(!confirm('Log out of MLS now?')) return;
   }
+  sfSessionStartupId++;
+  try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
+  sfActiveStartupController=null;
+  try{ if(typeof sfCancelGateLoading==='function') sfCancelGateLoading(); }catch(e){}
   if(capturing) stopCapture();
   stopIdle();            // clear the inactivity timer
   // HIPAA: never leave patient data in this browser after logout (shared
@@ -4454,45 +4494,79 @@ function logout(force){
 /* =========================================================
    HOSTED BACKEND: account info, access gating, redeem, admin
    ========================================================= */
-async function refreshMe(){
-  if(!backendMode()||!bkToken()) return;
-  try{
-    const r=await fetch(bkBase()+'/api/me',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(r.status===401){ handle401(); return; }
-    if(r.ok){
-      const d=await r.json();
-      bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
-      try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
-      try{
-        var pp=d.practice||{};
-        if(pp.name) localStorage.setItem(uns('practiceName'),String(pp.name));
-        if(pp.provider_name) localStorage.setItem(uns('providerName'),String(pp.provider_name));
-        if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
-        if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
-        if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
-        if(pp.timezone) localStorage.setItem(uns('acctTz'),String(pp.timezone));
-      }catch(e){}
-      // Canonical identity comes from the server (the Bearer token), not a stale
-      // localStorage value. Sync session + header UI so they always match the
-      // actually-authenticated user. (backend mode only — guarded above.)
-      const em=bkUser&&bkUser.email;
-      if(em){
-        session={email:em};
-        setSessionEmail(em); // per-tab session, with localStorage seed
-        const whoEl=document.getElementById('whoLabel');
-        if(whoEl) whoEl.textContent='👤 '+em;
-        const histEl=document.getElementById('histWho');
-        if(histEl) histEl.textContent=em;
+var _refreshMeInFlight=null, _refreshMeToken='';
+function refreshMe(opts){
+  opts=opts||{};
+  if(!backendMode()||!bkToken()) return Promise.resolve(false);
+  const token=bkToken();
+  if(_refreshMeInFlight&&_refreshMeToken===token) return _refreshMeInFlight;
+  const run=(async function(){
+    let identityNotified=false;
+    const notifyIdentity=()=>{ if(identityNotified) return; identityNotified=true; try{ if(typeof opts.onIdentity==='function') opts.onIdentity(); }catch(e){} };
+    try{
+      const init={headers:{'Authorization':'Bearer '+token}};
+      if(opts.signal) init.signal=opts.signal;
+      const r=await fetch(bkBase()+'/api/me',init);
+      if(!sfStartupValid(opts)) return false;
+      if(r.status===401){ handle401(); return false; }
+      if(r.ok){
+        const d=await r.json();
+        if(!sfStartupValid(opts)) return false;
+        bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
+        try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
+        try{
+          var pp=d.practice||{};
+          if(pp.name) localStorage.setItem(uns('practiceName'),String(pp.name));
+          if(pp.provider_name) localStorage.setItem(uns('providerName'),String(pp.provider_name));
+          if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
+          if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
+          if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
+          if(pp.timezone) localStorage.setItem(uns('acctTz'),String(pp.timezone));
+        }catch(e){}
+        const em=bkUser&&bkUser.email;
+        if(em){
+          session={email:em};
+          setSessionEmail(em);
+          const whoEl=document.getElementById('whoLabel');
+          if(whoEl) whoEl.textContent='👤 '+em;
+          const histEl=document.getElementById('histWho');
+          if(histEl) histEl.textContent=em;
+        }
+        applyAccessUI();
+        notifyIdentity();
+        /* Hydrate all first-session stores together, then reconcile once. Three
+           independent late renders were the source of the post-login flicker,
+           moving controls, and slow first clicks. */
+        const childOpts={signal:opts.signal,startupId:opts.startupId,deferRender:true};
+        const settled=await Promise.allSettled([
+          loadPatientsFromServer(childOpts),
+          loadRecordsFromServer(childOpts),
+          loadPrefsFromServer(childOpts)
+        ]);
+        if(!sfStartupValid(opts)) return false;
+        const changed=settled.map(x=>x.status==='fulfilled'&&x.value===true);
+        if(changed[2]){
+          try{ applyAppearance(); }catch(e){}
+          try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
+          try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
+          try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){}
+          try{ renderDocPrefs(); }catch(e){}
+        }
+        try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
+        if((changed[0]||changed[1])&&currentView==='patients'){ renderPatients(); renderProfile(); }
+        if(changed[1]&&currentView==='history') renderHistory();
+        if(changed[0]||changed[1]) updateNavCounts();
+        try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcile==='function') window.__mlsUiUnification.reconcile(); }catch(e){}
+        return true;
       }
-      applyAccessUI();
-      // hosted mode: pull this doctor's own patients so they follow them across devices
-      loadPatientsFromServer();
-      // ...and their server-stored visit history (merged into the local cache)
-      loadRecordsFromServer();
-      // ...and their cloud-synced settings/templates (fills local gaps only; silent)
-      try{ loadPrefsFromServer(); }catch(e){}
-    }
-  }catch(e){/* offline — leave UI as-is */}
+    }catch(e){/* offline / aborted — leave UI as-is */}
+    notifyIdentity();
+    return false;
+  })();
+  _refreshMeToken=token;
+  const shared=run.finally(()=>{ if(_refreshMeInFlight===shared){ _refreshMeInFlight=null; _refreshMeToken=''; } });
+  _refreshMeInFlight=shared;
+  return shared;
 }
 
 /* 401 from the backend → token is stale/invalid; force re-login. */
@@ -5507,14 +5581,17 @@ function syncPrefsToServer(){
     }).catch(()=>{ /* offline / transient — next save retries */ });
   }catch(e){ /* never block settings save */ }
 }
-async function loadPrefsFromServer(){
-  if(!backendMode()||!bkToken()) return;
+async function loadPrefsFromServer(opts){
+  opts=opts||{};
+  if(!backendMode()||!bkToken()) return false;
   try{
-    const r=await fetch(bkBase()+'/api/prefs',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(!r.ok) return;                      // incl. 401 — refreshMe handles auth
-    let d={}; try{ d=await r.json(); }catch(e){ return; }
+    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
+    const r=await fetch(bkBase()+'/api/prefs',init);
+    if(!sfStartupValid(opts)||!r.ok) return false; // incl. 401 — refreshMe handles auth
+    let d={}; try{ d=await r.json(); }catch(e){ return false; }
+    if(!sfStartupValid(opts)) return false;
     const prefs=(d&&d.prefs)||null;
-    if(!prefs||typeof prefs!=='object') return;
+    if(!prefs||typeof prefs!=='object') return false;
     let changed=false;
     PREF_SYNC_KEYS.forEach(k=>{
       if(!Object.prototype.hasOwnProperty.call(prefs,k)) return;
@@ -5523,15 +5600,16 @@ async function loadPrefsFromServer(){
       const local=localStorage.getItem(uns(k));
       if(local===null||local===''){ localStorage.setItem(uns(k),sv); changed=true; } // server fills gaps; local wins
     });
-    if(changed){
+    if(changed&&!opts.deferRender){
       try{ applyAppearance(); }catch(e){}
       try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
       try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
       try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){}
     }
     // Templates often arrive here (from the server) AFTER first paint → refresh the Specialty-template dropdown now.
-    try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
-  }catch(e){ /* offline — local values stand */ }
+    if(!opts.deferRender){ try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} }
+    return changed;
+  }catch(e){ /* offline — local values stand */ return false; }
 }
 
 /* =========================================================
@@ -5840,13 +5918,17 @@ async function deletePatientOnServer(externalId){
 }
 /* Pull the caller's OWN server patients and merge into the local list,
    matching on external_id so nothing is duplicated. */
-async function loadPatientsFromServer(){
-  if(!backendMode()||!bkToken()) return;
+async function loadPatientsFromServer(opts){
+  opts=opts||{};
+  if(!backendMode()||!bkToken()) return false;
   try{
-    const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(r.status===401){ handle401(); return; }
-    if(!r.ok) return;
+    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
+    const r=await fetch(bkBase()+'/api/patients',init);
+    if(!sfStartupValid(opts)) return false;
+    if(r.status===401){ handle401(); return false; }
+    if(!r.ok) return false;
     let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
+    if(!sfStartupValid(opts)) return false;
     const rows=Array.isArray(d)?d:(d&&d.patients)||[];
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     let changed=false;
@@ -5872,10 +5954,13 @@ async function loadPatientsFromServer(){
     });
     if(changed){
       savePatients(local);
-      if(currentView==='patients'){ renderPatients(); renderProfile(); }
-      updateNavCounts();
+      if(!opts.deferRender){
+        if(currentView==='patients'){ renderPatients(); renderProfile(); }
+        updateNavCounts();
+      }
     }
-  }catch(e){/* offline — keep local list */}
+    return changed;
+  }catch(e){/* offline — keep local list */ return false; }
 }
 
 /* ---------- HEAD-DOCTOR TEAM VIEW (read-only) ----------
@@ -7863,7 +7948,10 @@ function showView(v){
   // Feature/tool cards in any view collapse to a clickable sliver by default
   // (idempotent — safe to call on every view switch; runs even before a note is generated).
   try{ initCollapsibleExtras(); }catch(e){}
-  window.scrollTo({top:0,behavior:'smooth'});
+  /* A route switch can change several layouts in the same frame. An animated
+     document scroll fights those renders and feels like the page is pulling
+     away from the pointer; reset atomically and let in-view controls animate. */
+  window.scrollTo({top:0,behavior:'auto'});
 }
 function renderPatientBar(){
   const p=activePatient();
@@ -10035,8 +10123,25 @@ async function processDocFile(file, quiet){
     }
   }catch(e){ if(!quiet) toast('Could not read file: '+(e.message||e),'err'); return null; }
 }
+let _pdfJsLoadPromise=null;
+function loadPdfJsOnDemand(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfJsLoadPromise) return _pdfJsLoadPromise;
+  _pdfJsLoadPromise=new Promise((resolve,reject)=>{
+    const prior=document.querySelector('script[data-mls-pdfjs="1"]');
+    if(prior) try{ prior.remove(); }catch(e){}
+    const s=document.createElement('script');
+    const done=()=>{ if(window.pdfjsLib) resolve(window.pdfjsLib); else{ try{ s.remove(); }catch(e){} reject(new Error('PDF reader did not initialize.')); } };
+    s.addEventListener('load',done,{once:true});
+    s.addEventListener('error',()=>{ try{ s.remove(); }catch(e){} reject(new Error('PDF reader could not be downloaded.')); },{once:true});
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.async=true; s.setAttribute('data-mls-pdfjs','1');
+    (document.head||document.documentElement).appendChild(s);
+  }).catch(err=>{ _pdfJsLoadPromise=null; throw err; });
+  return _pdfJsLoadPromise;
+}
 async function extractPdfText(file){
-  if(!window.pdfjsLib){ throw new Error('PDF reader not loaded (check internet connection).'); }
+  const pdfjsLib=await loadPdfJsOnDemand();
   try{ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
   const buf=await file.arrayBuffer();
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
@@ -11298,13 +11403,17 @@ function deleteNoteOnServer(id){
    doctor across devices. localStorage stays as the offline cache; the newer
    copy of any record wins. Team records visible to a head are NOT merged into
    the head's own local history. */
-async function loadRecordsFromServer(){
-  if(!backendMode()||!bkToken()) return;
+async function loadRecordsFromServer(opts){
+  opts=opts||{};
+  if(!backendMode()||!bkToken()) return false;
   try{
-    const r=await fetch(bkBase()+'/api/records',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(r.status===401){ handle401(); return; }
-    if(!r.ok) return;
+    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
+    const r=await fetch(bkBase()+'/api/records',init);
+    if(!sfStartupValid(opts)) return false;
+    if(r.status===401){ handle401(); return false; }
+    if(!r.ok) return false;
     let d={}; try{ d=await r.json(); }catch(e){ d={}; }
+    if(!sfStartupValid(opts)) return false;
     const rows=(d&&d.records)||[];
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     const local=getNotes();
@@ -11326,11 +11435,14 @@ async function loadRecordsFromServer(){
     if(changed){
       local.sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0));
       saveNotes(local);
-      if(currentView==='history') renderHistory();
-      if(currentView==='patients'){ renderPatients(); renderProfile(); }
-      updateNavCounts();
+      if(!opts.deferRender){
+        if(currentView==='history') renderHistory();
+        if(currentView==='patients'){ renderPatients(); renderProfile(); }
+        updateNavCounts();
+      }
     }
-  }catch(e){/* offline — keep local history */}
+    return changed;
+  }catch(e){/* offline — keep local history */ return false; }
 }
 
 function renderHistory(){
@@ -19111,10 +19223,44 @@ function agSyncSignState(){
    agreements decision and critical UI bundle resolve. This is the ONE secure-
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
-var sfGateLoadingStarted=0, sfGateHideToken=0;
-/* One readiness-based first-session cover: long enough for critical controls
-   to settle, but bounded so a failed optional module cannot trap the user. */
-const SF_GATE_MIN_MS=2800;
+var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0;
+/* The cover stays up through cloud hydration and a stable first-frame window.
+   It is deliberately bounded: an optional service can slow startup, never trap it. */
+const SF_GATE_MIN_MS=5200, SF_GATE_MAX_MS=9000, SF_GATE_QUIET_MS=500;
+const SF_GATE_READY_HOLD_MS=180, SF_GATE_FADE_MS=320;
+
+function sfLoaderFrameSignature(){
+  const ids=['appScreen','visitView','patientBar','mlsEz3','mlsRdTop','transcript','mlsCopVoiceBtn','mlsAsstFab','mlsDaDock'];
+  return ids.map(id=>{
+    const n=document.getElementById(id); if(!n) return id+':-';
+    try{
+      const r=n.getBoundingClientRect();
+      return id+':'+[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height),n.hidden?'h':'v',n.style.display||'',n.className||''].join(',');
+    }catch(e){ return id+':?'; }
+  }).join('|');
+}
+
+function sfWaitForStableFirstFrame(token,force){
+  const minAt=sfGateLoadingStarted+SF_GATE_MIN_MS;
+  const releaseAt=sfGateLoadingStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
+  let last='',stableAt=0;
+  return new Promise(resolve=>{
+    const check=()=>{
+      if(token!==sfGateHideToken) return resolve(false);
+      const now=Date.now();
+      if(force||now>=releaseAt) return resolve(true);
+      const sig=sfLoaderFrameSignature();
+      if(sig===last){ if(!stableAt) stableAt=now; }else{ last=sig; stableAt=now; }
+      const bundleReady=!!(window.__mlsUiBundleReady||window.__mlsUiBundleFailed);
+      const ownerReady=!!(window.__mlsUiBundleFailed||(window.__mlsUiUnification&&window.__mlsUiUnification.installed));
+      const coreReady=!!(document.getElementById('appScreen')&&document.getElementById('visitView')&&document.getElementById('settingsModal'));
+      if(now>=minAt&&bundleReady&&ownerReady&&coreReady&&now-stableAt>=SF_GATE_QUIET_MS) return resolve(true);
+      setTimeout(check,100);
+    };
+    check();
+  });
+}
+
 function sfShowGateLoading(){
   let el=document.getElementById('sfGateLoading');
   if(!el){
@@ -19127,54 +19273,91 @@ function sfShowGateLoading(){
   el.setAttribute('aria-live','polite');
   el.setAttribute('aria-busy','true');
   el.setAttribute('aria-label','Preparing your MLS workspace');
-  el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center';
+  el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center;opacity:1;visibility:visible;pointer-events:auto;transition:opacity '+SF_GATE_FADE_MS+'ms ease';
   if(!el.querySelector('#sfGateLoadingInner')){
-    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip{display:none!important}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
+    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
       '<div id="sfGateLoadingBrand" style="display:flex;align-items:center;gap:12px">'+
         '<svg viewBox="0 0 56 56" width="48" height="48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sfGateMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect width="56" height="56" rx="15" fill="url(#sfGateMarkGrad)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>'+
         '<span style="font:800 24px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;letter-spacing:-.3px">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span>'+
       '</div>'+
       '<div id="mlsBLwrap" style="width:260px;max-width:72vw;margin:2px 0 0"><div id="mlsBLtrack" style="height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden"><div id="mlsBLbar" style="height:100%;width:8%;border-radius:999px;background:linear-gradient(90deg,#8FD8BE,#fff)"></div></div><div id="mlsBLmsg" style="margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px">Connecting to your practice…</div></div>'+
-    '</div>';
+      '</div>';
   }
+  const bootBar=el.querySelector('#mlsBLbar'), bootMsg=el.querySelector('#mlsBLmsg');
+  if(bootBar){ bootBar.classList.remove('done'); bootBar.style.width='8%'; }
+  if(bootMsg) bootMsg.textContent='Connecting to your practice…';
   sfGateLoadingStarted=Date.now();
-  sfGateHideToken++;
+  const showToken=++sfGateHideToken;
+  clearTimeout(sfGateForceTimer);
   const app=document.getElementById('appScreen'); if(app) app.setAttribute('aria-busy','true');
   /* The compliance/session gate is the single boot-screen owner. If the
      feature bundle painted its fallback veil first, retire it immediately. */
   const bootVeil=document.getElementById('mlsBootVeil'); if(bootVeil) bootVeil.remove();
   const bootFreeze=document.getElementById('mlsBootFreeze'); if(bootFreeze) bootFreeze.remove();
   document.documentElement.classList.remove('mls-booting');
+  document.documentElement.classList.remove('mls-app-revealing');
   document.documentElement.classList.add('mls-secure-loading');
   el.style.display='flex';
+  /* Absolute, no-human-input recovery if the caller itself never reaches hide. */
+  sfGateForceTimer=setTimeout(()=>{
+    if(showToken!==sfGateHideToken) return;
+    try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
+    sfHideGateLoading(false,{force:true});
+  },SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS);
 }
-/* Remove the loading overlay. If gated===true the gate (z-9999) is already
-   covering the screen, so we just drop the overlay and leave the app hidden
-   under the gate; otherwise the app is revealed normally. */
-function sfHideGateLoading(gated){
+
+function sfCancelGateLoading(){
+  sfGateHideToken++; clearTimeout(sfGateForceTimer);
   const el=document.getElementById('sfGateLoading');
   const app=document.getElementById('appScreen');
-  if(gated){ if(el){ el.style.display='none'; el.setAttribute('aria-busy','false'); } document.documentElement.classList.remove('mls-secure-loading'); if(app) app.removeAttribute('aria-busy'); return Promise.resolve(); }
+  if(el){ el.style.display='none'; el.style.opacity='1'; el.setAttribute('aria-busy','false'); }
+  document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
+  if(app) app.removeAttribute('aria-busy');
+}
+
+/* Wait for cloud data, UI ownership, and a quiet layout signature. The legal
+   gate handoff uses the same minimum, so unsigned users no longer bypass the
+   branded screen and see a half-built gate. */
+function sfHideGateLoading(gated,options){
+  options=options||{};
+  const el=document.getElementById('sfGateLoading');
+  const app=document.getElementById('appScreen');
   const token=++sfGateHideToken;
-  const minWait=Math.max(0,SF_GATE_MIN_MS-(Date.now()-sfGateLoadingStarted));
-  const bundleReady=new Promise(resolve=>{
-    if(window.__mlsUiBundleReady){ resolve(); return; }
-    let done=false;
-    const finish=()=>{ if(done) return; done=true; window.removeEventListener('mls:ui-ready',finish); resolve(); };
-    window.addEventListener('mls:ui-ready',finish,{once:true});
-    setTimeout(finish,4800);
-  });
-  return Promise.all([new Promise(resolve=>setTimeout(resolve,minWait)),bundleReady]).then(()=>new Promise(resolve=>{
+  clearTimeout(sfGateForceTimer);
+  return sfWaitForStableFirstFrame(token,!!options.force).then(ready=>{
+    if(!ready||token!==sfGateHideToken) return;
+    const bar=el&&el.querySelector('#mlsBLbar'), msg=el&&el.querySelector('#mlsBLmsg');
+    if(bar){ bar.classList.add('done'); bar.style.width='100%'; }
+    if(msg) msg.textContent='Ready';
+    try{ window.dispatchEvent(new Event('mls:loader-ready')); }catch(e){}
+    return new Promise(resolve=>setTimeout(resolve,SF_GATE_READY_HOLD_MS));
+  }).then(()=>new Promise(resolve=>{
+    if(token!==sfGateHideToken){ resolve(); return; }
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      if(token===sfGateHideToken){ if(el){ el.style.display='none'; el.setAttribute('aria-busy','false'); } document.documentElement.classList.remove('mls-secure-loading'); if(app) app.removeAttribute('aria-busy'); }
-      resolve();
+      if(token!==sfGateHideToken){ resolve(); return; }
+      if(gated){ try{ showAgreementsGate(true); }catch(e){} }
+      document.documentElement.classList.add('mls-app-revealing');
+      document.documentElement.classList.remove('mls-secure-loading');
+      if(el) el.style.opacity='0';
+      let fade=SF_GATE_FADE_MS;
+      try{ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) fade=0; }catch(e){}
+      setTimeout(()=>{
+        if(token===sfGateHideToken){
+          if(el){ el.style.display='none'; el.style.opacity='1'; el.setAttribute('aria-busy','false'); }
+          document.documentElement.classList.remove('mls-app-revealing');
+          if(app) app.removeAttribute('aria-busy');
+        }
+        resolve();
+      },fade);
     }));
   }));
 }
-function showAgreementsGate(){
+function showAgreementsGate(fromLoading){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
-  const ld=document.getElementById('sfGateLoading'); if(ld){ ld.style.display='none'; ld.setAttribute('aria-busy','false'); }
-  document.documentElement.classList.remove('mls-secure-loading');
+  if(!fromLoading){
+    const ld=document.getElementById('sfGateLoading'); if(ld){ ld.style.display='none'; ld.setAttribute('aria-busy','false'); }
+    document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
+  }
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
   agRenderSections();
   const dateEl=document.getElementById('agSignDate'); if(dateEl) dateEl.textContent=agTodayStr();
@@ -19196,7 +19379,8 @@ function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAg
 /* Gate check, called after refreshMe in the post-login path. If the user has NOT
    signed the current version, show the gate and return true (caller holds the
    app). On network error we DO NOT lock the user out (return false → app opens). */
-async function checkAgreementsGate(){
+async function checkAgreementsGate(opts){
+  opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
   // The OWNER/ADMIN is MLS itself — the Business Associate that COUNTERSIGNS the
   // BAA and is the recipient of everyone's signed forms. They are not a Covered
@@ -19206,11 +19390,14 @@ async function checkAgreementsGate(){
   try{ if(bkUser && bkUser.role==='admin') return false; }catch(e){}
   // Every other authenticated role must sign.
   try{
-    const r=await fetch(bkBase()+'/api/agreements/me',{headers:{'Authorization':'Bearer '+bkToken()}});
+    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
+    const r=await fetch(bkBase()+'/api/agreements/me',init);
+    if(!sfStartupValid(opts)) return false;
     if(r.status===401){ handle401(); return false; }
     if(!r.ok) return false; // server error — don't trap the user
     const d=await r.json();
-    if(d && d.signed===false){ showAgreementsGate(); return true; }
+    if(!sfStartupValid(opts)) return false;
+    if(d && d.signed===false) return true;
     return false;
   }catch(e){
     return false; // offline / fetch error — let them into the clinical tool
@@ -23095,6 +23282,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b294";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b295";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>

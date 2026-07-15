@@ -189,7 +189,12 @@
       if (!b) return;
       var frag = document.createElement('div');
       frag.innerHTML = actingBannerHTML();
-      b.replaceWith(frag.firstChild);
+      var next = frag.firstChild;
+      /* This function is called by a childList observer. Replacing an identical
+         banner wakes that observer again on the next animation frame and used
+         to create a perpetual 60fps render loop. Only write on a real change. */
+      if (!next || (b.className === next.className && b.innerHTML === next.innerHTML)) return;
+      b.replaceWith(next);
     } catch (e) {}
   }
 
@@ -330,12 +335,14 @@
           '<button type="button" class="ez-btn ez-primary" id="mlscpOpen" style="flex:2">⬇ Open this patient</button>' +
           '<button type="button" class="mlscp-mini" id="mlscpNext"' + (S.walk.idx >= total - 1 ? ' disabled' : '') + '>Next ▶</button>' +
         '</div></div>';
+      var frag = document.createElement('div'); frag.innerHTML = html;
+      var node = frag.firstChild;
       if (existing) {
-        existing.outerHTML = html;
+        /* Keep the live buttons/focus when the semantic strip is unchanged.
+           Rebuilding identical outerHTML self-triggered the page observer. */
+        if (node && !(existing.className === node.className && existing.innerHTML === node.innerHTML)) existing.replaceWith(node);
       } else {
         var banner = document.getElementById('mlscpActing');
-        var frag = document.createElement('div'); frag.innerHTML = html;
-        var node = frag.firstChild;
         if (banner && banner.parentNode) banner.parentNode.insertBefore(node, banner.nextSibling);
         else (panel.querySelector('.ez-body') || panel).insertBefore(node, (panel.querySelector('.ez-body') || panel).firstChild);
       }
@@ -382,9 +389,19 @@
   }
   function startObserver() {
     try {
-      var panel = document.getElementById('mlsEasyPanel') || document.body;
-      _obs = new MutationObserver(function () { scheduleInject(); });
-      _obs.observe(document.body, { childList: true, subtree: true });
+      var root = document.getElementById('visitView') || document.body;
+      _obs = new MutationObserver(function (mutations) {
+        /* Ignore unrelated app churn. The Visit root is stable, while the Easy
+           panel itself may be replaced as steps change. */
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i], t = m.target;
+          if ((t && t.nodeType === 1 && (t.id === 'mlsEasyPanel' || (t.closest && t.closest('#mlsEasyPanel')))) ||
+              Array.prototype.some.call(m.addedNodes || [], function (n) { return n && n.nodeType === 1 && (n.id === 'mlsEasyPanel' || (n.querySelector && n.querySelector('#mlsEasyPanel'))); })) {
+            scheduleInject(); return;
+          }
+        }
+      });
+      _obs.observe(root, { childList: true, subtree: true });
     } catch (e) {}
     // a slow safety poll keeps the acting banner fresh + re-mounts if MLS Easy re-renders
     _pollT = setInterval(function () { try { wrapImport(); if (onStep1()) { scheduleInject(); refreshActing(); } } catch (e) {} }, 1500);

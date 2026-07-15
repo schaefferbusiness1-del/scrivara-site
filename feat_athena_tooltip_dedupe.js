@@ -942,59 +942,24 @@
     /* Keep restoration inside the same layout transaction. Long delayed writes
        fight real wheel/trackpad gestures and were the snap-to-top source. */
     again();
-    safe(function () { requestAnimationFrame(function () { again(); requestAnimationFrame(again); }); });
+    safe(function () { requestAnimationFrame(again); });
   }
 
-  function nestedScrollerOwns(target, delta) {
-    var el = safe(function () { return target && target.closest && target.closest('textarea,[data-settings-own-scroll]'); }, null);
-    if (!el || el.scrollHeight <= el.clientHeight + 1) return false;
-    if (delta < 0 && el.scrollTop > 0) return true;
-    if (delta > 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
-    return false;
-  }
-
-  /* Several late modules can add a Settings section. Own only the scroll
-     gesture while that short reconciliation happens, without delayed writes. */
+  /* Several late modules can add a Settings section. Remember the native
+     compositor-owned position so a real section rebuild can restore it once.
+     Never intercept wheel/touch input: preventDefault + synchronous layout
+     reads made high-resolution mice and trackpads visibly stutter. */
   function ensureSettingsScrollGuard() {
     var body = settingsScrollBody(); if (!body || body.__mlsSettingsScrollGuard) return;
     body.__mlsSettingsScrollGuard = true;
-    var touchX = 0, touchY = 0;
     settingsDesiredTop = body.scrollTop || 0;
     function rememberNativeScroll() {
       if (settingsApplyingScroll) return;
       settingsDesiredTop = body.scrollTop || 0;
       settingsScrollToken++;
     }
-    function drive(delta) {
-      var max = Math.max(0, body.scrollHeight - body.clientHeight);
-      if (!max || !delta) return false;
-      var next = Math.max(0, Math.min(body.scrollTop + delta, max));
-      if (Math.abs(next - body.scrollTop) < 0.5) return false;
-      var token = ++settingsScrollToken;
-      preserveSettingsScroll(body, next, token);
-      return true;
-    }
-    function wheel(ev) {
-      if (!ev || Math.abs(ev.deltaY || 0) <= Math.abs(ev.deltaX || 0)) return;
-      if (nestedScrollerOwns(ev.target, ev.deltaY)) return;
-      if (drive(ev.deltaY)) ev.preventDefault();
-    }
-    function touchStart(ev) {
-      var t = ev && ev.touches && ev.touches[0]; if (!t) return;
-      touchX = t.clientX; touchY = t.clientY;
-    }
-    function touchMove(ev) {
-      var t = ev && ev.touches && ev.touches[0]; if (!t) return;
-      var dx = touchX - t.clientX, dy = touchY - t.clientY;
-      touchX = t.clientX; touchY = t.clientY;
-      if (Math.abs(dy) <= Math.abs(dx) || nestedScrollerOwns(ev.target, dy)) return;
-      if (drive(dy)) ev.preventDefault();
-    }
-    body.addEventListener('wheel', wheel, { passive: false });
-    body.addEventListener('touchstart', touchStart, { passive: true });
-    body.addEventListener('touchmove', touchMove, { passive: false });
     body.addEventListener('scroll', rememberNativeScroll, { passive: true });
-    settingsScrollBindings.push({ body: body, wheel: wheel, touchStart: touchStart, touchMove: touchMove, scroll: rememberNativeScroll });
+    settingsScrollBindings.push({ body: body, scroll: rememberNativeScroll });
   }
 
   function selectSettingsGroup(key, focusTab, resetScroll) {
@@ -1223,9 +1188,6 @@
     settingsScrollToken++;
     settingsScrollBindings.forEach(function (binding) {
       if (!binding || !binding.body) return;
-      binding.body.removeEventListener('wheel', binding.wheel, false);
-      binding.body.removeEventListener('touchstart', binding.touchStart, false);
-      binding.body.removeEventListener('touchmove', binding.touchMove, false);
       binding.body.removeEventListener('scroll', binding.scroll, false);
       try { delete binding.body.__mlsSettingsScrollGuard; } catch (e) { binding.body.__mlsSettingsScrollGuard = false; }
     });

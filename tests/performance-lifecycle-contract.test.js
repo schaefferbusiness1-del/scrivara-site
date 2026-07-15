@@ -98,9 +98,10 @@ assert(!/applyCtl\(\); sweepErrors\(\)/.test(round4Apply), 'friendly-error handl
 const premium = connect.slice(connect.indexOf('function normalizeSettingsLabel'), connect.indexOf('function paint(){'));
 assert(premium.includes("sp.getAttribute('data-mls-prem-pill') !== '1'"), 'premium labels must not rewrite their own observer target forever');
 
-const viewPulse = connect.slice(connect.indexOf('function onMaybeFlip()'), connect.indexOf('/* ================= RC4: FETCH COALESCER'));
-assert(viewPulse.includes('observeKnownViews'));
-assert(!viewPulse.includes("vmo.observe(document.documentElement"), 'view-change detection must observe only view roots');
+const intervalGuard = connect.slice(connect.indexOf('/* ================= RC3:'), connect.indexOf('/* ================= RC4: FETCH COALESCER'));
+assert(intervalGuard.includes('Preserve native timer semantics'));
+assert(!intervalGuard.includes('pulseAll') && !intervalGuard.includes('reg[i].f()'), 'view changes must not synchronously replay every registered timer');
+assert(!intervalGuard.includes('new MutationObserver') && !intervalGuard.includes("document.addEventListener('click'"), 'timer dedupe must not install a global view detector');
 
 const wbDefaults = connect.slice(connect.indexOf('function patchTeachMsg(root)'), connect.indexOf('feat_today_noblink'));
 assert(wbDefaults.includes("document.addEventListener('click'"));

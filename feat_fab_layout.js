@@ -24,7 +24,7 @@
     { id: 'mls-assist-badge', key: 'mls_assist_pos', row: 0 }, // bottom row
     { id: 'mlsAddPtLauncher', key: 'mls_addpt_pos', row: 1 }   // stacked above
   ];
-  var _bound = [], _styleEl = null, _obs = null, _pollT = null, _onResize = null;
+  var _bound = [], _styleEl = null, _obs = null, _raf = 0, _onResize = null;
 
   function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function vw() { return window.innerWidth || document.documentElement.clientWidth || 1200; }
@@ -60,12 +60,13 @@
     var right = saved ? saved.right : EDGE;
     var bottom = saved ? saved.bottom : defaultBottom(item.row);
     var c = clamp(node, right, bottom);
-    node.style.position = 'fixed';
-    node.style.right = c.right + 'px';
-    node.style.bottom = c.bottom + 'px';
-    node.style.left = 'auto';
-    node.style.top = 'auto';
-    if (item.id === 'mlsAddPtLauncher') node.style.cursor = 'grab';
+    var rightPx = c.right + 'px', bottomPx = c.bottom + 'px';
+    if (node.style.position !== 'fixed') node.style.position = 'fixed';
+    if (node.style.right !== rightPx) node.style.right = rightPx;
+    if (node.style.bottom !== bottomPx) node.style.bottom = bottomPx;
+    if (node.style.left !== 'auto') node.style.left = 'auto';
+    if (node.style.top !== 'auto') node.style.top = 'auto';
+    if (item.id === 'mlsAddPtLauncher' && node.style.cursor !== 'grab') node.style.cursor = 'grab';
   }
 
   function rectsOverlap(a, b) {
@@ -135,24 +136,41 @@
     _bound.push({ node: node, down: down });
   }
 
+  function scheduleLayout() {
+    if (_raf) return;
+    var raf = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+    _raf = raf(function () { _raf = 0; ITEMS.forEach(makeDraggable); ensureLayout(); });
+  }
+
+  function touchesLauncher(node, includeDescendants) {
+    if (!node) return false;
+    if (node.nodeType !== 1) node = node.parentElement;
+    if (!node) return false;
+    var selector = '#mls-assist-badge,#mlsAddPtLauncher';
+    try { return !!(node.matches(selector) || (node.closest && node.closest(selector)) || (includeDescendants && node.querySelector && node.querySelector(selector))); } catch (e) { return false; }
+  }
+
   function boot() {
     ITEMS.forEach(makeDraggable);
     ensureLayout();
-    _onResize = function () { ensureLayout(); };
+    _onResize = scheduleLayout;
     window.addEventListener('resize', _onResize);
     try {
-      _obs = new MutationObserver(function () { ITEMS.forEach(makeDraggable); ensureLayout(); });
+      _obs = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i], nodes = Array.prototype.slice.call(m.addedNodes || []).concat(Array.prototype.slice.call(m.removedNodes || []));
+          if (touchesLauncher(m.target, false) || nodes.some(function (node) { return touchesLauncher(node, true); })) { scheduleLayout(); return; }
+        }
+      });
       _obs.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
-    // slow safety re-assert (covers launchers that mount late)
-    _pollT = setInterval(function () { ITEMS.forEach(makeDraggable); ensureLayout(); }, 2000);
   }
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_pollT) clearInterval(_pollT); } catch (e) {}
+    try { if (_raf) (window.cancelAnimationFrame || clearTimeout)(_raf); } catch (e) {}
     try { if (_onResize) window.removeEventListener('resize', _onResize); } catch (e) {}
-    try { _bound.forEach(function (b) { b.node.removeEventListener('mousedown', b.down, true); b.node.__mlsDragBound = false; }); } catch (e) {}
+    try { _bound.forEach(function (b) { b.node.removeEventListener('mousedown', b.down, true); b.node.removeEventListener('touchstart', b.down, true); b.node.__mlsDragBound = false; }); } catch (e) {}
     try { if (_styleEl) _styleEl.remove(); } catch (e) {}
     // leave nodes where they are (positions are harmless); just clear cursor
     try { var a = el('mlsAddPtLauncher'); if (a) a.style.cursor = ''; } catch (e) {}

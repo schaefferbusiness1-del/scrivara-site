@@ -31450,9 +31450,11 @@
   function styleEl(){ if(document.getElementById('mlsBLcss'))return; var st=document.createElement('style'); st.id='mlsBLcss'; st.textContent='#sfGateLoadingInner{width:min(360px,86vw)}#mlsBLwrap{width:260px;max-width:72vw;margin:2px 0 0}#mlsBLtrack{height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden}#mlsBLbar{height:100%;width:0%;border-radius:999px;background-image:linear-gradient(90deg,#8FD8BE,#C9DCD2,#fff,#C9DCD2,#8FD8BE);background-size:220px 100%;box-shadow:0 0 16px rgba(143,216,190,.28);transition:width .45s cubic-bezier(.4,0,.2,1);animation:mlsBLshm 1.15s linear infinite}#mlsBLbar.done{animation:none;background-image:linear-gradient(90deg,#8FD8BE,#fff)}#mlsBLmsg{margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px}@keyframes mlsBLshm{0%{background-position:-220px 0}100%{background-position:220px 0}}'; (document.head||document.documentElement).appendChild(st); }
   var timer=null, failsafe=null, hideT=null, prog=0, msgi=0;
   function ensureBar(g){ var w=g.querySelector('#mlsBLwrap'); if(!w){ w=document.createElement('div'); w.id='mlsBLwrap'; w.innerHTML='<div id=\"mlsBLtrack\"><div id=\"mlsBLbar\"></div></div><div id=\"mlsBLmsg\"></div>'; g.appendChild(w); } return w; }
-  function start(){ styleEl(); var g=document.getElementById('sfGateLoading'); if(!g)return; ensureBar(g); var bar=g.querySelector('#mlsBLbar'), msg=g.querySelector('#mlsBLmsg'); clearTimeout(failsafe); failsafe=setTimeout(done,9000); if(timer&&prog>0){ if(bar)bar.classList.remove('done'); return; } prog=0; msgi=0; if(bar){bar.classList.remove('done');bar.style.width='0%';} if(msg)msg.textContent=STAGES[0]; clearInterval(timer); timer=setInterval(function(){ prog+=Math.max(0.6,(90-prog)*0.06); if(prog>90)prog=90; if(bar)bar.style.width=prog.toFixed(1)+'%'; var wm=Math.min(STAGES.length-1,Math.floor(prog/24)); if(wm!==msgi){msgi=wm; if(msg)msg.textContent=STAGES[msgi];} },160); }
+  function slow(){ var g=document.getElementById('sfGateLoading'), msg=g&&g.querySelector('#mlsBLmsg'); if(msg)msg.textContent='Still preparing your workspace…'; }
+  function start(){ styleEl(); var g=document.getElementById('sfGateLoading'); if(!g)return; ensureBar(g); var bar=g.querySelector('#mlsBLbar'), msg=g.querySelector('#mlsBLmsg'); clearTimeout(failsafe); failsafe=setTimeout(slow,8000); if(timer&&prog>0){ if(bar)bar.classList.remove('done'); return; } prog=0; msgi=0; if(bar){bar.classList.remove('done');bar.style.width='0%';} if(msg)msg.textContent=STAGES[0]; clearInterval(timer); timer=setInterval(function(){ prog+=Math.max(0.6,(90-prog)*0.06); if(prog>90)prog=90; if(bar)bar.style.width=prog.toFixed(1)+'%'; var wm=Math.min(STAGES.length-1,Math.floor(prog/24)); if(wm!==msgi){msgi=wm; if(msg)msg.textContent=STAGES[msgi];} },160); }
   function done(){ clearTimeout(failsafe); clearInterval(timer); timer=null; var g=document.getElementById('sfGateLoading'); if(!g)return; var bar=g.querySelector('#mlsBLbar'), msg=g.querySelector('#mlsBLmsg'); if(bar){bar.classList.add('done'); bar.style.width='100%';} if(msg)msg.textContent='Ready'; }
   function schedHide(){ clearTimeout(hideT); hideT=setTimeout(function(){ var g=document.getElementById('sfGateLoading'); if(!g||getComputedStyle(g).display==='none'){ if(g)g.__on=false; done(); } },400); }
+  window.addEventListener('mls:loader-ready',done);
   function wrap(name,fn,after){ var o=window[name]; if(typeof o==='function'&&!o.__mlsW){ window[name]=function(){ var r; if(!after){try{fn();}catch(e){}} r=o.apply(this,arguments); if(after){try{fn();}catch(e){}} return r; }; window[name].__mlsW=true; } }
   var n=0, iv=setInterval(function(){ wrap('sfShowGateLoading',start,true); wrap('sfHideGateLoading',schedHide,false); var g=document.getElementById('sfGateLoading'); if(g&&!g.__mlsBLobs){ g.__mlsBLobs=true; try{ var mo=new MutationObserver(function(){ var vis=getComputedStyle(g).display!=='none'; if(vis){ clearTimeout(hideT); if(!g.__on){g.__on=true;start();} } else if(g.__on){ schedHide(); } }); mo.observe(g,{attributes:true,attributeFilter:['style','class']}); }catch(e){} if(getComputedStyle(g).display!=='none'){g.__on=true;start();} } if(++n>60)clearInterval(iv); },150);
 })();
@@ -31491,7 +31493,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b294';
+  window.__MLS_AV = window.__MLS_AV || 'b295';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31525,7 +31527,6 @@
         document.documentElement.classList.remove('mls-booting');
         /* Each feature performs its own initial apply. Replaying the complete
            interval registry here caused a second main-thread stall. */
-        try{ lastSig=viewSig(); }catch(_){ }
         if(bar){ try{ bar.style.setProperty('animation','none','important'); bar.style.transform='scaleX(1)'; }catch(_){ } bar.style.width='100%'; }
         setTimeout(function(){ veil.style.opacity='0'; setTimeout(function(){ try{ veil.remove(); frz.remove(); }catch(_){ } },260); },70);
       };
@@ -31548,14 +31549,14 @@
     }
   }catch(e){ try{ document.documentElement.classList.remove('mls-booting'); var v0=document.getElementById('mlsBootVeil'); if(v0) v0.remove(); }catch(_){ } }
 
-  /* ================= RC3: TICK REGISTRY + VIEW PULSE ================= */
-  /* Settings/view dialogs are overlays, not route switches. Opening either
-     must not replay every registered background UI job. */
-  var VIEWS=['intakeView','patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','calendarView','analysisView','legalReqView','studioView'];
-  var reg=[], seen={}, idKey={}, origSetInterval=window.setInterval, origClearInterval=window.clearInterval;
+  /* ================= RC3: INTERVAL DEDUPE + HIDDEN-TAB PAUSE ============ */
+  /* Preserve native timer semantics. An earlier view-pulse replay invoked every
+     registered callback synchronously on navigation, exhausting bounded retries
+     and creating a large before-paint main-thread burst. */
+  var seen={}, idKey={}, origSetInterval=window.setInterval, origClearInterval=window.clearInterval;
   var wrapped=function(fn,delay){
     var args=Array.prototype.slice.call(arguments,2);
-    if(typeof fn==='function' && delay>=200 && delay<=3500 && reg.length<500){
+    if(typeof fn==='function' && delay>=200 && delay<=3500){
       var key=null, src='';
       try{ src=String(fn); if(src.indexOf('[native code]')===-1) key=src.slice(0,400)+'|'+delay; }catch(_){ key=null; }
       if(key){
@@ -31571,7 +31572,6 @@
         if(document.hidden && !isNet && delay<10000) return; /* skip pure-DOM work while hidden */
         return fn.apply(this,arguments);
       };
-      reg.push({f:fn,net:isNet});
       var id=origSetInterval.apply(window,[run,delay].concat(args));
       if(key) idKey[id]=key;
       return id;
@@ -31583,44 +31583,6 @@
     return origClearInterval.apply(window,arguments);
   };
   try{ window.setInterval=wrapped; window.clearInterval=wrappedClear; }catch(_){ }
-
-  var lastSig=viewSig(), lastPulse=0;
-  function viewSig(){
-    var s='';
-    for(var i=0;i<VIEWS.length;i++){ var el=document.getElementById(VIEWS[i]); s+=(el&&el.offsetParent!==null)?'1':'0'; }
-    return s;
-  }
-  function pulseAll(why){
-    var now=Date.now(); if(now-lastPulse<700) return; lastPulse=now;
-    ST.pulses++;
-    for(var i=0;i<reg.length;i++){ if(!reg[i].net){ try{ reg[i].f(); }catch(_){ } } }
-  }
-  var pending=false;
-  function onMaybeFlip(){
-    if(pending||ST.reverted) return; pending=true;
-    (window.requestAnimationFrame||setTimeout)(function(){
-      pending=false;
-      try{ var s=viewSig(); if(s!==lastSig){ lastSig=s; pulseAll('view-flip'); } }catch(_){ }
-    });
-  }
-  try{
-    var vmo=new MutationObserver(onMaybeFlip);
-    var observeKnownViews=function(){
-      for(var oi=0;oi<VIEWS.length;oi++){
-        var viewEl=document.getElementById(VIEWS[oi]);
-        if(viewEl) vmo.observe(viewEl,{attributes:true,attributeFilter:['class','style']});
-      }
-    };
-    /* View flips are represented on the view roots themselves. Observing every
-       class/style/child mutation in the entire document made this harmless
-       detector run dozens of times a second. Click capture plus two late mount
-       passes cover navigation without joining the global observer cascade. */
-    observeKnownViews();
-    setTimeout(observeKnownViews,1000);
-    setTimeout(observeKnownViews,4000);
-    document.addEventListener('click',onMaybeFlip,true);
-    ST._vmo=vmo;
-  }catch(_){ }
 
   /* ================= RC4: FETCH COALESCER (hot GET polls) ================= */
   var HOT=/\/api\/(appointments|connect\/status|providers|intake\/pending|calls\/active|mic\/)/;
@@ -31658,9 +31620,7 @@
     ST.reverted=true;
     try{ window.setInterval=origSetInterval; window.clearInterval=origClearInterval; }catch(_){ }
     try{ window.fetch=origFetch; }catch(_){ }
-    try{ ST._vmo&&ST._vmo.disconnect(); }catch(_){ }
-    try{ document.removeEventListener('click',onMaybeFlip,true); }catch(_){ }
-    reg=[]; seen={}; idKey={}; inflight={}; ttlCache={};
+    seen={}; idKey={}; inflight={}; ttlCache={};
     try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); document.documentElement.classList.remove('mls-booting'); }catch(_){ }
     return 'T6 stabilizer reverted';
   };
@@ -31824,7 +31784,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b294';
+  var MLS_APP_BUILD='2026-07-15-b295';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -33011,9 +32971,12 @@
   if(window.__mlsAthenaMsgFix) return; window.__mlsAthenaMsgFix=true;
   var BAD=/no signed-?in athenaone tab is readable|open one and sign in|please sign in to athenaone|no signed-?in athenaone tab/i;
   var GOOD='athenaOne is connected. If the schedule or chart didn’t load, open Calendar ‣ View Calendar in athenaOne (the day grid with provider columns), then try again.';
-  function fix(){
+  function fix(root,deep){
     try{
-      var els=document.querySelectorAll('div,span,p,li,small,em');
+      root=root||document;
+      var sel='div,span,p,li,small,em', els=[];
+      if(root.nodeType===1&&root.matches&&root.matches(sel)) els.push(root);
+      if(deep!==false&&root.querySelectorAll) els=els.concat([].slice.call(root.querySelectorAll(sel)));
       for(var i=0;i<els.length;i++){
         var e=els[i];
         if(e.__mlsMsgFixed) continue;
@@ -33024,10 +32987,16 @@
       }
     }catch(e){}
   }
-  var pend=false;
-  function sched(){ if(pend)return; pend=true; (window.requestAnimationFrame||setTimeout)(function(){pend=false; fix();}); }
-  fix();
-  try{ new MutationObserver(sched).observe(document.documentElement,{subtree:true,childList:true,characterData:true}); }catch(e){}
+  var pend=false, roots=[];
+  function queue(node,deep){
+    if(!node) return; if(node.nodeType!==1) node=node.parentElement; if(!node) return;
+    var found=null; for(var r=0;r<roots.length;r++){ if(roots[r].node===node){ found=roots[r]; break; } }
+    if(found){ if(deep) found.deep=true; } else roots.push({node:node,deep:!!deep});
+    if(pend)return; pend=true;
+    (window.requestAnimationFrame||setTimeout)(function(){ var batch=roots.slice(); roots=[]; pend=false; for(var i=0;i<batch.length;i++) fix(batch[i].node,batch[i].deep); });
+  }
+  fix(document);
+  try{ new MutationObserver(function(ms){ for(var i=0;i<ms.length;i++){ var m=ms[i]; queue(m.target,false); for(var j=0;j<(m.addedNodes||[]).length;j++) queue(m.addedNodes[j],true); } }).observe(document.documentElement,{subtree:true,childList:true,characterData:true}); }catch(e){}
 })();
 
 
