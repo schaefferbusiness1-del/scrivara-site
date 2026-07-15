@@ -62,6 +62,7 @@ const tests = [
   'schedule-history-pipeline.test.js',
   'schedule-identity-adversarial-runtime.test.js',
   'schedule-authoritative-reconciliation-runtime.test.js',
+  'schedule-import-scan-performance-contract.test.js',
   'provider-day-pull-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',

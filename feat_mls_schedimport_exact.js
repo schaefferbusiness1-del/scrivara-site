@@ -683,6 +683,14 @@
 
     var token = bkToken(), base = bkBase();
     var pts = (callG("getPatients") || []) || [];
+    /* Large accounts can carry years of patients and appointments.  Build the
+       immutable local-patient index once instead of repeating pts.find for
+       every archived appointment.  First-id wins, exactly matching Array.find. */
+    var patientByLocalId = Object.create(null);
+    for (var pti = 0; pti < pts.length; pti++) {
+      var localPatientId = String(pts[pti] && pts[pti].id || "");
+      if (localPatientId && !Object.prototype.hasOwnProperty.call(patientByLocalId, localPatientId)) patientByLocalId[localPatientId] = pts[pti];
+    }
     var existingRows = {}, existingAmbiguous = {}, backendById = {};
 
     function indexExisting(key, row) {
@@ -703,7 +711,7 @@
           });
         })
         .catch(function () { return { appointments: [], __mlsVerified: false }; });
-    }, Promise.resolve({ appointments: [], __mlsVerified: false })).then(function (ed) {
+    }, Promise.resolve({ appointments: [], __mlsVerified: false })).then(async function (ed) {
       if (!ed || ed.__mlsVerified !== true) {
         return { created: 0, repaired: 0, enrichedFields: 0, skipped: 0, failed: appts.length, attempted: appts.length,
           wrongDay: wrongDay, invalidDate: invalidDate, reason: "calendar-read-unverified", days: {}, target: target,
@@ -711,12 +719,13 @@
           unresolvedMappings: appts.map(function (a) { return { sourceIdentity: importKey(a, a._date || normDate(a.date) || target, normTime(a.time)), reason: "calendar-read-unverified", date: a._date || normDate(a.date) || target }; }),
           providerReceipt: providerScope.receipt };
       }
-      (ed.appointments || []).forEach(function (x) {
+      var backendAppointments = ed.appointments || [], ledgerByDay = Object.create(null);
+      for (var eri = 0; eri < backendAppointments.length; eri++) {
+        var x = backendAppointments[eri];
         var rawBackendId = backendRowId(x); if (rawBackendId) backendById[rawBackendId] = x;
         var lt = ""; safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
         var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
-        var linked = null;
-        safe(function () { linked = pts.find(function (p) { return String(p && p.id || "") === String(x.patient_external_id || ""); }); });
+        var linked = patientByLocalId[String(x && x.patient_external_id || "")] || null;
         var bound = {}; for (var bx in x) if (x.hasOwnProperty(bx)) bound[bx] = x[bx];
         if (linked && linked.id) bound.patient_external_id = String(linked.id);
         var existingIdentityKey = appointmentIdentity(bound, ld, lt, !!(linked && linked.id));
@@ -730,12 +739,26 @@
         /* Reconnect an Athena source appointment id to the backend row created
            by an earlier pull, even when the backend schema does not echo that
            source id. The account-local ledger stores only ids, never PHI. */
-        var dayLedger = readIndex(ld), backendId = String(x && x.id || "");
-        if (backendId) Object.keys(dayLedger.rows || {}).forEach(function (ledgerIdentity) {
-          var ledgerRow = dayLedger.rows[ledgerIdentity] || {};
-          if (ledgerRow.state === "done" && String(ledgerRow.backendAppointmentId || "") === backendId) indexExisting(ledgerIdentity, x);
-        });
-      });
+        var dayLedgerCache;
+        if (Object.prototype.hasOwnProperty.call(ledgerByDay, ld)) dayLedgerCache = ledgerByDay[ld];
+        else {
+          var freshDayLedger = readIndex(ld), ledgerIdentityByBackendId = Object.create(null);
+          Object.keys(freshDayLedger.rows || {}).forEach(function (ledgerIdentity) {
+            var ledgerRow = freshDayLedger.rows[ledgerIdentity] || {}, ledgerBackendId = String(ledgerRow.backendAppointmentId || "");
+            if (ledgerRow.state !== "done" || !ledgerBackendId) return;
+            if (!ledgerIdentityByBackendId[ledgerBackendId]) ledgerIdentityByBackendId[ledgerBackendId] = [];
+            ledgerIdentityByBackendId[ledgerBackendId].push(ledgerIdentity);
+          });
+          dayLedgerCache = ledgerByDay[ld] = { ledger: freshDayLedger, identitiesByBackendId: ledgerIdentityByBackendId };
+        }
+        var backendId = String(x && x.id || "");
+        var ledgerIdentities = backendId && dayLedgerCache.identitiesByBackendId[backendId] || [];
+        for (var li = 0; li < ledgerIdentities.length; li++) indexExisting(ledgerIdentities[li], x);
+        /* Yield between bounded archive chunks so the recording/transcript UI,
+           pull progress, and browser controls remain responsive.  The source
+           snapshot and all exact-identity maps stay frozen for this scan. */
+        if (eri > 0 && eri % 200 === 0) await new Promise(function (resolveChunk) { setTimeout(resolveChunk, 0); });
+      }
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};
       var resolvedAppointments = [], unresolvedMappings = [];
