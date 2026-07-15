@@ -31447,14 +31447,14 @@
 (function(){
   if(window.__mlsBootLoader) return; window.__mlsBootLoader=1;
   var STAGES=['Connecting to your practice\u2026','Loading your schedule\u2026','Preparing your workspace\u2026','Almost ready\u2026'];
-  function styleEl(){ if(document.getElementById('mlsBLcss'))return; var st=document.createElement('style'); st.id='mlsBLcss'; st.textContent='#mlsBLwrap{width:260px;max-width:70vw;margin:16px auto 0}#mlsBLtrack{height:6px;border-radius:999px;background:rgba(120,150,215,.22);overflow:hidden}#mlsBLbar{height:100%;width:0%;border-radius:999px;background-image:linear-gradient(90deg,#2E6A4B,#C9DCD2,#C9DCD2,#C9DCD2,#2E6A4B);background-size:220px 100%;transition:width .45s cubic-bezier(.4,0,.2,1);animation:mlsBLshm 1.15s linear infinite}#mlsBLbar.done{animation:none;background-image:linear-gradient(90deg,#2E6A4B,#C9DCD2)}#mlsBLmsg{margin-top:11px;font-size:13px;color:#2E6A4B;text-align:center;letter-spacing:.2px}@keyframes mlsBLshm{0%{background-position:-220px 0}100%{background-position:220px 0}}'; (document.head||document.documentElement).appendChild(st); }
+  function styleEl(){ if(document.getElementById('mlsBLcss'))return; var st=document.createElement('style'); st.id='mlsBLcss'; st.textContent='#sfGateLoadingInner{width:min(360px,86vw)}#mlsBLwrap{width:260px;max-width:72vw;margin:2px 0 0}#mlsBLtrack{height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden}#mlsBLbar{height:100%;width:0%;border-radius:999px;background-image:linear-gradient(90deg,#8FD8BE,#C9DCD2,#fff,#C9DCD2,#8FD8BE);background-size:220px 100%;box-shadow:0 0 16px rgba(143,216,190,.28);transition:width .45s cubic-bezier(.4,0,.2,1);animation:mlsBLshm 1.15s linear infinite}#mlsBLbar.done{animation:none;background-image:linear-gradient(90deg,#8FD8BE,#fff)}#mlsBLmsg{margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px}@keyframes mlsBLshm{0%{background-position:-220px 0}100%{background-position:220px 0}}'; (document.head||document.documentElement).appendChild(st); }
   var timer=null, failsafe=null, hideT=null, prog=0, msgi=0;
   function ensureBar(g){ var w=g.querySelector('#mlsBLwrap'); if(!w){ w=document.createElement('div'); w.id='mlsBLwrap'; w.innerHTML='<div id=\"mlsBLtrack\"><div id=\"mlsBLbar\"></div></div><div id=\"mlsBLmsg\"></div>'; g.appendChild(w); } return w; }
   function start(){ styleEl(); var g=document.getElementById('sfGateLoading'); if(!g)return; ensureBar(g); var bar=g.querySelector('#mlsBLbar'), msg=g.querySelector('#mlsBLmsg'); clearTimeout(failsafe); failsafe=setTimeout(done,9000); if(timer&&prog>0){ if(bar)bar.classList.remove('done'); return; } prog=0; msgi=0; if(bar){bar.classList.remove('done');bar.style.width='0%';} if(msg)msg.textContent=STAGES[0]; clearInterval(timer); timer=setInterval(function(){ prog+=Math.max(0.6,(90-prog)*0.06); if(prog>90)prog=90; if(bar)bar.style.width=prog.toFixed(1)+'%'; var wm=Math.min(STAGES.length-1,Math.floor(prog/24)); if(wm!==msgi){msgi=wm; if(msg)msg.textContent=STAGES[msgi];} },160); }
   function done(){ clearTimeout(failsafe); clearInterval(timer); timer=null; var g=document.getElementById('sfGateLoading'); if(!g)return; var bar=g.querySelector('#mlsBLbar'), msg=g.querySelector('#mlsBLmsg'); if(bar){bar.classList.add('done'); bar.style.width='100%';} if(msg)msg.textContent='Ready'; }
   function schedHide(){ clearTimeout(hideT); hideT=setTimeout(function(){ var g=document.getElementById('sfGateLoading'); if(!g||getComputedStyle(g).display==='none'){ if(g)g.__on=false; done(); } },400); }
-  function wrap(name,fn){ var o=window[name]; if(typeof o==='function'&&!o.__mlsW){ window[name]=function(){ try{fn();}catch(e){} return o.apply(this,arguments); }; window[name].__mlsW=true; } }
-  var n=0, iv=setInterval(function(){ wrap('sfShowGateLoading',start); wrap('sfHideGateLoading',schedHide); var g=document.getElementById('sfGateLoading'); if(g&&!g.__mlsBLobs){ g.__mlsBLobs=true; try{ var mo=new MutationObserver(function(){ var vis=getComputedStyle(g).display!=='none'; if(vis){ clearTimeout(hideT); if(!g.__on){g.__on=true;start();} } else if(g.__on){ schedHide(); } }); mo.observe(g,{attributes:true,attributeFilter:['style','class']}); }catch(e){} if(getComputedStyle(g).display!=='none'){g.__on=true;start();} } if(++n>60)clearInterval(iv); },150);
+  function wrap(name,fn,after){ var o=window[name]; if(typeof o==='function'&&!o.__mlsW){ window[name]=function(){ var r; if(!after){try{fn();}catch(e){}} r=o.apply(this,arguments); if(after){try{fn();}catch(e){}} return r; }; window[name].__mlsW=true; } }
+  var n=0, iv=setInterval(function(){ wrap('sfShowGateLoading',start,true); wrap('sfHideGateLoading',schedHide,false); var g=document.getElementById('sfGateLoading'); if(g&&!g.__mlsBLobs){ g.__mlsBLobs=true; try{ var mo=new MutationObserver(function(){ var vis=getComputedStyle(g).display!=='none'; if(vis){ clearTimeout(hideT); if(!g.__on){g.__on=true;start();} } else if(g.__on){ schedHide(); } }); mo.observe(g,{attributes:true,attributeFilter:['style','class']}); }catch(e){} if(getComputedStyle(g).display!=='none'){g.__on=true;start();} } if(++n>60)clearInterval(iv); },150);
 })();
 
 ;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
@@ -31491,7 +31491,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b291';
+  window.__MLS_AV = window.__MLS_AV || 'b292';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31824,7 +31824,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b291';
+  var MLS_APP_BUILD='2026-07-15-b292';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;

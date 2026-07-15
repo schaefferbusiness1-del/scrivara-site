@@ -19107,10 +19107,10 @@ function agSyncSignState(){
   if(btn) btn.disabled=!(allChecked && name.trim().length>0 && hasSig);
 }
 /* Show the full-screen gate (hide app + auth screens). */
-/* Brief neutral full-screen overlay shown during startSession (backend mode)
-   while the agreements gate decision resolves, so the app underneath is never
-   visible/touchable before we know whether to gate it. z-index sits just below
-   the gate (9999) so the gate can still cover it if shown. */
+/* Branded full-screen cover shown during startSession (backend mode) while the
+   agreements decision and critical UI bundle resolve. This is the ONE secure-
+   login loading owner: the old green MLS treatment, with the compliance gate
+   still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0;
 /* One readiness-based first-session cover: long enough for critical controls
    to settle, but bounded so a failed optional module cannot trap the user. */
@@ -19121,9 +19121,21 @@ function sfShowGateLoading(){
     el=document.createElement('div');
     el.id='sfGateLoading';
     el.setAttribute('aria-busy','true');
-    el.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg,#f4f7fb);display:flex;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--muted,#5a6b82)';
-    el.textContent='Loading…';
     document.body.appendChild(el);
+  }
+  el.setAttribute('role','status');
+  el.setAttribute('aria-live','polite');
+  el.setAttribute('aria-busy','true');
+  el.setAttribute('aria-label','Preparing your MLS workspace');
+  el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center';
+  if(!el.querySelector('#sfGateLoadingInner')){
+    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip{display:none!important}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
+      '<div id="sfGateLoadingBrand" style="display:flex;align-items:center;gap:12px">'+
+        '<svg viewBox="0 0 56 56" width="48" height="48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sfGateMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect width="56" height="56" rx="15" fill="url(#sfGateMarkGrad)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>'+
+        '<span style="font:800 24px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;letter-spacing:-.3px">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span>'+
+      '</div>'+
+      '<div id="mlsBLwrap" style="width:260px;max-width:72vw;margin:2px 0 0"><div id="mlsBLtrack" style="height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden"><div id="mlsBLbar" style="height:100%;width:8%;border-radius:999px;background:linear-gradient(90deg,#8FD8BE,#fff)"></div></div><div id="mlsBLmsg" style="margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px">Connecting to your practice…</div></div>'+
+    '</div>';
   }
   sfGateLoadingStarted=Date.now();
   sfGateHideToken++;
@@ -19133,6 +19145,7 @@ function sfShowGateLoading(){
   const bootVeil=document.getElementById('mlsBootVeil'); if(bootVeil) bootVeil.remove();
   const bootFreeze=document.getElementById('mlsBootFreeze'); if(bootFreeze) bootFreeze.remove();
   document.documentElement.classList.remove('mls-booting');
+  document.documentElement.classList.add('mls-secure-loading');
   el.style.display='flex';
 }
 /* Remove the loading overlay. If gated===true the gate (z-9999) is already
@@ -19141,7 +19154,7 @@ function sfShowGateLoading(){
 function sfHideGateLoading(gated){
   const el=document.getElementById('sfGateLoading');
   const app=document.getElementById('appScreen');
-  if(gated){ if(el) el.style.display='none'; if(app) app.removeAttribute('aria-busy'); return Promise.resolve(); }
+  if(gated){ if(el){ el.style.display='none'; el.setAttribute('aria-busy','false'); } document.documentElement.classList.remove('mls-secure-loading'); if(app) app.removeAttribute('aria-busy'); return Promise.resolve(); }
   const token=++sfGateHideToken;
   const minWait=Math.max(0,SF_GATE_MIN_MS-(Date.now()-sfGateLoadingStarted));
   const bundleReady=new Promise(resolve=>{
@@ -19153,14 +19166,15 @@ function sfHideGateLoading(gated){
   });
   return Promise.all([new Promise(resolve=>setTimeout(resolve,minWait)),bundleReady]).then(()=>new Promise(resolve=>{
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      if(token===sfGateHideToken){ if(el) el.style.display='none'; if(app) app.removeAttribute('aria-busy'); }
+      if(token===sfGateHideToken){ if(el){ el.style.display='none'; el.setAttribute('aria-busy','false'); } document.documentElement.classList.remove('mls-secure-loading'); if(app) app.removeAttribute('aria-busy'); }
       resolve();
     }));
   }));
 }
 function showAgreementsGate(){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
-  const ld=document.getElementById('sfGateLoading'); if(ld) ld.style.display='none';
+  const ld=document.getElementById('sfGateLoading'); if(ld){ ld.style.display='none'; ld.setAttribute('aria-busy','false'); }
+  document.documentElement.classList.remove('mls-secure-loading');
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
   agRenderSections();
   const dateEl=document.getElementById('agSignDate'); if(dateEl) dateEl.textContent=agTodayStr();
@@ -23081,6 +23095,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b291";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b292";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>
