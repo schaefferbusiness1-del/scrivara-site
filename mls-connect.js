@@ -31620,7 +31620,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b325';
+  window.__MLS_AV = window.__MLS_AV || 'b328';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31911,7 +31911,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b325';
+  var MLS_APP_BUILD='2026-07-16-b328';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -40496,7 +40496,7 @@
  * ensure interval (1.2s, write-only-when-missing). */
 (function () {
   if (window.__mlsDaySwitch) return;
-  var api = { installed: true, version: 'ds-1.2.0' };
+  var api = { installed: true, version: 'ds-1.2.1' };
   window.__mlsDaySwitch = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -40527,6 +40527,10 @@
     '#mlsDsStatus{flex-basis:100%;font:600 12px system-ui;color:#2E6A4B;background:#EAF1EE;border-radius:8px;padding:7px 10px;display:none;}',
     '#mlsDsList{background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:10px 12px;margin:0 0 10px;}',
     '#mlsDsList .ds-h{font:700 12px system-ui;color:#79837C;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;}',
+    '#mlsDsList .ds-h.ds-toggle{cursor:pointer;user-select:none;border-radius:7px;padding:4px 6px;margin:-4px -6px 6px;}',
+    '#mlsDsList .ds-h.ds-toggle:hover{background:rgba(46,106,75,.08);color:#2E6A4B;}',
+    '#mlsDsList .ds-caret{display:inline-block;width:12px;color:#2E6A4B;}',
+    '#mlsDsList .ds-hint{font-weight:600;text-transform:none;letter-spacing:0;color:#A6AEA6;}',
     '#mlsDsList .ds-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-top:1px solid #EFEDE6;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;flex-wrap:wrap;}',
     '#mlsDsList .ds-row:first-of-type{border-top:0;}',
     '#mlsDsList .ds-tm{color:#2E6A4B;min-width:70px;}',
@@ -40560,16 +40564,29 @@
     if (DS.day === todayKey()) return;                     /* today = native list only */
     var rows = rowsFor(DS.day);
     var el = document.createElement('div'); el.id = 'mlsDsList';
-    var h = '<div class="ds-h">' + esc(fmtDay(DS.day)) + ' - ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' loaded</div>';
-    if (!rows.length) h += '<div class="ds-empty">Nothing loaded for this day yet - tap "Pull this day" to get it from Athena, or it may genuinely be empty.</div>';
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      h += '<div class="ds-row"><span class="ds-tm">' + esc(fmt12(r.time) || '-') + '</span><span>' + esc(r.name) + '</span>' +
-           (r.dob ? '<span class="ds-dob">DOB ' + esc(r.dob) + '</span>' : '') +
-           '<span class="ds-pv">' + esc(r.prov || 'Provider not recorded') + '</span></div>';
+    /* ds-1.2.1: the other-day list is COLLAPSIBLE — the header row is the
+       toggle, so a long loaded day does not push the whole Visit screen down */
+    var collapsed = !!DS.listCollapsed;
+    var h = '<div class="ds-h ds-toggle" id="mlsDsListHdr" role="button" tabindex="0" aria-expanded="' + (!collapsed) + '" title="' + (collapsed ? 'Show' : 'Hide') + ' this day’s appointment list">' +
+            '<span class="ds-caret">' + (collapsed ? '▸' : '▾') + '</span> ' +
+            esc(fmtDay(DS.day)) + ' - ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' loaded' +
+            (collapsed ? ' <span class="ds-hint">(tap to expand)</span>' : '') + '</div>';
+    if (!collapsed) {
+      if (!rows.length) h += '<div class="ds-empty">Nothing loaded for this day yet - tap "Pull this day" to get it from Athena, or it may genuinely be empty.</div>';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        h += '<div class="ds-row"><span class="ds-tm">' + esc(fmt12(r.time) || '-') + '</span><span>' + esc(r.name) + '</span>' +
+             (r.dob ? '<span class="ds-dob">DOB ' + esc(r.dob) + '</span>' : '') +
+             '<span class="ds-pv">' + esc(r.prov || 'Provider not recorded') + '</span></div>';
+      }
     }
     el.innerHTML = h;
     host.parentNode.insertBefore(el, host.nextSibling);
+    var hdr = $('mlsDsListHdr');
+    if (hdr) {
+      hdr.onclick = function () { DS.listCollapsed = !DS.listCollapsed; renderList(); };
+      hdr.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); DS.listCollapsed = !DS.listCollapsed; renderList(); } };
+    }
   }
 
   function syncStrip() {
