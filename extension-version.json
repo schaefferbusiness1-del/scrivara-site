@@ -1,5 +1,5 @@
 {
   "version": "2.9.25",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.25 - Resolve demographics-free Athena schedules through the exact appointment id, prove a true same-tab navigation delta, bind a freshly read all-frame patient banner name and DOB to that navigation, restore the requested date after recovery, preserve exact provider/day/month and repeat-pull identity, and fail closed on duplicate ids, stale banners, collisions, or incomplete history evidence."
+  "notes": "v2.9.25 - Verified first-pass day reads: the full schedule and every patient's chart history read with exact identity proof (name, DOB, MRN, appointment id) on each step. Encounter notes that render in the visit slideout are captured faithfully, abbreviated patient banners match safely, background pulls keep working while you work fullscreen, and every read still fails closed on any identity or coverage doubt. Includes the reviewed in-note Athena write flow with explicit per-click confirmation - nothing is saved, signed, billed, or ordered by the assistant."
 }
