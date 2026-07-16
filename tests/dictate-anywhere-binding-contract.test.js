@@ -101,7 +101,7 @@ function finalResult(text) {
 }
 
 const h = makeHarness();
-assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.0.2');
+assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.0.3');
 for (const id of ['transcript', 'noteBox', 'patientLabel', 'ez3Transcript', 'ez3Note', 'mlsProtoScratch']) {
   assert(source.includes("id === '" + id + "'"), `clinical dictation alias ${id} is not visit-scoped`);
 }

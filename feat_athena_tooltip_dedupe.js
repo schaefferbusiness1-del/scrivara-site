@@ -40,7 +40,7 @@
  *   (B) If such a button holds >1 custom popover, keep the FIRST and hide the
  *       extras (`display:none` + `data-mlsdd-hidden`) -> exactly one shows.
  *   Re-applied on re-render (MutationObserver childList+subtree+`title` attr,
- *   plus a 1500ms safety poll matching the §64/§66/§67 owners' cadence),
+ *   plus bounded late-mount passes during the initial feature wave),
  *   because the owners re-create the cards (and re-add the native title).
  *
  * It does NOT touch: the custom popover content, the `.mlstip-host` /
@@ -75,7 +75,7 @@
   var stashedTips = [];    // {el} elements we removed a universal data-tip from
   var hiddenPops = [];     // {el, prevDisplay} popovers we hid as duplicates
   var addedTips = [];      // {el, value} clarity tips added by this module
-  var _obs = null, _raf = 0, _pollT = null;
+  var _obs = null, _raf = 0, _bootTimers = [];
   var _hoverGuardOn = false;
 
   function ce(tag, cls) { var el = document.createElement(tag); if (cls) el.className = cls; return el; }
@@ -292,6 +292,14 @@
     _raf = (W.requestAnimationFrame ? W.requestAnimationFrame(run) : setTimeout(run, 16));
   }
 
+  function relevantAddedNode(node) {
+    try {
+      if (!node || node.nodeType !== 1) return false;
+      var sel = HOST_SEL + ',' + POP_SEL + ',.mlsTbItem,[role="menuitem"],.cx-mini-prev,.cx-mini-next,button.modal-x,button[aria-label],[role="button"][aria-label],button[onclick^="copySection("]';
+      return !!((node.matches && node.matches(sel)) || (node.querySelector && node.querySelector(sel)));
+    } catch (e) { return false; }
+  }
+
   function guardCustomHover(ev) {
     try {
       var el = ev && ev.target && ev.target.closest ? ev.target.closest(HOST_SEL) : null;
@@ -322,16 +330,24 @@
       _obs = new MutationObserver(function (muts) {
         for (var i = 0; i < muts.length; i++) {
           var m = muts[i];
-          if (m.type === 'attributes' && (m.attributeName === 'title' || m.attributeName === 'data-tip')) { schedulePass(); return; }
-          if (m.addedNodes && m.addedNodes.length) { schedulePass(); return; }
+          if (m.type === 'attributes' && (m.attributeName === 'title' || m.attributeName === 'data-tip')) {
+            var host = hostButtonOf(m.target); if (host) processButton(host);
+            continue;
+          }
+          for (var j = 0; m.addedNodes && j < m.addedNodes.length; j++) {
+            if (relevantAddedNode(m.addedNodes[j])) { schedulePass(); return; }
+          }
         }
       });
       _obs.observe(document.body || document.documentElement, {
         childList: true, subtree: true, attributes: true, attributeFilter: ['title', 'data-tip']
       });
     } catch (e) {}
-    // slow safety poll mirrors the §64/§66/§67 owners' 1500ms re-render cadence
-    _pollT = setInterval(function () { schedulePass(); }, 1500);
+    // bounded boot retries cover late initial card owners without an idle poll
+    /* Bounded late-mount passes cover the initial feature wave. After that the
+       filtered observer and focus/hover guards own updates; there is no
+       permanent whole-document tooltip scan. */
+    [500,1500,3000].forEach(function (delay) { _bootTimers.push(setTimeout(schedulePass, delay)); });
   }
 
   function boot() {
@@ -350,7 +366,7 @@
 
   function revert() {
     try { if (_obs) { _obs.disconnect(); _obs = null; } } catch (e) {}
-    try { if (_pollT) { clearInterval(_pollT); _pollT = null; } } catch (e) {}
+    try { _bootTimers.forEach(function (timer) { clearTimeout(timer); }); _bootTimers = []; } catch (e) {}
     if (_hoverGuardOn) {
       try { document.removeEventListener('mouseover', guardCustomHover, true); } catch (e) {}
       try { document.removeEventListener('focusin', guardCustomHover, true); } catch (e) {}
@@ -440,16 +456,16 @@
   var retryCount = 0;
   var topObserver = null;
   var visitObserver = null;
+  var portalObserver = null;
+  var portalMountObserver = null;
   var settingsObserver = null;
   var reconciling = false;
   var initialAdvancedSettled = false;
   var activeSettingsGroup = 'account';
   var settingsWasOpen = false;
   var settingsMoves = [];
-  var settingsScrollBindings = [];
-  var settingsScrollToken = 0;
-  var settingsDesiredTop = 0;
-  var settingsApplyingScroll = false;
+  var concernRaf = 0;
+  var concernQueue = {};
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -590,8 +606,9 @@
       var email2 = accountEmail();
       var avatar = existing.querySelector('.mls-account-avatar');
       var id = existing.querySelector('.mls-account-id');
-      if (avatar) avatar.textContent = initials(email2);
-      if (id) id.textContent = email2 || 'Signed-in MLS account';
+      var nextAvatar = initials(email2), nextId = email2 || 'Signed-in MLS account';
+      if (avatar && avatar.textContent !== nextAvatar) avatar.textContent = nextAvatar;
+      if (id && id.textContent !== nextId) id.textContent = nextId;
     }
     hideLegacyAccountRows();
     dedupeHowTo();
@@ -636,9 +653,10 @@
         open = document.body.classList.contains('ez3adv');
       }
     }
-    trigger.textContent = open ? 'Hide advanced workspace' : 'Advanced visit workspace';
-    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-    trigger.setAttribute('aria-controls', 'captureCard');
+    var nextLabel = open ? 'Hide advanced workspace' : 'Advanced visit workspace';
+    if (trigger.textContent !== nextLabel) trigger.textContent = nextLabel;
+    if (trigger.getAttribute('aria-expanded') !== (open ? 'true' : 'false')) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (trigger.getAttribute('aria-controls') !== 'captureCard') trigger.setAttribute('aria-controls', 'captureCard');
     return true;
   }
 
@@ -681,7 +699,7 @@
       else pass.removeAttribute('minlength'); /* preserve login compatibility */
     }
     if (confirm) confirm.setAttribute('minlength', '8');
-    var helper = byId('mlsPasswordStandard');
+    var helper = byId('authPasswordStandard') || byId('mlsPasswordStandard');
     if (!helper && byId('authConfirmField')) {
       helper = document.createElement('p');
       helper.id = 'mlsPasswordStandard';
@@ -689,7 +707,7 @@
       helper.textContent = 'Use at least 8 characters.';
       byId('authConfirmField').insertAdjacentElement('afterend', helper);
     }
-    if (helper) helper.classList.toggle('is-visible', signupMode);
+    if (helper) { helper.classList.toggle('is-visible', signupMode); helper.style.display = signupMode ? 'block' : 'none'; }
 
     ['resetPass', 'resetPass2'].forEach(function (id) {
       var el = byId(id); if (el) el.setAttribute('minlength', '8');
@@ -921,52 +939,10 @@
     if (modal) modal.setAttribute('data-mls-settings-active', key);
   }
 
-  function settingsScrollBody() {
-    var modal = byId('settingsModal');
-    return modal && safe(function () { return modal.querySelector('.modal'); }, null);
-  }
-
-  function preserveSettingsScroll(body, top, token) {
-    if (!body) return;
-    var max = Math.max(0, body.scrollHeight - body.clientHeight);
-    var wanted = Math.max(0, Math.min(Number(top) || 0, max));
-    settingsDesiredTop = wanted;
-    function again() {
-      var modal = byId('settingsModal');
-      if (token !== settingsScrollToken || !modal || !modal.classList.contains('show')) return;
-      var cap = Math.max(0, body.scrollHeight - body.clientHeight);
-      settingsApplyingScroll = true;
-      body.scrollTop = Math.max(0, Math.min(settingsDesiredTop, cap));
-      requestAnimationFrame(function () { settingsApplyingScroll = false; });
-    }
-    /* Keep restoration inside the same layout transaction. Long delayed writes
-       fight real wheel/trackpad gestures and were the snap-to-top source. */
-    again();
-    safe(function () { requestAnimationFrame(again); });
-  }
-
-  /* Several late modules can add a Settings section. Remember the native
-     compositor-owned position so a real section rebuild can restore it once.
-     Never intercept wheel/touch input: preventDefault + synchronous layout
-     reads made high-resolution mice and trackpads visibly stutter. */
-  function ensureSettingsScrollGuard() {
-    var body = settingsScrollBody(); if (!body || body.__mlsSettingsScrollGuard) return;
-    body.__mlsSettingsScrollGuard = true;
-    settingsDesiredTop = body.scrollTop || 0;
-    function rememberNativeScroll() {
-      if (settingsApplyingScroll) return;
-      settingsDesiredTop = body.scrollTop || 0;
-      settingsScrollToken++;
-    }
-    body.addEventListener('scroll', rememberNativeScroll, { passive: true });
-    settingsScrollBindings.push({ body: body, scroll: rememberNativeScroll });
-  }
-
   function selectSettingsGroup(key, focusTab, resetScroll) {
     var modal = byId('settingsModal'), bar = byId('settingsTabBar');
     if (!modal || !bar || !allowedSettingsGroup(key)) return;
     var body = modal.querySelector('.modal');
-    var previousScroll = body ? body.scrollTop : 0;
     activeSettingsGroup = key;
     directSettingsSections().forEach(function (section) {
       var show = settingsGroupFor(section) === key && allowedSettingsGroup(key);
@@ -982,16 +958,12 @@
     var intro = byId('settingsIntro');
     if (intro) intro.style.display = key === 'account' && text(intro) ? '' : 'none';
     updateSettingsFooter(key);
-    /* Background rebuilds preserve the user's position. Only an explicit tab
-       change intentionally returns the newly selected section to its top. */
+    /* The browser is the sole owner of Settings scrolling. Background section
+       reconciliation performs no scroll writes; only an explicit tab choice
+       intentionally starts the newly selected group at the top. */
     if (body && resetScroll === true) {
-      settingsScrollToken++;
-      settingsDesiredTop = 0;
       body.scrollTop = 0;
-    } else if (body) {
-      preserveSettingsScroll(body, previousScroll, settingsScrollToken);
     }
-    ensureSettingsScrollGuard();
   }
 
   function settingsTabKeydown(ev) {
@@ -1044,7 +1016,6 @@
       return sections.some(function (section) { return settingsGroupFor(section) === group.key; }) && allowedSettingsGroup(group.key);
     }).length)) buildCleanSettingsTabs(sections);
     else selectSettingsGroup(activeSettingsGroup, false, false);
-    ensureSettingsScrollGuard();
     if (open && !settingsWasOpen) {
       var provider = byId('providerName'), legacy = byId('docName');
       if (provider && legacy) {
@@ -1068,6 +1039,21 @@
     reconciling = false;
   }
 
+  function scheduleConcern(name) {
+    concernQueue[name] = true;
+    if (concernRaf) return;
+    var run = function () {
+      concernRaf = 0;
+      var queue = concernQueue; concernQueue = {};
+      if (queue.top) safe(ensureAccountAccess);
+      if (queue.visit) safe(reconcileAdvanced);
+      if (queue.portal) safe(reconcilePortalOwner);
+      if (queue.settings) safe(reconcileSettings);
+      if (queue.auth) safe(reconcileAuth);
+    };
+    concernRaf = W.requestAnimationFrame ? W.requestAnimationFrame(run) : setTimeout(run, 16);
+  }
+
   function scheduleReconcile(reset) {
     if (reset) retryCount = 0;
     if (retryTimer) return;
@@ -1080,17 +1066,36 @@
   }
 
   function observeStableRoots() {
-    var top = byId('mlsRdTop'), visit = byId('mlsEz3'), settings = byId('settingsModal');
+    var top = byId('mlsRdTop'), visit = byId('mlsEz3'), portal = byId('mlsCtxBar'), settings = byId('settingsModal');
     if (top && !topObserver) {
-      topObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      topObserver = new MutationObserver(function () { scheduleConcern('top'); });
       topObserver.observe(top, { childList: true, subtree: true });
     }
     if (visit && !visitObserver) {
-      visitObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      visitObserver = new MutationObserver(function () { scheduleConcern('visit'); });
       visitObserver.observe(visit, { childList: true, subtree: true });
     }
+    if (portal && !portalObserver) {
+      portalObserver = new MutationObserver(function () { scheduleConcern('portal'); });
+      portalObserver.observe(portal, { childList: true, subtree: true });
+      scheduleConcern('portal');
+    } else if (!portal && !portalMountObserver) {
+      var app = byId('appScreen');
+      if (app) {
+        portalMountObserver = new MutationObserver(function () {
+          var mounted = byId('mlsCtxBar'); if (!mounted) return;
+          portalMountObserver.disconnect(); portalMountObserver = null;
+          if (!portalObserver) {
+            portalObserver = new MutationObserver(function () { scheduleConcern('portal'); });
+            portalObserver.observe(mounted, { childList: true, subtree: true });
+          }
+          scheduleConcern('portal');
+        });
+        portalMountObserver.observe(app, { childList: true });
+      }
+    }
     if (settings && !settingsObserver) {
-      settingsObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      settingsObserver = new MutationObserver(function () { scheduleConcern('settings'); });
       /* Do not observe descendant classes: selected-tab classes are our own
          output and previously fed back into another rebuild and scroll reset. */
       settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] });
@@ -1102,6 +1107,10 @@
   function onDocumentClick(ev) {
     var target = ev && ev.target;
     if (!target) return;
+    if (safe(function () { return !!target.closest('#tabLogin,#tabSignup'); }, false)) {
+      setTimeout(function () { scheduleConcern('auth'); }, 0);
+      return;
+    }
     if (target.id === 'authBtn' || safe(function () { return !!target.closest('#authBtn'); }, false)) {
       if (isSignupMode()) {
         var signupPass = byId('authPass');
@@ -1113,9 +1122,9 @@
         }
       }
       initialAdvancedSettled = false;
-      scheduleReconcile(true);
-      setTimeout(reconcileAll, 500);
-      setTimeout(reconcileAll, 1400);
+      scheduleConcern('auth');
+      setTimeout(function () { scheduleConcern('auth'); }, 500);
+      setTimeout(function () { scheduleConcern('auth'); }, 1400);
       return;
     }
     if (target.id === 'resetBtn' || safe(function () { return !!target.closest('#resetBtn'); }, false)) {
@@ -1142,7 +1151,6 @@
       return;
     }
     if (!safe(function () { return !!target.closest('#' + ACCOUNT_WRAP_ID); }, false)) closeAccountMenu();
-    setTimeout(reconcileAll, 0);
   }
 
   function boot() {
@@ -1154,8 +1162,12 @@
   function revert() {
     document.removeEventListener('click', onDocumentClick, true);
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (concernRaf) { if (W.cancelAnimationFrame) W.cancelAnimationFrame(concernRaf); else clearTimeout(concernRaf); concernRaf = 0; }
+    concernQueue = {};
     if (topObserver) { topObserver.disconnect(); topObserver = null; }
     if (visitObserver) { visitObserver.disconnect(); visitObserver = null; }
+    if (portalObserver) { portalObserver.disconnect(); portalObserver = null; }
+    if (portalMountObserver) { portalMountObserver.disconnect(); portalMountObserver = null; }
     if (settingsObserver) { settingsObserver.disconnect(); settingsObserver = null; }
     var wrap = byId(ACCOUNT_WRAP_ID); if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
     var helper = byId('mlsPasswordStandard'); if (helper && helper.parentNode) helper.parentNode.removeChild(helper);
@@ -1185,13 +1197,6 @@
       if (move.el) { move.el.removeAttribute('data-mls-settings-move'); move.el.classList.remove('mls-settings-moved'); }
     }
     settingsMoves = [];
-    settingsScrollToken++;
-    settingsScrollBindings.forEach(function (binding) {
-      if (!binding || !binding.body) return;
-      binding.body.removeEventListener('scroll', binding.scroll, false);
-      try { delete binding.body.__mlsSettingsScrollGuard; } catch (e) { binding.body.__mlsSettingsScrollGuard = false; }
-    });
-    settingsScrollBindings = [];
     var settingsModal = byId('settingsModal');
     if (settingsModal) {
       settingsModal.classList.remove('mls-settings-clean'); settingsModal.removeAttribute('data-mls-settings-active');

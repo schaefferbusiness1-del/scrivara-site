@@ -1,7 +1,6 @@
 /* MLS service worker — enables install (PWA) + offline shell.
-   Strategy: NETWORK-FIRST for same-origin requests so users always get the
-   latest deployed app when online (avoids stale-version problems); falls back
-   to cache only when offline. The API backend (onrender.com) is never cached.
+   Strategy: network-first for HTML/unversioned requests; exact versioned app
+   assets are immutable and cache-first. The API backend is never cached.
 
    v2 (2026-06-08): self-healing update. The cache name is bumped so the
    activate handler deletes every older cache — this purges any bad responses
@@ -10,7 +9,7 @@
    and replayed. Changing this file's bytes makes browsers fetch, install, and
    (via skipWaiting + clients.claim) immediately activate this new worker, so
    existing visitors self-heal on their next load with no manual cache clearing. */
-const CACHE = 'mls-v4';
+const CACHE = 'mls-v5';
 const SHELL = [
   'ScribeFlow.html',
   'index.html',
@@ -45,18 +44,39 @@ self.addEventListener('fetch', (e) => {
   // For HTML page loads, bypass the browser's ~10-min HTTP cache so a freshly
   // deployed version is never hidden behind a stale cached page.
   const isNav = req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') > -1;
+  /* Versioned JS/CSS URLs are immutable: every deploy changes ?v=. Serve an
+     already-cached exact version immediately instead of revalidating roughly
+     200 feature assets after the CDN's short max-age. HTML stays network-first
+     so a new build key is discovered normally. */
+  const isVersionedAsset = !isNav && url.searchParams.has('v') && /\.(?:js|css|woff2?)$/i.test(url.pathname);
+  if (isVersionedAsset) {
+    let cacheWrite = Promise.resolve();
+    const response =
+      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+        if (res && res.ok && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          cacheWrite = caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
+        return res;
+      })).catch(() => caches.match(req).then((m) => m || Response.error()));
+    e.respondWith(response);
+    e.waitUntil(response.then(() => cacheWrite).catch(() => {}));
+    return;
+  }
   const fetchReq = isNav ? new Request(req.url, { cache: 'reload', credentials: 'same-origin' }) : req;
-  e.respondWith(
+  let cacheWrite = Promise.resolve();
+  const response =
     fetch(fetchReq)
       .then((res) => {
         // Cache ONLY genuine, complete 200 OK responses — never 404s, redirects,
         // or opaque/error responses, so a bad page can't be stored and replayed.
         if (res && res.ok && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          cacheWrite = caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
       })
-      .catch(() => caches.match(req).then((m) => m || caches.match('ScribeFlow.html')))
-  );
+      .catch(() => caches.match(req).then((m) => m || caches.match('ScribeFlow.html')));
+  e.respondWith(response);
+  e.waitUntil(response.then(() => cacheWrite).catch(() => {}));
 });

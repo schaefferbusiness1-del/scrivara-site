@@ -28,10 +28,22 @@ assert(showSource.includes('html.mls-secure-loading #mlsBusyPill') && showSource
 assert(showSource.includes('html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}'), 'underlying app controls can leak above the secure loading surface');
 assert(showSource.includes('html.mls-secure-loading #mlsCopVoiceBtn') && showSource.includes('html.mls-secure-loading #mlsAsstFab') && showSource.includes('html.mls-secure-loading #mlsDaDock'), 'persistent voice controls can leak above the loading surface');
 assert(showSource.includes("bootVeil=document.getElementById('mlsBootVeil'); if(bootVeil) bootVeil.remove()"), 'the secure owner no longer retires the fallback boot veil');
-assert(app.includes('const SF_GATE_MIN_MS=5200, SF_GATE_MAX_MS=9000, SF_GATE_QUIET_MS=500'), 'long, bounded, quiet-window loading contract was lost');
+assert(app.includes('const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700'), 'long, bounded, quiet-window loading contract was lost');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV=\"b310\""), 'ScribeFlow loader was not cache-busted to b310');
+assert(app.includes("window.__MLS_AV='b310'"), 'ScribeFlow loader was not cache-busted to b310');
+
+const sessionStart = app.indexOf('function startSession(email)');
+const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
+assert(sessionSource.includes("}else if(typeof sfShowGateLoading==='function')") && sessionSource.includes('sfShowGateLoading();'), 'local/demo startup can flash the unfinished app instead of mounting the green loader');
+assert(sessionSource.includes("_bundleReadyPromise=typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():Promise.resolve(false)"), 'local/demo startup no longer waits for its on-demand UI bundle');
+assert(sessionSource.includes("return typeof sfHideGateLoading==='function'?sfHideGateLoading(false):undefined"), 'local/demo startup cannot retire its green loader after bundle settlement');
+
+const stableStart = app.indexOf('function sfWaitForStableFirstFrame(');
+const stableSource = app.slice(stableStart, app.indexOf('function sfShowGateLoading', stableStart));
+const readinessCheck = stableSource.indexOf('if(!(bundleReady&&ownerReady&&assetReady&&coreReady&&enhancedReady))');
+const layoutSample = stableSource.indexOf('const sig=sfLoaderFrameSignature()');
+assert(readinessCheck >= 0 && layoutSample > readinessCheck, 'loader samples layout before the critical UI/asset wave settles');
 
 const nodes = {};
 const removed = [];

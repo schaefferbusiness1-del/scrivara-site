@@ -1,6 +1,6 @@
 /* feat_agent_actions3 — MLS Agent one-tap actions (item #3, 2026-07-03). Supersedes v2:
-   the panel is position:fixed so offsetParent is null even when open — use bounding-rect width to
-   detect "open" instead. Runs first + sets the shared guard so the older v2 below no-ops. Additive/safe. */
+   use a bounded late-mount retry without layout reads, permanent polling, or a document-wide
+   observer. Runs first + sets the shared guard so the older v2 below no-ops. */
 (function(){
   "use strict";
   if(window.__mlsAgentActions) return; window.__mlsAgentActions=true;
@@ -28,9 +28,8 @@
   function inject(){
     try{
       var inRow=document.getElementById('mlsP1AgIn');
-      if(!inRow) return;
-      if(inRow.getBoundingClientRect().width < 5) return;   // panel not open/visible yet
-      if(document.getElementById('mlsAgentActBar')) return; // idempotent
+      if(!inRow) return false;
+      if(document.getElementById('mlsAgentActBar')) return true; // idempotent
       var bar=document.createElement('div');
       bar.id='mlsAgentActBar';
       bar.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:4px 8px 6px';
@@ -44,9 +43,16 @@
         bar.appendChild(b);
       });
       inRow.parentNode.insertBefore(bar, inRow);
-    }catch(e){}
+      return true;
+    }catch(e){ return false; }
   }
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1200);
+  var attempts=0, retryTimer=0;
+  function boot(){
+    if(inject()) return;
+    if(attempts++<80) retryTimer=setTimeout(boot,250);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true});
+  else boot();
+  window.addEventListener('mls:ui-ready',boot,{once:true});
 })();

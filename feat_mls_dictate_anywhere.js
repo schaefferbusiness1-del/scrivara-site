@@ -1,5 +1,5 @@
 /* =============================================================================
- * __mlsDictateAnywhere  da-1.0.2   (2026-07-14, owner directive)
+ * __mlsDictateAnywhere  da-1.0.3   (2026-07-15, owner directive)
  * -----------------------------------------------------------------------------
  * "There is always a chance to dictate into any text box."
  * Focus any textarea / text-ish input / contenteditable in MLS Scribe and a
@@ -23,7 +23,7 @@
   'use strict';
   if (window.__mlsDictateAnywhere) return;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var api = { installed: true, version: 'da-1.0.2', supported: !!SR, starts: 0 };
+  var api = { installed: true, version: 'da-1.0.3', supported: !!SR, starts: 0 };
   window.__mlsDictateAnywhere = api;
   if (!SR) { api.revert = function () {}; return; }
 
@@ -39,6 +39,7 @@
   var recognitionBinding = null;
   var recognitionBindingEpoch = null;
   var hideT = null;
+  var moveRaf = null;
   var unregisterSpeech = null;
 
   function speechHub() {
@@ -157,10 +158,13 @@
     try {
       var r = field.getBoundingClientRect();
       if (!r.width && !r.height) { hide(); return; }
+      var chipWidth = c.offsetWidth;
       var top = r.top - 13;
       if (top < 4) top = r.bottom + 5;
-      c.style.top = Math.round(top) + 'px';
-      c.style.left = Math.round(Math.max(8, r.right - c.offsetWidth - 10)) + 'px';
+      var nextTop = Math.round(top) + 'px';
+      var nextLeft = Math.round(Math.max(8, r.right - chipWidth - 10)) + 'px';
+      if (c.style.top !== nextTop) c.style.top = nextTop;
+      if (c.style.left !== nextLeft) c.style.left = nextLeft;
     } catch (e) {}
   }
 
@@ -346,12 +350,16 @@
       if (!listening && document.activeElement !== field) hide();
     }, 160);
   }
-  function onMove() { place(); }
+  function onMove() {
+    if (moveRaf != null) return;
+    var run = function () { moveRaf = null; place(); };
+    moveRaf = window.requestAnimationFrame ? window.requestAnimationFrame(run) : setTimeout(run, 16);
+  }
 
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('focusout', onFocusOut, true);
-  window.addEventListener('scroll', onMove, true);
-  window.addEventListener('resize', onMove);
+  window.addEventListener('scroll', onMove, { capture: true, passive: true });
+  window.addEventListener('resize', onMove, { passive: true });
 
   api.revert = function () {
     try { stop(); } catch (e) {}
@@ -361,6 +369,8 @@
     document.removeEventListener('focusout', onFocusOut, true);
     window.removeEventListener('scroll', onMove, true);
     window.removeEventListener('resize', onMove);
+    try { if (moveRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(moveRaf); else clearTimeout(moveRaf); } } catch (e1) {}
+    moveRaf = null;
     try { var c = document.getElementById(CHIP_ID); if (c) c.remove(); } catch (e) {}
     try { var dk = document.getElementById(DOCK_ID); if (dk) dk.remove(); } catch (e) {}
     try { var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e) {}

@@ -4,7 +4,8 @@
    computed client-side from window._calAppts. Fills in as more months are pulled from Athena. Read-only/safe. */
 (function(){
   "use strict";
-  if(window.__mlsDaysWorked) return; window.__mlsDaysWorked=true;
+  if(window.__mlsDaysWorked) return;
+  var api={installed:true,version:'dw-1.1.0'}; window.__mlsDaysWorked=api;
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
@@ -61,7 +62,6 @@
     try{
       var grid=document.getElementById('analysisView');
       if(!grid) return;
-      if(grid.getBoundingClientRect().width < 5) return;   // only when Analysis view is visible
       if(document.getElementById('mlsDWCard')) return;
       var model=[].slice.call(grid.children).filter(function(c){ return /(^|\s)card(\s|$)/.test((c.className||'').toString()); })[0];
       var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
@@ -73,6 +73,15 @@
     }catch(e){}
   }
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1500);
+  function onViewClick(ev){
+    try{ if(ev.target&&ev.target.closest&&ev.target.closest('#nav_analysis')) setTimeout(inject,0); }catch(e){}
+  }
+  function boot(){ inject(); document.addEventListener('click',onViewClick,true); }
+  api.refresh=inject;
+  api.revert=function(){
+    document.removeEventListener('click',onViewClick,true);
+    try{ var card=document.getElementById('mlsDWCard'); if(card) card.remove(); }catch(e){}
+    api.installed=false;
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
 })();

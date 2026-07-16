@@ -26,6 +26,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://scrivara-backend.onrender.com" crossorigin>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});var _swReloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(_swReloaded)return;_swReloaded=true;location.reload();});}</script>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
@@ -941,8 +942,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <div class="field" id="authConfirmField" style="display:none">
       <label for="authPass2">Confirm password</label>
-      <input type="password" id="authPass2" placeholder="••••••••" autocomplete="new-password">
+      <input type="password" id="authPass2" placeholder="••••••••" autocomplete="new-password" minlength="8">
     </div>
+    <p class="local-note" id="authPasswordStandard" style="display:none;margin-top:-4px">🔒 Use at least 8 characters.</p>
 
     <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
 
@@ -969,14 +971,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="auth-err" id="resetErr"></div>
     <div class="field">
       <label for="resetPass">New password</label>
-      <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password">
+      <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password" minlength="8">
     </div>
     <div class="field">
       <label for="resetPass2">Confirm new password</label>
-      <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password">
+      <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password" minlength="8">
     </div>
     <button class="btn-primary" id="resetBtn" style="width:100%" onclick="doResetPassword()">Update password</button>
-    <p class="local-note">🔒 Choose a password of at least 6 characters. You'll log in with it next.</p>
+    <p class="local-note">🔒 Choose a password of at least 8 characters. You'll log in with it next.</p>
   </div>
 
   <!-- Two-factor code card, shown when login returns twofa_required -->
@@ -4018,7 +4020,10 @@ function switchAuth(mode){
   document.getElementById('tabSignup').classList.toggle('on',mode==='signup');
   document.getElementById('authConfirmField').style.display=mode==='signup'?'block':'none';
   document.getElementById('authBtn').textContent=mode==='signup'?'Create account':'Log in';
-  document.getElementById('authPass').setAttribute('autocomplete',mode==='signup'?'new-password':'current-password');
+  const pass=document.getElementById('authPass');
+  pass.setAttribute('autocomplete',mode==='signup'?'new-password':'current-password');
+  if(mode==='signup') pass.setAttribute('minlength','8'); else pass.removeAttribute('minlength');
+  const standard=document.getElementById('authPasswordStandard'); if(standard) standard.style.display=mode==='signup'?'block':'none';
   hideAuthErr();
 }
 function showAuthErr(m){ const e=document.getElementById('authErr'); e.textContent=m; e.classList.add('show'); }
@@ -4085,7 +4090,7 @@ async function doResetPassword(){
   if(errEl) errEl.classList.remove('show');
   const p1=document.getElementById('resetPass').value;
   const p2=document.getElementById('resetPass2').value;
-  if(!p1 || p1.length<6){ showErr('Password must be at least 6 characters.'); return; }
+  if(!p1 || p1.length<8){ showErr('Password must be at least 8 characters.'); return; }
   if(p1!==p2){ showErr('Passwords do not match.'); return; }
   const btn=document.getElementById('resetBtn');
   const orig=btn?btn.textContent:'';
@@ -4120,7 +4125,8 @@ async function doAuth(){
   const email=document.getElementById('authEmail').value.trim().toLowerCase();
   const pass=document.getElementById('authPass').value;
   if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showAuthErr('Enter a valid email address.'); return; }
-  if(!pass || pass.length<6){ showAuthErr('Password must be at least 6 characters.'); return; }
+  const authMin=authMode==='signup'?8:6;
+  if(!pass || pass.length<authMin){ showAuthErr('Password must be at least '+authMin+' characters.'); return; }
 
   // HOSTED BACKEND MODE → server-side auth via Bearer token (no local accounts).
   if(backendMode()){
@@ -4382,12 +4388,25 @@ function startSession(email){
   document.getElementById('appScreen').style.display='block';
   let _startupId=0, _startupController=null;
   let _sessionReady=null;
+  let _bundleReadyPromise=null;
+  let _identityReady=null, _startupOpts=null, _refreshPromise=null;
   if(_gateMode){
     _startupId=++sfSessionStartupId;
     try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
     try{ _startupController=typeof AbortController==='function'?new AbortController():null; }catch(e){ _startupController=null; }
     sfActiveStartupController=_startupController;
     if(typeof sfShowGateLoading==='function') sfShowGateLoading();
+    /* Dispatch identity immediately so DNS/TLS/API work overlaps the purely
+       synchronous local UI preparation below. Promise continuations cannot
+       repaint until this task finishes, preserving the startup ordering. */
+    let _identityResolve;
+    _identityReady=new Promise(resolve=>{ _identityResolve=resolve; });
+    _startupOpts={startupId:_startupId,signal:_startupController&&_startupController.signal,deferRender:true,cancelled:false,onIdentity:_identityResolve};
+    _refreshPromise=Promise.resolve(refreshMe(_startupOpts)).catch(()=>false);
+  }else if(typeof sfShowGateLoading==='function'){
+    /* Local/demo sessions use the same branded first-paint owner. Because this
+       runs in the login click task, the base UI never flashes before it. */
+    sfShowGateLoading();
   }
   document.getElementById('whoLabel').textContent='👤 '+email;
   document.getElementById('histWho').textContent=email;
@@ -4400,12 +4419,10 @@ function startSession(email){
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide (per-user)
   try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){} // 🧩 doctor-built custom widget cards (per-user)
   renderDots();
-  renderHistory();
   newVisit({preserveRecovery:true});
-  updateNavCounts();
   showView('visit');   // land ready to record the first patient — not the busy Patients list
   applyBackendModeUI();
-  applyAccessUI();
+  if(!_gateMode) applyAccessUI();
   renderDocPrefs();
   attachIdleListeners();
   resetIdle();            // start the inactivity timer for this session
@@ -4418,23 +4435,51 @@ function startSession(email){
     // sign or log out. On resolve: gate shown → leave app hidden under it;
     // not gated (signed, or network error) → reveal the app. A network error
     // never traps the user (checkAgreementsGate returns false → app opens).
-    let _identityResolve;
-    const _identityReady=new Promise(resolve=>{ _identityResolve=resolve; });
-    const _startupOpts={startupId:_startupId,signal:_startupController&&_startupController.signal,deferRender:true,cancelled:false,onIdentity:_identityResolve};
-    let _deadlineTimer=0;
+    let _gatePhaseTimer=0, _deadlineTimer=0;
     let _gateDecision=null;
-    const _gateCheck=_identityReady.then(()=>checkAgreementsGate(_startupOpts)).then(value=>{ _gateDecision=!!value; return _gateDecision; }).catch(()=>false);
+    const _gateAttempt=_identityReady.then(()=>checkAgreementsGate(_startupOpts)).catch(()=>false);
+    /* Give identity + compliance their own bounded phase. Previously the gate
+       could consume the entire startup deadline and leave only a few hundred
+       milliseconds for the visible UI bundle. Aborting this generation also
+       prevents a late identity response from repainting after reveal. */
+    const _gateTimeout=new Promise(resolve=>{
+      _gatePhaseTimer=setTimeout(()=>{
+        _startupOpts.cancelled=true;
+        try{ if(_startupController) _startupController.abort(); }catch(e){}
+        resolve(false);
+      },10000);
+    });
+    const _gateCheck=Promise.race([_gateAttempt,_gateTimeout]).then(value=>{
+      clearTimeout(_gatePhaseTimer);
+      _gateDecision=!!value;
+      return _gateDecision;
+    }).catch(()=>false);
+    /* Do not parse and initialize the 200+ optional feature assets for an
+       unsigned account that can only see the compliance gate. Signed users
+       start the bundle as soon as the gate decision is known, while the green
+       loader remains the single first-paint owner. */
+    const _uiReady=_gateCheck.then(gated=>{
+      if(gated) return true;
+      return typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():false;
+    }).catch(()=>false);
     const _hydrate=Promise.all([
-      Promise.resolve(refreshMe(_startupOpts)).catch(()=>false),
-      _gateCheck
+      _refreshPromise,
+      _gateCheck,
+      _uiReady
     ]).then(results=>sfStartupValid(_startupOpts)?!!results[1]:false).catch(()=>false);
-    /* An optional or unreachable endpoint must never leave the user trapped.
-       Every participant checks the same generation before applying results, so
-       a timed-out response cannot repaint the app after it becomes interactive. */
+    /* Absolute recovery still exists, but it now leaves a full protected budget
+       after the gate phase for the large first-run UI bundle and quiet-frame
+       verification. No optional endpoint can trap the user indefinitely. */
     const _deadline=new Promise(resolve=>{
-      _deadlineTimer=setTimeout(()=>{ _startupOpts.cancelled=true; try{ if(_startupController) _startupController.abort(); }catch(e){} resolve(_gateDecision===true); },7200);
+      _deadlineTimer=setTimeout(()=>{
+        _startupOpts.cancelled=true;
+        try{ if(_startupController) _startupController.abort(); }catch(e){}
+        try{ if(typeof window.__mlsAbortUiBundle==='function') window.__mlsAbortUiBundle('session-deadline'); }catch(e){}
+        resolve(_gateDecision===true);
+      },30200);
     });
     _sessionReady=Promise.race([_hydrate,_deadline]).then(gated=>{
+      clearTimeout(_gatePhaseTimer);
       clearTimeout(_deadlineTimer);
       if(_startupId!==sfSessionStartupId) return;
       return typeof sfHideGateLoading==='function'?sfHideGateLoading(!!gated):undefined;
@@ -4444,11 +4489,19 @@ function startSession(email){
       if(sfActiveStartupController===_startupController) sfActiveStartupController=null;
     });
     window.__mlsSessionReady=_sessionReady;
+  }else{
+    /* Demo/local mode has no compliance decision. Load the enhancement bundle
+       on demand now instead of penalizing the unauthenticated production page. */
+    _bundleReadyPromise=typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():Promise.resolve(false);
+    _sessionReady=Promise.resolve(_bundleReadyPromise).then(function(){
+      return typeof sfHideGateLoading==='function'?sfHideGateLoading(false):undefined;
+    },function(){ return typeof sfHideGateLoading==='function'?sfHideGateLoading(false):undefined; });
+    window.__mlsSessionReady=_sessionReady;
   }
   if(!hasAI()){
     setTimeout(()=>toast('Add your OpenAI key in Settings to start generating notes.',''),700);
   }
-  return _sessionReady||Promise.resolve();
+  return _sessionReady||_bundleReadyPromise||Promise.resolve();
 }
 
 function logout(force){
@@ -4494,24 +4547,32 @@ function logout(force){
 /* =========================================================
    HOSTED BACKEND: account info, access gating, redeem, admin
    ========================================================= */
-var _refreshMeInFlight=null, _refreshMeToken='';
+var _refreshMeInFlight=null, _refreshMeToken='', _refreshMeIdentityReady=null;
 function refreshMe(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return Promise.resolve(false);
   const token=bkToken();
-  if(_refreshMeInFlight&&_refreshMeToken===token) return _refreshMeInFlight;
+  if(_refreshMeInFlight&&_refreshMeToken===token){
+    if(typeof opts.onIdentity==='function'&&_refreshMeIdentityReady){
+      Promise.resolve(_refreshMeIdentityReady).then(opts.onIdentity,opts.onIdentity);
+    }
+    return _refreshMeInFlight;
+  }
+  let resolveSharedIdentity;
+  const sharedIdentity=new Promise(resolve=>{ resolveSharedIdentity=resolve; });
+  _refreshMeIdentityReady=sharedIdentity;
   const run=(async function(){
     let identityNotified=false;
-    const notifyIdentity=()=>{ if(identityNotified) return; identityNotified=true; try{ if(typeof opts.onIdentity==='function') opts.onIdentity(); }catch(e){} };
+    const notifyIdentity=()=>{ if(identityNotified) return; identityNotified=true; try{ resolveSharedIdentity(); }catch(e){} try{ if(typeof opts.onIdentity==='function') opts.onIdentity(); }catch(e){} };
     try{
       const init={headers:{'Authorization':'Bearer '+token}};
       if(opts.signal) init.signal=opts.signal;
       const r=await fetch(bkBase()+'/api/me',init);
-      if(!sfStartupValid(opts)) return false;
-      if(r.status===401){ handle401(); return false; }
+      if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
+      if(r.status===401){ notifyIdentity(); handle401(); return false; }
       if(r.ok){
         const d=await r.json();
-        if(!sfStartupValid(opts)) return false;
+        if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
         bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
         try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
         try{
@@ -4564,7 +4625,7 @@ function refreshMe(opts){
     return false;
   })();
   _refreshMeToken=token;
-  const shared=run.finally(()=>{ if(_refreshMeInFlight===shared){ _refreshMeInFlight=null; _refreshMeToken=''; } });
+  const shared=run.finally(()=>{ if(_refreshMeInFlight===shared){ _refreshMeInFlight=null; _refreshMeToken=''; _refreshMeIdentityReady=null; } });
   _refreshMeInFlight=shared;
   return shared;
 }
@@ -6180,6 +6241,9 @@ async function loadPatientsFromServer(opts){
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     let changed=false;
     const local=getPatients();
+    const localIndex=new Map();
+    local.forEach((patient,index)=>{ if(patient&&patient.id!=null) localIndex.set(patient.id,index); });
+    const additions=[];
     rows.forEach(row=>{
       // remember server id for every visible row (used for delete + team open)
       if(row.external_id && row.id!=null) _serverPtIds[row.external_id]=row.id;
@@ -6187,12 +6251,13 @@ async function loadPatientsFromServer(opts){
       const isMine = !row.owner_email || (myEmail && String(row.owner_email).toLowerCase()===myEmail);
       if(!isMine) return;
       if(!row.data || !row.external_id) return;
-      const i=local.findIndex(p=>p.id===row.external_id);
+      const i=localIndex.has(row.external_id)?localIndex.get(row.external_id):-1;
+      if(i===-2) return;
       if(i<0){
         const np=Object.assign({},row.data,{id:row.external_id});
         if(!np.created) np.created=Date.now();
         if(!np.updated) np.updated=Date.now();
-        local.unshift(np); changed=true;
+        additions.unshift(np); localIndex.set(row.external_id,-2); changed=true;
       }else{
         // adopt server copy if it is strictly newer than the local copy
         const sUpd=row.data.updated||0, lUpd=local[i].updated||0;
@@ -6200,7 +6265,7 @@ async function loadPatientsFromServer(opts){
       }
     });
     if(changed){
-      savePatients(local);
+      savePatients(additions.length?additions.concat(local):local);
       if(!opts.deferRender){
         if(currentView==='patients'){ renderPatients(); renderProfile(); }
         updateNavCounts();
@@ -8064,16 +8129,41 @@ function _renderLiveCall(call){
   var who = pt ? esc(pt.name) : (call.from?esc(call.from):'Unknown caller');
   bar.innerHTML='<span class="live-dot" style="background:#fff"></span> 📞 Patient calling now — <b>'+who+'</b>'+(pt?' <span style="font-weight:400;opacity:.88">· patient on file</span>':' <span style="font-weight:400;opacity:.85">· not in your charts</span>')+' <span style="font-weight:400;opacity:.8">'+(call.seconds||0)+'s</span>';
 }
+var _liveCallsInFlight=false, _liveCallsStarted=false, _liveCallsInterval=0;
+function _liveCallsCanPoll(){
+  if(document.hidden) return false;
+  var app=document.getElementById('appScreen');
+  if(app && (app.hidden || app.style.display==='none')) return false;
+  var loader=document.getElementById('sfGateLoading');
+  if(loader && loader.getAttribute('aria-busy')==='true' && loader.style.display!=='none') return false;
+  return true;
+}
 async function _pollLiveCalls(){
+  if(_liveCallsInFlight || !_liveCallsCanPoll()) return;
   try{
     if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ _renderLiveCall(null); return; }
+    _liveCallsInFlight=true;
     var r=await fetch(bkBase()+'/api/calls/active',{headers:{Authorization:'Bearer '+bkToken()}});
     if(!r.ok){ _renderLiveCall(null); return; }
     var d=await r.json();
     _renderLiveCall((d.active&&d.active[0])||null);
   }catch(e){ _renderLiveCall(null); }
+  finally{ _liveCallsInFlight=false; }
 }
-try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch(e){}
+function _startLiveCallPolling(){
+  if(_liveCallsStarted) return;
+  _liveCallsStarted=true;
+  setTimeout(_pollLiveCalls,500);
+  _liveCallsInterval=setInterval(_pollLiveCalls,6000);
+}
+function _armLiveCallPolling(){
+  var ready=window.__mlsSessionReady;
+  if(ready && typeof ready.then==='function') Promise.resolve(ready).then(_startLiveCallPolling,function(){});
+  else if(typeof bkToken==='function' && bkToken()) _startLiveCallPolling();
+}
+window.addEventListener('mls:loader-ready',_startLiveCallPolling,{once:true});
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ setTimeout(_armLiveCallPolling,0); },{once:true});
+else setTimeout(_armLiveCallPolling,0);
 /* ===== Movable floating "+" quick-action button. Drag to reposition (saved);
    tap to open quick actions. Theme-aware. ===== */
 (function(){
@@ -8130,7 +8220,7 @@ function showView(v){
   // Global motion polish (injected once): smooth tab transitions + a subtle press
   // response on every button, so the whole app feels responsive and alive.
   if(!window._mlsPolishCss){ window._mlsPolishCss=1; try{ var _s=document.createElement('style'); _s.textContent='@keyframes mlsViewIn{from{opacity:.35;transform:translateY(6px)}to{opacity:1;transform:none}} button{transition:transform .07s ease} button:active{transform:scale(.97)}'; document.head.appendChild(_s); }catch(e){} }
-  try{ var _vm={patients:'patientsView',visit:'visitView',history:'historyView',recs:'recsView',orders:'ordersView',admin:'adminView',team:'teamView',analysis:'analysisView',legalreq:'legalReqView',studio:'studioView',calendar:'calendarView'}; var _ve=document.getElementById(_vm[v]); if(_ve){ setTimeout(function(){ try{ _ve.style.animation='none'; void _ve.offsetWidth; _ve.style.animation='mlsViewIn .22s ease'; }catch(e){} },0); } }catch(e){}
+  try{ var _vm={patients:'patientsView',visit:'visitView',history:'historyView',recs:'recsView',orders:'ordersView',admin:'adminView',team:'teamView',analysis:'analysisView',legalreq:'legalReqView',studio:'studioView',calendar:'calendarView'}; var _ve=document.getElementById(_vm[v]); if(_ve){ _ve.style.animation='none'; requestAnimationFrame(function(){ requestAnimationFrame(function(){ try{ if(currentView===v) _ve.style.animation='mlsViewIn .22s ease'; }catch(e){} }); }); } }catch(e){}
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ if(typeof renderVisitOrders==='function') renderVisitOrders(); }catch(e){} try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
@@ -11664,16 +11754,18 @@ async function loadRecordsFromServer(opts){
     const rows=(d&&d.records)||[];
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     const local=getNotes();
+    const localIndex=new Map();
+    local.forEach((record,index)=>{ if(record&&record.id!=null) localIndex.set(record.id,index); });
     let changed=false;
     rows.forEach(row=>{
       const isMine=!row.owner_email||(myEmail&&String(row.owner_email).toLowerCase()===myEmail);
       if(!isMine) return;
       const rec=row.record;
       if(!rec||!rec.id) return;
-      const i=local.findIndex(n=>n.id===rec.id);
+      const i=localIndex.has(rec.id)?localIndex.get(rec.id):-1;
       if(i<0){
         if(!rec.created) rec.created=rec.updated||Date.now();
-        local.push(rec); changed=true;
+        local.push(rec); localIndex.set(rec.id,local.length-1); changed=true;
       }else{
         const sUpd=rec.updated||0, lUpd=local[i].updated||0;
         if(sUpd>lUpd){ const created=local[i].created||rec.created; local[i]=rec; local[i].created=created; changed=true; }
@@ -19496,21 +19588,27 @@ function agSyncSignState(){
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0;
 /* The cover stays up through cloud hydration and a stable first-frame window.
    It is deliberately bounded: an optional service can slow startup, never trap it. */
-const SF_GATE_MIN_MS=5200, SF_GATE_MAX_MS=9000, SF_GATE_QUIET_MS=500;
+const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
 const SF_GATE_READY_HOLD_MS=180, SF_GATE_FADE_MS=320;
 
 function sfLoaderFrameSignature(){
-  const ids=['appScreen','visitView','patientBar','mlsEz3','mlsRdTop','transcript','mlsCopVoiceBtn','mlsAsstFab','mlsDaDock'];
+  const ids=['appScreen','visitView','patientBar','patientBarInner','mlsEz3','mlsRdTop','transcript','ez3flTranscript','mlsDayProgress','mlsAgendaChip','mlsRecentPts','mlsCopVoiceBtn','mlsAsstFab','mlsDaDock'];
+  const textIds={patientBarInner:1,transcript:1,ez3flTranscript:1,mlsDayProgress:1,mlsAgendaChip:1,mlsRecentPts:1};
   return ids.map(id=>{
     const n=document.getElementById(id); if(!n) return id+':-';
     try{
       const r=n.getBoundingClientRect();
-      return id+':'+[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height),n.hidden?'h':'v',n.style.display||'',n.className||''].join(',');
+      let fingerprint='';
+      if(textIds[id]){
+        const value=String(('value' in n?n.value:n.textContent)||'');
+        fingerprint=value.length+':'+value.slice(0,32)+':'+value.slice(-32);
+      }
+      return id+':'+[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height),n.hidden?'h':'v',n.style.display||'',n.className||'',fingerprint].join(',');
     }catch(e){ return id+':?'; }
   }).join('|');
 }
 
-function sfWaitForStableFirstFrame(token,force){
+function sfWaitForStableFirstFrame(token,force,gated){
   const minAt=sfGateLoadingStarted+SF_GATE_MIN_MS;
   const releaseAt=sfGateLoadingStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
   let last='',stableAt=0;
@@ -19519,13 +19617,18 @@ function sfWaitForStableFirstFrame(token,force){
       if(token!==sfGateHideToken) return resolve(false);
       const now=Date.now();
       if(force||now>=releaseAt) return resolve(true);
+      const bundleReady=!!(gated||window.__mlsUiBundleReady||window.__mlsUiBundleFailed);
+      const ownerReady=!!(gated||window.__mlsUiBundleFailed||(window.__mlsUiUnification&&window.__mlsUiUnification.installed));
+      const assetReady=!!(gated||window.__mlsUiBundleFailed||!window.__mlsStartupAssets||window.__mlsStartupAssets.settled);
+      const coreReady=!!(document.getElementById('appScreen')&&document.getElementById('visitView')&&document.getElementById('settingsModal'));
+      const enhancedReady=!!(gated||window.__mlsUiBundleFailed||(document.getElementById('mlsRdTop')&&document.getElementById('mlsEz3')));
+      /* Avoid forcing layout while the feature wave is still invalidating it.
+         The scoped asset tracker owns that phase; sample rects only afterward. */
+      if(!(bundleReady&&ownerReady&&assetReady&&coreReady&&enhancedReady)){ setTimeout(check,160); return; }
       const sig=sfLoaderFrameSignature();
       if(sig===last){ if(!stableAt) stableAt=now; }else{ last=sig; stableAt=now; }
-      const bundleReady=!!(window.__mlsUiBundleReady||window.__mlsUiBundleFailed);
-      const ownerReady=!!(window.__mlsUiBundleFailed||(window.__mlsUiUnification&&window.__mlsUiUnification.installed));
-      const coreReady=!!(document.getElementById('appScreen')&&document.getElementById('visitView')&&document.getElementById('settingsModal'));
-      if(now>=minAt&&bundleReady&&ownerReady&&coreReady&&now-stableAt>=SF_GATE_QUIET_MS) return resolve(true);
-      setTimeout(check,100);
+      if(now>=minAt&&now-stableAt>=SF_GATE_QUIET_MS) return resolve(true);
+      setTimeout(check,140);
     };
     check();
   });
@@ -19571,6 +19674,7 @@ function sfShowGateLoading(){
   /* Absolute, no-human-input recovery if the caller itself never reaches hide. */
   sfGateForceTimer=setTimeout(()=>{
     if(showToken!==sfGateHideToken) return;
+    try{ if(typeof window.__mlsAbortUiBundle==='function') window.__mlsAbortUiBundle('gate-force-release'); }catch(e){}
     try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
     sfHideGateLoading(false,{force:true});
   },SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS);
@@ -19594,7 +19698,7 @@ function sfHideGateLoading(gated,options){
   const app=document.getElementById('appScreen');
   const token=++sfGateHideToken;
   clearTimeout(sfGateForceTimer);
-  return sfWaitForStableFirstFrame(token,!!options.force).then(ready=>{
+  return sfWaitForStableFirstFrame(token,!!options.force,!!gated).then(ready=>{
     if(!ready||token!==sfGateHideToken) return;
     const bar=el&&el.querySelector('#mlsBLbar'), msg=el&&el.querySelector('#mlsBLmsg');
     if(bar){ bar.classList.add('done'); bar.style.width='100%'; }
@@ -23241,7 +23345,6 @@ function initTooltips(){
 window.addEventListener('DOMContentLoaded',()=>{
   // QoL (MLS): apply saved appearance prefs ASAP so there's no light flash.
   if(typeof applyAppearance==='function') applyAppearance();
-  try{ initTooltips(); }catch(e){}
   // ---- Phone-mic page: if ?mic=<CODE>, render the dedicated recorder and stop. ----
   const _params=new URLSearchParams(location.search);
   const _micCode=_params.get('mic');
@@ -23249,6 +23352,12 @@ window.addEventListener('DOMContentLoaded',()=>{
     initPhoneMicPage(_micCode);
     return; // dedicated phone page — skip the normal app boot entirely
   }
+  /* Tooltip normalization is useful but not startup-critical. Let session
+     restore and the first visible screen settle before scanning [title]. */
+  try{
+    const _tipBoot=()=>{ try{ initTooltips(); }catch(e){} };
+    if(typeof requestIdleCallback==='function') requestIdleCallback(_tipBoot,{timeout:1400}); else setTimeout(_tipBoot,900);
+  }catch(e){}
   // backdrop closes modals
   document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
   document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
@@ -23552,6 +23661,219 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b310";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>
+/* MLS-CONNECT auth-first loader. Login/unsigned compliance screens do not pay
+   the 200+ feature-script cost. Signed/demo callers share one promise, and the
+   green loader owns first paint until the visible startup wave is settled. */
+(function(){
+  window.__MLS_AV='b296';
+  var CRITICAL=[
+    'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
+    'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
+    'feat_mls_header_exact.js','feat_mls_patientpick.js','feat_mls_simple_exact.js',
+    'feat_mls_notetools_exact.js','feat_mls_assistant_exact.js','feat_mls_copilot_voice_v2.js',
+    'feat_mls_centerpiece.js','feat_athena_ux_unify.js','feat_fab_layout.js',
+    'feat_patient_switcher.js',
+    'feat_source_clarity.js','feat_athena_actions.js',
+    'feat_mls_dayprogress.js','feat_mls_recentpts.js','feat_mls_ptsnapshot.js',
+    'feat_mls_agenda_popover.js','feat_mls_appwidth_responsive.js',
+    'feat_mls_theme_polish.js','feat_mls_widget_deck.js',
+    'feat_athena_tooltip_dedupe.js'
+  ];
+  function assetName(node){
+    try{ return new URL(node.src,location.href).pathname.split('/').pop(); }catch(e){ return ''; }
+  }
+  function makeTracker(){
+    var wanted={}, state={}, expected=CRITICAL.slice(), errors=[], satelliteErrors=[], satellitePending=0;
+    var initialScripts=[];
+    try{ initialScripts=Array.prototype.slice.call(document.querySelectorAll('script[src]')); }catch(e){}
+    CRITICAL.forEach(function(name){ wanted[name]=true; });
+    var tracker={started:true,sealed:false,settled:false,degraded:false,lastActivity:Date.now(),state:state,expected:expected,errors:errors,satelliteErrors:satelliteErrors};
+    function settle(node,kind){
+      var name=assetName(node); if(!wanted[name]) return;
+      if(state[name]==='loaded'||state[name]==='error') return;
+      state[name]=kind==='error'?'error':'loaded';
+      if(kind==='error') errors.push(name);
+      tracker.lastActivity=Date.now();
+    }
+    function markNode(node,kind){
+      if(!node||node.tagName!=='SCRIPT') return;
+      if(!node.__mlsStartupSettled){
+        try{ node.__mlsStartupSettled=kind||'load'; }catch(e){}
+        if(node.__mlsStartupObserved&&satellitePending>0) satellitePending--;
+        if(kind==='error') satelliteErrors.push(assetName(node)||String(node.src||'unknown'));
+        tracker.lastActivity=Date.now();
+      }
+      settle(node,kind);
+    }
+    function observeSatellite(node){
+      if(!node||node.tagName!=='SCRIPT'||!node.src) return;
+      var scriptType=String(node.type||'').toLowerCase();
+      if(scriptType&&scriptType!=='module'&&!/javascript|ecmascript/.test(scriptType)) return;
+      if(initialScripts.indexOf(node)>=0||node.__mlsStartupObserved) return;
+      try{ node.__mlsStartupObserved=true; }catch(e){}
+      if(node.__mlsStartupSettled) return;
+      satellitePending++; tracker.lastActivity=Date.now();
+      node.addEventListener('load',function(){ markNode(node,'load'); },{once:true});
+      node.addEventListener('error',function(){ markNode(node,'error'); },{once:true});
+    }
+    function onLoad(ev){
+      var node=ev&&ev.target;
+      if(node&&node.tagName==='SCRIPT') markNode(node,ev.type);
+    }
+    window.addEventListener('load',onLoad,true);
+    window.addEventListener('error',onLoad,true);
+    var observer=null;
+    try{
+      observer=new MutationObserver(function(records){
+        records.forEach(function(record){
+          Array.prototype.forEach.call(record.addedNodes||[],function(node){
+            if(node&&node.tagName==='SCRIPT') observeSatellite(node);
+            try{ if(node&&node.querySelectorAll) Array.prototype.forEach.call(node.querySelectorAll('script[src]'),observeSatellite); }catch(e){}
+          });
+        });
+      });
+      observer.observe(document.documentElement,{childList:true,subtree:true});
+    }catch(e){}
+    tracker.seal=function(){
+      if(tracker.sealed) return;
+      tracker.sealed=true;
+      var seen={};
+      Array.prototype.forEach.call(document.querySelectorAll('script[src]'),function(node){
+        var name=assetName(node); if(!wanted[name]||seen[name]) return;
+        seen[name]=true;
+        if(state[name]==='loaded'||state[name]==='error') return;
+        state[name]='pending';
+        node.addEventListener('load',function(){ markNode(node,'load'); },{once:true});
+        node.addEventListener('error',function(){ markNode(node,'error'); },{once:true});
+      });
+      /* Load/error does not bubble consistently across browsers. Track every
+         script added after startup began, including untagged optional tools,
+         so reveal cannot race a still-executing satellite. */
+      Array.prototype.forEach.call(document.querySelectorAll('script[src]'),observeSatellite);
+      expected.forEach(function(name){ if(!state[name]) state[name]='missing'; });
+      tracker.lastActivity=Date.now();
+    };
+    tracker.pending=function(){
+      var count=0; expected.forEach(function(name){ if(state[name]!=='loaded'&&state[name]!=='error') count++; }); return count;
+    };
+    tracker.incomplete=function(){
+      var count=0; expected.forEach(function(name){ if(state[name]!=='loaded') count++; }); return count;
+    };
+    tracker.allPending=function(){ return satellitePending; };
+    tracker.abortPending=function(){
+      try{
+        Array.prototype.forEach.call(document.querySelectorAll('script[src]'),function(node){
+          var name=assetName(node);
+          if(!node.__mlsStartupObserved||node.__mlsStartupSettled) return;
+          if(wanted[name]) state[name]='aborted';
+          try{ node.onload=node.onerror=null; if(node.parentNode) node.parentNode.removeChild(node); }catch(e){}
+        });
+      }catch(e){}
+    };
+    tracker.stop=function(){
+      try{ window.removeEventListener('load',onLoad,true); window.removeEventListener('error',onLoad,true); }catch(e){}
+      try{ if(observer) observer.disconnect(); }catch(e){}
+    };
+    return tracker;
+  }
+  window.__mlsEnsureUiBundle=function(){
+    if(window.__mlsUiBundleReady||window.__mlsUiBundleFailed) return Promise.resolve(!window.__mlsUiBundleFailed);
+    if(window.__mlsUiBundlePromise) return window.__mlsUiBundlePromise;
+    var ensureStarted=Date.now();
+    var assets=makeTracker(); window.__mlsStartupAssets=assets;
+    window.__mlsUiBundlePromise=new Promise(function(resolve){
+      var published=false, hardTimer=0, fetchTimer=0, finishTimer=0, fetchController=null, s=null;
+      var gateStarted=(typeof sfGateLoadingStarted==='number'&&sfGateLoadingStarted)?sfGateLoadingStarted:ensureStarted;
+      var releaseAt=gateStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
+      var hardAt=releaseAt-Math.max(1400,SF_GATE_QUIET_MS+500);
+      function publish(ok,critical){
+        if(published) return; published=true;
+        if(hardTimer) clearTimeout(hardTimer);
+        if(fetchTimer) clearTimeout(fetchTimer);
+        if(finishTimer) clearTimeout(finishTimer);
+        if(window.__mlsAbortUiBundle===abort) window.__mlsAbortUiBundle=null;
+        assets.settled=true; assets.stop();
+        try{ if(critical&&window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcile==='function') window.__mlsUiUnification.reconcile(); }catch(e){}
+        var raf=window.requestAnimationFrame||function(cb){ setTimeout(cb,16); };
+        raf(function(){ raf(function(){
+          window.__mlsUiBundleReady=!!(ok&&critical);
+          window.__mlsUiBundleFailed=!window.__mlsUiBundleReady;
+          try{
+            document.documentElement.dataset.mlsStartupBundle=window.__mlsUiBundleReady?'ready':'failed';
+            document.documentElement.dataset.mlsStartupReason=assets.reason||'';
+            document.documentElement.dataset.mlsStartupErrors=String(assets.errors.length||0);
+            document.documentElement.dataset.mlsStartupSatelliteErrors=String(assets.satelliteErrors.length||0);
+            document.documentElement.dataset.mlsStartupPending=String(assets.pendingAtPublish==null?assets.pending():assets.pendingAtPublish);
+            document.documentElement.dataset.mlsStartupAllPending=String(assets.allPendingAtPublish==null?assets.allPending():assets.allPendingAtPublish);
+          }catch(e){}
+          window.dispatchEvent(new Event('mls:ui-ready'));
+          resolve(ok&&critical);
+        }); });
+      }
+      function abort(reason){
+        if(published) return;
+        assets.degraded=true; assets.reason=reason||'bundle-aborted';
+        assets.pendingAtPublish=assets.pending();
+        assets.allPendingAtPublish=assets.allPending();
+        try{ if(fetchController) fetchController.abort(); }catch(e){}
+        try{ if(s){ s.text=''; if(s.parentNode) s.parentNode.removeChild(s); } }catch(e){}
+        try{ assets.abortPending(); }catch(e){}
+        publish(false,false);
+      }
+      window.__mlsAbortUiBundle=abort;
+      try{
+        function done(){
+          if(published) return;
+          if(fetchTimer){ clearTimeout(fetchTimer); fetchTimer=0; }
+          assets.seal();
+          (function finish(){
+            if(published) return;
+            var now=Date.now();
+            var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);
+            var visible=!!(document.getElementById('mlsRdTop')&&document.getElementById('mlsEz3')&&document.getElementById('visitView'));
+            var pending=assets.pending();
+            var incomplete=assets.incomplete();
+            var allPending=assets.allPending();
+            var quiet=now-assets.lastActivity>=900;
+            if(pending===0&&allPending===0&&quiet){
+              if(incomplete===0&&assets.errors.length===0&&assets.satelliteErrors.length===0&&critical&&visible){ publish(true,true); return; }
+              abort(assets.errors.length?'critical-asset-error':(assets.satelliteErrors.length?'satellite-asset-error':'critical-ui-missing')); return;
+            }
+            if(now>=hardAt){ abort('critical-assets-timeout'); return; }
+            finishTimer=setTimeout(finish,120);
+          })();
+        }
+        if(hardAt<=Date.now()){ abort('gate-budget-exhausted'); return; }
+        hardTimer=setTimeout(function(){ abort('bundle-deadline'); },hardAt-Date.now());
+        try{ fetchController=typeof AbortController==='function'?new AbortController():null; }catch(e){ fetchController=null; }
+        var fetchBudget=Math.max(1,Math.min(10000,hardAt-Date.now()-1200));
+        fetchTimer=setTimeout(function(){ abort('main-fetch-timeout'); },fetchBudget);
+        var fetchInit={credentials:'same-origin',cache:'default'};
+        if(fetchController) fetchInit.signal=fetchController.signal;
+        if(typeof fetch!=='function'){ abort('fetch-unavailable'); return; }
+        fetch('mls-connect.js?v='+window.__MLS_AV,fetchInit).then(function(response){
+          if(!response||!response.ok) throw new Error('main-http-'+(response&&response.status||0));
+          return response.text();
+        }).then(function(source){
+          if(published) return;
+          if(fetchTimer){ clearTimeout(fetchTimer); fetchTimer=0; }
+          s=document.createElement('script');
+          s.id='mlsUiBundleScript';
+          s.setAttribute('data-mls-source','mls-connect.js?v='+window.__MLS_AV);
+          s.text=String(source||'')+'\n//# sourceURL=/mls-connect.js?v='+window.__MLS_AV;
+          (document.body||document.documentElement).appendChild(s);
+          var executed=!!window.__MLS_APP_BUILD;
+          try{ s.text=''; if(s.parentNode) s.parentNode.removeChild(s); }catch(e){}
+          s=null;
+          if(!executed){ abort('main-execution-blocked'); return; }
+          done();
+        }).catch(function(err){ if(!published) abort(err&&err.name==='AbortError'?'main-fetch-aborted':'main-fetch-error'); });
+      }catch(e){ abort('bundle-exception'); }
+    });
+    return window.__mlsUiBundlePromise;
+  };
+})();
+</script>
 </body>
 </html>
