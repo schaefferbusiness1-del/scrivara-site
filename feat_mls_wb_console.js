@@ -300,6 +300,15 @@
 
   /* the verified write, then ask the extension to click athenaOne Sign & Save */
   function signSaveFlow() {
+    /* ONE write surface: the unified Athena review owns note writes and Sign.
+       When it is installed, a chat-driven write request opens that same
+       immutable review instead of running an independent write+sign lane —
+       Sign there unlocks only after this exact note's write is verified. */
+    var wfU = window.__mlsWriteFlow, unifiedBtn = document.getElementById('pushAllEmrBtn');
+    if (wfU && wfU.installed && unifiedBtn) {
+      try { unifiedBtn.click(); } catch (eU) {}
+      return Promise.resolve('Opened the one unified Athena review instead of auto-writing. Run the read-only check there; one Confirm & write click performs exactly one action, and Sign unlocks only after the verified write.');
+    }
     if (signRunning) return Promise.resolve('Already running.');
     signRunning = true;
     var release = function () { signRunning = false; };

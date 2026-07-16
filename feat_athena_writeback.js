@@ -371,7 +371,17 @@
     b.setAttribute('data-mlswb', '1');
     b.title = INTENT_TEXT;            // click-intent on hover, same idea as §61
     b.textContent = '✍ Write note to Athena chart';
-    b.addEventListener('click', function (ev) { ev.preventDefault(); writeNoteToChart({}); });
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      /* ONE write surface: when the unified Athena review is installed, every
+         write entry point opens the same immutable review (read-only probe +
+         one typed Confirm & write). The legacy direct paste survives only as
+         a fallback when the unified module is absent. */
+      var wf = window.__mlsWriteFlow;
+      var unified = document.getElementById('pushAllEmrBtn');
+      if (wf && wf.installed && unified) { try { unified.click(); return; } catch (eU) {} }
+      writeNoteToChart({});
+    });
     return b;
   }
   function injectButtons() {
