@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.7";
+  var VERSION = "si-1.6.8";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1660,7 +1660,17 @@
         boundRef.requestId = requestId;
         saveRef = boundRef;
       }
-      if (!saveRef || !requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
+      /* Distinguish the two historically-conflated refusals: a null verified
+         ref means the READ's identity echo failed proof (the sink was never
+         called); a sink false means _savePatientChart itself refused (its
+         gate is recorded in window.__mlsChartSaveTrace). The echo evidence is
+         PHI-free presence booleans. */
+      if (!saveRef) {
+        var echoErr = new Error("chart-read-identity-echo-unproven");
+        echoErr.mlsEchoes = { name: !!String(rd && rd.chartName || ""), dob: !!String(rd && rd.chartDob || ""), mrn: !!String(rd && rd.chartMrn || "") };
+        throw echoErr;
+      }
+      if (!requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
       var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
       if(!storedCoverage||storedCoverage.complete!==true||storedCoverage.exactIdentityVerified!==true) throw new Error("clinical-field-save-unproven");
       /* A sink reporting success is not proof that this operation replaced the
@@ -1838,7 +1848,7 @@
           var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse");
            one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
           one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
-        } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
+        } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes; if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
         /* User preference: pull the six-card chart history WITHOUT opening
            every encounter body (much faster day prep). Default ON (full
            visits). Skipping is recorded honestly on the receipt — a skipped
