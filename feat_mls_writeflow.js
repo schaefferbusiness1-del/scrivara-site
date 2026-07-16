@@ -1438,7 +1438,10 @@
     var plan = panelManifestPlan(panel, gathered), secs = gathered.sections;
     if (!secs.length && !plan.length) { logTo(logEl, 'Select at least one section to open the Athena destination review. Nothing was sent.'); return null; }
     var p = activePt() || {};
-    var want = { name: S(p.name), dob: S(p.dob), mrn: S(p.athenaId || p.mrn || '') };
+    /* The manifest identity gate requires the immutable LOCAL patient id as
+       well; omitting it here made every panel-launched review show
+       "Write reviewed note: BLOCKED" even for a fully identified patient. */
+    var want = { patientId: S(p.id || ''), name: S(p.name), dob: S(p.dob), mrn: S(p.athenaId || p.mrn || '') };
     STATE.writes++;
     if (gathered.errors.length) logTo(logEl, '&#9940; <b>Blocked unknown route(s):</b> ' + esc(gathered.errors.join(', ')) + '. They are shown as BLOCKED in the unified review and can never cross the write bridge.');
     if (gathered.held.length) logTo(logEl, '&#128065; <b>Manual destinations:</b> ' + gathered.held.map(function(x){return esc(x.key) + ' &rarr; ' + esc(x.destination);}).join(' · ') + '. They remain visible but are never sent.');
