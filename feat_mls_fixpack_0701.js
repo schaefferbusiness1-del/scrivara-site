@@ -884,7 +884,7 @@
    * OP-NOTE FILL-IN-THE-BLANKS (restore)
    * ------------------------------------------------------------------ */
   try {
-    var FILL_RULES = '\n\nSTRICT DICTATION RULE: for ANY specific value that was NOT explicitly dictated or present in the template/source (injectate/solution amounts and volumes, medication names and doses, needle gauge, fluoroscopy time, laterality, spinal levels, complications), output a placeholder token EXACTLY in the form [FILL: short description of the missing value] instead of inventing a value. Example: "injected [FILL: volume of 0.25% bupivacaine] at each level". NEVER fabricate specifics. Keep every heading; use [FILL: ...] liberally for anything uncertain.';
+    var FILL_RULES = '\n\nSTRICT DICTATION RULE: never invent a specific value. For a case-specific value that was NOT dictated and is NOT stated in the template/source (injectate/solution amounts and volumes, medication names and doses, needle gauge, fluoroscopy time, laterality, spinal levels, complications), output ONE placeholder token EXACTLY in the form [FILL: short description of the missing value]. Example: "injected [FILL: volume of 0.25% bupivacaine] at each level". Use a placeholder ONLY when that value is genuinely missing — if the template, chart, or context already states it, copy it verbatim instead; never placeholder prose that needs no case-specific value, and never emit two placeholders for the same missing fact. Keep every heading.';
     /* harden the AI op-note path: append rules to the system prompt for op-note-ish calls */
     (function () {
       var origFetch = window.fetch; /* note: this is the F3-wrapped fetch, chain is fine */
@@ -921,108 +921,20 @@
       FP._orig.fetch9 = origFetch;
     })();
 
-    /* blank scanner + one-at-a-time walker */
-    addStyle('mlsFpBlankStyle',
-      '#mlsFpBlankBar{position:fixed;right:18px;bottom:18px;z-index:99997;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;border-radius:13px;padding:11px 16px;font-size:13.5px;font-weight:800;box-shadow:0 8px 26px rgba(15,40,90,.45);cursor:pointer;display:none;align-items:center;gap:9px}' +
-      '#mlsFpBlankModal{position:fixed;inset:0;z-index:99999;background:rgba(15,25,40,.55);display:none;align-items:center;justify-content:center}' +
-      '#mlsFpBlankModal .bm-card{width:520px;max-width:92vw;background:var(--card,#fff);color:var(--ink,#15243a);border-radius:16px;border:1px solid var(--line,#E4E1D8);box-shadow:0 24px 70px rgba(15,25,40,.5);padding:20px 22px}' +
-      '#mlsFpBlankModal .bm-ctx{background:rgba(33,104,201,.08);border:1px solid var(--line,#E4E1D8);border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;margin:10px 0}' +
-      '#mlsFpBlankModal .bm-ctx b{background:#fff3cd;border-radius:4px;padding:0 4px}' +
-      '#mlsFpBlankModal input{width:100%;box-sizing:border-box;border:1px solid var(--line,#c9d5e4);border-radius:10px;padding:11px 13px;font-size:15px;margin:4px 0 12px}' +
-      '#mlsFpBlankModal .bm-row{display:flex;gap:9px;justify-content:flex-end}' +
-      '#mlsFpBlankModal button{border:0;border-radius:10px;padding:9px 17px;font-size:13.5px;font-weight:800;cursor:pointer}' +
-      '#mlsFpBlankModal .bm-next{background:#2E6A4B;color:#fff}#mlsFpBlankModal .bm-skip{background:rgba(33,104,201,.12);color:#204034}');
-    var BLANK_RX = /\[FILL:[^\]]*\]|_{3,}|\[not dictated[^\]]*\]/gi;
-    var blankTarget = null;
-    function countBlanks(t) { var m = String(t || '').match(BLANK_RX); return m ? m.length : 0; }
-    function ensureBlankUi() {
-      if ($('mlsFpBlankBar')) return;
-      var bar = document.createElement('div');
-      bar.id = 'mlsFpBlankBar';
-      bar.innerHTML = '✏️ <span id="mlsFpBlankN"></span> blank(s) to fill — tap to start';
-      document.body.appendChild(bar); remember(bar);
-      bar.addEventListener('click', function () { startWalker(); });
-      var modal = document.createElement('div');
-      modal.id = 'mlsFpBlankModal';
-      modal.innerHTML = '<div class="bm-card"><div style="font-size:16px;font-weight:850">Fill in the blank <span id="mlsFpBmPos" style="opacity:.6;font-size:13px"></span></div>' +
-        '<div class="bm-ctx" id="mlsFpBmCtx"></div>' +
-        '<div style="font-size:12.5px;font-weight:700;opacity:.8" id="mlsFpBmAsk"></div>' +
-        '<input id="mlsFpBmInput" placeholder="Type the value (e.g. 2 mL of 0.25% bupivacaine)">' +
-        '<div class="bm-row"><button class="bm-skip" type="button">Skip</button><button class="bm-next" type="button">Save &amp; next →</button></div></div>';
-      document.body.appendChild(modal); remember(modal);
-      modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
-      modal.querySelector('.bm-skip').addEventListener('click', function () { walkerSkip(); });
-      modal.querySelector('.bm-next').addEventListener('click', function () { walkerNext(); });
-      $('mlsFpBmInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); walkerNext(); } });
-    }
-    var skipOffset = 0;
-    function currentBlank() {
-      if (!blankTarget) return null;
-      BLANK_RX.lastIndex = 0;
-      var t = blankTarget.value || '', m, idx = 0;
-      while ((m = BLANK_RX.exec(t))) {
-        if (idx === skipOffset) return { token: m[0], at: m.index, text: t };
-        idx++;
-      }
-      if (idx > 0 && skipOffset >= idx) { skipOffset = 0; return currentBlank(); }
-      return null;
-    }
-    function paintWalker() {
-      var b = currentBlank();
-      var modal = $('mlsFpBlankModal');
-      if (!b) { if (modal) modal.style.display = 'none'; updateBar(); safeToast('✅ All blanks filled — nice.', 'ok'); return; }
-      ensureBlankUi();
-      var n = countBlanks(blankTarget.value);
-      $('mlsFpBmPos').textContent = '(' + (skipOffset + 1) + ' of ' + n + ')';
-      var pre = b.text.slice(Math.max(0, b.at - 70), b.at), post = b.text.slice(b.at + b.token.length, b.at + b.token.length + 70);
-      $('mlsFpBmCtx').innerHTML = '…' + esc(pre) + '<b>' + esc(b.token) + '</b>' + esc(post) + '…';
-      var ask = b.token.replace(/^\[FILL:\s*/i, '').replace(/\]$/, '');
-      $('mlsFpBmAsk').textContent = /_{3,}/.test(b.token) ? 'What goes in this blank?' : ('Needed: ' + ask);
-      var inp = $('mlsFpBmInput'); inp.value = '';
-      $('mlsFpBlankModal').style.display = 'flex';
-      setTimeout(function () { inp.focus(); }, 40);
-    }
-    function walkerNext() {
-      var b = currentBlank(); if (!b) { paintWalker(); return; }
-      var v = String($('mlsFpBmInput').value || '').trim();
-      if (!v) { walkerSkip(); return; }
-      blankTarget.value = b.text.slice(0, b.at) + v + b.text.slice(b.at + b.token.length);
-      try { blankTarget.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
-      paintWalker();
-    }
-    function walkerSkip() { skipOffset++; paintWalker(); }
-    function startWalker() { skipOffset = 0; ensureBlankUi(); paintWalker(); }
-    var blankState = '', blankSeq = 0;
-    function updateBar() {
-      var best = null, bestN = 0;
-      Array.prototype.forEach.call(document.querySelectorAll('textarea'), function (ta) {
-        try { if (ta.offsetParent === null) return; var n = countBlanks(ta.value); if (n > bestN) { bestN = n; best = ta; } } catch (e) {}
-      });
-      blankTarget = best;
-      var bar = $('mlsFpBlankBar');
-      if (!bestN) {
-        blankState = '';
-        if (bar && bar.style.display !== 'none') bar.style.display = 'none';
-        return;
-      }
-      ensureBlankUi();
-      bar = $('mlsFpBlankBar');
-      if (!best.__fpBlankKey) best.__fpBlankKey = ++blankSeq;
-      var nextState = best.__fpBlankKey + '|' + bestN + '|' + String(best.value || '');
-      if (blankState !== nextState) {
-        blankState = nextState;
-        $('mlsFpBlankN').textContent = String(bestN);
-      }
-      if (bar.style.display !== 'flex') bar.style.display = 'flex';
-    }
-    registerRefresh(function (root, reason) {
-      var relevant = root === document && /generation|note|patient|view|boot|textarea/.test(reason || '');
-      try {
-        if (!relevant && root) relevant = root.tagName === 'TEXTAREA' || !!(root.closest && root.closest('textarea')) || !!(root.querySelector && root.querySelector('textarea'));
-      } catch (e) {}
-      if (relevant) updateBar();
-    });
-    FP.fixes.fillBlanks = true;
+    /* RETIRED (owner directive 2026-07-16): the floating "N blank(s) to fill —
+       tap to start" bar + one-at-a-time typed walker are gone. The op-note
+       fill box (feat_mls_opnote_fill.js) is the ONE fill mechanism: it pops up
+       at the note itself, pre-fills every field with its most-likely value,
+       and offers a dropdown (+ "Other") to change it. Keeping two UIs for the
+       same blanks confused the flow and the walker made doctors type values
+       the app already knew. FILL_RULES above stays — it is what guarantees the
+       AI emits [FILL:] placeholders instead of inventing values. */
+    try {
+      var oldBar = $('mlsFpBlankBar'); if (oldBar && oldBar.parentNode) oldBar.parentNode.removeChild(oldBar);
+      var oldModal = $('mlsFpBlankModal'); if (oldModal && oldModal.parentNode) oldModal.parentNode.removeChild(oldModal);
+      var oldStyle = $('mlsFpBlankStyle'); if (oldStyle && oldStyle.parentNode) oldStyle.parentNode.removeChild(oldStyle);
+    } catch (e) {}
+    FP.fixes.fillBlanks = 'retired: the op-note fill box (feat_mls_opnote_fill.js) owns every blank';
   } catch (e) { FP.fixes.fillBlanks = 'error: ' + e.message; }
 
   /* ------------------------------------------------------------------

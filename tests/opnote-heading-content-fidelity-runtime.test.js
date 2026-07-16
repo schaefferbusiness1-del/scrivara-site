@@ -77,6 +77,12 @@ async function main() {
   assert(first.note.includes('sacral hiatus was identified'), 'faithful draft content was altered');
   assert.strictEqual(context.__mlsLastOpFidelityPass, true, 'fidelity flag not set on first-pass success');
 
+  // oni-2.4.0: the returned note is aired — one blank line between sections,
+  // and airing never breaks fidelity.
+  assert(first.note.includes('\n\nPOSTOPERATIVE DIAGNOSIS:'), 'sections are not separated by a blank line (one-blob note)');
+  assert(api.fidelity(first.note, TPL).pass, 'aired note lost template fidelity');
+  assert.strictEqual(api.airSections(first.note), first.note, 'airSections is not idempotent');
+
   // 3) generate: initial and repair both structurally wrong -> reanchor must
   //    keep template structure AND carry the draft's section content into the
   //    "DETAILS: [DETAILS]" single-slot line instead of leaving a placeholder.

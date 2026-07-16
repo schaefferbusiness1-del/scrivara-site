@@ -89,7 +89,8 @@ async function main() {
   const result = await h.context._genOpNote('Exact One', '2026-07-14', 'Left L5-S1 TFESI', tpl, {
     patientId: 'exact-a', dob: '01/02/1970', history: 'UNVERIFIED CALLER-SUPPLIED HISTORY MUST NOT SURVIVE'
   });
-  assert.strictEqual(result.note, correct, 'template repair did not complete');
+  /* oni-2.4.0 airs the final note (one blank line between sections) */
+  assert.strictEqual(result.note, h.context.__mlsOpNoteIntegrity.airSections(correct), 'template repair did not complete');
   assert.strictEqual(h.calls.length, 2, 'generation and repair did not make exactly two requests');
 
   const first = h.calls[0].user;

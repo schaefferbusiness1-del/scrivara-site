@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.3.0
+ * MLS op-note integrity  oni-2.4.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.3.0';
+  var VERSION = 'oni-2.4.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -326,6 +326,23 @@
     return forceFacts(out.join('\n'),facts);
   }
 
+  /* oni-2.4.0: a finished draft must READ like a document, not one blob.
+     Deterministic spacing pass: exactly one blank line before every section
+     heading (never before the first line), runs of 3+ newlines collapsed to
+     one blank line. Line content is never altered, so a note that already
+     passed fidelity still passes (headings/fixed wording are line-based). */
+  function airSections(note) {
+    var lines=S(note).split(/\r?\n/), out=[], sawContent=false;
+    for (var i=0;i<lines.length;i++) {
+      var line=lines[i], blank=!S(line).trim();
+      if (blank) { if (out.length && S(out[out.length-1]).trim()) out.push(''); continue; }
+      if (headingLabel(line) && sawContent && S(out[out.length-1]).trim()) out.push('');
+      out.push(line); sawContent=true;
+    }
+    while (out.length && !S(out[out.length-1]).trim()) out.pop();
+    return out.join('\n');
+  }
+
   async function generate(name,dateStr,procedure,tplText,ctx) {
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
@@ -357,7 +374,7 @@
       if(!histValidation||!histValidation.ok){var ve=new Error('Op-note generation stopped because the exact patient or verified history changed while the draft was being created.');ve.code='MLS_OPNOTE_IDENTITY';ve.reason=histValidation&&histValidation.reason||'history-binding-invalid';throw ve;}
     }
     var check=fidelity(first.note,tplText);
-    if(check.pass){first.templateFidelity=check;window.__mlsLastOpFidelityPass=true;return first;}
+    if(check.pass){first.note=airSections(first.note);first.templateFidelity=check;window.__mlsLastOpFidelityPass=true;return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */
@@ -374,7 +391,7 @@
     var check2=fidelity(repaired.note,tplText);
     if(!check2.pass){repaired.note=reanchor(repaired.note,tplText,facts);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
-    repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
+    repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
   }
   /* These markers deliberately stop the two legacy heartbeat wrappers from
      taking ownership back after this final template-fidelity owner installs. */
@@ -400,6 +417,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

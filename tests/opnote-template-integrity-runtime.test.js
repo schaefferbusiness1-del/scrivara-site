@@ -135,7 +135,8 @@ async function main() {
   context.aiCallRaw = async () => JSON.stringify({ note: ++calls === 1 ? wrong : correct, missing: [] });
   const repaired = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' });
   assert.strictEqual(calls, 2, 'a structure-breaking draft did not receive exactly one repair attempt');
-  assert.strictEqual(repaired.note, correct, 'repair did not return the template-faithful note');
+  /* oni-2.4.0 airs the final note (one blank line between sections) */
+  assert.strictEqual(repaired.note, api.airSections(correct), 'repair did not return the template-faithful note');
   assert(!repaired.note.includes('Noah Williams'), 'another patient name leaked into the generated note');
   assert.strictEqual(repaired.templateFidelity.pass, true, 'successful draft lacks a fidelity receipt');
 

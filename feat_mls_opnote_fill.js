@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.8.0';
+  var VERSION = 'onf-2.1.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -233,6 +233,45 @@
     return out;
   }
   function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }
+
+  /* ================= onf-2.1.0: the fill box works OUTSIDE the op-prep modal too.
+     The retired floating "N blank(s) to fill" walker used to cover [FILL:] tokens
+     in the MAIN note editor; the fill box now owns those blanks as well, backed by
+     a per-active-patient pseudo-row so known values, chart history, per-patient
+     memory and dropdown history all behave exactly as they do in op-prep. */
+  var MAIN_ID = 'noteBox';
+  var _mainRows = {};
+  function todayDateStr() {
+    return safe(function () { return new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }, '');
+  }
+  function mainRowFor() {
+    var p = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
+    if (!p || !S(p.name).trim()) return null;
+    var key = S(p.id || p.mrn || p.name);
+    var row = _mainRows[key];
+    if (!row) {
+      row = _mainRows[key] = { __onfMain: true, proc: '', tplId: '', dateStr: todayDateStr(), appt: {} };
+    }
+    /* refresh identity every pass — the active patient's record can gain a DOB/MRN */
+    row.appt.name = S(p.name).trim();
+    row.appt.dob = S(p.dob).trim();
+    row.appt.mrn = S(p.mrn || p.athenaId || '').trim();
+    return row;
+  }
+  function rowFor(ta) {
+    if (!ta || !ta.id) return null;
+    if (ta.id === MAIN_ID) return mainRowFor();
+    return safe(function () { return (window._opPrep || [])[+ta.id.replace('opPrepNote_', '')]; }, null);
+  }
+  function isPrepBox(ta) { return !!(ta && ta.id && ta.id.indexOf('opPrepNote_') === 0); }
+  function mainBoxWithBlanks() {
+    var ta = $(MAIN_ID);
+    if (!ta || ta.offsetParent === null) return null;
+    var hasTokens = /\[FILL:|\[\[[a-z0-9_]+\]\]/i.test(ta.value || '');
+    /* also pick up a lingering fill box whose tokens were all just filled, so it re-renders/clears */
+    var hasBox = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox');
+    return (hasTokens || hasBox) ? ta : null;
+  }
   function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length); }
 
   /* onf-1.3.0: AUTO-FILL fields the app already KNOWS. Provider/physician name,
@@ -526,8 +565,9 @@
     return opts;
   }
   function buildFillBox(ta) {
-    var idx = ta.id.replace('opPrepNote_', '');
-    var row = safe(function () { return (window._opPrep || [])[+idx]; }, null);
+    var prep = isPrepBox(ta);
+    var idx = prep ? ta.id.replace('opPrepNote_', '') : 'main';
+    var row = rowFor(ta);
     var existing = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox')
       ? ta.previousElementSibling : null;
     /* establish / reset the raw template: a fresh AI draft is any note that has
@@ -565,7 +605,7 @@
     if (rendered !== (ta.value || '')) {
       ta.value = rendered;
       safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
-      safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = rendered; });
+      if (prep) safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = rendered; });
     }
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
@@ -614,9 +654,11 @@
           var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
           ta.value = out;
           safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
-          safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
-          /* keep the draft autosaved as blanks fill in (parity with the retired walker) */
-          safe(function () { if (typeof window.opPrepAutosaveDraft === 'function') window.opPrepAutosaveDraft(+idx); });
+          if (prep) {
+            safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
+            /* keep the draft autosaved as blanks fill in (parity with the retired walker) */
+            safe(function () { if (typeof window.opPrepAutosaveDraft === 'function') window.opPrepAutosaveDraft(+idx); });
+          }
           var lbl = el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
         }
         var handler = function () {
@@ -689,7 +731,21 @@
        born dead; the lazy cadence left a ~6s window where clicks did nothing
        - owner bug 2026-07-13) */
     if (_wireN <= 3 || _wireN % 6 === 0 || modalOpen()) safe(wireUploadButtons);
-    if (!modalOpen()) return;
+    var open = modalOpen();
+    /* onf-2.1.0: [FILL:] blanks in the MAIN note editor get the same fill box
+       (the floating tap-to-start walker is retired; this is the ONE mechanism).
+       Skipped while the op modal is open — the modal owns the screen then. */
+    if (!open) {
+      var main = safe(mainBoxWithBlanks, null);
+      if (main) {
+        var ms = sigOf(main);
+        if (_sig[MAIN_ID] !== ms) {
+          safe(function () { buildFillBox(main); });
+          _sig[MAIN_ID] = sigOf(main);
+        }
+      }
+      return;
+    }
     /* the Templates modal opens BEHIND the op modal (equal z 9400, earlier in
        DOM). The click-handler bump can miss (its wiring is lazy) - keep this
        tick-level guarantee: whenever both are open, templates paints on top. */
