@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.3.0-prod";
+  var VERSION = "sx-2.4.0-prod";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -84,7 +84,25 @@
       "#mls-sg-root .mls-sg-btn.gray{background:#fff;color:#79837C;border:1px solid #e0e8f1}",
       "#mls-sg-root .mls-sg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}",
       "@media (max-width:1100px){#studioView." + GRID_CLASS + " #mls-sg-root{grid-template-columns:1fr}}",
-      "@media (max-width:980px){#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important}#studioView." + GRID_CLASS + " .sx-right{grid-row:4!important}#studioView #studioResultCard{grid-row:5!important}}"
+      "@media (max-width:980px){#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important}#studioView." + GRID_CLASS + " .sx-right{grid-row:4!important}#studioView #studioResultCard{grid-row:5!important}}",
+      /* ---- sx-2.4.0 (owner 2026-07-16): tidy tiles - no more auto-placed strays.
+         (a) The Copilot/right-column row stretches to ONE shared height, so the
+             two tiles frame each other instead of leaving a ragged hole.
+         (b) Any study-builder host that lands as a direct grid child gets the
+             full-width study row (2) - same slot as #mls-sg-root/#mlsB39SgWrap.
+         (c) The premium-lock card and the Pay Reports tile form one matched
+             row (4) under the main tiles; the pay tile fills its cell.
+         (d) The generated-widget panel moves below them (row 5).
+         Layout only - no component is altered, moved, or re-parented. ---- */
+      "#studioView." + GRID_CLASS + " .stp-head{grid-row:2!important}",
+      "#studioView." + GRID_CLASS + ">#mlsSgPro,#studioView." + GRID_CLASS + ">#mlsStudyRequest,#studioView." + GRID_CLASS + ">#mls-sg-root,#studioView." + GRID_CLASS + ">#mlsB39SgWrap{grid-column:1/-1!important;grid-row:3!important;min-width:0}",
+      "#studioView." + GRID_CLASS + " #copilotCard{grid-row:4!important;align-self:stretch!important;height:auto!important;max-height:none!important}",
+      "#studioView." + GRID_CLASS + " .sx-right{grid-row:4!important;align-self:stretch!important;height:auto!important;max-height:none!important;min-height:520px}",
+      "#studioView." + GRID_CLASS + ">#mlsStudioPremiumLock{grid-column:1!important;grid-row:5!important;align-self:stretch;margin:0!important;min-width:0}",
+      "#studioView." + GRID_CLASS + ">.uc1-pay-wrap{grid-column:2!important;grid-row:5!important;align-self:stretch;margin:0!important;display:flex;min-width:0}",
+      "#studioView." + GRID_CLASS + ">.uc1-pay-wrap .uc1-pay{width:100%;height:100%;box-sizing:border-box}",
+      "#studioView." + GRID_CLASS + " #studioResultCard{grid-row:6!important}",
+      "@media (max-width:980px){#studioView." + GRID_CLASS + " #copilotCard{grid-row:4!important}#studioView." + GRID_CLASS + " .sx-right{grid-column:1!important;grid-row:5!important}#studioView." + GRID_CLASS + ">#mlsStudioPremiumLock{grid-column:1!important;grid-row:6!important}#studioView." + GRID_CLASS + ">.uc1-pay-wrap{grid-column:1!important;grid-row:7!important}#studioView." + GRID_CLASS + " #studioResultCard{grid-row:8!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }

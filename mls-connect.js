@@ -5650,11 +5650,12 @@
     '#mlsEz3 .ez3fl-gen[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
     '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
-    /* fl-1.6.1: while the engine has a patient open, its per-patient workspace
-       (own transcript pre-generation, note editor after) is the ONE visit
-       surface — the top lane yields so two transcript boxes can never show.
-       CSS-class hide, never node removal (see the fl-1.5.0 flash note). */
-    '#mlsEz3Body.ez3fl-ws-active .ez3fl-record,#mlsEz3Body.ez3fl-ws-active .ez3fl-transcript,#mlsEz3Body.ez3fl-ws-active .ez3fl-note{display:none!important}',
+    /* fl-1.7.0 (owner 2026-07-16, supersedes the fl-1.6.1 yield direction):
+       ONE transcript box and the TOP lane is the keeper — hiding .ez3fl-record
+       also killed the quick-tools row. While the top lane is mounted the
+       ENGINE's duplicate transcript card yields instead. CSS-class hide,
+       never node removal (see the fl-1.5.0 flash note). */
+    '#mlsEz3Body.ez3fl-top-owns .ez3-transcript-card{display:none!important}',
     '#mlsEz3 .ez3fl-txhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px;color:#1A211C;font-size:13px;font-weight:700;}',
     '#mlsEz3 .ez3fl-txhead span{color:#79837C;font-size:11.5px;font-weight:600;}',
     '#mlsEz3 .ez3fl-tx{display:block;width:100%;min-height:126px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #D9DFD9!important;border-radius:10px;padding:11px 12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;}',
@@ -5777,7 +5778,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.6.1';
+  var VERSION = 'fl-1.7.0';
   var _obs = null, _deb = null, _iv = null, _laneIv = null, _laneRaf = null;
   var _primaryLane = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -6022,12 +6023,16 @@
     var body = $('mlsEz3Body'); if (!body) return;
     var wrap = body.querySelector('#ez3Wrap');
     var staff = onStaffScreen(body);
-    /* fl-1.6.1: the engine's card carries a DOB badge exactly while a patient
-       is open in its workspace (recording, generating, or note review). That
-       is when the engine owns the ONE transcript surface and the top lane
-       yields — via class (CSS hide), never removal, so nothing flashes. */
+    /* fl-1.7.0 (owner 2026-07-16): ONE transcript box, and the TOP lane is
+       the keeper — the fl-1.6.1 yield hid .ez3fl-record, which also removed
+       the quick-tools row and the primary record CTA. Instead, while this
+       lane is mounted on the doctor screen the ENGINE's duplicate transcript
+       card yields (class on the body host + CSS, never node removal, so
+       nothing flashes and every engine re-render is covered). If the lane is
+       ever absent the class comes off and the engine card is back on its own. */
     try {
-      body.classList.toggle('ez3fl-ws-active', !staff && !!(wrap && wrap.querySelector('.ez3-badge.dob')));
+      var laneMounted = !!(_primaryLane && _primaryLane.isConnected) || !!body.querySelector('.ez3fl-record');
+      body.classList.toggle('ez3fl-top-owns', !staff && laneMounted);
     } catch (e) {}
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
        nodes we insert at body level survive mode switches and must be removed
@@ -31732,7 +31737,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b337';
+  window.__MLS_AV = window.__MLS_AV || 'b338';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32023,7 +32028,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b337';
+  var MLS_APP_BUILD='2026-07-16-b338';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38995,7 +39000,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260716idle1';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260716sx230';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260716sx240';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260716idle1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
 
