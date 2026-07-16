@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.1.0';
+  var VERSION = 'sr-2.2.0';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -174,7 +174,10 @@
     if (cohortMode === 'auto') notes.push('Uses the selected cohort when available; otherwise all stored patients.');
 
     var pageMatch = q.match(/(?:up\s+to\s+|about\s+|around\s+)?(\d{1,3})\s*(?:pages?|pp)\b/);
-    var requested = pageMatch ? Number(pageMatch[1]) : MAX_REPORT_PAGES;
+    /* Default target is a focused ~30-page academic paper; ask for more pages
+       explicitly (up to 60) if you want a longer document. Case-level detail
+       beyond the cap lives in the Excel export, not in padded PDF pages. */
+    var requested = pageMatch ? Number(pageMatch[1]) : 30;
     if (requested > MAX_REPORT_PAGES) notes.push('Detailed reports are capped at ' + MAX_REPORT_PAGES + ' evidence-supported pages.');
     requested = clamp(requested, 2, MAX_REPORT_PAGES);
 
@@ -936,8 +939,11 @@
     /* Evidence-supported ceiling: richer per-visit narrative, tables, figures,
        and case summaries justify more pages per unit of evidence than sr-1,
        but small cohorts still produce short reports and are never padded. */
+    /* The ceiling grows mainly with ANALYTIC content (visits/text volume), only
+       weakly with head-count — a 1,400-patient cohort should yield a focused
+       academic paper plus capped appendices, not 60 pages of per-patient dump. */
     var supportedCeiling = Math.min(spec.targetPages || MAX_REPORT_PAGES,
-      Math.max(3, 5 + Math.ceil(visits.length / 8) + Math.ceil(detailChars / 6000) + Math.ceil((patients || []).length / 3)));
+      Math.max(3, 5 + Math.ceil(visits.length / 12) + Math.ceil(detailChars / 8000) + Math.ceil((patients || []).length / 10)));
 
     var figures = [];
     if (monthKeys.length >= 2) {
@@ -986,10 +992,11 @@
       heading: 'Question and cohort definition',
       paragraphs: [safeSpec.question || safeSpec.originalQuery || typeLabel(spec.studyType)],
       bullets: [
-        'Cohort rule: ' + (safeSpec.cohort.mode === 'keyword' ? 'stored records matching ' + (safeSpec.cohort.keywords || []).join(' or ') : deidentifyText(meta.resolvedCohort || safeSpec.cohort.mode, identities)),
+        'Cohort rule: ' + (safeSpec.cohort.mode === 'keyword' ? 'stored records matching ' + (safeSpec.cohort.keywords || []).join(' or ') : deidentifyText(meta.resolvedCohort || safeSpec.cohort.mode, identities))
+      ].concat(meta.cohortFallback ? [deidentifyText(meta.cohortFallback, identities)] : []).concat([
         'Date rule: ' + privacyRangeLabel(spec.range) + '; exported visit dates are generalized to month precision.',
         'Privacy rule: common direct identifiers are scrubbed where detectable, but free text may retain indirect identifiers. This remains a limited-data draft requiring review.'
-      ]
+      ])
     });
     sections.push({
       key: 'methods',
@@ -1186,7 +1193,8 @@
        real per-patient evidence (not filler) and is what carries large cohorts
        to full-length papers; the PDF renderer still stops at the evidence
        ceiling. */
-    var caseParas = (patients || []).map(function (p) {
+    var CASE_CAP = 25;
+    var caseParas = (patients || []).slice(0, CASE_CAP).map(function (p) {
       var vs = p.visits || [];
       var datedVs = vs.filter(function (v) { return v.date; });
       var span = datedVs.length ? (datedVs[0].date + (datedVs.length > 1 ? ' through ' + datedVs[datedVs.length - 1].date : '')) : 'undated records only';
@@ -1201,10 +1209,14 @@
       return line;
     });
     if (caseParas.length) {
+      var caseIntro = ['One summary per coded patient, drawn verbatim from stored, identifier-scrubbed documentation.'];
+      if ((patients || []).length > CASE_CAP) {
+        caseIntro.push('Showing the first ' + CASE_CAP + ' of ' + patients.length + ' coded patients so the analytic sections keep priority; every remaining patient appears row-by-row in the limited-data Excel export.');
+      }
       sections.push({
         key: 'cases',
-        heading: 'Case-level summaries',
-        paragraphs: ['One summary per coded patient, drawn verbatim from stored, identifier-scrubbed documentation.'].concat(caseParas)
+        heading: 'Case-level summaries (capped)',
+        paragraphs: caseIntro.concat(caseParas)
       });
     }
     var discussion = [
@@ -1213,11 +1225,11 @@
       'Because this is a single-practice, non-randomized, documentation-based review, the appropriate use of this draft is internal quality review, hypothesis generation, and preparation for a formally designed study with IRB oversight.'
     ];
     sections.push({ key: 'discussion', heading: 'Discussion', paragraphs: discussion });
-    var limitations = [
+    var limitations = (meta.cohortFallback ? [deidentifyText(meta.cohortFallback, identities)] : []).concat([
       'This is a retrospective descriptive report from data stored in MLS, not a randomized or causal analysis.',
       'Absence of a documented finding does not prove the finding was absent.',
       'Clinical interpretation, compliance review, and any required IRB determination remain the responsibility of the practice.'
-    ];
+    ]);
     if (spec.cohort.mode === 'keyword') limitations.push('Cohort membership is text-mention based: all words of the requested term must appear close together within one visit record (or the stored problem summary). A documented mention is treated as received, and negated mentions are not distinguished. Use the cohort-construction table as the per-patient audit trail.');
     if (meta.scope && meta.scope.excludedUndated) limitations.push(meta.scope.excludedUndated + ' undated records were excluded because the request specified a date window.');
     if (meta.scope && meta.scope.excludedOutOfRange) limitations.push(meta.scope.excludedOutOfRange + ' records fell outside the requested date window.');
@@ -1521,9 +1533,13 @@
     });
 
     if (!truncated && model.appendixRows.length) {
+      var APPENDIX_CAP = 150;
       heading('Limited-data evidence appendix');
       text('One row per included stored visit. Common direct identifiers are scrubbed where detectable; clinician/privacy review is still required.', 9, { after: 8 });
-      model.appendixRows.some(function (r, idx) {
+      if (model.appendixRows.length > APPENDIX_CAP) {
+        text('Showing the first ' + APPENDIX_CAP + ' of ' + model.appendixRows.length + ' included visit rows; the COMPLETE row set is in the limited-data Excel export. The analytic sections above always take priority over raw rows.', 9, { bold: true, after: 8 });
+      }
+      model.appendixRows.slice(0, APPENDIX_CAP).some(function (r, idx) {
         if (!need(42) && truncated) return true;
         if (!text((idx + 1) + '. ' + r.code + ' | ' + (r.date || 'date not recorded') + ' | ' + r.type + ' | source: ' + r.source, 9, { bold: true, after: 2 })) return true;
         if (r.detail && !text(r.detail, 8.5, { indent: 10, after: 7 })) return true;
@@ -1709,7 +1725,7 @@
     options = options || {};
     var doc = options.document || root.document, token = options.token;
     function progress(v) { if (typeof options.onProgress === 'function') options.onProgress(v); }
-    var scoped, deid, model;
+    var scoped, deid, model, cohortFallbackNote = '';
     return waitForEngine(options).then(function (sg) {
       progress('Reading and de-duplicating stored visit evidence...');
       var env = options.env || root;
@@ -1717,6 +1733,22 @@
       var resolved = resolveRecords(spec, records, sg, doc, options);
       progress('Applying cohort and date rules...');
       scoped = applyScope(resolved.records, spec, options.now);
+      if (!scoped.patientCount && spec.cohort.mode === 'keyword') {
+        /* A question-style phrase ("how happy my patients are ...") parses as
+           a cohort keyword but defines no cohort. Rather than a dead end, the
+           study runs over ALL stored patients and all their visits, analyzes
+           the question against every record, and DISCLOSES the fallback. */
+        var allSpec = JSON.parse(JSON.stringify(spec));
+        allSpec.cohort = { mode: 'all', keywords: [] };
+        var allScoped = applyScope(resolved.records, allSpec, options.now);
+        if (allScoped.patientCount) {
+          progress('The phrase matched no records as a cohort filter — studying ALL stored patients instead...');
+          cohortFallbackNote = 'Cohort fallback: the phrase "' + spec.cohort.keywords.join(' / ') + '" matched no stored records as a patient filter, so this study covers ALL stored patients and all of their visits; the question is analyzed against every included record.';
+          spec = allSpec;
+          resolved.resolved = 'All stored patients (automatic fallback — the request phrase did not define a cohort)';
+          scoped = allScoped;
+        }
+      }
       if (!scoped.patientCount) throw studyError('empty-cohort', 'No stored patients match that cohort and date range. Try a broader term or time range.');
       if (!scoped.visitCount) throw studyError('empty-evidence', 'The matching patients have no stored visit evidence to analyze yet. Add or pull visit history, then retry.');
       deid = deidentifyPatients(scoped.patients, options.now);
@@ -1729,6 +1761,7 @@
         ambiguousRecordsSkipped: (resolved.records.provenance || {}).ambiguousRecordsSkipped || 0,
         identityConflicts: (resolved.records.provenance || {}).identityConflicts || 0,
         codeSignals: collectCodeSignals(allDeidVisits, options.env || root),
+        cohortFallback: cohortFallbackNote,
         identities: scoped.patients.map(function (p) { return { name: p.name, dob: p.dob, mrn: p.mrn }; })
       });
       progress('Analyzing the direct-identifier-scrubbed cohort in memory...');
@@ -1833,6 +1866,10 @@
       '#' + ADV_BODY_ID + '{border-top:1px solid #eceee9;padding:14px}',
       '#' + ADV_ID + '[open] #mls-sg-root{display:block!important}',
       '#mlsSg2Toggle{display:none!important}',
+      /* legibility: legacy muted text darkened, and a stuck pane fade-in can
+         never leave the advanced tools ghosted/unreadable */
+      '#' + ADV_BODY_ID + '{opacity:1!important;filter:none!important}',
+      '#' + ADV_BODY_ID + ' .mls-sg-muted,#' + ADV_BODY_ID + ' .sgp-note{color:#4c5c53!important}',
       '@media(max-width:700px){#' + UI_ID + '{padding:16px;border-radius:15px}#' + UI_ID + ' h3{font-size:21px}.sr-hint{display:block}.sr-example{display:block;margin-top:3px}.sr-proof{grid-template-columns:1fr}}',
       '@media(prefers-reduced-motion:reduce){#' + UI_ID + ' *{scroll-behavior:auto!important;transition:none!important}}'
     ].join('\n');

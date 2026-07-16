@@ -92,7 +92,7 @@ const model = study.buildReportModel(spec, deid, {
 const headings = model.sections.map((x) => x.heading);
 ['Abstract', 'Introduction and objective', 'Methods and provenance', 'Statistical methods',
  'Results: cohort characteristics', 'Results: documented coding signals (practice code table)',
- 'Case-level summaries', 'Discussion', 'Data quality and limitations', 'Conclusion',
+ 'Case-level summaries (capped)', 'Discussion', 'Data quality and limitations', 'Conclusion',
  'Reproducibility record'].forEach((h) => {
   assert.ok(headings.indexOf(h) >= 0, 'missing academic section: ' + h);
 });
@@ -284,3 +284,56 @@ assert.strictEqual(study.narrativeNumbersOk('Improvement was 87.3 percent.', dig
     'a genuine knee injection phrase must still match');
   console.log('study-proximity-cohort: ok');
 })();
+
+/* sr-2.2.0: question-phrase fallback to ALL patients + analysis-first composition */
+(async () => {
+  const spec30 = study.parseStudySpec('Study outcomes for all stored patients, all time');
+  assert.strictEqual(spec30.targetPages, 30, 'default target is a focused 30-page paper');
+  assert.strictEqual(study.parseStudySpec('x outcomes cohort, 60 pages').targetPages, 60, 'explicit page requests still honored');
+
+  const envQ = {
+    getPatients() {
+      const out = [];
+      for (let i = 1; i <= 40; i++) {
+        out.push({ id: 'q' + i, name: 'Cohort Patient' + i, dob: '1960-01-0' + ((i % 9) + 1), visits: [
+          { date: '2026-03-1' + (i % 9), type: 'Follow-up', detail: 'Routine follow-up, pain ' + (i % 10) + '/10, tolerating treatment well.' },
+          { date: '2026-05-1' + (i % 9), type: 'Follow-up', detail: 'Continued care, stable.' }
+        ] });
+      }
+      return out;
+    },
+    getNotes() { return []; }, _calAppts: [], sgFix: { buildAll() { return []; } }
+  };
+  const qRecords = study.collectStoredRecords(envQ);
+  const qSpec = study.parseStudySpec('Create a study on how happy my patients are based on each visit');
+  assert.strictEqual(qSpec.cohort.mode, 'keyword', 'question phrase initially parses as keyword');
+  const sg = {
+    __live: true,
+    analyze(group) { const v = group.patients.flatMap((p) => p.visits); return { patientCount: group.patients.length, visitCount: v.length, patients: group.patients, allVisits: v, months: [], byMonth: {}, byType: {}, pain: [], avgVisits: v.length / group.patients.length }; },
+    chartSVG() { return '<svg></svg>'; },
+    get() { return null; }
+  };
+  class FakeJsPDF {
+    constructor() { this.pages = 1; this.internal = { pageSize: { getWidth: () => 612, getHeight: () => 792 } }; }
+    setTextColor() {} setFontSize() {} setFont() {} text() {} setDrawColor() {} setFillColor() {} rect() {} line() {}
+    splitTextToSize(v) { const t = String(v); const l = []; for (let i = 0; i < t.length; i += 85) l.push(t.slice(i, i + 85)); return l.length ? l : ['']; }
+    addPage() { this.pages += 1; } getNumberOfPages() { return this.pages; } setPage() {}
+    output() { return new Blob(['fake'], { type: 'application/pdf' }); }
+  }
+  const doc = { getElementById() { return null; }, createElement() { return { value: '', textContent: '' }; } };
+  const res = await study.executeSpec(qSpec, { sg, records: qRecords, document: doc, now: new Date('2026-07-16T12:00:00Z'), jsPDF: FakeJsPDF, useAi: false });
+  assert.strictEqual(res.scoped.patientCount, 40, 'question phrase must fall back to ALL stored patients');
+  const modelText = JSON.stringify(res.model);
+  assert.match(modelText, /Cohort fallback: the phrase/, 'the fallback must be disclosed in the paper');
+  const cases = res.model.sections.find((s) => s.key === 'cases');
+  assert.ok(cases.paragraphs.filter((p) => /^P\d{3}:/.test(p)).length <= 25, 'case-level summaries capped at 25 patients');
+  assert.match(cases.paragraphs.join(' '), /Showing the first 25 of 40 coded patients/);
+  assert.ok(res.model.supportedPageCeiling <= 30, '80 visits over 40 patients stays a focused paper, not a head-count dump');
+
+  /* a REAL procedure term that matches nothing still falls back with disclosure, never a dead end */
+  const knee = await study.executeSpec(study.parseStudySpec('Study outcomes for patients who received knee injections, all time'),
+    { sg, records: qRecords, document: doc, now: new Date('2026-07-16T12:00:00Z'), jsPDF: FakeJsPDF, useAi: false });
+  assert.strictEqual(knee.scoped.patientCount, 40);
+  assert.match(JSON.stringify(knee.model), /Cohort fallback/);
+  console.log('study-question-fallback: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
