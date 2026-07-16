@@ -14584,7 +14584,11 @@
       return Promise.resolve().then(function () { return window.opPrepGenerateOne(idx); }).then(function () {
         var r = (window._opPrep || [])[idx];
         return !!(r && r.gen && S(r.note).trim());
-      })["catch"](function () { return false; });
+      })["catch"](function (e) {
+        /* keep the REAL reason for the ledger instead of a generic "failed twice" */
+        try { var r2 = (window._opPrep || [])[idx]; if (r2) r2._lastDraftErr = S((e && (e.message || e)) || "").replace(/^Error:\s*/, "").slice(0, 160); } catch (e2) {}
+        return false;
+      });
     }
     function step() {
       if (RUN.stop || i >= total) return finish();
@@ -14616,7 +14620,8 @@
           states[idx].st = "pend"; states[idx].msg = "stopped before finishing";
         } else {
           failN++;
-          states[idx].st = "fail"; states[idx].msg = "AI draft failed twice \u2014 re-try this one from its card";
+          var why = S(r && r._lastDraftErr).trim();
+          states[idx].st = "fail"; states[idx].msg = (why ? why + " \u2014 " : "AI draft failed twice \u2014 ") + "re-try this one from its card";
         }
         i++;
         paintLedger(states, i, total, headline());
