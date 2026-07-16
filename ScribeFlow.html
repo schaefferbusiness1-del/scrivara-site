@@ -12118,6 +12118,19 @@ function _assistReadAthenaTab(onStatus){
    an async read, and only when DOB/MRN makes that resolution unique. */
 function _athenaHistoryDigits(v){ return String(v||'').replace(/\D/g,''); }
 function _athenaHistoryName(v){ return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+function _athenaHistoryNameCompatible(seen, want){
+  var s=_athenaHistoryName(seen), w=_athenaHistoryName(want);
+  if(!s||!w) return true; /* an absent echo never vetoes; the DOB/MRN equality proof below still decides */
+  if(s===w) return true;
+  /* Live 2026-07-16: athena's banner abbreviates names ("cubbage reilly a" for
+     "ann cubbage reilly"). Accept when every token on one side matches a token
+     on the other by exact text, a >=4-char prefix, or a single-letter initial.
+     This relaxes ONLY the name echo; DOB/MRN equality still proves identity. */
+  var st=s.split(' '), wt=w.split(' ');
+  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
+  function covered(A,B){ return A.every(function(x){ return B.some(function(y){ return tokOk(x,y); }); }); }
+  return covered(st,wt)||covered(wt,st);
+}
 function _athenaHistoryTargetSnapshot(ref, allowCreate){
   ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
@@ -12165,7 +12178,7 @@ function _athenaHistoryProofMatches(target, observed){
   var seenName=String(observed.chartName||observed.name||'').trim();
   var seenDob=String(observed.chartDob||observed.dob||'').trim();
   var seenMrn=String(observed.chartMrn||observed.mrn||'').trim();
-  if(seenName&&_athenaHistoryName(seenName)!==_athenaHistoryName(target.name)) return false;
+  if(seenName&&!_athenaHistoryNameCompatible(seenName,target.name)) return false;
   if(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(target.dob)) return false;
   if(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)!==_athenaHistoryDigits(target.mrn)) return false;
   var dobProof=!!(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)===_athenaHistoryDigits(target.dob));
@@ -23552,6 +23565,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b310";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b311";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>
