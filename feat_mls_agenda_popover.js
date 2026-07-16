@@ -59,7 +59,7 @@
         '#'+CHIP_ID+':hover{background:rgba(46,106,75,.18);}'+
         '#'+CHIP_ID+' .ag-ico{font-size:12px;line-height:1;}'+
         '#'+POP_ID+'{position:fixed;z-index:2147483600;width:300px;max-width:92vw;max-height:64vh;'+
-        'overflow:auto;background:#fff;border:1px solid #E7E5DD;border-radius:12px;'+
+        'overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #E7E5DD;border-radius:12px;'+
         'box-shadow:0 14px 40px rgba(26,33,28,.22);padding:10px 8px;font-size:13px;color:#1E2B24;display:none;}'+
         '#'+POP_ID+'.open{display:block;}'+
         '#'+POP_ID+' .ag-h{display:flex;align-items:center;justify-content:space-between;gap:8px;'+
@@ -150,12 +150,16 @@
   function positionPop(chip, pop){
     try{
       var r=chip.getBoundingClientRect();
-      pop.style.visibility='hidden'; pop.classList.add('open');
+      /* only use the measure-while-hidden trick on first open — re-hiding an
+         ALREADY-open popover on every background refresh made it blink */
+      if (!pop.classList.contains('open')){ pop.style.visibility='hidden'; pop.classList.add('open'); }
       var pw=pop.offsetWidth||300, ph=pop.offsetHeight||200;
       var left=Math.max(8, Math.min(r.left, window.innerWidth-pw-8));
       var top=r.bottom+6;
       if (top+ph > window.innerHeight-8) top=Math.max(8, r.top-ph-6);
-      pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
+      var nl=Math.round(left)+'px', nt=Math.round(top)+'px';
+      if (pop.style.left!==nl) pop.style.left=nl;
+      if (pop.style.top!==nt) pop.style.top=nt;
       pop.style.visibility='';
     }catch(e){}
   }
@@ -230,7 +234,13 @@
       chip.innerHTML='<span class="ag-ico">🗓</span> Agenda ('+seen+'/'+list.length+')';
       chip.title='Today’s schedule — '+seen+' of '+list.length+' seen. Click to view & jump.';
       var pop=document.getElementById(POP_ID);
-      if (pop && pop.classList.contains('open')){ buildPop(); positionPop(chip, pop); }
+      if (pop && pop.classList.contains('open')){
+        /* a background refresh must not yank the list back to the top while
+           the doctor is scrolling it */
+        var keepScroll=pop.scrollTop;
+        buildPop(); positionPop(chip, pop);
+        if (pop.scrollTop!==keepScroll) pop.scrollTop=keepScroll;
+      }
       lastSig=sig;
     }
   }
@@ -248,7 +258,20 @@
       if (pop.contains(ev.target) || (chip&&chip.contains(ev.target))) return; closePop(); };
     document.addEventListener('click', docClickBound, true);
     window.addEventListener('resize', closePop, true);
-    window.addEventListener('scroll', closePop, true);
+    window.addEventListener('scroll', onPageScroll, true);
+  }
+
+  /* Close on PAGE scroll only. The capture-phase window listener also fires
+     for scrolls that happen INSIDE the popover's own list — closing there
+     made the agenda snap shut the instant the doctor tried to scroll it. */
+  function onPageScroll(ev){
+    try{
+      var pop=document.getElementById(POP_ID);
+      if(!pop||!pop.classList.contains('open')) return;
+      var t=ev&&ev.target;
+      if (t && t.nodeType===1 && (t===pop || pop.contains(t))) return;
+      closePop();
+    }catch(e){ closePop(); }
   }
 
   window.__mlsAgenda = {
@@ -259,7 +282,7 @@
       try{ if(origRenderBar){window.renderPatientBar=origRenderBar;origRenderBar=null;} }catch(e){}
       try{ if(docClickBound){document.removeEventListener('click',docClickBound,true);docClickBound=null;} }catch(e){}
       try{ window.removeEventListener('resize', closePop, true);}catch(e){}
-      try{ window.removeEventListener('scroll', closePop, true);}catch(e){}
+      try{ window.removeEventListener('scroll', onPageScroll, true);}catch(e){}
       ['mlsAgendaChip','mlsAgendaPop','mlsAgendaChip-style',LEGACY_LAYOUT_STYLE_ID].forEach(function(id){var n=document.getElementById(id);if(n&&n.parentNode)n.parentNode.removeChild(n);});
       window.__mlsAgenda.__booted=false;
       return true;

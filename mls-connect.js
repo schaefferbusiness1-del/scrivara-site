@@ -31620,7 +31620,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b324';
+  window.__MLS_AV = window.__MLS_AV || 'b325';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31911,7 +31911,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b324';
+  var MLS_APP_BUILD='2026-07-16-b325';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38962,7 +38962,7 @@
 ;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260715dp6";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
 ;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714rp2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
 ;(function(){try{var A="feat_mls_ptsnapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714ps2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient snapshot chip: stable, deduplicated header rendering */
-;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716ag-stable3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
+;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716ag-stable4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
 ;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
 ;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716fd3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
 ;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714wntime1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
@@ -40496,7 +40496,7 @@
  * ensure interval (1.2s, write-only-when-missing). */
 (function () {
   if (window.__mlsDaySwitch) return;
-  var api = { installed: true, version: 'ds-1.1.0' };
+  var api = { installed: true, version: 'ds-1.2.0' };
   window.__mlsDaySwitch = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -40770,7 +40770,14 @@
     try {
       var body = $('mlsEz3Body'); if (!body) return;
       if (body.querySelector('.ez3fl-staffbadge')) { var s0 = $('mlsDsStrip'); if (s0) s0.remove(); var l0 = $('mlsDsList'); if (l0) l0.remove(); return; }
-      if ($('mlsDsStrip')) return;
+      var existing = $('mlsDsStrip');
+      if (existing) {
+        /* ds-1.2.0: the strip owns the TOP of the Visit screen. It used to
+           anchor to the .ez3fl-record lane, so when b321 stabilized the lane
+           deeper in the layout the day selector silently sank with it. */
+        if (body.firstChild !== existing) body.insertBefore(existing, body.firstChild);
+        return;
+      }
       var strip = document.createElement('div'); strip.id = 'mlsDsStrip';
       strip.innerHTML =
         '<button type="button" class="ds-nav" id="mlsDsPrev" title="Previous day">&#8249;</button>' +
@@ -40781,9 +40788,9 @@
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: pull the schedule and each patient’s chart history cards only — much faster." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
-      var anchor = body.querySelector('.ez3fl-record');
-      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(strip, anchor);
-      else body.insertBefore(strip, body.firstChild);
+      /* always the FIRST element of the Visit body — above the engine wrap,
+         outside its innerHTML re-renders, so it can never sink or flicker */
+      body.insertBefore(strip, body.firstChild);
       /* "Full visit notes" preference: default ON; OFF pulls schedule + chart
          history cards only (the importer records the skipped stage honestly). */
       (function () {
