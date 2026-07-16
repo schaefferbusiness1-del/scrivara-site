@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.2.0';
+  var VERSION = 'sr-2.2.1';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -730,6 +730,9 @@
       .replace(/\b\d{1,6}\s+(?:[A-Z0-9.'\-]+\s+){0,6}(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Way|Parkway|Pkwy|Highway|Hwy)\b(?:\s+(?:Apt|Apartment|Unit|Suite|Ste)\s*[A-Z0-9-]+)?(?:,\s*[A-Z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?)?/gi, '[address redacted]')
       .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email redacted]')
       .replace(/\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/g, '[phone redacted]')
+      /* any explicitly labeled patient name (covers OTHER patients referenced
+         inside this patient's text, e.g. a pasted op report) */
+      .replace(/\bPatient\s*:\s*[A-Z][A-Za-z'’-]+\s*,\s*[A-Z][A-Za-z'’-]+/g, 'Patient: [name redacted]')
       .replace(/\b(\d{4})[\/-](\d{1,2})[\/-]\d{1,2}\b/g, function (_, y, m) { return y + '-' + ('0' + m).slice(-2); })
       .replace(/\b(\d{1,2})[\/-]\d{1,2}[\/-](\d{4})\b/g, function (_, m, y) { return y + '-' + ('0' + m).slice(-2); })
       .replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+(\d{4})\b/gi, '$1 $2');
@@ -744,9 +747,13 @@
     return years >= 0 && years < 130 ? years : null;
   }
   function deidentifyPatients(patients, now) {
-    var ids = (patients || []).map(function (p) { return { name: p.name, dob: p.dob, mrn: p.mrn }; });
     var nowIso = isoDate(now instanceof Date ? now : new Date());
     return (patients || []).map(function (p, i) {
+      /* Scrub each visit against ITS OWN patient's identity plus the generic
+         identifier patterns (incl. the labeled "Patient: Name," rule above).
+         Scrubbing every visit against EVERY cohort identity is O(n^2) regex
+         work — it froze the browser for minutes on a 1,400-patient cohort. */
+      var ids = [{ name: p.name, dob: p.dob, mrn: p.mrn }];
       var code = 'P' + ('000' + (i + 1)).slice(-3);
       var lastDated = '';
       (p.visits || []).forEach(function (v) { var d = isoDate(v.date); if (d && d > lastDated) lastDated = d; });
