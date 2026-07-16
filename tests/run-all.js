@@ -114,7 +114,8 @@ const tests = [
   'study-academic-paper.test.js',
   'comp-report-contract.test.js',
   'prep-summary-debris.test.js',
-  'visit-single-transcript-contract.test.js'
+  'visit-single-transcript-contract.test.js',
+  'onboarding-tour-v2-contract.test.js'
 ];
 
 for (const test of tests) {

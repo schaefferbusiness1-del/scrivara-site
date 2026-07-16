@@ -252,88 +252,74 @@
 })();
 
 /* =============================================================================
- * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-1.0.0)
+ * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-2.0.0)
  * -----------------------------------------------------------------------------
- * A significantly-better first-sign-in GUIDED TOUR for the MLS Easy / MLS Assist
- * web app. Interactive spotlight walkthrough of the whole product, PLUS two new
- * required onboarding steps the old tours never had:
+ * The first-sign-in GUIDED TOUR, rebuilt for the Editorial Calm shell (b324+
+ * rail/top-bar/Menu). Replaces obt-1.0.0 in place. What changed and why:
  *
- *   (A) CHROME CHECK  - confirms the user is on Google Chrome. The MLS Assist
- *       companion browser extension only works in Chrome; on any other browser
- *       the tour says so clearly and links to https://www.google.com/chrome/ .
- *   (B) INSTALL MLS ASSIST - explains the extension and links to the EXISTING
- *       hosted install page (https://mlsscribe.com/get-extension.html). It does
- *       NOT build any new delivery mechanism; it links to what already ships,
- *       and live-detects whether the extension is already installed using the
- *       app's OWN existing mlsPing/mlsPong handshake (read-only presence check;
- *       the extension itself is NEVER touched or modified).
+ *   1. SCENE-DRIVEN STEPS. obt-1.0.0 spotlighted whatever happened to be on
+ *      screen; most of its targets predate the redesign, so on a fresh account
+ *      almost every step degraded to a centered card. Each step now declares
+ *      the scene it needs ({view:'visit'} / {menu:true}) and the tour navigates
+ *      there first (read-only showView / Menu toggle), so the highlight ring
+ *      always lands on a real, visible element.
+ *   2. TRUE SPOTLIGHT. The target now stays at full brightness inside a cutout
+ *      (ring + 9999px box-shadow); everything else dims. obt-1 dimmed the
+ *      target too.
+ *   3. FULL COVERAGE. 21 steps: Chrome check, MLS Assist check (live mlsPing,
+ *      read-only), top-bar Find + "+ New", Visit home base, day pull, record,
+ *      every capture mode, review/sign/send, op notes, Pay Report, Patients,
+ *      Calendar, History, then every Menu row (Ask/Copilot, Templates + Custom
+ *      widget, Staff day-prep + Patient intake + Team, Legal requests,
+ *      Troubleshoot Athena + phone + reviews), Settings/Help, safety recap.
+ *   4. NO OWN #nav_help INTERCEPT. obt-1 capture-bound Help itself; this
+ *      module does not (the legacy tour engines' Help wiring, already
+ *      redirected to __mlsOnboardingTour.open by td-1.0.0, still routes Help
+ *      clicks to this tour where that tab is visible). Entry points owned
+ *      here: first-login auto-launch + Menu -> "Guided tour / How-to".
+ *      Done/session keys are compatible with obt-1 (including its 'anon'
+ *      fallback), so accounts that already finished or skipped the old tour
+ *      are NOT re-prompted.
  *
- * This module is the improved successor to the older, never-deployed
- * dispatch-work\onboarding\feat_mls_guided_tour.module.js. SHIP ONLY ONE of the
- * two (they would both add a Menu row + a Help intercept). This file subsumes
- * everything that one did and adds A + B and clearer feature coverage.
- *
- * SAFETY / SCOPE (this is a live clinical app):
- *   - Onboarding UI ONLY. It reads no PHI, stores no PHI, makes no clinical
- *     writes, and never touches athenaOne.
- *   - The one and only message it posts is the app's existing extension
- *     presence ping ({type:'mlsPing',source:'mls-app'}); it listens for the
- *     existing {source:'mls-ext',type:'mlsPong'} reply. Read-only detection.
- *   - While the tour is open a transparent full-screen catch layer swallows
- *     every page click, so a user stepping through can NEVER accidentally start
- *     a recording, generate, sign, or push a note to the EMR. Navigation is
- *     card buttons / arrow keys / Esc only.
- *   - The EXTENSION IS FROZEN AND OFF LIMITS. Nothing here edits, reloads, or
- *     reaches into it; it only detects presence and links to the existing page.
+ * SAFETY / SCOPE (live clinical app):
+ *   - Onboarding UI only. No PHI read or stored, no clinical writes, never
+ *     touches athenaOne. Scene changes are the app's own read-only view
+ *     navigation (showView) and the Menu toggle button.
+ *   - Only message posted is the existing extension presence ping
+ *     ({type:'mlsPing',source:'mls-app'}); listens for the existing
+ *     {source:'mls-ext',type:'mlsPong'}. Read-only detection.
+ *   - While the tour is open a full-screen catch layer swallows every page
+ *     click, so stepping through can never start a recording, generate, sign,
+ *     or push anything. Navigation is card buttons / arrow keys / Esc only.
+ *   - The EXTENSION IS FROZEN AND OFF LIMITS: presence-detect + link only.
  *
  * ENGINEERING DISCIPLINE (matches every other module in this repo):
- *   - Prepend ABOVE the live mls-connect.js bundle with a real \n\n join.
- *   - ES5 only. ASCII-only source (emoji via \u escapes) so it cannot be
- *     mangled by the UTF-8 -> Windows-1252 clipboard bug. Guarded, idempotent,
- *     reversible IIFE. LF line endings.
- *   - Uses a MutationObserver / short re-assert ticks, never a hot animation
- *     loop (setInterval is throttled to ~0 in the MLS tab).
+ *   - ES5 only. ASCII-only source (emoji via \u escapes). Guarded, idempotent,
+ *     reversible IIFE. DOM via createElement/textContent only.
+ *   - No hot loops: one slow menu-row re-assert tick + bounded auto-launch
+ *     polling, same budget as obt-1.
  *
- * PUBLIC API:
- *   window.__mlsOnboardingTour.open()      - open the tour programmatically
- *   window.__mlsOnboardingTour.reset()     - clear done flags (re-arm auto-launch)
- *   window.__mlsOnboardingTour.revert()    - full uninstall (overlay/CSS/menu/listeners)
- *   window.__mlsOnboardingTour.__test      - pure functions for the offline harness
+ * PUBLIC API (unchanged from obt-1.0.0, so td-1.0.0 keeps working):
+ *   window.__mlsOnboardingTour.open() / .close() / .reset() / .revert()
+ *   window.__mlsOnboardingTour.__test  - pure functions for offline harness
  * ===========================================================================*/
 (function () {
   'use strict';
   if (window.__mlsOnboardingTour && window.__mlsOnboardingTour.installed) return;
 
-  var VERSION = 'obt-1.0.0';
+  var VERSION = 'obt-2.0.0';
   var Z = 2147483600;                 // above the app's own modals
-  var DONE_PREFIX = 'mls_onboard_tour_done::';
-  var SESSION_SHOWN = 'mls_obt_shown'; // per-tab guard so a mid-session reload won't re-open
+  var DONE_PREFIX = 'mls_onboard_tour_done::';   // unchanged: old finishers stay done
+  var SESSION_SHOWN = 'mls_obt_shown';
   var CHROME_URL = 'https://www.google.com/chrome/';
-  var EXT_INSTALL_URL = 'https://mlsscribe.com/get-extension.html'; // EXISTING hosted page
+  var EXT_INSTALL_URL = 'https://mlsscribe.com/get-extension.html';
 
-  /* ---------------------------------------------------------------------------
-   * REPLACE THE LEGACY ONBOARDING LAYERS (this module is their improved
-   * successor). The live b130 bundle already ships an older 9-step guided tour
-   * (window.__mlsGuidedTour) and a static how-to (window.__mlsHowToV2), each of
-   * which auto-launches, adds a Menu row, and intercepts the Help button. If we
-   * merely coexisted, the user would get TWO tours, two menu rows, and two Help
-   * intercepts.
-   *
-   * Both of those live IIFEs bail early on a truthy self-global
-   * (`if (window.__mlsGuidedTour) return;` / `if (window.__mlsHowToV2) return;`
-   * -- confirmed in the live bundle). Because THIS module is prepended ABOVE the
-   * bundle, seeding a truthy sentinel here makes each of them no-op. This is the
-   * exact, already-proven technique the live guided tour itself uses to retire
-   * the static how-to. At the end of this IIFE we alias window.__mlsGuidedTour
-   * to our own API, so any legacy `__mlsGuidedTour.open()` caller opens THIS
-   * (better) tour instead. The EXTENSION is untouched; this is app-layer only.
-   * ------------------------------------------------------------------------- */
+  /* Neutralize the legacy onboarding layers exactly as obt-1 did (both bail on
+   * a truthy self-global; this module is prepended above them). */
   try { if (!window.__mlsGuidedTour) window.__mlsGuidedTour = { installed: true, __neutralizedBy: 'obt', open: function () {}, reset: function () {} }; } catch (e) {}
   try { if (!window.__mlsHowToV2) window.__mlsHowToV2 = { installed: true, __neutralizedBy: 'obt' }; } catch (e) {}
 
-  /* ---------------------------------------------------------------------------
-   * Small helpers (ASCII-safe DOM builders; never innerHTML with user data).
-   * ------------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ utils */
   function el(tag, css, txt) {
     var n = document.createElement(tag);
     if (css) n.style.cssText = css;
@@ -344,13 +330,7 @@
   function on(node, ev, fn, cap) { try { node.addEventListener(ev, fn, !!cap); } catch (e) {} }
   function off(node, ev, fn, cap) { try { node.removeEventListener(ev, fn, !!cap); } catch (e) {} }
 
-  /* ---------------------------------------------------------------------------
-   * (A) BROWSER DETECTION. "Chrome" here means genuine Google Chrome, because
-   * that is what the companion extension is distributed for. Chromium-family
-   * browsers (Edge, Opera, Brave, Samsung Internet) are reported by name and
-   * treated as "not the supported browser" per the task requirement ("only
-   * works on Chrome"). Pure function -> unit-testable with an injected nav.
-   * ------------------------------------------------------------------------- */
+  /* ------------------------------------------------ (A) browser detection */
   function detectBrowser(nav) {
     nav = nav || (typeof navigator !== 'undefined' ? navigator : {});
     var ua = String(nav.userAgent || '');
@@ -364,34 +344,21 @@
       }
     } catch (e) {}
     var b = { name: 'your browser', isChrome: false, isChromium: false, ua: ua };
-
-    // Non-Chromium first (unambiguous).
     if (/Firefox\//i.test(ua) || /\bFxiOS\//i.test(ua)) { b.name = 'Firefox'; return b; }
     if (/\bEdg(e|A|iOS)?\//i.test(ua) || /Edg\//i.test(brands)) { b.name = 'Microsoft Edge'; b.isChromium = true; return b; }
     if (/\bOPR\//i.test(ua) || /Opera/i.test(ua) || /Opera/i.test(brands)) { b.name = 'Opera'; b.isChromium = true; return b; }
     if (/\bBrave\//i.test(ua) || /Brave/i.test(brands) || (nav.brave && typeof nav.brave === 'object')) { b.name = 'Brave'; b.isChromium = true; return b; }
     if (/SamsungBrowser\//i.test(ua)) { b.name = 'Samsung Internet'; b.isChromium = true; return b; }
-    // Safari: has "Safari" and "Version/" but no "Chrome" / "CriOS".
     if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua) && !/CriOS\//i.test(ua) && !/Chromium\//i.test(ua)) { b.name = 'Safari'; return b; }
-    // Chrome on iOS is really Safari's WebKit under the hood -> extension can't run.
     if (/CriOS\//i.test(ua)) { b.name = 'Chrome for iOS (iPhone/iPad)'; b.isChromium = false; return b; }
-
-    // Genuine desktop Google Chrome: "Chrome/" present, Google vendor, and NOT
-    // one of the Chromium re-skins handled above.
     if (/Chrome\//i.test(ua) && /Google Inc\.?/i.test(vendor)) { b.name = 'Google Chrome'; b.isChrome = true; b.isChromium = true; return b; }
     if (/Chromium\//i.test(ua)) { b.name = 'Chromium'; b.isChromium = true; return b; }
-    if (/Chrome\//i.test(ua)) { b.name = 'a Chrome-based browser'; b.isChromium = true; return b; } // Chrome/ but no Google vendor (unusual)
-
+    if (/Chrome\//i.test(ua)) { b.name = 'a Chrome-based browser'; b.isChromium = true; return b; }
     return b;
   }
   function isChrome(nav) { return detectBrowser(nav).isChrome === true; }
 
-  /* ---------------------------------------------------------------------------
-   * (B) EXTENSION PRESENCE - the app's OWN existing handshake, read-only.
-   * Posts {type:'mlsPing',source:'mls-app'} and resolves true if a
-   * {source:'mls-ext',type:'mlsPong'} arrives within `timeoutMs`. Never mutates
-   * the extension. Injectable win for tests.
-   * ------------------------------------------------------------------------- */
+  /* --------------------------------- (B) extension presence, read-only ping */
   function pingExtension(cb, timeoutMs, win) {
     win = win || window;
     var done = false, version = '', buildId = '';
@@ -413,25 +380,36 @@
     setTimeout(function () { finish(false); }, timeoutMs || 1500);
   }
 
-  /* ---------------------------------------------------------------------------
-   * Per-account done flag. There is no reliable client-side "first login ever"
-   * signal, so the tour shows once per account until finished or skipped.
-   * ------------------------------------------------------------------------- */
+  /* -------------------------------------------------- per-account done flag */
   function acctKey() {
     var e = '';
     try { e = localStorage.getItem('sf_user') || ''; } catch (x) {}
-    if (!e) { try { var s = JSON.parse(localStorage.getItem('sf_session') || '{}'); e = (s && (s.email || s.user)) || ''; } catch (x2) {} }
+    if (!e) {
+      /* sf_session is a plain email string in local/demo mode and (possibly)
+       * JSON elsewhere — obt-1 only handled the JSON shape, so every local
+       * account degraded to 'anon'. Handle both. */
+      try {
+        var raw = '';
+        try { raw = localStorage.getItem('sf_session') || ''; } catch (x1) {}
+        var s = null;
+        try { s = JSON.parse(raw); } catch (x2) {}
+        e = (s && typeof s === 'object' && (s.email || s.user)) || (raw.indexOf('@') > 0 ? raw : '');
+      } catch (x3) {}
+    }
     return String(e || 'anon').toLowerCase();
   }
   function doneKey() { return DONE_PREFIX + acctKey(); }
-  function isDone() { try { return localStorage.getItem(doneKey()) === '1'; } catch (e) { return false; } }
+  function isDone() {
+    /* honor the legacy 'anon' flag too, so nobody who finished/skipped the old
+     * tour gets auto-re-prompted by this upgrade */
+    try {
+      if (localStorage.getItem(doneKey()) === '1') return true;
+      return localStorage.getItem(DONE_PREFIX + 'anon') === '1';
+    } catch (e) { return false; }
+  }
   function markDone() { try { localStorage.setItem(doneKey(), '1'); } catch (e) {} }
 
-  /* ---------------------------------------------------------------------------
-   * Graceful spotlight target resolution: first selector that EXISTS and is
-   * actually rendered. If none resolve, the step degrades to a centered card
-   * (never points at nothing, never throws). Injectable doc for tests.
-   * ------------------------------------------------------------------------- */
+  /* --------------------------------------------- target + scene resolution */
   function isVisible(node, docWin) {
     if (!node) return false;
     try {
@@ -443,32 +421,86 @@
       return (r.width > 1 && r.height > 1);
     } catch (e) { return true; }
   }
+  /* selectors may be CSS strings OR functions returning a node */
   function resolveTarget(selectors, doc, docWin) {
     doc = doc || document;
     if (!selectors || !selectors.length) return null;
     for (var i = 0; i < selectors.length; i++) {
       var node = null;
-      try { node = doc.querySelector(selectors[i]); } catch (e) { node = null; }
+      if (typeof selectors[i] === 'function') {
+        try { node = selectors[i](doc); } catch (e) { node = null; }
+      } else {
+        try { node = doc.querySelector(selectors[i]); } catch (e2) { node = null; }
+      }
       if (node && isVisible(node, docWin)) return node;
     }
     return null;
   }
+  /* find a Menu row (#mlsTbMenuPanel .mlsTbItem) by contained text */
+  function menuRowFinder(txt) {
+    return function (doc) {
+      var panel = (doc || document).getElementById('mlsTbMenuPanel');
+      if (!panel) return null;
+      var rows = panel.querySelectorAll('.mlsTbItem, button');
+      for (var i = 0; i < rows.length; i++) {
+        if (String(rows[i].textContent || '').indexOf(txt) >= 0) return rows[i];
+      }
+      return null;
+    };
+  }
 
-  /* ---------------------------------------------------------------------------
-   * THE STEPS. Each: {key, badge, title, body(), target?[], kind?}. `body` is a
-   * function returning a DOM node (so the Chrome/extension steps can render live
-   * status). Steps with a `target` spotlight it; if it doesn't resolve, they
-   * degrade to a centered card.
-   * ------------------------------------------------------------------------- */
+  /* Menu open/close via the app's own toggle button (never synthesized DOM). */
+  function menuIsOpen() {
+    var p = byId('mlsTbMenuPanel');
+    if (!p) return false;
+    try { return window.getComputedStyle(p).display !== 'none'; } catch (e) { return false; }
+  }
+  function setMenuOpen(want) {
+    try {
+      if (menuIsOpen() === !!want) return;
+      var b = byId('mlsTbMenuBtn');
+      if (b) b.click();
+    } catch (e) {}
+  }
+  function gotoView(view) {
+    try {
+      var fn = window.showView;
+      if (typeof fn === 'function') { fn(view); return true; }
+    } catch (e) {}
+    try { var t = byId('nav_' + view); if (t) { t.click(); return true; } } catch (e2) {}
+    return false;
+  }
+  /* Apply a step's scene: open/close menu, switch views. Read-only navigation. */
+  function applyScene(step) {
+    if (step && step.menu) { setMenuOpen(true); return; }
+    setMenuOpen(false);
+    if (step && step.view) gotoView(step.view);
+  }
+
+  /* -------------------------------------------------------------- step UI  */
   function pill(txt, bg, fg) {
-    var p = el('span', 'display:inline-block;font:600 12px/1 system-ui;padding:5px 10px;border-radius:999px;background:' + bg + ';color:' + fg + ';margin:2px 6px 2px 0', txt);
-    return p;
+    return el('span', 'display:inline-block;font:600 12px/1 system-ui;padding:5px 10px;border-radius:999px;background:' + bg + ';color:' + fg + ';margin:2px 6px 2px 0', txt);
   }
   function para(txt) { return el('div', 'font:14px/1.5 system-ui;color:#e8eeff;margin:8px 0 0', txt); }
+  function bullets(items) {
+    var ul = el('ul', 'margin:8px 0 0;padding-left:18px');
+    for (var i = 0; i < items.length; i++) {
+      ul.appendChild(el('li', 'font:13px/1.5 system-ui;color:#dce7f7;margin:3px 0', items[i]));
+    }
+    return ul;
+  }
   function linkBtn(txt, href) {
     var a = el('a', 'display:inline-block;margin-top:10px;background:#ffffff;color:#204034;font:700 13px/1 system-ui;text-decoration:none;padding:9px 14px;border-radius:9px');
     a.textContent = txt; a.href = href; a.target = '_blank'; a.rel = 'noopener';
     return a;
+  }
+  function textBody(paras, list) {
+    return function () {
+      var wrap = el('div');
+      for (var i = 0; i < paras.length; i++) wrap.appendChild(para(paras[i]));
+      if (list && list.length) wrap.appendChild(bullets(list));
+      return wrap;
+    };
   }
 
   function buildChromeBody() {
@@ -476,12 +508,12 @@
     var b = detectBrowser();
     if (b.isChrome) {
       wrap.appendChild(pill('✓ Google Chrome', '#e7f6ec', '#1c7a43'));
-      wrap.appendChild(para('You are on Google Chrome — perfect. The MLS Assist companion extension runs here so MLS can work inside your real EMR.'));
+      wrap.appendChild(para('You are on Google Chrome — perfect. The MLS Assist companion extension runs here, and it is what lets MLS work inside your real EMR.'));
     } else {
       wrap.appendChild(pill('⚠ ' + b.name, '#fdecec', '#b4231e'));
       var note = b.isChromium
-        ? 'You are on ' + b.name + '. MLS Assist — the browser extension that lets MLS read a chart and drop the finished note back into your EMR — is built for Google Chrome. Please switch to Chrome for the EMR features. You can still use the rest of MLS here.'
-        : 'You are on ' + b.name + '. The MLS Assist browser extension only works in Google Chrome. To use MLS inside your real EMR, please open MLS in Chrome. You can still use the rest of MLS here.';
+        ? 'You are on ' + b.name + '. MLS Assist — the browser extension that pulls charts from your EMR and drops finished notes back — is built for Google Chrome. Please switch to Chrome for the EMR features. Everything else in MLS still works here.'
+        : 'You are on ' + b.name + '. The MLS Assist browser extension only works in Google Chrome. To use MLS inside your real EMR, open MLS in Chrome. Everything else in MLS still works here.';
       wrap.appendChild(para(note));
       wrap.appendChild(linkBtn('⬇ Get Google Chrome', CHROME_URL));
     }
@@ -490,12 +522,11 @@
 
   function buildExtensionBody() {
     var wrap = el('div');
-    wrap.appendChild(para('🧩 MLS Assist is a browser extension. Install it once and MLS can capture a chart from your EMR (e.g. athenaOne) into MLS in one click, and drop the finished, reviewed note back — you always confirm inside the EMR.'));
+    wrap.appendChild(para('🧩 MLS Assist is the bridge between MLS and your EMR (e.g. athenaOne). Install it once and MLS can pull your day’s schedule and each patient’s chart in one click, and drop the finished, signed note back — you always confirm inside the EMR itself.'));
     var status = el('div', 'font:600 13px/1.4 system-ui;color:#EAF1EE;margin-top:10px', 'Checking whether MLS Assist is already installed…');
     wrap.appendChild(status);
     var act = el('div', 'margin-top:8px');
     wrap.appendChild(act);
-    // Live, read-only presence check via the app's existing handshake.
     pingExtension(function (ok, ver) {
       if (ok) {
         status.textContent = '✓ MLS Assist is installed' + (ver ? (' (v' + ver + ')') : '') + ' and responding. You are ready to pull charts.';
@@ -512,94 +543,230 @@
     return wrap;
   }
 
-  function textBody(lines) {
-    return function () {
-      var wrap = el('div');
-      for (var i = 0; i < lines.length; i++) wrap.appendChild(para(lines[i]));
-      return wrap;
-    };
-  }
-
+  /* ---------------------------------------------------------------------------
+   * THE STEPS. {key, badge, title, body(), target?, view?, menu?}
+   * target items are CSS selectors or finder functions, tried in order against
+   * the CURRENT (b324+ Editorial Calm) shell; every step degrades to a
+   * centered card if nothing resolves.
+   * ------------------------------------------------------------------------- */
   var STEPS = [
     {
       key: 'welcome', badge: '👋 Welcome', title: 'Welcome to MLS',
       body: textBody([
-        'This 90-second tour shows you the whole visit flow and where everything lives. You are always the final word — MLS drafts, you review and sign.',
-        'You can skip anytime, and reopen this from ❓ Help or the Menu whenever you like.'
+        'MLS is your AI scribe and practice copilot: it pulls your day from the EMR, listens to the visit, writes the note, and files it back — while you stay the final word on everything.',
+        'This tour walks the whole product (about 3 minutes). Use Next / → to advance, ← to go back, Esc to leave. While it is open, clicks on the page are disabled so nothing can be triggered by accident.',
+        'You can reopen it anytime: Menu → 🎓 Guided tour / How-to.'
       ])
     },
     {
-      key: 'chrome', badge: 'Step 1 · Browser', title: 'Use Google Chrome',
+      key: 'chrome', badge: 'Setup 1 of 2 · Browser', title: 'Use Google Chrome',
       body: buildChromeBody
     },
     {
-      key: 'extension', badge: 'Step 2 · MLS Assist', title: 'Install the MLS Assist extension',
+      key: 'extension', badge: 'Setup 2 of 2 · MLS Assist', title: 'Install the MLS Assist extension',
       body: buildExtensionBody
     },
     {
-      key: 'visit', badge: 'Step 3 · Your day', title: 'Pull your day in one tap',
-      target: ['#nav_visit', '[data-view="visit"]'],
-      body: textBody(['The Visit tab is home base. Pull today’s schedule and each patient’s history from your EMR in one tap (that is what the MLS Assist extension is for).'])
+      key: 'find', badge: 'Top bar', title: 'Find anything — just press /',
+      target: ['#mlsRdSearchSlot', '#mlsRdKbd'],
+      body: textBody([
+        'This is Find. Press the / key anywhere (or click here) and jump straight to any patient, screen, or tool by typing a few letters. It is the fastest way around MLS.'
+      ])
     },
     {
-      key: 'record', badge: 'Step 4 · Record', title: 'Record & generate — one button',
-      target: ['.ez3-big', '#recordBtn', '#startBtn'],
-      body: textBody(['Open a patient (or “New visit”), press record, and just talk through the visit. MLS transcribes and writes a structured note. No microphone? You can type or paste the conversation instead.'])
+      key: 'newbtn', badge: 'Top bar', title: '＋ New — start anything from anywhere',
+      target: ['#mlsRdNewBtn'],
+      body: textBody([
+        'The ＋ New button starts a new visit, a new patient, or a new recording from any screen — no need to navigate first. If a patient walks in unscheduled, this is your button.'
+      ])
     },
     {
-      key: 'review', badge: 'Step 5 · Review', title: 'Review & sign — you decide',
-      target: ['#noteCard', '#noteBox', '.note-card'],
-      body: textBody(['Read the draft, edit anything, switch between SOAP and insurance-ready formats, then Sign. Your signature block is appended automatically. Nothing is final until you sign.'])
+      key: 'visit', badge: 'Your day', title: 'The Visit tab is home base',
+      view: 'visit', target: ['#nav_visit', '[data-view="visit"]'],
+      body: textBody([
+        'You will live on this tab. It shows your day, the big pull button, the record button, and every quick tool for the patient in front of you.'
+      ])
     },
     {
-      key: 'send', badge: 'Step 6 · Send safely', title: 'Send back to your EMR',
-      target: ['#pushAllEmrBtn', '#emrBtn', '[data-emr-send]'],
-      body: textBody(['When ready, MLS drops the note into your EMR through the MLS Assist extension — you confirm it inside the EMR. MLS never signs for you, and clinical orders are never auto-sent; you place those yourself.'])
+      key: 'pull', badge: 'Your day', title: 'Pull your day in one tap',
+      view: 'visit', target: ['#ez3PullNow', '#mlsDsPullBtn', '.ez3-big'],
+      body: textBody([
+        'One tap and MLS Assist pulls today’s schedule and each patient’s chart — history, meds, allergies — out of your EMR and into MLS.'
+      ], [
+        'Use the ‹ › day strip above to pull any other day.',
+        'Pulling again later the same day is safe — it updates, it never duplicates.',
+        'Everything is filed under the EMR’s actual served date.'
+      ])
     },
     {
-      key: 'patients', badge: 'Step 7 · Charts', title: 'Patients & history',
-      target: ['#nav_patients', '#nav_history', '[data-view="patients"]'],
-      body: textBody(['Every chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top. The History tab lists everything you have generated.'])
+      key: 'record', badge: 'The visit', title: 'Record the visit — one button',
+      view: 'visit', target: ['.ez3fl-recbtn', '#recordBtn'],
+      body: textBody([
+        'Pick the patient, press record, and just talk to them like you normally would. MLS listens, transcribes live, and writes a complete structured note — with real ICD-10 codes — when you stop.'
+      ], [
+        'You can pause and resume mid-visit.',
+        'Multiple recording segments combine into one note.',
+        'The transcript stays visible so you can check what was heard.'
+      ])
     },
     {
-      key: 'reports', badge: 'Step 8 · Reports', title: 'Legal reports & prior-auth',
-      body: textBody(['From a patient you can generate a medical-legal narrative / IME / records-review report, or a payer-ready prior-authorization request and denial appeal — built only from that chart, with [bracketed placeholders] for anything missing. Always a draft you verify and sign.'])
+      key: 'capture', badge: 'The visit', title: 'No mic? Five other ways to capture',
+      view: 'visit', target: ['#ez3flDictate', '.ez3fl-qchip'],
+      body: textBody([
+        'The quick chips under the record button cover every situation:'
+      ], [
+        '🎤 Dictate — speak the note yourself instead of recording the room.',
+        '📋 Paste a transcript — already have text? Paste it and generate.',
+        '📱 Record on phone — scan a QR code and use your phone as the mic. No app needed.',
+        '📄 After-visit summary — a patient-friendly summary of the visit.',
+        '📦 Orders — draft orders for your review (drafts only — MLS never places orders).'
+      ])
     },
     {
-      key: 'practice', badge: 'Step 9 · Practice', title: 'Scheduling, booking & phone',
-      body: textBody(['Set your hours in Availability, share your online booking link, and let the AI phone assistant answer calls, book real open slots, and take messages — all from the same account.'])
+      key: 'review', badge: 'The note', title: 'Review, edit, sign — you decide',
+      view: 'visit', target: ['.ez3fl-openws', '#ez3flNoteWrap', '#noteCard'],
+      body: textBody([
+        'After Generate, the draft opens for review. Read it, edit anything inline, switch between SOAP and insurance-ready formats, then Sign — your signature block is appended automatically.',
+        'The Advanced visit workspace (this button) gives you the full editor with templates, code tables, and note tools. Nothing is ever final until you sign it.'
+      ])
     },
     {
-      key: 'studio', badge: 'Step 10 · More', title: 'AI Studio, custom cards & Help',
-      target: ['#nav_studio', '[data-view="studio"]'],
-      body: (function () {
-        return function () {
-          var wrap = el('div');
-          wrap.appendChild(para('AI Studio holds the extra tools — ask questions about a chart, and build your own visit cards by describing them in plain English (they are display-only and never change your note or write to your EMR).'));
-          wrap.appendChild(para('That is the tour! Reopen it anytime from ❓ Help or the Menu. Welcome aboard.'));
-          return wrap;
-        };
-      })()
+      key: 'send', badge: 'The note', title: 'Send it back to your EMR — safely',
+      view: 'visit',
+      body: textBody([
+        'When you are happy with the signed note, MLS Assist drops it into the right patient’s chart in your EMR. The safety rules are absolute:'
+      ], [
+        'MLS verifies patient identity (ID + DOB, not just name) before any write.',
+        'You confirm the note inside the EMR itself — MLS never signs there for you.',
+        'Clinical orders are NEVER auto-sent. You place those yourself, always.',
+        'If anything does not match, MLS refuses to write rather than guess.'
+      ])
+    },
+    {
+      key: 'opnote', badge: 'Procedures', title: 'Op notes — prep & draft',
+      view: 'visit', target: ['#ez3Prep'],
+      body: textBody([
+        'Doing a procedure? Op note — prep & draft builds the operative note for you: it pre-fills from the patient’s chart history (medication names, laterality, your usual details), leaves a fill-in box for anything it cannot know, and remembers your answers per patient for next time.'
+      ])
+    },
+    {
+      key: 'payreport', badge: 'Money', title: 'Pay Report — know your month',
+      view: 'visit', target: ['#mlsPrvbBtn', '.mls-prvb'],
+      body: textBody([
+        'The Pay Report estimates what the month looks like from the visits and codes you have actually documented — including pending visits — and can export the full estimate detail and fee schedule to Excel.'
+      ])
+    },
+    {
+      key: 'patients', badge: 'Charts', title: 'Patients — every chart in one place',
+      view: 'patients', target: ['#nav_patients', '[data-view="patients"]'],
+      body: textBody([
+        'Every pulled or created patient lives here: problem list, meds, allergies, prior visits, and every note. Search by name or DOB, open a chart, or add someone new.'
+      ])
+    },
+    {
+      key: 'calendar', badge: 'Schedule', title: 'Calendar — your pulled schedule',
+      view: 'calendar', target: ['#nav_calendar'],
+      body: textBody([
+        'The Calendar shows each day you have pulled, laid out by provider and time. Click any appointment to jump straight into that patient’s visit.'
+      ])
+    },
+    {
+      key: 'history', badge: 'Records', title: 'History — everything you have generated',
+      view: 'history', target: ['#nav_history'],
+      body: textBody([
+        'Every note, summary, and report you have ever generated is here — reopen, edit, copy, or export any of them. Nothing you make in MLS is ever lost.'
+      ])
+    },
+    {
+      key: 'menu-ask', badge: 'Menu', title: '✦ Ask — your practice copilot',
+      menu: true, target: [menuRowFinder('Ask')],
+      body: textBody([
+        'Everything else lives under Menu. Start with ✦ Ask — the Copilot. Ask it anything about your practice in plain English:'
+      ], [
+        '“Who hasn’t been seen in 90 days?”',
+        '“How busy is tomorrow?”',
+        'It can open the chart or start the visit for you on the spot.',
+        '💡 Recommendations gives AI follow-up suggestions after each note you generate.'
+      ])
+    },
+    {
+      key: 'menu-templates', badge: 'Menu', title: 'Templates & custom widgets',
+      menu: true, target: [menuRowFinder('Templates')],
+      body: textBody([
+        'Make MLS write the way YOU write:'
+      ], [
+        '🗂 Templates — upload or build note templates; MLS fills them on Generate.',
+        '＋ Custom widget — describe any card you want in plain English (“show BMI trend”) and MLS builds a real widget that auto-fills on every visit. Display-only — widgets never change your note or your EMR.'
+      ])
+    },
+    {
+      key: 'menu-staff', badge: 'Menu', title: 'Your front desk & your team',
+      menu: true, target: [menuRowFinder('Staff day-prep'), menuRowFinder('Patient intake')],
+      body: textBody([
+        'MLS is not just for the room:'
+      ], [
+        '🗃 Staff day-prep — a front-desk view to pull the day, prep charts, and get every patient ready before you walk in.',
+        '📝 Patient intake — digital intake forms patients fill out; answers land in the chart.',
+        '👥 Team — see the whole practice: who is busiest, where documentation gaps are.'
+      ])
+    },
+    {
+      key: 'menu-legal', badge: 'Menu', title: 'Legal requests & reports',
+      menu: true, target: [menuRowFinder('Legal requests')],
+      body: textBody([
+        '⚖️ When an attorney or insurer requests records, MLS assembles the full chart history and drafts a medical-legal narrative, IME, or records-review report — built only from that patient’s chart, with [bracketed placeholders] for anything missing. Always a draft you verify and sign.'
+      ])
+    },
+    {
+      key: 'menu-athena', badge: 'Menu', title: 'Troubleshooting, phone & reputation',
+      menu: true, target: [menuRowFinder('Troubleshoot Athena')],
+      body: textBody([
+        'Three more worth knowing:'
+      ], [
+        '🔧 Troubleshoot Athena — if pulls or write-backs ever act up, start here; it checks the connection end to end.',
+        '📱 Use on your phone — put MLS on your phone’s home screen and record from anywhere.',
+        '⭐ Reviews & reputation — find your Google reviews and grow the practice (Premium).'
+      ])
+    },
+    {
+      key: 'settings', badge: 'Finish up', title: 'Settings & Help',
+      target: ['#mlsRdUserChip', menuRowFinder('Settings')],
+      body: textBody([
+        'Two last things:'
+      ], [
+        '⚙ Settings (here, under your name) — practice details, your hours and online booking link, the AI phone assistant, signature block, and the extension download.',
+        '❓ Stuck later? ✦ Ask in the Menu answers “how do I…” questions, and this tour is always one click away: Menu → 🎓 Guided tour / How-to.'
+      ])
+    },
+    {
+      key: 'finish', badge: '✅ Ready', title: 'That’s everything — you’re ready',
+      body: textBody([
+        'The loop you will run every day: Pull → Record → Review & Sign → Send. Everything else supports that loop.',
+        'And the promise behind all of it: MLS drafts, you decide. Nothing is signed, sent, or ordered without you.',
+        'Reopen this tour anytime from Menu → 🎓 Guided tour / How-to. Welcome aboard!'
+      ])
     }
   ];
 
-  /* ---------------------------------------------------------------------------
-   * Overlay / rendering.
-   * ------------------------------------------------------------------------- */
-  var state = { open: false, i: 0, nodes: null, keyHandler: null, resizeHandler: null };
+  /* ------------------------------------------------------ overlay rendering */
+  var state = { open: false, i: 0, keyHandler: null, resizeHandler: null, posTimer: null, returnView: null };
 
   function ensureCss() {
     if (byId('mlsObtCss')) return;
     var s = el('style'); s.id = 'mlsObtCss';
     s.textContent =
-      '#mlsObtDim{position:fixed;inset:0;background:rgba(11,18,40,.62);z-index:' + Z + ';}' +
+      '#mlsObtDim{position:fixed;inset:0;background:rgba(11,18,40,.55);z-index:' + Z + ';}' +
       '#mlsObtCatch{position:fixed;inset:0;z-index:' + (Z + 1) + ';cursor:default;}' +
-      '#mlsObtRing{position:fixed;z-index:' + (Z + 2) + ';border:3px solid #C9DCD2;border-radius:12px;box-shadow:0 0 0 4px rgba(99,160,255,.35),0 0 0 9999px rgba(11,18,40,.0);pointer-events:none;transition:all .18s ease;}' +
-      '#mlsObtCard{position:fixed;z-index:' + (Z + 3) + ';max-width:380px;width:calc(100vw - 32px);box-sizing:border-box;background:linear-gradient(180deg,#2E6A4B,#204034);color:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 18px 50px rgba(10,20,50,.5);font-family:system-ui,-apple-system,"Plus Jakarta Sans",sans-serif;}' +
+      '#mlsObtRing{position:fixed;z-index:' + (Z + 2) + ';border:3px solid #C9DCD2;border-radius:12px;' +
+        'box-shadow:0 0 0 4px rgba(155,130,212,.45),0 0 0 9999px rgba(11,18,40,.55);pointer-events:none;transition:all .22s ease;}' +
+      '#mlsObtCard{position:fixed;z-index:' + (Z + 3) + ';max-width:400px;width:calc(100vw - 32px);box-sizing:border-box;' +
+        'background:linear-gradient(180deg,#2E6A4B,#204034);color:#fff;border-radius:16px;padding:18px 18px 14px;' +
+        'box-shadow:0 18px 50px rgba(10,20,50,.5);font-family:system-ui,-apple-system,"Plus Jakarta Sans",sans-serif;transition:top .22s ease,left .22s ease;}' +
       '#mlsObtCard h3{margin:6px 0 2px;font-size:18px;line-height:1.25;}' +
-      '#mlsObtDots{display:flex;gap:5px;margin:12px 0 10px;flex-wrap:wrap;}' +
-      '.mlsObtDot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);}' +
-      '.mlsObtDot.on{background:#fff;}' +
+      '#mlsObtProg{display:flex;align-items:center;gap:8px;margin:12px 0 10px;}' +
+      '#mlsObtBar{flex:1;height:4px;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden;}' +
+      '#mlsObtBarFill{height:100%;border-radius:999px;background:#C9DCD2;transition:width .22s ease;}' +
+      '#mlsObtCount{font:600 11px/1 system-ui;color:#cfe0d8;white-space:nowrap;}' +
       '#mlsObtBtns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;}' +
       '.mlsObtBtn{font:600 13px/1 system-ui;border-radius:9px;padding:9px 13px;border:0;cursor:pointer;}' +
       '.mlsObtNext{background:#fff;color:#204034;}' +
@@ -617,21 +784,26 @@
 
   function positionForTarget(ring, card, target) {
     var vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
+    var dim = byId('mlsObtDim');
     if (target && target.getBoundingClientRect) {
       var r = target.getBoundingClientRect();
+      if (dim) dim.style.display = 'none';         // cutout shadow does the dimming
       ring.style.display = 'block';
       ring.style.left = Math.max(4, r.left - 6) + 'px';
       ring.style.top = Math.max(4, r.top - 6) + 'px';
       ring.style.width = Math.min(vw - 8, r.width + 12) + 'px';
       ring.style.height = Math.min(vh - 8, r.height + 12) + 'px';
-      // place card below if room, else above, else centered-bottom
-      var cardTop = r.bottom + 12;
-      if (cardTop + 220 > vh) cardTop = Math.max(12, r.top - 232);
+      var cardH = Math.min(vh - 24, (card.offsetHeight || 260));
+      var cardTop = r.bottom + 14;
+      if (cardTop + cardH > vh - 12) cardTop = Math.max(12, r.top - cardH - 14);
+      if (cardTop + cardH > vh - 12) cardTop = Math.max(12, vh - cardH - 12);
       card.style.top = cardTop + 'px';
-      var left = Math.min(Math.max(12, r.left), vw - 392);
+      var left = Math.min(Math.max(12, r.left), Math.max(12, vw - 412));
       card.style.left = left + 'px';
       card.style.bottom = 'auto'; card.style.right = 'auto';
+      card.style.transform = '';
     } else {
+      if (dim) dim.style.display = 'block';
       ring.style.display = 'none';
       card.style.left = '50%'; card.style.top = '50%';
       card.style.transform = 'translate(-50%,-50%)';
@@ -643,21 +815,20 @@
     var step = STEPS[state.i];
     var ring = byId('mlsObtRing'), card = byId('mlsObtCard');
     if (!ring || !card) return;
-    card.style.transform = '';
-    // build card content
+    applyScene(step);
     card.innerHTML = '';
     var badge = el('div', 'font:700 11px/1 system-ui;letter-spacing:.03em;color:#EAF1EE;text-transform:uppercase', step.badge || '');
     card.appendChild(badge);
-    var h = el('h3', '', step.title || ''); card.appendChild(h);
+    card.appendChild(el('h3', '', step.title || ''));
     var bodyNode = (typeof step.body === 'function') ? step.body() : el('div', '', String(step.body || ''));
     card.appendChild(bodyNode);
-    // dots
-    var dots = el('div'); dots.id = 'mlsObtDots';
-    for (var d = 0; d < STEPS.length; d++) {
-      var dot = el('span'); dot.className = 'mlsObtDot' + (d === state.i ? ' on' : ''); dots.appendChild(dot);
-    }
-    card.appendChild(dots);
-    // buttons
+    var prog = el('div'); prog.id = 'mlsObtProg';
+    var bar = el('div'); bar.id = 'mlsObtBar';
+    var fill = el('div'); fill.id = 'mlsObtBarFill';
+    fill.style.width = Math.round(((state.i + 1) / STEPS.length) * 100) + '%';
+    bar.appendChild(fill); prog.appendChild(bar);
+    prog.appendChild(el('span', '', (state.i + 1) + ' / ' + STEPS.length)).id = 'mlsObtCount';
+    card.appendChild(prog);
     var btns = el('div'); btns.id = 'mlsObtBtns';
     if (state.i > 0) {
       var back = el('button'); back.className = 'mlsObtBtn mlsObtBack'; back.textContent = '← Back';
@@ -667,14 +838,19 @@
     next.textContent = (state.i >= STEPS.length - 1) ? '✓ Finish' : 'Next →';
     on(next, 'click', function () { (state.i >= STEPS.length - 1) ? finish(true) : go(1); });
     btns.appendChild(next);
-    var skip = el('button'); skip.className = 'mlsObtBtn mlsObtSkip'; skip.textContent = 'Skip';
+    var skip = el('button'); skip.className = 'mlsObtBtn mlsObtSkip'; skip.textContent = 'Skip tour';
     on(skip, 'click', function () { finish(true); });
     btns.appendChild(skip);
     card.appendChild(btns);
-    // position (graceful spotlight)
-    var target = step.target ? resolveTarget(step.target) : null;
-    if (target && target.scrollIntoView) { try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }
-    positionForTarget(ring, card, target);
+    /* position now, and once more after the scene settles (view switches render async) */
+    function place() {
+      var target = step.target ? resolveTarget(step.target) : null;
+      if (target && target.scrollIntoView) { try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }
+      positionForTarget(byId('mlsObtRing') || ring, byId('mlsObtCard') || card, target);
+    }
+    place();
+    try { if (state.posTimer) clearTimeout(state.posTimer); } catch (e) {}
+    state.posTimer = setTimeout(function () { if (state.open && STEPS[state.i] === step) place(); }, 380);
   }
 
   function go(delta) {
@@ -684,13 +860,24 @@
     state.i = n; renderStep();
   }
 
+  function currentView() {
+    try {
+      var tabs = document.querySelectorAll('.navtab.on');
+      for (var i = 0; i < tabs.length; i++) {
+        var m = /^nav_(\w+)$/.exec(tabs[i].id || '');
+        if (m) return m[1];
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function openTour() {
     if (state.open) return;
     ensureCss();
     clearOverlay();
+    state.returnView = currentView();
     var dim = el('div'); dim.id = 'mlsObtDim';
     var catcher = el('div'); catcher.id = 'mlsObtCatch';
-    // Safety: swallow all clicks on the page while the tour is up.
     on(catcher, 'click', function (ev) { ev.preventDefault(); ev.stopPropagation(); }, true);
     on(catcher, 'mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); }, true);
     var ring = el('div'); ring.id = 'mlsObtRing'; ring.style.display = 'none';
@@ -701,9 +888,16 @@
     document.body.appendChild(card);
     state.open = true; state.i = 0;
     state.keyHandler = function (e) {
-      if (e.key === 'Escape') { finish(true); }
-      else if (e.key === 'ArrowRight') { go(1); }
-      else if (e.key === 'ArrowLeft') { go(-1); }
+      var handled = false;
+      if (e.key === 'Escape') { finish(true); handled = true; }
+      else if (e.key === 'ArrowRight') { go(1); handled = true; }
+      else if (e.key === 'ArrowLeft') { go(-1); handled = true; }
+      else if (e.key === 'Enter') {
+        /* don't double-fire when a card button/link is focused (its click handles it) */
+        var t = e.target;
+        if (!(t && (t.tagName === 'BUTTON' || t.tagName === 'A'))) { go(1); handled = true; }
+      }
+      if (handled) { try { e.preventDefault(); e.stopPropagation(); } catch (x) {} }
     };
     on(document, 'keydown', state.keyHandler, true);
     state.resizeHandler = function () { renderStep(); };
@@ -717,7 +911,11 @@
     state.open = false;
     off(document, 'keydown', state.keyHandler, true);
     off(window, 'resize', state.resizeHandler);
+    try { if (state.posTimer) clearTimeout(state.posTimer); } catch (e) {}
     clearOverlay();
+    /* leave the app the way we found it: menu closed, original view restored */
+    setMenuOpen(false);
+    try { if (state.returnView) gotoView(state.returnView); } catch (e) {}
   }
 
   function finish(setDone) {
@@ -725,17 +923,12 @@
     closeTour();
   }
 
-  /* ---------------------------------------------------------------------------
-   * Auto-launch on first sign-in. DEFERS while the practice-setup wizard
-   * (#setupModal.show) is open, so the two never collide; the tour is the
-   * natural next thing after setup. Never fires if already done this account or
-   * already shown this tab session.
-   * ------------------------------------------------------------------------- */
+  /* ------------------------------------------------ first sign-in auto-launch */
   function signedIn() {
     var app = byId('appScreen'), auth = byId('authScreen'), veil = byId('mlsBootVeil');
     var sess = '';
     try { sess = localStorage.getItem('sf_session') || localStorage.getItem('sf_user') || ''; } catch (e) {}
-    var appVisible = app ? isVisible(app) : true;   // if no #appScreen id, don't block
+    var appVisible = app ? isVisible(app) : true;
     var authHidden = auth ? !isVisible(auth) : true;
     var veilUp = veil ? isVisible(veil) : false;
     var navReady = !!byId('nav_visit') || !!document.querySelector('[data-view="visit"]');
@@ -751,20 +944,16 @@
     if (isDone()) return;
     try { if (sessionStorage.getItem(SESSION_SHOWN) === '1') return; } catch (e) {}
     if (!signedIn()) { scheduleAuto(); return; }
-    if (setupOpen()) { scheduleAuto(); return; } // let the setup wizard finish first
-    // one more settle beat, then a final signed-in re-check (guards a logout in the window)
+    if (setupOpen()) { scheduleAuto(); return; }
     setTimeout(function () { if (!state.open && signedIn() && !setupOpen() && !isDone()) openTour(); }, 700);
   }
   function scheduleAuto() {
     _autoTries++;
-    if (_autoTries > 120) return; // ~2 min ceiling, then stop polling
+    if (_autoTries > 120) return;
     _autoTimer = setTimeout(maybeAutoLaunch, 1000);
   }
 
-  /* ---------------------------------------------------------------------------
-   * Revisit affordances: a Menu row + a Help intercept. Both open THIS tour.
-   * Re-asserted on a slow tick so they survive menu re-renders.
-   * ------------------------------------------------------------------------- */
+  /* --------------------------------------------------------- Menu row keep */
   var _menuTimer = null;
   function ensureMenuRow() {
     try {
@@ -780,25 +969,15 @@
       panel.appendChild(row);
     } catch (e) {}
   }
-  var _helpBound = false;
-  function bindHelp() {
-    if (_helpBound) return;
-    var help = byId('nav_help');
-    if (!help) return;
-    on(help, 'click', function (ev) {
-      try { ev.stopImmediatePropagation(); ev.preventDefault(); } catch (e) {}
-      openTour();
-    }, true);
-    _helpBound = true;
-  }
+  /* NOTE: unlike obt-1.0.0 there is deliberately NO #nav_help intercept here.
+   * Help is the AI help assistant (openMlsHelp); the tour's entry points are
+   * first-login auto-launch and the Menu row above. */
 
-  /* ---------------------------------------------------------------------------
-   * Boot.
-   * ------------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------- boot */
   function boot() {
     ensureCss();
-    ensureMenuRow(); bindHelp();
-    _menuTimer = setInterval(function () { ensureMenuRow(); bindHelp(); }, 1500);
+    ensureMenuRow();
+    _menuTimer = setInterval(ensureMenuRow, 1500);
     scheduleAuto();
   }
 
@@ -812,6 +991,7 @@
   }
   function reset() {
     try { localStorage.removeItem(doneKey()); } catch (e) {}
+    try { localStorage.removeItem(DONE_PREFIX + 'anon'); } catch (e) {}
     try { sessionStorage.removeItem(SESSION_SHOWN); } catch (e) {}
     _autoTries = 0; scheduleAuto();
   }
@@ -820,21 +1000,25 @@
     installed: true, version: VERSION,
     open: openTour, close: closeTour, reset: reset, revert: revert,
     stepCount: function () { return STEPS.length; },
-    /* pure functions for the offline harness (no DOM required) */
+    goTo: function (n) { if (state.open && n >= 0 && n < STEPS.length) { state.i = n; renderStep(); } },
     __test: {
       detectBrowser: detectBrowser,
       isChrome: isChrome,
       pingExtension: pingExtension,
       resolveTarget: resolveTarget,
       isVisible: isVisible,
+      menuRowFinder: menuRowFinder,
       doneKeyFor: function (email) { return DONE_PREFIX + String(email || 'anon').toLowerCase(); },
-      steps: function () { return STEPS.map(function (s) { return { key: s.key, title: s.title, hasTarget: !!s.target }; }); },
+      steps: function () {
+        return STEPS.map(function (s) {
+          return { key: s.key, title: s.title, hasTarget: !!s.target, view: s.view || null, menu: !!s.menu };
+        });
+      },
       constants: { CHROME_URL: CHROME_URL, EXT_INSTALL_URL: EXT_INSTALL_URL, DONE_PREFIX: DONE_PREFIX }
     }
   };
 
-  // Alias the legacy global so any pre-existing "__mlsGuidedTour.open()" caller
-  // (menu rows, help handlers baked into the bundle) opens THIS tour instead.
+  /* legacy alias: any surviving __mlsGuidedTour.open() caller opens THIS tour */
   try { window.__mlsGuidedTour = window.__mlsOnboardingTour; } catch (e) {}
 
   if (document.readyState === 'loading') on(document, 'DOMContentLoaded', boot); else boot();
@@ -31737,7 +31921,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b338';
+  window.__MLS_AV = window.__MLS_AV || 'b341';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32028,7 +32212,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b338';
+  var MLS_APP_BUILD='2026-07-16-b341';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
