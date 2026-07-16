@@ -39,9 +39,10 @@ assert(code.includes("W.showView('orders')"), 'Orders popup must lead to the ded
 assert(code.includes("MODAL_ID = 'mlsQuickToolPopup'"), 'in-place Quick Tool dialog is missing');
 
 // The day-progress label has two writers. The short 15-second legacy write is
-// normalized before paint and its final width is reserved, preventing the
-// intermittent compressed blue-pill/header reflow shown by the owner.
-assert(code.includes("flex:0 0 361px;min-width:361px"), 'day-progress final width is not reserved');
+// normalized before paint, while its intrinsic pill is capped so it cannot
+// expand into a full-width blue bar or force Recent off the header.
+assert(code.includes("flex:0 1 auto;min-width:0;max-width:min(361px,100%);width:max-content"), 'day-progress pill is not compact and capped');
+assert(!code.includes("flex:0 0 361px;min-width:361px"), 'day-progress still reserves an oversized fixed column');
 assert(asset.includes("continuityStyle.__mlsStabilizePatientBar();"), 'patient-bar same-frame shared mutation pass is missing');
 assert(code.includes("st.__mlsStabilizePatientBar = stabilizePatientBar"), 'patient-bar stabilizer must survive global cleanup');
 assert(code.includes("document.body.classList.contains('mls-has-active-pt')"), 'active-patient ownership guard is missing');

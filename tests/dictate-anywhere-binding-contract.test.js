@@ -101,8 +101,8 @@ function finalResult(text) {
 }
 
 const h = makeHarness();
-assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.0.3');
-for (const id of ['transcript', 'noteBox', 'patientLabel', 'ez3Transcript', 'ez3Note', 'mlsProtoScratch']) {
+assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.1.0');
+for (const id of ['transcript', 'noteBox', 'patientLabel', 'ez3Transcript', 'ez3Note', 'mlsProtoScratch', 'ez3flTranscript', 'ez3flNote']) {
   assert(source.includes("id === '" + id + "'"), `clinical dictation alias ${id} is not visit-scoped`);
 }
 h.documentHandlers.focusin({ target: h.transcript });
@@ -132,6 +132,57 @@ h.context.currentVisitAthenaEpoch += 1;
 samePatientRecognition.onresult(finalResult('old same-patient visit detail'));
 assert.strictEqual(h.transcript.value, '', 'field dictation crossed a same-patient New Visit boundary');
 assert.strictEqual(h.context.__mlsDictateAnywhere.isListening(), false);
+
+/* ---- da-1.1.0: the easy-workflow chip drives dictation through toggleFor ----
+ * Clicking the easy Dictate chip must start recognition bound to the exact
+ * #ez3flTranscript node, insert final speech into it, let the lane's own input
+ * listener synchronize the underlying #transcript, and reject stale results
+ * after a visit change. */
+const h2 = makeHarness();
+const api2 = h2.context.__mlsDictateAnywhere;
+assert.strictEqual(typeof api2.toggleFor, 'function', 'the direct toggleFor API is missing');
+
+const topTx = makeNode('textarea', h2.nodes);
+topTx.id = 'ez3flTranscript';
+h2.nodes.ez3flTranscript = topTx;
+/* the flow lane mirrors the top textarea into the canonical #transcript on
+   every input event — model that exact listener */
+topTx.dispatchEvent = function (ev) {
+  if (ev && ev.type === 'input') h2.nodes.transcript.value = topTx.value;
+};
+
+/* an ineligible target is refused with a calm explanation */
+const disabledBox = makeNode('textarea', h2.nodes);
+disabledBox.disabled = true;
+assert.strictEqual(api2.toggleFor(disabledBox), false, 'a disabled field must not accept dictation');
+assert.strictEqual(h2.recognizers.length, 0, 'a refused toggle still created a recognizer');
+
+assert.strictEqual(api2.toggleFor(topTx), true, 'toggleFor did not start listening on the easy transcript');
+assert(h2.context.currentVisitAthenaBinding, 'the easy transcript was not visit-bound before the first spoken word');
+assert.strictEqual(h2.recognizers.length, 1, 'toggleFor did not start exactly one recognition session');
+const easyRecognition = h2.recognizers[0];
+easyRecognition.onresult(finalResult('knee exam is stable today'));
+assert.strictEqual(topTx.value, 'knee exam is stable today', 'final speech did not land in the easy transcript');
+assert.strictEqual(h2.nodes.transcript.value, 'knee exam is stable today', 'the underlying transcript was not synchronized');
+
+/* toggling again while listening stops the same session */
+assert.strictEqual(api2.toggleFor(topTx), false, 'a second toggle did not stop dictation');
+assert.strictEqual(api2.isListening(), false);
+assert.strictEqual(easyRecognition.stopCalls, 1, 'the recognizer was not stopped');
+
+/* a stale queued result after a visit change is rejected, not inserted */
+assert.strictEqual(api2.toggleFor(topTx), true, 'restart for the stale-result scenario failed');
+const staleRecognition = h2.recognizers[1];
+h2.context.currentVisitAthenaBinding = { id: 'visit-z', patient: { patientId: 'z', name: 'Patient Z' } };
+h2.context.currentVisitAthenaEpoch += 1;
+staleRecognition.onresult(finalResult('should never land'));
+assert.strictEqual(topTx.value, 'knee exam is stable today', 'a stale result crossed the visit change into the easy transcript');
+assert.strictEqual(api2.isListening(), false, 'stale dictation did not stop after the visit change');
+
+/* the easy chip keeps a compatibility fallback to the old dock */
+const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+assert(connect.includes('dictate.toggleFor(top)'), 'the easy Dictate chip does not call the direct API');
+assert(connect.includes("else clickTopVoiceControl('mlsDaDock', 'Dictate')"), 'the old dock fallback was removed instead of kept as compatibility');
 
 const newVisitSource = app.slice(app.indexOf('function newVisit(opts)'), app.indexOf('function noteRecordFromState(markSigned)'));
 const switchSource = app.slice(app.indexOf('function _athenaHandleActivePatientChange(previousId,nextId)'), app.indexOf('function _athenaMarkBoundEdit(fieldId)'));

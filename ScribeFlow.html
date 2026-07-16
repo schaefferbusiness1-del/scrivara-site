@@ -19640,7 +19640,7 @@ function agSyncSignState(){
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
 /* The cover stays up through cloud hydration and a stable first-frame window.
    It is deliberately bounded: an optional service can slow startup, never trap it. */
-const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
+const SF_GATE_MIN_MS=4500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
 /* "Ready" is a hand-off signal, not another loading step.  Keep it readable
    for one beat, then reveal the already-stable app in under 200 ms. */
 const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120;
@@ -19654,10 +19654,10 @@ function sfScheduleGateStages(el){
   sfClearGateStages();
   const msg=el&&el.querySelector('#mlsBLmsg');
   const stages=[
-    [1500,'Loading your schedule…'],
-    [3500,'Preparing your workspace…'],
-    [5600,'Almost ready…'],
-    [9000,'Still preparing your workspace…']
+    [1100,'Loading your schedule…'],
+    [2500,'Preparing your workspace…'],
+    [3900,'Almost ready…'],
+    [8000,'Still preparing your workspace…']
   ];
   stages.forEach(stage=>{
     sfGateStageTimers.push(setTimeout(()=>{
@@ -19729,7 +19729,7 @@ function sfShowGateLoading(){
   el.setAttribute('aria-label','Preparing your MLS workspace');
   el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center;opacity:1;visibility:visible;pointer-events:auto;transition:opacity '+SF_GATE_FADE_MS+'ms ease';
   if(!el.querySelector('#sfGateLoadingInner')){
-    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}#mlsBLbar{transform-origin:left center;will-change:transform}#sfGateLoading.mls-gate-progress #mlsBLbar{animation:sfGateAdvance 6200ms cubic-bezier(.22,.7,.25,1) forwards}#sfGateLoading #mlsBLbar.done{animation:none;transform:scaleX(1)!important}@keyframes sfGateAdvance{0%{transform:scaleX(.08)}24%{transform:scaleX(.28)}58%{transform:scaleX(.57)}84%{transform:scaleX(.78)}100%{transform:scaleX(.88)}}@media(prefers-reduced-motion:reduce){#sfGateLoading.mls-gate-progress #mlsBLbar{animation:none;transform:scaleX(.55)}}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
+    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}#mlsBLbar{transform-origin:left center;will-change:transform}#sfGateLoading.mls-gate-progress #mlsBLbar{animation:sfGateAdvance 4300ms cubic-bezier(.22,.7,.25,1) forwards}#sfGateLoading #mlsBLbar.done{animation:none;transform:scaleX(1)!important}@keyframes sfGateAdvance{0%{transform:scaleX(.08)}24%{transform:scaleX(.28)}58%{transform:scaleX(.57)}84%{transform:scaleX(.78)}100%{transform:scaleX(.88)}}@media(prefers-reduced-motion:reduce){#sfGateLoading.mls-gate-progress #mlsBLbar{animation:none;transform:scaleX(.55)}}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
       '<div id="sfGateLoadingBrand" style="display:flex;align-items:center;gap:12px">'+
         '<svg viewBox="0 0 56 56" width="48" height="48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sfGateMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect width="56" height="56" rx="15" fill="url(#sfGateMarkGrad)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>'+
         '<span style="font:800 24px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;letter-spacing:-.3px">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span>'+
@@ -23753,7 +23753,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b320';
+  window.__MLS_AV='b321';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

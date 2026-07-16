@@ -1,5 +1,5 @@
 /* =============================================================================
- * __mlsDictateAnywhere  da-1.0.3   (2026-07-15, owner directive)
+ * __mlsDictateAnywhere  da-1.1.0   (2026-07-16, owner directive)
  * -----------------------------------------------------------------------------
  * "There is always a chance to dictate into any text box."
  * Focus any textarea / text-ish input / contenteditable in MLS Scribe and a
@@ -23,7 +23,7 @@
   'use strict';
   if (window.__mlsDictateAnywhere) return;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var api = { installed: true, version: 'da-1.0.3', supported: !!SR, starts: 0 };
+  var api = { installed: true, version: 'da-1.1.0', supported: !!SR, starts: 0 };
   window.__mlsDictateAnywhere = api;
   if (!SR) { api.revert = function () {}; return; }
 
@@ -60,7 +60,10 @@
   function isVisitField(el) {
     var id = el && el.id ? String(el.id) : '';
     return id === 'transcript' || id === 'noteBox' || id === 'patientLabel'
-      || id === 'ez3Transcript' || id === 'ez3Note' || id === 'mlsProtoScratch';
+      || id === 'ez3Transcript' || id === 'ez3Note' || id === 'mlsProtoScratch'
+      /* da-1.1.0: the easy-workflow top lane's canonical transcript alias.
+         It mirrors #transcript, so it gets the same immutable visit binding. */
+      || id === 'ez3flTranscript' || id === 'ez3flNote';
   }
   function captureVisitToken(target) {
     var binding = null, epoch = null;
@@ -379,4 +382,30 @@
   };
   api.stop = stop;
   api.isListening = function () { return listening; };
+  /* da-1.1.0: direct programmatic entry point for first-party callers (the
+     easy-workflow Dictate chip). Toggles dictation FOR a specific field:
+     - already listening -> stop (regardless of target), exactly like the chip;
+     - otherwise validate the supplied target with the SAME eligibility rules
+       the focus-driven chip uses, focus it, and start recognition bound to it.
+     Every existing guard still applies unchanged: visit-field targets must
+     resolve an immutable patient/visit binding before the first spoken word,
+     stale results after a patient switch / New Visit are rejected by
+     visitTokenStillSafe, and the speech hub still arbitrates the microphone.
+     Returns true when dictation is listening after the call, false when it
+     stopped or could not start. */
+  api.toggleFor = function (target) {
+    if (listening) { stop(); return false; }
+    if (!target || !eligible(target)) {
+      try { if (typeof window.toast === 'function') window.toast('That field cannot take dictation. Click into a text box first.', 'err'); } catch (e) {}
+      return false;
+    }
+    try { if (!document.contains(target)) return false; } catch (e2) { return false; }
+    field = target;
+    lastField = target;
+    try { target.focus({ preventScroll: true }); } catch (e3) {}
+    css();
+    start();
+    try { syncDock(); } catch (e4) {}
+    return listening;
+  };
 })();

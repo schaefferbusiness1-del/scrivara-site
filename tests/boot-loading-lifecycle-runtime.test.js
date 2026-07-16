@@ -52,9 +52,9 @@ function harness(ready, assetsSettled = true) {
   fast.context.api.setStart(0); fast.context.api.setToken(1);
   let fastResult = 'pending';
   fast.context.api.wait(1, false).then(v => { fastResult = v; });
-  await fast.advance(6499);
-  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the 6.5-second minimum');
-  await fast.advance(6580);
+  await fast.advance(4499);
+  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the 4.5-second minimum');
+  await fast.advance(4620);
   assert.strictEqual(fastResult, true, 'stable ready UI did not release at the minimum');
 
   const deferred = harness(true, false);
@@ -65,7 +65,7 @@ function harness(ready, assetsSettled = true) {
   assert.strictEqual(deferredResult, 'pending', 'unsettled critical assets incorrectly released the loader');
   assert.strictEqual(deferred.rectReads(), 0, 'loader forced layout while critical assets were still invalidating the page');
   deferred.settleAssets();
-  await deferred.advance(6600);
+  await deferred.advance(4700);
   assert(deferred.rectReads() > 0, 'loader never sampled layout after the critical asset wave settled');
   assert.strictEqual(deferredResult, true, 'settled critical assets did not enter stable-frame release');
 
@@ -86,5 +86,5 @@ function harness(ready, assetsSettled = true) {
   await stale.advance(140);
   assert.strictEqual(staleResult, false, 'a stale hide request can clear a newer loading owner');
 
-  console.log('PASS loader lifecycle: 6.5s minimum, deferred layout sampling, 32s bounded reveal, and stale-token safety');
+  console.log('PASS loader lifecycle: 4.5s minimum, deferred layout sampling, 32s bounded reveal, and stale-token safety');
 })().catch(err => { console.error(err); process.exit(1); });

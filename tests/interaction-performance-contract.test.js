@@ -105,7 +105,7 @@ assert(dictateMove.includes('if (moveRaf != null) return') && dictateMove.includ
 assert(dictate.includes("window.addEventListener('scroll', onMove, { capture: true, passive: true })"), 'dictate scroll placement can block compositor scrolling');
 assert(dictate.includes("window.addEventListener('resize', onMove, { passive: true })"), 'dictate resize placement is not passive');
 assert(dictate.includes('if (moveRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(moveRaf); else clearTimeout(moveRaf); }'), 'dictate cleanup leaks a scheduled placement frame');
-assert(dictate.includes("version: 'da-1.0.3'") && connect.includes('__mlsDictateAnywhere da-1.0.3'), 'dictate-anywhere runtime/loader contract is not da-1.0.3');
+assert(dictate.includes("version: 'da-1.1.0'") && connect.includes('__mlsDictateAnywhere da-1.1.0'), 'dictate-anywhere runtime/loader contract is not da-1.1.0');
 
 assert(!/setInterval\s*\(|getBoundingClientRect\s*\(/.test(agentActions), 'agent actions still uses a permanent poll or forced layout read');
 assert(agentActions.includes('panelObserver.observe(panel,{childList:true,subtree:true})'), 'agent actions is not scoped to its own panel for re-render recovery');
@@ -188,7 +188,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-16-b320' }, 'tiny version probe does not match b320');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-16-b321' }, 'tiny version probe does not match b321');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -245,4 +245,4 @@ const swFetch = sw.slice(swFetchStart);
 assert.strictEqual((swFetch.match(/e\.waitUntil\(/g) || []).length, 2, 'service-worker cache writes can be terminated after respondWith resolves');
 assert(swFetch.includes('e.waitUntil(response.then(() => cacheWrite).catch(() => {}))'), 'service-worker fetch lifetime is not tied to its deferred cache write');
 
-console.log('PASS interaction performance: native Settings scroll, loader-safe timers/calls, bounded agents, exact SW lifetime, deferred polish, and da-1.0.3');
+console.log('PASS interaction performance: native Settings scroll, loader-safe timers/calls, bounded agents, exact SW lifetime, deferred polish, and da-1.1.0');

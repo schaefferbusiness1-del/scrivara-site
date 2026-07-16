@@ -111,16 +111,22 @@
         '#patientBar>#mlsAgendaChip{grid-column:1;grid-row:1;order:0!important;margin-left:0!important;}'+
         '#patientBar>#patientBarInner{grid-column:2;grid-row:1;min-width:0;overflow:hidden;}'+
         '#patientBar>#patientBarInner .pnone{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'+
-        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:2;margin-left:0!important;min-width:0;}'+
-        '#patientBar>#mlsRecentPts{grid-column:3;grid-row:2;margin-left:0!important;}'+
+        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:2;margin-left:0!important;min-width:0;'+
+        'justify-self:start;width:max-content;max-width:min(361px,100%);overflow:hidden;}'+
+        '#patientBar>#mlsDayProgress .mdp-next{min-width:0;overflow:hidden;text-overflow:ellipsis;}'+
+        '#patientBar>#mlsRecentPts{grid-column:3;grid-row:2;margin-left:0!important;justify-self:start;'+
+        'min-width:max-content;max-width:100%;}'+
+        '#patientBar>#mlsRecentPts .mrp-btn{max-width:100%;}'+
         '#patientBar>.spacer{grid-column:4;grid-row:2;min-width:0;}'+
         '#patientBar>.btn-ghost{grid-column:3;grid-row:1;margin:0!important;white-space:nowrap;}'+
         '#patientBar>#wf2OneClick{grid-column:4;grid-row:1;margin:0!important;white-space:nowrap;}'+
         '@media(max-width:900px){#patientBar{grid-template-columns:minmax(0,1fr) auto!important;}'+
         '#patientBar>#mlsAgendaChip{grid-column:1/3;grid-row:1;}'+
         '#patientBar>#patientBarInner{grid-column:1/3;grid-row:2;}'+
-        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:3;max-width:100%;overflow:hidden;}'+
-        '#patientBar>#mlsRecentPts{grid-column:1;grid-row:4;}'+
+        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:3;justify-self:start;width:max-content;'+
+        'max-width:min(361px,100%);overflow:hidden;}'+
+        '#patientBar>#mlsRecentPts{grid-column:1;grid-row:4;justify-self:start;min-width:max-content;'+
+        'max-width:100%;}'+
         '#patientBar>.spacer{display:none!important;}'+
         '#patientBar>.btn-ghost{grid-column:2;grid-row:4;}'+
         '#patientBar>#wf2OneClick{grid-column:1/3;grid-row:5;justify-self:stretch;}}';

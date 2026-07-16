@@ -1308,9 +1308,14 @@
       'html body.mls-top-voice-tools #mlsDaDock{display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}',
       '}',
       /* The legacy day-progress renderer briefly replaces the provider-scoped
-         label every 15 seconds. Reserve the final width so that write cannot
-         collapse and reflow the patient bar while the second writer settles. */
-      '#mlsCtxBar>#mlsDayProgress{box-sizing:border-box;flex:0 0 361px;min-width:361px;justify-content:flex-start;}',
+         label every 15 seconds. Cap the intrinsic pill instead of reserving a
+         full flex column: the label stays stable without becoming a blue bar
+         across the header. The next-patient name may ellipsize on narrow bars,
+         while the seen/remaining counts stay visible. */
+      '#mlsCtxBar>#mlsDayProgress{box-sizing:border-box;flex:0 1 auto;min-width:0;max-width:min(361px,100%);width:max-content;align-self:flex-start;overflow:hidden;justify-content:flex-start;}',
+      '#mlsCtxBar>#mlsDayProgress .mdp-next{min-width:0;overflow:hidden;text-overflow:ellipsis;}',
+      '#mlsCtxBar>#mlsRecentPts{box-sizing:border-box;flex:0 0 auto;min-width:max-content;max-width:100%;align-self:flex-start;}',
+      '#mlsCtxBar>#mlsRecentPts .mrp-btn{max-width:100%;}',
       'body.mls-has-active-pt #patientBar>#mlsDayProgress,body.mls-has-active-pt #patientBar>#mlsAgendaChip{display:none!important;}',
       /* The Copilot dock owns the full viewport-height sidebar. Let its chat
          thread absorb the available space and keep a full-width composer at
@@ -1343,7 +1348,6 @@
       '.mls-qtp-link{display:block;color:#245C42;font-size:12px;word-break:break-all;}',
       '.mls-qtp-qr{width:180px;height:180px;border:1px solid #D7DFD9;border-radius:10px;background:#F5F7F5;object-fit:contain;}',
       '.mls-qtp-orders{border:1px solid #D7E4F3;background:#F5F9FE;border-radius:12px;padding:13px;min-height:54px;}',
-      '@media (max-width:900px){#mlsCtxBar>#mlsDayProgress{flex:1 1 100%;min-width:0;width:100%;max-width:100%;overflow:hidden;}}',
       '@media (max-width:620px){.mls-qtp-phone{grid-template-columns:1fr}.mls-qtp-qr{justify-self:center}}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);

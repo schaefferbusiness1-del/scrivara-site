@@ -28,13 +28,15 @@ assert(showSource.includes('html.mls-secure-loading #mlsBusyPill') && showSource
 assert(showSource.includes('html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}'), 'underlying app controls can leak above the secure loading surface');
 assert(showSource.includes('html.mls-secure-loading #mlsCopVoiceBtn') && showSource.includes('html.mls-secure-loading #mlsAsstFab') && showSource.includes('html.mls-secure-loading #mlsDaDock'), 'persistent voice controls can leak above the loading surface');
 assert(showSource.includes("bootVeil=document.getElementById('mlsBootVeil'); if(bootVeil) bootVeil.remove()"), 'the secure owner no longer retires the fallback boot veil');
-assert(app.includes('const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700'), 'long, bounded, quiet-window loading contract was lost');
+assert(app.includes('const SF_GATE_MIN_MS=4500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700'), 'bounded, quiet-window loading contract was lost');
 assert(app.includes('const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120'), 'Ready-to-app handoff is no longer bounded below 200ms');
 assert(showSource.includes('@keyframes sfGateAdvance') && showSource.includes('transform:scaleX('), 'loader progress is not compositor driven');
+assert(showSource.includes('animation:sfGateAdvance 4300ms'), 'loader progress no longer matches the faster safe startup floor');
+assert(app.includes("[1100,'Loading your schedule…']") && app.includes("[2500,'Preparing your workspace…']") && app.includes("[3900,'Almost ready…']") && app.includes("[8000,'Still preparing your workspace…']"), 'loader stage copy no longer matches the safe startup cadence');
 assert(showSource.includes('if(sfGateLoadingVisible&&el.style.display!==\'none\') return el'), 'duplicate startup calls can reset visible progress again');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b320'"), 'ScribeFlow loader was not cache-busted to b320');
+assert(app.includes("window.__MLS_AV='b321'"), 'ScribeFlow loader was not cache-busted to b321');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -109,7 +111,7 @@ assert(bootDriver.includes("owner:'ScribeFlow'"), 'compatibility layer does not 
 assert(!bootDriver.includes('setInterval('), 'a second progress interval can fight the secure loader again');
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b320'"), 'shared asset version was not bumped to b320');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-16-b320'"), 'app build was not bumped to b320');
+assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b321'"), 'shared asset version was not bumped to b321');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-16-b321'"), 'app build was not bumped to b321');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

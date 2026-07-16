@@ -5649,8 +5649,9 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.5.1';
+  var VERSION = 'fl-1.6.0';
   var _obs = null, _deb = null, _iv = null, _laneIv = null, _laneRaf = null;
+  var _primaryLane = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
     try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e) { return false; }
@@ -5725,14 +5726,30 @@
         } else cb.click();
       } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); return; }
     } else {
-      try { cb.click(); finishTopSegmentAfterStop(); }
-      catch (e2) { flowToast('The recorder could not stop. Please try again.', 'err'); return; }
+      /* Pause is non-destructive: never route through the legacy captureBtn
+         click (its stop path can raise a stop-and-generate confirmation).
+         Stopping the armed segment stops the base recorder AND slices this
+         segment's text; the full transcript itself always stays in
+         #transcript, and Resume opens the next segment against that same
+         patient binding. */
+      try {
+        var segStop = segmentApi();
+        if (segStop && typeof segStop.isArmed === 'function' && segStop.isArmed() && typeof segStop.stopSegment === 'function') {
+          segStop.stopSegment();
+        } else if (typeof window.stopCapture === 'function') {
+          window.stopCapture();
+        } else {
+          cb.click();
+          finishTopSegmentAfterStop();
+        }
+      }
+      catch (e2) { flowToast('The recorder could not pause. Please try again.', 'err'); return; }
     }
-    setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 250);
-    setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 900);
+    setTimeout(function () { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); }, 250);
+    setTimeout(function () { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); }, 900);
   }
   function generateTopNote() {
-    if (recordingNow()) { flowToast('Stop recording first. Your transcript will stay safe.', 'err'); return; }
+    if (recordingNow()) { flowToast('Pause recording first. Your transcript will stay safe.', 'err'); return; }
     var tx = $('transcript'), text = tx ? (tx.value || '').trim() : '';
     if (!text) { flowToast('Type, paste, or record some visit text first.', 'err'); var top = $('ez3flTranscript'); if (top) top.focus(); return; }
     var gen = $('genBtn');
@@ -5836,7 +5853,7 @@
         var dot = document.createElement('span'); dot.className = 'dot'; rb.appendChild(dot);
         rbLabel = document.createElement('span'); rbLabel.className = 'ez3fl-rblabel'; rb.appendChild(rbLabel);
       }
-      setLaneText(rbLabel, live ? '\u23F8 Stop recording' : (text.trim() ? '\uD83C\uDFA4 Resume recording' : '\uD83C\uDFA4 ' + (pname ? 'Start recording - ' + pname : 'Start a visit recording')));
+      setLaneText(rbLabel, live ? '\u23F8 Pause recording' : (text.trim() ? '\uD83C\uDFA4 Resume recording' : '\uD83C\uDFA4 ' + (pname ? 'Start recording - ' + pname : 'Start a visit recording')));
       setLaneAttr(rb, 'aria-pressed', live ? 'true' : 'false');
     }
     setLaneHidden(ob, !!noteText.trim());
@@ -5846,7 +5863,7 @@
       setLaneText(gb, genReal && genReal.disabled && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
     }
     if (hint) {
-      setLaneText(hint, live ? 'Recording now. Stop whenever you need to; everything captured stays here so you can resume later.' :
+      setLaneText(hint, live ? 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.' :
         (noteText.trim() ? 'Your note is ready below. Review and edit it here before using any send tools.' :
         (text.trim() ? 'Recording stopped. Resume to add more, or generate one note from every segment.' :
         'Records locally and drafts the note here - nothing goes to Athena until you review and send it.')));
@@ -5858,7 +5875,7 @@
   }
   function scheduleLaneSync() {
     if (_laneRaf != null) return;
-    var run = function () { _laneRaf = null; try { syncTopLane(document.querySelector('.ez3fl-record')); } catch (e) {} };
+    var run = function () { _laneRaf = null; try { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); } catch (e) {} };
     _laneRaf = window.requestAnimationFrame ? window.requestAnimationFrame(run) : setTimeout(run, 16);
   }
   function laneSignal(ev) {
@@ -5873,16 +5890,18 @@
        order battle — inline-important is the deterministic hide */
     try { var fb = $('mlsDayHistBtn'); if (fb && fb.style.getPropertyValue('display') !== 'none') fb.style.setProperty('display', 'none', 'important'); } catch (e) {}
     var body = $('mlsEz3Body'); if (!body) return;
+    var wrap = body.querySelector('#ez3Wrap');
     var staff = onStaffScreen(body);
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
        nodes we insert at body level survive mode switches and must be removed
        for the mode they do not belong to (fl-1.0.1 fix: the Back button leaked
-       onto the doctor screen after a staff round-trip). */
+       onto the doctor screen after a staff round-trip). A Staff transition
+       removes the lane DELIBERATELY: the engine's own render pass has already
+       parked the canonical node for the doctor return, so anything still in
+       the DOM here is a stale duplicate. */
     try {
       var kill = staff ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
       body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
-      /* Opening the optional workspace must not destroy an in-progress top-lane
-         transcript. It stays mounted and mirrors the same underlying controls. */
     } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
@@ -5895,10 +5914,12 @@
          mounted lane (including textarea value, selection and focus), remove
          only accidental extras, and create it only when it truly is absent. */
       var mountedLanes = body.querySelectorAll('.ez3fl-record');
-      var mountedLane = mountedLanes.length ? mountedLanes[0] : null;
-      for (var laneIndex = 1; laneIndex < mountedLanes.length; laneIndex++) mountedLanes[laneIndex].remove();
+      var mountedLane = (_primaryLane && _primaryLane.isConnected && body.contains(_primaryLane))
+        ? _primaryLane : (mountedLanes.length ? mountedLanes[0] : null);
+      for (var laneIndex = 0; laneIndex < mountedLanes.length; laneIndex++) {
+        if (mountedLanes[laneIndex] !== mountedLane) mountedLanes[laneIndex].remove();
+      }
       if (!mountedLane) {
-        var wrap = body.querySelector('#ez3Wrap');
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
           var nmEl = document.querySelector('.mlsctx-name');
@@ -5924,7 +5945,7 @@
           rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(gb); rec.appendChild(hint);
           var txWrap = document.createElement('div');
           txWrap.className = 'ez3fl-transcript';
-          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, stop, and resume without losing anything</span></div>' +
+          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, pause, and resume without losing anything</span></div>' +
             '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="The visit conversation appears here as you speak. You can also type or paste text."></textarea>' +
             '<div class="ez3fl-txmeta"><span id="ez3flCount">0 words captured</span><span>Every segment is combined into one note.</span></div>';
           rec.appendChild(txWrap);
@@ -5965,8 +5986,13 @@
           });
           av.id = 'ez3flAssistant'; av.classList.add('ez3fl-voicechip'); av.setAttribute('aria-controls', 'mlsAsstPanel'); av.setAttribute('aria-pressed', 'false');
           var dv = mkq('<span aria-hidden="true">&#127908;</span><span class="ez3fl-vlabel">Dictate</span>', 'Dictate into the visit transcript (separate from Copilot Voice)', function () {
-            try { var top = $('ez3flTranscript'); if (top) top.focus(); } catch (e) {}
-            clickTopVoiceControl('mlsDaDock', 'Dictate');
+            var top = $('ez3flTranscript');
+            try { if (top) top.focus(); } catch (e) {}
+            try {
+              var dictate = window.__mlsDictateAnywhere;
+              if (dictate && typeof dictate.toggleFor === 'function') dictate.toggleFor(top);
+              else clickTopVoiceControl('mlsDaDock', 'Dictate');
+            } catch (e2) { clickTopVoiceControl('mlsDaDock', 'Dictate'); }
             setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
           });
           dv.id = 'ez3flDictate'; dv.classList.add('ez3fl-voicechip'); dv.setAttribute('aria-controls', 'ez3flTranscript'); dv.setAttribute('aria-pressed', 'false');
@@ -5987,10 +6013,17 @@
           });
           rec.appendChild(q);
 
+          /* The lane lives INSIDE #ez3Wrap before the screen's first action
+             row — its historical visual position. The active engine's own
+             render pass (v3.7.1 setWrapHtml) now detaches and reinserts this
+             exact node synchronously around every innerHTML rewrite, so this
+             creation path only runs when the lane truly does not exist yet. */
           wrap.insertBefore(rec, row2);
+          _primaryLane = rec;
           syncTopLane(rec);
         }
       } else {
+        _primaryLane = mountedLane;
         syncTopLane(mountedLane);
       }
       /* (1a1b) the home status line duplicated the banner strip's seen-count
@@ -6126,7 +6159,7 @@
         if (document.hidden) return;
         var visit = $('visitView');
         if (!visit || visit.style.display === 'none') return;
-        syncTopLane(document.querySelector('.ez3fl-record'));
+        syncTopLane(_primaryLane || document.querySelector('.ez3fl-record'));
       } catch (e) {}
     }, 2500);
     /* b233: the duplicate seen-count is now removed at the SOURCE (homeStatus in
@@ -6144,6 +6177,7 @@
       try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
       try { document.body.classList.remove('mls-top-voice-tools'); } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
+      _primaryLane = null;
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
     }
   };
@@ -16074,7 +16108,8 @@
   'use strict';
   if (window.__mlsEasyV32) return;
 
-  var VER = '3.7.0'; /* 3.7 = visible transcript editor + stop/resume without auto-generation */
+  var VER = '3.7.1'; /* 3.7 = visible transcript editor + stop/resume without auto-generation;
+                        3.7.1 = renders preserve the flow lane node through innerHTML rewrites */
 
   /* ---------------- kill switch (always defined, even when dormant) ------- */
   function easyEnabled() {
@@ -17167,6 +17202,48 @@
   /* =======================================================================
    *  renderers
    * ===================================================================== */
+  /* v3.7.1: the flow module's canonical .ez3fl-record lane (recorder chips +
+     #ez3flTranscript) is mounted INSIDE #ez3Wrap. Every render used to destroy
+     it via `wrap().innerHTML = h`; a satellite observer recreated it ~150ms
+     later -- a visible flicker that could also detach an active Dictate target
+     and silently drop speech results. This owner now detaches that exact node,
+     swaps the screen HTML, and reinserts the SAME node before the screen's
+     first .ez3-row2 within the same JavaScript turn, restoring focus and
+     selection. A screen with no .ez3-row2 (Choose patient) and the Staff
+     workspace deliberately PARK the node instead of reinserting it -- the same
+     node (value, listeners, per-node state intact) remounts on the next
+     doctor-screen render. Only this first-guard active engine does this; the
+     dormant duplicate engine copies never run. */
+  var _flowLaneKeep = null;
+  function setWrapHtml(h, laneAllowed) {
+    var w = wrap(); if (!w) return;
+    var lane = null;
+    try { lane = w.querySelector('.ez3fl-record'); } catch (e) {}
+    if (lane) _flowLaneKeep = null; /* a live lane always wins over a stale parked node */
+    else if (_flowLaneKeep && !_flowLaneKeep.isConnected) lane = _flowLaneKeep;
+    var focusEl = null, selS = null, selE = null, selD = 'none';
+    try {
+      var ae = document.activeElement;
+      if (lane && ae && lane.contains(ae)) {
+        focusEl = ae;
+        if (typeof ae.selectionStart === 'number') { selS = ae.selectionStart; selE = ae.selectionEnd; selD = ae.selectionDirection || 'none'; }
+      }
+    } catch (e1) {}
+    try { if (lane && lane.parentNode) lane.parentNode.removeChild(lane); } catch (e2) { lane = null; }
+    w.innerHTML = h;
+    _flowLaneKeep = null;
+    if (!lane) return;
+    var row2 = null;
+    try { row2 = laneAllowed === false ? null : w.querySelector('.ez3-row2'); } catch (e3) {}
+    if (!row2) { _flowLaneKeep = lane; return; }
+    try { w.insertBefore(lane, row2); } catch (e4) { _flowLaneKeep = lane; return; }
+    if (focusEl) {
+      try {
+        focusEl.focus({ preventScroll: true });
+        if (selS != null && typeof focusEl.setSelectionRange === 'function') focusEl.setSelectionRange(selS, selE, selD);
+      } catch (e5) {}
+    }
+  }
   function render() {
     if (!host) return;
     clearClicks(); /* every render rebuilds the click registry with fresh closures */
@@ -17278,7 +17355,7 @@
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    setWrapHtml(h, true);
     wireProvSelect(); wireAdv(); wireEmptyToday(); wireRecBanner();
     on('ez3Now', function () { var t2 = timeContext(); if (t2.cur) lockAndStart(t2.cur, { record: true }); });
     on('ez3Nxt', function () { var t2 = timeContext(); if (t2.nxt) lockAndStart(t2.nxt, { record: !t2.cur }); });
@@ -17516,7 +17593,7 @@
     h += '<div class="ez3-search"><input type="text" id="ez3Search" placeholder="🔍 Type a patient’s name…" value="' +
          esc(S.query || '') + '" autocomplete="off" autocapitalize="off" spellcheck="false"></div>';
     h += '<div id="ez3ChooseList">' + chooseListHtml() + '</div>';
-    wrap().innerHTML = h;
+    setWrapHtml(h, true);
     wireProvSelect(); wireRecBanner();
     on('ez3Back', function () { S.screen = 'home'; S.query = ''; render(); });
     var inp = $('ez3Search');
@@ -17675,7 +17752,7 @@
            '</div>';
     }
     h += advRowHtml();
-    wrap().innerHTML = h;
+    setWrapHtml(h, true);
     wireAdv(); wireQuickStrip();
 
     /* v3.4: ALL clicks below are registry-based (delegated) — see ez3Click.
@@ -18520,7 +18597,7 @@
       }
     }
     h += advRowHtml();
-    wrap().innerHTML = h;
+    setWrapHtml(h, false); /* Staff workspace: the lane is deliberately parked, not shown */
     wireProvSelect(); wireAdv(); wireRecBanner();
     /* v3.4: registry-based (delegated); range tabs + rows via data attributes */
     on('ez3PullStart', function () { startMonthPull(false); });
@@ -31504,7 +31581,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b320';
+  window.__MLS_AV = window.__MLS_AV || 'b321';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31795,7 +31872,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b320';
+  var MLS_APP_BUILD='2026-07-16-b321';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38719,7 +38796,7 @@
 }catch(e){}})();
 ;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623c1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
 
-;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260716ui113';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260716ui114';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260716vt102';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -38846,7 +38923,7 @@
 ;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260715dp6";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
 ;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714rp2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
 ;(function(){try{var A="feat_mls_ptsnapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714ps2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient snapshot chip: stable, deduplicated header rendering */
-;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714ag-stable1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
+;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716ag-stable3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
 ;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
 ;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716fd3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
 ;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714wntime1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
@@ -40045,7 +40122,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260714opnp130';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - immutable ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.3.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.3, mic chip on focus, insert-at-caret, zero observers) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.1.0, mic chip on focus, insert-at-caret, direct toggleFor API for the easy lane, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
 ;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716sr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* natural-language StudySpec -> stored-evidence limited-data draft with direct-identifier scrubbing where detectable (up to 30 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260716pr202';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/Send owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
