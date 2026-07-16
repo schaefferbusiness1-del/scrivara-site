@@ -75,6 +75,7 @@ const tests = [
   'patient-store-compression-runtime.test.js',
   'visit-shell-merge-alias-survival.test.js',
   'visit-pull-toggle-contract.test.js',
+  'visit-wire-identity-guard-runtime.test.js',
   'schedule-time-contract.test.js',
   'schedule-pull-integrity.test.js',
   'schedule-packaged-reader-regression.test.js',

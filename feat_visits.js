@@ -1495,13 +1495,31 @@
       var targetName = String((name && typeof name === 'object' && name.name) || '');
       var targetId = String((name && typeof name === 'object' && (name.patientId || name.id)) ||
         (appt && (appt._mlsTargetPatientId || appt.patientId)) || '');
+      /* The extension's frozen saveRef proof (verifiedName/Dob/Mrn observed on
+         the exact open chart) is deterministic. When it re-passes the app's
+         own identity gate, an AI-parsed chart.name string may not veto the
+         save: the parse routinely reformats or truncates names (live
+         2026-07-15: 5 exact-identity saves per day pull were blocked by the
+         fuzzy name check alone). Callers WITHOUT the deterministic proof
+         (legacy grab/bulk) keep the full fail-closed name veto. */
+      var refProofVerified = false;
+      try {
+        var tDob0 = String((name && typeof name === 'object' && name.dob) || (appt && appt.dob) || '');
+        var tMrn0 = String((name && typeof name === 'object' && (name.mrn || name.athenaId)) || (appt && (appt.mrn || appt.athenaId)) || '');
+        if (name && typeof name === 'object' && targetId && targetName && isFn(window._athenaHistoryProofMatches)) {
+          refProofVerified = window._athenaHistoryProofMatches(
+            { patientId: targetId, name: targetName, dob: tDob0, mrn: tMrn0 },
+            { chartName: String(name.verifiedName || ''), chartDob: String(name.verifiedDob || ''), chartMrn: String(name.verifiedMrn || '') }
+          ) === true;
+        }
+      } catch (eRefProof) { refProofVerified = false; }
       /* IDENTITY GUARD (2026-07-06): a schedule/bulk import once fed ONE open
          chart to EVERY appointment name, filing the same patient's data into
          62 charts. If the chart declares an identity that does not match the
          target name, BLOCK the whole save for that patient. */
       try {
         var cid = chartIdent(chart);
-        if (chart && cid.name && (!targetName || !namesMatch(cid.name, targetName))) {
+        if (!refProofVerified && chart && cid.name && (!targetName || !namesMatch(cid.name, targetName))) {
           console.warn('[mls-visit-wire] BLOCKED cross-patient chart write: chart belongs to "' + cid.name + '" but target is "' + targetName + '". Nothing saved for this patient.');
           try { window.__mlsVisitWire._blocked = (window.__mlsVisitWire._blocked || 0) + 1; window.__mlsVisitWire._lastBlocked = { chart: cid.name, target: targetName, at: new Date().toISOString() }; } catch (e) {}
           return false; /* the wrong chart must never touch this patient */
