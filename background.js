@@ -8946,7 +8946,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0;
+      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [];
       async function sleepWithinReadDeadline(ms) {
         var remaining = Math.max(0, readDeadline - Date.now());
         if (!remaining) return false;
@@ -8958,6 +8958,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var snap = rows[i] || {}, expected = snap.binding || null;
         if (!expected || Number(expected.index) !== i || !expected.rowKey) {
           failures.push({ index: i, reason: 'index-binding-missing' });
+          continue;
+        }
+        /* Live 2026-07-16: 'order group' rows are administrative order
+           summaries rendered in the cached classic_summary frame - they have
+           no clinical note body and can never satisfy the fresh-frame proof
+           (encounter-frame-not-refreshed on every chart carrying one). Count
+           them honestly on the receipt instead of failing the whole batch. */
+        if (/^\s*order\s*group\b/i.test(String(snap.type || ''))) {
+          administrativeRows.push({ index: i, type: String(snap.type || '').slice(0, 60) });
           continue;
         }
         attemptedCount++;
@@ -9148,17 +9157,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         failures.push({ index: -1, reason: 'read-deadline-exceeded' });
       }
 
-      var sourceKeys = {}, stableKeysComplete = visits.length === total;
+      var clinicalTotal = Math.max(0, total - administrativeRows.length);
+      var sourceKeys = {}, stableKeysComplete = visits.length === clinicalTotal;
       for (var sk = 0; sk < visits.length; sk++) {
         var sourceKey = String(visits[sk] && visits[sk].sourceVisitKey || '');
         if (!sourceKey || sourceKeys[sourceKey]) stableKeysComplete = false;
         sourceKeys[sourceKey] = 1;
       }
       if (!stableKeysComplete) failures.push({ index: -1, reason: 'stable-source-keys-incomplete' });
-      var bodyComplete = failures.length === 0 && visits.length === total && stableKeysComplete;
+      var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete;
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
-        fullDetail: bodyComplete, expected: total, parsed: visits.length,
+        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, indexTotal: total,
         attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
@@ -9179,7 +9189,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       res = res || {};
       res.readerVersion = '2.9.22-visits-r4-two-stage';
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
-      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true);
+      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0);
       res.receipt.complete = proven;
       res.receipt.fullDetail = proven;
       res.receipt.readerVersion = res.readerVersion;

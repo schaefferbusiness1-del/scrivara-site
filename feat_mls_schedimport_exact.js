@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.9";
+  var VERSION = "si-1.7.0";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1716,7 +1716,11 @@
     var readerVersion = String(r && r.readerVersion || ""), receiptReaderVersion = String(r && r.receipt && r.receipt.readerVersion || "");
     var provenReader = /^2\.9\.22-visits-r4-two-stage$/.test(readerVersion) && receiptReaderVersion === readerVersion;
     if (!r.receipt || r.receipt.complete !== true || r.receipt.indexComplete !== true || r.receipt.bodyComplete !== true || r.receipt.fullDetail !== true || r.receipt.stableKeysComplete !== true || !provenReader || expected < 0 || parsed !== expected) throw new Error("visits-full-detail-unproven");
-    if (expected === 0 && r.receipt.authoritativeEmpty !== true) throw new Error("visits-empty-unproven");
+    /* A chart whose only encounter rows are administrative order groups has
+       zero CLINICAL bodies to read; the reader reports them honestly as
+       administrativeRows. That is verified evidence of emptiness-of-bodies,
+       not an unproven zero. */
+    if (expected === 0 && r.receipt.authoritativeEmpty !== true && !(Number(r.receipt.administrativeRows || 0) > 0)) throw new Error("visits-empty-unproven");
     var p = patientById(target.patientId), cv = window.__mlsCopyVisits, vm = window.__mlsVisitModel, visits = Array.isArray(r.visits) ? r.visits : [];
     if (visits.length !== parsed) throw new Error("visits-count-mismatch");
     var sourceKeys = {};
