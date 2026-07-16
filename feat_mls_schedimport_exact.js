@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.8";
+  var VERSION = "si-1.6.9";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -2130,11 +2130,18 @@
           onStatus(emptyError, "err");
           return fail(emptyContract.reason, { error: emptyError, scheduleReceipt: r.receipt, emptyContract: emptyContract, retry: { schedule: true } });
         }
-        if(!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true&&currentProviderRosterReceipt.partial!==true)){
+        /* A VERIFIED-EMPTY day (holiday/closed clinic) legitimately renders no
+           provider headers, so the roster can never corroborate there. The
+           authoritative empty contract above already proved the emptiness is
+           internally consistent; requiring a roster on top of it made every
+           closed day fail 'provider-roster-incomplete' (live: 2026-07-03).
+           Non-empty days keep the full fail-closed roster requirement. */
+        var verifiedEmptyDay = r.receipt.authoritativeEmpty === true;
+        if(!verifiedEmptyDay&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true&&currentProviderRosterReceipt.partial!==true)){
           onStatus("Athena's full provider roster was not verified. Nothing was imported; keep the complete Day schedule open and retry.","err");
           return fail("provider-roster-incomplete",{scheduleReceipt:r.receipt,providerRosterReceipt:currentProviderRosterReceipt,retry:{schedule:true,providerRoster:true}});
         }
-        if (!rosterReceiptBatchBound(currentProviderRosterReceipt)) {
+        if (!verifiedEmptyDay && !rosterReceiptBatchBound(currentProviderRosterReceipt)) {
           onStatus("Athena's provider roster receipt was not bound to this exact pull request and scope. Nothing was imported; retry.", "err");
           return fail("provider-roster-unbound", { scheduleReceipt: r.receipt, providerRosterReceipt: currentProviderRosterReceipt, rosterOperationArmed: !!rosterOperationArmed, retry: { schedule: true, providerRoster: true } });
         }

@@ -149,3 +149,19 @@ assert.strictEqual(api.authoritativeStatusForDay('2026-07-23').available, false,
   assert(statuses.some(status => status.kind === 'err' && /disagreed with its schedule rows/i.test(status.message)), 'fail-closed empty receipt did not explain the retry');
   console.log('PASS authoritative-empty receipts require exact zero evidence and never publish or label contradictory success');
 })().catch(error => { console.error(error); process.exit(1); });
+
+/* 2026-07-16: a VERIFIED-EMPTY day (holiday/closed clinic) renders no provider
+   headers, so the roster gate must not fail it — while non-empty days keep the
+   full fail-closed roster requirement (live: 2026-07-03 failed
+   provider-roster-incomplete on a closed day). */
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'utf8');
+  const gate = src.indexOf('var verifiedEmptyDay = r.receipt.authoritativeEmpty === true;');
+  assert(gate >= 0, 'importer must derive verifiedEmptyDay from the authoritative empty receipt');
+  const block = src.slice(gate, gate + 1400);
+  assert(block.includes('if(!verifiedEmptyDay&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true'), 'roster completeness must still be required on NON-empty days');
+  assert(block.includes('if (!verifiedEmptyDay && !rosterReceiptBatchBound(currentProviderRosterReceipt))'), 'roster batch binding must still be required on NON-empty days');
+  const contractIdx = src.indexOf('var emptyContract = authoritativeEmptyContract(r);');
+  assert(contractIdx >= 0 && contractIdx < gate, 'the authoritative empty contract must be proven BEFORE the roster bypass can apply');
+  console.log('PASS verified-empty day bypasses the roster gate only after the empty contract is proven');
+}
