@@ -9092,11 +9092,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var attempt = await runBoundAttempt(detailWaitMs);
         var retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
         var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
-        if (coldRetryable && Date.now() + 1000 < readDeadline) {
-          retryCount++;
+        /* 2026-07-15 live: one cold reopen was not enough for encounter-frame-not-refreshed on slow charts (one stale body failed the whole day batch). Allow a SECOND bounded reopen for the same retryable reasons while the read deadline permits. */
+        var coldTries = 0;
+        while (coldRetryable && coldTries < 2 && Date.now() + 1000 < readDeadline) {
+          retryCount++; coldTries++;
           emit(appTabId, frozenRequestId, 'Finishing cold encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
           await sleepWithinReadDeadline(coldRetryPauseMs);
           attempt = await runBoundAttempt(coldRetryWaitMs);
+          retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
+          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
         }
         if (attempt.failure) {
           failures.push({ index: i, reason: attempt.failure.reason || 'detail-read-failed', d2: attempt.failure.d2 || null });
