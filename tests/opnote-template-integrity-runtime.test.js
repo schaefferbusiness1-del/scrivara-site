@@ -86,6 +86,8 @@ async function main() {
     ['Genicular nerve block', 'gen-block'],
     ['Genicular nerve radiofrequency ablation', 'gen-rfa'],
     ['Right SI joint injection', 'si'],
+    ['L SI joint inj P', 'si'],
+    ['B/L L3, L4MB & L5 DR B #2 PP; CASE# KPNV5463', 'mbb'],
     ['SCS trial', 'scs-trial'],
     ['Intracept BVN ablation', 'intracept'],
     ['Trigger point injections', 'trigger']
@@ -154,8 +156,8 @@ async function main() {
   assert(liveAnchored.includes('PATIENT: Jordan Lee') && !liveAnchored.includes('Wrong Patient') && !liveAnchored.includes('MRN: WRONG'), 'model-supplied identity leaked through template reconstruction');
   assert(liveAnchored.includes('The risks, benefits, and alternatives were discussed with the patient, and informed consent was obtained.'), 'live template consent wording changed');
 
-  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260716oni261'), 'production does not load the final op-note integrity owner');
-  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260716oni261'), 'staging does not load the same op-note integrity owner');
+  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260716oni262'), 'production does not load the final op-note integrity owner');
+  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260716oni262'), 'staging does not load the same op-note integrity owner');
   assert(scribeFlow.includes('✍️ Type or paste below') && stagingScribeFlow.includes('✍️ Type or paste below'), 'template text entry is not the same clear inline control in production and staging');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(scribeFlow), 'production template text entry still opens a blocking JavaScript prompt');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(stagingScribeFlow), 'staging template text entry still opens a blocking JavaScript prompt');

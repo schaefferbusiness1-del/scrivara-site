@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.6.1';
+  var VERSION = 'oni-2.6.2';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -22,6 +22,15 @@
   function templates() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
   function normText(x) {
     return S(x).toLowerCase()
+      /* oni-2.6.2: Athena schedule-reason ABBREVIATIONS — "L SI joint inj P"
+         must classify as an SI injection, "B/L L3, L4MB & L5 DR B" as MBBs.
+         Expanded BEFORE phrase mapping so the class guard can fire and a
+         cross-procedure template gets rejected instead of silently used. */
+      .replace(/\bb\s*\/\s*l\b/g, ' bilateral ')
+      .replace(/\binjs?\b/g, ' injection ')
+      .replace(/\b([lcts]\d{1,2})\s*mbs?\b/g, ' $1 medial branch block ')
+      .replace(/\bmbs\b/g, ' medial branch blocks ')
+      .replace(/\bdr\s*b\b/g, ' dorsal ramus block ')
       .replace(/\btransforaminal epidural steroid injection\b/g, ' tfesi ')
       .replace(/\bepidural steroid injection\b/g, ' esi ')
       .replace(/\bmedial branch blocks?\b/g, ' mbb ')

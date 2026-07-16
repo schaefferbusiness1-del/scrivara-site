@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.4.1';
+  var VERSION = 'onf-2.5.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -232,6 +232,25 @@
      replaces both token forms. */
   function keyToLabel(k) { return S(k).toLowerCase().replace(/_/g, ' ').trim(); }
   function labelToKey(l) { return S(l).toLowerCase().trim().replace(/\s+/g, '_'); }
+  /* onf-2.5.0 (owner report): templates from real past notes carry ANONYMOUS
+     blanks — "___" runs and "[not dictated]" markers. The formatted view
+     highlights them yellow but they never surfaced as fill fields. Convert
+     each into a labeled [FILL: …] token (label = surrounding words, unique),
+     so the ONE fill box owns every blank a doctor can see. */
+  function normalizeAnonBlanks(text) {
+    var t = S(text), seen = {};
+    return t.replace(/_{3,}|\[not dictated[^\]]*\]/gi, function (m0, at) {
+      var before = t.slice(Math.max(0, at - 44), at).replace(/[\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim();
+      var after = t.slice(at + m0.length, at + m0.length + 26).replace(/[\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim();
+      var bw = before.split(' ').slice(-4).join(' ').replace(/^[^A-Za-z0-9]+/, '');
+      var aw = after.split(' ').slice(0, 2).join(' ');
+      var label = ('after "' + bw + '"' + (aw ? (' before "' + aw + '"') : '')).slice(0, 70);
+      var base = label, n = 2;
+      while (seen[label.toLowerCase()]) label = base + ' #' + (n++);
+      seen[label.toLowerCase()] = 1;
+      return '[FILL: ' + label + ']';
+    });
+  }
   function fillTokens(text) {
     var re = /\[FILL:\s*([^\]]+?)\s*\]|\[\[([a-z0-9_]+)\]\]/gi, seen = {}, out = [], m;
     while ((m = re.exec(text)) !== null) {
@@ -285,7 +304,7 @@
   function mainBoxWithBlanks() {
     var ta = $(MAIN_ID);
     if (!ta || ta.offsetParent === null) return null;
-    var hasTokens = /\[FILL:|\[\[[a-z0-9_]+\]\]/i.test(ta.value || '');
+    var hasTokens = /\[FILL:|\[\[[a-z0-9_]+\]\]|_{3,}|\[not dictated[^\]]*\]/i.test(ta.value || '');
     /* also pick up a lingering fill box whose tokens were all just filled, so it re-renders/clears */
     var hasBox = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox');
     return (hasTokens || hasBox) ? ta : null;
@@ -706,7 +725,7 @@
        [FILL:] tokens and is NOT our own last render (identical to applyVals(raw)). */
     if (row) {
       var lastRender = row._onfRaw != null ? applyVals(row._onfRaw, row._onfVals || {}) : null;
-      if (/\[FILL:|\[\[[a-z0-9_]+\]\]/i.test(ta.value || '') && ta.value !== lastRender) { row._onfRaw = ta.value; row._onfVals = {}; }
+      if (/\[FILL:|\[\[[a-z0-9_]+\]\]|_{3,}|\[not dictated[^\]]*\]/i.test(ta.value || '') && ta.value !== lastRender) { row._onfRaw = normalizeAnonBlanks(ta.value); row._onfVals = {}; }
     }
     var raw = (row && row._onfRaw != null) ? row._onfRaw : (ta.value || '');
     var tokens = fillTokens(raw);

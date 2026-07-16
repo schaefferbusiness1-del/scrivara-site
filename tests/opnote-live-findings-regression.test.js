@@ -20,8 +20,8 @@ assert(integrity.includes('oneWrap.__opnpWrapped=true;'),
   'single-note strict wrapper can still be replaced by the legacy prep heartbeat');
 
 for (const [name, source] of [['production', prod], ['staging', staging]]) {
-  const fillAt = source.indexOf('feat_mls_opnote_fill.js?v=20260716onf241');
-  const integrityAt = source.indexOf('feat_mls_opnote_integrity.js?v=20260716oni261');
+  const fillAt = source.indexOf('feat_mls_opnote_fill.js?v=20260716onf250');
+  const integrityAt = source.indexOf('feat_mls_opnote_integrity.js?v=20260716oni262');
   assert(fillAt >= 0, `${name} does not load the corrected known-field filler`);
   assert(integrityAt > fillAt, `${name} does not load the strict template owner after the field filler`);
 }
