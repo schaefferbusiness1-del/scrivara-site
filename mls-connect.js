@@ -6078,7 +6078,10 @@
          the schedule browser (staff day-prep) preset to the chosen day —
          existing, tested machinery; no hidden day state. */
       var clockbar = body.querySelector('.ez3-clockbar');
-      if (clockbar && !clockbar.querySelector('.ez3fl-daychip')) {
+      /* 2026-07-16 (user): the day is already shown at the top of the view -
+         the extra Viewing-today chip flickered in and out and is removed. */
+      try { var oldDayChip = clockbar && clockbar.querySelector('.ez3fl-daychip'); if (oldDayChip) oldDayChip.remove(); } catch (eChip) {}
+      if (false && clockbar && !clockbar.querySelector('.ez3fl-daychip')) {
         var chip = document.createElement('button');
         chip.type = 'button'; chip.className = 'ez3fl-daychip';
         chip.innerHTML = '&#128197; Viewing today &#9662;';
@@ -31540,7 +31543,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b312';
+  window.__MLS_AV = window.__MLS_AV || 'b313';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31845,7 +31848,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b312';
+  var MLS_APP_BUILD='2026-07-16-b313';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

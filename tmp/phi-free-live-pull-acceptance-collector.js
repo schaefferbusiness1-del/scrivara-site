@@ -24,7 +24,7 @@
   const CHART_READER_VERSION = "2.9.19-chart-r3";
   const EXPECTED_IMPORTER_VERSION = "si-1.7.2";
   const EXPECTED_EXTENSION_VERSION = "2.9.25";
-  const EXPECTED_ASSET_VERSION = "b312";
+  const EXPECTED_ASSET_VERSION = "b313";
   const MIN_VISIT_BODY_CHARS = 40;
   const RECEIPT_NODE_ID = "mlsPhiFreeAcceptanceReceipt";
   const CARD_KEYS = ["problems", "meds", "allergies", "summary", "vitals", "history"];
