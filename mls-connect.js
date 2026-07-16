@@ -5890,13 +5890,15 @@
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
     var wasOpen = false;
     try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
-    if (!wasOpen) { try { var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
+    /* owner 2026-07-16: the advanced workspace only needs to EXIST so the send
+       button is live — do NOT move the viewport to it. The flow lane up top
+       already shows everything; jumping the page down to "Advanced tools" on
+       review/send was disorienting. Focus without scrolling keeps
+       Enter-to-send working from where the doctor already is. */
+    if (!wasOpen) { try { window.__mlsAdvQuietOpen = true; var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
     setTimeout(function () {
-      try {
-        var target = $('noteCard') || $('pushAllEmrBtn');
-        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
-        var send = $('pushAllEmrBtn'); if (send) send.focus();
-      } catch (e) {}
+      try { var send = $('pushAllEmrBtn'); if (send) send.focus({ preventScroll: true }); } catch (e) {}
+      window.__mlsAdvQuietOpen = false;
     }, wasOpen ? 100 : 700);
   }
   function setLaneHidden(el, value) {
@@ -17408,7 +17410,9 @@
       S.advOpen = !S.advOpen;
       try { document.body.classList.toggle('ez3adv', S.advOpen); } catch (e) {}
       render();
-      if (S.advOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+      /* scroll only on a DELIBERATE click of the toggle — a programmatic quiet
+         open (review/send step revealing the workspace) must not move the page */
+      if (S.advOpen && !window.__mlsAdvQuietOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
     });
   }
 
@@ -21825,7 +21829,9 @@
       S.advOpen = !S.advOpen;
       try { document.body.classList.toggle('ez3adv', S.advOpen); } catch (e) {}
       render();
-      if (S.advOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+      /* scroll only on a DELIBERATE click of the toggle — a programmatic quiet
+         open (review/send step revealing the workspace) must not move the page */
+      if (S.advOpen && !window.__mlsAdvQuietOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
     });
   }
 
@@ -23756,7 +23762,9 @@
       S.advOpen = !S.advOpen;
       try { document.body.classList.toggle('ez3adv', S.advOpen); } catch (e) {}
       render();
-      if (S.advOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+      /* scroll only on a DELIBERATE click of the toggle — a programmatic quiet
+         open (review/send step revealing the workspace) must not move the page */
+      if (S.advOpen && !window.__mlsAdvQuietOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
     };
   }
 
@@ -25528,7 +25536,9 @@
       S.advOpen = !S.advOpen;
       try { document.body.classList.toggle('ez3adv', S.advOpen); } catch (e) {}
       render();
-      if (S.advOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+      /* scroll only on a DELIBERATE click of the toggle — a programmatic quiet
+         open (review/send step revealing the workspace) must not move the page */
+      if (S.advOpen && !window.__mlsAdvQuietOpen) { var c = $('captureCard'); if (c && c.scrollIntoView) safe(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
     };
   }
 
@@ -40272,11 +40282,11 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260713wd2';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260716onf220';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260716onf230';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260712ct100c1';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260716oni250';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: exact procedure-class matching, sticky manual picks, exact-patient history signals, and fail-closed selected-template fidelity */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260716oni260';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: exact procedure-class matching, sticky manual picks, exact-patient history signals, and fail-closed selected-template fidelity */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_label.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_label.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_label.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE canonical provider-name resolver (window.__mlsProviderLabel) + normalizes _calProviders so every dropdown shows real names instead of "Provider undefined"/"[object Object]"/"Provider N" (plbl-1.0.0; revert()) */

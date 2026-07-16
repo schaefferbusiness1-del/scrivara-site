@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.5.0
+ * MLS op-note integrity  oni-2.6.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.5.0';
+  var VERSION = 'oni-2.6.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -371,6 +371,30 @@
     return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
   }
 
+  /* oni-2.6.0: history/diagnosis placeholders that survive the model are
+     filled DETERMINISTICALLY from the exact patient's own chart (problems +
+     latest documented plan) — chart-grounded only, never invented. A slot the
+     chart cannot answer stays visible for the doctor / fill box. */
+  function fillChartSlots(note, p, ctx) {
+    if (!p) return S(note);
+    var problems = S(p.problems).replace(/\s+/g, ' ').trim();
+    var diag = problems.split(/[;\n]/)[0].trim().slice(0, 140);
+    var age = 0;
+    try { var d = new Date(S(p.dob)); if (!isNaN(d.getTime())) { var now = new Date(); age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; if (age <= 0 || age >= 130) age = 0; } } catch (e) {}
+    var sex = S((ctx && ctx.sex) || p.sex || p.gender).trim();
+    var bits = [];
+    if (age && sex) bits.push(age + '-year-old ' + sex);
+    if (problems) bits.push((bits.length ? 'with ' : '') + problems);
+    var hist = bits.join(' ');
+    var plan = '';
+    try { var vs = p.visits || []; for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim(); } catch (e) {}
+    if (plan) hist = [hist, 'Most recent plan: ' + plan.slice(0, 160)].filter(Boolean).join('. ');
+    if (hist) hist = hist.replace(/\.+$/, '') + '.';
+    return S(note)
+      .replace(/\[\[(history|clinical_history|patient_history)\]\]/gi, function (m) { return hist || m; })
+      .replace(/\[\[(pre_?operative_diagnosis|diagnosis|indication|indications|indications_for_procedure)\]\]/gi, function (m) { return diag || m; });
+  }
+
   /* oni-2.4.0: a finished draft must READ like a document, not one blob.
      Deterministic spacing pass: exactly one blank line before every section
      heading (never before the first line), runs of 3+ newlines collapsed to
@@ -401,7 +425,7 @@
     tplText=sanitizeTemplate(tplText);
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.facility)known.push('facility: '+ctx.facility);
-    var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
+    var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
     var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
     /* When the verified-history owner is ready it is the sole history source;
        do not also trust or duplicate a caller-supplied ctx.history string. */
@@ -416,7 +440,7 @@
     if(ctx.providerNpi)facts.npi=ctx.providerNpi;
     if(ctx.facility)facts.facility=ctx.facility;
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
-    first.note=forceFacts(first.note,facts);
+    first.note=fillChartSlots(forceFacts(first.note,facts),p,ctx);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
     if(histApi&&histApi.installed){
       histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
@@ -436,9 +460,9 @@
     var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
-    repaired.note=forceFacts(repaired.note,facts);
+    repaired.note=fillChartSlots(forceFacts(repaired.note,facts),p,ctx);
     var check2=fidelity(repaired.note,tplText);
-    if(!check2.pass){repaired.note=reanchor(repaired.note,tplText,facts);check2=fidelity(repaired.note,tplText);}
+    if(!check2.pass){repaired.note=fillChartSlots(reanchor(repaired.note,tplText,facts),p,ctx);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
   }

@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.2.0';
+  var VERSION = 'onf-2.3.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -295,9 +295,65 @@
      provider name). NPI / facility / practice stay blank for the clinician to set
      one time in the profile editor -- we NEVER fabricate an NPI or facility. */
   function seedProfile() {
-    var p = provProfile();
-    if (!S(p.name).trim()) { var cp = commonApptProvider(); if (cp) { p.name = cp; saveProfile(p); } }
+    /* onf-2.3.0: the app SETTINGS already hold the doctor name, clinic/practice
+       name and NPI — pull them in so "practice name"-type blanks stop asking
+       for what the app already knows. Profile edits still win (only blanks are
+       seeded); we NEVER fabricate an NPI or facility. */
+    var p = provProfile(), dirty = false;
+    if (!S(p.name).trim()) {
+      var nm = safe(function () { return isFn(window.getName) ? S(window.getName()).trim() : ''; }, '') || commonApptProvider();
+      if (nm) { p.name = nm; dirty = true; }
+    }
+    if (!S(p.practice).trim()) {
+      var pr = safe(function () { return isFn(window.getPracticeName) ? S(window.getPracticeName()).trim() : ''; }, '');
+      if (pr) { p.practice = pr; dirty = true; }
+    }
+    if (!S(p.npi).trim()) {
+      var np = safe(function () { return isFn(window.getNpi) ? S(window.getNpi()).trim() : ''; }, '');
+      if (np) { p.npi = np; dirty = true; }
+    }
+    if (dirty) saveProfile(p);
     return p;
+  }
+  /* onf-2.3.0: exact chart-record lookup for the row's patient (name+DOB) */
+  function chartPatient(row) {
+    return safe(function () {
+      var appt = row && row.appt; if (!appt) return null;
+      var pts = isFn(window.getPatients) ? window.getPatients() : [];
+      var nn = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, ''), wd = S(appt.dob).replace(/\D/g, ''), p = null;
+      for (var i = 0; i < pts.length; i++) {
+        var q = pts[i]; if (!q || S(q.name).toLowerCase().replace(/[^a-z0-9]/g, '') !== nn) continue;
+        if (!wd || S(q.dob).replace(/\D/g, '') === wd) { p = q; break; } if (!p) p = q;
+      }
+      return p || null;
+    }, null);
+  }
+  function chartAge(p) {
+    return safe(function () {
+      var d = new Date(S(p.dob)); if (isNaN(d.getTime())) return 0;
+      var now = new Date(), a = now.getFullYear() - d.getFullYear();
+      if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--;
+      return (a > 0 && a < 130) ? a : 0;
+    }, 0) || 0;
+  }
+  /* onf-2.3.0: history / diagnosis blanks fill from the patient's OWN chart —
+     problems list + latest documented plan. Chart-grounded only, never
+     invented; when the chart has nothing, the field stays for the doctor. */
+  function chartValue(label, row) {
+    var l = S(label).toLowerCase();
+    if (!/history|diagnosis|indication/.test(l)) return '';
+    if (/postoperative|post ?op/.test(l)) return '';         /* postop stays the template's own value */
+    var p = chartPatient(row); if (!p) return '';
+    var problems = S(p.problems).replace(/\s+/g, ' ').trim();
+    if (/diagnosis|indication/.test(l)) return problems.split(/[;\n]/)[0].trim().slice(0, 140);
+    var bits = [], age = chartAge(p), sex = S(p.sex || p.gender).trim();
+    if (age && sex) bits.push(age + '-year-old ' + sex);
+    if (problems) bits.push((bits.length ? 'with ' : '') + problems);
+    var head = bits.join(' ');
+    var plan = '';
+    var vs = (p.visits || []); for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim();
+    var out = [head, plan ? ('Most recent plan: ' + plan.slice(0, 160)) : ''].filter(Boolean).join('. ');
+    return out ? (out.replace(/\.+$/, '') + '.') : '';
   }
   /* the patient's own recent chart text (for deriving laterality / prior values) */
   function patientHistText(row) {
@@ -431,7 +487,7 @@
   function knownValue(label, row) {
     var l = S(label).toLowerCase().replace(/[^a-z0-9 \/]/g, ' ').replace(/\s+/g, ' ').trim();
     var appt = (row && row.appt) || {};
-    var prof = provProfile();
+    var prof = seedProfile();   /* onf-2.3.0: Settings-backed (name/practice/NPI) */
     var prov = apptProvider(appt) || S(prof.name).trim();
     var pname = S(appt.name).trim();
     var dob = S(appt.dob).trim();
@@ -622,8 +678,9 @@
         else if (pmem[key]) { vals[key] = pmem[key]; meta[key] = 'saved'; }        /* remembered for this patient */
         else {
           var hm = historyMed(lab, row);                                          /* from the patient's chart history */
-          if (hm) { vals[key] = hm; meta[key] = 'history'; saveFillMemValue(row, key, hm); }
-          else {
+          if (!hm) { hm = chartValue(lab, row); if (hm) { vals[key] = hm; meta[key] = 'history'; } }   /* onf-2.3.0: history/diagnosis from the chart itself (not memorized — the chart is re-read each draft) */
+          else { vals[key] = hm; meta[key] = 'history'; saveFillMemValue(row, key, hm); }
+          if (!hm) {
             var td = templateDefault(lab, row);                                   /* the template's OWN standard value */
             if (td) { vals[key] = td; meta[key] = 'template'; }
             else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }

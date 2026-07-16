@@ -44,7 +44,11 @@ const REBEL = [
 ].join('\n');
 
 async function main() {
-  const patients = [{ id: 'p1', name: 'Qa Alpha', dob: '1970-01-15', sex: 'F', mrn: '' }];
+  const patients = [{
+    id: 'p1', name: 'Qa Alpha', dob: '1970-01-15', sex: 'F', mrn: '',
+    problems: 'Lumbar spondylosis M47.816; chronic low back pain',
+    visits: [{ date: '2026-07-10', plan: 'Proceed with caudal epidural steroid injection.' }]
+  }];
   const aiQueue = [];
   let aiCalls = 0;
   const context = {
@@ -133,7 +137,23 @@ async function main() {
   assert(fromBlob.note.includes('Written and verbal consent were obtained'), 'technique narrative lost in generation');
   assert(fromBlob.note.includes('\n\n'), 'blob-template draft came back as one blob');
 
-  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized');
+  // 7) oni-2.6.0: [[history]] / [[preoperative_diagnosis]] slots the model
+  //    leaves behind are filled from the patient's OWN chart, never invented.
+  const clean2 = api.sanitizeTemplate(BLOB);
+  const lazyDraft = clean2
+    .replace('[[patient]]', 'Qa Alpha').replace('[[patient_dob]]', '1970-01-15')
+    .replace('[[physician]]', 'Dr. Test').replace('[[date_of_operation]]', '2026-07-17')
+    .replace('[[procedure]]', 'Caudal ESI');   // history + preop diagnosis placeholders left in
+  aiQueue.push(lazyDraft);
+  aiCalls = 0;
+  const charted = await api.generate('Qa Alpha', '2026-07-17', 'Caudal ESI', BLOB, { dob: '1970-01-15', patientId: 'p1', sex: 'F' });
+  assert(!/\[\[history\]\]/.test(charted.note), 'the history slot was left as a placeholder');
+  assert(!/\[\[preoperative_diagnosis\]\]/.test(charted.note), 'the preop-diagnosis slot was left as a placeholder');
+  assert(/\d+-year-old F with Lumbar spondylosis/.test(charted.note), 'chart-derived history sentence missing');
+  assert(charted.note.includes('Most recent plan: Proceed with caudal epidural steroid injection'), 'latest documented plan missing from history');
+  assert(charted.note.includes('Preoperative Diagnosis: Lumbar spondylosis M47.816'), 'preop diagnosis not filled from the chart problems list');
+
+  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized, chart fills history/diagnosis');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
