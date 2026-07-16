@@ -109,7 +109,9 @@ const tests = [
   'extension-package.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
-  'settings-cleanup-contract.test.js'
+  'settings-cleanup-contract.test.js',
+  'study-natural-request-report.test.js',
+  'study-academic-paper.test.js'
 ];
 
 for (const test of tests) {

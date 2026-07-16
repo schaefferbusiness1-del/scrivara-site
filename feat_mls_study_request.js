@@ -1,11 +1,20 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-1.0.0 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.0.0 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
  * cohort, and the detailed report removes common direct identifiers by default.
- * only evidence already stored in MLS. They may be as long as 30 pages when the
+ * sr-2.0.0 upgrades the output to an academic-paper structure (abstract,
+ * introduction, methods, statistical methods, results with tables + embedded
+ * figures, case-level summaries, discussion, limitations, conclusion) drawn
+ * from EVERY evidence store in MLS: patient records (incl. demographics, meds,
+ * allergies, problems), saved notes, calendar appointments, the Athena
+ * harvester, and the practice ICD/CPT code table. When the app's AI transport
+ * is available the narrative sections are AI-drafted from the deidentified
+ * statistics only, then number-verified so no statistic can be invented; when
+ * it is not, deterministic prose is used. Reports use
+ * only evidence already stored in MLS. They may be as long as 60 pages when the
  * evidence supports that length; they are never padded or invented.
  * ========================================================================== */
 (function (root, factory) {
@@ -24,12 +33,12 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-1.0.0';
+  var VERSION = 'sr-2.0.0';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
   var ADV_BODY_ID = 'mlsStudyAdvancedBody';
-  var MAX_REPORT_PAGES = 30;
+  var MAX_REPORT_PAGES = 60;
   var PRIVACY_WARNING = 'Direct identifiers removed where detectable; limited-data study draft requiring clinician and privacy review before use or sharing.';
   var CDN_JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
   var mountObserver = null, childObserver = null, mountDeadline = null;
@@ -101,7 +110,7 @@
       .replace(/\s+(?:in|during|over)\s+(?:the\s+)?(?:last|past|previous|this)\b[\s\S]*$/i, '')
       .replace(/\s+(?:from|between)\s+\d{4}-\d{1,2}-\d{1,2}[\s\S]*$/i, '')
       .replace(/[,;]?\s+all\s+time\b[\s\S]*$/i, '')
-      .replace(/\s+(?:retrospective|outcomes?|volume|trends?|profile|study|report)\b[\s\S]*$/i, '')
+      .replace(/\s+(?:retrospective|outcomes?|volume|trends?|profile|study|report|paper)\b[\s\S]*$/i, '')
       .replace(/\s+(?:up\s+to\s+)?\d{1,3}\s*(?:pages?|pp)\b[\s\S]*$/i, '')
       .replace(/[.,;:]+$/g, '').trim();
   }
@@ -148,7 +157,7 @@
       return { ok: false, code: 'clarify-request', clarification: 'Describe the patients, question, or time range you want to study.' };
     }
     var specificSignal = /outcome|pain|response|procedure|injection|surgery|visit|trend|volume|profile|demograph|diagnos|cohort|patients?|compare|versus|\bvs\b/i.test(q);
-    if (!specificSignal && /^(?:make|build|create|run|generate)?\s*(?:me\s+)?(?:a\s+)?(?:\d+[- ]page\s+)?study\s*\.?$/i.test(q)) {
+    if (!specificSignal && /^(?:make|build|create|run|generate)?\s*(?:me\s+)?(?:a\s+)?(?:\d+[- ]page\s+)?(?:study|paper)\s*\.?$/i.test(q)) {
       return { ok: false, code: 'clarify-request', clarification: 'What should the study measure, and which patients should it include?' };
     }
 
@@ -166,11 +175,11 @@
 
     var pageMatch = q.match(/(?:up\s+to\s+|about\s+|around\s+)?(\d{1,3})\s*(?:pages?|pp)\b/);
     var requested = pageMatch ? Number(pageMatch[1]) : MAX_REPORT_PAGES;
-    if (requested > MAX_REPORT_PAGES) notes.push('Detailed reports are capped at 30 evidence-supported pages.');
+    if (requested > MAX_REPORT_PAGES) notes.push('Detailed reports are capped at ' + MAX_REPORT_PAGES + ' evidence-supported pages.');
     requested = clamp(requested, 2, MAX_REPORT_PAGES);
 
     var spec = {
-      version: 1,
+      version: 2,
       originalQuery: original,
       question: original,
       cohort: { mode: cohortMode, keywords: keywords },
@@ -226,6 +235,32 @@
   function visitKey(v) {
     return [v.date, lower(v.type), lower(v.detail)].join('|');
   }
+  function normalizeSex(v) {
+    var s = lower(v);
+    if (!s) return '';
+    if (/^m(?:ale)?$/.test(s)) return 'male';
+    if (/^f(?:emale)?$/.test(s)) return 'female';
+    if (/^(?:other|nonbinary|non-binary|nb|x)$/.test(s)) return 'other';
+    return '';
+  }
+  function listFromRaw(v) {
+    if (v == null) return [];
+    if (Object.prototype.toString.call(v) === '[object Array]') {
+      return v.map(function (x) {
+        if (x && typeof x === 'object') return S(x.name || x.drug || x.text || x.desc || x.value).trim();
+        return S(x).trim();
+      }).filter(Boolean);
+    }
+    return S(v).split(/[;,\n]/).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function mergeList(target, incoming) {
+    (incoming || []).forEach(function (item) {
+      var probe = lower(item);
+      if (!probe) return;
+      var have = target.some(function (known) { return lower(known) === probe; });
+      if (!have && target.length < 60) target.push(item);
+    });
+  }
   function collectStoredRecords(env) {
     env = env || root;
     var getPatients = typeof env.getPatients === 'function' ? env.getPatients : root.getPatients;
@@ -258,6 +293,7 @@
       if (!name) { ambiguousRecordsSkipped++; return null; }
       var rec = {
         name: name, dob: dob, mrn: S(raw.mrn || '').trim(), visits: [], _visitKeys: {},
+        sex: '', meds: [], allergies: [], problems: '',
         _chartText: '', _stableRefs: {}, _demoKeys: {}
       };
       patients.push(rec); registerStable(rec, refs); registerDemo(rec, name, dob); return rec;
@@ -322,6 +358,10 @@
       if (rec) {
         if (!rec.dob && dob) rec.dob = dob;
         if (!rec.mrn && raw.mrn) rec.mrn = S(raw.mrn).trim();
+        if (!rec.sex) rec.sex = normalizeSex(raw.sex || raw.gender);
+        mergeList(rec.meds, listFromRaw(raw.meds || raw.medications));
+        mergeList(rec.allergies, listFromRaw(raw.allergies));
+        if (raw.problems) rec.problems = (rec.problems ? rec.problems + ' | ' : '') + S(raw.problems).replace(/\s+/g, ' ').trim();
         registerDemo(rec, name, dob);
         rec._chartText += ' ' + S(raw.problems || '') + ' ' + S(raw.summary || '');
       }
@@ -381,7 +421,9 @@
   function groupToRecords(group) {
     var patients = [], sources = {}, visits = 0, dup = 0;
     (group && group.patients || []).forEach(function (p) {
-      var out = { name: S(p.name), dob: isoDate(p.dob), mrn: S(p.mrn), visits: [], _chartText: '' }, seen = {};
+      var out = { name: S(p.name), dob: isoDate(p.dob), mrn: S(p.mrn), sex: normalizeSex(p.sex || p.gender),
+        meds: listFromRaw(p.meds), allergies: listFromRaw(p.allergies), problems: S(p.problems || ''),
+        visits: [], _chartText: '' }, seen = {};
       (p.visits || p.history || []).forEach(function (raw) {
         var v = visitFromRaw(raw, raw.source || 'study-group'), k = visitKey(v);
         if (seen[k]) { dup++; return; }
@@ -429,7 +471,8 @@
         matchingVisitCount: 0, includedVisitCount: 0, patientCodes: [],
         documentedPainScoreCount: 0, meanDocumentedPainScore: null,
         pairedPainPatientCount: 0, meanFirstToLastPainChange: null,
-        _painScores: [], _pairedChanges: []
+        painChangeSamples: [],
+        _painScores: []
       };
     });
     var membership = {}, overlapPatients = 0, unmatchedPatients = 0;
@@ -460,7 +503,7 @@
         });
         datedScores.sort(function (a, b) { return a.date.localeCompare(b.date); });
         if (datedScores.length >= 2 && datedScores[0].date < datedScores[datedScores.length - 1].date) {
-          group._pairedChanges.push(datedScores[datedScores.length - 1].score - datedScores[0].score);
+          group.painChangeSamples.push(datedScores[datedScores.length - 1].score - datedScores[0].score);
         }
         membership[code] = group.label;
       } else if (indexes.length > 1) {
@@ -475,9 +518,9 @@
       group.meanIncludedVisitsPerPatient = group.patientCount ? group.includedVisitCount / group.patientCount : null;
       group.documentedPainScoreCount = group._painScores.length;
       group.meanDocumentedPainScore = group._painScores.length ? mean(group._painScores) : null;
-      group.pairedPainPatientCount = group._pairedChanges.length;
-      group.meanFirstToLastPainChange = group._pairedChanges.length ? mean(group._pairedChanges) : null;
-      delete group._painScores; delete group._pairedChanges;
+      group.pairedPainPatientCount = group.painChangeSamples.length;
+      group.meanFirstToLastPainChange = group.painChangeSamples.length ? mean(group.painChangeSamples) : null;
+      delete group._painScores;
     });
     return {
       mutuallyExclusive: true,
@@ -496,7 +539,8 @@
     var selected = (records.patients || []).filter(function (p) {
       return spec.cohort.mode !== 'keyword' || keywordMatch(p, spec.cohort.keywords);
     }).map(function (p) {
-      var copy = { name: p.name, dob: p.dob, mrn: p.mrn, _chartText: p._chartText, visits: [] };
+      var copy = { name: p.name, dob: p.dob, mrn: p.mrn, sex: p.sex || '', meds: (p.meds || []).slice(),
+        allergies: (p.allergies || []).slice(), problems: S(p.problems || ''), _chartText: p._chartText, visits: [] };
       (p.visits || []).forEach(function (v) {
         if (range.kind === 'all') { copy.visits.push(v); return; }
         if (!v.date) { excludedUndated++; return; }
@@ -573,15 +617,32 @@
       .replace(/\b(\d{1,2})[\/-]\d{1,2}[\/-](\d{4})\b/g, function (_, m, y) { return y + '-' + ('0' + m).slice(-2); })
       .replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+(\d{4})\b/gi, '$1 $2');
   }
-  function deidentifyPatients(patients) {
+  function ageYearsAt(dob, refIso) {
+    var d = isoDate(dob), r = isoDate(refIso);
+    if (!d || !r) return null;
+    var years = Number(r.slice(0, 4)) - Number(d.slice(0, 4));
+    if (r.slice(5) < d.slice(5)) years--;
+    /* HIPAA limited-data convention: ages 90 and above are grouped. */
+    if (years >= 90) return 90;
+    return years >= 0 && years < 130 ? years : null;
+  }
+  function deidentifyPatients(patients, now) {
     var ids = (patients || []).map(function (p) { return { name: p.name, dob: p.dob, mrn: p.mrn }; });
+    var nowIso = isoDate(now instanceof Date ? now : new Date());
     return (patients || []).map(function (p, i) {
       var code = 'P' + ('000' + (i + 1)).slice(-3);
+      var lastDated = '';
+      (p.visits || []).forEach(function (v) { var d = isoDate(v.date); if (d && d > lastDated) lastDated = d; });
       return {
         code: code,
         name: code,
         dob: '',
         mrn: '',
+        ageYears: ageYearsAt(p.dob, lastDated || nowIso),
+        sex: normalizeSex(p.sex),
+        meds: (p.meds || []).map(function (m) { return deidentifyText(m, ids); }).filter(Boolean).slice(0, 40),
+        allergies: (p.allergies || []).map(function (a) { return deidentifyText(a, ids); }).filter(Boolean).slice(0, 40),
+        problems: deidentifyText(S(p.problems || '').slice(0, 400), ids),
         visits: (p.visits || []).map(function (v) {
           return { date: generalizeDate(v.date), type: deidentifyText(v.type, ids), detail: deidentifyText(v.detail, ids), source: deidentifyText(v.source, ids) };
         })
@@ -589,7 +650,7 @@
     });
   }
 
-  /* -------------------- evidence-grounded detailed report -------------------- */
+  /* ---------------------------- descriptive statistics ---------------------------- */
   function countBy(items, getter) {
     var out = {};
     (items || []).forEach(function (x) { var k = S(getter(x) || 'Not recorded'); out[k] = (out[k] || 0) + 1; });
@@ -605,18 +666,117 @@
     var sorted = nums.slice().sort(function (a, b) { return a - b; }), mid = Math.floor(sorted.length / 2);
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   }
+  function sampleSd(nums) {
+    if (nums.length < 2) return null;
+    var m = mean(nums), ss = 0;
+    nums.forEach(function (x) { ss += (x - m) * (x - m); });
+    return Math.sqrt(ss / (nums.length - 1));
+  }
+  /* two-sided critical t values (95%) for small df; 1.96 beyond the table. */
+  var T_CRIT_95 = [0, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23,
+    2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09,
+    2.08, 2.07, 2.07, 2.06, 2.06, 2.06, 2.05, 2.05, 2.05, 2.04];
+  function tCrit95(df) {
+    df = Math.max(1, Math.round(df));
+    return df <= 30 ? T_CRIT_95[df] : 1.96;
+  }
+  function ci95(nums) {
+    if (nums.length < 2) return null;
+    var m = mean(nums), s = sampleSd(nums);
+    if (s == null) return null;
+    var half = tCrit95(nums.length - 1) * s / Math.sqrt(nums.length);
+    return { mean: m, low: m - half, high: m + half, n: nums.length, sd: s };
+  }
+  function normalCdf(z) {
+    /* Abramowitz & Stegun 26.2.17 */
+    var sign = z < 0 ? -1 : 1, x = Math.abs(z) / Math.sqrt(2);
+    var t = 1 / (1 + 0.3275911 * x);
+    var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return 0.5 * (1 + sign * y);
+  }
+  function tApproxP(t, df) {
+    /* normal approximation to the t distribution; adequate for a labeled
+       descriptive draft and dependency-free. */
+    if (!isFinite(t) || !isFinite(df) || df <= 0) return null;
+    var z = Math.abs(t) * (1 - 1 / (4 * df)) / Math.sqrt(1 + (t * t) / (2 * df));
+    var p = 2 * (1 - normalCdf(z));
+    return Math.max(0, Math.min(1, p));
+  }
+  function welchTTest(a, b) {
+    if (!a || !b || a.length < 2 || b.length < 2) return null;
+    var ma = mean(a), mb = mean(b), sa = sampleSd(a), sb = sampleSd(b);
+    if (sa == null || sb == null) return null;
+    var va = (sa * sa) / a.length, vb = (sb * sb) / b.length;
+    if (va + vb === 0) return null;
+    var t = (ma - mb) / Math.sqrt(va + vb);
+    var df = Math.pow(va + vb, 2) / ((va * va) / (a.length - 1) + (vb * vb) / (b.length - 1));
+    return { t: t, df: df, p: tApproxP(t, df), meanA: ma, meanB: mb, nA: a.length, nB: b.length };
+  }
+  function fmt(n, digits) {
+    if (n == null || !isFinite(n)) return 'not available';
+    return Number(n).toFixed(digits == null ? 1 : digits);
+  }
+  function fmtP(p) {
+    if (p == null || !isFinite(p)) return 'not available';
+    if (p < 0.001) return '<0.001';
+    return p.toFixed(3);
+  }
+
+  /* ------------------ practice code table (ICD/CPT) evidence ------------------ */
+  function collectCodeSignals(visits, env) {
+    env = env || root;
+    var table = env.__mlsCodeTable || root.__mlsCodeTable;
+    var entries = safeCall(function () {
+      if (!table || typeof table.load !== 'function') return [];
+      var loaded = table.load();
+      return (loaded && loaded.entries) || [];
+    }, []);
+    if (!entries.length) return null;
+    var rows = [];
+    entries.slice(0, 400).forEach(function (entry) {
+      var desc = S(entry && entry.desc).trim(), code = S(entry && entry.code).trim();
+      if (!desc || !code) return;
+      var hits = 0;
+      (visits || []).forEach(function (v) { if (recordMentions(v, desc)) hits++; });
+      if (hits > 0) rows.push({ code: code, desc: desc, kind: S(entry.kind || '').toUpperCase() || 'CODE', count: hits });
+    });
+    rows.sort(function (a, b) { return b.count - a.count || a.code.localeCompare(b.code); });
+    return rows.length ? rows.slice(0, 40) : null;
+  }
+
+  /* -------------------- evidence-grounded academic report -------------------- */
   function meaningfulQuestionTerms(question) {
     var stop = { build:1, create:1, generate:1, study:1, report:1, patient:1, patients:1, cohort:1,
       stored:1, evidence:1, pages:1, page:1, last:1, past:1, month:1, months:1, year:1, years:1,
       from:1, through:1, with:1, without:1, who:1, what:1, when:1, where:1, which:1, were:1,
       have:1, had:1, received:1, compare:1, versus:1, outcomes:1, outcome:1, retrospective:1,
-      this:1, that:1, these:1, those:1, their:1, them:1, then:1, than:1, into:1, about:1 };
+      this:1, that:1, these:1, those:1, their:1, them:1, then:1, than:1, into:1, about:1, paper:1 };
     var seen = {}, out = [];
     searchTokens(question).forEach(function (term) {
       if (term.length < 4 || stop[term] || /^\d+$/.test(term) || seen[term]) return;
       seen[term] = 1; out.push(term);
     });
     return out.slice(0, 10);
+  }
+  function demographicsSummary(patients) {
+    var ages = [], sexCounts = { male: 0, female: 0, other: 0, 'not recorded': 0 };
+    var medCounts = {}, allergyCounts = {}, withMeds = 0, withAllergies = 0, withProblems = 0;
+    (patients || []).forEach(function (p) {
+      if (p.ageYears != null) ages.push(p.ageYears);
+      sexCounts[p.sex || 'not recorded'] = (sexCounts[p.sex || 'not recorded'] || 0) + 1;
+      if ((p.meds || []).length) withMeds++;
+      if ((p.allergies || []).length) withAllergies++;
+      if (S(p.problems).trim()) withProblems++;
+      (p.meds || []).forEach(function (m) { var k = lower(m).slice(0, 60); if (k) medCounts[k] = (medCounts[k] || 0) + 1; });
+      (p.allergies || []).forEach(function (a) { var k = lower(a).slice(0, 60); if (k) allergyCounts[k] = (allergyCounts[k] || 0) + 1; });
+    });
+    return {
+      ages: ages, ageMean: mean(ages), ageSd: sampleSd(ages), ageMedian: median(ages),
+      ageMin: ages.length ? Math.min.apply(Math, ages) : null,
+      ageMax: ages.length ? Math.max.apply(Math, ages) : null,
+      sexCounts: sexCounts, withMeds: withMeds, withAllergies: withAllergies, withProblems: withProblems,
+      topMeds: topCounts(medCounts, 15), topAllergies: topCounts(allergyCounts, 10)
+    };
   }
   function buildReportModel(spec, patients, meta) {
     meta = meta || {};
@@ -642,6 +802,8 @@
     });
     var sourceCounts = countBy(visits, function (v) { return v.source; });
     var typeCounts = countBy(visits, function (v) { return v.type; });
+    var demo = demographicsSummary(patients);
+    var codeSignals = meta.codeSignals || null;
     var firstPain = {}, lastPain = {}, datedPain = pain.filter(function (p) { return !!p.date; });
     datedPain.slice().sort(function (a, b) { return a.date.localeCompare(b.date); }).forEach(function (p) {
       if (!firstPain[p.code]) firstPain[p.code] = p;
@@ -649,18 +811,64 @@
     });
     var painChanges = Object.keys(firstPain).filter(function (k) { return lastPain[k] !== firstPain[k]; })
       .map(function (k) { return lastPain[k].score - firstPain[k].score; });
+    var baselineScores = Object.keys(firstPain).map(function (k) { return firstPain[k].score; });
+    var finalScores = Object.keys(firstPain).filter(function (k) { return lastPain[k] !== firstPain[k]; })
+      .map(function (k) { return lastPain[k].score; });
+    var responders = painChanges.filter(function (delta) { return delta <= -2; }).length;
+    var painCi = ci95(painChanges);
+    var allScores = pain.map(function (x) { return x.score; });
+    var monthKeys = Object.keys(byMonth).sort();
+    var perPatient = (patients || []).map(function (p) { return (p.visits || []).length; });
+    /* Evidence-supported ceiling: richer per-visit narrative, tables, figures,
+       and case summaries justify more pages per unit of evidence than sr-1,
+       but small cohorts still produce short reports and are never padded. */
     var supportedCeiling = Math.min(spec.targetPages || MAX_REPORT_PAGES,
-      Math.max(3, 3 + Math.ceil(visits.length / 12) + Math.ceil(detailChars / 9000)));
+      Math.max(3, 5 + Math.ceil(visits.length / 8) + Math.ceil(detailChars / 6000) + Math.ceil((patients || []).length / 3)));
+
+    var figures = [];
+    if (monthKeys.length >= 2) {
+      figures.push({ id: 'fig-monthly', kind: 'line', title: 'Figure 1. Included visit records per month',
+        labels: monthKeys, values: monthKeys.map(function (k) { return byMonth[k]; }) });
+    }
+    var typeTop = topCounts(typeCounts, 10);
+    if (typeTop.length >= 2) {
+      figures.push({ id: 'fig-types', kind: 'bar', title: 'Figure ' + (figures.length + 1) + '. Encounter types (top ' + typeTop.length + ')',
+        labels: typeTop.map(function (x) { return x[0]; }), values: typeTop.map(function (x) { return x[1]; }) });
+    }
+    if (allScores.length >= 4) {
+      var hist = [];
+      for (var b = 0; b <= 10; b++) hist.push(allScores.filter(function (s) { return s === b; }).length);
+      figures.push({ id: 'fig-pain', kind: 'bar', title: 'Figure ' + (figures.length + 1) + '. Distribution of documented pain scores (0-10)',
+        labels: ['0','1','2','3','4','5','6','7','8','9','10'], values: hist });
+    }
+
     var sections = [];
+    var abstractResults = patients.length + ' patients and ' + visits.length + ' deduplicated visit records were included (' + privacyRangeLabel(spec.range) + '). ' +
+      (demo.ageMean != null ? 'Mean age was ' + fmt(demo.ageMean) + ' years (SD ' + fmt(demo.ageSd) + '; range ' + demo.ageMin + '-' + demo.ageMax + '). ' : '') +
+      (pain.length ? pain.length + ' documented pain scores were parsed (mean ' + fmt(mean(allScores)) + '/10). ' : '') +
+      (painChanges.length ? 'Among ' + painChanges.length + ' patients with two or more dated scores, mean first-to-last change was ' + fmt(mean(painChanges)) +
+        ' points' + (painCi ? ' (95% CI ' + fmt(painCi.low) + ' to ' + fmt(painCi.high) + ')' : '') + '; ' + responders + ' improved by 2 or more points. ' : '');
     sections.push({
-      heading: 'Executive summary',
+      key: 'abstract',
+      heading: 'Abstract',
       paragraphs: [
-        'This limited-data retrospective draft includes ' + patients.length + ' patients and ' + visits.length + ' stored visit records within ' + privacyRangeLabel(spec.range) + '.',
-        'The requested analysis is ' + typeLabel(spec.studyType) + '. Findings are descriptive, practice-data only, and limited to documentation available in MLS. No external literature or citations are added unless source material was explicitly supplied.',
-        PRIVACY_WARNING
+        'Background: This limited-data retrospective draft summarizes documentation stored in MLS Scribe for the requested cohort. ' + PRIVACY_WARNING,
+        'Methods: MLS normalized per-visit records from every connected evidence store (patient records, saved notes, calendar appointments, the Athena harvester' + (codeSignals ? ', and the practice code table' : '') + '), removed exact duplicate visits, applied the cohort and date rules of the request, scrubbed common direct identifiers, and computed the descriptive statistics reported here.',
+        'Results: ' + abstractResults,
+        'Conclusions: Findings are descriptive, practice-data only, and limited to documentation available in MLS. They do not establish causation and require clinician and privacy review before any use.'
       ]
     });
     sections.push({
+      key: 'introduction',
+      heading: 'Introduction and objective',
+      paragraphs: [
+        'Routine clinical documentation accumulates evidence that can support practice-level retrospective review. This report was generated from a natural-language request and is grounded exclusively in records already stored in MLS Scribe for this practice.',
+        'Objective: ' + (safeSpec.question || safeSpec.originalQuery || typeLabel(spec.studyType)) + '.',
+        'The requested analysis type is ' + typeLabel(spec.studyType) + '. No external literature was retrieved and no citation was created; the evidence base is the practice\'s own stored documentation.'
+      ]
+    });
+    sections.push({
+      key: 'cohort',
       heading: 'Question and cohort definition',
       paragraphs: [safeSpec.question || safeSpec.originalQuery || typeLabel(spec.studyType)],
       bullets: [
@@ -670,62 +878,130 @@
       ]
     });
     sections.push({
+      key: 'methods',
       heading: 'Methods and provenance',
       paragraphs: [
-        'MLS normalized per-visit records, removed exact duplicate visits, applied the cohort and date rules, then calculated the descriptive results shown here. No missing outcome was inferred.',
+        'MLS normalized per-visit records, removed exact duplicate visits, applied the cohort and date rules, then calculated the descriptive results shown here. Evidence was merged from every connected store: patient records (including demographics, medication lists, allergy lists, and problem summaries), saved notes, calendar appointments, and the Athena harvester' + (codeSignals ? ', with procedure/diagnosis coding cross-referenced against the practice code table' : '') + '. No missing outcome was inferred.',
         'This is a practice-data analysis, not a literature review. The report does not retrieve external research and does not create external citations unless those sources were explicitly provided.'
       ],
       bullets: topCounts(sourceCounts, 20).map(function (x) { return x[0] + ': ' + x[1] + ' records'; })
     });
     sections.push({
-      heading: 'Encounter composition',
-      paragraphs: [dated + ' of ' + visits.length + ' included records have a usable encounter date.'],
-      bullets: topCounts(typeCounts, 15).map(function (x) { return x[0] + ': ' + x[1] + ' visits'; })
+      key: 'stat-methods',
+      heading: 'Statistical methods',
+      paragraphs: [
+        'Continuous measures are summarized as mean, sample standard deviation (SD), median, and range; 95% confidence intervals use the t distribution. Between-group comparisons of documented first-to-last pain change use Welch\'s unequal-variance t test with a normal approximation for the p value; all p values are two-sided, descriptive, and labeled approximate.',
+        'Pain scores are parsed only where explicitly documented as a 0-10 value; no score was imputed. A responder is defined descriptively as a documented first-to-last improvement of 2 or more points. All statistics are computed deterministically in the browser from the deidentified working dataset.'
+      ]
     });
-    if (Object.keys(byMonth).length) {
-      sections.push({ heading: 'Temporal pattern', bullets: topCounts(byMonth, 18).map(function (x) { return x[0] + ': ' + x[1] + ' visits'; }) });
+    var demoRows = [];
+    demoRows.push(['Included patients', String(patients.length)]);
+    demoRows.push(['Included visit records', String(visits.length)]);
+    demoRows.push(['Age, mean (SD)', demo.ageMean != null ? fmt(demo.ageMean) + ' (' + fmt(demo.ageSd) + ')' : 'not recorded']);
+    demoRows.push(['Age, median (range)', demo.ageMedian != null ? fmt(demo.ageMedian) + ' (' + demo.ageMin + '-' + demo.ageMax + ')' : 'not recorded']);
+    demoRows.push(['Sex: female / male / other / not recorded',
+      [demo.sexCounts.female || 0, demo.sexCounts.male || 0, demo.sexCounts.other || 0, demo.sexCounts['not recorded'] || 0].join(' / ')]);
+    demoRows.push(['Patients with a stored medication list', demo.withMeds + ' of ' + patients.length]);
+    demoRows.push(['Patients with a stored allergy list', demo.withAllergies + ' of ' + patients.length]);
+    demoRows.push(['Patients with a stored problem summary', demo.withProblems + ' of ' + patients.length]);
+    demoRows.push(['Visits per patient, median (range)', perPatient.length ?
+      fmt(median(perPatient)) + ' (' + Math.min.apply(Math, perPatient) + '-' + Math.max.apply(Math, perPatient) + ')' : 'not available']);
+    sections.push({
+      key: 'demographics',
+      heading: 'Results: cohort characteristics',
+      paragraphs: ['Table 1 summarizes the included cohort. Only values explicitly stored in MLS are reported; nothing was inferred from missing fields.'],
+      table: { title: 'Table 1. Cohort characteristics', columns: ['Characteristic', 'Value'], rows: demoRows }
+    });
+    if (demo.topMeds.length) {
+      sections.push({
+        key: 'medications',
+        heading: 'Results: documented medications and allergies',
+        paragraphs: ['Medication and allergy entries come from the stored patient lists; counts are patients with the entry, not prescriptions issued.'],
+        table: { title: 'Table 2. Most frequent stored medication-list entries', columns: ['Medication entry', 'Patients'],
+          rows: demo.topMeds.map(function (x) { return [x[0], String(x[1])]; }) },
+        bullets: demo.topAllergies.length ? demo.topAllergies.map(function (x) { return 'Allergy entry "' + x[0] + '": ' + x[1] + ' patients'; }) : ['No stored allergy-list entries in this cohort.']
+      });
+    }
+    sections.push({
+      key: 'composition',
+      heading: 'Results: encounter composition',
+      paragraphs: [dated + ' of ' + visits.length + ' included records have a usable encounter date.'],
+      table: { title: 'Table ' + (demo.topMeds.length ? '3' : '2') + '. Encounter types', columns: ['Encounter type', 'Visits'],
+        rows: topCounts(typeCounts, 15).map(function (x) { return [x[0], String(x[1])]; }) },
+      figureId: 'fig-types'
+    });
+    if (monthKeys.length) {
+      sections.push({
+        key: 'temporal',
+        heading: 'Results: temporal pattern',
+        paragraphs: ['Monthly counts of included, dated visit records across the full study window.'],
+        table: { title: 'Monthly visit counts', columns: ['Month', 'Visits'],
+          rows: monthKeys.map(function (k) { return [k, String(byMonth[k])]; }) },
+        figureId: 'fig-monthly'
+      });
+    }
+    if (codeSignals && codeSignals.length) {
+      sections.push({
+        key: 'codes',
+        heading: 'Results: documented coding signals (practice code table)',
+        paragraphs: ['Visit text was cross-referenced against the practice\'s uploaded ICD/CPT code table. A match is a documentation mention, not a billing assertion.'],
+        table: { title: 'Code-table matches in included visit text', columns: ['Code', 'Kind', 'Description', 'Visits'],
+          rows: codeSignals.map(function (r) { return [r.code, r.kind, r.desc, String(r.count)]; }) }
+      });
     }
     if (spec.studyType === 'profile') {
-      var perPatient = (patients || []).map(function (p) { return (p.visits || []).length; });
       sections.push({
-        heading: 'Cohort profile findings',
+        key: 'profile',
+        heading: 'Results: cohort profile findings',
         paragraphs: [
-          'Median documented visits per included patient: ' + (median(perPatient) == null ? 'not available' : median(perPatient).toFixed(1)) + '.',
+          'Median documented visits per included patient: ' + (median(perPatient) == null ? 'not available' : fmt(median(perPatient))) + '.',
           'Observed visit-count range: ' + (perPatient.length ? (Math.min.apply(Math, perPatient) + ' to ' + Math.max.apply(Math, perPatient)) : 'not available') + '. No demographic value was inferred from missing fields.'
         ]
       });
     }
     if (spec.studyType === 'outcomes' || pain.length) {
-      var painText = pain.length ? (pain.length + ' pain scores were explicitly parsed from stored notes; mean documented score ' + mean(pain.map(function (x) { return x.score; })).toFixed(1) + '/10.') : 'No structured pain scores could be parsed from the included records.';
-      if (painChanges.length) painText += ' Among ' + painChanges.length + ' patients with at least two dated scores, mean first-to-last change was ' + mean(painChanges).toFixed(1) + ' points (descriptive; not causal).';
-      sections.push({ heading: 'Documented outcomes', paragraphs: [painText] });
+      var outcomeParas = [];
+      outcomeParas.push(pain.length ? (pain.length + ' pain scores were explicitly parsed from stored notes; mean documented score ' + fmt(mean(allScores)) + '/10 (SD ' + fmt(sampleSd(allScores)) + '; median ' + fmt(median(allScores)) + ').') : 'No structured pain scores could be parsed from the included records.');
+      if (painChanges.length) {
+        outcomeParas.push('Among ' + painChanges.length + ' patients with at least two dated scores, mean baseline (first documented) score was ' + fmt(mean(baselineScores)) + '/10 and mean final documented score was ' + fmt(mean(finalScores)) + '/10. Mean first-to-last change was ' + fmt(mean(painChanges)) + ' points' + (painCi ? ' (95% CI ' + fmt(painCi.low) + ' to ' + fmt(painCi.high) + ')' : '') + ' (descriptive; not causal).');
+        outcomeParas.push(responders + ' of ' + painChanges.length + ' patients (' + fmt(100 * responders / painChanges.length) + '%) had a documented improvement of 2 or more points between their first and last dated score.');
+      }
+      sections.push({ key: 'outcomes', heading: 'Results: documented outcomes', paragraphs: outcomeParas, figureId: allScores.length >= 4 ? 'fig-pain' : undefined });
     }
     var comparison = null;
     if (spec.studyType === 'procedure' && spec.cohort.keywords && spec.cohort.keywords.length >= 2) {
       comparison = buildComparisonCohorts(patients, safeSpec.cohort.keywords);
+      var armRows = comparison.groups.map(function (group) {
+        return [group.label, String(group.patientCount), String(group.matchingVisitCount),
+          group.meanIncludedVisitsPerPatient == null ? '-' : fmt(group.meanIncludedVisitsPerPatient),
+          group.meanDocumentedPainScore == null ? '-' : fmt(group.meanDocumentedPainScore),
+          group.meanFirstToLastPainChange == null ? '-' : ((group.meanFirstToLastPainChange > 0 ? '+' : '') + fmt(group.meanFirstToLastPainChange)) + ' (n=' + group.pairedPainPatientCount + ')'];
+      });
+      var comparisonParas = [
+        'Each patient is assigned to exactly one comparison group. Patients documented in multiple groups are disclosed and excluded from between-group counts.',
+        'Arm results are descriptive summaries of stored documentation only; they do not establish comparative effectiveness or causation.'
+      ];
+      var armed = comparison.groups.filter(function (g) { return (g.painChangeSamples || []).length >= 2; });
+      if (armed.length >= 2) {
+        var test = welchTTest(armed[0].painChangeSamples, armed[1].painChangeSamples);
+        if (test) {
+          comparisonParas.push('Exploratory between-arm contrast of documented first-to-last pain change (' + armed[0].label + ' vs ' + armed[1].label + '): mean ' + fmt(test.meanA) + ' vs ' + fmt(test.meanB) + ' points; Welch t = ' + fmt(test.t, 2) + ', df = ' + fmt(test.df) + ', approximate two-sided p = ' + fmtP(test.p) + '. This is a descriptive, non-randomized contrast and must not be read as a treatment effect.');
+        }
+      }
       sections.push({
-        heading: 'Mutually exclusive procedure comparison cohorts',
-        paragraphs: [
-          'Each patient is assigned to exactly one comparison group. Patients documented in multiple groups are disclosed and excluded from between-group counts.',
-          'Arm results are descriptive summaries of stored documentation only; they do not establish comparative effectiveness or causation.'
-        ],
-        bullets: comparison.groups.map(function (group) {
-          var visitsMean = group.meanIncludedVisitsPerPatient == null ? 'not available' : group.meanIncludedVisitsPerPatient.toFixed(1);
-          var painMean = group.meanDocumentedPainScore == null ? 'not available' : group.meanDocumentedPainScore.toFixed(1) + '/10';
-          var pairedChange = group.meanFirstToLastPainChange == null ? 'not available' :
-            ((group.meanFirstToLastPainChange > 0 ? '+' : '') + group.meanFirstToLastPainChange.toFixed(1) + ' points');
-          return group.label + ': ' + group.patientCount + ' mutually exclusive patients; ' +
-            group.matchingVisitCount + ' matching visit records; mean included visits/patient ' + visitsMean +
-            '; documented pain scores ' + group.documentedPainScoreCount + ' (mean ' + painMean + ')' +
-            '; paired dated first-to-last pain change ' + pairedChange + ' across ' + group.pairedPainPatientCount + ' patients';
-        }).concat([
+        key: 'comparison',
+        heading: 'Results: mutually exclusive procedure comparison cohorts',
+        paragraphs: comparisonParas,
+        table: { title: 'Comparison arms', columns: ['Arm', 'Patients', 'Matching visits', 'Mean visits/pt', 'Mean pain', 'Mean pain change'], rows: armRows },
+        bullets: [
           'Overlap excluded: ' + comparison.overlapPatients + ' patients',
           'Unmatched excluded: ' + comparison.unmatchedPatients + ' patients'
-        ])
+        ]
       });
     } else if (spec.cohort.keywords && spec.cohort.keywords.length) {
       sections.push({
-        heading: 'Cohort-term evidence',
+        key: 'terms',
+        heading: 'Results: cohort-term evidence',
         bullets: safeSpec.cohort.keywords.map(function (term) {
           var n = visits.filter(function (v) { return recordMentions(v, term); }).length;
           return term + ': documented in ' + n + ' included visit records';
@@ -736,7 +1012,8 @@
       var qTerms = meaningfulQuestionTerms(safeSpec.question);
       if (qTerms.length) {
         sections.push({
-          heading: 'Question-specific documentation',
+          key: 'question-terms',
+          heading: 'Results: question-specific documentation',
           paragraphs: ['These are documentation counts, not inferred diagnoses or causal effects.'],
           bullets: qTerms.map(function (term) {
             return term + ': mentioned in ' + visits.filter(function (v) { return recordMentions(v, term); }).length + ' of ' + visits.length + ' included visit records';
@@ -750,11 +1027,43 @@
     }).filter(function (x) { return x[1] > 0; });
     if (safety.length) {
       sections.push({
-        heading: 'Documented safety-signal terms',
+        key: 'safety',
+        heading: 'Results: documented safety-signal terms',
         paragraphs: ['The following are text mentions that require clinical review; a mention is not proof of an adverse event.'],
         bullets: safety.map(function (x) { return x[0] + ': ' + x[1] + ' visit records'; })
       });
     }
+    /* Case-level summaries: one grounded paragraph per coded patient. This is
+       real per-patient evidence (not filler) and is what carries large cohorts
+       to full-length papers; the PDF renderer still stops at the evidence
+       ceiling. */
+    var caseParas = (patients || []).map(function (p) {
+      var vs = p.visits || [];
+      var datedVs = vs.filter(function (v) { return v.date; });
+      var span = datedVs.length ? (datedVs[0].date + (datedVs.length > 1 ? ' through ' + datedVs[datedVs.length - 1].date : '')) : 'undated records only';
+      var types = topCounts(countBy(vs, function (v) { return v.type; }), 3).map(function (x) { return x[0] + ' (' + x[1] + ')'; }).join(', ');
+      var scores = [];
+      vs.forEach(function (v) { var s = documentedPainScore(v); if (s != null) scores.push(s); });
+      var line = p.code + ': ' + (p.ageYears != null ? p.ageYears + '-year-old' + (p.sex ? ' ' + p.sex : '') + ' patient with ' : '') +
+        vs.length + ' included visit record' + (vs.length === 1 ? '' : 's') + ' (' + span + '). Encounter types: ' + (types || 'not recorded') + '.';
+      if (scores.length) line += ' Documented pain scores: ' + scores.join(', ') + ' (0-10).';
+      if ((p.meds || []).length) line += ' Stored medication-list entries: ' + p.meds.slice(0, 6).join('; ') + ((p.meds.length > 6) ? ' (and ' + (p.meds.length - 6) + ' more)' : '') + '.';
+      if (S(p.problems).trim()) line += ' Problem summary: ' + S(p.problems).slice(0, 220) + '.';
+      return line;
+    });
+    if (caseParas.length) {
+      sections.push({
+        key: 'cases',
+        heading: 'Case-level summaries',
+        paragraphs: ['One summary per coded patient, drawn verbatim from stored, identifier-scrubbed documentation.'].concat(caseParas)
+      });
+    }
+    var discussion = [
+      'Within the stated limits, the included documentation supports the descriptive findings above: ' + patients.length + ' patients contributed ' + visits.length + ' deduplicated visit records' + (monthKeys.length ? ' across ' + monthKeys.length + ' calendar months' : '') + '.',
+      pain.length ? ('Documented pain scoring was available for a subset of encounters (' + pain.length + ' scores), and any change estimates reflect only patients with repeated dated documentation. Undocumented outcomes are reported as absent evidence, not as negative findings.') : 'Structured outcome scores were not documented in this cohort, so the report is limited to utilization and composition findings.',
+      'Because this is a single-practice, non-randomized, documentation-based review, the appropriate use of this draft is internal quality review, hypothesis generation, and preparation for a formally designed study with IRB oversight.'
+    ];
+    sections.push({ key: 'discussion', heading: 'Discussion', paragraphs: discussion });
     var limitations = [
       'This is a retrospective descriptive report from data stored in MLS, not a randomized or causal analysis.',
       'Absence of a documented finding does not prove the finding was absent.',
@@ -766,8 +1075,24 @@
     if (meta.ambiguousRecordsSkipped) limitations.push(meta.ambiguousRecordsSkipped + ' records without a unique stable-ID or exact unique name+DOB match were excluded to prevent cross-patient mixing.');
     if (meta.identityConflicts) limitations.push(meta.identityConflicts + ' records with conflicting namespace-qualified identifiers were excluded for identity safety.');
     if (!painChanges.length && spec.studyType === 'outcomes') limitations.push('The records do not support a longitudinal pain-change estimate for two or more measurements per patient.');
-    sections.push({ heading: 'Data quality and limitations', bullets: limitations });
+    sections.push({ key: 'limitations', heading: 'Data quality and limitations', bullets: limitations });
     sections.push({
+      key: 'conclusion',
+      heading: 'Conclusion',
+      paragraphs: [
+        'This evidence-grounded draft summarizes what the practice\'s stored documentation shows for the requested question. All findings are descriptive and reproducible from the included records; none should be acted on clinically without independent review.',
+        PRIVACY_WARNING
+      ]
+    });
+    sections.push({
+      key: 'references',
+      heading: 'References and evidence policy',
+      paragraphs: [
+        'No external literature was retrieved and no external citation is included; the sole evidence base is the practice\'s stored documentation enumerated in Methods and the appendix. If literature context is required, supply the sources explicitly and they will be quoted as provided, never invented.'
+      ]
+    });
+    sections.push({
+      key: 'repro',
       heading: 'Reproducibility record',
       bullets: [
         'Parser version: ' + VERSION,
@@ -775,6 +1100,8 @@
         'Requested maximum: ' + spec.targetPages + ' pages; evidence-supported ceiling: ' + supportedCeiling + ' pages.',
         'Included records: ' + visits.length + '; included patients: ' + patients.length + '; exact duplicates removed: ' + (meta.duplicateVisitsRemoved || 0) + '.',
         'Ambiguous identity rows excluded: ' + (meta.ambiguousRecordsSkipped || 0) + '; conflicting stable-identifier rows excluded: ' + (meta.identityConflicts || 0) + '.',
+        'Evidence stores read: patient records, saved notes, calendar, Athena harvester' + (codeSignals ? ', practice code table' : '') + '.',
+        'Narrative mode: deterministic (statistics computed in-browser; see any AI-narrative note below).',
         'Report policy: stop when evidence is exhausted; never add filler or invented results.'
       ]
     });
@@ -783,6 +1110,7 @@
       generatedAt: new Date().toISOString(),
       spec: safeSpec,
       sections: sections,
+      figures: figures,
       appendixRows: visits,
       patientCount: patients.length,
       visitCount: visits.length,
@@ -791,21 +1119,132 @@
       limitations: limitations,
       provenance: sourceCounts,
       comparison: comparison,
+      demographics: demo,
+      codeSignals: codeSignals,
+      aiNarrative: false,
       deidentified: false,
       privacyMode: 'direct-identifiers-removed-limited-data-draft',
       privacyWarning: PRIVACY_WARNING
     };
   }
 
+  /* ------------------------ AI academic narrative (optional) ------------------------ */
+  function buildStatsDigest(model) {
+    /* Everything here is already deidentified; the digest is the ONLY material
+       the narrative model may draw from. */
+    return {
+      title: model.title,
+      question: model.spec && (model.spec.question || model.spec.originalQuery),
+      studyType: model.spec && model.spec.studyTypeLabel,
+      patientCount: model.patientCount,
+      visitCount: model.visitCount,
+      sections: (model.sections || []).map(function (s) {
+        return {
+          heading: s.heading,
+          paragraphs: (s.paragraphs || []).slice(0, 30),
+          bullets: (s.bullets || []).slice(0, 40),
+          table: s.table ? { title: s.table.title, columns: s.table.columns, rows: (s.table.rows || []).slice(0, 40) } : undefined
+        };
+      })
+    };
+  }
+  function narrativeNumbersOk(text, digestStr) {
+    /* Anti-fabrication guard: every number in AI prose must already exist in
+       the deterministic digest (or be a trivially small count). */
+    var nums = S(text).match(/\d+(?:\.\d+)?/g) || [];
+    return nums.every(function (n) {
+      if (digestStr.indexOf(n) >= 0) return true;
+      var v = Number(n);
+      return isFinite(v) && v >= 0 && v <= 12 && n.indexOf('.') < 0;
+    });
+  }
+  function parseNarrativeJson(raw) {
+    var text = S(raw).replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    try {
+      var parsed = JSON.parse(text);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (e) { return null; }
+  }
+  function aiNarrative(model, options) {
+    options = options || {};
+    if (options.useAi === false) return Promise.resolve(null);
+    var ai = options.ai || (typeof root.aiCallRaw === 'function' ? root.aiCallRaw : null);
+    if (!ai) return Promise.resolve(null);
+    var digest = buildStatsDigest(model);
+    var digestStr = JSON.stringify(digest);
+    var sys = 'You are an academic medical writer preparing a retrospective, practice-data quality-review draft. ' +
+      'You are given the COMPLETE deterministic statistics of the study as JSON. Rules: ' +
+      '(1) Use ONLY facts and numbers that appear verbatim in the provided JSON; never compute, estimate, or invent a number, percentage, patient, citation, or reference. ' +
+      '(2) Never claim causation; the data are descriptive documentation from a single practice. ' +
+      '(3) Do not include any patient identifier; the data are already coded (P001...). ' +
+      '(4) Write in formal academic prose (journal style), third person, no headings inside fields. ' +
+      'Return STRICT JSON: {"abstract": "<structured abstract paragraph(s), Background/Methods/Results/Conclusions labeled inline>", ' +
+      '"introduction": "<2-4 paragraphs framing the objective and why practice-level retrospective review of this question is useful, separated by \\n\\n>", ' +
+      '"discussion": "<3-6 paragraphs interpreting the provided findings, their internal consistency, and appropriate use, separated by \\n\\n>", ' +
+      '"conclusion": "<1-2 paragraph conclusion, separated by \\n\\n>"}';
+    var key = '';
+    try { key = typeof root.getKey === 'function' ? (root.getKey() || '') : ''; } catch (e) {}
+    var call = safeCall(function () { return ai(sys, digestStr, key, { freeform: true, maxTokens: 3800 }); }, null);
+    if (!call || typeof call.then !== 'function') return Promise.resolve(null);
+    return promiseWithTimeout(call, Math.max(1000, Number(options.aiTimeoutMs) || 90000), 'ai-narrative-timeout', 'The AI narrative timed out.')
+      .then(function (raw) {
+        var parsed = parseNarrativeJson(raw);
+        if (!parsed) return null;
+        var out = {};
+        ['abstract', 'introduction', 'discussion', 'conclusion'].forEach(function (fieldKey) {
+          var value = S(parsed[fieldKey]).trim();
+          if (value && value.length > 40 && narrativeNumbersOk(value, digestStr)) out[fieldKey] = value;
+        });
+        return Object.keys(out).length ? out : null;
+      })
+      .catch(function () { return null; });
+  }
+  function splitParagraphs(text) {
+    return S(text).split(/\n{2,}/).map(function (p) { return p.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  }
+  function applyNarrative(model, narrative) {
+    if (!narrative) return model;
+    var note = 'Narrative drafted by AI strictly from the deterministic statistics in this report (numbers verified against the computed values); clinician review required.';
+    function replaceSection(key, text) {
+      if (!text) return false;
+      var section = (model.sections || []).filter(function (s) { return s.key === key; })[0];
+      if (!section) return false;
+      section.paragraphs = splitParagraphs(text).concat(['[' + note + ']']);
+      return true;
+    }
+    var used = false;
+    if (replaceSection('abstract', narrative.abstract)) used = true;
+    if (replaceSection('introduction', narrative.introduction)) used = true;
+    if (narrative.discussion) {
+      var disc = (model.sections || []).filter(function (s) { return s.key === 'discussion'; })[0];
+      if (disc) { disc.paragraphs = splitParagraphs(narrative.discussion).concat(['[' + note + ']']); used = true; }
+    }
+    if (replaceSection('conclusion', narrative.conclusion)) used = true;
+    if (used) {
+      model.aiNarrative = true;
+      var repro = (model.sections || []).filter(function (s) { return s.key === 'repro'; })[0];
+      if (repro && repro.bullets) {
+        repro.bullets = repro.bullets.map(function (b) {
+          return /^Narrative mode:/.test(b) ? 'Narrative mode: AI-drafted from the deterministic statistics digest, number-verified; all tables, figures, and statistics remain deterministic.' : b;
+        });
+      }
+    }
+    return model;
+  }
+
+  /* ------------------------------- PDF rendering ------------------------------- */
   function pdfSafe(v) {
-    return S(v).replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
-      .replace(/[\u2013\u2014]/g, '-').replace(/\u2022/g, '*').replace(/[^\x20-\xFF\n\t]/g, ' ');
+    return S(v).replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+      .replace(/[–—]/g, '-').replace(/•/g, '*').replace(/[^\x20-\xFF\n\t]/g, ' ');
   }
   function renderDetailedPdf(jsPDF, model) {
     if (!jsPDF) throw new Error('PDF renderer unavailable');
     var doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
     var W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
     var M = 50, y = 64, pages = 1, maxPages = Math.min(MAX_REPORT_PAGES, model.supportedPageCeiling), truncated = false;
+    var canDraw = typeof doc.rect === 'function' && typeof doc.line === 'function';
+    var figuresById = {};
+    (model.figures || []).forEach(function (f) { figuresById[f.id] = f; });
     function nextPage() {
       if (pages >= maxPages) { truncated = true; return false; }
       doc.addPage(); pages++; y = 64; return true;
@@ -826,14 +1265,96 @@
       if (!need(28)) return false;
       doc.setTextColor(32, 64, 52); var ok = text(value, 14, { bold: true, after: 7 }); doc.setTextColor(20, 28, 24); return ok;
     }
+    function renderTable(table) {
+      if (!table || !table.rows || !table.rows.length) return true;
+      if (table.title && !text(table.title, 10, { bold: true, after: 3 })) return false;
+      var cols = table.columns || [];
+      var usable = W - M * 2;
+      var widths;
+      if (cols.length === 2) widths = [usable * 0.62, usable * 0.38];
+      else if (cols.length === 4) widths = [usable * 0.16, usable * 0.12, usable * 0.56, usable * 0.16];
+      else {
+        widths = [];
+        var first = usable * 0.3, rest = (usable - first) / Math.max(1, cols.length - 1);
+        cols.forEach(function (_, i) { widths.push(i === 0 ? first : rest); });
+      }
+      function row(cells, bold) {
+        doc.setFontSize(8.5); doc.setFont(undefined, bold ? 'bold' : 'normal');
+        var wrapped = cells.map(function (cell, i) {
+          return doc.splitTextToSize(pdfSafe(S(cell)), Math.max(20, widths[i] - 6));
+        });
+        var lines = Math.max.apply(Math, wrapped.map(function (wl) { return wl.length; }).concat([1]));
+        var rowH = lines * 10.5 + 4;
+        if (!need(rowH)) return false;
+        var x = M;
+        wrapped.forEach(function (wl, i) {
+          for (var li = 0; li < wl.length; li++) doc.text(wl[li], x + 2, y + 9 + li * 10.5);
+          x += widths[i];
+        });
+        if (canDraw) { doc.setDrawColor(214, 224, 218); doc.line(M, y + rowH - 1, W - M, y + rowH - 1); }
+        y += rowH;
+        return true;
+      }
+      if (!row(cols, true)) return false;
+      for (var r = 0; r < table.rows.length; r++) {
+        if (!row(table.rows[r], false)) return false;
+      }
+      y += 9;
+      return true;
+    }
+    function renderFigure(fig) {
+      if (!fig || !canDraw || !(fig.values || []).length) return true;
+      var boxH = 190, plotH = 130, plotW = W - M * 2 - 40;
+      if (!need(boxH + 24)) return false;
+      if (!text(fig.title, 10, { bold: true, after: 4 })) return false;
+      var x0 = M + 30, y0 = y + plotH;
+      var values = fig.values, labels = fig.labels || [];
+      var maxV = Math.max.apply(Math, values.concat([1]));
+      doc.setDrawColor(120, 140, 130);
+      doc.line(x0, y0, x0 + plotW, y0);
+      doc.line(x0, y0, x0, y0 - plotH);
+      doc.setFontSize(7); doc.setFont(undefined, 'normal'); doc.setTextColor(90, 100, 94);
+      doc.text('0', x0 - 12, y0 + 2);
+      doc.text(String(maxV), x0 - 4 - String(maxV).length * 4, y0 - plotH + 4);
+      var n = values.length, slot = plotW / n;
+      if (fig.kind === 'line') {
+        doc.setDrawColor(32, 64, 52);
+        for (var i = 1; i < n; i++) {
+          var xa = x0 + slot * (i - 0.5), ya = y0 - (values[i - 1] / maxV) * plotH;
+          var xb = x0 + slot * (i + 0.5), yb = y0 - (values[i] / maxV) * plotH;
+          doc.line(xa, ya, xb, yb);
+        }
+        for (var j = 0; j < n; j++) {
+          var cx = x0 + slot * (j + 0.5), cy = y0 - (values[j] / maxV) * plotH;
+          doc.rect(cx - 1.4, cy - 1.4, 2.8, 2.8, 'F');
+        }
+      } else {
+        doc.setFillColor(46, 106, 75);
+        for (var k = 0; k < n; k++) {
+          var barW = Math.max(3, slot * 0.62);
+          var barH = (values[k] / maxV) * plotH;
+          doc.rect(x0 + slot * k + (slot - barW) / 2, y0 - barH, barW, barH, 'F');
+        }
+      }
+      var step = Math.max(1, Math.ceil(n / 12));
+      for (var t2 = 0; t2 < n; t2 += step) {
+        var lab = pdfSafe(S(labels[t2])).slice(0, 12);
+        doc.text(lab, x0 + slot * (t2 + 0.5) - lab.length * 1.8, y0 + 12);
+      }
+      doc.setTextColor(20, 28, 24);
+      y = y0 + 26;
+      return true;
+    }
 
+    /* ------- cover page ------- */
     doc.setTextColor(32, 64, 52); text('MLS Scribe', 12, { bold: true, after: 28 });
     doc.setTextColor(20, 28, 24); text(model.title, 22, { bold: true, after: 14 });
     text('Generated ' + new Date(model.generatedAt).toLocaleString(), 10, { after: 18 });
     text(model.patientCount + ' coded patients | ' + model.visitCount + ' stored visit records', 12, { bold: true, after: 16 });
     text(PRIVACY_WARNING, 10, { bold: true, after: 10 });
     text('Evidence policy: this report stops when the stored evidence is exhausted. It is not padded to a page target. Exported visit dates use month precision.', 10, { after: 14 });
-    text('Requested maximum: ' + model.targetPages + ' pages | Evidence-supported ceiling: ' + maxPages + ' pages', 10, { bold: true });
+    text('Requested maximum: ' + model.targetPages + ' pages | Evidence-supported ceiling: ' + maxPages + ' pages', 10, { bold: true, after: 12 });
+    if (model.aiNarrative) text('Narrative sections were AI-drafted from the deterministic statistics digest and number-verified; all tables, figures, and statistics are computed deterministically.', 9, { after: 10 });
     if (pages < maxPages) nextPage();
 
     model.sections.some(function (section) {
@@ -841,6 +1362,8 @@
       var stopped = false;
       (section.paragraphs || []).some(function (p) { if (!text(p, 10)) { stopped = true; return true; } return false; });
       if (stopped) return true;
+      if (section.table && !renderTable(section.table)) return true;
+      if (section.figureId && figuresById[section.figureId] && !renderFigure(figuresById[section.figureId])) return true;
       (section.bullets || []).some(function (b) { if (!text('- ' + b, 9.5, { indent: 10, after: 2 })) { stopped = true; return true; } return false; });
       y += 7;
       return stopped;
@@ -889,8 +1412,14 @@
       ['Date range', privacyRangeLabel(spec.range) + ' (visit dates generalized to month)'],
       ['Privacy warning', PRIVACY_WARNING],
       [],
-      ['Patient code', 'Comparison group', 'Visit date', 'Visit type', 'Source', 'Detail']
+      ['Patient code', 'Age (years)', 'Sex', 'Medication-list entries', 'Allergy-list entries'],
     ];
+    (patients || []).forEach(function (p) {
+      rows.push([p.code, p.ageYears == null ? '' : String(p.ageYears), p.sex || '',
+        (p.meds || []).join('; '), (p.allergies || []).join('; ')]);
+    });
+    rows.push([]);
+    rows.push(['Patient code', 'Comparison group', 'Visit date', 'Visit type', 'Source', 'Detail']);
     var membership = model && model.comparison && model.comparison.membership || {};
     (patients || []).forEach(function (p) {
       (p.visits || []).forEach(function (v) { rows.push([p.code, membership[p.code] || '', v.date, v.type, v.source, v.detail]); });
@@ -1039,13 +1568,16 @@
       scoped = applyScope(resolved.records, spec, options.now);
       if (!scoped.patientCount) throw studyError('empty-cohort', 'No stored patients match that cohort and date range. Try a broader term or time range.');
       if (!scoped.visitCount) throw studyError('empty-evidence', 'The matching patients have no stored visit evidence to analyze yet. Add or pull visit history, then retry.');
-      deid = deidentifyPatients(scoped.patients);
+      deid = deidentifyPatients(scoped.patients, options.now);
+      var allDeidVisits = [];
+      deid.forEach(function (p) { (p.visits || []).forEach(function (v) { allDeidVisits.push(v); }); });
       model = buildReportModel(spec, deid, {
         scope: scoped.scope,
         resolvedCohort: resolved.resolved,
         duplicateVisitsRemoved: (resolved.records.provenance || {}).duplicateVisitsRemoved || 0,
         ambiguousRecordsSkipped: (resolved.records.provenance || {}).ambiguousRecordsSkipped || 0,
         identityConflicts: (resolved.records.provenance || {}).identityConflicts || 0,
+        codeSignals: collectCodeSignals(allDeidVisits, options.env || root),
         identities: scoped.patients.map(function (p) { return { name: p.name, dob: p.dob, mrn: p.mrn }; })
       });
       progress('Analyzing the direct-identifier-scrubbed cohort in memory...');
@@ -1070,30 +1602,37 @@
       };
     }).then(function (engineResult) {
       if (token != null && token !== generation) throw studyError('superseded', 'A newer study request replaced this one.');
-      progress('Building the evidence-grounded detailed report...');
-      return getJsPDF(options).then(function (jsPDF) {
-        var detailed = renderDetailedPdf(jsPDF, model);
-        return {
-          spec: model.spec,
-          scoped: publicScopedSummary(scoped),
-          limitedDataPatients: deid,
-          model: model,
-          engineResult: engineResult,
-          pdfBlob: detailed.pdfBlob,
-          pdfPages: detailed.pageCount,
-          reportTruncatedAtEvidenceCeiling: detailed.truncated,
-          supportedPageCeiling: detailed.supportedPageCeiling,
-          xlsxBlob: engineResult && engineResult.xlsxBlob,
-          xlsxFallback: true,
-          svg: scopedVisual(engineResult, spec, scoped)
-        };
-      }).catch(function (e) {
-        return {
-          spec: model.spec, scoped: publicScopedSummary(scoped), limitedDataPatients: deid, model: model,
-          engineResult: engineResult, xlsxBlob: engineResult && engineResult.xlsxBlob,
-          xlsxFallback: true,
-          svg: scopedVisual(engineResult, spec, scoped), pdfError: e.message
-        };
+      progress('Drafting the academic narrative from the computed statistics...');
+      return aiNarrative(model, options).then(function (narrative) {
+        if (token != null && token !== generation) throw studyError('superseded', 'A newer study request replaced this one.');
+        applyNarrative(model, narrative);
+        progress('Building the evidence-grounded detailed report...');
+        return getJsPDF(options).then(function (jsPDF) {
+          var detailed = renderDetailedPdf(jsPDF, model);
+          return {
+            spec: model.spec,
+            scoped: publicScopedSummary(scoped),
+            limitedDataPatients: deid,
+            model: model,
+            engineResult: engineResult,
+            pdfBlob: detailed.pdfBlob,
+            pdfPages: detailed.pageCount,
+            reportTruncatedAtEvidenceCeiling: detailed.truncated,
+            supportedPageCeiling: detailed.supportedPageCeiling,
+            xlsxBlob: engineResult && engineResult.xlsxBlob,
+            xlsxFallback: true,
+            aiNarrative: !!model.aiNarrative,
+            svg: scopedVisual(engineResult, spec, scoped)
+          };
+        }).catch(function (e) {
+          return {
+            spec: model.spec, scoped: publicScopedSummary(scoped), limitedDataPatients: deid, model: model,
+            engineResult: engineResult, xlsxBlob: engineResult && engineResult.xlsxBlob,
+            xlsxFallback: true,
+            aiNarrative: !!model.aiNarrative,
+            svg: scopedVisual(engineResult, spec, scoped), pdfError: e.message
+          };
+        });
       });
     });
   }
@@ -1164,7 +1703,7 @@
       ({ all: 'All stored patients', selected: 'Selected cohort', auto: 'Selected cohort or all stored patients' })[spec.cohort.mode];
     el.innerHTML = [
       ['Cohort', cohort], ['Analysis', spec.studyTypeLabel], ['Dates', rangeLabel(spec.range)],
-      ['Report', 'Up to ' + spec.targetPages + ' evidence-supported pages'], ['Privacy', 'Direct identifiers scrubbed; review required']
+      ['Report', 'Academic paper, up to ' + spec.targetPages + ' evidence-supported pages'], ['Privacy', 'Direct identifiers scrubbed; review required']
     ].map(function (x) { return '<span class="sr-chip"><b>' + esc(x[0]) + '</b> ' + esc(x[1]) + '</span>'; }).join('');
     el.hidden = false;
   }
@@ -1182,10 +1721,10 @@
     var box = ui(), out = box && box.querySelector('#mlsStudyResults'); if (!out) return;
     var pdf = rememberUrl(result.pdfBlob), xlsx = rememberUrl(result.xlsxBlob);
     var downloads = '';
-    if (pdf) downloads += '<a class="sr-download" href="' + pdf + '" download="' + esc(filename(result.spec.studyType, 'pdf')) + '">Detailed PDF</a>';
+    if (pdf) downloads += '<a class="sr-download" href="' + pdf + '" download="' + esc(filename(result.spec.studyType, 'pdf')) + '">Academic PDF</a>';
     if (xlsx) downloads += '<a class="sr-download sr-secondary" href="' + xlsx + '" download="' + esc(filename(result.spec.studyType, result.xlsxFallback ? 'csv' : 'xlsx')) + '">Limited-data export</a>';
     out.innerHTML = '<div class="sr-result-head"><div><h4>Study ready</h4><div class="sr-result-meta">' +
-      esc(result.pdfPages ? (result.pdfPages + ' evidence-supported pages; requested maximum ' + result.spec.targetPages + '.') : ('Report model ready. ' + (result.pdfError || 'PDF unavailable.'))) +
+      esc(result.pdfPages ? (result.pdfPages + ' evidence-supported pages (abstract, methods, results, discussion' + (result.aiNarrative ? '; AI-drafted narrative, number-verified' : '') + '); requested maximum ' + result.spec.targetPages + '.') : ('Report model ready. ' + (result.pdfError || 'PDF unavailable.'))) +
       '</div></div><div class="sr-downloads">' + downloads + '</div></div>' +
       '<div class="sr-proof"><div><b>' + result.scoped.patientCount + '</b><span>coded patients</span></div>' +
       '<div><b>' + result.scoped.visitCount + '</b><span>deduplicated visits</span></div>' +
@@ -1205,13 +1744,21 @@
     if (!spec.ok) { setStatus(spec.clarification, 'error'); return Promise.resolve(spec); }
     generation++; var token = generation;
     if (submit) submit.disabled = true;
-    renderSpec(spec); setStatus('Interpreting your request...', 'progress');
-    var resultBox = box && box.querySelector('#mlsStudyResults'); if (resultBox) resultBox.hidden = true;
+    /* Anything failing between disabling the button and the async job starting
+       must never leave the composer stuck disabled with no status. */
+    try {
+      renderSpec(spec); setStatus('Interpreting your request...', 'progress');
+      var resultBox = box && box.querySelector('#mlsStudyResults'); if (resultBox) resultBox.hidden = true;
+    } catch (uiSetupError) {
+      if (submit) submit.disabled = false;
+      try { setStatus('The study view could not update (' + uiSetupError.message + '). Press Enter to retry.', 'error'); } catch (e2) {}
+      return Promise.reject(uiSetupError);
+    }
     uiRunPromise = executeSpec(spec, { token: token, onProgress: function (m) { if (token === generation) setStatus(m, 'progress'); } })
       .then(function (result) {
         if (token !== generation) return result;
         lastResult = result; renderResult(result);
-        setStatus(result.pdfPages ? ('Ready: ' + result.pdfPages + '-page report built from ' + result.scoped.visitCount + ' stored visits. It stopped at the evidence-supported length.') : ('Study completed, but the PDF needs a retry: ' + result.pdfError), result.pdfPages ? 'done' : 'error');
+        setStatus(result.pdfPages ? ('Ready: ' + result.pdfPages + '-page academic-style report built from ' + result.scoped.visitCount + ' stored visits. It stopped at the evidence-supported length.') : ('Study completed, but the PDF needs a retry: ' + result.pdfError), result.pdfPages ? 'done' : 'error');
         return result;
       }).catch(function (e) {
         if (e && e.code === 'superseded') return null;
@@ -1230,11 +1777,11 @@
     var section = doc.createElement('section'); section.id = UI_ID; section.setAttribute('aria-labelledby', 'mlsStudyRequestTitle');
     section.innerHTML =
       '<div class="sr-eyebrow">Natural-language study builder</div>' +
-      '<h3 id="mlsStudyRequestTitle">Describe the study. MLS builds it from your stored evidence.</h3>' +
-      '<p class="sr-lede">Type the cohort, question, and time range in plain language. Press Enter - no setup steps required. Outputs scrub common direct identifiers, remain limited-data drafts requiring clinician/privacy review, and expand only as far as the evidence supports, up to 30 pages.</p>' +
-      '<div class="sr-compose"><textarea id="mlsStudyPrompt" rows="2" aria-label="Describe the study to build" aria-keyshortcuts="Enter" placeholder="Example: Compare outcomes for patients who received lumbar epidural injections in the last 12 months, up to 30 pages"></textarea>' +
+      '<h3 id="mlsStudyRequestTitle">Describe the study. MLS writes the paper from your stored evidence.</h3>' +
+      '<p class="sr-lede">Type the cohort, question, and time range in plain language. Press Enter - no setup steps required. MLS reads every connected evidence store (patients, notes, calendar, Athena pulls, your code table) and produces an academic-style paper - abstract, methods, statistics, tables, figures, discussion - up to 60 evidence-supported pages. Outputs scrub common direct identifiers, remain limited-data drafts requiring clinician/privacy review, and are never padded.</p>' +
+      '<div class="sr-compose"><textarea id="mlsStudyPrompt" rows="2" aria-label="Describe the study to build" aria-keyshortcuts="Enter" placeholder="Example: Compare outcomes for patients who received lumbar epidural injections in the last 12 months, up to 40 pages"></textarea>' +
       '<button type="button" id="mlsStudySubmit" aria-label="Generate this study" title="Generate study">&#8593;</button></div>' +
-      '<div class="sr-hint"><span>Enter to generate - Shift+Enter for a new line</span><span class="sr-example">Uses visits, notes, and calendar records already stored in MLS</span></div>' +
+      '<div class="sr-hint"><span>Enter to generate - Shift+Enter for a new line</span><span class="sr-example">Uses visits, notes, calendar, demographics, and code-table records already stored in MLS</span></div>' +
       '<div id="mlsStudySpec" class="sr-spec" hidden></div><div id="mlsStudyStatus" class="sr-status" role="status" aria-live="polite" hidden></div>' +
       '<div id="mlsStudyResults" class="sr-results" hidden></div>';
     var input = section.querySelector('#mlsStudyPrompt'), submit = section.querySelector('#mlsStudySubmit');
@@ -1327,6 +1874,11 @@
     getJsPDF: getJsPDF,
     shouldSubmitKey: shouldSubmitKey,
     executeSpec: executeSpec,
+    collectCodeSignals: collectCodeSignals,
+    aiNarrative: aiNarrative,
+    applyNarrative: applyNarrative,
+    narrativeNumbersOk: narrativeNumbersOk,
+    stats: { mean: mean, median: median, sampleSd: sampleSd, ci95: ci95, welchTTest: welchTTest },
     run: function (query, options) {
       var spec = typeof query === 'string' ? parseStudySpec(query, options) : query;
       if (!spec || !spec.ok) return Promise.reject(studyError((spec && spec.code) || 'invalid-request', (spec && spec.clarification) || 'Describe the study to build.'));
