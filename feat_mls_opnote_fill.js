@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.3.0';
+  var VERSION = 'onf-2.4.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -67,6 +67,8 @@
       '.onf-fillbox .onf-saved{font:800 9px system-ui;color:#1b5e20;background:#dff0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#204034;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
+      '.onf-fillbox .onf-accept{cursor:pointer;border:0;border-radius:8px;padding:8px 15px;font:700 12.5px system-ui;background:#2E6A4B;color:#fff;}',
+      '.onf-fillbox .onf-accept:hover{filter:brightness(1.08);}',
       '@media (max-width:600px){.onf-fillbox .onf-grid{grid-template-columns:1fr;}}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
@@ -118,12 +120,28 @@
       '<button type="button" id="mlsOnfApplyAll">Apply to all</button>' +
       '<button type="button" class="ghost" id="mlsOnfApplyBlank">Only the blank ones</button>' +
       '<button type="button" class="ghost" id="mlsOnfProfBtn" title="Set your provider name, NPI, facility and practice ONCE — they auto-fill on every note">⚙ Practice profile</button>' +
+      '<button type="button" id="mlsOnfSaveAll" title="Finalize every drafted note into its patient\'s History — nothing is sent to Athena">✓ Save all drafted</button>' +
       '<span class="onf-count"></span>' +
       profileFormHtml();
     list.parentNode.insertBefore(bar, list);
     var a = $('mlsOnfApplyAll'); if (a) a.addEventListener('click', function () { applyBulk(false); });
     var b = $('mlsOnfApplyBlank'); if (b) b.addEventListener('click', function () { applyBulk(true); });
     var pb = $('mlsOnfProfBtn'); if (pb) pb.addEventListener('click', toggleProfileEditor);
+    /* onf-2.4.0 (owner: "one or two clicks then it's done"): click 1 = Draft all,
+       click 2 = this. Finalizes every drafted note into its patient's History
+       via the app's own opPrepSave (exact-identity gated, never Athena). */
+    var sa = $('mlsOnfSaveAll'); if (sa) sa.addEventListener('click', function () {
+      var op = window._opPrep || [], saved = 0, blanksLeft = 0, skipped = 0;
+      for (var i = 0; i < op.length; i++) {
+        var r = op[i];
+        if (!r || !S(r.note).trim()) { skipped++; continue; }
+        blanksLeft += (S(r.note).match(/\[FILL:[^\]]*\]|\[\[[a-z0-9_]+\]\]/gi) || []).length;
+        safe(function (j) { return function () { if (isFn(window.opPrepSave)) window.opPrepSave(j); }; }(i)());
+        saved++;
+      }
+      if (!saved) { toast('Nothing drafted yet — press "Draft all op notes" first.', 'err'); return; }
+      toast('✓ Saved ' + saved + ' note' + (saved === 1 ? '' : 's') + ' to History' + (skipped ? ' · ' + skipped + ' not drafted' : '') + (blanksLeft ? ' · ' + blanksLeft + ' blank(s) still marked in the text' : ''), blanksLeft ? 'err' : 'ok');
+    });
     var ps = $('mlsOnfProfSave'); if (ps) ps.addEventListener('click', saveProfileFromForm);
     updateBarCount();
   }
@@ -727,10 +745,20 @@
       return '<label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>';
     }).join('');
     var blanks = 0; for (var m in meta) if (meta[m] === 'blank') blanks++;
+    /* onf-2.4.0 (owner: "one or two clicks then it's done"): the accept step IS
+       the save step — one green button right here finalizes this note into the
+       patient's History. Nothing is ever sent to Athena by this button. */
+    var saveBtn = prep ? ('<div style="margin-top:9px;display:flex;align-items:center;gap:9px;">' +
+      '<button type="button" class="onf-accept" data-onf-accept="' + idx + '">✓ Looks right — save to History' + (blanks ? (' (' + blanks + ' blank' + (blanks === 1 ? '' : 's') + ' left)') : '') + '</button>' +
+      '<span style="font:600 10.5px system-ui;color:#7a5310;">saves to this patient’s History only — never sent to Athena</span></div>') : '';
     box.innerHTML = '<div class="onf-h">✏️ Fields (' + tokens.length + ') — pre-filled with best guesses; change any in one click' + (blanks ? ' · <b>' + blanks + '</b> still need a value' : '') + '</div>' +
       '<div class="onf-grid">' + rowsHtml + '</div>' +
-      '<div class="onf-note">Every field is pre-selected from the patient + procedure context. Changing one updates the note instantly.</div>';
+      '<div class="onf-note">Every field is pre-selected from the patient + procedure context. Changing one updates the note instantly.</div>' + saveBtn;
     if (!existing) ta.parentNode.insertBefore(box, ta);
+    var acc = box.querySelector('[data-onf-accept]');
+    if (acc) acc.addEventListener('click', function () {
+      safe(function () { if (isFn(window.opPrepSave)) window.opPrepSave(+acc.getAttribute('data-onf-accept')); });
+    });
     var ctrls = box.querySelectorAll('[data-onf-label]');
     for (var i = 0; i < ctrls.length; i++) {
       (function wire(ctrl) {
