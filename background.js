@@ -8375,6 +8375,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         iframeContract: !!(surfaceIframe && /encounter/i.test(surfaceSrc) && /summary/i.test(surfaceSrc) && /(?:\?|&)FROMSTREAMLINED=/i.test(surfaceSrc) && /(?:\?|&)CROSSFRAMEID=/i.test(surfaceSrc))
       };
     }
+    if (op === 'slideoutProbe') {
+      /* REDACTED forensics for a row whose child frame never refreshed: what
+         does the OPEN slideout itself render outside the iframe? Lengths,
+         booleans and hash tails only - never patient text. */
+      var soOpen = null;
+      try { soOpen = document.querySelector('.slideout.chart-component.slideout-open'); } catch (eSoFind) {}
+      if (!soOpen) return { present: false };
+      var soText = txt(soOpen);
+      var soNorm = String(soText || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      var soFrames = 0; try { soFrames = soOpen.querySelectorAll('iframe').length; } catch (eSoFr) {}
+      return { present: true, textLen: soNorm.length, clinical: clinicalBody(soText), iframes: soFrames, hash8: soNorm ? hashText(soNorm).slice(0, 8) : '' };
+    }
     if (op === 'detailFrameProbe') {
       var probeUrl = '';
       try { probeUrl = String(location.href || ''); } catch (eProbeUrl) {}
@@ -8841,7 +8853,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         error: 'The verified Athena history read reached its absolute deadline during ' + (stage || 'the read') + '. Nothing partial was reported or saved.'
       };
     }
-    var readPromise = pickEmrTab(frozenHint).then(async function (emr) {
+    var readPromise = (async function () {
+      var emr = await pickEmrTab(frozenHint);
+      /* Live 2026-07-16: a just-finished chart read can leave the exact tab
+         momentarily unreadable (no-athena-tab about once per 20-patient batch).
+         Two bounded re-picks after a short settle heal it; every identity gate
+         still runs unchanged before any body is read. */
+      var rePicks = 0;
+      while (!emr && rePicks < 2 && Date.now() + 2500 < readDeadline) {
+        rePicks++;
+        await sleep(2000);
+        emr = await pickEmrTab(frozenHint);
+      }
+      return emr;
+    })().then(async function (emr) {
       if (!emr) return Date.now() >= readDeadline ? deadlineResult('exact-tab selection') : { ok: false, reason: 'no-athena-tab', visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
       var emrId = emr.id;
       readTabId = Number(emrId);
@@ -9056,7 +9081,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180)))))) break;
             } while (Date.now() < frameProofDeadline);
-            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId), rowType: String((snap && snap.type) || '').slice(0, 60), hadDetailFrame: !!detailFrame, frameUrlTail: detailFrame ? String(detailFrame.url || '').split('/').slice(-1)[0].split('?')[0].slice(0, 40) : '' } } };
+            if (!frameProven || !detailFrame) {
+              /* Live 2026-07-16 forensics: appointment-type rows (est/post/epnp)
+                 fail this proof deterministically on some charts. Capture what
+                 the open slideout renders OUTSIDE the child frame (REDACTED:
+                 lengths, booleans, hash tails) to distinguish a real in-slideout
+                 body from an appointment row with no note document. */
+              var soProbe = null;
+              try {
+                var soR = await exec(emrId, [listFrame], ['slideoutProbe', cfg]);
+                soProbe = bestResult(soR, function (r) { return r && r.present ? 1 : 0; }).result || null;
+              } catch (eSoProbe) {}
+              return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId), rowType: String((snap && snap.type) || '').slice(0, 60), hadDetailFrame: !!detailFrame, frameUrlTail: detailFrame ? String(detailFrame.url || '').split('/').slice(-1)[0].split('?')[0].slice(0, 40) : '', preHash8: (priorProbe && priorProbe.contentHash) ? String(priorProbe.contentHash).slice(0, 8) : '', postHash8: (probe && probe.contentHash) ? String(probe.contentHash).slice(0, 8) : '', frameLen: (probe && probe.len != null) ? Number(probe.len) : null, slideout: soProbe } } };
+            }
 
             /* Re-prove the parent patient after the child frame opens. A tab or
                chart switch during the two clicks invalidates this encounter. */
