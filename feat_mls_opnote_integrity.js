@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.2.1
+ * MLS op-note integrity  oni-2.3.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.2.1';
+  var VERSION = 'oni-2.3.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -217,8 +217,13 @@
   }
 
   function headingLabel(line) {
-    var t=S(line).trim(); if(!t || t.length>90) return '';
+    var t=S(line).trim(); if(!t) return '';
     var m=t.match(/^([^:]{2,70}):(?:\s+.*)?$/); var label=m?m[1].trim():t;
+    /* Only colon-less document titles carry the whole-line length guard; a
+       "HEADING: <content>" line stays a heading no matter how long its content
+       is, so a draft that fills a section on the heading line itself can never
+       lose that heading relative to the short placeholder line in the template. */
+    if(!m && t.length>90) return '';
     var common=/^(patient|patient name|dob|date of birth|mrn|date|date of procedure|provider|surgeon|assistant|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|indications?(?: for procedure)?|consent|findings?|technique|description of procedure|estimated blood loss|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
     var caps=label.length>2 && label===label.toUpperCase() && /[A-Z]/.test(label);
     if(!m && !caps) return '';
@@ -306,6 +311,10 @@
       if(exact){out.push(seg.head.slice(0,colon+1)+' '+exact);}
       else if(S(tail).trim()&&!hasSlot){out.push(seg.head);}
       else if(!hasBody&&!hasSlot){out.push(seg.head+(cand.length?(' '+cand.join('\n')):(' [['+seg.h.replace(/\s+/g,'_')+']]')));}
+      /* A tail that is exactly one placeholder takes the draft's same-heading
+         content; without this, a "HEADING: [SLOT]" section came back as the
+         bare placeholder and the model's clinical prose for it was dropped. */
+      else if(cand.length&&/^\s*(?:\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,})\s*$/i.test(tail)){out.push(seg.head.slice(0,colon+1)+' '+cand.join('\n'));}
       else {out.push(seg.head);}
       seg.body.forEach(function(b){
         if(/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(b)){
