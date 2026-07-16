@@ -11,7 +11,7 @@ const CARD_KEYS = ["problems", "meds", "allergies", "summary", "vitals", "histor
 const BUILD = Object.freeze({
   importerVersion: "si-1.7.2",
   extensionVersion: "2.9.25",
-  assetVersion: "b313",
+  assetVersion: "b318",
   importerSha256: "a".repeat(64),
   extensionSha256: "b".repeat(64),
   assetSha256: "c".repeat(64)
@@ -452,7 +452,7 @@ function createHarness(config) {
     __mlsPhiFreeAcceptanceExpectedDate: TARGET_DATE,
     __mlsPhiFreeAcceptanceExpectedBuild: Object.assign({}, BUILD),
     __mlsExtReportedVersion: "2.9.25",
-    __MLS_AV: "b313",
+    __MLS_AV: "b318",
     addEventListener(type, listener) {
       if (!listeners[type]) listeners[type] = [];
       listeners[type].push(listener);
