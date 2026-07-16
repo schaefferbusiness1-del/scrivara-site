@@ -11718,10 +11718,27 @@ function _athenaChartSnapshotList(value){
 function _athenaChartSnapshotFromChart(chart){
   chart=chart||{};
   var history=_athenaChartHistoryObject(chart),vitals=_athenaChartVitalsObject(chart);
-  var visits=Array.isArray(chart.visits)?chart.visits.map(function(x){
-    if(x&&typeof x==='object')return [x.date,x.type||x.summary||x.raw].filter(Boolean).join(' — ');
-    return String(x||'').trim();
-  }).filter(Boolean):[];
+  /* Athena's print/sketchpad frames leak raw JS (window.Original, IsSafari,
+     Jotter/SVG path code) into the frame text, and the chart parse sometimes
+     echoes it into visit lines — which then land verbatim in the profile
+     summary and prep context. Visit lines are clinical one-liners: cut each
+     line at the first code signature, cap it, and drop duplicates. */
+  var cleanVisitLine=function(s){
+    s=String(s||'').trim(); if(!s)return '';
+    var m=s.search(/window\.\w|=\s*function|\bfunction\s*\(|\bvar\s+\w+\s*=|\bJotter\b|IsSafari|SVGJotter|VMLJSON|\bRaphael\b|PutSketchpad|createElement|[{}]/);
+    if(m>=0)s=s.slice(0,m);
+    s=s.replace(/\s+/g,' ').replace(/[••·|;,\-\s]+$/,'').trim();
+    return s.length>200?(s.slice(0,200).trim()+'…'):s;
+  };
+  var seenVisit={},visits=[];
+  (Array.isArray(chart.visits)?chart.visits:[]).forEach(function(x){
+    var line=(x&&typeof x==='object')?[x.date,x.type||x.summary||x.raw].filter(Boolean).join(' — '):String(x||'');
+    line=cleanVisitLine(line);
+    if(!line||line.length<6)return;
+    var k=line.toLowerCase();
+    if(seenVisit[k])return; seenVisit[k]=1;
+    if(visits.length<15)visits.push(line);
+  });
   return {problems:_athenaChartSnapshotList(chart.problems),meds:_athenaChartSnapshotList(chart.meds),allergies:_athenaChartSnapshotList(chart.allergies),summary:String(chart.summary||'').trim(),vitals:vitals,history:history,visits:visits};
 }
 function _athenaChartSnapshotProof(snapshot){

@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.6.6";
+  var VERSION = "si-1.6.7";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1839,7 +1839,20 @@
            one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
           one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
         } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
-        if (!stopAfterTimeout) {
+        /* User preference: pull the six-card chart history WITHOUT opening
+           every encounter body (much faster day prep). Default ON (full
+           visits). Skipping is recorded honestly on the receipt — a skipped
+           stage is never reported as verified encounter bodies. */
+        var pullVisitBodies = safe(function () {
+          var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
+          var v = k ? localStorage.getItem(k) : null;
+          return v == null ? true : v !== "0";
+        }, true);
+        if (!stopAfterTimeout && pullVisitBodies !== true) {
+          one.visitsComplete = true;
+          one.visitsSkipped = true;
+          one.organizationComplete = one.organized;
+        } else if (!stopAfterTimeout) {
           try {
             var visitsRequestId = patientRequestId + "-visits";
             var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
@@ -1870,7 +1883,7 @@
             }
           } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
         }
-        if(one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
+        if(one.visitsSkipped!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
         one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
         if (!one.complete) {
           one.reason = one.chartReason || one.visitsReason || "history-partial";

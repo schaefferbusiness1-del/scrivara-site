@@ -681,3 +681,29 @@ Live graded runs on the exact published stack (ext 2.9.25 core-sha256:26d61913�
 4. `same-frame-name-mismatch` ×2 + 1 open-timeout — chart open lane (same-name pair or slow open).
 
 Working set: MLS tab 256587204 (my MCP tab), collector server 127.0.0.1:8777 (task bt29bllre), Athena tab moved to QP work-strip window (untouched, signed in). Roster prime = `__mlsSI.pull({date,provider:'all',includeHistory:false})` then resolve('Matthew Schaeffer, MD') for the selected run. Both Athena tabs stayed signed in all session; zero Athena writes.
+
+---
+
+## 2026-07-15 late checkpoint (Claude, b295→b297, commit 648c4ff)
+
+**ROOT CAUSE of `visits-persistence-count-unproven` FOUND AND FIXED — it was never a flag-stamping bug.** The ORIGIN's ~5M-char localStorage quota was exhausted (patients blob 3.45M chars; origin total 4.84M). `savePatients` threw QuotaExceededError, every caller swallows it, so addVisit's verified rows (correctly stamped identityVerified/bodyComplete/fullDetail) silently never persisted; si's strict persisted filter then failed honestly. Live-confirmed with an in-page quota probe before the fix, and the unverified `athena-schedule-history` rows in the store were prior-run casualties of the same wall (plus server skeleton echoes — see feat_mls_visitfix hydrator comments).
+
+**Fix (b297):** ScribeFlow.html now stores `uns('patients')` LZ-packed (`'MLSZ1|'+compressToUTF16(json)`, ~7x: 6.7MB→505KB live, 1388 patients verified intact), round-trip verified before EVERY write, plain-JSON read fallback, and on quota: evict regenerable caches → retry → toast loud + throw (never silent again). Decoder exposed as `window.__mlsPtsDecode`.
+
+**Trap for future edits:** `feat_mls_store_cache.js` is duplicated INSIDE mls-connect.js (bundle head). b296 patched only the satellite → live wrapped getPatients() returned [] while data stayed safe; b297 patched the bundle copy. Any store-boundary change must hit BOTH, plus feat_mls_visitfix.js hydrator + legal-chart-fill-ui.js; ScribeFlow-staging/_test.html got refuse-to-clobber guards. New suite: tests/patient-store-compression-runtime.test.js. 97 suites green (also registered the startup lane's 4 unlisted tests in run-all).
+
+**Merged concurrent lane:** beb1fee "b295 startup/jank" — my work re-labeled b296→b297; loader line + gate asserts resolved in the lane's favor.
+
+**Open:** duplicate MLS Assist install is BACK (2 mlsPongs, identical digests; user notified — only chrome://extensions can remove it). Graded day pull in flight on b297/si-1.6.5/collector 3.4.14 (sha 6e90c92c…). Remaining classes to kill: visit-bodies-incomplete (need live failedIndexes), chart-identity-save-refused ×3 (six-card parse coverage), then repeat idempotency/op-note/all-provider/month, Adam J Schaeffer write test, ZIP publish (get-extension.html serves /MLS_Assist_v2.9.25.zip once committed; extension-version.json already 2.9.25).
+
+## 2026-07-15 b298-b301 checkpoint (Claude, commit 09a4a9e)
+
+**SECOND visits killer found and fixed (b299): feat_mls_b121_pack.js cycle-guard deliberately called addVisit with TWO args ("b120 parity"), dropping opts on EVERY filing** — verified saves lost {source:'athena-copy', identityVerified, identityBinding, bodyComplete} and landed as unverified 'import' rows (the mystery 'import' rows all along). `inner.apply(M, arguments)` now; tests/visit-shell-merge-alias-survival.test.js pins it. History failures: 16 → 5-8.
+
+**b298 (si-1.6.6):** retry lane resurrected — retryFailedHistory fed normDob YYYYMMDD tokens to _athenaHistoryTargetSnapshot which only accepts stored separator DOBs → instant identity-target-unresolved xN. Rows now carry the stored dob/mrn form.
+
+**b300/b301:** _savePatientChart records WHICH gate refused (window.__mlsChartSaveTrace ring, PHI-free: gate + coverage card classifications + persist error). staging parity transplanted; duplicate-name-binding test pins the new literal.
+
+**Latest b301 run (16 patients):** app-side save pipeline CLEAN — zero chart-save refusals (traceGates empty). Failures 8: same-frame-name-mismatch x3 + visit-bodies-incomplete x5 — BOTH extension-lane. The duplicate MLS Assist install is BACK (2 mlsPongs, identical digests) and is the known cause of same-frame collisions; user notified, only chrome://extensions can fix. visit-bodies-incomplete needs r4 failedIndexes capture next.
+
+**Ops notes:** runs take ~15 min; collector state = __mlsPhiFreeAcceptance.status()/results()/verdict() (functions). A stray SECOND MLS tab in the MCP group (my chrome:// recovery artifact) clobbered one run — keep exactly ONE MLS tab. Collector 3.4.14 now expects b301 (sha 6f8f8b3e…). All deployed byte-verified; 98 suites green.

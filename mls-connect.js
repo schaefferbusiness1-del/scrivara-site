@@ -17295,7 +17295,7 @@
     /* one obvious action at a time: Choose only makes sense once rows exist */
     if (rows.length) {
       h += '<button type="button" class="ez3-big ok" id="ez3Choose" style="' + ((tc.cur || tc.nxt) ? 'min-height:60px;font-size:16px;' : '') + '">👥 Choose patient' +
-           '<small>' + rows.length + ' on today’s schedule</small></button>';
+           '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on today’s schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
          (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
@@ -21712,7 +21712,7 @@
     /* one obvious action at a time: Choose only makes sense once rows exist */
     if (rows.length) {
       h += '<button type="button" class="ez3-big ok" id="ez3Choose" style="' + ((tc.cur || tc.nxt) ? 'min-height:60px;font-size:16px;' : '') + '">👥 Choose patient' +
-           '<small>' + rows.length + ' on today’s schedule</small></button>';
+           '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on today’s schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
          (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
@@ -23630,7 +23630,7 @@
     /* one obvious action at a time: Choose only makes sense once rows exist */
     if (rows.length) {
       h += '<button type="button" class="ez3-big ok" id="ez3Choose" style="' + ((tc.cur || tc.nxt) ? 'min-height:60px;font-size:16px;' : '') + '">👥 Choose patient' +
-           '<small>' + rows.length + ' on today’s schedule</small></button>';
+           '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on today’s schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
          (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
@@ -31496,7 +31496,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b301';
+  window.__MLS_AV = window.__MLS_AV || 'b302';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31787,7 +31787,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b301';
+  var MLS_APP_BUILD='2026-07-15-b302';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38701,7 +38701,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.6 - exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.6.7 - exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -40525,11 +40525,38 @@
       syncRetryControl(DS.lastResult);
       if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
       if (stat) { stat.style.display = keepStatus ? 'block' : 'none'; if (keepStatus) stat.textContent = msg; }
+      try { var dsBar = document.getElementById('mlsDsPullBar'); if (dsBar) dsBar.style.display = 'none'; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
       renderList();
     }
     try {
-      var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} } });
+      /* The pull runs for many minutes; the doctor needs a real progress bar,
+         not just a status sentence. Both phases stream exact "X of N" counts. */
+      var paintDsProgress = function (m) {
+        try {
+          if (!stat) return;
+          var msg = String(m || '');
+          var bar = document.getElementById('mlsDsPullBar');
+          if (!bar) {
+            bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
+            bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
+            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+            stat.parentNode.insertBefore(bar, stat.nextSibling);
+          }
+          var fill = bar.firstElementChild;
+          var mm = msg.match(/(\d+)\s+of\s+(\d+)/);
+          if (mm && Number(mm[2]) > 0) {
+            var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
+            var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
+            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2];
+          } else if (bar.style.display !== 'block') {
+            bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
+          }
+        } catch (e) {}
+      };
+      var hideDsProgress = function () { try { var bar = document.getElementById('mlsDsPullBar'); if (bar) bar.style.display = 'none'; } catch (e) {} };
+      paintDsProgress('');
+      var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} paintDsProgress(m); } });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
@@ -40555,10 +40582,20 @@
         '<button type="button" class="ds-today" id="mlsDsTodayBtn">Back to Today</button>' +
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
+        '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: pull the schedule and each patient’s chart history cards only — much faster." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
       var anchor = body.querySelector('.ez3fl-record');
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(strip, anchor);
       else body.insertBefore(strip, body.firstChild);
+      /* "Full visit notes" preference: default ON; OFF pulls schedule + chart
+         history cards only (the importer records the skipped stage honestly). */
+      (function () {
+        var tgl = $('mlsDsVisitBodies'); if (!tgl) return;
+        var key = ''; try { key = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; } catch (e) {}
+        var cur = null; try { cur = key ? localStorage.getItem(key) : null; } catch (e) {}
+        tgl.checked = cur == null ? true : cur !== '0';
+        tgl.onchange = function () { try { if (key) localStorage.setItem(key, tgl.checked ? '1' : '0'); } catch (e) {} };
+      })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
       $('mlsDsNext').onclick = function () { shift(1); };
       $('mlsDsTodayBtn').onclick = function () { setDay(todayKey()); };
