@@ -112,7 +112,8 @@ const tests = [
   'settings-cleanup-contract.test.js',
   'study-natural-request-report.test.js',
   'study-academic-paper.test.js',
-  'comp-report-contract.test.js'
+  'comp-report-contract.test.js',
+  'prep-summary-debris.test.js'
 ];
 
 for (const test of tests) {

@@ -753,13 +753,51 @@
     }).join(' '));
   }
 
+  /* Athena print-view captures arrive with the page's own scaffolding baked
+     into the text: inline JavaScript (window.Original / SVGJotter / Jotter /
+     IsSafari sketchpad shims) and the repeated print header ("Print <practice>
+     • <address> NAME, First (id #NNN, dob: MM/DD/YYYY)"). None of that is
+     clinical content. Deterministic scrub, applied when text is SUMMARIZED for
+     display — the stored raw capture is never modified. */
+  var _DEBRIS_START = /^(window\.|document\.|function$|function\(|var$|new$|Jotter=?$|IsSafari=?$|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|svgjotter)/i;
+  var _DEBRIS_CODEY = /[{}();=<>[\]]|^['"]|['"][:,]?$|^\d+[,;]?$|^(var|function|new|return|if|else|for|while|this|null|true|false|params)$|params\.|jotter|svgjotter|raphael|\bjson\b|^\/\//i;
+  function _stripPageDebris(text) {
+    /* The Athena print page's scaffolding is interleaved with the note text,
+       often on ONE long line, sometimes BEFORE the clinical content. A cut-to-
+       end would delete the note itself, so this walks tokens: a strong code
+       marker enters code mode, code-shaped tokens stay dropped, and a run of
+       plain prose tokens exits code mode with that prose kept. */
+    var lines = S(text).split(/\n/).map(function (line) {
+      line = line.replace(/\bPrint\b[\s\S]{0,240}?\(id\s*#\d+,\s*dob:\s*\d{1,2}\/\d{1,2}\/\d{2,4}\)[\s.•-]*/g, '');
+      if (!_DEBRIS_START.test(line) && line.search(/window\.|svgjotter|SVGJotter|\bJotter\b|IsSafari|VMLJSON/i) < 0) {
+        return line.replace(/\s{2,}/g, ' ').replace(/\s+$/, '');
+      }
+      var toks = line.split(/\s+/), res = [], buf = [], code = false;
+      for (var i = 0; i < toks.length; i++) {
+        var t = toks[i]; if (!t) continue;
+        if (!code && _DEBRIS_START.test(t)) { code = true; buf = []; continue; }
+        if (code) {
+          if (_DEBRIS_CODEY.test(t)) { buf = []; continue; }
+          buf.push(t);
+          if (buf.length >= 5) { code = false; res = res.concat(buf); buf = []; }
+          continue;
+        }
+        res.push(t);
+      }
+      return res.join(' ').replace(/[{};|]{2,}/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+$/, '');
+    }).filter(function (line) {
+      return line === '' || !/^[\s\-•·—*.,;:{}()]*$/.test(line);
+    });
+    return lines.join('\n');
+  }
+
   function _aggregateSummary(p, visits, facts) {
     var lines = [];
     var pulled = visits.some(_isAthenaVisit);
     var when = new Date().toLocaleDateString();
     lines.push((pulled ? 'Pulled from Athena ' : 'Longitudinal summary refreshed ') + when + ' —');
     var latest = visits[0];
-    var lead = latest && _stripIdentityLines(latest.aiSummary || latest.findings || latest.plan || latest.raw);
+    var lead = latest && _stripIdentityLines(_stripPageDebris(latest.aiSummary || latest.findings || latest.plan || latest.raw));
     if (lead) lines.push(lead.slice(0, 900));
 
     var prior = [];
@@ -774,8 +812,8 @@
     if (visits.length) {
       lines.push('', 'Recent visits:');
       visits.slice(0, 12).forEach(function (v) {
-        var detail = _stripIdentityLines(v.aiSummary || v.findings || v.plan || v.raw || v.type);
-        if (!detail) detail = trim(v.type) || 'Visit';
+        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || v.type));
+        if (!detail) detail = trim(v.type) || 'Visit — no readable note text captured';
         lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, 320));
       });
     }
@@ -938,6 +976,7 @@
     _SUM_SYS: SUM_SYS,
     _visitToPrompt: _visitToPrompt,
     _sectionValues: _sectionValues,
+    _stripPageDebris: _stripPageDebris,
     _aggregateSummary: _aggregateSummary
   };
 })();

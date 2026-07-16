@@ -1504,9 +1504,9 @@
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.0.0') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.1.0') return; } catch (e) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -1758,6 +1758,86 @@
     return S(s).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  /* ---------- Athena page-debris scrub + cross-patient withhold (v1.1.0) ----
+     Stored longitudinal summaries and pulled note text can carry the Athena
+     print page's own scaffolding: inline JavaScript (window.Original /
+     SVGJotter / Jotter / IsSafari sketchpad shims) and the repeated header
+     "Print <practice> • <address> NAME, First (id #NNN, dob: MM/DD/YYYY)".
+     Scrub is deterministic and DISPLAY-ONLY — stored chart fields are never
+     modified — and it also repairs summaries saved before this fix existed. */
+  var EP_DEBRIS_START = /^(window\.|document\.|function$|function\(|var$|new$|Jotter=?$|IsSafari=?$|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|svgjotter)/i;
+  var EP_DEBRIS_CODEY = /[{}();=<>[\]]|^['"]|['"][:,]?$|^\d+[,;]?$|^(var|function|new|return|if|else|for|while|this|null|true|false|params)$|params\.|jotter|svgjotter|raphael|\bjson\b|^\/\//i;
+  function scrubPageDebris(text) {
+    /* Token-walk (not cut-to-end): the page scaffolding is interleaved with
+       the note text on single long lines, often BEFORE the clinical content —
+       a strong code marker enters code mode, code-shaped tokens are dropped,
+       a run of plain prose tokens exits code mode with that prose kept. */
+    var lines = S(text).split(/\n/).map(function (line) {
+      line = line.replace(/\bPrint\b[\s\S]{0,240}?\(id\s*#\d+,\s*dob:\s*\d{1,2}\/\d{1,2}\/\d{2,4}\)[\s.•-]*/g, '');
+      if (EP_DEBRIS_START.test(line) || line.search(/window\.|svgjotter|SVGJotter|\bJotter\b|IsSafari|VMLJSON/i) >= 0) {
+        var toks = line.split(/\s+/), res = [], buf = [], code = false;
+        for (var i = 0; i < toks.length; i++) {
+          var t = toks[i]; if (!t) continue;
+          if (!code && EP_DEBRIS_START.test(t)) { code = true; buf = []; continue; }
+          if (code) {
+            if (EP_DEBRIS_CODEY.test(t)) { buf = []; continue; }
+            buf.push(t);
+            if (buf.length >= 5) { code = false; res = res.concat(buf); buf = []; }
+            continue;
+          }
+          res.push(t);
+        }
+        line = res.join(' ');
+      }
+      line = line.replace(/[{};|]{2,}/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+$/, '');
+      /* a visit bullet whose whole body was scaffolding keeps its date with an
+         honest placeholder instead of dangling into nothing */
+      line = line.replace(/^(•\s*[\d-]{4,10}\s*—)\s*$/, '$1 no readable note text captured (page scaffolding removed)');
+      return line;
+    }).filter(function (line) {
+      return line === '' || !/^[\s\-•·—*.,;:{}()]*$/.test(line);
+    });
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function _epLastName(name) {
+    var s = trim(name); if (!s) return '';
+    if (s.indexOf(',') >= 0) return trim(s.split(',')[0]).toLowerCase(); // "MORENO, Mary"
+    var parts = s.split(/\s+/); return (parts[parts.length - 1] || '').toLowerCase(); // "Mary Moreno"
+  }
+  function _epIsoDob(v) {
+    var s = trim(v), m;
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+    if ((m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/))) {
+      var y = m[3].length === 2 ? '19' + m[3] : m[3];
+      return y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    }
+    return '';
+  }
+  /* If a text block explicitly names a DIFFERENT patient ("Patient:
+     Alexander, Michael" / "Patient DOB: 1-2-1955") than the chart it is being
+     shown on, withhold it — never display another patient's note text on this
+     patient's prep card. Conservative: only fires on an explicit conflict. */
+  function withholdIfOtherPatient(text, p) {
+    var s = S(text); if (!s.trim() || !p) return s;
+    var conflict = false;
+    var nm = s.match(/Patient\s*:\s*([A-Za-z'’-]{2,})\s*,\s*[A-Za-z'’-]{2,}/i);
+    if (nm) {
+      var myLast = _epLastName(p.name);
+      if (myLast && nm[1].toLowerCase() !== myLast) conflict = true;
+    }
+    var dm = s.match(/Patient\s+DOB\s*:?\s*([\d\/-]{6,10})/i);
+    if (dm && p.dob) {
+      var theirs = _epIsoDob(dm[1]), mine = _epIsoDob(p.dob);
+      if (theirs && mine && theirs !== mine) conflict = true;
+    }
+    if (!conflict) return s;
+    return '⚠ Withheld: this text names a different patient than this chart — open the source note to review. Nothing from it is shown here for identity safety.';
+  }
+  /* summaries are multi-section: withhold only the offending LINES, keep the rest */
+  function withholdLinesIfOtherPatient(text, p) {
+    return S(text).split(/\n/).map(function (line) { return withholdIfOtherPatient(line, p); }).join('\n');
+  }
+
   function buildPrepSummaryForPatient(p) {
     if (!p) return '';
     var appt = apptContext(p);
@@ -1768,8 +1848,10 @@
       problems: cleanListField(p.problems), meds: cleanListField(p.meds),
       allergies: cleanListField(p.allergies, { keepNegatives: true }),
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
-      historySummary: cleanNarrative(p.athenaHistorySummary || ''), careFlags: cleanListField(p.careFlags),
-      visitCount: lv.count, lastDate: lv.lastDate, lastExcerpt: lv.lastExcerpt,
+      historySummary: withholdLinesIfOtherPatient(cleanNarrative(scrubPageDebris(p.athenaHistorySummary || '')), p),
+      careFlags: cleanListField(p.careFlags),
+      visitCount: lv.count, lastDate: lv.lastDate,
+      lastExcerpt: withholdIfOtherPatient(scrubPageDebris(lv.lastExcerpt), p),
       outsideText: outsideRecordsText(p)
     });
   }
@@ -2129,6 +2211,8 @@
     apptContext: apptContext,
     buildPrepSummary: buildPrepSummary,
     buildPrepSummaryForPatient: buildPrepSummaryForPatient,
+    scrubPageDebris: scrubPageDebris,
+    withholdIfOtherPatient: withholdIfOtherPatient,
     render: mlsEP_render
   };
 
@@ -38664,7 +38748,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260714vis3r7';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260716vis4';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
