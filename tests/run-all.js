@@ -113,7 +113,8 @@ const tests = [
   'study-natural-request-report.test.js',
   'study-academic-paper.test.js',
   'comp-report-contract.test.js',
-  'prep-summary-debris.test.js'
+  'prep-summary-debris.test.js',
+  'visit-single-transcript-contract.test.js'
 ];
 
 for (const test of tests) {

@@ -5650,6 +5650,11 @@
     '#mlsEz3 .ez3fl-gen[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
     '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
+    /* fl-1.6.1: while the engine has a patient open, its per-patient workspace
+       (own transcript pre-generation, note editor after) is the ONE visit
+       surface — the top lane yields so two transcript boxes can never show.
+       CSS-class hide, never node removal (see the fl-1.5.0 flash note). */
+    '#mlsEz3Body.ez3fl-ws-active .ez3fl-record,#mlsEz3Body.ez3fl-ws-active .ez3fl-transcript,#mlsEz3Body.ez3fl-ws-active .ez3fl-note{display:none!important}',
     '#mlsEz3 .ez3fl-txhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px;color:#1A211C;font-size:13px;font-weight:700;}',
     '#mlsEz3 .ez3fl-txhead span{color:#79837C;font-size:11.5px;font-weight:600;}',
     '#mlsEz3 .ez3fl-tx{display:block;width:100%;min-height:126px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #D9DFD9!important;border-radius:10px;padding:11px 12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;}',
@@ -5772,7 +5777,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.6.0';
+  var VERSION = 'fl-1.6.1';
   var _obs = null, _deb = null, _iv = null, _laneIv = null, _laneRaf = null;
   var _primaryLane = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -6015,6 +6020,13 @@
     var body = $('mlsEz3Body'); if (!body) return;
     var wrap = body.querySelector('#ez3Wrap');
     var staff = onStaffScreen(body);
+    /* fl-1.6.1: the engine's card carries a DOB badge exactly while a patient
+       is open in its workspace (recording, generating, or note review). That
+       is when the engine owns the ONE transcript surface and the top lane
+       yields — via class (CSS hide), never removal, so nothing flashes. */
+    try {
+      body.classList.toggle('ez3fl-ws-active', !staff && !!(wrap && wrap.querySelector('.ez3-badge.dob')));
+    } catch (e) {}
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
        nodes we insert at body level survive mode switches and must be removed
        for the mode they do not belong to (fl-1.0.1 fix: the Back button leaked
