@@ -34,7 +34,7 @@
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
     if (s.textContent !== css) s.textContent = css;
   }
-  function build() { injectCSS(); var a = $("authScreen"); if (a) a.setAttribute("data-lgx-built", VERSION); }
+  function build() { injectCSS(); var a = $("authScreen"); if (a && a.getAttribute("data-lgx-built") !== VERSION) a.setAttribute("data-lgx-built", VERSION); }
   function boot() { build(); var n = 0; _t = setInterval(function () { build(); if (++n > 6) clearInterval(_t); }, 1000); }
   function revert() { try { if (_t) clearInterval(_t); } catch (e) {} try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {} try { window.__mlsLgx.installed = false; } catch (e) {} }
   window.__mlsLgx = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };

@@ -10,7 +10,7 @@ const end = source.indexOf('/* =================================================
 assert(start >= 0 && end > start, 'easy visit flow module boundary was not found');
 const flow = source.slice(start, end);
 
-assert(flow.includes("var VERSION = 'fl-1.5.0'"), 'persistent transcript lifecycle release is not installed');
+assert(flow.includes("var VERSION = 'fl-1.5.1'"), 'persistent transcript lifecycle release is not installed');
 assert(!flow.includes('function nativeDoctorScreen()'), 'transient native-doctor state still owns transcript mounting');
 assert(!/nativeDoctor[\s\S]{0,180}\.ez3fl-record[\s\S]{0,80}remove\(/.test(flow), 'native doctor reconciliation can still remove the transcript lane');
 assert(flow.includes("var mountedLanes = body.querySelectorAll('.ez3fl-record')"), 'easy flow does not reconcile one persistent transcript lane');

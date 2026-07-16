@@ -35,7 +35,7 @@
 ;(function () {
   "use strict";
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.1";
   var ASSET = "feat_mls_pick_smartscope.js";
   var WRAP_ID = "mlsPickSmartWrap";
   var STYLE_ID = "mlsPickSmartStyle";
@@ -108,7 +108,17 @@
     var w = ensureHost(); if (!w) return;
     w.style.display = "";
     var host = w.querySelector(".mlsps-host"); if (!host) return;
-    try { api.renderGrid(host, { scope: smartScope(), limit: 6, showNote: true }); } catch (e) {}
+    try {
+      var scope = smartScope();
+      var scoped = api.scopeList(scope) || {}, list = scoped.list || [];
+      var active = (typeof window.activePatient === 'function' && window.activePatient()) || null;
+      var key = scope + '|' + String(active && (active.id || active.external_id || active.mrn) || '') + '|' + list.slice(0, 6).map(function (row) {
+        return [row && (row.id || row.appointment_id || ''), row && (row.name || ''), row && (row.start_at || row.time || ''), row && (row.status || '')].join('~');
+      }).join('|');
+      if (host.__mlsSmartRenderKey === key && host.childNodes.length) return;
+      api.renderGrid(host, { scope: scope, limit: 6, showNote: true });
+      host.__mlsSmartRenderKey = key;
+    } catch (e) {}
   }
 
   /* ---- re-render after a schedule pull (same chokepoint centerpiece uses) ---- */
@@ -132,11 +142,26 @@
   }
 
   /* ---- keep present without flicker (observer coalesced via rAF) + slow safety poll ---- */
-  var _obs = null, _raf = 0, _poll = null;
+  var _obs = null, _raf = 0, _listening = false;
   function scheduleRender() {
     if (_raf) return;
     var run = function () { _raf = 0; try { render(); } catch (e) {} };
     if (window.requestAnimationFrame) _raf = window.requestAnimationFrame(run); else _raf = setTimeout(run, 16);
+  }
+  function relevantMutations(records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes || [];
+      for (var j = 0; j < added.length; j++) {
+        var node = added[j]; if (!node) continue;
+        if (node.nodeType === 3) node = node.parentNode;
+        if (!node || node.nodeType !== 1) continue;
+        try {
+          if (node.closest('#' + WRAP_ID)) continue;
+          if (node.matches('#visitHero,#mlsPickComplexWrap,#mlsCtxBar,.ez3fl-record') || node.querySelector('#visitHero,#mlsPickComplexWrap,#mlsCtxBar,.ez3fl-record')) return true;
+        } catch (e) {}
+      }
+    }
+    return false;
   }
   function boot() {
     if (!pickApi()) return false;
@@ -144,10 +169,16 @@
     wrapImport();
     render();
     try {
-      _obs = new MutationObserver(function () { scheduleRender(); });
-      _obs.observe(document.documentElement, { childList: true, subtree: true });
+      if (!_obs) {
+        _obs = new MutationObserver(function (records) { if (relevantMutations(records)) scheduleRender(); });
+        _obs.observe($("visitView") || document.documentElement, { childList: true, subtree: true });
+      }
+      if (!_listening) {
+        document.addEventListener('mls:patientpicked', scheduleRender);
+        window.addEventListener('mls:ui-ready', scheduleRender);
+        _listening = true;
+      }
     } catch (e) {}
-    _poll = setInterval(function () { try { wrapImport(); render(); } catch (e) {} }, 4000);
     try { [250, 700, 1500, 3000, 5000].forEach(function (ms) { setTimeout(render, ms); }); } catch (e) {}
     return true;
   }
@@ -155,7 +186,8 @@
   function revert() {
     _reverted = true;
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_poll) clearInterval(_poll); } catch (e) {}
+    try { if (_listening) { document.removeEventListener('mls:patientpicked', scheduleRender); window.removeEventListener('mls:ui-ready', scheduleRender); } } catch (e) {}
+    _listening = false;
     try { _timers.forEach(function (t) { clearTimeout(t); }); } catch (e) {}
     try { if (_origImport && window._importPulledSchedule && window._importPulledSchedule.__pssWrapped) window._importPulledSchedule = _origImport; } catch (e) {}
     try { var w = $(WRAP_ID); if (w) w.remove(); } catch (e) {}

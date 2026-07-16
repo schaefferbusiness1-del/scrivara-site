@@ -326,7 +326,7 @@
   }
 
   function styleAgenda(card) {
-    card.classList.add("cx-agenda");
+    if (!card.classList.contains("cx-agenda")) card.classList.add("cx-agenda");
     imp(card, "padding", "20px 24px 24px");
     imp(card, "margin", "0");
     buildAgendaHeader(card);
@@ -508,12 +508,12 @@
     installHooks();
     try { syncSeg(); } catch (e) {}
     try { deoverlapGrid(); } catch (e) {}
-    v.setAttribute("data-cx-built", VERSION);
+    if (v.getAttribute("data-cx-built") !== VERSION) v.setAttribute("data-cx-built", VERSION);
   }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { build(); } catch (e) {}
-    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    try { var root = $("calendarView"); if (_obs && root) _obs.observe(root, { childList: true, subtree: true }); } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 150); }
   function boot() {

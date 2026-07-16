@@ -1,4 +1,4 @@
-/* feat_mls_viewtoggle.js  ->  window.__mlsViewToggle  (v1.0.0)
+/* feat_mls_viewtoggle.js  ->  window.__mlsViewToggle  (v1.0.2)
  *
  * Add a clear, always-visible Simple / Complex view switch in the TOP-LEFT of
  * the app header, right next to the MLS logo/branding. It reflects the current
@@ -37,9 +37,9 @@
  *    flag, __mlsViewPersist saves the choice (persists across reload/login)
  *    and __mlsSimpleViewGlobal applies/relaxes the nav restriction. No second
  *    source of truth is introduced; the host's inline links keep working.
- *  - The control reflects the live mode: a cheap poll reads
- *    __mlsEasy.state.mode and marks the active segment, so it stays in sync
- *    whether the user switches here, via the host's links, or after reload.
+ *  - The control reflects the live mode from user actions, storage/UI-ready
+ *    events, and a scoped header remount observer. It does not run an idle
+ *    document-wide observer or a permanent polling loop.
  *  - If __mlsEasy isn't ready yet (or its state can't be read), the control
  *    falls back to clicking the host's own visible switch link if one exists,
  *    so it degrades gracefully and never strands the user.
@@ -57,7 +57,7 @@
   "use strict";
   try { if (window.__mlsViewToggle && window.__mlsViewToggle.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.2";
   var ASSET = "feat_mls_viewtoggle.js";
   var STYLE_ID = "mls-vt-style";
   var WRAP_ID = "mlsViewToggle";
@@ -65,7 +65,8 @@
   var BTN_FULL_ID = "mlsVtFull";
 
   var _reverted = false;
-  var _obs = null, _poll = null, _raf = 0;
+  var _obs = null, _headerRoot = null, _sentinelObs = null, _sentinelRoot = null;
+  var _retryT = null, _raf = 0, _retryCount = 0, _listenersBound = false, _lastPaintMode = null;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -179,32 +180,118 @@
       // default visual when unknown: treat as 'easy' (the host default)
       var isFull = (m === "full");
       var bs = gid(BTN_SIMPLE_ID), bf = gid(BTN_FULL_ID);
-      if (bs) { bs.classList.toggle("mlsVtOn", !isFull); bs.setAttribute("aria-pressed", String(!isFull)); }
-      if (bf) { bf.classList.toggle("mlsVtOn", isFull); bf.setAttribute("aria-pressed", String(isFull)); }
+      var simpleOn = !isFull, fullOn = isFull;
+      if (bs) {
+        if (bs.classList.contains("mlsVtOn") !== simpleOn) bs.classList.toggle("mlsVtOn", simpleOn);
+        if (bs.getAttribute("aria-pressed") !== String(simpleOn)) bs.setAttribute("aria-pressed", String(simpleOn));
+      }
+      if (bf) {
+        if (bf.classList.contains("mlsVtOn") !== fullOn) bf.classList.toggle("mlsVtOn", fullOn);
+        if (bf.getAttribute("aria-pressed") !== String(fullOn)) bf.setAttribute("aria-pressed", String(fullOn));
+      }
+      if (_lastPaintMode !== m) {
+        _lastPaintMode = m;
+        safe(function () { window.dispatchEvent(new CustomEvent("mls:view-mode-changed", { detail: { mode: m } })); });
+      }
     });
   }
 
-  // ---- watcher: keep mounted + in sync (cheap reads only) -------------------
+  // ---- watcher: event-driven, scoped, and bounded ---------------------------
   function schedule() {
     if (_raf || _reverted) return;
     _raf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
-      _raf = 0; if (!_reverted) { mount(); paint(curMode()); }
+      _raf = 0; if (!_reverted) { mount(); paint(curMode()); bindHeaderObserver(); }
     });
   }
+  function bindHeaderObserver() {
+    if (_reverted) return;
+    var header = gid("appHeader");
+    /* Keep the parent observer alive while the header is temporarily absent.
+       A host render can remove and insert #appHeader in separate tasks, long
+       after the finite boot retries have finished. */
+    if (!header) {
+      safe(function () { if (_obs) _obs.disconnect(); });
+      _obs = null;
+      _headerRoot = null;
+      return;
+    }
+
+    if (!_obs || header !== _headerRoot) {
+      safe(function () { if (_obs) _obs.disconnect(); });
+      safe(function () {
+        _obs = new MutationObserver(function (records) {
+          for (var i = 0; i < records.length; i++) {
+            var added = records[i].addedNodes || [];
+            for (var j = 0; j < added.length; j++) {
+              var node = added[j];
+              if (node && node.nodeType === 1 &&
+                  (node.id === WRAP_ID || (node.querySelector && node.querySelector(".logo,#" + WRAP_ID)))) {
+                schedule(); return;
+              }
+            }
+            if (!gid(WRAP_ID)) { schedule(); return; }
+          }
+        });
+        _obs.observe(header, { childList: true, subtree: true });
+        _headerRoot = header;
+      });
+    }
+
+    /* Observe only the header's direct parent, not the document subtree. This
+       stable sentinel sees wholesale header replacement, then reconnects the
+       scoped observer to the new root. Identity guards make unrelated sibling
+       mutations free. */
+    var sentinel = header.parentNode;
+    if (sentinel && (!_sentinelObs || sentinel !== _sentinelRoot)) {
+      safe(function () { if (_sentinelObs) _sentinelObs.disconnect(); });
+      safe(function () {
+        _sentinelObs = new MutationObserver(function () {
+          var liveHeader = gid("appHeader");
+          if (liveHeader !== _headerRoot || (_headerRoot && !_headerRoot.isConnected)) schedule();
+        });
+        _sentinelObs.observe(sentinel, { childList: true });
+        _sentinelRoot = sentinel;
+      });
+    }
+  }
+  function retryMount() {
+    _retryT = null;
+    if (_reverted) return;
+    mount(); paint(curMode()); bindHeaderObserver();
+    if (!gid(WRAP_ID) && _retryCount++ < 40) _retryT = setTimeout(retryMount, 250);
+  }
+  function onHostActivity(ev) {
+    if (_reverted) return;
+    var target = ev && ev.target;
+    if (target && target.closest && target.closest("#" + WRAP_ID)) return;
+    setTimeout(schedule, 0);
+  }
   function start() {
-    mount();
-    safe(function () {
-      _obs = new MutationObserver(function () { if (!_reverted) schedule(); });
-      _obs.observe(document.documentElement, { childList: true, subtree: true });
-    });
-    _poll = setInterval(function () { if (!_reverted) { mount(); paint(curMode()); } }, 600);
+    if (_reverted) return;
+    retryMount();
+    if (!_listenersBound) {
+      _listenersBound = true;
+      document.addEventListener("click", onHostActivity, true);
+      window.addEventListener("storage", schedule);
+      window.addEventListener("mls:ui-ready", schedule);
+    }
   }
 
   // ---- revert ---------------------------------------------------------------
   function revert() {
     _reverted = true;
     safe(function () { if (_obs) _obs.disconnect(); });
-    safe(function () { if (_poll) clearInterval(_poll); });
+    safe(function () { if (_sentinelObs) _sentinelObs.disconnect(); });
+    safe(function () { if (_retryT) clearTimeout(_retryT); });
+    safe(function () {
+      if (_raf) {
+        if (window.cancelAnimationFrame) window.cancelAnimationFrame(_raf);
+        else clearTimeout(_raf);
+      }
+    });
+    safe(function () { document.removeEventListener("click", onHostActivity, true); });
+    safe(function () { window.removeEventListener("storage", schedule); });
+    safe(function () { window.removeEventListener("mls:ui-ready", schedule); });
     safe(function () { var w = gid(WRAP_ID); if (w && w.parentNode) w.parentNode.removeChild(w); });
     safe(function () { var s = gid(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); });
     safe(function () { window.__mlsViewToggle.installed = false; });

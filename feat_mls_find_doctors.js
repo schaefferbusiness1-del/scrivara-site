@@ -27,7 +27,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.0.2", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
+  var VERSION = "1.0.3", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
   try { if (window.__mlsFindDoctors && window.__mlsFindDoctors.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -210,18 +210,42 @@
     } catch (e) {}
   }
 
-  var _obs = null, _poll = null;
+  var _obs = null, _raf = 0;
   function tick() { normalizeProviders(); relabelSelects(); ensureButton(); }
+  function scheduleTick() {
+    if (_raf) return;
+    var run = function () { _raf = 0; tick(); };
+    _raf = window.requestAnimationFrame ? window.requestAnimationFrame(run) : setTimeout(run, 16);
+  }
+  function relevantMutation(records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes || [];
+      for (var j = 0; j < added.length; j++) {
+        var node = added[j]; if (!node) continue;
+        if (node.nodeType === 3) node = node.parentNode;
+        if (!node || node.nodeType !== 1) continue;
+        try {
+          if (node.closest('select,.vx-cap-row,#heroPullStatus,#calProvFilter') || node.matches('select,.vx-cap-row,#heroPullStatus,#calProvFilter') || node.querySelector('select,.vx-cap-row,#heroPullStatus,#calProvFilter')) return true;
+        } catch (e) {}
+      }
+    }
+    return false;
+  }
   function boot() {
     injectCSS(); tick();
-    try { _obs = new MutationObserver(function () { tick(); }); _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
-    _poll = setInterval(tick, 4000);
+    try {
+      if (!_obs) {
+        _obs = new MutationObserver(function (records) { if (relevantMutation(records)) scheduleTick(); });
+        _obs.observe(document.documentElement, { childList: true, subtree: true });
+      }
+    } catch (e) {}
     try { [300, 800, 1600, 3000].forEach(function (ms) { setTimeout(tick, ms); }); } catch (e) {}
   }
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_poll) clearInterval(_poll); } catch (e) {}
+    try { if (_raf) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(_raf); else clearTimeout(_raf); } } catch (e) {}
+    _raf = 0;
     try { var b = $(BTN_ID); if (b) b.remove(); } catch (e) {}
     try { var m = $(MODAL_ID); if (m) m.remove(); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}

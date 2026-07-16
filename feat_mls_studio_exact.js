@@ -145,7 +145,7 @@
       var notes = copilot.querySelectorAll(":scope > .note");
       Array.prototype.forEach.call(notes, function (n) { n.classList.add("copilot-note"); });
     }
-    v.setAttribute("data-sx-built", VERSION);
+    if (v.getAttribute("data-sx-built") !== VERSION) v.setAttribute("data-sx-built", VERSION);
   }
 
   function hookShowView() {

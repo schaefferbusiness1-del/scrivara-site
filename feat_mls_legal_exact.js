@@ -51,7 +51,7 @@
       }
     }
   }
-  function build() { var v = $("legalReqView"); if (!v) return; injectCSS(); styleHeaders(); v.setAttribute("data-lx-built", VERSION); }
+  function build() { var v = $("legalReqView"); if (!v) return; injectCSS(); styleHeaders(); if (v.getAttribute("data-lx-built") !== VERSION) v.setAttribute("data-lx-built", VERSION); }
   function applyAll() { try { if (_obs) _obs.disconnect(); } catch (e) {} try { build(); } catch (e) {} try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {} }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
   function boot() { try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {} applyAll(); var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) clearInterval(_t); }, 700); }

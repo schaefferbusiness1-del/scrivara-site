@@ -85,7 +85,10 @@
   function update(ta) {
     var rec = boundMap.get(ta);
     if (!rec) return;
-    var words = countWords(ta.value);
+    var value = String(ta.value || '');
+    if (rec.lastValue === value) return;
+    rec.lastValue = value;
+    var words = countWords(value);
     if (words <= 0) {
       if (rec.wrap.style.display !== 'none') rec.wrap.style.display = 'none';
       return;
@@ -107,19 +110,21 @@
     var handler = function () { update(ta); };
     ta.addEventListener('input', handler);
     ta.addEventListener('change', handler);
-    boundMap.set(ta, { wrap: meter.row, wEl: meter.wEl, rEl: meter.rEl, handler: handler });
+    boundMap.set(ta, { wrap: meter.row, wEl: meter.wEl, rEl: meter.rEl, handler: handler, lastValue: null });
     bound.push(ta);
     update(ta);
   }
 
   function scan(root) {
     try {
+      if (root && root.nodeType === 1 && root.tagName === 'TEXTAREA') wire(root);
       var nodes = (root || document).querySelectorAll('textarea');
       for (var i = 0; i < nodes.length; i++) if (isNoteBox(nodes[i])) wire(nodes[i]);
     } catch (e) {}
   }
 
   function refreshAll() {
+    if (document.hidden) return;
     try { for (var i = 0; i < bound.length; i++) update(bound[i]); } catch (e) {}
   }
 
@@ -133,10 +138,16 @@
   function start() {
     tick();
     try {
-      obs = new MutationObserver(function () { if (!applying) tick(); });
+      obs = new MutationObserver(function (records) {
+        if (applying) return;
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) if (added[j] && added[j].nodeType === 1) scan(added[j]);
+        }
+      });
       obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
-    if (!refreshIv) refreshIv = setInterval(refreshAll, 1000); // catch programmatic note fills
+    if (!refreshIv) refreshIv = setInterval(refreshAll, 2000); // catch programmatic note fills without rescanning/layout work
   }
 
   var tries = 0;

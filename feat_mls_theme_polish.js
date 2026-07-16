@@ -1,7 +1,7 @@
 /* =========================================================================
  * MLS -- Theme Polish  (feat_mls_theme_polish.js -> window.__mlsThemePolish)
  * ----------------------------------------------------------------------------
- * thm-2.0.0 (2026-07-12, Editorial Calm redesign): this module is now the
+ * thm-2.2.0 (2026-07-15, Editorial Calm redesign): this module is now the
  * final "calm polish + micro-interaction" layer that loads LAST and wins any
  * residual specificity battles (specificity-stacked selectors + !important,
  * NO style-node re-appending -- see thm-1.1.1 freeze lesson below).
@@ -24,7 +24,7 @@
   'use strict';
   try { if (window.__mlsThemePolish && window.__mlsThemePolish.installed) return; } catch (e) { return; }
 
-  var VERSION = 'thm-2.1.0';
+  var VERSION = 'thm-2.2.0';
   var STYLE_ID = 'mlsThemePolishStyle';
   /* thm-2.1.0: (a) serif display headers inside modals (Editorial Calm), and
    * (b) a UNIVERSAL, guarded dismiss for .modal-bg overlays: Escape closes the
@@ -132,7 +132,7 @@
   }
 
   /* view-transition wrap: additive, guarded, restorable */
-  var wrapped = false;
+  var wrapped = false, viewRaf = null;
   function wrapShowView() {
     if (wrapped) return;
     if (!isFn(window.showView) || window.showView.__thmWrapped) { wrapped = !!(window.showView && window.showView.__thmWrapped); return; }
@@ -142,10 +142,15 @@
       try { r = orig.apply(this, arguments); } catch (e) {}
       safe(function () {
         var el = document.getElementById(String(view) + 'View');
-        if (el && el.offsetParent) {
+        if (el && !el.hidden && el.style.display !== 'none') {
           el.classList.remove('mls-thm-viewin');
-          void el.offsetWidth;               /* restart the animation */
-          el.classList.add('mls-thm-viewin');
+          if (viewRaf != null && window.cancelAnimationFrame) window.cancelAnimationFrame(viewRaf);
+          viewRaf = window.requestAnimationFrame(function () {
+            viewRaf = window.requestAnimationFrame(function () {
+              viewRaf = null;
+              if (!el.hidden && el.style.display !== 'none') el.classList.add('mls-thm-viewin');
+            });
+          });
         }
       });
       return r;
@@ -160,15 +165,18 @@
      recurring synchronous hit on a clinic-scale DOM. Insert ONCE; the tick is
      a cheap existence check only. */
 
-  var tickIv = null;
+  var retryT = null, retryCount = 0;
+  function retryBoot() {
+    css(); wrapShowView();
+    if (!wrapped && retryCount++ < 8) retryT = setTimeout(retryBoot, 500);
+  }
   function boot() {
-    css();
-    wrapShowView();
+    retryBoot();
     wireDismiss();
-    tickIv = setInterval(function () { safe(css); safe(wrapShowView); }, 3000);
   }
   function revert() {
-    if (tickIv) { clearInterval(tickIv); tickIv = null; }
+    if (retryT) { clearTimeout(retryT); retryT = null; }
+    if (viewRaf != null && window.cancelAnimationFrame) { window.cancelAnimationFrame(viewRaf); viewRaf = null; }
     var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s);
     try { if (window.showView && window.showView.__thmWrapped && window.showView.__thmOrig) window.showView = window.showView.__thmOrig; } catch (e) {}
     try { window.__mlsThemePolish.installed = false; } catch (e) {}

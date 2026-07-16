@@ -1,4 +1,4 @@
-/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.0.0 "Editorial Calm")
+/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.1.2 "Editorial Calm")
  * =====================================================================
  *  MLSscribe 2026 GROUND-UP reskin v3 -- calm, premium, doctor-first.
  *  Replaces v2's dark-navy top-tab shell with the Editorial Calm shell:
@@ -25,10 +25,10 @@
 ;(function () {
   "use strict";
   try { if (window.__mlsRedesign && window.__mlsRedesign.installed) return; } catch (e) { return; }
-  var VERSION = "3.1.0", ASSET = "feat_mls_redesign.js";
+  var VERSION = "3.1.2", ASSET = "feat_mls_redesign.js";
   var FONT_ID = "mlsRdFont", STYLE_ID = "mlsRdStyle", CLS = "mls-redesign";
   var FONT_HREF = "fonts/fonts.css"; /* self-hosted Newsreader + Public Sans */
-  var _obs = null, _t = null;
+  var _obs = null, _lifeObs = null, _observedRoot = null, _lifeRoot = null, _t = [], _schedT = null;
   function $(id){ try{return document.getElementById(id);}catch(e){return null;} }
   function mk(tag, css, html){ var e=document.createElement(tag); if(css)e.style.cssText=css; if(html!=null)e.innerHTML=html; return e; }
 
@@ -223,7 +223,10 @@
   function injectFonts(){ try{ if($(FONT_ID))return; var h=document.head||document.documentElement;
     var l=mk('link'); l.id=FONT_ID; l.rel='stylesheet'; l.href=FONT_HREF; h.appendChild(l);}catch(e){} }
   function injectCSS(){ try{ var s=$(STYLE_ID); if(!s){s=mk('style');s.id=STYLE_ID;(document.head||document.documentElement).appendChild(s);} if(s.textContent!==CSS)s.textContent=CSS; }catch(e){} }
-  function mark(){ try{document.documentElement.classList.add(CLS); if(document.body)document.body.classList.add(CLS);}catch(e){} }
+  function mark(){ try{
+    if(!document.documentElement.classList.contains(CLS)) document.documentElement.classList.add(CLS);
+    if(document.body&&!document.body.classList.contains(CLS)) document.body.classList.add(CLS);
+  }catch(e){} }
 
   /* ---------------- shell (light rail + 60px top bar) ---------------- */
   var LOGO_SVG='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21"/></svg>';
@@ -247,7 +250,7 @@
       var cs=getComputedStyle(a); if(cs.display==='none'||cs.visibility==='hidden') return false;
       return a.getBoundingClientRect().height>40; }catch(e){ return false; }
   }
-  function setFab(hide){ try{ ['mls-assist-badge','mlsAddPtLauncher'].forEach(function(id){ var e=$(id); if(e) e.style.display=hide?'none':''; }); }catch(e){} }
+  function setFab(hide){ try{ ['mls-assist-badge','mlsAddPtLauncher'].forEach(function(id){ var e=$(id), next=hide?'none':''; if(e&&e.style.display!==next) e.style.display=next; }); }catch(e){} }
 
   /* '+ New' quick actions in the top bar (v3.1.0). Same six actions as the
      floating '+' FAB (#mlsFab, ScribeFlow ~7650) - the FAB stays the mobile
@@ -323,9 +326,12 @@
   function buildShell(){
     var hdr=$('appHeader'); if(!hdr) return false;
     if(isOnLogin()){ hideChrome(); return false; }
-    hdr.classList.add('mlsRdHdr');
-    hdr.style.background=''; hdr.style.borderBottom=''; hdr.style.boxShadow='';
-    hdr.style.position='sticky'; hdr.style.top='0'; hdr.style.zIndex='60';
+    if(!hdr.classList.contains('mlsRdHdr')) hdr.classList.add('mlsRdHdr');
+    if(hdr.getAttribute('data-mlsrd-header-style')!=='1'){
+      hdr.style.background=''; hdr.style.borderBottom=''; hdr.style.boxShadow='';
+      hdr.style.position='sticky'; hdr.style.top='0'; hdr.style.zIndex='60';
+      hdr.setAttribute('data-mlsrd-header-style','1');
+    }
 
     var top=$('mlsRdTop');
     if(!top){
@@ -408,7 +414,7 @@
     else if(!meWrap && meBtn && meSlot && meBtn.parentElement!==meSlot){ styleMenu(meBtn); meSlot.appendChild(meBtn); }
     var nav=document.querySelector('.mainnav');
     if(nav && navWrap && nav.parentElement!==navWrap){ var foot2=$('mlsRdRailFoot'); if(foot2) navWrap.insertBefore(nav,foot2); else navWrap.appendChild(nav); }
-    try{ var _t2=$('mlsRdTop'),_n=$('mlsRdNav'); if(_t2)_t2.style.display=''; if(_n)_n.style.display=''; if(document.body)document.body.classList.add('mls-rd-shell'); setFab(false); }catch(e){}
+    try{ var _t2=$('mlsRdTop'),_n=$('mlsRdNav'); if(_t2&&_t2.style.display!=='')_t2.style.display=''; if(_n&&_n.style.display!=='')_n.style.display=''; if(document.body&&!document.body.classList.contains('mls-rd-shell'))document.body.classList.add('mls-rd-shell'); setFab(false); }catch(e){}
     ensureNewBtn();
     syncTitle();
     refreshUserChip();
@@ -416,23 +422,27 @@
   }
   /* every PREMIUM tag rendered by any module collapses to the ONE canonical
      badge (inline gradient styles at 9px rendered muddy/mismatched) */
-  function normalizePremiumBadges(){
+  function normalizePremiumBadgeNode(s){
+    try{
+      if(!s||s.nodeType!==1||!s.matches||!s.matches('span,b,em,i,div')) return;
+      if(s.children.length!==0||!s.isConnected) return;
+      var t=(s.textContent||'').trim();
+      if(!/^premium( feature)?$/i.test(t)) return;
+      if(s.getAttribute('class')!=='mlsRdPrem') s.className='mlsRdPrem';
+      if(s.hasAttribute('style')) s.removeAttribute('style');
+      if(/feature/i.test(t)&&t!=='PREMIUM') s.textContent='PREMIUM';
+    }catch(e){}
+  }
+  function normalizePremiumBadges(root){
     try{
       /* canonicalize EVERY premium badge, not just rail/menu — the AI Studio
          header carried a bare white-on-transparent span that read as "faded"
          (owner report 2026-07-13) */
-      var spans=document.querySelectorAll('span,b,em,i,div');
-      for(var i=0;i<spans.length;i++){
-        var s=spans[i];
-        if(s.children.length!==0) continue;
-        var t=(s.textContent||'').trim();
-        if(!/^premium( feature)?$/i.test(t)) continue;
-        if(s.classList.contains('mlsRdPrem')) continue;
-        var r=s.getBoundingClientRect();
-        if(r.height>40||(!r.height&&!r.width)) continue;   /* skip huge/detached nodes */
-        s.className='mlsRdPrem'; s.removeAttribute('style');
-        if(/feature/i.test(t)) s.textContent='PREMIUM';
-      }
+      root=root||document;
+      if(root.nodeType===1) normalizePremiumBadgeNode(root);
+      if(!root.querySelectorAll) return;
+      var spans=root.querySelectorAll('span,b,em,i,div');
+      for(var i=0;i<spans.length;i++) normalizePremiumBadgeNode(spans[i]);
     }catch(e){}
   }
   function refreshUserChip(){ try{ var chip=$('mlsRdUserChip'); if(!chip) return; var u=userInfo();
@@ -440,9 +450,12 @@
     if(nm&&nm.textContent!==u.name) nm.textContent=u.name;
     if(sb&&sb.textContent!==u.sub) sb.textContent=u.sub;
     if(av&&av.textContent!==u.initials) av.textContent=u.initials; }catch(e){} }
-  function styleToggle(vt){ try{ vt.style.cssText='display:flex;align-items:center;background:#F0EEE7;border:1px solid #E4E1D8;border-radius:10px;padding:3px;gap:2px';
+  function styleToggle(vt){ try{ var mode=[].slice.call(vt.children).map(function(b){return /mlsVtOn/.test(b.className)?'1':'0';}).join('');
+    if(vt.getAttribute('data-mlsrd-toggle-style')===mode) return;
+    vt.style.cssText='display:flex;align-items:center;background:#F0EEE7;border:1px solid #E4E1D8;border-radius:10px;padding:3px;gap:2px';
     [].slice.call(vt.children).forEach(function(b){ var on=/mlsVtOn/.test(b.className);
-      b.style.cssText='display:flex;align-items:center;height:30px;padding:0 14px;border:0;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;'+(on?'background:#fff;color:#1A211C;box-shadow:0 1px 3px rgba(20,33,28,.15);':'background:transparent;color:#79837C;'); }); }catch(e){} }
+      b.style.cssText='display:flex;align-items:center;height:30px;padding:0 14px;border:0;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;'+(on?'background:#fff;color:#1A211C;box-shadow:0 1px 3px rgba(20,33,28,.15);':'background:transparent;color:#79837C;'); });
+    vt.setAttribute('data-mlsrd-toggle-style',mode); }catch(e){} }
   function styleSearch(se){ try{ se.style.cssText=''; se.classList.add('mlsRdSearch'); try{se.placeholder='Find anything — patients, notes, codes…';}catch(e){} }catch(e){} }
   function styleMenu(me){ try{ me.style.cssText='height:38px;padding:0 16px;border-radius:10px;border:1px solid #E4E1D8;background:var(--card);color:#55605A;font-weight:600;font-size:13px;line-height:1;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center';
     /* text-only label: the hamburger icon pushed "Menu" right of the button's
@@ -508,7 +521,7 @@
       var v=document.getElementById('visitView'); if(!v) return;
       var grid=v.querySelector(':scope > .grid'); var emr=document.getElementById('emrCard');
       if(!grid) return;
-      grid.classList.add('mlsRdVisitGrid');
+      if(!grid.classList.contains('mlsRdVisitGrid')) grid.classList.add('mlsRdVisitGrid');
       if(emr && emr.parentElement!==grid){ grid.appendChild(emr); }
     }catch(e){}
   }
@@ -681,12 +694,66 @@
 "}"
   ].join("\n");
 
-  function applyAll(){
-    try{ if(_obs) _obs.disconnect(); }catch(e){}
-    try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); syncTitle(); normalizePremiumBadges(); }catch(e){}
-    try{ if(_obs) _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  var RELEVANT='#appHeader,.mainnav,#mlsViewToggle,#mlsPqsInput,#mlsTbMenu,#mlsTbMenuBtn,#visitView,#analysisView,#emrCard,#mlsRdTop,#mlsRdNav';
+  function relevantNode(node){
+    if(!node||node.nodeType!==1) return false;
+    try{ return (node.matches&&node.matches(RELEVANT))||!!(node.querySelector&&node.querySelector(RELEVANT)); }catch(e){ return false; }
   }
-  var _schedT=null;
+  /* The feature observer stays inside the app. A separate direct-child-only
+     watcher follows the app node itself, so a session remount can replace
+     #appScreen after the finite boot retries without stranding us on the
+     detached tree or requiring a document-wide subtree observer/poll. */
+  function observeLifecycle(){
+    if(!_lifeObs) return;
+    var app=$('appScreen'), root=(app&&app.parentNode)||document.body||document.documentElement;
+    if(!root||root===_lifeRoot) return;
+    try{ _lifeObs.disconnect(); _lifeObs.observe(root,{childList:true}); _lifeRoot=root; }catch(e){}
+  }
+  function observeRoot(){
+    if(!_obs) return;
+    var root=$('appScreen');
+    try{ _obs.disconnect(); }catch(e){}
+    _observedRoot=null;
+    observeLifecycle();
+    if(!root) return;
+    try{ _obs.observe(root,{childList:true,subtree:true,characterData:true}); _observedRoot=root; }catch(e){}
+  }
+  function onLifecycleMutations(){
+    var current=$('appScreen'), root=(current&&current.parentNode)||document.body||document.documentElement;
+    var appChanged=current!==_observedRoot;
+    if(!appChanged&&root===_lifeRoot) return;
+    observeRoot();
+    if(appChanged) schedule();
+  }
+  function applyAll(){
+    var built=false;
+    try{ if(_obs) _obs.disconnect(); }catch(e){}
+    try{ injectCSS(); mark(); built=buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); syncTitle(); }catch(e){}
+    observeRoot();
+    return built;
+  }
+  function onMutations(records){
+    var needsApply=false;
+    for(var i=0;i<records.length;i++){
+      var record=records[i], target=record.target;
+      if(record.type==='characterData'){
+        var parent=target&&target.parentElement;
+        if(parent) normalizePremiumBadgeNode(parent);
+        continue;
+      }
+      var added=record.addedNodes||[], removed=record.removedNodes||[], textOnly=false;
+      for(var j=0;j<added.length;j++){
+        if(added[j]&&added[j].nodeType===1) normalizePremiumBadges(added[j]);
+        else if(added[j]&&added[j].nodeType===3) textOnly=true;
+        if(relevantNode(added[j])) needsApply=true;
+      }
+      /* textContent assignments are reported as childList records whose new
+         node is text, so inspect the owning element as well as added elements. */
+      if(textOnly&&target&&target.nodeType===1) normalizePremiumBadgeNode(target);
+      for(var k=0;k<removed.length;k++) if(relevantNode(removed[k])) needsApply=true;
+    }
+    if(needsApply) schedule();
+  }
   function schedule(){ if(_schedT) return; _schedT=setTimeout(function(){ _schedT=null; applyAll(); },120); }
   /* the nav .on class flips without childList mutations, so the observer never
      sees a view switch — wrap showView additively (guarded) for an instant,
@@ -704,12 +771,16 @@
   function boot(){
     injectFonts();
     try{ if(localStorage.getItem('mls_rail_collapsed')==='1') document.documentElement.classList.add('mls-rail-collapsed'); }catch(e){}
-    try{ _obs=new MutationObserver(function(){ schedule(); }); }catch(e){}
+    try{ if(!_obs)_obs=new MutationObserver(onMutations); if(!_lifeObs)_lifeObs=new MutationObserver(onLifecycleMutations); }catch(e){}
     wrapShowViewForTitle();
+    normalizePremiumBadges(document);
     applyAll();
-    var n=0; _t=setInterval(function(){ applyAll(); wrapShowViewForTitle(); if(++n>15) clearInterval(_t); }, 700);
+    [250,700,1600,3200].forEach(function(delay){ _t.push(setTimeout(function(){ applyAll(); wrapShowViewForTitle(); },delay)); });
+    window.addEventListener('mls:ui-ready',schedule);
+    window.addEventListener('mls:view-mode-changed',schedule);
   }
-  function revert(){ try{if(_obs)_obs.disconnect();}catch(e){} try{if(_t)clearInterval(_t);}catch(e){}
+  function revert(){ try{if(_obs)_obs.disconnect();if(_lifeObs)_lifeObs.disconnect();_observedRoot=null;_lifeRoot=null;}catch(e){} try{_t.forEach(function(timer){clearTimeout(timer);});_t=[];}catch(e){} try{if(_schedT)clearTimeout(_schedT);}catch(e){}
+    try{window.removeEventListener('mls:ui-ready',schedule);window.removeEventListener('mls:view-mode-changed',schedule);}catch(e){}
     try{ if(window.showView&&window.showView.__rdTitleWrapped&&window.showView.__rdTitleOrig) window.showView=window.showView.__rdTitleOrig; }catch(e){}
     try{var s=$(STYLE_ID);if(s)s.remove();}catch(e){} try{var f=$(FONT_ID);if(f)f.remove();}catch(e){}
     try{document.documentElement.classList.remove(CLS);document.documentElement.classList.remove('mls-rail-open');if(document.body){document.body.classList.remove(CLS);document.body.classList.remove('mls-rd-shell');}}catch(e){}

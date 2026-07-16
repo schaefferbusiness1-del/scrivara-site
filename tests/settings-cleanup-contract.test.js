@@ -45,16 +45,21 @@ assert(ui.includes('id = \'mlsIntakeQuestionEditor\'') && ui.includes("add.textC
 assert(ui.includes("values.join('\\n')"), 'intake editor must persist through the existing settings field');
 
 assert(ui.includes("var dedicated = key === 'legal' || key === 'integrations' || key === 'advanced'"), 'specialized settings must own their save actions');
-assert(ui.includes("primary.style.display = dedicated ? 'none' : ''"), 'global save must be hidden where it cannot save the visible controls');
+assert(ui.includes("var primaryDisplay = dedicated ? 'none' : ''") && ui.includes('if (primary.style.display !== primaryDisplay) primary.style.display = primaryDisplay'), 'global save must be hidden idempotently where it cannot save the visible controls');
 assert(ui.includes("var closeLabel = dedicated ? 'Done' : 'Cancel'") && ui.includes('if (close.textContent !== closeLabel)'), 'specialized settings need an honest, idempotent close action');
 assert(ui.includes("/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/"), 'settings navigation must support keyboard movement');
 assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] })"), 'settings observer must watch only modal open/close state');
 assert(ui.includes("settingsObserver.observe(settingsBody, { childList: true })"), 'settings observer may watch only direct section additions');
 assert(!ui.includes("settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true"), 'settings observer must not feed descendant class changes back into a rebuild');
-assert(ui.includes('ensureSettingsScrollGuard()'), 'settings must install one stable native scroll observer');
-const scrollOwner = ui.slice(ui.indexOf('function ensureSettingsScrollGuard()'), ui.indexOf('function selectSettingsGroup'));
-assert(scrollOwner.includes("body.addEventListener('scroll', rememberNativeScroll, { passive: true })"), 'settings must remember compositor-owned native scrolling passively');
-assert(!scrollOwner.includes("addEventListener('wheel'") && !scrollOwner.includes("addEventListener('touchmove'") && !scrollOwner.includes('preventDefault'), 'settings must not replace native wheel/touch scrolling with synchronous JavaScript');
+assert(!/ensureSettingsScrollGuard|preserveSettingsScroll|settingsDesiredTop|settingsApplyingScroll|settingsScrollToken/.test(ui), 'Settings still installs a background scroll guard/restorer');
+assert(!/addEventListener\(['"](?:scroll|wheel|touchmove)/.test(ui), 'Settings must leave wheel, touch, and native scroll ownership entirely to the browser');
+const selectStart = ui.indexOf('function selectSettingsGroup(');
+const selectSettings = ui.slice(selectStart, ui.indexOf('function settingsTabKeydown', selectStart));
+assert(selectStart >= 0, 'settings group selector is missing');
+assert(selectSettings.includes('if (body && resetScroll === true)') && selectSettings.includes('body.scrollTop = 0'), 'an explicit Settings tab choice must start its newly selected group at the top');
+assert.strictEqual((ui.match(/\.scrollTop\s*=/g) || []).length, 1, 'background Settings reconciliation still writes scrollTop');
+assert(ui.includes("btn.addEventListener('click', function () { selectSettingsGroup(group.key, false, true); })"), 'mouse tab choices must be the explicit scroll-reset path');
+assert(ui.includes("else selectSettingsGroup(activeSettingsGroup, false, false)"), 'background Settings reconciliation must preserve native scroll without writing it');
 assert(ui.includes("if (safe(function () { return !!target.closest('#settingsModal'); }, false)) return;"), 'settings clicks must not trigger whole-site reconciliation');
 assert(ui.includes('overflow-anchor:none!important') && ui.includes('touch-action:pan-y!important'), 'settings scroll container must disable anchoring and allow touch scrolling');
 assert(appSource.includes("where:'Settings -> Notes & AI -> AI personalization'") && appSource.includes("route:'settings:notes'"), 'Help/Search must route AI personalization through the real Notes & AI tab');
