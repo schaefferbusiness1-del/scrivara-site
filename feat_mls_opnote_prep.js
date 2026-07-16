@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.3.0';
+  var VERSION = 'opnp-1.4.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -76,19 +76,38 @@
   function apptId(appt) { appt = appt || {}; return S(appt.athenaId || appt.mrn || appt.patient_external_id || appt.externalId || ''); }
   function ptId(p) { p = p || {}; return S(p.athenaId || p.mrn || p.id || ''); }
 
+  /* opnp-1.4.0: a numeric-ID key may ONLY come from a value that IS a number
+     (a real athena ID / MRN). digits('p_sched_i7qsgc') = "7" used to become a
+     junk key that "collided" with every record whose internal id reduces to
+     "7" — a FALSE "multiple records share this athena ID" that refused
+     perfectly safe saves on the live account. */
+  function plausibleNumericId(s) {
+    var t = S(s).trim(), d = digits(t);
+    return d.length >= 4 && d.length <= 15 && d.length >= t.length - 3;
+  }
   function resolvePatient(appt) {
     appt = appt || {};
     var out = { patient: null, status: 'no-record', warnings: [] };
     var pts = getPts();
-    var wantId = digits(apptId(appt));
+    var rawId = apptId(appt);
     var wantName = nname(appt.name);
     var wantDob = normDob(appt.dob);
 
-    // Tier 1: exact athena-ID / MRN match (the only truly safe key).
+    // Tier 0: EXACT internal record id — schedule rows carry the app's own
+    // patient id; a byte-identical match is the safest key there is.
+    if (rawId) {
+      for (var i0 = 0; i0 < pts.length; i0++) {
+        if (S(pts[i0].id) === rawId) { out.patient = pts[i0]; out.status = 'id-match'; return out; }
+      }
+    }
+
+    // Tier 1: exact athena-ID / MRN match (numeric keys only, both sides).
+    var wantId = plausibleNumericId(rawId) ? digits(rawId) : '';
     if (wantId) {
       var byId = [];
       for (var i = 0; i < pts.length; i++) {
-        var pid = digits(S(pts[i].athenaId || pts[i].mrn || pts[i].id));
+        var cand = S(pts[i].athenaId || pts[i].mrn || '');
+        var pid = plausibleNumericId(cand) ? digits(cand) : '';
         if (pid && pid === wantId) byId.push(pts[i]);
       }
       if (byId.length === 1) { out.patient = byId[0]; out.status = 'id-match'; return out; }
