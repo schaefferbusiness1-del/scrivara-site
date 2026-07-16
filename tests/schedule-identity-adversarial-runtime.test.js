@@ -198,7 +198,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.7.0');
+assert(api && api.version === 'si-1.7.1');
 
 (async () => {
   const bootstrapDate = '2026-07-22';

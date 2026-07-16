@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.0";
+  var VERSION = "si-1.7.1";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1868,10 +1868,25 @@
           one.organizationComplete = one.organized;
         } else if (!stopAfterTimeout) {
           try {
-            var visitsRequestId = patientRequestId + "-visits";
-            var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
-            var vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
-            if (!vr || !vr.ok) throw new Error((vr && (vr.reason || vr.error)) || "visits-read-failed");
+            /* Live 2026-07-16: after the chart read, the visits pane very
+               occasionally still shows the PREVIOUS patient's encounter list
+               (same-frame-name-mismatch — the identity gate refuses, which is
+               correct). One bounded re-read re-opens the exact chart and
+               re-verifies; every identity gate runs again in full. */
+            var vr = null, visitsAttempt = 0;
+            while (true) {
+              visitsAttempt++;
+              var visitsRequestId = patientRequestId + "-visits" + (visitsAttempt > 1 ? "-a" + visitsAttempt : "");
+              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
+              vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+              if (vr && vr.ok) break;
+              var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
+              if (visitsAttempt < 2 && /same-frame-name-mismatch/.test(vErrText) && Date.now() + 210000 < patientDeadlineAt) {
+                await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
+                continue;
+              }
+              throw new Error(vErrText);
+            }
             var savedVisits = saveVerifiedVisits(target, vr);
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
             if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
