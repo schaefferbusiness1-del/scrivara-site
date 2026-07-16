@@ -2400,6 +2400,40 @@ function mlsAthenaTeachWatcherFn(config) {
       await qpSleep(600);
       if (await tabVisible(tab.id)) return 'strip';
     }
+    /* Live 2026-07-16 (screenshot-verified): the doctor was working in a
+       maximized window that fully covered the strip - occluded tabs stop
+       rendering and every read stalls. When a SECOND display exists, move the
+       strip to a display that does NOT contain the doctor's window and
+       re-check. Never focuses anything; single-display setups keep the
+       existing limp behavior. */
+    try {
+      if (QP.winId != null && chrome.system && chrome.system.display && chrome.system.display.getInfo) {
+        var displays = await chrome.system.display.getInfo();
+        if (displays && displays.length > 1) {
+          var hostWin2 = null;
+          try { if (senderTabId != null) { var st2 = await chrome.tabs.get(senderTabId); hostWin2 = await chrome.windows.get(st2.windowId); } } catch (eH2) {}
+          if (!hostWin2) { try { hostWin2 = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }); } catch (eH3) {} }
+          var hx = hostWin2 ? (hostWin2.left | 0) + ((hostWin2.width | 0) / 2) : 0;
+          var hy = hostWin2 ? (hostWin2.top | 0) + ((hostWin2.height | 0) / 2) : 0;
+          var other = null;
+          for (var di = 0; di < displays.length; di++) {
+            var wa = displays[di].workArea || displays[di].bounds;
+            if (!wa) continue;
+            var containsHost = hx >= wa.left && hx < wa.left + wa.width && hy >= wa.top && hy < wa.top + wa.height;
+            if (!containsHost) { other = wa; break; }
+          }
+          if (other) {
+            var stripW2 = Math.min(900, Math.max(520, Math.floor(other.width * 0.45)));
+            var alt = { left: other.left + other.width - stripW2, top: other.top, width: stripW2, height: other.height };
+            try { var aw2 = await chrome.windows.get(QP.winId); if (aw2.state !== 'normal') await chrome.windows.update(QP.winId, { state: 'normal' }); } catch (eAw2) {}
+            await chrome.windows.update(QP.winId, { left: alt.left, top: alt.top, width: alt.width, height: alt.height });
+            QP.strip = alt; persist();
+            await qpSleep(700);
+            if (await tabVisible(tab.id)) return 'strip';
+          }
+        }
+      }
+    } catch (eAltDisplay) {}
     /* still covered (doctor re-maximized / another app on top): read anyway,
        throttled, under the callers' existing budgets. Nudge ONCE, never focus. */
     if (!QP.flashed) { QP.flashed = true; try { if (QP.winId != null) chrome.windows.update(QP.winId, { drawAttention: true }); } catch (e) {} }
