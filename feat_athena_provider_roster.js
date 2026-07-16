@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '2.2.1';
+  var VERSION = '2.2.2';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -393,8 +393,20 @@
      carry information beyond the display string and stay distinct identities. */
   function stringEchoEquivalent(e) {
     if (!e || e.id || !/^athena:/.test(String(e.stableKey || '')) || !e.equivalentKey) return '';
-    var body = String(e.stableKey).slice(7).toLowerCase().replace(/[^a-z0-9]/g, '');
-    return body && body === String(e.equivalentKey).toLowerCase().replace(/[^a-z0-9]/g, '') ? e.equivalentKey : '';
+    var body = String(e.stableKey).slice(7);
+    var flat = body.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (flat && flat === String(e.equivalentKey).toLowerCase().replace(/[^a-z0-9]/g, '')) return e.equivalentKey;
+    /* Athena renders the SAME clinician on different surfaces as a machine
+       username ("Schaeffer_Matthew_MD", surname-first) or with a label prefix
+       ("doctor: ..."). A key body that CANONICALIZES to this entry's own
+       clinician identity is still display evidence of that one person, never
+       a second provider (live 2026-07-16: "athena:schaeffer_matthew_md"
+       beside "athena:matthew schaeffer, md" made every selected-provider
+       pull fail provider-ambiguous, and the ingest unique-clinician count
+       contradicted the sweep receipt). Opaque supplied keys (athena:alex-1)
+       canonicalize to nothing here and stay distinct identities. */
+    var bodyEq = safe(function () { return providerEquivalentKey(body, true, true); }, '');
+    return bodyEq && bodyEq === e.equivalentKey ? e.equivalentKey : '';
   }
   var _lastMergeIdentityConflict = false;
   function mergeEntries(list, source) {

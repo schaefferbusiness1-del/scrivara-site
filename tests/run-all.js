@@ -91,6 +91,7 @@ const tests = [
   'provider-day-pull-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
+  'provider-roster-machine-echo-collapse.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',
