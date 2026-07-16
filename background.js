@@ -8471,7 +8471,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var sdOpen = null;
       try { sdOpen = document.querySelector('.slideout.chart-component.slideout-open'); } catch (eSdF) {}
       if (!sdOpen) return { raw: '', len: 0, fullDetail: false, reason: 'slideout-not-open', binding: expectedBinding || null };
-      var sdRaw = txt(sdOpen);
+      /* Live 2026-07-16: on an occluded tab innerText degrades to textContent,
+         so athena sketchpad <script> code (window.Original/Jotter) leaked into
+         saved bodies. Extract from a clone with script/style/svg/iframe removed
+         - deterministic regardless of tab visibility. */
+      var sdRaw = '';
+      try {
+        var sdClone = sdOpen.cloneNode(true);
+        var sdJunk = sdClone.querySelectorAll('script,style,noscript,template,svg,iframe');
+        for (var sj = sdJunk.length - 1; sj >= 0; sj--) { try { sdJunk[sj].parentNode.removeChild(sdJunk[sj]); } catch (eSj) {} }
+        sdRaw = String(sdClone.textContent || '').replace(/\s+/g, ' ').trim();
+      } catch (eSdClone) { sdRaw = txt(sdOpen); }
       var sdNorm = String(sdRaw || '').toLowerCase().replace(/\s+/g, ' ').trim();
       if (!clinicalBody(sdRaw)) return { raw: '', len: sdNorm.length, fullDetail: false, reason: 'slideout-body-not-clinical', binding: expectedBinding || null };
       if (hashText(sdNorm) === expectedBinding.indexTextHash) return { raw: '', len: sdNorm.length, fullDetail: false, reason: 'slideout-body-equals-index', binding: expectedBinding || null };
