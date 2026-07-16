@@ -8,7 +8,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.0.1";
+  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.1.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -46,9 +46,34 @@
       if (s && isFn(s.reconcile)) s.reconcile(reason || "copilot-request");
     });
   }
+  function cloneJson(value) {
+    return safe(function () { return JSON.parse(JSON.stringify(value == null ? {} : value)); }, {});
+  }
+  function uniqueMeta(data, requestId) {
+    var seen = {}, actions = [], followups = [];
+    var aa = data && Array.isArray(data.actions) ? data.actions : [];
+    for (var i = 0; i < aa.length; i++) {
+      var a = aa[i]; if (!a || typeof a !== "object") continue;
+      var ak = [a.kind || "", a.arg || "", a.label || ""].join("|");
+      if (seen["a:" + ak]) continue; seen["a:" + ak] = true; actions.push(a);
+    }
+    var ff = data && Array.isArray(data.followups) ? data.followups : [];
+    for (var j = 0; j < ff.length; j++) {
+      var f = String(ff[j] || "").trim(); if (!f) continue;
+      var fk = f.toLowerCase(); if (seen["f:" + fk]) continue; seen["f:" + fk] = true; followups.push(f);
+    }
+    return { requestId: requestId, actions: actions, followups: followups,
+      artifact: data && data.artifact && typeof data.artifact === "object" ? data.artifact : null };
+  }
+  var requestSeq = 0, activeRequest = null, ownerEvents = [];
   function capture() {
     reconcile("copilot-send");
-    return { activeId: activeId(), ownerId: ownerId(), bindingId: bindingId(), epoch: bindingEpoch(), history: historyNow() };
+    return {
+      id: ++requestSeq,
+      activeId: activeId(), ownerId: ownerId(), bindingId: bindingId(), epoch: bindingEpoch(),
+      history: historyNow(), context: null, controller: (typeof AbortController === "function") ? new AbortController() : null,
+      stale: false, reverted: false
+    };
   }
   function stillCurrent(t) {
     return !!(t && historyNow() === t.history && activeId() === t.activeId && ownerId() === t.ownerId
@@ -63,6 +88,22 @@
     safe(function () { if (isFn(window._copilotRenderThread)) window._copilotRenderThread(); });
     safe(function () { if (isFn(window._copilotRenderChips)) window._copilotRenderChips(); });
     safe(function () { if (isFn(window._copilotSaveHist)) window._copilotSaveHist(); });
+  }
+  function abortIfStale() {
+    var token = activeRequest;
+    if (!token || stillCurrent(token)) return;
+    token.stale = true;
+    safe(function () { if (token.controller) token.controller.abort(); });
+  }
+  function bindOwnerEvents() {
+    if (ownerEvents.length || !isFn(window.addEventListener)) return;
+    ["mls:patient-changed", "mls:active-patient-change", "mls:active-patient-changed", "mls:visit-changed", "mls:view-changed", "mls:context-changed"].forEach(function (name) {
+      safe(function () { window.addEventListener(name, abortIfStale, false); ownerEvents.push([name, abortIfStale]); });
+    });
+  }
+  function unbindOwnerEvents() {
+    for (var i = 0; i < ownerEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, ownerEvents[i]));
+    ownerEvents = [];
   }
 
   var original = safe(function () { return window.copilotAsk; }, null);
@@ -86,16 +127,18 @@
     }
 
     var token = capture(), ownerHistory = token.history;
+    activeRequest = token;
     if (inp) { inp.value = ""; inp.style.height = "auto"; }
     ownerHistory.push({ role: "user", text: q });
-    var pending = { role: "pending", requestOwner: token.ownerId, requestEpoch: token.epoch };
+    var pending = { role: "pending", requestId: token.id, requestOwner: token.ownerId, requestEpoch: token.epoch };
+    token.pending = pending;
     ownerHistory.push(pending);
     repaint();
     var chips = safe(function () { return document.getElementById("copilotChips"); }, null);
     if (chips) chips.innerHTML = "";
     window._copilotBusy = true;
     var send = safe(function () { return document.getElementById("copilotSendBtn"); }, null);
-    if (send) send.disabled = true;
+    if (send) { send.disabled = true; safe(function () { send.setAttribute("aria-busy", "true"); }); }
     var aborted = false;
 
     try {
@@ -106,48 +149,77 @@
 
       var hist = ownerHistory.filter(function (m) { return m && (m.role === "user" || m.role === "ai"); })
         .map(function (m) { return { role: m.role === "user" ? "user" : "ai", text: m.text }; });
-      var context = isFn(window.copilotSnapshot) ? window.copilotSnapshot() : {};
+      var context = cloneJson(isFn(window.copilotSnapshot) ? window.copilotSnapshot() : {});
+      token.context = context;
       if (!stillCurrent(token)) { aborted = true; return false; }
 
-      var response = await fetch(window.bkBase() + "/api/copilot", {
+      var options = {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + window.bkToken() },
         body: JSON.stringify({ question: q, context: context, history: hist.slice(0, -1) })
-      });
+      };
+      if (token.controller) options.signal = token.controller.signal;
+      var response = await fetch(window.bkBase() + "/api/copilot", options);
       var data = await response.json().catch(function () { return {}; });
       if (!stillCurrent(token)) { aborted = true; return false; }
 
       dropPending(ownerHistory, pending);
-      if (response.status === 403) ownerHistory.push({ role: "ai", text: "Copilot is available on clinician accounts." });
-      else if (!response.ok) ownerHistory.push({ role: "ai", text: data.error || "Copilot had trouble answering. Try again." });
-      else ownerHistory.push({ role: "ai", text: data.reply || "Done.", actions: data.actions || [], followups: data.followups || [], artifact: data.artifact || null });
+      token.pending = null;
+      if (response.status === 401) ownerHistory.push({ role: "ai", text: "Your MLS session expired. Sign in again, then resend this question.", requestId: token.id });
+      else if (response.status === 403) ownerHistory.push({ role: "ai", text: "Copilot is available on clinician accounts.", requestId: token.id });
+      else if (response.status === 429) ownerHistory.push({ role: "ai", text: "Copilot is handling unusually high demand. Nothing was run; wait a moment and try again.", requestId: token.id });
+      else if (response.status === 503) ownerHistory.push({ role: "ai", text: "Copilot's AI service is temporarily unavailable. Your local schedule and patient commands still work.", requestId: token.id });
+      else if (!response.ok) ownerHistory.push({ role: "ai", text: data.error || ("Copilot could not answer (server status " + response.status + "). Try again."), requestId: token.id });
+      else {
+        var meta = uniqueMeta(data, token.id);
+        ownerHistory.push({ role: "ai", text: data.reply || "Copilot returned no answer. Try rephrasing the question.", requestId: token.id,
+          actions: meta.actions, followups: meta.followups, artifact: meta.artifact });
+      }
       return true;
     } catch (e1) {
       if (stillCurrent(token)) {
         dropPending(ownerHistory, pending);
-        ownerHistory.push({ role: "ai", text: "Network error reaching Copilot. Try again." });
+        token.pending = null;
+        if (!(e1 && e1.name === "AbortError")) ownerHistory.push({ role: "ai", text: "Network error reaching Copilot. Nothing was run; check your connection and try again.", requestId: token.id });
+        else aborted = true;
       } else aborted = true;
       return false;
     } finally {
       dropPending(ownerHistory, pending);
-      window._copilotBusy = false;
-      var button = safe(function () { return document.getElementById("copilotSendBtn"); }, null);
-      if (button) button.disabled = false;
+      token.pending = null;
+      if (activeRequest === token) {
+        activeRequest = null;
+        window._copilotBusy = false;
+        var button = safe(function () { return document.getElementById("copilotSendBtn"); }, null);
+        if (button) { button.disabled = false; safe(function () { button.setAttribute("aria-busy", "false"); }); }
+      }
       reconcile("copilot-finished");
       repaint();
-      if (aborted) safe(function () { if (isFn(window.toast)) window.toast("The patient or visit changed, so that Copilot answer was discarded.", ""); });
+      if (aborted && !token.reverted) safe(function () { if (isFn(window.toast)) window.toast("The patient or visit changed, so that Copilot answer was discarded.", ""); });
     }
   }
 
   guardedCopilotAsk.__mlsRequestSafety = true;
   guardedCopilotAsk.__mlsOrig = original;
   window.copilotAsk = guardedCopilotAsk;
+  bindOwnerEvents();
   window[NS] = {
     installed: true,
     version: VERSION,
     capture: capture,
     stillCurrent: stillCurrent,
     revert: function () {
+      if (activeRequest) {
+        activeRequest.reverted = true;
+        safe(function () { if (activeRequest.controller) activeRequest.controller.abort(); });
+        dropPending(activeRequest.history, activeRequest.pending);
+        activeRequest = null;
+        safe(function () { window._copilotBusy = false; });
+        var button = safe(function () { return document.getElementById("copilotSendBtn"); }, null);
+        if (button) { button.disabled = false; safe(function () { button.setAttribute("aria-busy", "false"); }); }
+        repaint();
+      }
+      unbindOwnerEvents();
       try { if (window.copilotAsk === guardedCopilotAsk) window.copilotAsk = original; } catch (e) {}
       try { window[NS].installed = false; } catch (e2) {}
       return true;

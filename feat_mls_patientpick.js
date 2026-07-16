@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.5.0";   /* TZ-correct times (acct TZ, not literal UTC) + honest in-modal pull status/refresh */
+  var VERSION = "pick-1.6.1";   /* scoped lifecycle + fail-closed canonical chart identity */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -153,24 +153,89 @@
     return list.length - 1;
   }
 
-  /* ---- match an appointment to an existing patient record ---- */
-  function buildIndex() {
-    var ps = getPatients(), byExt = {}, byNameDob = {}, byName = {};
-    for (var i = 0; i < ps.length; i++) {
-      var p = ps[i]; if (!p) continue;
-      if (p.external_id != null && p.external_id !== "") byExt[String(p.external_id)] = p;
-      var nm = (p.name || "").toLowerCase();
-      if (nm) { byNameDob[nm + "|" + (p.dob || "")] = p; if (!byName[nm]) byName[nm] = p; }
+  /* ---- match an appointment to an existing patient record ----
+     patient_external_id on an appointment is the local chart id used by this app,
+     so patient.id is authoritative. Every secondary index is collision-aware: a
+     duplicate key is deliberately unresolvable instead of "last row wins". */
+  /* __MLSPK_IDENTITY_START__ */
+  var PICK_AMBIGUOUS = {};
+  function pickIdKey(value) {
+    return value == null ? "" : String(value).trim();
+  }
+  function pickNameKey(value) {
+    return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function pickDobKey(value) {
+    var s = String(value == null ? "" : value).trim();
+    if (!s) return "";
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\D|$)/);
+    if (m) return m[1] + "-" + (m[2].length < 2 ? "0" : "") + m[2] + "-" + (m[3].length < 2 ? "0" : "") + m[3];
+    m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\D|$)/);
+    if (m) return m[3] + "-" + (m[1].length < 2 ? "0" : "") + m[1] + "-" + (m[2].length < 2 ? "0" : "") + m[2];
+    /* A supplied but nonstandard DOB still blocks unsafe name-only fallback. */
+    return s.toLowerCase().replace(/\s+/g, " ");
+  }
+  function pickIndexAdd(index, key, patient) {
+    if (!key || !patient) return;
+    if (!Object.prototype.hasOwnProperty.call(index, key)) index[key] = patient;
+    else if (index[key] !== patient) index[key] = PICK_AMBIGUOUS;
+  }
+  function pickIndexGet(index, key) {
+    if (!key || !Object.prototype.hasOwnProperty.call(index, key)) return null;
+    return index[key];
+  }
+  function pickApptLocalId(a) {
+    var ids = [], fields = ["patient_external_id", "_mlsTargetPatientId", "patientId", "patient_id"];
+    for (var i = 0; i < fields.length; i++) {
+      var id = pickIdKey(a && a[fields[i]]);
+      if (id && ids.indexOf(id) < 0) ids.push(id);
     }
-    return { byExt: byExt, byNameDob: byNameDob, byName: byName };
+    if (ids.length > 1) return PICK_AMBIGUOUS;
+    return ids.length ? ids[0] : "";
+  }
+  function buildIndex() {
+    var ps = getPatients(), byId = Object.create(null), byExt = Object.create(null);
+    var byNameDob = Object.create(null), byName = Object.create(null), i, p, id, nm, dob;
+    /* Pass one establishes which canonical chart ids are genuinely unique. */
+    for (i = 0; i < ps.length; i++) {
+      p = ps[i]; id = pickIdKey(p && p.id);
+      if (p && id) pickIndexAdd(byId, id, p);
+    }
+    /* A chart with a missing or duplicated canonical id is never selectable. */
+    for (i = 0; i < ps.length; i++) {
+      p = ps[i]; id = pickIdKey(p && p.id);
+      if (!p || !id || pickIndexGet(byId, id) !== p) continue;
+      pickIndexAdd(byExt, pickIdKey(p.external_id), p); /* legacy local alias */
+      nm = pickNameKey(p.name); dob = pickDobKey(p.dob);
+      if (nm) {
+        if (dob) pickIndexAdd(byNameDob, nm + "|" + dob, p);
+        pickIndexAdd(byName, nm, p);
+      }
+    }
+    return { byId: byId, byExt: byExt, byNameDob: byNameDob, byName: byName };
   }
   function matchAppt(a, idx) {
-    if (a.patient_external_id != null && idx.byExt[String(a.patient_external_id)]) return idx.byExt[String(a.patient_external_id)];
-    var nm = (a.name || "").toLowerCase();
-    if (nm && idx.byNameDob[nm + "|" + (a.dob || "")]) return idx.byNameDob[nm + "|" + (a.dob || "")];
-    if (nm && idx.byName[nm]) return idx.byName[nm];
-    return null;
+    if (!a || !idx) return null;
+    var stableId = pickApptLocalId(a), hit;
+    if (stableId === PICK_AMBIGUOUS) return null;
+    if (stableId) {
+      /* Canonical patient.id wins even if a legacy external_id collides. */
+      hit = pickIndexGet(idx.byId, stableId);
+      if (hit === PICK_AMBIGUOUS) return null;
+      if (hit) return hit;
+      hit = pickIndexGet(idx.byExt, stableId);
+      return hit && hit !== PICK_AMBIGUOUS ? hit : null;
+    }
+    var nm = pickNameKey(a.name), dob = pickDobKey(a.dob);
+    if (!nm) return null;
+    if (dob) {
+      hit = pickIndexGet(idx.byNameDob, nm + "|" + dob);
+      return hit && hit !== PICK_AMBIGUOUS ? hit : null;
+    }
+    hit = pickIndexGet(idx.byName, nm);
+    return hit && hit !== PICK_AMBIGUOUS ? hit : null;
   }
+  /* __MLSPK_IDENTITY_END__ */
 
   /* ---- provider filter (lenient: only applies when it actually narrows) ---- */
   function providerId(name) {
@@ -231,9 +296,10 @@
     var seen = {}, out = [];
     for (var i = 0; i < pool.length; i++) {
       var a = pool[i];
-      var key = (a.patient_external_id || "") + "|" + (a.name || "") + "|" + (a.dob || "");
-      if (seen[key]) continue; seen[key] = 1;
       var p = matchAppt(a, idx); if (!p) continue;
+      /* De-duplicate only after exact resolution, by canonical chart id. */
+      var key = pickIdKey(p.id);
+      if (!key || seen[key]) continue; seen[key] = 1;
       out.push({ id: p.id, name: p.name || a.name || "(unnamed)", dob: p.dob || a.dob || "",
         sex: p.sex || "", mrn: p.mrn || "", reason: a.reason || "", time: a.start_at || "",
         mins: apptMins(a.start_at) });
@@ -377,6 +443,10 @@
         if (!h.offsetWidth && !h.offsetHeight) continue;   /* hidden (self or ancestor) */
         if (h.__mlspkOpts) renderGrid(h, h.__mlspkOpts);
       } catch (e) {}
+    }
+    if (!_gridHosts.length && _nowTimer) {
+      try { clearInterval(_nowTimer); } catch (e) {}
+      _nowTimer = null;
     }
   }
 
@@ -571,7 +641,7 @@
   /* ===================== Complex view wiring ===================== */
   /* The Complex hero's "Pull today's patients" quick action (onclick=pullScheduleViaAssist)
      opens this selectable-card modal in addition to attempting the real pull. View-isolated. */
-  var _obs = null, _wireT = null;
+  var _obs = null, _ctxObs = null, _wireT = null, _bootTimers = [];
   function onVisitComplex() {
     try {
       var v = $("visitView"); if (!v || getComputedStyle(v).display === "none") return false;
@@ -643,20 +713,56 @@
   }
 
   function tick() { wireComplex(); renderComplexInline(); ensureCtxBar(); }
+  function scheduleTick() {
+    if (_wireT) return;
+    _wireT = setTimeout(function () { _wireT = null; tick(); }, 120);
+  }
+  function onViewChanged(ev) {
+    var d = ev && ev.detail;
+    if (!d || d.view === "visit" || d.previousView === "visit") scheduleTick();
+  }
+  function onPatientChanged() { scheduleTick(); }
+  function stopWatchers() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {} _obs = null;
+    try { if (_ctxObs) _ctxObs.disconnect(); } catch (e) {} _ctxObs = null;
+    try { if (_wireT) clearTimeout(_wireT); } catch (e) {} _wireT = null;
+    try { _bootTimers.forEach(function (timer) { clearTimeout(timer); }); } catch (e) {} _bootTimers = [];
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
+    try { window.removeEventListener("mls:active-patient-changed", onPatientChanged); } catch (e) {}
+    try { document.removeEventListener("mls:patientpicked", onPatientChanged); } catch (e) {}
+  }
+  function startWatchers() {
+    try {
+      var visit = $("visitView");
+      if (visit) {
+        _obs = new MutationObserver(scheduleTick);
+        _obs.observe(visit, { childList: true, subtree: true });
+      }
+    } catch (e) {}
+    /* #mlsCtxBar is a direct sibling of #appHeader. Watching only that stable
+       parent preserves delayed remount recovery without waking on page-wide DOM churn. */
+    try {
+      var hdr = $("appHeader"), wrap = (hdr && hdr.parentElement) || $("appWrap");
+      if (wrap) {
+        _ctxObs = new MutationObserver(scheduleTick);
+        _ctxObs.observe(wrap, { childList: true });
+      }
+    } catch (e) {}
+    try { window.addEventListener("mls:view-changed", onViewChanged); } catch (e) {}
+    try { window.addEventListener("mls:active-patient-changed", onPatientChanged); } catch (e) {}
+    try { document.addEventListener("mls:patientpicked", onPatientChanged); } catch (e) {}
+  }
   function boot() {
+    stopWatchers();
     injectCSS();
     tick();
-    try {
-      _obs = new MutationObserver(function () { if (_wireT) return; _wireT = setTimeout(function () { _wireT = null; tick(); }, 200); });
-      _obs.observe(document.documentElement, { childList: true, subtree: true });
-    } catch (e) {}
-    startNowTimer();
+    startWatchers();
     /* catch the delayed load-race that drops #mlsCtxBar into the clipped nav ~1s in */
-    try { [250, 700, 1400, 2600, 4000].forEach(function (ms) { setTimeout(ensureCtxBar, ms); }); } catch (e) {}
+    try { [250, 700, 1400, 2600, 4000].forEach(function (ms) { _bootTimers.push(setTimeout(ensureCtxBar, ms)); }); } catch (e) {}
   }
 
   function revert() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    stopWatchers();
     try { if (_nowTimer) { clearInterval(_nowTimer); _nowTimer = null; } } catch (e) {}
     _gridHosts = [];
     try { var wired = document.querySelectorAll("[data-mlspk-onclick]"); for (var i = 0; i < wired.length; i++) { var w = wired[i]; w.setAttribute("onclick", w.getAttribute("data-mlspk-onclick")); w.removeAttribute("data-mlspk-onclick"); w.onclick = null; w.__mlspkWired = false; } } catch (e) {}

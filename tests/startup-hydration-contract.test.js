@@ -170,8 +170,8 @@ function makeLoaderHarness(options) {
     sfGateLoadingStarted: 1000,
     SF_GATE_MAX_MS: 32000,
     SF_GATE_QUIET_MS: 700,
-    SF_GATE_READY_HOLD_MS: 180,
-    SF_GATE_FADE_MS: 320
+    SF_GATE_READY_HOLD_MS: 40,
+    SF_GATE_FADE_MS: 120
   };
   vm.createContext(context);
   vm.runInContext(loaderCode, context, { filename: 'on-demand-ui-loader.js' });
@@ -189,11 +189,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b313', 'main UI script is not exact-versioned');
-  assert(success.timerDelays().includes(30100), 'loader-derived hard deadline was not scheduled');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b317', 'main UI script is not exact-versioned');
+  assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b313');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b317');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
@@ -211,14 +211,14 @@ async function verifyLoaderRuntime() {
   const missingResult = missing.window.__mlsEnsureUiBundle();
   await missing.flush();
   assert.strictEqual(missing.window.__mlsStartupAssets.state[criticalNames[criticalNames.length - 1]], 'missing', 'missing critical asset was not recorded');
-  await missing.advance(31200);
+  await missing.advance(31500);
   assert.strictEqual(await missingResult, false, 'missing critical asset incorrectly published readiness');
 
   const pending = makeLoaderHarness({ assets: 'pending' });
   const pendingResult = pending.window.__mlsEnsureUiBundle();
   await pending.flush();
   assert(Object.values(pending.window.__mlsStartupAssets.state).some(value => value === 'pending'), 'unsettled critical scripts were not marked pending');
-  await pending.advance(31200);
+  await pending.advance(31500);
   assert.strictEqual(await pendingResult, false, 'pending critical assets incorrectly published readiness');
 
   const optionalPending = makeLoaderHarness({ assets: 'success', optionalPending: true });
@@ -251,7 +251,7 @@ async function verifyLoaderRuntime() {
   assert(manual.removedMain.includes('mlsUiBundleScript'), 'manual loader abort left its main script attached');
   assert.strictEqual(manual.window.__mlsAbortUiBundle, null, 'loader abort hook was not retired');
   assert.strictEqual(manual.window.__mlsStartupAssets.settled, true, 'manual loader abort did not stop its tracker');
-  assert(!manual.timerDelays().includes(10000) && !manual.timerDelays().includes(30100), 'loader abort leaked its load/hard timers');
+  assert(!manual.timerDelays().includes(10000) && !manual.timerDelays().includes(30440), 'loader abort leaked its load/hard timers');
 }
 
 const refresh = app.slice(app.indexOf("var _refreshMeInFlight=null"), app.indexOf('function handle401()'));

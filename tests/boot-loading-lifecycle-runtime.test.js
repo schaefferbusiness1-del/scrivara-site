@@ -73,9 +73,9 @@ function harness(ready, assetsSettled = true) {
   capped.context.api.setStart(0); capped.context.api.setToken(7);
   let cappedResult = 'pending';
   capped.context.api.wait(7, false).then(v => { cappedResult = v; });
-  await capped.advance(31499);
+  await capped.advance(31839);
   assert.strictEqual(cappedResult, 'pending', 'unready UI released before the bounded deadline');
-  await capped.advance(31520);
+  await capped.advance(31860);
   assert.strictEqual(cappedResult, true, 'failed optional readiness did not reach the absolute release path');
 
   const stale = harness(true);

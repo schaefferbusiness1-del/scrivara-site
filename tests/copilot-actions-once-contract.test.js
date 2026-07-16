@@ -1,0 +1,143 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.resolve(__dirname, '..');
+const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
+
+assert(source.includes("var VERSION = 'ca-2.0.0'"));
+assert(!source.includes('response.clone') && !source.includes('resp.clone'), 'action asset still clones the base Copilot response');
+assert(!source.includes('installFetchPeek') && !source.includes('__mlsCaWrapped'), 'action asset still intercepts base Copilot fetches');
+assert(!source.includes('window.fetch ='), 'action asset still replaces the shared fetch function');
+assert(!source.includes("fetch(base + '/api/copilot',"), 'action asset still issues or parses a second base Copilot request');
+assert(source.includes("fetch(base + '/api/copilot/email'"), 'explicit user-clicked email route was accidentally removed');
+
+function hasClass(node, cls) { return String(node.className || '').split(/\s+/).includes(cls); }
+function walk(rootNode) {
+  const out = [];
+  (function visit(node) { out.push(node); node.children.forEach(visit); })(rootNode);
+  return out;
+}
+function makeNode(tag, id, cls) {
+  const node = {
+    tagName: String(tag || 'div').toUpperCase(), id: id || '', className: cls || '', children: [], parentNode: null,
+    attributes: {}, style: {}, textContent: '', value: '', offsetParent: {},
+    appendChild(child) { if (child.parentNode) child.parentNode.removeChild(child); this.children.push(child); child.parentNode = this; return child; },
+    insertBefore(child, before) {
+      if (child.parentNode) child.parentNode.removeChild(child);
+      const at = before ? this.children.indexOf(before) : -1;
+      if (at < 0) this.children.push(child); else this.children.splice(at, 0, child);
+      child.parentNode = this; return child;
+    },
+    removeChild(child) { const at = this.children.indexOf(child); if (at >= 0) this.children.splice(at, 1); child.parentNode = null; return child; },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    querySelectorAll(selector) {
+      const descendants = walk(this).slice(1);
+      if (selector.startsWith('.')) return descendants.filter(n => hasClass(n, selector.slice(1)));
+      const exact = selector.match(/^\[data-mlsca-message="([^"]+)"\]$/);
+      if (exact) return descendants.filter(n => n.getAttribute('data-mlsca-message') === exact[1]);
+      if (selector === '[data-mlsca-message]') return descendants.filter(n => n.getAttribute('data-mlsca-message') != null);
+      return [];
+    },
+    scrollIntoView() {}, dispatchEvent() {}, focus() {}
+  };
+  Object.defineProperty(node, 'nextSibling', { get() { if (!this.parentNode) return null; const i = this.parentNode.children.indexOf(this); return this.parentNode.children[i + 1] || null; } });
+  return node;
+}
+
+const html = makeNode('html'), head = makeNode('head'), body = makeNode('body');
+html.appendChild(head); html.appendChild(body);
+const panel = makeNode('section', 'mlsAsstPanel');
+const assistantThread = makeNode('div', '', 'as-thread');
+const assistantBubble = makeNode('div', '', 'as-msg ai');
+assistantThread.appendChild(assistantBubble); panel.appendChild(assistantThread); body.appendChild(panel);
+const studioThread = makeNode('div', 'copilotThread');
+const canonicalStudioBlock = makeNode('div', '', 'base-copilot-actions');
+studioThread.appendChild(canonicalStudioBlock); body.appendChild(studioThread);
+
+const messages = [{
+  role: 'ai', requestId: 7, text: 'Canonical answer',
+  actions: [{ kind: 'navigate', arg: 'visit', label: 'Open visit' }, { kind: 'navigate', arg: 'visit', label: 'Open visit' }],
+  followups: ['What next?', 'What next?'],
+  artifact: { kind: 'draft', title: 'Plan', content: 'Canonical artifact' }
+}];
+const subscribers = [];
+const store = {
+  all() { return messages.slice(); },
+  subscribe(fn) { subscribers.push(fn); fn(); return () => { const i = subscribers.indexOf(fn); if (i >= 0) subscribers.splice(i, 1); }; }
+};
+const timers = [];
+let timerId = 0, fetchCalls = 0;
+const handlers = {};
+const patients = [
+  { id: 'p1', mrn: 'M1', name: 'Jane Doe', dob: '1980-01-01' },
+  { id: 'p2', mrn: 'M2', name: 'Jane Doe', dob: '1990-02-02' },
+  { id: 'p3', mrn: 'M3', name: 'Janet Doe', dob: '1975-03-03' },
+  { id: 'p4', mrn: 'M4', name: 'John Unique', dob: '1985-04-04' }
+];
+const selected = [], views = [], toasts = [];
+let recordCalls = 0;
+const document = {
+  readyState: 'complete', head, body, documentElement: html,
+  createElement(tag) { return makeNode(tag); },
+  getElementById(id) { return walk(html).find(node => node.id === id) || null; },
+  querySelectorAll(selector) { return html.querySelectorAll(selector); }, addEventListener() {}
+};
+const originalFetch = function () { fetchCalls++; return Promise.resolve({ json: () => Promise.resolve({ ok: true }) }); };
+const context = {
+  console, Promise, Date, JSON, Object, Array, String, Number, RegExp, Event: function Event() {},
+  document, __mlsCopilotConvo: store, fetch: originalFetch,
+  setTimeout(fn) { const id = ++timerId; timers.push({ id, fn }); return id; }, clearTimeout(id) { const item = timers.find(x => x.id === id); if (item) item.fn = null; },
+  setInterval() { throw new Error('action metadata must not poll'); }, clearInterval() {},
+  addEventListener(name, fn) { (handlers[name] || (handlers[name] = [])).push(fn); }, removeEventListener() {},
+  getPatients() { return patients.slice(); },
+  __mlsWhosNext: { activeList() { return [patients[3]]; } },
+  __mlsPick: { select(id) { selected.push(id); return true; } },
+  showView(view) { views.push(view); },
+  startCapture() { recordCalls++; },
+  toast(message) { toasts.push(String(message)); }
+};
+context.window = context;
+vm.runInNewContext(source, context, { filename: 'feat_mls_copilot_actions.js' });
+while (timers.length) { const item = timers.shift(); if (item.fn) item.fn(); }
+
+assert.strictEqual(context.fetch, originalFetch, 'action asset replaced fetch even without making a request');
+assert.strictEqual(fetchCalls, 0, 'action asset made a second request while rendering canonical metadata');
+assert.strictEqual(studioThread.children.length, 1, 'action asset injected a second block into base Studio Copilot');
+assert.strictEqual(studioThread.children[0], canonicalStudioBlock);
+
+let blocks = assistantThread.querySelectorAll('[data-mlsca-message]');
+assert.strictEqual(blocks.length, 1, 'Assistant did not receive exactly one canonical metadata block');
+assert.strictEqual(blocks[0].querySelector('.mlsca-acts').children.length, 1, 'duplicate canonical action was rendered');
+assert.strictEqual(blocks[0].querySelector('.mlsca-fu').children.length, 1, 'duplicate canonical follow-up was rendered');
+assert.strictEqual(blocks[0].querySelectorAll('.mlsca-art').length, 1, 'artifact was missing or duplicated');
+
+subscribers.slice().forEach(fn => fn());
+context.__mlsCopilotActions.sync();
+while (timers.length) { const item = timers.shift(); if (item.fn) item.fn(); }
+blocks = assistantThread.querySelectorAll('[data-mlsca-message]');
+assert.strictEqual(blocks.length, 1, 'repeated canonical notifications duplicated Assistant metadata');
+assert.strictEqual(fetchCalls, 0, 'repeated canonical rendering parsed or requested the response again');
+
+const api = context.__mlsCopilotActions;
+assert.strictEqual(api.resolvePatient('Jane Doe').reason, 'ambiguous-name', 'duplicate exact names did not fail closed');
+assert.strictEqual(api.resolvePatient('Jan').reason, 'ambiguous-name', 'non-unique partial name did not fail closed');
+assert.strictEqual(api.resolvePatient({ id: 'p2' }).patient.id, 'p2', 'same-namespace stable ID did not resolve exactly');
+assert.strictEqual(api.resolvePatient({ mrn: 'p2' }).patient, null, 'equal value in a different ID namespace crossed charts');
+assert.strictEqual(api.runAction({ kind: 'openPatient', arg: 'Jane Doe' }), false);
+assert.strictEqual(selected.length, 0, 'ambiguous name opened a chart');
+assert(toasts.some(t => /more than one patient/i.test(t)), 'ambiguity did not produce an explicit message');
+
+assert.strictEqual(api.runAction({ kind: 'openPatient', arg: 'John' }), true, 'unique partial name did not resolve');
+assert.deepStrictEqual(selected, ['p4']);
+assert.strictEqual(api.runAction({ kind: 'startVisit', arg: { id: 'p2' } }), true);
+assert.deepStrictEqual(selected, ['p4', 'p2'], 'Start Visit did not canonically select the exact resolved patient');
+assert.strictEqual(views[views.length - 1], 'visit', 'Start Visit did not navigate after exact selection');
+assert.strictEqual(recordCalls, 0, 'Start Visit auto-started recording');
+
+console.log('PASS Copilot actions: single-owner metadata plus fail-closed patient resolution and canonical no-auto-record Start Visit');
