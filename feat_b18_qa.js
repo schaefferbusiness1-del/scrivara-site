@@ -760,7 +760,10 @@ var __mlsB18Q=window.__mlsB18QA;
 (function(){
   "use strict";
   if(window.__mlsFabStack) return; window.__mlsFabStack={v:'b18'};
-  var SLOTS=[['mlsP1AgFab',18],['mlsAddPtLauncher',72],['mlsVoiceFab',126]];
+  /* Share the exact coordinates owned by __mlsUiCleanupB26. The previous
+     2px disagreement made the two idempotent healers rewrite each other
+     forever (three style mutations every ~800ms). */
+  var SLOTS=[['mlsP1AgFab',16],['mlsAddPtLauncher',70],['mlsVoiceFab',124]];
   var originals=[];
   function remember(el){
     for(var i=0;i<originals.length;i++) if(originals[i].el===el) return;
@@ -771,10 +774,10 @@ var __mlsB18Q=window.__mlsB18QA;
       for(var i=0;i<SLOTS.length;i++){
         var el=document.getElementById(SLOTS[i][0]); if(!el) continue;
         var bottom=SLOTS[i][1]+'px';
-        if(el.__mlsSlot===SLOTS[i][1] && el.style.getPropertyValue('bottom')===bottom && el.style.getPropertyValue('right')==='18px' && el.style.getPropertyValue('left')==='auto') continue;
+        if(el.__mlsSlot===SLOTS[i][1] && el.style.getPropertyValue('bottom')===bottom && el.style.getPropertyValue('right')==='16px' && el.style.getPropertyValue('left')==='auto') continue;
         remember(el);
         el.style.setProperty('bottom',bottom,'important');
-        el.style.setProperty('right','18px','important');
+        el.style.setProperty('right','16px','important');
         el.style.setProperty('left','auto','important');
         el.__mlsSlot=SLOTS[i][1];
       }

@@ -45,7 +45,7 @@ assert(ui.includes('id = \'mlsIntakeQuestionEditor\'') && ui.includes("add.textC
 assert(ui.includes("values.join('\\n')"), 'intake editor must persist through the existing settings field');
 
 assert(ui.includes("var dedicated = key === 'legal' || key === 'integrations' || key === 'advanced'"), 'specialized settings must own their save actions');
-assert(ui.includes("primary.style.display = dedicated ? 'none' : ''"), 'global save must be hidden where it cannot save the visible controls');
+assert(ui.includes("var primaryDisplay = dedicated ? 'none' : ''") && ui.includes('if (primary.style.display !== primaryDisplay) primary.style.display = primaryDisplay'), 'global save must be hidden idempotently where it cannot save the visible controls');
 assert(ui.includes("var closeLabel = dedicated ? 'Done' : 'Cancel'") && ui.includes('if (close.textContent !== closeLabel)'), 'specialized settings need an honest, idempotent close action');
 assert(ui.includes("/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/"), 'settings navigation must support keyboard movement');
 assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] })"), 'settings observer must watch only modal open/close state');

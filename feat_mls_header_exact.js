@@ -125,7 +125,7 @@
       el.style.removeProperty("display"); menu.appendChild(el);
     }
     if (!el.classList.contains("hx-menurow")) el.classList.add("hx-menurow");
-    el.setAttribute("data-hx-relocated", "1");
+    if (el.getAttribute("data-hx-relocated") !== "1") el.setAttribute("data-hx-relocated", "1");
     styleMenuRow(el);
   }
   function relocateToMenu() {

@@ -41,6 +41,8 @@
     if (!ta) return;
     try {
       var cap = capPx();
+      var rec = boundMap.get(ta), value = String(ta.value || '');
+      if (rec && rec.lastValue === value && rec.lastCap === cap) return;
       // measure natural content height: briefly shrink then read scrollHeight
       var prevH = ta.style.height;
       ta.style.height = 'auto';
@@ -48,6 +50,7 @@
       var target = Math.min(cap, Math.max(MIN_PX, needed + 2));
       ta.style.height = target + 'px';
       ta.style.overflowY = (needed > cap) ? 'auto' : 'hidden';
+      if (rec) { rec.lastValue = value; rec.lastCap = cap; }
       if (prevH && ta.style.height === prevH) { /* unchanged */ }
     } catch (e) {}
   }
@@ -65,19 +68,21 @@
     ta.style.maxHeight = capPx() + 'px';
     var handler = function () { fit(ta); };
     ta.addEventListener('input', handler);
-    boundMap.set(ta, { handler: handler, prev: prev });
+    boundMap.set(ta, { handler: handler, prev: prev, lastValue: null, lastCap: 0 });
     bound.push(ta);
     fit(ta);
   }
 
   function scan(root) {
     try {
+      if (root && root.nodeType === 1 && root.tagName === 'TEXTAREA') wire(root);
       var nodes = (root || document).querySelectorAll('textarea');
       for (var i = 0; i < nodes.length; i++) if (isNoteBox(nodes[i])) wire(nodes[i]);
     } catch (e) {}
   }
 
   function refreshAll() {
+    if (document.hidden) return;
     try { for (var i = 0; i < bound.length; i++) fit(bound[i]); } catch (e) {}
   }
 
@@ -88,15 +93,21 @@
     applying = false;
   }
 
-  function onResize() { try { bound.forEach(function (ta) { ta.style.maxHeight = capPx() + 'px'; fit(ta); }); } catch (e) {} }
+  function onResize() { try { bound.forEach(function (ta) { var rec=boundMap.get(ta); if(rec) rec.lastCap=0; ta.style.maxHeight = capPx() + 'px'; fit(ta); }); } catch (e) {} }
 
   function start() {
     tick();
     try {
-      obs = new MutationObserver(function () { if (!applying) tick(); });
+      obs = new MutationObserver(function (records) {
+        if (applying) return;
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) if (added[j] && added[j].nodeType === 1) scan(added[j]);
+        }
+      });
       obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
-    if (!refreshIv) refreshIv = setInterval(refreshAll, 1000); // catch programmatic note fills (no input event)
+    if (!refreshIv) refreshIv = setInterval(refreshAll, 2000); // value guard prevents idle layout reads
     window.addEventListener('resize', onResize);
   }
 

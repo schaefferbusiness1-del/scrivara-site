@@ -252,7 +252,7 @@
   function build() {
     var v = $("visitView"); if (!v) return;
     injectCSS(); buildHero(); buildGrid(); buildTools(); restyleCardChrome(); buildOutcomes();
-    v.setAttribute(BUILT_ATTR, VERSION);
+    if (v.getAttribute(BUILT_ATTR) !== VERSION) v.setAttribute(BUILT_ATTR, VERSION);
   }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}

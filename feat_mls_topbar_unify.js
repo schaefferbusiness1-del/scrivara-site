@@ -1,4 +1,4 @@
-/* feat_mls_topbar_unify.js  ->  window.__mlsTopbar  (v1.0.0)
+/* feat_mls_topbar_unify.js  ->  window.__mlsTopbar  (v1.0.2)
  *
  * Declutters the top toolbar (the `.tools` row) and unifies the two "find"
  * surfaces. Additive, reversible, composes with -- never edits -- the host app.
@@ -48,7 +48,7 @@
   "use strict";
   try { if (window.__mlsTopbar && window.__mlsTopbar.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.2";
   var ASSET = "feat_mls_topbar_unify.js";
   var HIDE = "mlsTbHidden";
   var STYLE_ID = "mlsTbStyle";
@@ -60,6 +60,7 @@
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
   function tools() { return safe(function () { return document.querySelector(".tools"); }, null); }
+  function menuHost() { return gid("mlsRdMenuSlot") || tools(); }
   function isEl(n) { return !!(n && n.nodeType === 1); }
 
   // ---- locate the cluster controls by STABLE handle (id or onclick) ----
@@ -126,8 +127,13 @@
 
   // ---- build the menu ----
   function buildMenu() {
-    var t = tools(); if (!t) return;
-    if (gid(MENU_ID)) return; // already mounted
+    var t = tools(), host = menuHost(); if (!t || !host) return;
+    var existing = gid(MENU_ID);
+    /* Editorial Calm intentionally relocates the live menu into its top-bar
+       slot. Treat either host as canonical so Topbar and Redesign do not
+       remove/recreate/move the same menu forever. */
+    if (existing && (t.contains(existing) || host.contains(existing))) return;
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
     var wrap = document.createElement("div");
     wrap.id = MENU_ID;
     wrap.setAttribute("data-mls-asset", ASSET);
@@ -171,7 +177,7 @@
 
     wrap.appendChild(btn);
     wrap.appendChild(panel);
-    t.appendChild(wrap);
+    host.appendChild(wrap);
 
     // rows other modules relocate into the panel don't know about closePanel
     panel.addEventListener("click", function (ev) {
@@ -184,17 +190,17 @@
     document.addEventListener("keydown", escClose, true);
   }
   function panelEl() { return gid(PANEL_ID); }
-  function openPanel() { var p = panelEl(); if (p) { p.classList.add("open"); var b = gid(BTN_ID); if (b) b.setAttribute("aria-expanded", "true"); } }
-  function closePanel() { var p = panelEl(); if (p) { p.classList.remove("open"); var b = gid(BTN_ID); if (b) b.setAttribute("aria-expanded", "false"); } }
+  function openPanel() { var p = panelEl(); if (p) { if(!p.classList.contains("open"))p.classList.add("open"); var b = gid(BTN_ID); if (b&&b.getAttribute("aria-expanded")!=="true") b.setAttribute("aria-expanded", "true"); } }
+  function closePanel() { var p = panelEl(); if (p) { if(p.classList.contains("open"))p.classList.remove("open"); var b = gid(BTN_ID); if (b&&b.getAttribute("aria-expanded")!=="false") b.setAttribute("aria-expanded", "false"); } }
   function togglePanel() { var p = panelEl(); if (p) { p.classList.contains("open") ? closePanel() : openPanel(); } }
   function outsideClose(ev) { var m = gid(MENU_ID); if (m && !m.contains(ev.target)) closePanel(); }
   function escClose(ev) { if (ev.key === "Escape") closePanel(); }
 
   // ---- hide the originals (cluster buttons, email, standalone Find) ----
   function hideOriginals() {
-    MENU_ITEMS.forEach(function (it) { var el = it.find(); if (el) el.classList.add(HIDE); });
-    var email = gid("whoLabel"); if (email) email.classList.add(HIDE);
-    var fb = findBtnEl(); if (fb) fb.classList.add(HIDE);
+    MENU_ITEMS.forEach(function (it) { var el = it.find(); if (el&&!el.classList.contains(HIDE)) el.classList.add(HIDE); });
+    var email = gid("whoLabel"); if (email&&!email.classList.contains(HIDE)) email.classList.add(HIDE);
+    var fb = findBtnEl(); if (fb&&!fb.classList.contains(HIDE)) fb.classList.add(HIDE);
   }
 
   // ---- unified find: the visible box launches the powerful Find ----
@@ -242,28 +248,173 @@
     wireFind();
   }
 
-  // ---- low-cost watcher: re-apply if the header re-renders ----
-  var _obs = null, _poll = null, _raf = 0, _reverted = false;
+  // ---- low-cost watcher: re-apply if the relevant header re-renders ----
+  var _obs = null, _obsRoot = null, _toolsRoot = null;
+  var _sentinelObs = null, _sentinelRoot = null;
+  var _retryTimer = 0, _retryIndex = 0, _raf = 0, _rafIsNative = false;
+  var _signalsBound = false, _reverted = false;
+  var RETRY_DELAYS = [120, 300, 650, 1100, 1800, 2800, 4200, 6000];
+  var TOPBAR_SELECTOR = ".tools,#mlsPqsInput,#whoLabel,#askCopilotHdrBtn,#intakeBtn,#customWidgetHdrBtn,#mlsAthenaDoctorBtn";
+
+  function liveMenuMounted() {
+    var host = menuHost(), menu = gid(MENU_ID), input = pqsInput();
+    return !!(host && menu && host.contains(menu) && (!input || input.__mlsTbWired));
+  }
+  function isWithinOwnedMenu(node) {
+    if (!node) return false;
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el) return false;
+    if (el.id === MENU_ID) return true;
+    try { if (el.closest && el.closest("#" + MENU_ID)) return true; } catch (e) {}
+    var menu = gid(MENU_ID);
+    return !!(menu && (el === menu || menu.contains(el)));
+  }
+  function nodeContainsMenu(node) {
+    if (!isEl(node)) return false;
+    if (node.id === MENU_ID) return true;
+    try { return !!node.querySelector("#" + MENU_ID); } catch (e) { return false; }
+  }
+  function nodeTouchesTopbar(node, liveTools) {
+    if (!isEl(node) || isWithinOwnedMenu(node)) return false;
+    if (liveTools && (node === liveTools || node.contains(liveTools))) return true;
+    try { return node.matches(TOPBAR_SELECTOR) || !!node.querySelector(TOPBAR_SELECTOR); } catch (e) { return false; }
+  }
+  function mutationNeedsApply(records) {
+    var liveTools = tools();
+    if (liveTools !== _toolsRoot) return true;
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      if (isWithinOwnedMenu(record.target)) continue;
+      for (var r = 0; r < record.removedNodes.length; r++) {
+        if (nodeContainsMenu(record.removedNodes[r])) return true;
+      }
+      var targetInTools = !!(liveTools && (record.target === liveTools || liveTools.contains(record.target)));
+      if (targetInTools) {
+        var onlyOwnedAdds = record.addedNodes.length > 0 && record.removedNodes.length === 0;
+        for (var a = 0; onlyOwnedAdds && a < record.addedNodes.length; a++) {
+          if (!isWithinOwnedMenu(record.addedNodes[a])) onlyOwnedAdds = false;
+        }
+        if (!onlyOwnedAdds) return true;
+        continue;
+      }
+      var lists = [record.addedNodes, record.removedNodes];
+      for (var j = 0; j < lists.length; j++) {
+        for (var k = 0; k < lists[j].length; k++) {
+          if (nodeTouchesTopbar(lists[j][k], liveTools)) return true;
+        }
+      }
+    }
+    return false;
+  }
+  function headerRoot(t) {
+    if (!t) return _obsRoot;
+    return safe(function () { return t.closest("header,[role='banner'],#mlsRdTop,.topbar,.app-header") || t.parentElement; }, t.parentElement);
+  }
+  function bindObserver() {
+    var t = tools();
+    /* Do not tear down the stable parent sentinel while the header is briefly
+       absent. It is what notices a later insertion after boot retries end. */
+    if (!t) {
+      _toolsRoot = null;
+      safe(function () { if (_obs) _obs.disconnect(); });
+      _obs = null;
+      _obsRoot = null;
+      return;
+    }
+    var root = headerRoot(t); if (!root) return;
+    _toolsRoot = t;
+    if (!_obs || root !== _obsRoot) {
+      safe(function () { if (_obs) _obs.disconnect(); });
+      safe(function () {
+        _obs = new MutationObserver(function (records) { if (!_reverted && mutationNeedsApply(records)) schedule(); });
+        _obs.observe(root, { childList: true, subtree: true });
+        _obsRoot = root;
+      });
+    }
+
+    /* The scoped root observer cannot see its own removal. Observe only its
+       direct parent so wholesale #appHeader replacement reconnects us without
+       a body-wide observer or a permanent poll. */
+    var sentinel = root.parentNode;
+    if (sentinel && (!_sentinelObs || sentinel !== _sentinelRoot)) {
+      safe(function () { if (_sentinelObs) _sentinelObs.disconnect(); });
+      safe(function () {
+        _sentinelObs = new MutationObserver(function () {
+          var liveTools = tools();
+          var liveRoot = liveTools ? headerRoot(liveTools) : null;
+          if (liveTools !== _toolsRoot || liveRoot !== _obsRoot || (_obsRoot && !_obsRoot.isConnected)) schedule();
+        });
+        _sentinelObs.observe(sentinel, { childList: true });
+        _sentinelRoot = sentinel;
+      });
+    }
+  }
+  function applyAndObserve() {
+    if (_reverted) return;
+    safe(apply);
+    safe(bindObserver);
+  }
   function schedule() {
     if (_raf || _reverted) return;
-    _raf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
-      _raf = 0; if (!_reverted) safe(apply);
-    });
+    var run = function () { _raf = 0; if (!_reverted) applyAndObserve(); };
+    if (typeof window.requestAnimationFrame === "function") {
+      _rafIsNative = true;
+      _raf = window.requestAnimationFrame(run);
+    } else {
+      _rafIsNative = false;
+      _raf = setTimeout(run, 16);
+    }
+  }
+  function retryMount() {
+    _retryTimer = 0;
+    applyAndObserve();
+    if (_reverted || liveMenuMounted() || _retryIndex >= RETRY_DELAYS.length) return;
+    _retryTimer = setTimeout(retryMount, RETRY_DELAYS[_retryIndex++]);
+  }
+  function startRetries() {
+    if (_reverted) return;
+    if (_retryTimer) clearTimeout(_retryTimer);
+    _retryTimer = 0;
+    _retryIndex = 0;
+    retryMount();
+  }
+  function onTopbarSignal() { startRetries(); }
+  function onTopbarVisible() { if (!document.hidden && !liveMenuMounted()) startRetries(); }
+  function onTopbarActivity(ev) {
+    if (liveMenuMounted()) return;
+    var t = tools(), target = ev && ev.target;
+    if (t && target && (target === t || t.contains(target))) startRetries();
+  }
+  function bindSignals() {
+    if (_signalsBound) return;
+    ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered"].forEach(function (type) { window.addEventListener(type, onTopbarSignal); });
+    window.addEventListener("pageshow", onTopbarSignal);
+    document.addEventListener("visibilitychange", onTopbarVisible);
+    document.addEventListener("pointerdown", onTopbarActivity, true);
+    _signalsBound = true;
   }
   function start() {
-    safe(apply);
-    safe(function () {
-      _obs = new MutationObserver(function () { if (!_reverted) schedule(); });
-      _obs.observe(document.body, { childList: true, subtree: true });
-    });
-    _poll = setInterval(function () { if (!_reverted) safe(apply); }, 1500);
+    if (_reverted) return;
+    bindSignals();
+    startRetries();
   }
 
   // ---- revert ----
   function revert() {
     _reverted = true;
     safe(function () { if (_obs) _obs.disconnect(); });
-    safe(function () { if (_poll) clearInterval(_poll); });
+    safe(function () { if (_sentinelObs) _sentinelObs.disconnect(); });
+    safe(function () { if (_retryTimer) clearTimeout(_retryTimer); });
+    safe(function () {
+      if (_raf) {
+        if (_rafIsNative && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(_raf);
+        else clearTimeout(_raf);
+      }
+    });
+    safe(function () { ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered"].forEach(function (type) { window.removeEventListener(type, onTopbarSignal); }); });
+    safe(function () { window.removeEventListener("pageshow", onTopbarSignal); });
+    safe(function () { document.removeEventListener("visibilitychange", onTopbarVisible); });
+    safe(function () { document.removeEventListener("pointerdown", onTopbarActivity, true); });
     safe(function () { document.removeEventListener("click", outsideClose, true); });
     safe(function () { document.removeEventListener("keydown", escClose, true); });
     // un-hide every original control
@@ -284,7 +435,7 @@
     installed: true,
     version: VERSION,
     asset: ASSET,
-    apply: function () { safe(apply); },
+    apply: function () { applyAndObserve(); },
     openMenu: openPanel,
     closeMenu: closePanel,
     items: function () { return MENU_ITEMS.map(function (i) { return i.label; }); },

@@ -70,7 +70,7 @@
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
     if (s.textContent !== css) s.textContent = css;
   }
-  function build() { injectCSS(); var m = $("settingsModal"); if (m) m.setAttribute("data-stx-built", VERSION); }
+  function build() { injectCSS(); var m = $("settingsModal"); if (m && m.getAttribute("data-stx-built") !== VERSION) m.setAttribute("data-stx-built", VERSION); }
   function boot() { build(); var n = 0; _t = setInterval(function () { build(); if (++n > 6) clearInterval(_t); }, 1000); }
   function revert() { try { if (_t) clearInterval(_t); } catch (e) {} try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {} try { window.__mlsStx.installed = false; } catch (e) {} }
   window.__mlsStx = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };

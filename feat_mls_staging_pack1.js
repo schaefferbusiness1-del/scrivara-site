@@ -32,7 +32,7 @@
 ;(function () {
   'use strict';
   try { if (window.__mlsPack1 && window.__mlsPack1.installed) return; } catch (e) { return; }
-  var P = { installed: true, v: '1.0.1', feats: {}, _ivs: [], _nodes: [], _orig: {} };
+  var P = { installed: true, v: '1.0.1', feats: {}, _ivs: [], _nodes: [], _orig: {}, _observers: [], _events: [] };
   window.__mlsPack1 = P;
 
   function $(id) { return document.getElementById(id); }
@@ -201,8 +201,6 @@
       } catch (e) {}
       tplLog('Templates toolbar ready.');
     }
-    var tplIv = setInterval(mountTplBar, 1500); P._ivs.push(tplIv); mountTplBar();
-
     /* Upload button inside the Prep-op-note modal header */
     function mountOpPrepUpload() {
       var hdr = $('opPrepHdr'); if (!hdr || $('mlsP1OpUp')) return;
@@ -212,7 +210,80 @@
       b.onclick = function () { var f = $('mlsP1File'); if (f) f.click(); else safeToast('Open the Templates tab once first.', ''); };
       hdr.appendChild(b); remember(b);
     }
-    var opUpIv = setInterval(mountOpPrepUpload, 1800); P._ivs.push(opUpIv);
+
+    /* Mount these controls when their UI appears instead of polling forever.
+       Observers stay scoped to the relevant modal/section, mutations are
+       frame-coalesced, and retries are short-lived and restart on open events. */
+    var templateMountFrame = 0;
+    var templateMountFrameIsRaf = false;
+    var templateMountRetryTimer = 0;
+    var templateMountRetryIndex = 0;
+    var templateMountRetryDelays = [120, 300, 650, 1100, 1800, 2800, 4200, 6000];
+    var templateMountRoots = [];
+
+    function observeTemplateMountRoot(root) {
+      if (!root || typeof window.MutationObserver !== 'function' || templateMountRoots.indexOf(root) !== -1) return;
+      var observer = new window.MutationObserver(scheduleTemplateMounts);
+      observer.observe(root, { childList: true, subtree: true });
+      templateMountRoots.push(root);
+      P._observers.push(observer);
+    }
+    function bindTemplateMountRoots() {
+      var list = $('tplList');
+      var hdr = $('opPrepHdr');
+      var listRoot = list && list.closest ? list.closest('[role="dialog"],dialog,.modal') : null;
+      var hdrRoot = hdr && hdr.closest ? hdr.closest('[role="dialog"],dialog,.modal') : null;
+      observeTemplateMountRoot(listRoot || (list && list.parentElement));
+      observeTemplateMountRoot(hdrRoot || (hdr && hdr.parentElement));
+    }
+    function runTemplateMounts() {
+      if (!P.installed) return;
+      mountTplBar();
+      mountOpPrepUpload();
+      bindTemplateMountRoots();
+    }
+    function scheduleTemplateMounts() {
+      if (!P.installed || templateMountFrame) return;
+      var run = function () {
+        templateMountFrame = 0;
+        runTemplateMounts();
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        templateMountFrameIsRaf = true;
+        templateMountFrame = window.requestAnimationFrame(run);
+      } else {
+        templateMountFrameIsRaf = false;
+        templateMountFrame = setTimeout(run, 16);
+      }
+    }
+    function runTemplateMountRetry() {
+      templateMountRetryTimer = 0;
+      runTemplateMounts();
+      if ($('mlsP1TplBar') && $('mlsP1OpUp')) return;
+      if (templateMountRetryIndex >= templateMountRetryDelays.length) return;
+      templateMountRetryTimer = setTimeout(runTemplateMountRetry, templateMountRetryDelays[templateMountRetryIndex++]);
+    }
+    function startTemplateMountRetries() {
+      if (templateMountRetryTimer) clearTimeout(templateMountRetryTimer);
+      templateMountRetryTimer = 0;
+      templateMountRetryIndex = 0;
+      runTemplateMountRetry();
+    }
+    function onTemplateMountSignal() { startTemplateMountRetries(); }
+    function onTemplateMountTriggerClick(ev) {
+      var target = ev && ev.target && ev.target.closest ? ev.target.closest('button,[role="button"],a') : null;
+      if (!target) return;
+      var clue = [target.id || '', target.getAttribute('data-action') || '', target.textContent || ''].join(' ');
+      if (!/(template|prep\s*op|op[- ]?note)/i.test(clue)) return;
+      startTemplateMountRetries();
+    }
+    ['mls:ui-ready', 'mls:templates-opened', 'mls:op-prep-opened'].forEach(function (type) {
+      window.addEventListener(type, onTemplateMountSignal);
+      P._events.push({ target: window, type: type, fn: onTemplateMountSignal, options: false });
+    });
+    document.addEventListener('click', onTemplateMountTriggerClick, true);
+    P._events.push({ target: document, type: 'click', fn: onTemplateMountTriggerClick, options: true });
+    startTemplateMountRetries();
 
     /* "always add standard lines": after a generation completes, run the std-line engine */
     if (typeof window.generateNote === 'function' && !window.generateNote.__p1Wrap) {
@@ -534,6 +605,7 @@
         '<div id="mlsP1AgMsgs"></div>' +
         '<div id="mlsP1AgIn"><input id="mlsP1AgQ" placeholder="e.g. prep all my op notes for tomorrow"><button id="mlsP1AgMic" type="button" title="Speak">🎤</button><button id="mlsP1AgSend" type="button">Send</button></div>';
       document.body.appendChild(dock); remember(dock);
+      try { window.dispatchEvent(new CustomEvent('mls:agent-mounted', { detail: { panel: 'mlsP1Ag' } })); } catch (e) {}
       fab.onclick = function () { dock.style.display = dock.style.display === 'flex' ? 'none' : 'flex'; if (dock.style.display === 'flex' && !dock.__welcomed) { dock.__welcomed = true; agMsg('Hi - tell me what you need. I can prep the day’s op notes, run the Athena pull, list a day, set your active patient, open simple mode, add starter templates and more. I never sign or send anything to Athena myself.', 'ai'); } };
       $('mlsP1AgX').onclick = function () { dock.style.display = 'none'; };
       function send() { var q = $('mlsP1AgQ').value.trim(); if (!q) return; $('mlsP1AgQ').value = ''; agentAsk(q); }
@@ -549,13 +621,24 @@
         r.start();
       };
     }
-    var agIv = setInterval(mountAgent, 2000); P._ivs.push(agIv); mountAgent();
+    /* The feature asset executes after <body> exists. One idempotent mount is
+       enough; a permanent two-second document poll only adds background work. */
+    mountAgent();
     P.feats.agent = true;
   } catch (e) { P.feats.agent = 'error: ' + e.message; }
 
   /* ------------------------------------------------------------------ */
   P.revert = function () {
     try { P._ivs.forEach(function (i) { clearInterval(i); }); } catch (e) {}
+    try { if (templateMountRetryTimer) clearTimeout(templateMountRetryTimer); } catch (e) {}
+    try {
+      if (templateMountFrame) {
+        if (templateMountFrameIsRaf && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(templateMountFrame);
+        else clearTimeout(templateMountFrame);
+      }
+    } catch (e) {}
+    try { P._observers.forEach(function (observer) { observer.disconnect(); }); } catch (e) {}
+    try { P._events.forEach(function (event) { event.target.removeEventListener(event.type, event.fn, event.options); }); } catch (e) {}
     try { if (P._orig.generateNote) window.generateNote = P._orig.generateNote; } catch (e) {}
     try { P._nodes.forEach(function (n) { if (n && n.parentElement) n.parentElement.removeChild(n); }); } catch (e) {}
     try { ['mlsP1TplStyle', 'mlsP1TunStyle', 'mlsP1AgStyle'].forEach(function (id) { var s = $(id); if (s && s.parentElement) s.parentElement.removeChild(s); }); } catch (e) {}

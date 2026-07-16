@@ -771,7 +771,10 @@
   }
 
   function moveSettingField(el, parent, before) {
-    if (!el || !parent || el.parentNode === parent && (!before || el.nextSibling === before)) return;
+    /* insertBefore(el, el) is a DOM mutation even though the visual order is
+       unchanged. The old guard missed that case, so Settings could observe
+       its own no-op move forever and keep waking every other UI observer. */
+    if (!el || !parent || before === el || el.parentNode === parent && (!before || el.nextSibling === before)) return;
     rememberSettingsMove(el);
     parent.insertBefore(el, before || null);
     el.classList.add('mls-settings-moved');
@@ -928,7 +931,8 @@
     var dedicated = key === 'legal' || key === 'integrations' || key === 'advanced';
     if (primary) {
       if (!primary.getAttribute('data-mls-original-text')) primary.setAttribute('data-mls-original-text', primary.textContent || '');
-      primary.style.display = dedicated ? 'none' : '';
+      var primaryDisplay = dedicated ? 'none' : '';
+      if (primary.style.display !== primaryDisplay) primary.style.display = primaryDisplay;
       if (primary.textContent !== 'Save changes') primary.textContent = 'Save changes';
     }
     if (close) {
@@ -936,7 +940,7 @@
       var closeLabel = dedicated ? 'Done' : 'Cancel';
       if (close.textContent !== closeLabel) close.textContent = closeLabel;
     }
-    if (modal) modal.setAttribute('data-mls-settings-active', key);
+    if (modal && modal.getAttribute('data-mls-settings-active') !== key) modal.setAttribute('data-mls-settings-active', key);
   }
 
   function selectSettingsGroup(key, focusTab, resetScroll) {
@@ -946,17 +950,23 @@
     activeSettingsGroup = key;
     directSettingsSections().forEach(function (section) {
       var show = settingsGroupFor(section) === key && allowedSettingsGroup(key);
-      section.classList.toggle('set-tab-hidden', !show);
-      section.style.display = show ? '' : 'none';
+      if (section.classList.contains('set-tab-hidden') !== !show) section.classList.toggle('set-tab-hidden', !show);
+      var sectionDisplay = show ? '' : 'none';
+      if (section.style.display !== sectionDisplay) section.style.display = sectionDisplay;
     });
     Array.prototype.slice.call(bar.querySelectorAll('[data-mls-settings-group]')).forEach(function (tab) {
       var on = tab.getAttribute('data-mls-settings-group') === key;
-      tab.classList.toggle('on', on); tab.setAttribute('aria-selected', on ? 'true' : 'false');
-      tab.setAttribute('tabindex', on ? '0' : '-1');
+      if (tab.classList.contains('on') !== on) tab.classList.toggle('on', on);
+      var selected = on ? 'true' : 'false', tabIndex = on ? '0' : '-1';
+      if (tab.getAttribute('aria-selected') !== selected) tab.setAttribute('aria-selected', selected);
+      if (tab.getAttribute('tabindex') !== tabIndex) tab.setAttribute('tabindex', tabIndex);
       if (on && focusTab) safe(function () { tab.focus(); });
     });
     var intro = byId('settingsIntro');
-    if (intro) intro.style.display = key === 'account' && text(intro) ? '' : 'none';
+    if (intro) {
+      var introDisplay = key === 'account' && text(intro) ? '' : 'none';
+      if (intro.style.display !== introDisplay) intro.style.display = introDisplay;
+    }
     updateSettingsFooter(key);
     /* The browser is the sole owner of Settings scrolling. Background section
        reconciliation performs no scroll writes; only an explicit tab choice
@@ -1006,7 +1016,10 @@
 
   function reconcileSettings() {
     var modal = byId('settingsModal'); if (!modal) return false;
-    modal.classList.add('mls-settings-clean');
+    /* The modal's class is itself observed for open/close. Re-adding an
+       already-present class generated an endless observer -> reconcile ->
+       class mutation cycle even while Settings was closed. */
+    if (!modal.classList.contains('mls-settings-clean')) modal.classList.add('mls-settings-clean');
     var sections = directSettingsSections();
     if (!sections.length) return false;
     var open = modal.classList.contains('show');

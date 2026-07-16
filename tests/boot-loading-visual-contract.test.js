@@ -31,7 +31,7 @@ assert(showSource.includes("bootVeil=document.getElementById('mlsBootVeil'); if(
 assert(app.includes('const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700'), 'long, bounded, quiet-window loading contract was lost');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b310'"), 'ScribeFlow loader was not cache-busted to b310');
+assert(app.includes("window.__MLS_AV='b311'"), 'ScribeFlow loader was not cache-busted to b311');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -98,7 +98,7 @@ const bootDriver = connect.slice(connect.indexOf('if(window.__mlsBootLoader)'), 
 assert(bootDriver.includes('#mlsBLwrap{width:260px;max-width:72vw;margin:2px 0 0}'), 'progress driver can reintroduce the split auto-margin layout');
 assert(bootDriver.includes('#mlsBLmsg{margin-top:11px;font-size:13px;color:#C9DCD2'), 'progress text is not legible on the green loader');
 assert(bootDriver.includes("wrap('sfShowGateLoading',start,true)"), 'late sign-in can mount a static progress bar instead of starting it');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b310'"), 'shared asset version was not bumped to b310');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-15-b310'"), 'app build was not bumped to b310');
+assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b311'"), 'shared asset version was not bumped to b311');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-16-b311'"), 'app build was not bumped to b311');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "hy-1.1.0";
+  var VERSION = "hy-1.1.1";
   try { if (window.__mlsHy && window.__mlsHy.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -26,7 +26,8 @@
   if (!isStaging()) { try { window.__mlsHy = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "hyStyle";
-  var _obs = null, _t = null, _sched = null;
+  var _obs = null, _mountObs = null, _historyRoot = null, _historyHost = null;
+  var _t = null, _sched = 0, _schedIsRaf = false;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function imp(el, p, v) { try { el.style.setProperty(p, v, "important"); } catch (e) {} }
@@ -83,7 +84,10 @@
   function syncChips() {
     var wrap = $("hyChips"), f = $("histFilter"); if (!wrap || !f) return;
     var kids = wrap.children;
-    for (var i = 0; i < kids.length; i++) { kids[i].setAttribute("data-on", kids[i].getAttribute("data-val") === f.value ? "1" : "0"); }
+    for (var i = 0; i < kids.length; i++) {
+      var next = kids[i].getAttribute("data-val") === f.value ? "1" : "0";
+      if (kids[i].getAttribute("data-on") !== next) kids[i].setAttribute("data-on", next);
+    }
   }
   function buildChips() {
     var f = $("histFilter"); if (!f) return;
@@ -115,22 +119,79 @@
   function build() {
     var v = $("historyView"); if (!v) return;
     injectCSS(); styleHeader(); buildChips();
-    v.setAttribute("data-hy-built", VERSION);
+    if (v.getAttribute("data-hy-built") !== VERSION) v.setAttribute("data-hy-built", VERSION);
+  }
+  function historyHost(v) {
+    try { return v && v.closest ? (v.closest("#appScreen,main,[role='main']") || v.parentElement) : (v && v.parentElement); }
+    catch (e) { return v && v.parentElement; }
+  }
+  function nodeHasHistoryView(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node === _historyRoot || node.id === "historyView") return true;
+    try { return !!node.querySelector("#historyView"); } catch (e) { return false; }
+  }
+  function remountMutation(records) {
+    var live = $("historyView");
+    if (live !== _historyRoot) { schedule(); return; }
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      if (_historyRoot && (record.target === _historyRoot || _historyRoot.contains(record.target))) continue;
+      var lists = [record.addedNodes, record.removedNodes];
+      for (var j = 0; j < lists.length; j++) {
+        for (var k = 0; k < lists[j].length; k++) {
+          if (nodeHasHistoryView(lists[j][k])) { schedule(); return; }
+        }
+      }
+    }
+  }
+  function bindObservers() {
+    var v = $("historyView");
+    if (!v) { _historyRoot = null; return; }
+    if (v !== _historyRoot) {
+      try { if (_obs) _obs.disconnect(); } catch (e) {}
+      try { if (!_obs) _obs = new MutationObserver(schedule); _obs.observe(v, { childList: true, subtree: true }); } catch (e) {}
+      _historyRoot = v;
+    }
+    var host = historyHost(v);
+    if (host && host !== _historyHost) {
+      try { if (_mountObs) _mountObs.disconnect(); } catch (e) {}
+      try { if (!_mountObs) _mountObs = new MutationObserver(remountMutation); _mountObs.observe(host, { childList: true, subtree: true }); } catch (e) {}
+      _historyHost = host;
+    }
   }
   function applyAll() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { build(); } catch (e) {}
-    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    try { bindObservers(); } catch (e) {}
   }
-  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
+  function schedule() {
+    if (_sched) return;
+    var run = function () { _sched = 0; applyAll(); };
+    if (typeof window.requestAnimationFrame === "function") {
+      _schedIsRaf = true;
+      _sched = window.requestAnimationFrame(run);
+    } else {
+      _schedIsRaf = false;
+      _sched = setTimeout(run, 16);
+    }
+  }
   function boot() {
-    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
     applyAll();
-    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) clearInterval(_t); }, 700);
+    try { if (_t) clearInterval(_t); } catch (e) {}
+    var n = 0; _t = setInterval(function () {
+      applyAll();
+      if (++n > 12) { clearInterval(_t); _t = null; }
+    }, 700);
   }
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_mountObs) _mountObs.disconnect(); } catch (e) {}
     try { if (_t) clearInterval(_t); } catch (e) {}
+    try {
+      if (_sched) {
+        if (_schedIsRaf && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(_sched);
+        else clearTimeout(_sched);
+      }
+    } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try { var w = $("hyChips"); if (w && w.parentNode) w.parentNode.removeChild(w); } catch (e) {}
     try { window.__mlsHy.installed = false; } catch (e) {}

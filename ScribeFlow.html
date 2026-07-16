@@ -4462,11 +4462,13 @@ function startSession(email){
       if(gated) return true;
       return typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():false;
     }).catch(()=>false);
-    const _hydrate=Promise.all([
-      _refreshPromise,
-      _gateCheck,
-      _uiReady
-    ]).then(results=>sfStartupValid(_startupOpts)?!!results[1]:false).catch(()=>false);
+    const _hydrate=_gateCheck.then(gated=>{
+      /* An unsigned user can use only the compliance gate. Do not keep the
+         green boot cover up while unrelated patient/prefs hydration finishes;
+         that work may safely continue behind the already-mounted gate. */
+      if(gated) return true;
+      return Promise.all([_refreshPromise,_uiReady]).then(()=>false);
+    }).then(gated=>sfStartupValid(_startupOpts)?!!gated:false).catch(()=>false);
     /* Absolute recovery still exists, but it now leaves a full protected budget
        after the gate phase for the large first-run UI bundle and quiet-frame
        verification. No optional endpoint can trap the user indefinitely. */
@@ -8217,10 +8219,9 @@ function showView(v){
   // The legal builder and its review/sign/PDF card have one permanent runtime
   // home: Legal requests. Move the original live nodes before that view renders.
   if(v==='legalreq'){ try{ if(typeof ensureLegalRequestWorkspace==='function') ensureLegalRequestWorkspace(); }catch(e){} }
-  // Global motion polish (injected once): smooth tab transitions + a subtle press
-  // response on every button, so the whole app feels responsive and alive.
+  // One global button press rule. View motion is owned exclusively by
+  // feat_mls_theme_polish.js so navigation cannot double-fade or jump.
   if(!window._mlsPolishCss){ window._mlsPolishCss=1; try{ var _s=document.createElement('style'); _s.textContent='@keyframes mlsViewIn{from{opacity:.35;transform:translateY(6px)}to{opacity:1;transform:none}} button{transition:transform .07s ease} button:active{transform:scale(.97)}'; document.head.appendChild(_s); }catch(e){} }
-  try{ var _vm={patients:'patientsView',visit:'visitView',history:'historyView',recs:'recsView',orders:'ordersView',admin:'adminView',team:'teamView',analysis:'analysisView',legalreq:'legalReqView',studio:'studioView',calendar:'calendarView'}; var _ve=document.getElementById(_vm[v]); if(_ve){ _ve.style.animation='none'; requestAnimationFrame(function(){ requestAnimationFrame(function(){ try{ if(currentView===v) _ve.style.animation='mlsViewIn .22s ease'; }catch(e){} }); }); } }catch(e){}
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ if(typeof renderVisitOrders==='function') renderVisitOrders(); }catch(e){} try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
@@ -23666,7 +23667,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b296';
+  window.__MLS_AV='b311';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -23783,14 +23784,15 @@ function _ptGroupSort(mode){
     var ensureStarted=Date.now();
     var assets=makeTracker(); window.__mlsStartupAssets=assets;
     window.__mlsUiBundlePromise=new Promise(function(resolve){
-      var published=false, hardTimer=0, fetchTimer=0, finishTimer=0, fetchController=null, s=null;
+      var published=false, hardTimer=0, loadTimer=0, finishTimer=0, s=null;
       var gateStarted=(typeof sfGateLoadingStarted==='number'&&sfGateLoadingStarted)?sfGateLoadingStarted:ensureStarted;
       var releaseAt=gateStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
       var hardAt=releaseAt-Math.max(1400,SF_GATE_QUIET_MS+500);
+      var optionalWaitUntil=Math.min(hardAt,gateStarted+9000);
       function publish(ok,critical){
         if(published) return; published=true;
         if(hardTimer) clearTimeout(hardTimer);
-        if(fetchTimer) clearTimeout(fetchTimer);
+        if(loadTimer) clearTimeout(loadTimer);
         if(finishTimer) clearTimeout(finishTimer);
         if(window.__mlsAbortUiBundle===abort) window.__mlsAbortUiBundle=null;
         assets.settled=true; assets.stop();
@@ -23816,8 +23818,7 @@ function _ptGroupSort(mode){
         assets.degraded=true; assets.reason=reason||'bundle-aborted';
         assets.pendingAtPublish=assets.pending();
         assets.allPendingAtPublish=assets.allPending();
-        try{ if(fetchController) fetchController.abort(); }catch(e){}
-        try{ if(s){ s.text=''; if(s.parentNode) s.parentNode.removeChild(s); } }catch(e){}
+        try{ if(s){ s.onload=s.onerror=null; if(s.parentNode) s.parentNode.removeChild(s); } }catch(e){}
         try{ assets.abortPending(); }catch(e){}
         publish(false,false);
       }
@@ -23825,7 +23826,7 @@ function _ptGroupSort(mode){
       try{
         function done(){
           if(published) return;
-          if(fetchTimer){ clearTimeout(fetchTimer); fetchTimer=0; }
+          if(loadTimer){ clearTimeout(loadTimer); loadTimer=0; }
           assets.seal();
           (function finish(){
             if(published) return;
@@ -23836,9 +23837,13 @@ function _ptGroupSort(mode){
             var incomplete=assets.incomplete();
             var allPending=assets.allPending();
             var quiet=now-assets.lastActivity>=900;
-            if(pending===0&&allPending===0&&quiet){
-              if(incomplete===0&&assets.errors.length===0&&assets.satelliteErrors.length===0&&critical&&visible){ publish(true,true); return; }
-              abort(assets.errors.length?'critical-asset-error':(assets.satelliteErrors.length?'satellite-asset-error':'critical-ui-missing')); return;
+            var optionalSettled=allPending===0||now>=optionalWaitUntil;
+            if(pending===0&&optionalSettled&&quiet){
+              if(incomplete===0&&assets.errors.length===0&&critical&&visible){
+                if(allPending||assets.satelliteErrors.length) assets.degraded=true;
+                publish(true,true); return;
+              }
+              abort(assets.errors.length?'critical-asset-error':'critical-ui-missing'); return;
             }
             if(now>=hardAt){ abort('critical-assets-timeout'); return; }
             finishTimer=setTimeout(finish,120);
@@ -23846,29 +23851,22 @@ function _ptGroupSort(mode){
         }
         if(hardAt<=Date.now()){ abort('gate-budget-exhausted'); return; }
         hardTimer=setTimeout(function(){ abort('bundle-deadline'); },hardAt-Date.now());
-        try{ fetchController=typeof AbortController==='function'?new AbortController():null; }catch(e){ fetchController=null; }
-        var fetchBudget=Math.max(1,Math.min(10000,hardAt-Date.now()-1200));
-        fetchTimer=setTimeout(function(){ abort('main-fetch-timeout'); },fetchBudget);
-        var fetchInit={credentials:'same-origin',cache:'default'};
-        if(fetchController) fetchInit.signal=fetchController.signal;
-        if(typeof fetch!=='function'){ abort('fetch-unavailable'); return; }
-        fetch('mls-connect.js?v='+window.__MLS_AV,fetchInit).then(function(response){
-          if(!response||!response.ok) throw new Error('main-http-'+(response&&response.status||0));
-          return response.text();
-        }).then(function(source){
+        var loadBudget=Math.max(1,Math.min(10000,hardAt-Date.now()-1200));
+        loadTimer=setTimeout(function(){ abort('main-load-timeout'); },loadBudget);
+        s=document.createElement('script');
+        s.id='mlsUiBundleScript';
+        s.src='mls-connect.js?v='+window.__MLS_AV;
+        s.async=true;
+        s.setAttribute('data-mls-source',s.src);
+        s.onload=function(){
           if(published) return;
-          if(fetchTimer){ clearTimeout(fetchTimer); fetchTimer=0; }
-          s=document.createElement('script');
-          s.id='mlsUiBundleScript';
-          s.setAttribute('data-mls-source','mls-connect.js?v='+window.__MLS_AV);
-          s.text=String(source||'')+'\n//# sourceURL=/mls-connect.js?v='+window.__MLS_AV;
-          (document.body||document.documentElement).appendChild(s);
-          var executed=!!window.__MLS_APP_BUILD;
-          try{ s.text=''; if(s.parentNode) s.parentNode.removeChild(s); }catch(e){}
-          s=null;
-          if(!executed){ abort('main-execution-blocked'); return; }
+          if(loadTimer){ clearTimeout(loadTimer); loadTimer=0; }
+          s.onload=s.onerror=null;
+          if(!window.__MLS_APP_BUILD){ abort('main-execution-blocked'); return; }
           done();
-        }).catch(function(err){ if(!published) abort(err&&err.name==='AbortError'?'main-fetch-aborted':'main-fetch-error'); });
+        };
+        s.onerror=function(){ abort('main-load-error'); };
+        (document.body||document.documentElement).appendChild(s);
       }catch(e){ abort('bundle-exception'); }
     });
     return window.__mlsUiBundlePromise;

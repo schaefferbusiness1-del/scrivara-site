@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_fixpack_0701.js  ->  window.__mlsFixpack   (v1.0.1)   [item79]
+ * feat_mls_fixpack_0701.js  ->  window.__mlsFixpack   (v1.0.2)   [item79]
  *
  * PROD FIX-PACK (July 1, 2026) - nine additive, independently-guarded fixes
  * to things Michael is actively hitting on live. Each sub-fix is wrapped in
@@ -51,7 +51,18 @@
   'use strict';
   try { if (window.__mlsFixpack && window.__mlsFixpack.installed) return; } catch (e) { return; }
 
-  var FP = { installed: true, v: '1.0.1', fixes: {}, _obs: [], _ivs: [], _orig: {}, _nodes: [] };
+  var FP = {
+    installed: true,
+    v: '1.0.2',
+    fixes: {},
+    _obs: [],
+    _ivs: [],
+    _tos: [],
+    _listeners: [],
+    _refreshers: [],
+    _orig: {},
+    _nodes: []
+  };
   window.__mlsFixpack = FP;
 
   function $(id) { return document.getElementById(id); }
@@ -74,6 +85,59 @@
   function normName(n) { return String(n || '').trim().toLowerCase().replace(/\s+/g, ' '); }
   function safeToast(m, k) { try { if (typeof toast === 'function') toast(m, k || ''); } catch (e) {} }
   function remember(node) { if (node) FP._nodes.push(node); return node; }
+  function later(fn, delay) {
+    var id = setTimeout(function () {
+      var at = FP._tos.indexOf(id);
+      if (at >= 0) FP._tos.splice(at, 1);
+      if (!FP.installed) return;
+      try { fn(); } catch (e) {}
+    }, delay);
+    FP._tos.push(id);
+    return id;
+  }
+  function listen(target, name, fn, options) {
+    if (!target || !target.addEventListener) return;
+    target.addEventListener(name, fn, options);
+    FP._listeners.push({ target: target, name: name, fn: fn, options: options });
+  }
+  function registerRefresh(fn) { if (typeof fn === 'function') FP._refreshers.push(fn); }
+
+  /* One filtered refresh bus replaces several permanent UI/layout polls below.
+     It is installed after all nine fixes register their refresh callbacks. */
+  var refreshTimer = null, refreshRoots = [], refreshReasons = {};
+  function queueRefresh(root, reason, delay) {
+    if (!FP.installed) return;
+    root = root && (root.nodeType === 1 || root.nodeType === 9) ? root : document;
+    if (root === document) {
+      refreshRoots = [document];
+    } else if (refreshRoots.indexOf(document) < 0 && refreshRoots.indexOf(root) < 0) {
+      if (refreshRoots.length < 12) refreshRoots.push(root);
+      else refreshRoots = [document];
+    }
+    refreshReasons[reason || 'event'] = 1;
+    if (refreshTimer) return;
+    refreshTimer = later(function () {
+      refreshTimer = null;
+      var roots = refreshRoots.slice(), why = Object.keys(refreshReasons).join(',');
+      refreshRoots = []; refreshReasons = {};
+      if (!roots.length) roots = [document];
+      for (var r = 0; r < roots.length; r++) {
+        for (var i = 0; i < FP._refreshers.length; i++) {
+          try { FP._refreshers[i](roots[r], why); } catch (e) {}
+        }
+      }
+    }, delay == null ? 100 : delay);
+  }
+  var refreshBurstSeq = {};
+  function refreshBurst(reason, delays) {
+    reason = reason || 'fallback';
+    delays = delays || [];
+    var token = (refreshBurstSeq[reason] || 0) + 1;
+    refreshBurstSeq[reason] = token;
+    delays.forEach(function (ms) {
+      later(function () { if (refreshBurstSeq[reason] === token) queueRefresh(document, reason, 0); }, ms);
+    });
+  }
   function addStyle(id, css) {
     if ($(id)) return;
     var st = document.createElement('style'); st.id = id; st.textContent = css;
@@ -138,8 +202,12 @@
       mo.observe(st, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['style'] });
       FP._obs.push(mo);
     }
-    var wIv = setInterval(watchStatus, 1200); FP._ivs.push(wIv);
     watchStatus();
+    registerRefresh(function (root) {
+      var relevant = root === document;
+      try { if (!relevant && root) relevant = root.id === 'heroPullStatus' || !!(root.closest && root.closest('#heroPullStatus')) || !!(root.querySelector && root.querySelector('#heroPullStatus')); } catch (e) {}
+      if (relevant) watchStatus();
+    });
 
     /* wrap pullScheduleViaAssist: mark active + clearer button title */
     if (typeof window.pullScheduleViaAssist === 'function' && !window.pullScheduleViaAssist.__fpWrap) {
@@ -352,7 +420,12 @@
       });
       try { sel.value = window.getNoteModel(); } catch (e) {}
     }
-    var selIv = setInterval(extendModelSel, 1500); FP._ivs.push(selIv); extendModelSel();
+    extendModelSel();
+    registerRefresh(function (root, reason) {
+      var relevant = root === document && /settings|boot|ui-ready/.test(reason || '');
+      try { if (!relevant && root) relevant = root.id === 'noteModelSel' || !!(root.closest && root.closest('#noteModelSel')) || !!(root.querySelector && root.querySelector('#noteModelSel')); } catch (e) {}
+      if (relevant) extendModelSel();
+    });
 
     /* fetch cascade on /api/generate model rejections */
     if (!window.fetch.__fpWrap) {
@@ -402,28 +475,48 @@
    * ------------------------------------------------------------------ */
   try {
     addStyle('mlsFpTodayStyle', '.mls-fp-offtoday{outline:2px solid #f5b942 !important;outline-offset:1px;border-radius:9px}');
-    function capBlink() {
+    function blinkRootRelevant(root) {
+      if (!root || root === document) return true;
+      try {
+        if (root.id === 'calendarView' || root.id === 'mlsAgendaChip') return true;
+        if (root.closest && root.closest('#calendarView,#mlsAgendaChip')) return true;
+        if (root.matches && root.matches('[data-scope="today"],.mlspk-tab')) return true;
+        if (/today/i.test(String(root.id || '') + ' ' + String(root.className || ''))) return true;
+        return !!(root.querySelector && root.querySelector('[data-scope="today"],.mlspk-tab,#mlsAgendaChip'));
+      } catch (e) { return false; }
+    }
+    function capBlink(root) {
       try {
         var offToday = false;
         try { offToday = !!(window._calRefDate && window._calRefDate !== todayISO()); } catch (e) {}
-        var cands = document.querySelectorAll('[data-scope="today"],[id*="oday"],[class*="oday"],button,\n.mlspk-tab');
-        var n = 0;
-        for (var i = 0; i < cands.length && n < 250; i++) {
-          var el = cands[i]; n++;
+        var base = root && root !== document ? root : document;
+        var cands = [];
+        if (base.nodeType === 1) cands.push(base);
+        if (base.querySelectorAll) {
+          var found = base.querySelectorAll('[data-scope="today"],[id*="oday"],[class*="oday"],button,.mlspk-tab');
+          for (var q = 0; q < found.length && cands.length < 250; q++) cands.push(found[q]);
+        }
+        for (var i = 0; i < cands.length && i < 250; i++) {
+          var el = cands[i];
           var txt = String(el.textContent || '');
           if (!/today/i.test(txt) && !/today/i.test(el.id || '') && !/today/i.test(el.className || '')) continue;
           var cs;
           try { cs = getComputedStyle(el); } catch (e) { continue; }
           if (cs && cs.animationName && cs.animationName !== 'none' && /infinite/i.test(cs.animationIterationCount || '')) {
             el.style.animationIterationCount = '3'; /* pulse 3x then stop - never blink forever */
+            el.__fpBlinkCapped = true;
+          }
+          if (el.classList && (el.__fpBlinkCapped || el.classList.contains('mls-fp-offtoday'))) {
             if (offToday) el.classList.add('mls-fp-offtoday'); else el.classList.remove('mls-fp-offtoday');
-          } else if (el.classList && el.classList.contains('mls-fp-offtoday') && !offToday) {
-            el.classList.remove('mls-fp-offtoday');
           }
         }
       } catch (e) {}
     }
-    var blinkIv = setInterval(capBlink, 4000); FP._ivs.push(blinkIv); capBlink();
+    registerRefresh(function (root, reason) {
+      if (/input|change/.test(reason || '') && root && root.tagName === 'TEXTAREA') return;
+      if (root === document && !/boot|navigation|calendar|schedule|view|ui-ready/.test(reason || '')) return;
+      if (blinkRootRelevant(root)) capBlink(root);
+    });
     FP.fixes.blinkCap = true;
   } catch (e) { FP.fixes.blinkCap = 'error: ' + e.message; }
 
@@ -456,7 +549,8 @@
         chip.__fpRelabeling = false;
       }
     }
-    var agIv = setInterval(upgradeAgendaChip, 1200); FP._ivs.push(agIv); upgradeAgendaChip();
+    upgradeAgendaChip();
+    registerRefresh(function () { upgradeAgendaChip(); });
     FP.fixes.agendaPrimary = true;
   } catch (e) { FP.fixes.agendaPrimary = 'error: ' + e.message; }
 
@@ -468,6 +562,7 @@
       try { if (a.start_at) { var d = new Date(a.start_at); var h = d.getHours(), mi = ('0' + d.getMinutes()).slice(-2); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + mi + ' ' + ap; } } catch (e) {}
       return '';
     }
+    var fallbackSig = '';
     function ensureDayFallback() {
       try {
         var calView = $('calendarView');
@@ -481,6 +576,9 @@
         var panel = $('calDayPanel') && $('calDayPanel').style.display !== 'none' ? $('calDayPanel') : calView;
         var shown = 0;
         var ptxt = String(panel.textContent || '').toLowerCase();
+        /* Never count this fallback's own rows as evidence that the real
+           calendar rendered them; that caused a remove/recreate ping-pong. */
+        if (old) ptxt = ptxt.replace(String(old.textContent || '').toLowerCase(), '');
         appts.forEach(function (a) {
           var nm = normName(a.name || '');
           if (nm && ptxt.indexOf(nm.split(' ')[0]) >= 0 && ptxt.indexOf(nm.split(' ').slice(-1)[0]) >= 0) shown++;
@@ -499,12 +597,26 @@
           panel.insertAdjacentElement('afterbegin', box);
           remember(box);
         }
-        box.innerHTML = '<div style="font-size:12.5px;font-weight:800;margin-bottom:2px">' + esc(dayLabel(date)) + ' — ' + appts.length + ' appointment' + (appts.length === 1 ? '' : 's') + ' (all providers)</div>' +
+        var html = '<div style="font-size:12.5px;font-weight:800;margin-bottom:2px">' + esc(dayLabel(date)) + ' — ' + appts.length + ' appointment' + (appts.length === 1 ? '' : 's') + ' (all providers)</div>' +
           '<div style="font-size:11.5px;opacity:.75;margin-bottom:4px">Shown as one list because these appointments aren’t tagged with a doctor yet — the Athena pull update will fix per-doctor filtering.</div>' + rows;
+        var sig = date + '|' + html;
+        if (fallbackSig !== sig || box.__fpFallbackSig !== sig) {
+          fallbackSig = sig;
+          box.__fpFallbackSig = sig;
+          box.innerHTML = html;
+        }
       } catch (e) {}
     }
-    function removeFb() { var o = $('mlsFpDayFallback'); if (o && o.parentElement) o.parentElement.removeChild(o); }
-    var fbIv = setInterval(ensureDayFallback, 2500); FP._ivs.push(fbIv);
+    function removeFb() { var o = $('mlsFpDayFallback'); if (o && o.parentElement) o.parentElement.removeChild(o); fallbackSig = ''; }
+    registerRefresh(function (root, reason) {
+      if (root === document && /generation|note|input|change/.test(reason || '') && !/calendar|navigation|schedule/.test(reason || '')) return;
+      if (root !== document) {
+        var inCalendar = false;
+        try { inCalendar = !!(root.closest && root.closest('#calendarView')) || !!(root.querySelector && root.querySelector('#calendarView')); } catch (e) {}
+        if (!inCalendar && !/calendar|schedule|navigation|boot|action/.test(reason || '')) return;
+      }
+      ensureDayFallback();
+    });
     FP.fixes.dayWeekFallback = true;
   } catch (e) { FP.fixes.dayWeekFallback = 'error: ' + e.message; }
 
@@ -694,9 +806,9 @@
       closeUl();
       return html || '<div style="opacity:.55">Nothing to format yet.</div>';
     }
+    var previewEntries = [];
     function attachPreview(ta) {
       if (!ta || ta.__fpFmt) return;
-      ta.__fpFmt = true;
       var wrap = document.createElement('div');
       wrap.className = 'mls-fp-fmt';
       wrap.style.display = 'none';
@@ -705,28 +817,66 @@
       remember(wrap);
       var body = wrap.querySelector('.fmt-body');
       var btn = wrap.querySelector('button');
-      var hidden = false;
-      btn.addEventListener('click', function () { hidden = !hidden; body.style.display = hidden ? 'none' : 'block'; btn.textContent = hidden ? 'Show' : 'Hide'; });
-      var tmr = null;
-      function rerender() {
+      var entry = { ta: ta, wrap: wrap, body: body, hidden: false, lastValue: null, lastShow: null, lastHtml: null, render: null };
+      ta.__fpFmt = entry;
+      previewEntries.push(entry);
+      function rerender(force) {
         var t = ta.value || '';
-        if (looksStructured(t) && t.length > 60) { wrap.style.display = 'block'; if (!hidden) body.innerHTML = fmtHtml(t); }
-        else wrap.style.display = 'none';
+        var show = looksStructured(t) && t.length > 60;
+        if (!force && t === entry.lastValue && show === entry.lastShow) return;
+        entry.lastValue = t;
+        entry.lastShow = show;
+        var wantDisplay = show ? 'block' : 'none';
+        if (wrap.style.display !== wantDisplay) wrap.style.display = wantDisplay;
+        if (!show || entry.hidden) return;
+        var html = fmtHtml(t);
+        if (html !== entry.lastHtml) {
+          entry.lastHtml = html;
+          body.innerHTML = html;
+        }
       }
-      ta.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(rerender, 450); });
-      var poll = setInterval(rerender, 2500); FP._ivs.push(poll); /* catches programmatic sets (generation) */
-      rerender();
+      entry.render = rerender;
+      btn.addEventListener('click', function () {
+        entry.hidden = !entry.hidden;
+        body.style.display = entry.hidden ? 'none' : 'block';
+        btn.textContent = entry.hidden ? 'Show' : 'Hide';
+        if (!entry.hidden) rerender(true);
+      });
+      rerender(true);
     }
-    function scanBoxes() {
-      var nb = $('noteBox'); if (nb) attachPreview(nb);
-      Array.prototype.forEach.call(document.querySelectorAll('textarea'), function (ta) {
+    function considerPreview(ta) {
+      if (!ta || ta.tagName !== 'TEXTAREA' || ta.__fpFmt) return;
+      try {
+        var value = ta.value || '';
+        if (ta.id === 'noteBox' || (value.length > 200 && looksStructured(value))) attachPreview(ta);
+      } catch (e) {}
+    }
+    function scanBoxes(root) {
+      root = root || document;
+      if (root === document) {
+        var nb = $('noteBox'); if (nb) considerPreview(nb);
+      } else if (root.tagName === 'TEXTAREA') {
+        considerPreview(root);
+      }
+      var scope = root.querySelectorAll ? root : document;
+      Array.prototype.forEach.call(scope.querySelectorAll('textarea'), function (ta) {
         try {
-          if (ta.__fpFmt) return;
-          if ((ta.value || '').length > 200 && looksStructured(ta.value) && ta.offsetHeight > 90) attachPreview(ta);
+          considerPreview(ta);
         } catch (e) {}
       });
     }
-    var fmtIv = setInterval(scanBoxes, 3000); FP._ivs.push(fmtIv); scanBoxes();
+    function refreshPreviews() {
+      for (var i = previewEntries.length - 1; i >= 0; i--) {
+        var entry = previewEntries[i];
+        if (!entry.ta || !entry.ta.isConnected) { previewEntries.splice(i, 1); continue; }
+        entry.render(false);
+      }
+    }
+    registerRefresh(function (root, reason) {
+      if (root === document && /calendar|navigation/.test(reason || '') && !/patient|view|boot|note|generation/.test(reason || '')) return;
+      scanBoxes(root);
+      refreshPreviews();
+    });
     FP.fixes.fmtPreview = true;
   } catch (e) { FP.fixes.fmtPreview = 'error: ' + e.message; }
 
@@ -739,8 +889,9 @@
     (function () {
       var origFetch = window.fetch; /* note: this is the F3-wrapped fetch, chain is fine */
       var f9Fetch = function (input, init) {
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        var nextInit = init;
         try {
-          var url = (typeof input === 'string') ? input : (input && input.url) || '';
           if (init && typeof init.body === 'string' && init.body.indexOf('"system"') >= 0 && /\/api\//.test(url)) {
             var b = init.body;
             if (/operative|op[ -]?note|procedure note|injection/i.test(b) && b.indexOf('STRICT DICTATION RULE') < 0) {
@@ -750,13 +901,20 @@
                   o.system += FILL_RULES;
                   var init2 = {}; for (var k in init) init2[k] = init[k];
                   init2.body = JSON.stringify(o);
-                  return origFetch.call(window, input, init2);
+                  nextInit = init2;
                 }
               } catch (e) {}
             }
           }
         } catch (e) {}
-        return origFetch.apply(window, arguments);
+        var pending = origFetch.call(window, input, nextInit);
+        if (/\/api\/generate(?:\?|$)/.test(url) && pending && typeof pending.then === 'function') {
+          return pending.then(function (res) {
+            refreshBurst('network,generation,note', [0, 150, 500, 1000, 2000]);
+            return res;
+          });
+        }
+        return pending;
       };
       f9Fetch.__fpWrap = true;
       window.fetch = f9Fetch;
@@ -834,27 +992,132 @@
     }
     function walkerSkip() { skipOffset++; paintWalker(); }
     function startWalker() { skipOffset = 0; ensureBlankUi(); paintWalker(); }
+    var blankState = '', blankSeq = 0;
     function updateBar() {
-      ensureBlankUi();
-      var bar = $('mlsFpBlankBar');
       var best = null, bestN = 0;
       Array.prototype.forEach.call(document.querySelectorAll('textarea'), function (ta) {
         try { if (ta.offsetParent === null) return; var n = countBlanks(ta.value); if (n > bestN) { bestN = n; best = ta; } } catch (e) {}
       });
       blankTarget = best;
-      if (bestN > 0) { $('mlsFpBlankN').textContent = String(bestN); bar.style.display = 'flex'; }
-      else bar.style.display = 'none';
+      var bar = $('mlsFpBlankBar');
+      if (!bestN) {
+        blankState = '';
+        if (bar && bar.style.display !== 'none') bar.style.display = 'none';
+        return;
+      }
+      ensureBlankUi();
+      bar = $('mlsFpBlankBar');
+      if (!best.__fpBlankKey) best.__fpBlankKey = ++blankSeq;
+      var nextState = best.__fpBlankKey + '|' + bestN + '|' + String(best.value || '');
+      if (blankState !== nextState) {
+        blankState = nextState;
+        $('mlsFpBlankN').textContent = String(bestN);
+      }
+      if (bar.style.display !== 'flex') bar.style.display = 'flex';
     }
-    var blankIv = setInterval(updateBar, 2500); FP._ivs.push(blankIv);
+    registerRefresh(function (root, reason) {
+      var relevant = root === document && /generation|note|patient|view|boot|textarea/.test(reason || '');
+      try {
+        if (!relevant && root) relevant = root.tagName === 'TEXTAREA' || !!(root.closest && root.closest('textarea')) || !!(root.querySelector && root.querySelector('textarea'));
+      } catch (e) {}
+      if (relevant) updateBar();
+    });
     FP.fixes.fillBlanks = true;
   } catch (e) { FP.fixes.fillBlanks = 'error: ' + e.message; }
+
+  /* ------------------------------------------------------------------
+   * EVENT-DRIVEN REFRESH BUS
+   * ------------------------------------------------------------------
+   * One child-list observer, scoped to the app host and filtered to the
+   * calendar/agenda/textarea surfaces, replaces the former F4/F5/F6/F8/F9
+   * idle polls. Input/change and known app lifecycle events update instantly.
+   * Finite retry bursts cover programmatic textarea fills that emit no event.
+   */
+  function mutationRefreshRoot(node) {
+    var el = node && node.nodeType === 1 ? node : (node && node.parentElement);
+    if (!el) return null;
+    try {
+      if (el.tagName === 'TEXTAREA' || el.id === 'mlsAgendaChip' || el.id === 'calendarView' || el.id === 'heroPullStatus' || el.id === 'noteModelSel') return el;
+      if (el.matches && el.matches('[data-scope="today"],.mlspk-tab')) return el;
+      if (/today/i.test(String(el.id || '') + ' ' + String(el.className || ''))) return el;
+      if (el.closest && el.closest('#calendarView,#mlsAgendaChip,#heroPullStatus,#noteModelSel')) return el;
+      if (el.querySelector && el.querySelector('textarea,#mlsAgendaChip,#calendarView,#heroPullStatus,#noteModelSel,[data-scope="today"],.mlspk-tab')) return el;
+    } catch (e) {}
+    return null;
+  }
+  function installRefreshBus() {
+    if (FP._refreshBusInstalled || !FP.installed) return;
+    var host = $('appScreen') || document.body;
+    if (!host) { later(installRefreshBus, 100); return; }
+    FP._refreshBusInstalled = true;
+
+    listen(document, 'input', function (e) {
+      var ta = e && e.target;
+      if (ta && ta.tagName === 'TEXTAREA') queueRefresh(ta, 'input,textarea', 80);
+    }, true);
+    listen(document, 'change', function (e) {
+      var ta = e && e.target;
+      if (ta && ta.tagName === 'TEXTAREA') queueRefresh(ta, 'change,textarea', 80);
+    }, true);
+    listen(document, 'click', function (e) {
+      var target = e && e.target;
+      var action = target && target.closest ? target.closest('button,a,[role="button"],#mlsAgendaChip,.mlspk-tab') : null;
+      if (!action) return;
+      var label = String(action.textContent || '') + ' ' + String(action.id || '') + ' ' + String(action.className || '');
+      if (/generate|draft|prep|op[ -]?note|procedure note|create note|one note|soap/i.test(label)) {
+        refreshBurst('action,generation,note', [80, 350, 900, 1800, 3500, 6000, 10000, 16000, 24000, 36000]);
+      } else if (/settings|preferences/i.test(label)) {
+        refreshBurst('action,settings', [60, 250, 700, 1500, 3000]);
+      } else if (/patient|visit|record|switch/i.test(label)) {
+        refreshBurst('action,patient,view', [60, 250, 700, 1500, 3000, 5000]);
+      } else if (/today|calendar|day|week|agenda|next|previous/i.test(label) || (action.closest && action.closest('#calendarView'))) {
+        refreshBurst('action,navigation,calendar', [60, 250, 700, 1500, 3000, 5000]);
+      }
+    }, true);
+
+    ['mls:ui-ready', 'mls:view-changed', 'mls:patient-changed', 'mls:note-generated',
+      'mls:generation-complete', 'mls:schedule-updated', 'mls:calendar-updated'].forEach(function (name) {
+      listen(window, name, function () { queueRefresh(document, name, 40); }, false);
+    });
+
+    try {
+      var mo = new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+          var rec = records[i], targetRoot = null, target = null;
+          try {
+            target = rec.target && rec.target.nodeType === 1 ? rec.target : rec.target.parentElement;
+            if (target && target.closest && target.closest('#calendarView,#mlsAgendaChip')) targetRoot = target;
+          } catch (e) {}
+          if (targetRoot) queueRefresh(targetRoot, 'mutation,calendar', 100);
+          var groups = [rec.addedNodes || [], rec.removedNodes || []];
+          for (var g = 0; g < groups.length; g++) {
+            for (var n = 0; n < groups[g].length; n++) {
+              var root = mutationRefreshRoot(groups[g][n]);
+              if (root) queueRefresh(g ? (target || document) : root, g ? 'mutation,textarea-removed' : 'mutation', 100);
+            }
+          }
+        }
+      });
+      mo.observe(host, { childList: true, subtree: true });
+      FP._obs.push(mo);
+    } catch (e) {}
+
+    refreshBurst('boot', [0, 300, 1000, 2500, 5000, 9000]);
+  }
+  if (document.readyState === 'loading') listen(document, 'DOMContentLoaded', installRefreshBus, { once: true });
+  else installRefreshBus();
 
   /* ------------------------------------------------------------------
    * REVERT
    * ------------------------------------------------------------------ */
   FP.revert = function () {
     try { FP._ivs.forEach(function (i) { clearInterval(i); }); } catch (e) {}
+    try { FP._tos.forEach(function (i) { clearTimeout(i); }); FP._tos.length = 0; } catch (e) {}
     try { FP._obs.forEach(function (o) { o.disconnect(); }); } catch (e) {}
+    try {
+      FP._listeners.forEach(function (r) { r.target.removeEventListener(r.name, r.fn, r.options); });
+      FP._listeners.length = 0;
+    } catch (e) {}
     try {
       if (FP._orig.pull) window.pullScheduleViaAssist = FP._orig.pull;
       if (FP._orig.importSched) window._importPulledSchedule = FP._orig.importSched;
@@ -866,6 +1129,11 @@
       if (FP._orig.fetch) window.fetch = FP._orig.fetch; /* unwinds F9 too (it chained on top) */
     } catch (e) {}
     try { FP._nodes.forEach(function (n) { if (n && n.parentElement) n.parentElement.removeChild(n); }); } catch (e) {}
+    try {
+      if (typeof previewEntries !== 'undefined') previewEntries.forEach(function (entry) {
+        if (entry && entry.ta && entry.ta.__fpFmt === entry) delete entry.ta.__fpFmt;
+      });
+    } catch (e) {}
     try {
       ['mlsFpStyle', 'mlsFpTodayStyle', 'mlsFpQfStyle', 'mlsFpFmtStyle', 'mlsFpBlankStyle'].forEach(function (id) { var s = $(id); if (s && s.parentElement) s.parentElement.removeChild(s); });
     } catch (e) {}

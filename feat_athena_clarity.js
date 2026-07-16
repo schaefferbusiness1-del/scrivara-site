@@ -17,7 +17,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.0.2';
+  var VERSION = '1.0.3';
   if (window.__mlsAthenaClarity && window.__mlsAthenaClarity.installed) return;
 
   var STYLE_ID = 'mlsac-style';
@@ -98,9 +98,12 @@
   }
 
   function decorateOne(btn) {
+    /* Already-decorated controls dominate mature-idle scans. Bail out before
+       catalog normalization/text matching so unrelated UI mutations stay
+       essentially free. */
+    if (!btn || btn.getAttribute(ATTR)) return false;
     var e = matchEntry(btn);
     if (!e) return false;
-    if (btn.getAttribute(ATTR)) return false;   // idempotent
     btn.setAttribute(ATTR, e.tag);
     // always-visible sub-label
     var sub = document.createElement('span');
@@ -222,16 +225,37 @@
 
   function scan(root) {
     var scope = root && root.querySelectorAll ? root : document;
+    if (scope.nodeType === 1 && safe(function () { return scope.matches('button, a.btn, [role="button"]'); })) decorateOne(scope);
     var btns = scope.querySelectorAll('button, a.btn, [role="button"]');
     var n = 0;
     for (var i = 0; i < btns.length; i++) { if (decorateOne(btns[i])) n++; }
     return n;
   }
 
-  var deb = null;
-  function onMutate() {
-    if (deb) return;
-    deb = setTimeout(function () { deb = null; safe(function () { scan(document); }); }, 250);
+  var deb = null, pendingRoots = [];
+  function queueRoot(node) {
+    if (!node) return;
+    if (node.nodeType === 3) node = node.parentNode;
+    if (!node || node.nodeType !== 1) return;
+    /* Decorating a button adds our own label/chip children. Ignore those
+       mutations so this observer cannot schedule itself again. */
+    if (safe(function () { return !!node.closest('button[' + ATTR + ']'); })) return;
+    var relevant = safe(function () {
+      return node.matches('button, a.btn, [role="button"]') || !!node.querySelector('button, a.btn, [role="button"]');
+    });
+    if (relevant && pendingRoots.indexOf(node) < 0) pendingRoots.push(node);
+  }
+  function onMutate(records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes || [];
+      for (var j = 0; j < added.length; j++) queueRoot(added[j]);
+    }
+    if (!pendingRoots.length || deb) return;
+    deb = setTimeout(function () {
+      deb = null;
+      var roots = pendingRoots.slice(); pendingRoots.length = 0;
+      for (var i = 0; i < roots.length; i++) safe(function (root) { return function () { scan(root); }; }(roots[i]));
+    }, 80);
   }
 
   function mount() {
@@ -246,6 +270,8 @@
   function revert() {
     safe(function () { if (observer) observer.disconnect(); });
     observer = null;
+    if (deb) { clearTimeout(deb); deb = null; }
+    pendingRoots.length = 0;
     listeners.forEach(function (l) { safe(function () { window.removeEventListener(l[0], l[1], false); }); });
     listeners = [];
     safe(function () {

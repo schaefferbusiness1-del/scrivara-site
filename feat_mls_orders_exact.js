@@ -51,7 +51,7 @@
     var back = h2.querySelector("button");
     if (back) { imp(back, "height", "40px"); imp(back, "border-radius", "11px"); imp(back, "border", "1px solid #e0e8f1"); imp(back, "background", "#fff"); imp(back, "color", "#3d5168"); imp(back, "font-weight", "600"); }
   }
-  function build() { var v = $("ordersView"); if (!v) return; injectCSS(); styleHeader(); v.setAttribute("data-ox-built", VERSION); }
+  function build() { var v = $("ordersView"); if (!v) return; injectCSS(); styleHeader(); if (v.getAttribute("data-ox-built") !== VERSION) v.setAttribute("data-ox-built", VERSION); }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { build(); } catch (e) {}

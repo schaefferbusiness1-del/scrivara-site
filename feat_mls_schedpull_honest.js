@@ -42,7 +42,7 @@
   var NS = '__mlsSchedPullHonest';
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_mls_schedpull_honest.js';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -61,6 +61,7 @@
 
   /* Surfaces the two emitters write to (+ the hero status the engine writes). */
   var SELECTORS = ['.mlspk-pullstatus', '.as-pullstatus', '#mlsAsstPanel .as-pullstatus', '#heroPullStatus'];
+  var SELECTOR = SELECTORS.join(',');
 
   var restore = [];   // [{el, prev}] for revert
   var MAXLEN = 240;   // never touch large content blocks -- status lines only
@@ -92,12 +93,13 @@
         return;
       }
       if (node.nodeType !== 1) return;
-      var t = norm(node.textContent);
-      if (t && t.length <= MAXLEN && FALSE_RE.test(t)) fixEl(node);
+      if (node.matches && node.matches(SELECTOR)) fixEl(node);
+      var list = node.querySelectorAll ? node.querySelectorAll(SELECTOR) : [];
+      for (var i = 0; i < list.length; i++) fixEl(list[i]);
     });
   }
 
-  var mo = null, iv = null;
+  var mo = null;
 
   function onMut(muts) {
     safe(function () {
@@ -106,8 +108,7 @@
         if (m.type === 'characterData') { scanNode(m.target); }
         else if (m.addedNodes && m.addedNodes.length) {
           for (var k = 0; k < m.addedNodes.length; k++) scanNode(m.addedNodes[k]);
-          scanNode(m.target);
-        } else { scanNode(m.target); }
+        }
       }
     });
   }
@@ -119,8 +120,6 @@
       o.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
       return o;
     }, null);
-    /* cheap belt-and-suspenders sweep for the known surfaces */
-    iv = safe(function () { return setInterval(scanSelectors, 800); }, null);
   }
 
   window[NS] = {
@@ -131,7 +130,6 @@
     audit: function () { return { fixed: restore.length, observing: !!mo }; },
     revert: function () {
       safe(function () { if (mo) mo.disconnect(); }); mo = null;
-      safe(function () { if (iv) clearInterval(iv); }); iv = null;
       for (var i = 0; i < restore.length; i++) {
         (function (rec) {
           safe(function () {

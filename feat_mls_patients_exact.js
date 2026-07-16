@@ -106,7 +106,7 @@
     var hasProfile = prof && vis(prof);
     if (hasProfile) wrap.classList.add("px-has-profile"); else wrap.classList.remove("px-has-profile");
     if (hasProfile) styleProfile();
-    v.setAttribute("data-px-built", VERSION);
+    if (v.getAttribute("data-px-built") !== VERSION) v.setAttribute("data-px-built", VERSION);
   }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}

@@ -252,7 +252,7 @@
       seq.forEach(function (el) { v.appendChild(el); });
       if (Math.abs(window.scrollY - _sy) > 1) window.scrollTo(0, _sy);
     }
-    v.setAttribute("data-ax-built", VERSION);
+    if (v.getAttribute("data-ax-built") !== VERSION) v.setAttribute("data-ax-built", VERSION);
   }
 
   function hookShowView() {

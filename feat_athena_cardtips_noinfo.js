@@ -45,7 +45,7 @@
   if (!W) return;
   if (W.__mlsCardTipsNoInfo && W.__mlsCardTipsNoInfo.installed) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_athena_cardtips_noinfo.js';
   var STYLE_ID = 'mlsCardTipsNoInfoStyle';
   var SEL = '.mlstip-info, .mlsactip-info';   // both variants' circle classes
@@ -71,10 +71,12 @@
     } catch (e) {}
   }
 
-  function pass() {
+  function pass(root) {
     try {
       injectStyle();
-      var els = document.querySelectorAll(SEL);
+      root = root && root.nodeType === 1 ? root : document;
+      if (root.nodeType === 1 && root.matches && root.matches(SEL)) removeCircle(root);
+      var els = root.querySelectorAll(SEL);
       for (var i = 0; i < els.length; i++) removeCircle(els[i]);
     } catch (e) {}
   }
@@ -89,11 +91,14 @@
 
   function startObserver() {
     try {
-      _obs = new MutationObserver(function () { schedulePass(); });
+      _obs = new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) if (added[j] && added[j].nodeType === 1) pass(added[j]);
+        }
+      });
       _obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
-    // slow safety poll mirrors the owners' 1500ms re-render cadence
-    _pollT = setInterval(function () { schedulePass(); }, 1500);
   }
 
   function boot() {

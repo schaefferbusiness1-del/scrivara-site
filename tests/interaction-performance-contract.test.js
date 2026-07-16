@@ -15,7 +15,42 @@ const app = read('ScribeFlow.html');
 const dictate = read('feat_mls_dictate_anywhere.js');
 const theme = read('feat_mls_theme_polish.js');
 const agentActions = read('feat_agent_actions3.js');
+const stagingPack = read('feat_mls_staging_pack1.js');
+const viewToggle = read('feat_mls_viewtoggle.js');
+const redesign = read('feat_mls_redesign.js');
+const historyExact = read('feat_mls_history_exact.js');
+const topbar = read('feat_mls_topbar_unify.js');
+const clarity = read('feat_athena_clarity.js');
+const cardTips = read('feat_athena_cardtips_noinfo.js');
+const findDoctors = read('feat_mls_find_doctors.js');
+const smartScope = read('feat_mls_pick_smartscope.js');
+const noteMetrics = read('feat_mls_note_metrics.js');
+const noteAutofit = read('feat_mls_note_autofit.js');
+const b18 = read('feat_b18_qa.js');
+const fixpack = read('feat_mls_fixpack_0701.js');
+const calendarExact = read('feat_mls_calendar_exact.js');
+const headerExact = read('feat_mls_header_exact.js');
+const athenaActions = read('feat_athena_actions.js');
 const sw = read('sw.js');
+
+const exactBuiltMarkers = [
+  ['feat_mls_analysis_exact.js', 'data-ax-built'],
+  ['feat_mls_calendar_exact.js', 'data-cx-built'],
+  ['feat_mls_help_exact.js', 'data-hpx-built'],
+  ['feat_mls_legal_exact.js', 'data-lx-built'],
+  ['feat_mls_login_exact.js', 'data-lgx-built'],
+  ['feat_mls_orders_exact.js', 'data-ox-built'],
+  ['feat_mls_patients_exact.js', 'data-px-built'],
+  ['feat_mls_recs_exact.js', 'data-rx-built'],
+  ['feat_mls_settings_exact.js', 'data-stx-built'],
+  ['feat_mls_studio_exact.js', 'data-sx-built'],
+  ['feat_mls_team_exact.js', 'data-tx-built']
+];
+exactBuiltMarkers.forEach(([file, attr]) => {
+  const source = read(file);
+  assert(source.includes(`getAttribute("${attr}") !== VERSION`), `${file} can still rewrite an identical built marker`);
+});
+assert(read('feat_mls_visit_exact.js').includes('getAttribute(BUILT_ATTR) !== VERSION'), 'Visit can still rewrite an identical built marker');
 
 const settingsStart = settings.indexOf('single-owner UI + account access');
 const settingsUi = settings.slice(settingsStart, settings.indexOf('visit-control continuity', settingsStart));
@@ -58,6 +93,9 @@ assert(theme.includes('if (!wrapped && retryCount++ < 8) retryT = setTimeout(ret
 assert(!/setInterval\s*\(/.test(theme), 'theme polish added a permanent reconciliation poll');
 assert(theme.includes('if (retryT) { clearTimeout(retryT); retryT = null; }'), 'theme retry timer is not cleaned up');
 assert(theme.includes('viewRaf = window.requestAnimationFrame(function ()') && theme.includes('if (viewRaf != null && window.cancelAnimationFrame)'), 'theme transitions are not frame-owned and cancellable');
+const showViewStart = app.indexOf('function showView(v)');
+const showViewSource = app.slice(showViewStart, app.indexOf('function showPatients()', showViewStart));
+assert(!showViewSource.includes("_ve.style.animation='none'") && !showViewSource.includes("_ve.style.animation='mlsViewIn .22s ease'"), 'base navigation still competes with the theme transition owner');
 
 assert(!/new\s+MutationObserver\s*\(/.test(dictate), 'dictate placement must not observe the whole DOM');
 assert(!/setInterval\s*\(/.test(dictate), 'dictate placement must not poll layout');
@@ -69,10 +107,57 @@ assert(dictate.includes("window.addEventListener('resize', onMove, { passive: tr
 assert(dictate.includes('if (moveRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(moveRaf); else clearTimeout(moveRaf); }'), 'dictate cleanup leaks a scheduled placement frame');
 assert(dictate.includes("version: 'da-1.0.3'") && connect.includes('__mlsDictateAnywhere da-1.0.3'), 'dictate-anywhere runtime/loader contract is not da-1.0.3');
 
-assert(!/new\s+MutationObserver|setInterval\s*\(|getBoundingClientRect\s*\(/.test(agentActions), 'agent actions still uses a whole-document observer, permanent poll, or forced layout read');
+assert(!/setInterval\s*\(|getBoundingClientRect\s*\(/.test(agentActions), 'agent actions still uses a permanent poll or forced layout read');
+assert(agentActions.includes('panelObserver.observe(panel,{childList:true,subtree:true})'), 'agent actions is not scoped to its own panel for re-render recovery');
 const agentRetry = /if\(attempts\+\+<(\d+)\) retryTimer=setTimeout\(boot,250\)/.exec(agentActions);
 assert(agentRetry && Number(agentRetry[1]) > 0 && Number(agentRetry[1]) <= 80, 'agent actions late-mount retry is not explicitly bounded');
-assert(agentActions.includes("window.addEventListener('mls:ui-ready',boot,{once:true})"), 'agent actions cannot retry once when the UI wave announces readiness');
+assert(agentActions.includes("window.addEventListener('mls:ui-ready',boot)") && agentActions.includes("window.addEventListener('mls:agent-mounted',boot)"), 'agent actions cannot recover after its UI or panel remounts');
+assert(!stagingPack.includes('setInterval(mountAgent') && stagingPack.includes("dispatchEvent(new CustomEvent('mls:agent-mounted'"), 'agent panel still polls forever or fails to announce its exact mount');
+assert(!stagingPack.includes('setInterval(mountTplBar') && !stagingPack.includes('setInterval(mountOpPrepUpload'), 'template/op-prep controls still run permanent mount polls');
+assert(stagingPack.includes('new window.MutationObserver(scheduleTemplateMounts)') && stagingPack.includes('templateMountRetryIndex >= templateMountRetryDelays.length'), 'template/op-prep remount recovery is not scoped and bounded');
+
+assert(!/setInterval\s*\(/.test(viewToggle), 'Simple/Complex toggle still wakes an idle tab on a permanent timer');
+assert(viewToggle.includes('bs.classList.contains("mlsVtOn") !== simpleOn') && viewToggle.includes('bf.getAttribute("aria-pressed") !== String(fullOn)'), 'view toggle can still write identical class/ARIA state');
+assert(viewToggle.includes('_obs.observe(header, { childList: true, subtree: true })') && !viewToggle.includes('_obs.observe(document.documentElement'), 'view toggle observer is not scoped to the header');
+assert(viewToggle.includes('_sentinelObs.observe(sentinel, { childList: true })') && viewToggle.includes('liveHeader !== _headerRoot') && viewToggle.includes('bindHeaderObserver(); }'), 'view toggle cannot reconnect its scoped observer after wholesale header replacement');
+
+assert(redesign.includes('new MutationObserver(onMutations)') && redesign.includes('if(relevantNode(added[j])) needsApply=true'), 'redesign still schedules a full reconciliation for every document mutation');
+const premiumStart = redesign.indexOf('function normalizePremiumBadges(root)');
+const premiumSource = redesign.slice(premiumStart, redesign.indexOf('function refreshUserChip', premiumStart));
+const premiumNodeStart = redesign.indexOf('function normalizePremiumBadgeNode(s)');
+const premiumNodeSource = redesign.slice(premiumNodeStart, premiumStart);
+assert(premiumStart >= 0 && !premiumSource.includes('getBoundingClientRect'), 'premium-badge reconciliation still forces layout while scanning');
+assert(redesign.includes('[250,700,1600,3200].forEach') && !redesign.includes("_t=setInterval(function(){ applyAll()"), 'redesign late-mount recovery is still a permanent reconcile loop');
+assert(redesign.includes("_lifeObs.observe(root,{childList:true})") && redesign.includes("var appChanged=current!==_observedRoot") && redesign.includes("if(!appChanged&&root===_lifeRoot) return;") && redesign.includes("var root=$('appScreen');"), 'redesign cannot reconnect its scoped observer after wholesale app replacement');
+assert(!redesign.includes('_lifeObs.observe(root,{childList:true,subtree:true})') && !redesign.includes('_obs.observe(document.documentElement'), 'redesign app-remount recovery observes a document-wide high-churn subtree');
+assert(redesign.includes('characterData:true') && redesign.includes("if(record.type==='characterData')") && redesign.includes('if(textOnly&&target&&target.nodeType===1)'), 'redesign misses premium badges created by text-only mutations');
+assert(premiumNodeStart >= 0 && premiumNodeSource.includes("if(s.getAttribute('class')!=='mlsRdPrem')") && premiumNodeSource.includes("if(s.hasAttribute('style'))") && premiumNodeSource.includes("t!=='PREMIUM'"), 'premium-badge text mutation normalization is not idempotent');
+
+assert(historyExact.includes('getAttribute("data-on") !== next') && historyExact.includes('getAttribute("data-hy-built") !== VERSION'), 'history chips can still write identical attributes every pass');
+assert(!historyExact.includes('observe(document.documentElement') && historyExact.includes('_obs.observe(v, { childList: true, subtree: true })'), 'history reconciliation is not scoped to its view');
+assert(!/setInterval\s*\(/.test(topbar) && topbar.includes('function mutationNeedsApply(records)'), 'topbar still polls or processes every page mutation');
+assert(topbar.includes('function menuHost() { return gid("mlsRdMenuSlot") || tools(); }') && topbar.includes('t.contains(existing) || host.contains(existing)'), 'topbar and redesign do not share one canonical live-menu host');
+assert(topbar.includes("if (el&&!el.classList.contains(HIDE)) el.classList.add(HIDE)"), 'topbar can still rewrite identical hidden classes');
+assert(topbar.includes('_sentinelObs.observe(sentinel, { childList: true })') && topbar.includes('liveRoot !== _obsRoot') && topbar.includes('safe(bindObserver)'), 'topbar cannot reconnect its scoped observer after wholesale header replacement');
+
+const decorateStart = clarity.indexOf('function decorateOne(btn)');
+const decorateSource = clarity.slice(decorateStart, clarity.indexOf('function restoreOne', decorateStart));
+assert(decorateSource.indexOf('btn.getAttribute(ATTR)') < decorateSource.indexOf('matchEntry(btn)'), 'Athena clarity still performs catalog matching before its idempotency guard');
+assert(!cardTips.includes('_pollT = setInterval') && cardTips.includes('addedNodes'), 'Athena card tips still polls or rescans on unrelated mutations');
+assert(!/setInterval\s*\(tick/.test(findDoctors) && findDoctors.includes('requestAnimationFrame'), 'Find Doctors still has a permanent reconciliation tick');
+assert(!smartScope.includes('_poll = setInterval') && smartScope.includes('__mlsSmartRenderKey'), 'patient smart scope still polls or rebuilds identical content');
+assert(noteMetrics.includes('if (rec.lastValue === value) return') && noteAutofit.includes('rec.lastValue === value && rec.lastCap === cap'), 'note metrics/autofit lost their idle value guards');
+assert(b18.includes("['mlsP1AgFab',16],['mlsAddPtLauncher',70],['mlsVoiceFab',124]") && !b18.includes("el.style.setProperty('right','18px'"), 'FAB owners disagree on coordinates and can rewrite one another');
+const cleanupStart = connect.indexOf('if(window.__mlsUiCleanupB26) return;');
+const cleanupSource = connect.slice(cleanupStart, connect.indexOf('(function(){\n  if(window.__mlsBootLoader)', cleanupStart));
+assert(cleanupSource.includes("target.closest('#emrPanel,#mlsWbcModal')") && cleanupSource.includes('records[i].removedNodes||[]'), 'UI cleanup cannot recover an internal EMR/modal control removal after boot');
+assert(!cleanupSource.includes('setInterval(tick,800)'), 'UI cleanup still runs its old permanent layout heartbeat');
+assert(!/setInterval\s*\(/.test(fixpack), 'July fix-pack still installs a permanent idle poll');
+assert(fixpack.includes('t === entry.lastValue && show === entry.lastShow') && fixpack.includes('html !== entry.lastHtml'), 'formatted preview can still rewrite unchanged HTML');
+assert(fixpack.includes('new MutationObserver(function (records)') && fixpack.includes('Finite retry bursts cover programmatic textarea fills'), 'fix-pack lost event-driven remount/programmatic-fill recovery');
+assert(calendarExact.includes('if (!card.classList.contains("cx-agenda"))') && calendarExact.includes('_obs.observe(root, { childList: true, subtree: true })') && !calendarExact.includes('_obs.observe(document.documentElement'), 'calendar design reconciliation still writes/observes outside its owned view');
+assert(headerExact.includes('getAttribute("data-hx-relocated") !== "1"'), 'header can still rewrite an identical relocation marker');
+assert(athenaActions.includes("if (btn.getAttribute('data-mlsaa-intent') !== it.brings) btn.setAttribute"), 'Athena action clarity can still rewrite an identical intent attribute');
 
 const liveCallStart = app.indexOf('function _liveCallsCanPoll()');
 const liveCall = app.slice(liveCallStart, app.indexOf('/* ===== Movable floating', liveCallStart));
@@ -103,7 +188,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-15-b296' }, 'tiny version probe does not match b296');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-16-b311' }, 'tiny version probe does not match b311');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);

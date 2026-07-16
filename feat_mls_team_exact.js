@@ -42,7 +42,7 @@
     var btns = h2.querySelectorAll("button");
     for (var j = 0; j < btns.length; j++) { var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px"); imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }
   }
-  function build() { var v = $("teamView"); if (!v) return; injectCSS(); styleHeader(); v.setAttribute("data-tx-built", VERSION); }
+  function build() { var v = $("teamView"); if (!v) return; injectCSS(); styleHeader(); if (v.getAttribute("data-tx-built") !== VERSION) v.setAttribute("data-tx-built", VERSION); }
   function applyAll() { try { if (_obs) _obs.disconnect(); } catch (e) {} try { build(); } catch (e) {} try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {} }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
   function boot() { try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {} applyAll(); var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) clearInterval(_t); }, 700); }

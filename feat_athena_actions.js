@@ -431,7 +431,7 @@
       if (btn.getAttribute && btn.getAttribute('data-mlsac')) {
         var dupSib = btn.nextSibling && btn.nextSibling.classList && btn.nextSibling.classList.contains('mlsaa-intent') ? btn.nextSibling : null;
         if (dupSib) dupSib.remove();
-        btn.setAttribute('data-mlsaa-intent', it.brings);
+        if (btn.getAttribute('data-mlsaa-intent') !== it.brings) btn.setAttribute('data-mlsaa-intent', it.brings);
         return;
       }
       if (btn.getAttribute('data-mlsaa-intent') === it.brings) return;

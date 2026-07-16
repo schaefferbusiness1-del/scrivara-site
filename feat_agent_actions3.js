@@ -47,12 +47,36 @@
     }catch(e){ return false; }
   }
 
-  var attempts=0, retryTimer=0;
+  var attempts=0, retryTimer=0, panelObserver=null, observedPanel=null, injectRaf=0;
+  function scheduleInject(){
+    if(injectRaf) return;
+    var raf=window.requestAnimationFrame||function(cb){ return setTimeout(cb,16); };
+    injectRaf=raf(function(){ injectRaf=0; inject(); });
+  }
+  function watchPanel(){
+    var panel=document.getElementById('mlsP1Ag');
+    if(!panel) return false;
+    if(panel!==observedPanel){
+      try{ if(panelObserver) panelObserver.disconnect(); }catch(e){}
+      observedPanel=panel;
+      try{
+        panelObserver=new MutationObserver(function(){
+          if(!document.getElementById('mlsAgentActBar')) scheduleInject();
+        });
+        panelObserver.observe(panel,{childList:true,subtree:true});
+      }catch(e){ panelObserver=null; }
+    }
+    return true;
+  }
   function boot(){
-    if(inject()) return;
+    if(watchPanel()&&inject()){
+      if(retryTimer){ clearTimeout(retryTimer); retryTimer=0; }
+      return;
+    }
     if(attempts++<80) retryTimer=setTimeout(boot,250);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true});
   else boot();
-  window.addEventListener('mls:ui-ready',boot,{once:true});
+  window.addEventListener('mls:ui-ready',boot);
+  window.addEventListener('mls:agent-mounted',boot);
 })();
