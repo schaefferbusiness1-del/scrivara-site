@@ -7070,18 +7070,23 @@ async function mlsSchedDomInline(doc, CFG){
           const nrmStrict = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
           const nameTokensStrict = (s) => nrmStrict(s).split(' ').filter((x) => x.length > 1);
           const strictNameMatch = (observed, expected) => {
-            const have = nameTokensStrict(observed), need = nameTokensStrict(expected);
-            if (have.length < 2 || need.length < 2) return false;
-            /* Live 2026-07-16: athena's banner can TRUNCATE a long compound
-               surname ("Ann Cubbage-Reil" for "Ann Cubbage-Reilly"), which
-               failed the exact-token gate on the RIGHT patient (DOB exact).
-               The LAST token may match by >=4-char prefix in either direction;
-               the first token stays exact and every DOB/MRN gate plus the
-               strong-mismatch veto are unchanged, so a truly different
-               patient still fails closed. */
-            const lastNeed = need[need.length - 1];
-            const lastOk = have.some((h) => h === lastNeed || (h.length >= 4 && lastNeed.length >= 4 && (h.indexOf(lastNeed) === 0 || lastNeed.indexOf(h) === 0)));
-            return have.indexOf(need[0]) >= 0 && lastOk;
+            /* Live 2026-07-16: athena's banner abbreviates long names - observed
+               "Cubbage-Reilly A" for stored "Ann Cubbage-Reilly" (full surname +
+               first-name INITIAL). Both the first and last stored tokens may
+               match an observed token by exact text, a >=4-char prefix in either
+               direction, or a single-letter initial. Single-letter observed
+               tokens are RETAINED for this check. Every DOB/MRN gate plus the
+               strong-mismatch veto are unchanged, so a genuinely different
+               patient (same surname, different DOB) still fails closed. */
+            const haveAll = nrmStrict(observed).split(' ').filter(Boolean);
+            const need = nameTokensStrict(expected);
+            if (haveAll.length < 2 || need.length < 2) return false;
+            const tokMatch = (h, n) => h === n ||
+              (h.length >= 4 && n.length >= 4 && (h.indexOf(n) === 0 || n.indexOf(h) === 0)) ||
+              (h.length === 1 && h === n.charAt(0));
+            const firstOk = haveAll.some((h) => tokMatch(h, need[0]));
+            const lastOk = haveAll.some((h) => tokMatch(h, need[need.length - 1]));
+            return firstOk && lastOk;
           };
           const dobPartsStrict = (s) => {
             const m = String(s || '').match(/\b(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})\b/);
@@ -8862,16 +8867,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
     if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
     var have = {}; haveName.forEach(function (w) { have[w] = 1; });
-    /* Truncated-banner surname (see strictNameMatch): the LAST want-token may
-       match a live token by >=4-char prefix in either direction. First token
-       stays exact; the DOB/MRN equality gates below are unchanged. */
-    function lastTokenOk(wantLast) {
-      if (have[wantLast]) return true;
-      if (wantLast.length < 4) return false;
-      return haveName.some(function (h) { return h.length >= 4 && (h.indexOf(wantLast) === 0 || wantLast.indexOf(h) === 0); });
+    /* Abbreviated-banner names (see strictNameMatch): a want-token may match a
+       live token by exact text, >=4-char prefix in either direction, or a
+       single-letter live initial (athena shows "Cubbage-Reilly A"). Live
+       single-letter tokens are retained for this check only. The DOB/MRN
+       equality gates below are unchanged. */
+    var haveAllTok = String(live.name || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    function wantTokenOk(wantTok) {
+      if (have[wantTok]) return true;
+      return haveAllTok.some(function (h) {
+        if (h === wantTok) return true;
+        if (h.length >= 4 && wantTok.length >= 4 && (h.indexOf(wantTok) === 0 || wantTok.indexOf(h) === 0)) return true;
+        return h.length === 1 && h === wantTok.charAt(0);
+      });
     }
-    var hits = 0; wantName.forEach(function (w, wi) { if (have[w] || (wi === wantName.length - 1 && lastTokenOk(w))) hits++; });
-    var nameOk = hits >= 2 && have[wantName[0]] && lastTokenOk(wantName[wantName.length - 1]);
+    var hits = 0; wantName.forEach(function (w) { if (wantTokenOk(w)) hits++; });
+    var nameOk = hits >= 2 && wantTokenOk(wantName[0]) && wantTokenOk(wantName[wantName.length - 1]);
     if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
     /* DOB is preferred when frozen. MRN is the exact fallback for records that
        intentionally omit DOB. Never accept a name-only chart. */
