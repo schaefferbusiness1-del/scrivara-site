@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.4.0
+ * MLS op-note integrity  oni-2.5.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.4.0';
+  var VERSION = 'oni-2.5.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -224,7 +224,7 @@
        is, so a draft that fills a section on the heading line itself can never
        lose that heading relative to the short placeholder line in the template. */
     if(!m && t.length>90) return '';
-    var common=/^(patient|patient name|dob|date of birth|mrn|date|date of procedure|provider|surgeon|assistant|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|indications?(?: for procedure)?|consent|findings?|technique|description of procedure|estimated blood loss|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
+    var common=/^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of procedure|date of operation|date of service|provider|physician|surgeon|assistant|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|type of anesthesia|indications?(?: for procedure)?|history|consent|findings?|technique|description of procedure|estimated blood loss|fluoroscopy time|injectate(?: per point)?|laterality|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|plan|follow.?up|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
     var caps=label.length>2 && label===label.toUpperCase() && /[A-Z]/.test(label);
     if(!m && !caps) return '';
     if(!common && !caps) return '';
@@ -271,9 +271,13 @@
   /* Keep exact chart-owned identity values out of the model's discretion. */
   function forceFacts(note, facts) {
     facts=facts||{};
+    /* Only the FIRST line per heading is stamped — a repeated heading (a
+       second "Procedure:" carrying the technique narrative) is body text. */
+    var used={};
     return S(note).split(/\r?\n/).map(function(line){
       var h=headingLabel(line), colon=line.indexOf(':');
-      if(!h||colon<0||!Object.prototype.hasOwnProperty.call(facts,h))return line;
+      if(!h||colon<0||used[h]||!Object.prototype.hasOwnProperty.call(facts,h))return line;
+      used[h]=1;
       var value=S(facts[h]).trim()||'[['+h.replace(/\s+/g,'_')+']]';
       return line.slice(0,colon+1)+' '+value;
     }).join('\n');
@@ -301,10 +305,12 @@
       var h=headingLabel(line);
       if(h){cur={h:h,head:line,body:[]};segs.push(cur);}else if(cur){cur.body.push(line);}else{segs.push({h:'',head:line,body:[]});}
     });
-    var out=[];
+    var out=[], usedFact={};
     segs.forEach(function(seg){
       if(!seg.h){out.push(seg.head);return;}
-      var colon=seg.head.indexOf(':'), exact=colon>=0&&facts&&Object.prototype.hasOwnProperty.call(facts,seg.h)?S(facts[seg.h]).trim():'', cand=(src[seg.h]&&src[seg.h].lines)||[];
+      /* facts stamp only the FIRST occurrence of a heading (see forceFacts) */
+      var colon=seg.head.indexOf(':'), exact=colon>=0&&facts&&!usedFact[seg.h]&&Object.prototype.hasOwnProperty.call(facts,seg.h)?S(facts[seg.h]).trim():'', cand=(src[seg.h]&&src[seg.h].lines)||[];
+      if(exact)usedFact[seg.h]=1;
       /* A colon-less ALL-CAPS line is a literal document title, never a fillable field. */
       if(colon<0){out.push(seg.head);seg.body.forEach(function(b){out.push(b);});return;}
       var tail=S(seg.head.slice(colon+1)), bodyJoined=seg.body.join('\n'), hasBody=S(bodyJoined).trim(), hasSlot=/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(tail+'\n'+bodyJoined);
@@ -324,6 +330,45 @@
       });
     });
     return forceFacts(out.join('\n'),facts);
+  }
+
+  /* oni-2.5.0: doctors upload PAST NOTES as templates. Such a "template" is a
+     flat paragraph carrying the PRIOR patient's name/DOB/dates/history, and the
+     fidelity system would otherwise preserve that verbatim into every new
+     draft. sanitizeTemplate makes it reusable and structured:
+     1) every recognized "Heading:" is put on its own line, so airing, the
+        heading-order fidelity check, forceFacts, and the fill box all see
+        real sections instead of one blob;
+     2) the VALUES of patient-identity and patient-specific headings are
+        replaced with [[snake]] placeholders — the prior patient's identity
+        and history can never survive into a new patient's draft. Everything
+        else (the doctor's own standard technique wording) is kept verbatim. */
+  var SPLIT_TITLES = /(^|\s+)(OPERATIVE REPORT|PROCEDURE NOTE)(?=\s)/g;
+  var SPLIT_LABELS = ['description of procedure','indications for procedure','estimated blood loss','postoperative diagnosis','post-operative diagnosis','preoperative diagnosis','pre-operative diagnosis','medications injected','date of operation','date of procedure','date of service','type of anesthesia','fluoroscopy time','date of birth','patient name','patient dob','patient','complications','disposition','indications','indication','anesthesia','physician','technique','laterality','injectate','follow-up','diagnosis','specimens','findings','procedure','provider','surgeon','consent','history','needle','levels','plan','mrn','dob','age','sex'];
+  /* boundary includes start-of-string/line so a label at position 0 is
+     consumed WHOLE — otherwise the bare-word alternative ("diagnosis") could
+     split "PREOPERATIVE DIAGNOSIS:" in the middle of the label itself */
+  var SPLIT_RX = new RegExp('(^|\\s+)((?:' + SPLIT_LABELS.join('|').replace(/-/g, '\\-') + ')\\s*:)', 'gi');
+  var SCRUB_HEADINGS = /^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of operation|date of procedure|date of service|physician|provider|surgeon|history|procedure|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|indications?(?: for procedure)?)$/i;
+  function sanitizeTemplate(tplText) {
+    var t = S(tplText);
+    t = t.replace(SPLIT_TITLES, '\n$2\n');
+    t = t.replace(SPLIT_RX, '\n$2');
+    var lines = t.split(/\r?\n/), out = [], scrubbed = {};
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], m = line.match(/^\s*([A-Za-z][A-Za-z /\-]{1,40}):(.*)$/);
+      if (m && SCRUB_HEADINGS.test(m[1].trim())) {
+        var label = m[1].trim(), key = label.toLowerCase(), val = S(m[2]).trim();
+        /* Only the FIRST occurrence of a heading is identity/case data; a
+           REPEATED heading (e.g. a second "Procedure:" carrying the technique
+           narrative) is the doctor's own body text and must stay verbatim.
+           "Same." back-references and already-placeholder values also stay. */
+        var keep = scrubbed[key] || !val || /^same\b/i.test(val) || /\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|_{2,}/i.test(val);
+        scrubbed[key] = 1;
+        out.push(keep ? line : (line.slice(0, line.indexOf(':') + 1) + ' [[' + key.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + ']]'));
+      } else out.push(line);
+    }
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
   }
 
   /* oni-2.4.0: a finished draft must READ like a document, not one blob.
@@ -351,6 +396,9 @@
       var ie=new Error('Op-note generation stopped: exact patient identity could not be verified.');ie.code='MLS_OPNOTE_IDENTITY';throw ie;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
+    /* a past-note "template" becomes structured + prior-patient-free before
+       anything downstream (prompt, fidelity, reanchor, airing) sees it */
+    tplText=sanitizeTemplate(tplText);
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
@@ -361,9 +409,10 @@
     var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
     var key=isFn(window.getKey)?window.getKey():'';
     var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
-    var facts={patient:name,mrn:ctx.mrn,'date of procedure':dateStr,procedure:procedure};
-    if(ctx.dob)facts['date of birth']=ctx.dob;
-    if(ctx.provider)facts.provider=ctx.provider;
+    var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
+    if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
+    if(ctx.sex)facts.sex=ctx.sex;
+    if(ctx.provider){facts.provider=ctx.provider;facts.physician=ctx.provider;facts.surgeon=ctx.provider;}
     if(ctx.providerNpi)facts.npi=ctx.providerNpi;
     if(ctx.facility)facts.facility=ctx.facility;
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
@@ -417,6 +466,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

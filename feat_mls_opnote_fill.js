@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.1.0';
+  var VERSION = 'onf-2.2.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -398,11 +398,17 @@
       [/local anesthetic.*volume|local anesthetic\b/, '1% lidocaine, 3 mL'],
       [/steroid.*dose|steroid \+/, 'Dexamethasone 10 mg'],
       [/anesthetic.*volume|injectate.*anesthetic/, '0.25% bupivacaine, 1 mL'],
+      [/agent.*volume|volume.*agent|injectate|per point|per level/, '0.25% bupivacaine + dexamethasone, 1 mL per point'],
       [/contrast.*volume/, '1 mL'],
+      [/fluoro/, '< 1 minute'],
       [/^interval\b|follow.?up interval/, '6 weeks'],
       [/needle length/, '3.5-inch']
     ];
     for (var s2 = 0; s2 < STD.length; s2++) { if (STD[s2][0].test(l)) return STD[s2][1]; }
+    /* onf-2.2.0 (owner directive): needle size pre-selects by the patient's
+       BMI — the deeper the target, the longer the suggested needle. Amber
+       "suggested"; the dropdown carries the alternatives. */
+    if (/needle|gauge/.test(l)) return needleOpts(row)[0];
     /* anything else dose/level/count-like stays blank - patient-specific,
        never invented. */
     if (/\b(dose|dosage|volume|amount|\bmg\b|\bml\b|\bcc\b|mcg|units|concentration|levels?|which level|how many|number of|count)\b/.test(l)) return '';
@@ -503,14 +509,40 @@
      #1 guess pre-selected, guesses #2/#3 as alternatives, the doctor's own
      previously-used values above the generic ones, and "Other (type custom)"
      last. Never type from scratch in the common case. */
-  function altGuesses(label) {
+  /* onf-2.2.0: the patient's BMI (chart record or op-prep ctx) drives the
+     needle suggestion — a deeper target needs a longer needle. The doctor
+     always sees it as an amber "suggested" dropdown and can change it. */
+  function patientBmi(row) {
+    return safe(function () {
+      var direct = parseFloat(row && (row.bmi || (row.appt && row.appt.bmi)));
+      if (direct > 0) return direct;
+      var appt = row && row.appt; if (!appt) return 0;
+      var pts = isFn(window.getPatients) ? window.getPatients() : [];
+      var nn = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, ''), wd = S(appt.dob).replace(/\D/g, '');
+      for (var i = 0; i < pts.length; i++) {
+        var q = pts[i]; if (!q || S(q.name).toLowerCase().replace(/[^a-z0-9]/g, '') !== nn) continue;
+        if (wd && S(q.dob).replace(/\D/g, '') !== wd) continue;
+        var b = parseFloat(q.bmi); return b > 0 ? b : 0;
+      }
+      return 0;
+    }, 0) || 0;
+  }
+  function needleOpts(row) {
+    var bmi = patientBmi(row);
+    if (bmi >= 35) return ['22-gauge, 5-inch', '25-gauge, 5-inch', '22-gauge, 3.5-inch'];
+    if (bmi >= 30) return ['22-gauge, 3.5-inch', '22-gauge, 5-inch', '25-gauge, 3.5-inch'];
+    return ['25-gauge, 1.5-inch', '22-gauge, 3.5-inch', '27-gauge, 1.25-inch'];
+  }
+  function altGuesses(label, row) {
     var l = S(label).toLowerCase();
     var A = [
       [/local anesthetic/, ['1% lidocaine, 3 mL', '2% lidocaine, 2 mL', '0.25% bupivacaine, 2 mL']],
       [/steroid/, ['Dexamethasone 10 mg', 'Triamcinolone (Kenalog) 40 mg', 'Methylprednisolone (Depo-Medrol) 40 mg']],
-      [/anesthetic.*volume|injectate/, ['0.25% bupivacaine, 1 mL', '0.5% bupivacaine, 1 mL', '1% lidocaine, 1 mL']],
-      [/needle/, ['22-gauge', '25-gauge', '20-gauge']],
+      [/agent.*volume|volume.*agent|injectate|per point|per level|anesthetic.*volume/, ['0.25% bupivacaine + dexamethasone, 1 mL per point', '1% lidocaine, 1 mL per point', '0.25% bupivacaine, 1 mL', '0.5% bupivacaine, 0.5 mL per point']],
+      [/needle|gauge/, needleOpts(row)],
       [/contrast/, ['1 mL', '2 mL', '0.5 mL']],
+      [/fluoro/, ['< 1 minute', '~1 minute', '~2 minutes']],
+      [/\bnumber\b|\bcount\b|how many|points|levels/, ['2', '3', '4', '1', '5', '6']],
       [/interval|follow.?up/, ['6 weeks', '2 weeks', '3 months']],
       [/position/, ['Prone', 'Supine', 'Lateral decubitus']],
       [/sedation/, ['None - local anesthesia only', 'MAC sedation', 'Oral anxiolysis']],
@@ -548,7 +580,7 @@
     } catch (e) {}
     return '';
   }
-  function buildOptions(label, cur) {
+  function buildOptions(label, cur, row) {
     var key = S(label).toLowerCase();
     /* history was written under the space form by this box and under the
        snake_case form by the retired ScribeFlow walker — read BOTH */
@@ -560,8 +592,8 @@
     var opts = [], seen = {};
     function add(v) { v = S(v).trim(); if (!v || seen[v.toLowerCase()]) return; seen[v.toLowerCase()] = 1; opts.push(v); }
     add(cur);
-    prev.slice(0, 3).forEach(add);       /* the doctor's own answers first */
-    altGuesses(label).forEach(add);      /* then the standard alternatives */
+    prev.slice(0, 3).forEach(add);            /* the doctor's own answers first */
+    altGuesses(label, row).forEach(add);      /* then the standard alternatives */
     return opts;
   }
   function buildFillBox(ta) {
@@ -620,7 +652,7 @@
           opsHtml.map(function (o) { return '<option value="' + esc(o) + '"' + (S(o) === S(cur) ? ' selected' : '') + '>' + (o ? esc(o) : '— pick —') + '</option>'; }).join('') +
           '<option value="' + OTHER + '">Other (type custom)…</option></select>';
       } else {
-        var choices = buildOptions(label, cur);
+        var choices = buildOptions(label, cur, row);
         if (choices.length) {
           ctrl = '<select data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '">' +
             (cur ? '' : '<option value="" selected>— pick —</option>') +

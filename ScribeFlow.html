@@ -10817,8 +10817,8 @@ function opPrepAutosaveDraft(i){
     var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
     if(!p){ try{ toast('Draft not saved: exact patient identity could not be verified.','err'); }catch(e){} return false; }
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
-    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
+    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){} return true;
   }catch(e){ return false; }
 }
@@ -10927,7 +10927,7 @@ function opPrepSave(i){
   if(!p){ try{ toast('Op note not saved: exact patient identity could not be verified. Re-open it from that patient’s chart.','err'); }catch(e){} return; }
   try{
     var ns=getNotes();
-    var cc=(row.proc||row.appt.reason||'Operative note')+' (op note)';
+    var cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op note)';
     var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;   // finalize the SAME draft we auto-saved (no duplicate)
     if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=false; ex.updated=Date.now(); }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:false }; ns.unshift(n); row._noteId=n.id; }
