@@ -31496,7 +31496,7 @@
   var ST=window.__mlsT6Stab={v:'b20',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b304';
+  window.__MLS_AV = window.__MLS_AV || 'b305';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31787,7 +31787,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b304';
+  var MLS_APP_BUILD='2026-07-15-b305';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -40420,7 +40420,21 @@
       'unverified-day': 'The extension could not prove that the visible Athena schedule matches this day, so nothing was accepted.',
       'schedule-incomplete': 'The Athena schedule was only partly read (' + Number(sr2.parsedCount || 0) + ' of ' + Number(sr2.expectedCount || sr2.candidateCount || 0) + ' rows). No complete-pull message was issued; retry after the grid finishes loading.',
       'calendar-partial': 'The schedule was read, but one or more appointments could not be saved to the MLS calendar. The failed rows are ready to retry.',
-      'history-partial': 'The schedule was imported, but history or prior visits are incomplete for ' + ((hr2.retry && hr2.retry.length) || 0) + ' patient' + (((hr2.retry && hr2.retry.length) || 0) === 1 ? '' : 's') + '. Retry the history step before relying on prep or operative-note context.'
+      'history-partial': (function () {
+        /* Name the exact patients whose history is incomplete — a bare count
+           left the doctor unable to tell WHO needs the retry. Names stay
+           in-app only. Each retry entry also carries its failure reason. */
+        var items = (hr2.retry || []).map(function (it) {
+          var p = null; try { p = typeof window.findPatient === 'function' ? window.findPatient(String(it && it.patientId || '')) : null; } catch (e) {}
+          var nm = p && p.name ? String(p.name) : '';
+          var why = String(it && it.reason || '').replace(/-/g, ' ');
+          return nm ? (nm + (why ? ' (' + why + ')' : '')) : '';
+        }).filter(Boolean);
+        var n = (hr2.retry && hr2.retry.length) || 0;
+        return 'The schedule was imported, but history or prior visits are incomplete for ' + n + ' patient' + (n === 1 ? '' : 's') +
+          (items.length ? (': ' + items.slice(0, 6).join('; ') + (items.length > 6 ? '; …' : '')) : '') +
+          '. Use “↻ Retry failed histories only” before relying on prep or operative-note context.';
+      })()
     };
     return { ok: false, message: messages[reason] || 'The pull did not return a verified completion receipt (' + reason + '). Nothing is being reported as complete.' };
   }
