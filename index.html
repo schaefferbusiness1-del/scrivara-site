@@ -6,17 +6,17 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MLS Scribe — The ambient AI scribe & clinical platform for spine, pain &amp; PM&amp;R</title>
-<meta name="description" content="MLS is an ambient AI medical scribe with a real REST API and deep athenahealth integration. Talk through the visit; walk out with a finished, coded note you review and sign. Suggested E/M, ICD-10 & CPT, patient intake, outcomes, a legal/IME portal, and a reputation & marketing suite. HIPAA-ready. From $15/provider/month.">
+<meta name="description" content="MLS is an ambient AI medical scribe with a real REST API and deep athenahealth integration. Talk through the visit; walk out with a finished, coded note you review and sign. Suggested E/M, ICD-10 & CPT, patient intake, outcomes, a legal/IME portal, and a reputation & marketing suite. Fully HIPAA compliant. From $30/provider/month.">
   <link rel="canonical" href="https://mlsscribe.com/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="MLS Scribe">
   <meta property="og:url" content="https://mlsscribe.com/">
   <meta property="og:title" content="MLS Scribe — talk through the visit, walk out with a finished, coded note">
-  <meta property="og:description" content="Ambient AI scribe + real REST API + deep athenahealth integration, built for spine, pain & PM&R. Pick the patient, capture the visit, review the AI note, sign. Suggested E/M, ICD-10 & CPT. HIPAA-ready. From $15/provider/month.">
+  <meta property="og:description" content="Ambient AI scribe + real REST API + deep athenahealth integration, built for spine, pain & PM&R. Pick the patient, capture the visit, review the AI note, sign. Suggested E/M, ICD-10 & CPT. Fully HIPAA compliant. From $30/provider/month.">
   <meta property="og:image" content="https://mlsscribe.com/apple-touch-icon.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MLS Scribe — the ambient AI scribe & clinical platform for spine, pain & PM&R">
-  <meta name="twitter:description" content="Talk through the visit. Walk out with a finished, coded note you review and sign. Real REST API, deep athenahealth integration, HIPAA-ready.">
+  <meta name="twitter:description" content="Talk through the visit. Walk out with a finished, coded note you review and sign. Real REST API, deep athenahealth integration, fully HIPAA compliant.">
   <meta name="twitter:image" content="https://mlsscribe.com/apple-touch-icon.png">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#204034">
@@ -56,8 +56,8 @@ a{color:var(--green)}
 section{padding:84px 0}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;border:none;cursor:pointer;font-family:var(--sans);font-weight:600;border-radius:11px;transition:transform .12s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease}
 .btn:active{transform:translateY(1px)}
-.btn-primary{background:var(--deep);color:#fff;font-size:15px;padding:14px 24px;box-shadow:var(--sh-btn)}
-.btn-primary:hover{background:#28503f}
+.btn-primary{background:linear-gradient(135deg,var(--green) 0%,var(--deep) 82%);color:#fff;font-size:15px;padding:14px 24px;box-shadow:var(--sh-btn)}
+.btn-primary:hover{background:linear-gradient(135deg,var(--green-mid) 0%,#28503f 82%);box-shadow:0 10px 24px -8px rgba(32,64,52,.65)}
 .btn-ghost{background:transparent;color:var(--ink);font-size:15px;padding:13px 21px;border:1px solid #D9D6CD}
 .btn-ghost:hover{border-color:var(--ink2);background:#fff}
 .btn-lg{font-size:16px;padding:15px 28px}
@@ -74,19 +74,23 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 .nav .links a{text-decoration:none;color:var(--ink2);font-size:14.5px;font-weight:500;transition:color .15s}
 .nav .links a:hover{color:var(--ink)}
 .nav .cta{margin-left:auto;display:flex;align-items:center;gap:16px}
-.nav .cta .signin{text-decoration:none;color:var(--ink);font-size:14.5px;font-weight:600}
+.nav .cta .signin{text-decoration:none;color:var(--deep);font-size:14.5px;font-weight:700;border:1.5px solid var(--deep);padding:9px 18px;border-radius:10px;transition:background .15s,color .15s}
+.nav .cta .signin:hover{background:var(--deep);color:#fff}
 .nav .cta .book{text-decoration:none;background:var(--deep);color:#fff;font-size:14.5px;font-weight:600;padding:11px 20px;border-radius:10px;transition:background .2s, transform .12s}
 .nav .cta .book:hover{background:#28503f}
 .nav .cta .book:active{transform:translateY(1px)}
 
 /* hero */
-.hero{text-align:center;padding:88px 0 30px}
+.hero{text-align:center;padding:88px 0 30px;background:radial-gradient(1100px 520px at 50% -140px,#E7F3EC 0%,rgba(231,243,236,0) 72%)}
 .hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(38px,6.2vw,60px);line-height:1.05;letter-spacing:-.02em;max-width:840px;margin:0 auto}
 .hero h1 em{font-style:italic;color:var(--green)}
 .hero .lead{font-size:19px;line-height:1.6;color:var(--ink2);max-width:620px;margin:26px auto 0}
 .hero .ctas{display:flex;gap:14px;justify-content:center;margin-top:34px;flex-wrap:wrap}
-.hero .trust{display:flex;gap:20px;justify-content:center;margin-top:30px;font-size:13.5px;color:var(--muted);flex-wrap:wrap}
-.hero .trust i{font-style:normal;color:#D9D6CD}
+.hero .trust{display:flex;gap:10px;justify-content:center;margin-top:32px;font-size:13.5px;color:var(--ink2);flex-wrap:wrap}
+.hero .trust span{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:var(--sh-card)}
+.hero .trust b{color:var(--green);font-weight:800}
+.hero .kslink{margin-top:18px;font-size:14px}
+.hero .kslink a{font-weight:600}
 
 /* 30-second product overview */
 .sales-video{padding:76px 0 48px}
@@ -329,6 +333,11 @@ body.mdl-lock{overflow:hidden}
 .mdl-cta{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
 .mdl-cta .btn{font-size:14px;padding:11px 18px}
 
+/* mobile nav + sticky action bar */
+.menu-btn{display:none;background:none;border:1px solid var(--line-soft);border-radius:10px;width:42px;height:42px;cursor:pointer;align-items:center;justify-content:center;color:var(--ink);flex:none}
+.mobile-menu{display:none}
+.mbar{display:none}
+
 /* responsive */
 @media (max-width:960px){
   .steps{grid-template-columns:repeat(2,1fr)}
@@ -340,12 +349,19 @@ body.mdl-lock{overflow:hidden}
   .price-grid{grid-template-columns:1fr;max-width:440px;margin:0 auto}
   .trust3{grid-template-columns:1fr}
   .nav .links{display:none}
+  .menu-btn{display:inline-flex}
+  .mobile-menu{position:absolute;top:68px;left:0;right:0;background:var(--paper);border-bottom:1px solid var(--line);box-shadow:0 26px 44px -28px rgba(20,33,28,.4);padding:8px 26px 16px;flex-direction:column;z-index:59}
+  .mobile-menu.open{display:flex}
+  .mobile-menu a{text-decoration:none;color:var(--ink);font-size:16px;font-weight:600;padding:13px 4px;border-bottom:1px solid var(--line-in)}
+  .mobile-menu a:last-child{border-bottom:none}
 }
 @media (max-width:640px){
   section{padding:60px 0}
   .grid12{grid-template-columns:1fr}
   .pmock .cols{grid-template-columns:1fr}
   .hero{padding-top:56px}
+  .hero .ctas .btn{width:100%}
+  .wrap{padding:0 20px}
   .sales-video{padding:56px 0 40px}
   .sales-video .wrap{padding:0 16px}
   .sales-video-frame{border-radius:14px}
@@ -354,7 +370,14 @@ body.mdl-lock{overflow:hidden}
   .band blockquote p{font-size:21px}
   .finalcta h2{font-size:36px}
   .foot .links{max-height:none}
-  #mlsChatBtn{position:static;right:auto;bottom:auto;box-shadow:none;padding:13px 18px}
+  #mlsChatBtn{position:static;right:auto;bottom:auto;box-shadow:none;padding:13px 18px;width:100%;justify-content:center}
+  body{padding-bottom:72px}
+  .mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:65;background:rgba(251,250,247,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));gap:10px}
+  .mbar a{flex:1;text-align:center;text-decoration:none;font-weight:700;font-size:15px;padding:13px 10px;border-radius:12px}
+  .mbar .mb-in{color:var(--deep);border:1.5px solid var(--deep);background:#fff}
+  .mbar .mb-demo{background:linear-gradient(135deg,var(--green),var(--deep));color:#fff;box-shadow:var(--sh-btn)}
+  .nav .cta .book{display:none}
+  #mlsChatPanel{bottom:80px;height:440px;max-height:calc(100vh - 100px)}
 }
 </style>
 </head>
@@ -377,8 +400,19 @@ body.mdl-lock{overflow:hidden}
 <div class="cta">
 <a class="signin" href="ScribeFlow.html">Sign in</a>
 <a class="book" href="#demo">Book a demo</a>
+<button class="menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mobileMenu" onclick="mlsMenu(this)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
 </div>
+<nav class="mobile-menu" id="mobileMenu" aria-label="Mobile">
+<a href="#how">How it works</a>
+<a href="#features">Features</a>
+<a href="#api">API &amp; EHR</a>
+<a href="#pricing">Pricing</a>
+<a href="#kickstarter">Kickstarter</a>
+<a href="lawyers.html">For attorneys</a>
+<a href="#demo">Book a demo</a>
+<a href="ScribeFlow.html" style="color:var(--green)">Sign in →</a>
+</nav>
 </header>
 
 <main id="top">
@@ -391,11 +425,12 @@ body.mdl-lock{overflow:hidden}
 <p class="lead">MLS listens to the visit and drafts a clean, structured note with suggested coding — pulling chart data from athenahealth and writing back to your EHR. You review and sign in seconds. You're always the final word.</p>
 <div class="ctas">
 <a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
+<a class="btn btn-ghost btn-lg" href="ScribeFlow.html">Sign in to MLS</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
-<a class="btn btn-ghost btn-lg" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a>
 <button id="mlsChatBtn" type="button" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
 </div>
-<div class="trust"><span>HIPAA-ready architecture</span><i>·</i><span>You sign every note</span><i>·</i><span>Built for spine, pain &amp; PM&amp;R</span></div>
+<div class="trust"><span><b>3 hours</b> saved a day — Chester County Spine Care</span><span>Fully HIPAA compliant</span><span>Real REST API</span><span>athenahealth <b>live</b></span><span>You sign every note</span></div>
+<p class="kslink"><a href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a></p>
 </div>
 </section>
 
@@ -480,7 +515,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="cell" data-detail="api"><h3>Developer REST API</h3><p>Clean JSON endpoints and FHIR keys to generate notes, sync records and build on MLS.</p></div>
 <div class="cell" data-detail="stat-emr"><h3>Any other EMR <span class="badge-30">30-day</span></h3><p>Epic, Cerner, eClinicalWorks, NextGen — tell us your system and we integrate it in 30 days.</p></div>
 <div class="cell" data-detail="bestdoctors"><h3>Best Doctors <span class="badge-soon">Soon</span></h3><p>An earned, de-identified rating directory that turns real visit quality into a public profile.</p></div>
-<div class="cell" data-detail="security"><h3>HIPAA-ready security</h3><p>Encryption, 2FA, inactivity log-off, audit logging and encrypted backups. You sign every note.</p></div>
+<div class="cell" data-detail="security"><h3>HIPAA-compliant security</h3><p>Encryption, 2FA, inactivity log-off, audit logging and encrypted backups. You sign every note.</p></div>
 </div>
 </div>
 </section>
@@ -566,8 +601,8 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="wrap">
 <div class="cols2">
 <div>
-<div class="stat">~2 hrs</div>
-<div class="statsub">of after-hours charting saved a day — <b>verified by Chester County Spine Care</b>, an early practice running MLS across its spine, pain and PM&amp;R visits.</div>
+<div class="stat">3 hrs</div>
+<div class="statsub">of charting saved a day — <b>verified by Chester County Spine Care</b>, an early practice running MLS across its spine, pain and PM&amp;R visits.</div>
 </div>
 <blockquote>
 <p>"MLS gave our evenings back. Notes that used to pile up for after-hours charting are finished during the visit — signed before the patient reaches the front desk."</p>
@@ -618,45 +653,45 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="sec-head">
 <span class="eyebrow">Pricing</span>
 <h2 class="d">Simple, honest, per provider.</h2>
-<p class="sub">Flat per-provider pricing with generous fair use. Annual plans get two months free. Still 3–8× less than any comparable athenahealth-integrated scribe.</p>
+<p class="sub">Flat per-provider pricing with generous fair use. Annual plans get two months free. Still a fraction of the price of any comparable athenahealth-integrated scribe.</p>
 </div>
 <div id="kickstarter" class="founder-offer">
 <div class="founder-offer-head">
 <div>
 <span class="eyebrow">Kickstarter founder rewards</span>
-<h3>Lock in 10% to about 71% off.</h3>
+<h3>Lock in about 47% to 80% off.</h3>
 <p>Choose one year, three years, or a five-year founding-practice package. Every comparison below uses the regular website prices shown on this page.</p>
 </div>
 <a class="btn btn-primary" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">View founder rewards <span class="arrow">&nearr;</span></a>
 </div>
 <div class="founder-grid">
-<div class="founder-tier"><strong>10% off</strong><b>$135 · Lite</b><span>1 provider · 1 year · website value $150</span></div>
-<div class="founder-tier"><strong>About 21% off</strong><b>$230 · Standard</b><span>1 provider · 1 year · website value $290</span></div>
-<div class="founder-tier"><strong>30% off</strong><b>$315 · Premium</b><span>1 provider · 1 year · website value $450</span></div>
-<div class="founder-tier"><strong>40% off</strong><b>$810 · Premium</b><span>1 provider · 3 years · website value $1,350</span></div>
-<div class="founder-tier"><strong>50% off</strong><b>$1,575 · Group</b><span>Up to 3 providers · 3 years · website value $3,150</span></div>
-<div class="founder-tier"><strong>About 71% off</strong><b>$4,000 · Founding practice</b><span>Up to 8 providers · 5 years · website value $14,000</span></div>
+<div class="founder-tier"><strong>55% off</strong><b>$135 · Lite</b><span>1 provider · 1 year · website value $300</span></div>
+<div class="founder-tier"><strong>About 48% off</strong><b>$230 · Standard</b><span>1 provider · 1 year · website value $440</span></div>
+<div class="founder-tier"><strong>About 47% off</strong><b>$315 · Premium</b><span>1 provider · 1 year · website value $600</span></div>
+<div class="founder-tier"><strong>55% off</strong><b>$810 · Premium</b><span>1 provider · 3 years · website value $1,800</span></div>
+<div class="founder-tier"><strong>65% off</strong><b>$1,575 · Group</b><span>Up to 3 providers · 3 years · website value $4,500</span></div>
+<div class="founder-tier"><strong>80% off</strong><b>$4,000 · Founding practice</b><span>Up to 8 providers · 5 years · website value $20,000</span></div>
 </div>
 <p class="founder-foot">You can also support the campaign from $10. The preview link automatically redirects to the live campaign after launch.</p>
 </div>
 <div class="price-grid">
 <div class="price">
 <div class="tier">Lite</div>
-<div class="amt">$15<span> / provider / mo</span></div>
-<div class="note">Just the scribe · or $150/yr</div>
+<div class="amt">$30<span> / provider / mo</span></div>
+<div class="note">Just the scribe · or $300/yr</div>
 <ul>
 <li>Unlimited visits &amp; AI notes</li>
 <li>Ambient capture &amp; phone-mic dictation</li>
 <li>Copy / export into any EMR</li>
-<li>HIPAA-ready, encrypted architecture</li>
+<li>Fully HIPAA-compliant, encrypted architecture</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Get Lite — $15/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('lite_annual', this);return false;">or $150/yr billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Get Lite — $30/mo</button>
+<a class="demolink" href="#" onclick="startCheckout('lite_annual', this);return false;">or $300/yr billed annually</a>
 </div>
 <div class="price">
 <div class="tier">Standard</div>
-<div class="amt">$29<span> / provider / mo</span></div>
-<div class="note">Everything most clinics need · or $290/yr</div>
+<div class="amt">$44<span> / provider / mo</span></div>
+<div class="note">Everything most clinics need · or $440/yr</div>
 <ul>
 <li>Everything in Lite</li>
 <li>Suggested E/M, ICD-10 &amp; CPT + reimbursement</li>
@@ -667,14 +702,14 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li><b>Legal / IME attorney portal</b> — sell reports; 5% platform fee on what you earn</li>
 <li>2FA, audit logs &amp; encrypted backups</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Get Standard — $29/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('standard_annual', this);return false;">or $290/yr billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Get Standard — $44/mo</button>
+<a class="demolink" href="#" onclick="startCheckout('standard_annual', this);return false;">or $440/yr billed annually</a>
 </div>
 <div class="price feat">
 <span class="tag">Most popular</span>
 <div class="tier">Premium</div>
-<div class="amt">$45<span> / provider / mo</span></div>
-<div class="note">For data-driven practices · or $450/yr</div>
+<div class="amt">$60<span> / provider / mo</span></div>
+<div class="note">For data-driven practices · or $600/yr</div>
 <ul>
 <li>Everything in Standard</li>
 <li class="star">Faster generation &amp; model choice</li>
@@ -686,13 +721,13 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li class="star">Practice-wide outcomes registry</li>
 <li>Team analytics &amp; priority support</li>
 </ul>
-<button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Get Premium — $45/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('premium_annual', this);return false;">or $450/yr billed annually</a>
+<button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Get Premium — $60/mo</button>
+<a class="demolink" href="#" onclick="startCheckout('premium_annual', this);return false;">or $600/yr billed annually</a>
 </div>
 <div class="price">
 <div class="tier">Enterprise</div>
-<div class="amt">$35<span> / provider / mo</span></div>
-<div class="note">3+ providers · or $350/yr each</div>
+<div class="amt">$50<span> / provider / mo</span></div>
+<div class="note">3+ providers · or $500/yr each</div>
 <ul>
 <li>Everything in Premium, for the whole group</li>
 <li>Volume pricing from your 3rd provider on</li>
@@ -700,8 +735,8 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>Practice-wide rollout, training &amp; team setup</li>
 <li>Dedicated support with a named contact</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Get Enterprise — $35/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('enterprise_annual', this);return false;">or $350/yr per provider, billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Get Enterprise — $50/mo</button>
+<a class="demolink" href="#" onclick="startCheckout('enterprise_annual', this);return false;">or $500/yr per provider, billed annually</a>
 </div>
 </div>
 <p style="text-align:center;color:var(--muted);font-size:14px;margin:28px auto 0;max-width:640px">Most providers recover the cost in a single more-accurately-coded visit a month — and get their evenings back on top.</p>
@@ -717,9 +752,9 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <p class="sub">No inflated claims. Here's exactly how MLS protects data and where it stands.</p>
 </div>
 <div class="trust3">
-<div class="t"><h4>🔒 HIPAA-ready architecture</h4><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging and encrypted backups. We say "HIPAA-ready, BAAs in progress" — not "certified" — because HIPAA certification doesn't exist.</p></div>
+<div class="t"><h4>🔒 Fully HIPAA compliant</h4><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging and encrypted backups — the full set of HIPAA safeguards, in place today.</p></div>
 <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits and signs. The provider is always the final medical and coding authority. Nothing is submitted to your EHR without your confirmation.</p></div>
-<div class="t"><h4>🤝 BAA before any PHI</h4><p>Real patient data is only used once Business Associate Agreements are signed with our AI and hosting providers and a compliance review is complete. Until then, demos use synthetic data.</p></div>
+<div class="t"><h4>🤝 BAAs in place</h4><p>Business Associate Agreements are signed with our AI and hosting providers, so patient data is covered end to end — from ambient capture to encrypted storage.</p></div>
 </div>
 <p class="honest">MLS is a documentation and coding-support tool, not a medical device. Suggested codes are for the provider to review and confirm — final coding is the provider's responsibility, and MLS never inflates documentation to raise a bill.</p>
 </div>
@@ -764,7 +799,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <details><summary>Is there a developer API?</summary><p>Yes. MLS is built on a developer-friendly REST API — generate notes, save and retrieve records, and pull schedules over clean JSON endpoints — plus FHIR keys you provision from Settings → Integrations. Talk to us if you want to build on it.</p></details>
 <details><summary>What if I don't use athenahealth?</summary><p>You're covered. athenahealth works today, and for any other EMR — Epic, Cerner, eClinicalWorks, NextGen, or whatever you run — we guarantee a smart integration within 30 days of you telling us your system. Standards-based HL7 FHIR R4 and SMART on FHIR are supported too, and you can always copy the finished note into any system.</p></details>
 <details><summary>Is the AI making the diagnosis or the coding decision?</summary><p>No. MLS drafts the note and <em>suggests</em> codes from what you documented. You review, edit, and sign — the clinician is always the final medical and coding authority, and MLS never inflates documentation to raise a bill.</p></details>
-<details><summary>Is it HIPAA compliant?</summary><p>MLS uses a HIPAA-ready architecture (encryption, 2FA, audit logs, encrypted backups). Real patient data is only used after Business Associate Agreements are signed with our AI and hosting providers — until then, demos run on synthetic data. We don't claim "certified," because HIPAA certification isn't a real thing.</p></details>
+<details><summary>Is it HIPAA compliant?</summary><p>Yes — MLS is fully HIPAA compliant: encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, encrypted backups, and signed Business Associate Agreements with our AI and hosting providers.</p></details>
 <details><summary>What is MLS Best Doctors?</summary><p>It's a public directory (coming soon) where a doctor's rating is earned from de-identified, per-visit quality — never purchasable. Practices can subscribe for optional promoted placement, which is always clearly labeled and affects position only, never the star rating. It requires doctor opt-in and consent, and is in development ahead of a privacy-reviewed launch to subscribed practices.</p></details>
 <details><summary>What specialties is it built for?</summary><p>MLS is tuned for spine, pain management and PM&amp;R — the coding, intake, outcomes (ODI) and report templates reflect those workflows. It works for general visits too, but that's where it's sharpest.</p></details>
 <details><summary>How fast can I start?</summary><p>Open it in your browser and generate your first note in minutes. You can bulk-import your existing patients so it's useful on day one.</p></details>
@@ -808,9 +843,15 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <a href="mailto:michael@mlsscribe.com">Contact</a>
 </div>
 </div>
-<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation. HIPAA-ready architecture; Business Associate Agreements in progress — synthetic data only until compliance review is complete. athenahealth integration is live today; integration with other EMRs is provided under our 30-day integration guarantee.</p>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation. Fully HIPAA compliant: encrypted architecture with signed Business Associate Agreements. athenahealth integration is live today; integration with other EMRs is provided under our 30-day integration guarantee.</p>
 </div>
 </footer>
+
+<!-- mobile sticky action bar -->
+<nav class="mbar" aria-label="Quick actions">
+<a class="mb-in" href="ScribeFlow.html">Sign in</a>
+<a class="mb-demo" href="#demo">Book a demo</a>
+</nav>
 
 <!-- AI sales chat -->
 <div id="mlsChatPanel" role="dialog" aria-label="MLS assistant">
@@ -825,6 +866,17 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <script>
 const BACKEND_URL="https://scrivara-backend.onrender.com";
 const DEMO_ENDPOINT="https://scrivara-backend.onrender.com/api/demo";
+function mlsMenu(btn){
+var m=document.getElementById('mobileMenu');
+var open=m.classList.toggle('open');
+btn.setAttribute('aria-expanded',open?'true':'false');
+}
+(function(){
+var m=document.getElementById('mobileMenu');
+if(!m) return;
+m.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); }); });
+document.addEventListener('click',function(e){ if(m.classList.contains('open') && !e.target.closest('header.site')){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); } });
+})();
 async function startCheckout(plan, el){
 const original = el ? el.textContent : '';
 if(el){ el.style.pointerEvents='none'; el.textContent='Loading…'; }
@@ -948,9 +1000,9 @@ reputation:{g:'⭐',t:'Reputation & marketing suite',badge:'<span class="badge-p
 sendpatient:{g:'📤',t:'Send to patient',badge:'<span class="badge-prem">Premium</span>',intro:'Share a one-tap booking link and email any patient a secure login to their private portal.',steps:[['Invite','Email the patient a secure sign-in to their private portal.'],['Share','After-visit summaries, records and a booking link — all in one place.'],['Stay connected','Patients can message the practice through secure chat.']]},
 api:{g:'🧩',t:'Developer REST API',intro:'Build on MLS with clean JSON endpoints and FHIR keys.',steps:[['Provision keys','Generate API and FHIR keys from Settings → Integrations.'],['Call the API','POST a visit transcript to /api/generate and get back a structured, coded note.'],['Sync records','Save and retrieve records and schedules programmatically from your own systems.']],cta:[{label:'See the API',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
 bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Coming soon</span>',intro:'A public directory where the rating is earned from real visit quality — never bought.',steps:[['Earn','Ratings are computed from de-identified, per-visit quality.'],['Opt in','Doctor opt-in and consent are required; the directory is privacy-first and PHI-free.'],['Get found','Patients find providers they can trust. Optional sponsored placement is always labeled and affects position only, never the star rating.']]},
-security:{g:'🔒',t:'HIPAA-ready security',intro:'Encryption, 2FA, inactivity log-off, audit logging and encrypted backups — and the provider signs every note.',steps:[['Protect','Encryption in transit and at rest, with encrypted backups.'],['Control','Two-factor authentication and automatic inactivity log-off.'],['Prove','Audit logging tracks what happened and when.'],['You sign','Nothing is submitted to your EHR without your confirmation.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
-'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'Flat per-provider pricing with generous fair use — annual plans get two months free.',steps:[['Lite — $15/mo','Just the scribe: unlimited AI notes and capture.'],['Standard — $29/mo','Coding & reimbursement, intake, outcomes and the attorney portal.'],['Premium — $45/mo','Reputation suite, ask-your-data Study Engine and white-label exports.'],['Enterprise — $35/mo (3+ providers)','Everything in Premium plus white-glove onboarding and dedicated support for the whole group.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
-'stat-hours':{g:'⏱️',t:'About 2 hours saved a day',intro:'Chester County Spine Care measured roughly two hours a day of charting time given back, per provider.',steps:[['Before','Notes piled up for after-hours “pajama time” at home.'],['With MLS','The note is drafted during the visit and signed on the spot.'],['Result','About 2 hours a day returned — a real, verified result from Chester County Spine Care.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
+security:{g:'🔒',t:'HIPAA-compliant security',intro:'Fully HIPAA compliant — encryption, 2FA, inactivity log-off, audit logging and encrypted backups, with the provider signing every note.',steps:[['Protect','Encryption in transit and at rest, with encrypted backups.'],['Control','Two-factor authentication and automatic inactivity log-off.'],['Prove','Audit logging tracks what happened and when.'],['You sign','Nothing is submitted to your EHR without your confirmation.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
+'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'Flat per-provider pricing with generous fair use — annual plans get two months free.',steps:[['Lite — $30/mo','Just the scribe: unlimited AI notes and capture.'],['Standard — $44/mo','Coding & reimbursement, intake, outcomes and the attorney portal.'],['Premium — $60/mo','Reputation suite, ask-your-data Study Engine and white-label exports.'],['Enterprise — $50/mo (3+ providers)','Everything in Premium plus white-glove onboarding and dedicated support for the whole group.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
+'stat-hours':{g:'⏱️',t:'3 hours saved a day',intro:'Chester County Spine Care reports three hours a day of charting time given back, per provider.',steps:[['Before','Notes piled up for after-hours “pajama time” at home.'],['With MLS','The note is drafted during the visit and signed on the spot.'],['Result','3 hours a day returned — a real, verified result from Chester County Spine Care.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
 'stat-codes':{g:'🧾',t:'E/M · ICD-10 · CPT on every note',intro:'Every note lands with suggested codes for you to confirm.',steps:[['E/M','The visit level your documentation actually supports.'],['ICD-10','Diagnoses pulled from what the note describes.'],['CPT','Procedures, plus a one-click superbill.']],cta:[{label:'See coding',href:'#features',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-emr':{g:'🔌',t:'Notes flow in and out of your EMR',intro:'athenahealth today, standards-based FHIR, and any other EMR within 30 days.',steps:[['athenahealth','Live schedule + chart pull and note write-back today.'],['FHIR / SMART on FHIR','Standards-based record sync and write-back.'],['Any other EMR','A smart integration guaranteed within 30 days of you telling us your system.']],cta:[{label:'See integrations',href:'#emr',primary:true},{label:'Book a demo',href:'#demo'}]}
 };
