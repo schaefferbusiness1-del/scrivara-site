@@ -1722,6 +1722,42 @@
     return lines.join('\n');
   }
 
+  /* ---------- summary-content cleaner ----------
+     Pulled charts arrive with bullets, duplicate rows, EMR boilerplate
+     ("Reviewed", "See note") and stray blank lines. Normalize list fields for
+     DISPLAY only — the stored chart fields are never modified. Splits on
+     newlines / bullets / semicolons (never commas, which live inside med
+     doses), drops empty and boilerplate-only entries, de-duplicates
+     case-insensitively keeping the first spelling, and bounds the list. */
+  var CLEAN_BOILER = /^(reviewed|reconciled|see note|see chart|none|n\/a|no data|unknown|-+|—+|\.+)$/i;
+  function cleanListField(s, opts) {
+    opts = opts || {};
+    s = S(s);
+    if (!s.trim()) return '';
+    var parts = s.split(/\r?\n|;|(?:^|\s)[•·▪◦]\s*|(?:^|\n)\s*[-*]\s+/);
+    var seen = {}, out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var item = trim(String(parts[i] || '').replace(/\s+/g, ' '));
+      if (!item) continue;
+      if (CLEAN_BOILER.test(item) && !(opts.keepNegatives && /^(nkda|no known)/i.test(item))) continue;
+      var key = item.toLowerCase().replace(/[.\s]+$/, '');
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(item);
+    }
+    var MAX = opts.max || 24;
+    if (out.length > MAX) {
+      var extra = out.length - MAX;
+      out = out.slice(0, MAX);
+      out.push('+' + extra + ' more');
+    }
+    return out.join('; ');
+  }
+  function cleanNarrative(s) {
+    /* collapse runs of blank lines and trailing spaces in free-text summaries */
+    return S(s).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   function buildPrepSummaryForPatient(p) {
     if (!p) return '';
     var appt = apptContext(p);
@@ -1729,9 +1765,10 @@
     return buildPrepSummary({
       name: p.name, dob: p.dob, age: computeAge(p.dob), sex: p.sex || p.gender, mrn: p.mrn,
       reason: appt.reason, apptTime: appt.time,
-      problems: p.problems, meds: p.meds, allergies: p.allergies,
+      problems: cleanListField(p.problems), meds: cleanListField(p.meds),
+      allergies: cleanListField(p.allergies, { keepNegatives: true }),
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
-      historySummary: p.athenaHistorySummary || '', careFlags: p.careFlags,
+      historySummary: cleanNarrative(p.athenaHistorySummary || ''), careFlags: cleanListField(p.careFlags),
       visitCount: lv.count, lastDate: lv.lastDate, lastExcerpt: lv.lastExcerpt,
       outsideText: outsideRecordsText(p)
     });
@@ -1886,7 +1923,9 @@
     // just a bare '1' (which would let a stale edit for patient A survive a
     // switch to patient B and get saved onto B - see editingGuardOk() above).
     if (!editingGuardOk(host, p)) return;
-    var val = trim(p.careFlags);
+    /* read view shows the cleaned list (deduped, boilerplate dropped); the
+       Edit textarea still opens the raw stored field untouched */
+    var val = cleanListField(p.careFlags);
     host.innerHTML =
       '<h3>🚩 Key risks &amp; reminders <button class="edit" onclick="window.__mlsEpEditRisks()">✎ Edit</button></h3>' +
       '<div class="body' + (val ? '' : ' empty-txt') + '" id="mlsEpRisksBody">' +
@@ -31581,7 +31620,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b321';
+  window.__MLS_AV = window.__MLS_AV || 'b324';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31872,7 +31911,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b321';
+  var MLS_APP_BUILD='2026-07-16-b324';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38801,7 +38840,7 @@
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260716vt102';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260716rd312';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260716rd313';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
@@ -40125,7 +40164,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.1.0, mic chip on focus, insert-at-caret, direct toggleFor API for the easy lane, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
 ;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716sr4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260716pr202';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/Send owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260716pr203';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/Send owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260714audit1';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calm loading vocabulary: slim working bar driven by real /api fetches + .mls-skel shimmer (window.__mlsLoadingCalm lb-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_staff_hub.js"]'))return;var s=document.createElement('script');s.src='feat_mls_staff_hub.js?v=20260714sh2';s.setAttribute('data-mls-asset','feat_mls_staff_hub.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE staff-account system: real receptionist + restricted nursing login provisioning (window.__mlsStaffHub sh-1.1.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260713cmd1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */

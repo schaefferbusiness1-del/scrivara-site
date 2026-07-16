@@ -51,10 +51,20 @@ assert.strictEqual(model.comparison.groups[1].pairedPainPatientCount, 1);
 assert.strictEqual(model.comparison.groups[1].meanFirstToLastPainChange, -1);
 assert.strictEqual(model.comparison.overlapPatients, 1, 'patients in both groups must not be counted in either arm');
 assert.strictEqual(model.comparison.unmatchedPatients, 0);
-assert.match(JSON.stringify(model.sections), /lumbar injections: 1 mutually exclusive patients; 1 matching visit records/);
-assert.match(JSON.stringify(model.sections), /epidural injections: 1 mutually exclusive patients; 1 matching visit records/);
-assert.match(JSON.stringify(model.sections), /lumbar injections[^\"]*mean included visits\/patient 2\.0[^\"]*documented pain scores 2 \(mean 6\.0\/10\)[^\"]*first-to-last pain change -4\.0 points across 1 patients/);
-assert.match(JSON.stringify(model.sections), /epidural injections[^\"]*documented pain scores 2 \(mean 5\.5\/10\)[^\"]*first-to-last pain change -1\.0 points across 1 patients/);
+/* sr-2.1.0 presents the mutually exclusive arms as a structured table
+   instead of prose. Assert the same facts against the table rows. */
+const comparisonSection = model.sections.find(s => s.key === 'comparison');
+assert(comparisonSection && comparisonSection.table, 'comparison arms table is missing');
+const armRows = comparisonSection.table.rows;
+const lumbarRow = armRows.find(r => r[0] === 'lumbar injections');
+const epiduralRow = armRows.find(r => r[0] === 'epidural injections');
+assert(lumbarRow && lumbarRow[1] === '1' && lumbarRow[2] === '1', 'lumbar arm must show 1 mutually exclusive patient and 1 matching visit');
+assert(epiduralRow && epiduralRow[1] === '1' && epiduralRow[2] === '1', 'epidural arm must show 1 mutually exclusive patient and 1 matching visit');
+assert.strictEqual(lumbarRow[4], '6.0', 'lumbar arm mean documented pain must be 6.0');
+assert.match(lumbarRow[5], /^-4\.0/, 'lumbar arm first-to-last pain change must be -4.0');
+assert.strictEqual(epiduralRow[4], '5.5', 'epidural arm mean documented pain must be 5.5');
+assert.match(epiduralRow[5], /^-1\.0/, 'epidural arm first-to-last pain change must be -1.0');
+assert.match(JSON.stringify(model.sections), /Overlap excluded: 1 patients/, 'both-group patients must be disclosed and excluded');
 assert.match(JSON.stringify(model.sections), /do not establish comparative effectiveness or causation/i);
 
 console.log('study-natural-request-comparison: ok');

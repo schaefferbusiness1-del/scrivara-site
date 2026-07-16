@@ -3,9 +3,9 @@
   'use strict';
 
   var prior = W.__mlsPatientReach;
-  if (prior && prior.version === '2.0.2') return;
+  if (prior && prior.version === '2.0.3') return;
 
-  var VERSION = '2.0.2';
+  var VERSION = '2.0.3';
   var REVIEW_URL = '/review-finder.html';
   var KINDS = { reviews: 1, send: 1 };
   var labels = {
@@ -58,7 +58,7 @@
     var style = make('style', { id: 'mls-pr-v2-css' });
     style.textContent = [
       '#mlsPatientReachWorkspace[hidden],#mlsPatientReachDialog[hidden],#mlsPatientReachParking[hidden]{display:none!important}',
-      '#mlsRdNav [data-mls-pr-tab],.mainnav [data-mls-pr-tab]{box-sizing:border-box;appearance:none;border:0;font:inherit;cursor:pointer}',
+      '#mlsRdNav [data-mls-pr-tab],.mainnav [data-mls-pr-tab]{box-sizing:border-box;appearance:none;border:0;font:inherit;cursor:pointer;flex:0 0 auto!important;min-height:38px;max-height:44px}',
       '#mlsRdNav [data-mls-pr-tab] .mls-pr-prem,.mainnav [data-mls-pr-tab] .mls-pr-prem{margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:999px;background:#EAF1EE;color:#2E6A4B}',
       '#mlsPatientReachWorkspace{box-sizing:border-box;width:100%;min-height:calc(100vh - 120px);padding:22px;color:#1A211C;background:#FBFAF7}',
       '.mls-pr-page-head{max-width:1180px;margin:0 auto 14px;padding:0 2px}',
@@ -341,7 +341,13 @@
   }
 
   function navHost() {
-    return byId('mlsRdNav') || (byId('nav_help') && byId('nav_help').parentNode) || byId('mainnav') || D.querySelector('.mainnav');
+    /* 2.0.3: mount INSIDE the rail's .mainnav list, never as a direct child of
+       the fixed-height #mlsRdNav flex column. The base app's .navtab{flex:1}
+       (from the old horizontal tab bar) made direct rail children stretch to
+       fill the leftover rail height — the giant Reviews / Send blocks. */
+    var rail = byId('mlsRdNav');
+    var railList = rail ? rail.querySelector('.mainnav') : null;
+    return railList || (byId('nav_help') && byId('nav_help').parentNode) || byId('mainnav') || D.querySelector('.mainnav') || rail;
   }
   function ensureTab(kind) {
     var id = 'mlsPtab_' + kind, old = byId(id), host = navHost(), tab;

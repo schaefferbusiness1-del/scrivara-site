@@ -1,4 +1,4 @@
-/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.1.2 "Editorial Calm")
+/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.1.3 "Editorial Calm")
  * =====================================================================
  *  MLSscribe 2026 GROUND-UP reskin v3 -- calm, premium, doctor-first.
  *  Replaces v2's dark-navy top-tab shell with the Editorial Calm shell:
@@ -25,7 +25,7 @@
 ;(function () {
   "use strict";
   try { if (window.__mlsRedesign && window.__mlsRedesign.installed) return; } catch (e) { return; }
-  var VERSION = "3.1.2", ASSET = "feat_mls_redesign.js";
+  var VERSION = "3.1.3", ASSET = "feat_mls_redesign.js";
   var FONT_ID = "mlsRdFont", STYLE_ID = "mlsRdStyle", CLS = "mls-redesign";
   var FONT_HREF = "fonts/fonts.css"; /* self-hosted Newsreader + Public Sans */
   var _obs = null, _lifeObs = null, _observedRoot = null, _lifeRoot = null, _t = [], _schedT = null;
@@ -296,7 +296,13 @@
       if(!nm) nm=localStorage.getItem('mls_provider_name')||localStorage.getItem('mls_name')||localStorage.getItem('providerName');
       if(!nm&&window.bkUser&&window.bkUser.name) nm=window.bkUser.name;
       if(!nm){ var w=$('whoLabel'); if(w&&w.textContent.trim()) nm=w.textContent.trim(); }
-      if(nm){ name=nm; var pp=nm.trim().split(/\s+/); initials=(((pp[0]||'')[0]||'')+((pp[pp.length-1]||'')[0]||'')).toUpperCase()||'MS'; }
+      if(nm){ name=nm;
+        /* initials from the first alphanumeric of the first/last words only —
+           indexing [0] on a word that starts with an emoji (e.g. a "👤 ..."
+           label) splits the surrogate pair and renders a broken � glyph */
+        var pp=nm.trim().split(/\s+/).map(function(w){ var m=w.match(/[A-Za-z0-9]/); return m?m[0]:''; }).filter(Boolean);
+        initials=((pp[0]||'')+(pp.length>1?pp[pp.length-1]:'')).toUpperCase()||'MS';
+      }
       try{ if(window.bkUser&&window.bkUser.email) sub=window.bkUser.email; }catch(e){}
     }catch(e){}
     if(sub&&sub.length>24) sub=sub.slice(0,23)+'…';

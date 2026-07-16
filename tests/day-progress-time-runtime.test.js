@@ -9,7 +9,10 @@ const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const dayProgress = fs.readFileSync(path.join(root, 'feat_mls_dayprogress.js'), 'utf8');
 
-const helperStart = app.indexOf('function _fmtApptTime(v)');
+/* start at the shared memoized-formatter cache so the extracted helpers run
+   exactly the shipped code path (b322: _fmtApptTime formats through
+   _mlsTzFmt instead of constructing an Intl formatter per call) */
+const helperStart = app.indexOf('var _mlsTzFmtCache={};');
 const helperEnd = app.indexOf('function _acctWallToUtcIso', helperStart);
 assert(helperStart >= 0 && helperEnd > helperStart, 'canonical appointment display helpers were not found');
 
@@ -21,6 +24,7 @@ const context = {
   String,
   isNaN,
   _acctTz: () => 'America/New_York',
+  _calPad: n => ('0' + n).slice(-2),
   _acctTodayKey: () => '2026-07-15',
   _acctDateKeyOf: d => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'

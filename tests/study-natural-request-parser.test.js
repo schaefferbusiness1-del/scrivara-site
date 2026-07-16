@@ -4,7 +4,7 @@ const assert = require('assert');
 const path = require('path');
 const study = require(path.join(__dirname, '..', 'feat_mls_study_request.js'));
 
-assert.strictEqual(study.version, 'sr-1.0.0');
+assert.strictEqual(study.version, 'sr-2.1.0');
 
 const outcomes = study.parseStudySpec(
   'Build a 30 page retrospective outcomes study of patients who received lumbar epidural injections in the last 12 months',
@@ -35,8 +35,9 @@ const exact = study.parseStudySpec(
 assert.strictEqual(exact.studyType, 'volume');
 assert.strictEqual(exact.cohort.mode, 'all');
 assert.deepStrictEqual(exact.range, { kind: 'dates', from: '2026-01-01', to: '2026-06-30' });
-assert.strictEqual(exact.targetPages, 30, 'the hard report cap must be 30 pages');
-assert.ok(exact.notes.some((n) => /capped at 30/i.test(n)));
+/* sr-2.0.0 raised the evidence-supported hard cap from 30 to 60 pages */
+assert.strictEqual(exact.targetPages, 60, 'the hard report cap must be 60 pages');
+assert.ok(exact.notes.some((n) => /capped at 60/i.test(n)));
 
 const vague = study.parseStudySpec('make a study');
 assert.strictEqual(vague.ok, false);
