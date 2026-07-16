@@ -198,7 +198,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.7.1');
+assert(api && api.version === 'si-1.7.2');
 
 (async () => {
   const bootstrapDate = '2026-07-22';
@@ -452,7 +452,10 @@ assert(api && api.version === 'si-1.7.1');
   assert.strictEqual(unproven.patients[0].organized, false);
   assert.strictEqual(unproven.patients[0].chartReason, 'chart-coverage-unproven');
   assert.strictEqual(chartSaves, 0, 'unproven chart coverage was saved');
-  assert.strictEqual(assistCalls, 1, 'stale imported-history marker skipped the explicit pull');
+  /* si-1.7.2: a non-timeout chart failure performs exactly ONE bounded
+     in-batch open+verify retry (2 fresh reads total, never more). */
+  assert.strictEqual(assistCalls, 2, 'unproven chart read must retry exactly once (fresh open+verify), never zero or more');
+  assert.strictEqual(unproven.patients[0].chartRetried, true, 'chart retry receipt missing');
 
   assistMode = 'complete';
   const proven = await api._runHistoryBatch([historyRow], [], () => {});
@@ -461,7 +464,7 @@ assert(api && api.version === 'si-1.7.1');
   assert.strictEqual(proven.patients[0].visitsCoverageComplete, true);
   assert.strictEqual(proven.patients[0].expectedVisits, proven.patients[0].parsedVisits);
   assert.strictEqual(chartSaves, 1);
-  assert.strictEqual(assistCalls, 2, 'every explicit pull must perform a fresh chart read');
+  assert.strictEqual(assistCalls, 3, 'every explicit pull must perform a fresh chart read (2 from the retried unproven batch + 1 clean)');
 
   console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, and full visit-reader receipt');
 })().catch(err => { console.error(err); process.exit(1); });

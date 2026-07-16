@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.1";
+  var VERSION = "si-1.7.2";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1843,16 +1843,40 @@
            "Pulled from Athena" marker is not a coverage receipt and may be
            stale or partial, so it can never short-circuit this batch. */
         one.organized = false;
-        try {
-          var chartReadStartedAt = patientReadStartedAt;
-          var chartRequestId = patientRequestId + "-chart";
-          var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
-          var rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
-          var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
-          var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse");
-           one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
-          one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
-        } catch (chartErr) { one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120); if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes; if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
+        /* Live 2026-07-16 (si-1.7.2): a stale Athena tab can make the whole
+           chart OPEN land on the previous patient (wrong-chart / DOB-MRN proof
+           failures). One bounded in-batch retry re-runs the full open+verify;
+           every identity gate runs again from scratch. Timeouts never retry
+           (they stop the batch), and the retry window is budgeted against the
+           BATCH deadline so a second attempt genuinely fits. */
+        var rd = null, chartAttempt = 0;
+        while (true) {
+          chartAttempt++;
+          try {
+            var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
+            var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
+            var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
+            rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
+            var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
+            var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : ""));
+            one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
+            one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
+            one.chartReason = "";
+            break;
+          } catch (chartErr) {
+            one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120);
+            if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes;
+            if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; break; }
+            if (chartAttempt < 2 && Date.now() + 300000 < batchDeadlineAt) {
+              patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+              one.deadlineAt = patientDeadlineAt;
+              one.chartRetried = true;
+              await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
+              continue;
+            }
+            break;
+          }
+        }
         /* User preference: pull the six-card chart history WITHOUT opening
            every encounter body (much faster day prep). Default ON (full
            visits). Skipping is recorded honestly on the receipt — a skipped
@@ -1881,7 +1905,21 @@
               vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
               if (vr && vr.ok) break;
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
-              if (visitsAttempt < 2 && /same-frame-name-mismatch/.test(vErrText) && Date.now() + 210000 < patientDeadlineAt) {
+              if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {
+                /* Live 2026-07-16 (si-1.7.2): a bare visits re-read is NOT
+                   enough when the whole tab kept the previous patient (run 2
+                   p1: both attempts read the same stale 38-row list). Re-run
+                   the exact chart OPEN+VERIFY first so the re-read starts from
+                   a proven fresh chart; the per-patient window is re-budgeted
+                   against the batch deadline so the second attempt fits.
+                   Every identity gate runs again in full. */
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                one.deadlineAt = patientDeadlineAt;
+                one.visitsChartReopened = true;
+                try {
+                  var reopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
+                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                } catch (reopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
               }

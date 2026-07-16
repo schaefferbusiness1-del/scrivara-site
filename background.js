@@ -8375,6 +8375,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         iframeContract: !!(surfaceIframe && /encounter/i.test(surfaceSrc) && /summary/i.test(surfaceSrc) && /(?:\?|&)FROMSTREAMLINED=/i.test(surfaceSrc) && /(?:\?|&)CROSSFRAMEID=/i.test(surfaceSrc))
       };
     }
+    if (op === 'slideoutDetail') {
+      /* Live 2026-07-16 CONFIRMED by run-2 forensics: appointment-type rows
+         (est/post/epnp) render their clinical body directly in the slideout
+         DOM while the embedded classic_summary iframe never navigates (pre/
+         post content hashes identical on every such row). Read that DOM body
+         as the row's honest full detail. Fail-closed: the read-binding marker
+         must match the exact expected row (set by the bound click), the
+         slideout must be open (it was proven CLOSED before our click, so any
+         open slideout is ours), the text must read clinical, and it must
+         differ from the frozen index text. txt() never crosses the iframe's
+         document boundary, so a stale iframe can never leak another
+         encounter's text into this body. */
+      var sdMarker = null;
+      try { sdMarker = window.__mlsVisitReadBinding || null; } catch (eSdM) {}
+      if (!sameBinding(sdMarker, expectedBinding)) return { raw: '', len: 0, fullDetail: false, reason: 'slideout-binding-mismatch', binding: expectedBinding || null };
+      var sdOpen = null;
+      try { sdOpen = document.querySelector('.slideout.chart-component.slideout-open'); } catch (eSdF) {}
+      if (!sdOpen) return { raw: '', len: 0, fullDetail: false, reason: 'slideout-not-open', binding: expectedBinding || null };
+      var sdRaw = txt(sdOpen);
+      var sdNorm = String(sdRaw || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!clinicalBody(sdRaw)) return { raw: '', len: sdNorm.length, fullDetail: false, reason: 'slideout-body-not-clinical', binding: expectedBinding || null };
+      if (hashText(sdNorm) === expectedBinding.indexTextHash) return { raw: '', len: sdNorm.length, fullDetail: false, reason: 'slideout-body-equals-index', binding: expectedBinding || null };
+      var sdDate = sdRaw.match(DATE_RE);
+      return {
+        date: (sdDate && sdDate[1]) || (expectedBinding && expectedBinding.date) || '', type: '', raw: sdRaw,
+        cpt: codes(sdRaw, CPT_RE), icd10: codes(sdRaw, ICD_RE), len: sdRaw.length,
+        observedLen: sdNorm.length, minAcceptedLen: Math.max(60, Number(cfg.minRealLen || 60)),
+        fullDetail: true, indexOnly: false, binding: expectedBinding || null,
+        frameContract: false, slideoutBody: true, bodyMinimal: false, sectionComplete: true
+      };
+    }
     if (op === 'slideoutProbe') {
       /* REDACTED forensics for a row whose child frame never refreshed: what
          does the OPEN slideout itself render outside the iframe? Lengths,
@@ -9092,6 +9123,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 var soR = await exec(emrId, [listFrame], ['slideoutProbe', cfg]);
                 soProbe = bestResult(soR, function (r) { return r && r.present ? 1 : 0; }).result || null;
               } catch (eSoProbe) {}
+              /* Run-2 forensics confirmed: these rows carry the real clinical
+                 body in the slideout DOM (iframe hash frozen pre/post on every
+                 failing row). Accept that body under the full existing gate
+                 chain: proven-closed-then-opened surface, exact-row binding
+                 marker, live patient identity re-proof, clinical floor, and
+                 index-text inequality. Anything less still fails closed. */
+              if (detailFrames.length <= 1 && soProbe && soProbe.present && soProbe.clinical) {
+                if (Date.now() >= readDeadline) return { failure: { reason: 'read-deadline-exceeded' } };
+                var soIds = await exec(emrId, [listFrame], ['identity', cfg]);
+                var soIdentity = bestResult(soIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
+                if (visitIdentityGate(frozenHint, soIdentity).ok) {
+                  var soDetailR = await exec(emrId, [listFrame], ['slideoutDetail', cfg, i, expected]);
+                  var soDetail = bestResult(soDetailR, function (r) { return (r && r.fullDetail === true && r.raw) ? String(r.raw).length : 0; }).result || {};
+                  if (soDetail.fullDetail === true && soDetail.raw) return { detail: soDetail };
+                }
+              }
               return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId), rowType: String((snap && snap.type) || '').slice(0, 60), hadDetailFrame: !!detailFrame, frameUrlTail: detailFrame ? String(detailFrame.url || '').split('/').slice(-1)[0].split('?')[0].slice(0, 40) : '', preHash8: (priorProbe && priorProbe.contentHash) ? String(priorProbe.contentHash).slice(0, 8) : '', postHash8: (probe && probe.contentHash) ? String(probe.contentHash).slice(0, 8) : '', frameLen: (probe && probe.len != null) ? Number(probe.len) : null, slideout: soProbe } } };
             }
 
