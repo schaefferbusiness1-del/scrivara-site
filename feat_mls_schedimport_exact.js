@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.2";
+  var VERSION = "si-1.7.3";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1849,21 +1849,35 @@
            every identity gate runs again from scratch. Timeouts never retry
            (they stop the batch), and the retry window is budgeted against the
            BATCH deadline so a second attempt genuinely fits. */
+        /* si-1.7.3 SPEED EVIDENCE: PHI-free per-stage wall-clock stamps on
+           every patient receipt (numbers only — no names, no chart text).
+           chart = extension open+read (incl. bounded retries), parseSave =
+           organize+persist of the six-card chart, visits = full encounter-
+           body stage incl. retries/reopen, visitSave = synchronous visit
+           persist. One graded run now shows exactly where the seconds go
+           BEFORE any sleep is converted to a readiness poll. */
+        var stageMs = { chart: 0, parseSave: 0, visits: 0, visitSave: 0 };
         var rd = null, chartAttempt = 0;
         while (true) {
           chartAttempt++;
+          var __chartT0 = Date.now(), __parseT0 = 0;
           try {
             var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
             var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
             var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
             rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
+            stageMs.chart += Date.now() - __chartT0;
+            __parseT0 = Date.now();
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
             var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : ""));
+            stageMs.parseSave += Date.now() - __parseT0;
+            __parseT0 = 0;
             one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
             one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
             one.chartReason = "";
             break;
           } catch (chartErr) {
+            if (__parseT0) { stageMs.parseSave += Date.now() - __parseT0; } else { stageMs.chart += Date.now() - __chartT0; }
             one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120);
             if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes;
             if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; break; }
@@ -1891,6 +1905,7 @@
           one.visitsSkipped = true;
           one.organizationComplete = one.organized;
         } else if (!stopAfterTimeout) {
+          var __visitsT0 = Date.now();
           try {
             /* Live 2026-07-16: after the chart read, the visits pane very
                occasionally still shows the PREVIOUS patient's encounter list
@@ -1925,7 +1940,9 @@
               }
               throw new Error(vErrText);
             }
+            var __visitSaveT0 = Date.now();
             var savedVisits = saveVerifiedVisits(target, vr);
+            stageMs.visitSave = Date.now() - __visitSaveT0;
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
             if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
               var profileCapturedRaw=savedVisits.profileCoverage.capturedAt;
@@ -1949,8 +1966,10 @@
               }
             }
           } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
+          stageMs.visits = Date.now() - __visitsT0;
         }
         if(one.visitsSkipped!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
+        one.stageMs = { chartMs: stageMs.chart, parseSaveMs: stageMs.parseSave, visitsMs: stageMs.visits, visitSaveMs: stageMs.visitSave, totalMs: Date.now() - patientReadStartedAt };
         one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
         if (!one.complete) {
           one.reason = one.chartReason || one.visitsReason || "history-partial";

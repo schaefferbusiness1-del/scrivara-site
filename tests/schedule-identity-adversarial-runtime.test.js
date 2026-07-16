@@ -198,7 +198,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.7.2');
+assert(api && api.version === 'si-1.7.3');
 
 (async () => {
   const bootstrapDate = '2026-07-22';
@@ -465,6 +465,19 @@ assert(api && api.version === 'si-1.7.2');
   assert.strictEqual(proven.patients[0].expectedVisits, proven.patients[0].parsedVisits);
   assert.strictEqual(chartSaves, 1);
   assert.strictEqual(assistCalls, 3, 'every explicit pull must perform a fresh chart read (2 from the retried unproven batch + 1 clean)');
+  /* si-1.7.3 SPEED EVIDENCE: every processed patient receipt carries PHI-free
+     per-stage wall-clock stamps (pure numbers) so one live run localizes the
+     slow stage before any sleep is converted to a readiness poll. */
+  const stamps = proven.patients[0].stageMs;
+  assert(stamps && typeof stamps === 'object', 'per-stage timing stamps missing from a completed patient receipt');
+  ['chartMs', 'parseSaveMs', 'visitsMs', 'visitSaveMs', 'totalMs'].forEach(k => {
+    assert(Number.isFinite(stamps[k]) && stamps[k] >= 0, 'stage stamp ' + k + ' must be a non-negative number');
+  });
+  assert(stamps.totalMs >= stamps.chartMs, 'total must cover the chart stage');
+  assert(stamps.visitsMs >= stamps.visitSaveMs, 'visits stage must contain the visit persist');
+  assert.strictEqual(JSON.stringify(stamps).includes(patients[0].name), false, 'timing stamps must stay PHI-free');
+  const failedStamps = unproven.patients[0].stageMs;
+  assert(failedStamps && Number.isFinite(failedStamps.chartMs), 'failed patients must still carry chart-stage timing evidence');
 
   console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, and full visit-reader receipt');
 })().catch(err => { console.error(err); process.exit(1); });
