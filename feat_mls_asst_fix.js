@@ -1,4 +1,4 @@
-/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.3.0)  [item19 + Task 2]
+/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.4.1)  [item19 + Task 2]
  *
  * v1.2.0 (Task 2 -- unified Copilot conversation): FIX 3's chat now shares ONE
  * conversation store with AI Studio via window.__mlsCopilotConvo (feat_mls_copilot_unify.js).
@@ -47,7 +47,7 @@
 ;(function () {
   "use strict";
   var NS = "__mlsAsstFix";
-  var VERSION = "1.3.2";
+  var VERSION = "1.4.1";
   /* Task 2: the shared Copilot conversation store (feat_mls_copilot_unify.js).
      When present, the panel's history reads/writes go through it so Studio and
      this panel are ONE conversation. Absent -> fall back to the private chatLog. */
@@ -330,6 +330,7 @@
    * ===================================================================== */
   var chatLog = [], chatObserver = null, sendCapture = null, keyCapture = null,
       chatBusy = false, chatSelfRender = false, chatBoundEls = null, convoUnsub = null;
+  var aiRequestSeq = 0, activeAiRequest = null, aiOwnerEvents = [];
   var THREAD_MARK = "data-mlsfix";
 
   var GREETING = "Hi -- I'm the MLS Assistant. I can pull your athenaOne schedule, open athenaOne, and answer questions. Try \"pull today's patients\", \"pull Dr <name>'s schedule\", or \"are we connected?\".";
@@ -381,9 +382,123 @@
     var b = bodyEl(); if (b) b.scrollTop = b.scrollHeight;
   }
   function addUser(text) { var s = CONVO(); if (s) { safe(function () { s.append("user", text); }); } else { chatLog.push({ role: "user", text: text }); renderThread(); } }
-  function addAi(text) { var s = CONVO(); if (s) { safe(function () { s.dropPending(); s.append("ai", text); }); } else { dropPending(); chatLog.push({ role: "ai", text: text }); renderThread(); } }
-  function addPending(text) { var s = CONVO(); if (s) { safe(function () { s.pushPending(text || "Thinking..."); }); } else { chatLog.push({ role: "pending", text: text || "Thinking..." }); renderThread(); } }
-  function dropPending() { var s = CONVO(); if (s) { safe(function () { s.dropPending(); }); } else { chatLog = chatLog.filter(function (m) { return m.role !== "pending"; }); } }
+  function dropPending(target) {
+    var s = CONVO();
+    if (s) { return safe(function () { return s.dropPending(target); }, false); }
+    var changed = false;
+    for (var i = chatLog.length - 1; i >= 0; i--) {
+      if (chatLog[i] && chatLog[i].role === "pending" && (!target || chatLog[i] === target)) {
+        chatLog.splice(i, 1); changed = true; if (target) break;
+      }
+    }
+    if (changed) renderThread();
+    return changed;
+  }
+  function addAi(text, extra, pending) {
+    var s = CONVO();
+    if (s) {
+      safe(function () { if (pending) s.dropPending(pending); s.append("ai", text, extra || null); });
+    } else {
+      if (pending) dropPending(pending);
+      var msg = { role: "ai", text: text };
+      if (extra && typeof extra === "object") for (var k in extra) if (k !== "role" && k !== "text") msg[k] = extra[k];
+      chatLog.push(msg); renderThread();
+    }
+  }
+  function addPending(text, extra) {
+    var s = CONVO();
+    if (s) return safe(function () { return s.pushPending(text || "Thinking...", extra || null); }, null);
+    var pending = { role: "pending", text: text || "Thinking..." };
+    if (extra && typeof extra === "object") for (var k in extra) if (k !== "role" && k !== "text") pending[k] = extra[k];
+    chatLog.push(pending); renderThread(); return pending;
+  }
+
+  function norm(v) { return v == null ? "" : String(v); }
+  function activePatientId() {
+    return safe(function () {
+      if (isFn(window.getActivePtId)) return norm(window.getActivePtId());
+      var p = isFn(window.activePatient) ? window.activePatient() : null;
+      return p ? norm(p.id) : "";
+    }, "");
+  }
+  function contextOwnerId() {
+    return safe(function () {
+      var owner = window.__mlsPtCtxSafety;
+      return owner && isFn(owner.owner) ? norm(owner.owner()) : activePatientId();
+    }, activePatientId());
+  }
+  function visitBindingId() {
+    return safe(function () {
+      var b = (typeof currentVisitAthenaBinding !== "undefined") ? currentVisitAthenaBinding : null;
+      return b ? norm(b.id) : "";
+    }, "");
+  }
+  function visitBindingEpoch() {
+    return safe(function () { return (typeof currentVisitAthenaEpoch !== "undefined") ? Number(currentVisitAthenaEpoch || 0) : 0; }, 0);
+  }
+  function reconcilePatient(reason) {
+    safe(function () {
+      var owner = window.__mlsPtCtxSafety;
+      if (owner && isFn(owner.reconcile)) owner.reconcile(reason || "assistant-copilot");
+    });
+  }
+  function cloneJson(value) {
+    return safe(function () { return JSON.parse(JSON.stringify(value == null ? {} : value)); }, {});
+  }
+  function convoHistoryRef() {
+    return safe(function () { return Array.isArray(window._copilotHistory) ? window._copilotHistory : chatLog; }, chatLog);
+  }
+  function captureAiOwner() {
+    reconcilePatient("assistant-copilot-send");
+    var store = CONVO();
+    return {
+      id: ++aiRequestSeq,
+      activeId: activePatientId(),
+      ownerId: contextOwnerId(),
+      bindingId: visitBindingId(),
+      epoch: visitBindingEpoch(),
+      history: convoHistoryRef(),
+      rev: store && isFn(store.rev) ? Number(store.rev()) : -1,
+      context: cloneJson(safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : {}; }, {})),
+      controller: (typeof AbortController === "function") ? new AbortController() : null,
+      pending: null,
+      stale: false,
+      reverted: false
+    };
+  }
+  function aiOwnerStillCurrent(req, includeRev) {
+    if (!req || activeAiRequest !== req || convoHistoryRef() !== req.history) return false;
+    if (activePatientId() !== req.activeId || contextOwnerId() !== req.ownerId || visitBindingId() !== req.bindingId || visitBindingEpoch() !== req.epoch) return false;
+    if (includeRev) {
+      var store = CONVO();
+      if (store && isFn(store.rev) && Number(store.rev()) !== Number(req.rev)) return false;
+    }
+    return true;
+  }
+  function setAiBusy(on) {
+    chatBusy = !!on;
+    safe(function () { window._copilotBusy = !!on; });
+    var p = panel(), send = p ? p.querySelector(".as-send") : null;
+    if (send) { send.disabled = !!on; send.setAttribute("aria-busy", on ? "true" : "false"); }
+    var studioSend = $("copilotSendBtn");
+    if (studioSend) { studioSend.disabled = !!on; studioSend.setAttribute("aria-busy", on ? "true" : "false"); }
+  }
+  function abortCurrentIfStale() {
+    var req = activeAiRequest;
+    if (!req || aiOwnerStillCurrent(req, false)) return;
+    req.stale = true;
+    safe(function () { if (req.controller) req.controller.abort(); });
+  }
+  function bindAiOwnerEvents() {
+    if (aiOwnerEvents.length) return;
+    ["mls:patient-changed", "mls:active-patient-change", "mls:active-patient-changed", "mls:visit-changed", "mls:view-changed", "mls:context-changed"].forEach(function (name) {
+      safe(function () { window.addEventListener(name, abortCurrentIfStale, false); aiOwnerEvents.push([name, abortCurrentIfStale]); });
+    });
+  }
+  function unbindAiOwnerEvents() {
+    for (var i = 0; i < aiOwnerEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, aiOwnerEvents[i]));
+    aiOwnerEvents = [];
+  }
 
   function parseIntent(q) {
     var s = String(q || "").toLowerCase().trim();
@@ -479,17 +594,45 @@
         .catch(function () { addAi("Couldn't finish the pull -- open your athenaOne Day schedule and ask again."); });
     });
   }
+  function uniqueResponseMeta(d, requestId) {
+    var seen = {}, actions = [], followups = [];
+    var rawActions = d && Array.isArray(d.actions) ? d.actions : [];
+    for (var i = 0; i < rawActions.length; i++) {
+      var a = rawActions[i]; if (!a || typeof a !== "object") continue;
+      var ak = [a.kind || "", a.arg || "", a.label || ""].join("|");
+      if (seen["a:" + ak]) continue; seen["a:" + ak] = true; actions.push(a);
+    }
+    var rawFollowups = d && Array.isArray(d.followups) ? d.followups : [];
+    for (var j = 0; j < rawFollowups.length; j++) {
+      var f = String(rawFollowups[j] || "").trim(); if (!f) continue;
+      var fk = f.toLowerCase(); if (seen["f:" + fk]) continue; seen["f:" + fk] = true; followups.push(f);
+    }
+    return {
+      requestId: requestId,
+      actions: actions,
+      followups: followups,
+      artifact: d && d.artifact && typeof d.artifact === "object" ? d.artifact : null
+    };
+  }
+  function busyNotice() {
+    safe(function () { if (isFn(window.toast)) window.toast("Copilot is finishing the current answer. Please wait a moment.", ""); });
+  }
   function aiAsk(q) {
+    if (chatBusy || safe(function () { return !!window._copilotBusy; }, false)) { busyNotice(); return false; }
     var ready = safe(function () {
       var bm = isFn(window.backendMode) && window.backendMode();
       var tok = isFn(window.bkToken) && window.bkToken();
       return !!(bm && tok);
     }, false);
-    if (!ready) { addAi("AI chat needs you signed in to your MLS account. I can still pull schedules, open athenaOne, and report your connection status -- try \"pull today's patients\"."); return; }
-    addPending("Thinking...");
+    if (!ready) { addAi("Sign in to your MLS account to use AI answers. Schedule, patient, and connection commands still work here."); return true; }
+    var req = captureAiOwner();
+    activeAiRequest = req;
+    setAiBusy(true);
+    req.pending = addPending("Reading the selected patient and practice context...", { requestId: req.id, requestOwner: req.ownerId, requestEpoch: req.epoch });
+    var storeAtSend = CONVO();
+    req.rev = storeAtSend && isFn(storeAtSend.rev) ? Number(storeAtSend.rev()) : -1;
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
-    var ctx = safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : null; }, null);
     /* history from the shared store when present (so it matches Studio exactly),
        else the private chatLog. Exclude any pending; drop the just-added user turn. */
     var s = CONVO();
@@ -497,25 +640,44 @@
     var hist = src.filter(function (m) { return m.role === "user" || m.role === "ai"; })
                   .map(function (m) { return { role: m.role, text: m.text }; });
     hist = hist.slice(0, -1);
-    var body = { question: q, history: hist };
-    if (ctx) body.context = ctx;
-    var degraded = "The AI assistant is temporarily unavailable (the AI service is rate-limited right now). That part is being fixed. In the meantime I can still pull schedules, open athenaOne, and report your connection -- try \"pull today's patients\" or \"are we connected?\".";
-    fetch(base + "/api/copilot", {
+    var body = { question: q, history: hist, context: req.context };
+    var options = {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
       body: JSON.stringify(body)
-    }).then(function (r) {
-      if (r.status === 429 || r.status === 503) { addAi(degraded); return null; }
-      return r.json().catch(function () { return {}; });
-    }).then(function (d) {
-      if (d === null) return;
-      var reply = (d && (d.reply || d.text || d.answer)) || "";
-      reply = String(reply).trim();
-      if (!reply) { addAi(degraded); return; }
-      addAi(reply);
-    }).catch(function () {
-      addAi("Couldn't reach the AI just now (network or backend). My actions still work -- try \"pull today's patients\".");
+    };
+    if (req.controller) options.signal = req.controller.signal;
+    fetch(base + "/api/copilot", options).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) { return { response: r, data: d || {} }; });
+    }).then(function (result) {
+      if (!aiOwnerStillCurrent(req, true)) { req.stale = true; return; }
+      var r = result.response, d = result.data || {}, message = "";
+      if (r.status === 401) message = "Your MLS session expired. Sign in again, then resend this question.";
+      else if (r.status === 403) message = "Copilot is available on clinician accounts.";
+      else if (r.status === 429) message = "Copilot is handling unusually high demand. Nothing was run; wait a moment and try again.";
+      else if (r.status === 503) message = "Copilot's AI service is temporarily unavailable. Your local schedule and patient commands still work.";
+      else if (!r.ok) message = String(d.error || ("Copilot could not answer (server status " + r.status + "). Try again."));
+      else message = String(d.reply || d.text || d.answer || "").trim() || "Copilot returned no answer. Try rephrasing the question.";
+      addAi(message, r.ok ? uniqueResponseMeta(d, req.id) : { requestId: req.id, actions: [], followups: [], artifact: null }, req.pending);
+      req.pending = null;
+    }).catch(function (err) {
+      if (!aiOwnerStillCurrent(req, false) || req.stale || (err && err.name === "AbortError")) { req.stale = !req.reverted; return; }
+      addAi("Network error reaching Copilot. Nothing was run; check your connection and try again.", { requestId: req.id, actions: [], followups: [], artifact: null }, req.pending);
+      req.pending = null;
+    }).then(function () {
+      dropPending(req.pending); req.pending = null;
+      if (activeAiRequest === req) {
+        activeAiRequest = null;
+        setAiBusy(false);
+      }
+      reconcilePatient("assistant-copilot-finished");
+      renderThread();
+      if (req.stale && !req.reverted) safe(function () { if (isFn(window.toast)) window.toast("The patient, visit, or conversation changed, so that Copilot answer was discarded.", ""); });
+    }, function () {
+      dropPending(req.pending); req.pending = null;
+      if (activeAiRequest === req) { activeAiRequest = null; setAiBusy(false); }
     });
+    return true;
   }
   /* ---- EXTENSIBLE intent registry (intents -> actions + persisted settings) ----
    * Michael's design: the chat is a smart command surface wired to the data layer.
@@ -572,15 +734,16 @@
 
   function handleSend(raw) {
     var q = String(raw || "").trim();
-    if (!q || chatBusy) return;
+    if (!q) return false;
+    if (chatBusy || safe(function () { return !!window._copilotBusy; }, false)) { busyNotice(); return false; }
     addUser(q);
     registerBuiltins();
     for (var i = 0; i < intentRegistry.length; i++) {
       var entry = intentRegistry[i];
       var handled = safe(function () { return entry.run(q); }, false);
-      if (handled) return;
+      if (handled) return true;
     }
-    aiAsk(q);
+    return aiAsk(q);
   }
   function takeoverChat() {
     var p = panel(); if (!p) return false;
@@ -598,15 +761,13 @@
     sendCapture = function (e) {
       var v = ta.value;
       try { e.stopImmediatePropagation(); e.preventDefault(); } catch (er) {}
-      ta.value = "";
-      handleSend(v);
+      if (handleSend(v) !== false) ta.value = "";
     };
     keyCapture = function (e) {
       if (e.key === "Enter" && !e.shiftKey) {
         var v = ta.value;
         try { e.stopImmediatePropagation(); e.preventDefault(); } catch (er) {}
-        ta.value = "";
-        handleSend(v);
+        if (handleSend(v) !== false) ta.value = "";
       }
     };
     send.addEventListener("click", sendCapture, true);
@@ -639,7 +800,7 @@
   /* =====================================================================
    * FIX 5 -- dynamic doctor picker from the REAL athena providers
    * ===================================================================== */
-  var providerPoll = null;
+  var providerEvents = [], providerRetryTimer = null, providerRetryTries = 0, providerLateStarted = false;
   /* Sanitize roster-recovered names. The roster's flat-text extractor over-captures
    * (dates, locations, "Appointment Type", resource codes, UI "Close" artifacts), so
    * we admit a recovered name only if it actually LOOKS like a provider: athena's
@@ -770,8 +931,29 @@
     } catch (e) {}
     rebuildProvDropdown(real);
   }
-  function startProviderPoll() { stopProviderPoll(); providerPoll = setInterval(function () { safe(syncProviders); }, 5000); }
-  function stopProviderPoll() { if (providerPoll) { clearInterval(providerPoll); providerPoll = null; } }
+  function providerRefresh() { safe(syncProviders); }
+  function bindProviderEvents() {
+    if (providerEvents.length || !isFn(window.addEventListener)) return;
+    ["mls:provider-roster-changed", "mls:providers-changed", "mls:calendar-changed", "mls:schedule-changed",
+     "mls:connection-changed", "mls:ui-ready", "mls:view-changed", "mls:panel-open", "focus"].forEach(function (name) {
+      safe(function () { window.addEventListener(name, providerRefresh, false); providerEvents.push([name, providerRefresh]); });
+    });
+  }
+  function unbindProviderEvents() {
+    for (var i = 0; i < providerEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, providerEvents[i]));
+    providerEvents = [];
+  }
+  function stopProviderLateRetry() {
+    if (providerRetryTimer != null) { safe(function () { clearTimeout(providerRetryTimer); }); providerRetryTimer = null; }
+  }
+  function providerLateStep() {
+    providerRetryTimer = null; providerRetryTries++; providerRefresh();
+    if (providerRetryTries < 12) providerRetryTimer = setTimeout(providerLateStep, 250);
+  }
+  function startProviderLateRetry() {
+    if (providerLateStarted) return;
+    providerLateStarted = true; providerRetryTries = 0; stopProviderLateRetry(); providerLateStep();
+  }
 
   /* =====================================================================
    * FIX 6 -- never show a failure message during an in-flight read
@@ -876,11 +1058,13 @@
       takeoverChat();
       takeoverPullButton();
       syncProviders();
-      if (!providerPoll) startProviderPoll();
+      startProviderLateRetry();
     } else wiredAll = false;
     return wiredAll && connInstalled;
   }
   function boot() {
+    bindAiOwnerEvents();
+    bindProviderEvents();
     if (tryWire()) return;
     bootIv = setInterval(function () {
       bootTries++;
@@ -890,7 +1074,16 @@
 
   function revert() {
     if (bootIv) { clearInterval(bootIv); bootIv = null; }
-    safe(stopProviderPoll);
+    if (activeAiRequest) {
+      activeAiRequest.reverted = true;
+      safe(function () { if (activeAiRequest.controller) activeAiRequest.controller.abort(); });
+      dropPending(activeAiRequest.pending);
+      activeAiRequest = null;
+      setAiBusy(false);
+    }
+    safe(unbindAiOwnerEvents);
+    safe(stopProviderLateRetry);
+    safe(unbindProviderEvents);
     safe(revertPullButton);
     safe(revertChat);
     safe(removeOpenButton);

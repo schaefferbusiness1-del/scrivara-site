@@ -449,7 +449,7 @@
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
 
-  var VERSION = '1.1.1';
+  var VERSION = '1.1.3';
   var STYLE_ID = 'mlsUiUnificationStyle';
   var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
   var retryTimer = null;
@@ -510,6 +510,10 @@
       '#settingsModal.mls-settings-clean .set-section>.set-desc{color:#55605A!important;}',
       '#settingsModal.mls-settings-clean .modal>.row{position:sticky;bottom:-92px;z-index:5;background:rgba(251,250,247,.96);border-top:1px solid #E7E5DD;margin:20px -32px -92px;padding:14px 32px 18px;backdrop-filter:blur(8px);}',
       '#settingsModal.mls-settings-clean .mls-settings-moved{border-top:1px solid #EFEDE6;padding-top:14px;margin-top:14px;}',
+      /* Settings is a modal workspace. Keep the persistent bottom voice tools
+         out of its scrolling surface and sticky footer, then restore them
+         automatically when the modal closes. */
+      'html body.mls-settings-open.mls-top-voice-tools #mlsCopVoiceBtn,html body.mls-settings-open.mls-top-voice-tools #mlsAsstFab,html body.mls-settings-open.mls-top-voice-tools #mlsDaDock,html body.mls-settings-open #mlsCopVoiceBtn,html body.mls-settings-open #mlsAsstFab,html body.mls-settings-open #mlsDaDock{display:none!important;visibility:hidden!important;pointer-events:none!important;}',
       '.mls-intake-editor{display:grid;gap:8px;margin-top:9px;}',
       '.mls-intake-row{display:grid;grid-template-columns:minmax(0,1fr) 38px;gap:8px;align-items:center;}',
       '.mls-intake-row input{width:100%;min-width:0;}',
@@ -1023,6 +1027,7 @@
     var sections = directSettingsSections();
     if (!sections.length) return false;
     var open = modal.classList.contains('show');
+    if (document.body) document.body.classList.toggle('mls-settings-open', open);
     rearrangeSettingsFields(sections);
     var bar = byId('settingsTabBar');
     if (bar && (!bar.querySelector('[data-mls-settings-group]') || bar.querySelectorAll('[data-mls-settings-group]').length !== SETTINGS_GROUPS.filter(function (group) {
@@ -1038,6 +1043,14 @@
       var editor = byId('mlsIntakeQuestionEditor'); if (editor) renderIntakeEditor(editor, true);
     }
     settingsWasOpen = open;
+    /* One canonical lifecycle signal lets small Settings augmentations remount
+       without each feature installing its own page-wide observer or poll. */
+    safe(function () {
+      var ev;
+      try { ev = new CustomEvent('mls:settings-reconciled', { detail: { open: open } }); }
+      catch (e) { ev = new Event('mls:settings-reconciled'); ev.detail = { open: open }; }
+      W.dispatchEvent(ev);
+    });
     return true;
   }
 
@@ -1211,6 +1224,7 @@
     }
     settingsMoves = [];
     var settingsModal = byId('settingsModal');
+    if (document.body) document.body.classList.remove('mls-settings-open');
     if (settingsModal) {
       settingsModal.classList.remove('mls-settings-clean'); settingsModal.removeAttribute('data-mls-settings-active');
       var settingsIntro = byId('settingsIntro'); if (settingsIntro) settingsIntro.style.removeProperty('display');

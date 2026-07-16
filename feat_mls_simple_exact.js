@@ -33,7 +33,7 @@
      The inline schedule picker (#simPickGrid) now inherits the upgraded
      feat_mls_patientpick grid: appointment times, earliest-first order, first 6
      + Show more, and the auto-advancing "now" highlight. */
-  var VERSION = "simx-1.4.0";
+  var VERSION = "simx-1.4.1";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -48,7 +48,7 @@
 
   var STYLE_ID = "simxStyle";
   var WRAP_ID = "mlsSimWrap";
-  var _t = null, _obs = null, _schedT = null, _manual = false, _lastSig = "";
+  var _obs = null, _modeObs = null, _schedT = null, _visitRoot = null, _manual = false, _lastSig = "";
 
   /* emoji as HTML numeric entities (keeps this source pure ASCII) */
   var E = {
@@ -468,7 +468,7 @@
   function renderCard() {
     if (!isSimple()) { hideWrap(); return; }
     var w = ensureWrap(); if (!w) return;
-    w.style.display = "";
+    if (w.style.display) w.style.display = "";
     var step = curStep();
     renderStepper(step);
     renderBanner();
@@ -476,9 +476,11 @@
     renderBody(step);
     renderFoot(step);
   }
-  function hideWrap() { var w = $(WRAP_ID); if (w) w.style.display = "none"; }
+  function hideWrap() { var w = $(WRAP_ID); if (w && w.style.display !== "none") w.style.display = "none"; }
 
-  /* sync on a light interval: rebuild if missing, re-render on state change */
+  /* Re-render only after a relevant Visit lifecycle/input mutation. The previous
+     whole-document observer + 400ms poll woke on Settings/Copilot/Studio churn and
+     repeatedly probed patient/editor state even while Visit was not in use. */
   function sync() {
     if (!isSimple()) { hideWrap(); _lastSig = ""; return; }
     injectCSS();
@@ -492,16 +494,59 @@
     }
   }
 
+  function scheduleSync() {
+    if (_schedT) return;
+    _schedT = setTimeout(function () { _schedT = null; sync(); }, 80);
+  }
+  function onLifecycle() { scheduleSync(); }
+  function stopLifecycle() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {} _obs = null;
+    try { if (_modeObs) _modeObs.disconnect(); } catch (e) {} _modeObs = null;
+    try {
+      if (_visitRoot) {
+        _visitRoot.removeEventListener("input", onLifecycle, true);
+        _visitRoot.removeEventListener("change", onLifecycle, true);
+      }
+    } catch (e) {}
+    _visitRoot = null;
+    try { window.removeEventListener("mls:view-changed", onLifecycle); } catch (e) {}
+    try { window.removeEventListener("mls:active-patient-changed", onLifecycle); } catch (e) {}
+    try { document.removeEventListener("mls:patientpicked", onLifecycle); } catch (e) {}
+    try { if (_schedT) clearTimeout(_schedT); } catch (e) {} _schedT = null;
+  }
+  function startLifecycle() {
+    _visitRoot = $("visitView");
+    try {
+      if (_visitRoot) {
+        _visitRoot.addEventListener("input", onLifecycle, true);
+        _visitRoot.addEventListener("change", onLifecycle, true);
+        _obs = new MutationObserver(scheduleSync);
+        _obs.observe(_visitRoot, {
+          childList: true, subtree: true, characterData: true, attributes: true,
+          attributeFilter: ["class", "style", "hidden", "disabled", "aria-pressed"]
+        });
+      }
+    } catch (e) {}
+    /* Easy/full mode is expressed on the root class; observe that one attribute,
+       not the root subtree. */
+    try {
+      _modeObs = new MutationObserver(scheduleSync);
+      _modeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    } catch (e) {}
+    try { window.addEventListener("mls:view-changed", onLifecycle); } catch (e) {}
+    try { window.addEventListener("mls:active-patient-changed", onLifecycle); } catch (e) {}
+    try { document.addEventListener("mls:patientpicked", onLifecycle); } catch (e) {}
+  }
+
   function boot() {
+    stopLifecycle();
     injectCSS();
-    try { _obs = new MutationObserver(function () { if (_schedT) return; _schedT = setTimeout(function () { _schedT = null; sync(); }, 160); }); _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    startLifecycle();
     sync();
-    _t = setInterval(sync, 400);
   }
 
   function revert() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_t) clearInterval(_t); } catch (e) {}
+    stopLifecycle();
     try { var w = $(WRAP_ID); if (w) w.remove(); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try { window.__mlsSimX.installed = false; } catch (e) {}

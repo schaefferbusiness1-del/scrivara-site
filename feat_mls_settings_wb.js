@@ -22,7 +22,7 @@
   try { if (window.__mlsSettingsWb && window.__mlsSettingsWb.installed) return; } catch (e) { return; }
 
   var ASSET = 'feat_mls_settings_wb.js';
-  var VERSION = 'swb-1.0.0';
+  var VERSION = 'swb-1.1.0';
   var ROW_ID = 'mlsSettingsWbRow';
   var MARK = 'data-mls-settings-wb';
 
@@ -102,27 +102,25 @@
     });
   }
 
-  /* boot / observe ------------------------------------------------------- */
-  var mo = null, guard = null, retimer = null;
-  function schedule() {
-    if (retimer) return;
-    retimer = setTimeout(function () { retimer = null; ensureRow(); }, 300);
-  }
+  /* boot / lifecycle ----------------------------------------------------- */
+  var bootTimers = [], settingsEventBound = false;
+  function onSettingsReconciled() { ensureRow(); }
   function boot() {
     ensureRow();
-    /* Settings sections are show/hidden, not torn down, so one insert sticks;
-     * the observer + interval are belt-and-suspenders against re-renders. */
-    guard = setInterval(ensureRow, 4000);
-    safe(function () {
-      mo = new MutationObserver(schedule);
-      mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    if (!settingsEventBound) {
+      safe(function () { window.addEventListener('mls:settings-reconciled', onSettingsReconciled); });
+      settingsEventBound = true;
+    }
+    /* Initial asset order is asynchronous, so retain only bounded startup
+     * retries. The unified Settings owner handles every later open/remount. */
+    [500, 1500, 3000].forEach(function (delay) {
+      bootTimers.push(setTimeout(ensureRow, delay));
     });
   }
 
   function revert() {
-    try { if (mo) mo.disconnect(); } catch (e) {} mo = null;
-    if (guard) { clearInterval(guard); guard = null; }
-    if (retimer) { clearTimeout(retimer); retimer = null; }
+    safe(function () { bootTimers.forEach(function (timer) { clearTimeout(timer); }); bootTimers = []; });
+    safe(function () { if (settingsEventBound) window.removeEventListener('mls:settings-reconciled', onSettingsReconciled); settingsEventBound = false; });
     safe(function () {
       var nodes = document.querySelectorAll('[' + MARK + '="1"], #' + ROW_ID);
       [].slice.call(nodes).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });

@@ -62,12 +62,23 @@ assert(ui.includes("btn.addEventListener('click', function () { selectSettingsGr
 assert(ui.includes("else selectSettingsGroup(activeSettingsGroup, false, false)"), 'background Settings reconciliation must preserve native scroll without writing it');
 assert(ui.includes("if (safe(function () { return !!target.closest('#settingsModal'); }, false)) return;"), 'settings clicks must not trigger whole-site reconciliation');
 assert(ui.includes('overflow-anchor:none!important') && ui.includes('touch-action:pan-y!important'), 'settings scroll container must disable anchoring and allow touch scrolling');
+assert(ui.includes("document.body.classList.toggle('mls-settings-open', open)"), 'Settings must expose a deterministic open/closed UI state');
+assert(ui.includes('body.mls-settings-open.mls-top-voice-tools #mlsCopVoiceBtn') && ui.includes('body.mls-settings-open #mlsAsstFab') && ui.includes('body.mls-settings-open #mlsDaDock'), 'floating voice tools must not cover Settings content or its footer');
 assert(appSource.includes("where:'Settings -> Notes & AI -> AI personalization'") && appSource.includes("route:'settings:notes'"), 'Help/Search must route AI personalization through the real Notes & AI tab');
 assert(appSource.includes("where:'Settings -> Features & navigation -> App tabs'"), 'Help/Search must name the real App tabs destination');
 assert(appSource.includes("where:'Settings -> Account & security -> Security & privacy'"), 'Help/Search must name the real security destination');
 
+const tunnelControlStart = appSource.indexOf("sec.querySelector('#r44cTunnelGo').onclick");
+assert(tunnelControlStart >= 0, 'Settings Simple-mode launcher is missing');
+const tunnelControl = appSource.slice(tunnelControlStart, appSource.indexOf("sec.querySelector('#r44cBday')", tunnelControlStart));
+assert(tunnelControl.includes("if (typeof window.closeSettings === 'function') window.closeSettings()"), 'Settings Simple-mode launcher must close through the canonical Settings lifecycle');
+assert(tunnelControl.includes("settingsModal.classList.remove('show')"), 'Settings Simple-mode launcher needs a safe modal-state fallback');
+assert(tunnelControl.includes("settingsModal.style.removeProperty('display')"), 'Settings Simple-mode launcher must clear any stale legacy inline display override');
+assert(!/settingsModal[^\n;]*style\.display\s*=\s*['"]none['"]|\$\('settingsModal'\)[^\n;]*style\.display\s*=\s*['"]none['"]/.test(tunnelControl), 'Settings Simple-mode launcher must never hide the modal with an inline display override');
+
 assert(ui.includes("settingsIntro.style.removeProperty('display')"), 'cleanup must restore the original settings introduction');
 assert(ui.includes("button.style.removeProperty('display')"), 'cleanup must restore footer actions');
 assert(ui.includes('settingsObserver.disconnect()'), 'settings observer must be disconnected during cleanup');
+assert(ui.includes("document.body.classList.remove('mls-settings-open')"), 'cleanup must restore the Settings UI state class');
 
 console.log('PASS settings cleanup: eight destinations, single owners, truthful saves, and lifecycle restoration');

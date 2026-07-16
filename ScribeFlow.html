@@ -6136,8 +6136,13 @@ function savePatients(arr){
 function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
 function setActivePtId(id){
   var previous=''; try{previous=getActivePtId();}catch(e){}
-  if(String(previous)!==String(id||'')){ try{if(typeof _athenaHandleActivePatientChange==='function')_athenaHandleActivePatientChange(previous,id||'');}catch(e2){} }
+  var changed=String(previous)!==String(id||'');
+  if(changed){ try{if(typeof _athenaHandleActivePatientChange==='function')_athenaHandleActivePatientChange(previous,id||'');}catch(e2){} }
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
+  if(changed){
+    try{ window.dispatchEvent(new CustomEvent('mls:active-patient-changed',{detail:{previousId:String(previous||''),patientId:String(id||'')}})); }
+    catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }
+  }
 }
 function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
 function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
@@ -8215,7 +8220,12 @@ function showView(v){
   // TIER GUARD: Lite is note-generation ONLY — any other view bounces back to the Visit screen.
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
   try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. Upgrade in Settings to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
+  var previousView=currentView;
   currentView=v;
+  /* Read-only public view state for additive site features. Top-level lexical
+     `currentView` is not a window property, which previously made overlays
+     guess that every caller came from Visit. */
+  window.__mlsCurrentView=v;
   // The legal builder and its review/sign/PDF card have one permanent runtime
   // home: Legal requests. Move the original live nodes before that view renders.
   if(v==='legalreq'){ try{ if(typeof ensureLegalRequestWorkspace==='function') ensureLegalRequestWorkspace(); }catch(e){} }
@@ -8290,6 +8300,10 @@ function showView(v){
      document scroll fights those renders and feels like the page is pulling
      away from the pointer; reset atomically and let in-view controls animate. */
   window.scrollTo({top:0,behavior:'auto'});
+  if(previousView!==v){
+    try{ window.dispatchEvent(new CustomEvent('mls:view-changed',{detail:{previousView:previousView||'',view:v||''}})); }
+    catch(e){ try{ var ev=new Event('mls:view-changed'); ev.detail={previousView:previousView||'',view:v||''}; window.dispatchEvent(ev); }catch(_){} }
+  }
 }
 function renderPatientBar(){
   const p=activePatient();
@@ -12967,26 +12981,50 @@ function _calLoadNextUp(){
 }
 function _heroPickPatient(i){
   try{
-    // Manually selecting a patient (e.g. clinic running late/early) → highlight them blue.
-    window._heroSelIdx=i; window._heroWinOff=0;
     var a=(window._heroTodayList||[])[i]||{};
-    // Auto-fill DOB: prefer the appt's DOB, else the saved patient record's DOB (from the chart pull).
-    var dob=a.dob||'';
-    if(!dob){ try{ var pm=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===String(a.name||'').trim().toLowerCase(); }); if(pm&&pm.dob) dob=pm.dob; }catch(e){} }
+    var fail=function(){try{toast('Could not uniquely match that schedule row to a patient chart. Open Patients and choose the exact chart.','err');}catch(_){}return false;};
+    if(!String(a.name||'').trim()) return fail();
+    var cleanId=function(v){return String(v==null?'':v).trim().toLowerCase();};
+    var localAliases=function(raw,stored){
+      raw=raw||{};var keys=stored?['id','_mlsTargetPatientId','patientId','patient_id']:['patient_external_id','_mlsTargetPatientId','patientId','patient_id'];
+      var out=[],seen={};keys.forEach(function(k){var v=cleanId(raw[k]);if(v&&!seen[v]){seen[v]=1;out.push(v);}});return out;
+    };
+    var scheduleIds=localAliases(a,false); if(scheduleIds.length>1) return fail();
+    var localId=scheduleIds[0]||'', dob=String(a.dob||'');
+    var dobKey=function(v){var s=String(v||'').trim(),m;if((m=s.match(/^(\d{4})[-\/]?(\d{1,2})[-\/]?(\d{1,2})/)))return m[1]+('0'+m[2]).slice(-2)+('0'+m[3]).slice(-2);if((m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/)))return m[3]+('0'+m[1]).slice(-2)+('0'+m[2]).slice(-2);return '';};
+    var nmL=String(a.name||'').trim().toLowerCase().replace(/\s+/g,' '), pts=((typeof getPatients==='function'?getPatients():[])||[]);
+    var sameName=pts.filter(function(x){return String(x&&x.name||'').trim().toLowerCase().replace(/\s+/g,' ')===nmL;});
+    var rec=null;
+    if(localId){
+      var byId=pts.filter(function(x){var ids=localAliases(x,true);return ids.length===1&&ids[0]===localId;});
+      if(byId.length!==1) return fail();
+      rec=byId[0];
+      if((nmL&&String(rec.name||'').trim().toLowerCase().replace(/\s+/g,' ')!==nmL)||(dobKey(dob)&&dobKey(rec.dob)&&dobKey(dob)!==dobKey(rec.dob))) return fail();
+    }else if(dobKey(dob)){
+      var exact=sameName.filter(function(x){return dobKey(x&&x.dob)===dobKey(dob);});
+      if(exact.length===1&&localAliases(exact[0],true).length<=1&&String(exact[0].id||'')) rec=exact[0];
+      else if(exact.length||sameName.length) return fail();
+    }else if(sameName.length){return fail();}
+    if(!rec){
+      if(typeof upsertPatient!=='function') return fail();
+      rec={id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:a.name,dob:dob||'',reason:a.reason||'',source:'athena-schedule',created:Date.now()};
+      upsertPatient(rec); a.patient_external_id=rec.id;
+    }
+    if(!String(rec.id||'')) return fail();
+    if(!dob&&rec.dob) dob=String(rec.dob);
+    if(dob&&!rec.dob){rec.dob=dob;if(typeof upsertPatient==='function')upsertPatient(rec);}
+    setActivePtId(rec.id);
+    try{if(typeof renderProfile==='function')renderProfile();}catch(_){} try{if(typeof renderPatientBar==='function')renderPatientBar();}catch(_){} try{if(typeof renderPatients==='function')renderPatients();}catch(_){} try{if(typeof updateNavCounts==='function')updateNavCounts();}catch(_){}
+    // Only repaint after the canonical chart binding has succeeded.
+    window._heroSelIdx=i; window._heroWinOff=0;
     var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
     var db=document.getElementById('heroPtDob'); if(db) db.value=dob||'';
     _heroSyncName();
-    // Make this person the ACTIVE patient (find their record, or create one) so the whole app — chart, history, AI Studio, Copilot — is now about them.
-    try{
-      var nmL=String(a.name||'').trim().toLowerCase();
-      var rec=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nmL; });
-      if(!rec && a.name && typeof upsertPatient==='function'){ rec={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:a.name, dob:dob||'', reason:a.reason||'', source:'athena-schedule', created:Date.now() }; try{ upsertPatient(rec); }catch(_){} }
-      if(rec){ if(dob&&!rec.dob){ rec.dob=dob; try{ upsertPatient(rec); }catch(_){} } setActivePtId(rec.id); try{ if(typeof renderProfile==='function') renderProfile(); }catch(_){} try{ if(typeof renderPatientBar==='function') renderPatientBar(); }catch(_){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(_){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(_){} }
-    }catch(e){}
     try{ _renderTodayPatients(window._heroTodayList||[]); }catch(e){}
     try{ var rc=document.getElementById('heroRecBtn'); if(rc&&rc.scrollIntoView) rc.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
     try{ toast('Loaded '+(a.name||'patient')+' — hit 🎙️ Start recording.',''); }catch(e){}
-  }catch(e){}
+    return true;
+  }catch(e){try{toast('Could not safely open that patient. Please choose the exact chart from Patients.','err');}catch(_){}return false;}
 }
 function toggleCapture(){ capturing?stopCapture():startCapture(); }
 function startCapture(){
@@ -19599,11 +19637,35 @@ function agSyncSignState(){
    agreements decision and critical UI bundle resolve. This is the ONE secure-
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
-var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0;
+var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
 /* The cover stays up through cloud hydration and a stable first-frame window.
    It is deliberately bounded: an optional service can slow startup, never trap it. */
 const SF_GATE_MIN_MS=6500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
-const SF_GATE_READY_HOLD_MS=180, SF_GATE_FADE_MS=320;
+/* "Ready" is a hand-off signal, not another loading step.  Keep it readable
+   for one beat, then reveal the already-stable app in under 200 ms. */
+const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120;
+
+function sfClearGateStages(){
+  sfGateStageTimers.forEach(id=>clearTimeout(id));
+  sfGateStageTimers=[];
+}
+
+function sfScheduleGateStages(el){
+  sfClearGateStages();
+  const msg=el&&el.querySelector('#mlsBLmsg');
+  const stages=[
+    [1500,'Loading your schedule…'],
+    [3500,'Preparing your workspace…'],
+    [5600,'Almost ready…'],
+    [9000,'Still preparing your workspace…']
+  ];
+  stages.forEach(stage=>{
+    sfGateStageTimers.push(setTimeout(()=>{
+      if(!sfGateLoadingVisible||!msg||msg.textContent==='Ready') return;
+      msg.textContent=stage[1];
+    },stage[0]));
+  });
+}
 
 function sfLoaderFrameSignature(){
   const ids=['appScreen','visitView','patientBar','patientBarInner','mlsEz3','mlsRdTop','transcript','ez3flTranscript','mlsDayProgress','mlsAgendaChip','mlsRecentPts','mlsCopVoiceBtn','mlsAsstFab','mlsDaDock'];
@@ -19656,22 +19718,27 @@ function sfShowGateLoading(){
     el.setAttribute('aria-busy','true');
     document.body.appendChild(el);
   }
+  /* startSession can ask for the gate more than once while authentication and
+     hydration settle.  A second call must never reset progress or restart the
+     minimum clock. */
+  if(sfGateLoadingVisible&&el.style.display!=='none') return el;
+  sfGateLoadingVisible=true;
   el.setAttribute('role','status');
   el.setAttribute('aria-live','polite');
   el.setAttribute('aria-busy','true');
   el.setAttribute('aria-label','Preparing your MLS workspace');
   el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center;opacity:1;visibility:visible;pointer-events:auto;transition:opacity '+SF_GATE_FADE_MS+'ms ease';
   if(!el.querySelector('#sfGateLoadingInner')){
-    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
+    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}#mlsBLbar{transform-origin:left center;will-change:transform}#sfGateLoading.mls-gate-progress #mlsBLbar{animation:sfGateAdvance 6200ms cubic-bezier(.22,.7,.25,1) forwards}#sfGateLoading #mlsBLbar.done{animation:none;transform:scaleX(1)!important}@keyframes sfGateAdvance{0%{transform:scaleX(.08)}24%{transform:scaleX(.28)}58%{transform:scaleX(.57)}84%{transform:scaleX(.78)}100%{transform:scaleX(.88)}}@media(prefers-reduced-motion:reduce){#sfGateLoading.mls-gate-progress #mlsBLbar{animation:none;transform:scaleX(.55)}}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
       '<div id="sfGateLoadingBrand" style="display:flex;align-items:center;gap:12px">'+
         '<svg viewBox="0 0 56 56" width="48" height="48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sfGateMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect width="56" height="56" rx="15" fill="url(#sfGateMarkGrad)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>'+
         '<span style="font:800 24px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;letter-spacing:-.3px">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span>'+
       '</div>'+
-      '<div id="mlsBLwrap" style="width:260px;max-width:72vw;margin:2px 0 0"><div id="mlsBLtrack" style="height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden"><div id="mlsBLbar" style="height:100%;width:8%;border-radius:999px;background:linear-gradient(90deg,#8FD8BE,#fff)"></div></div><div id="mlsBLmsg" style="margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px">Connecting to your practice…</div></div>'+
+      '<div id="mlsBLwrap" style="width:260px;max-width:72vw;margin:2px 0 0"><div id="mlsBLtrack" style="height:6px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden"><div id="mlsBLbar" style="height:100%;width:100%;transform:scaleX(.08);border-radius:999px;background:linear-gradient(90deg,#8FD8BE,#fff)"></div></div><div id="mlsBLmsg" style="margin-top:11px;font-size:13px;color:#C9DCD2;text-align:center;letter-spacing:.2px">Connecting to your practice…</div></div>'+
       '</div>';
   }
   const bootBar=el.querySelector('#mlsBLbar'), bootMsg=el.querySelector('#mlsBLmsg');
-  if(bootBar){ bootBar.classList.remove('done'); bootBar.style.width='8%'; }
+  if(bootBar){ bootBar.classList.remove('done'); bootBar.style.width='100%'; bootBar.style.transform='scaleX(.08)'; }
   if(bootMsg) bootMsg.textContent='Connecting to your practice…';
   sfGateLoadingStarted=Date.now();
   const showToken=++sfGateHideToken;
@@ -19685,6 +19752,10 @@ function sfShowGateLoading(){
   document.documentElement.classList.remove('mls-app-revealing');
   document.documentElement.classList.add('mls-secure-loading');
   el.style.display='flex';
+  /* The class is removed at every hide/cancel, so a genuinely new session
+     starts a fresh compositor animation without a forced layout read. */
+  el.classList.add('mls-gate-progress');
+  sfScheduleGateStages(el);
   /* Absolute, no-human-input recovery if the caller itself never reaches hide. */
   sfGateForceTimer=setTimeout(()=>{
     if(showToken!==sfGateHideToken) return;
@@ -19696,9 +19767,10 @@ function sfShowGateLoading(){
 
 function sfCancelGateLoading(){
   sfGateHideToken++; clearTimeout(sfGateForceTimer);
+  sfGateLoadingVisible=false; sfClearGateStages();
   const el=document.getElementById('sfGateLoading');
   const app=document.getElementById('appScreen');
-  if(el){ el.style.display='none'; el.style.opacity='1'; el.setAttribute('aria-busy','false'); }
+  if(el){ el.style.display='none'; el.style.opacity='1'; el.classList.remove('mls-gate-progress'); el.setAttribute('aria-busy','false'); }
   document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
   if(app) app.removeAttribute('aria-busy');
 }
@@ -19715,13 +19787,14 @@ function sfHideGateLoading(gated,options){
   return sfWaitForStableFirstFrame(token,!!options.force,!!gated).then(ready=>{
     if(!ready||token!==sfGateHideToken) return;
     const bar=el&&el.querySelector('#mlsBLbar'), msg=el&&el.querySelector('#mlsBLmsg');
-    if(bar){ bar.classList.add('done'); bar.style.width='100%'; }
+    sfClearGateStages();
+    if(bar){ bar.classList.add('done'); bar.style.width='100%'; bar.style.transform='scaleX(1)'; }
     if(msg) msg.textContent='Ready';
     try{ window.dispatchEvent(new Event('mls:loader-ready')); }catch(e){}
     return new Promise(resolve=>setTimeout(resolve,SF_GATE_READY_HOLD_MS));
   }).then(()=>new Promise(resolve=>{
     if(token!==sfGateHideToken){ resolve(); return; }
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
       if(token!==sfGateHideToken){ resolve(); return; }
       if(gated){ try{ showAgreementsGate(true); }catch(e){} }
       document.documentElement.classList.add('mls-app-revealing');
@@ -19731,13 +19804,14 @@ function sfHideGateLoading(gated,options){
       try{ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) fade=0; }catch(e){}
       setTimeout(()=>{
         if(token===sfGateHideToken){
-          if(el){ el.style.display='none'; el.style.opacity='1'; el.setAttribute('aria-busy','false'); }
+          sfGateLoadingVisible=false;
+          if(el){ el.style.display='none'; el.style.opacity='1'; el.classList.remove('mls-gate-progress'); el.setAttribute('aria-busy','false'); }
           document.documentElement.classList.remove('mls-app-revealing');
           if(app) app.removeAttribute('aria-busy');
         }
         resolve();
       },fade);
-    }));
+    });
   }));
 }
 function showAgreementsGate(fromLoading){
@@ -23473,7 +23547,7 @@ function _ptGroupSort(mode){
    hides the legacy #patientBar (so there is exactly one card, never two stacked); when no patient is
    active it hides itself and lets #patientBar show its native "no active patient" affordance.
    Purely additive progressive enhancement: own IIFE, every external call guarded with try/catch,
-   OBSERVES state (light 1.2s poll on active-patient id + storage events), and never modifies any
+   OBSERVES the canonical patient-change event + scoped cross-tab storage events, and never modifies any
    existing app function. The only DOM it touches outside its own element is a reversible body class
    that hides #patientBar. Any error or missing global degrades to a silent no-op.
    Mobile-first responsive. Exposes window.__mlsCard for later connectedness features. */
@@ -23645,9 +23719,8 @@ function _ptGroupSort(mode){
   function refresh(){ safe(build); }
   function init(){
     injectCss();
-    var lastId = activeId();
     refresh();
-    setInterval(function(){ var id = activeId(); if (id !== lastId){ lastId = id; refresh(); } }, 1200);
+    window.addEventListener('mls:active-patient-changed', refresh);
     (function(){ /* __mlsCardStormFix v1 */
       /* Every localStorage write from ANY other MLS tab used to fire this
          card's refresh(), which does a full getPatients() JSON.parse (~2MB on
@@ -23680,7 +23753,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b313';
+  window.__MLS_AV='b317';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

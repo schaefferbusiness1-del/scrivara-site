@@ -20,7 +20,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "px-1.1.0";
+  var VERSION = "px-1.2.0";
   try { if (window.__mlsPx && window.__mlsPx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -39,7 +39,11 @@
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function imp(el, p, v) { try { el.style.setProperty(p, v, "important"); } catch (e) {} }
   function impAll(el, list) { if (!el) return; list.forEach(function (p) { var i = p.indexOf(":"); imp(el, p.slice(0, i), p.slice(i + 1)); }); }
-  function vis(el) { try { return el && el.offsetParent !== null && getComputedStyle(el).display !== "none"; } catch (e) { return false; } }
+  function profileShown(el) {
+    try {
+      return !!(el && !el.hidden && el.getAttribute("aria-hidden") !== "true" && el.style.display !== "none");
+    } catch (e) { return false; }
+  }
 
   function injectCSS() {
     var css = [
@@ -103,7 +107,9 @@
     injectCSS();
     var wrap = $("ptSplitWrap"); if (!wrap) return;
     var prof = $("profileCard");
-    var hasProfile = prof && vis(prof);
+    /* renderProfile owns this card's inline display state. Reading it directly
+       avoids offsetParent/getComputedStyle forced-layout work during updates. */
+    var hasProfile = prof && profileShown(prof);
     if (hasProfile) wrap.classList.add("px-has-profile"); else wrap.classList.remove("px-has-profile");
     if (hasProfile) styleProfile();
     if (v.getAttribute("data-px-built") !== VERSION) v.setAttribute("data-px-built", VERSION);
@@ -111,17 +117,34 @@
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { build(); } catch (e) {}
-    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] }); } catch (e) {}
+    try {
+      var v = $("patientsView");
+      if (_obs && v) _obs.observe(v, {
+        childList: true, subtree: true, attributes: true,
+        attributeFilter: ["style", "class", "hidden", "aria-hidden"]
+      });
+    } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
+  function onViewChanged(ev) {
+    var d = ev && ev.detail;
+    if (!d || d.view === "patients" || d.previousView === "patients") schedule();
+  }
   function boot() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_t) clearInterval(_t); } catch (e) {} _t = null;
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    try { window.addEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     applyAll();
-    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) clearInterval(_t); }, 700);
+    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) { clearInterval(_t); _t = null; } }, 700);
   }
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_t) clearInterval(_t); } catch (e) {}
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try {
       var wrap = $("ptSplitWrap"); if (wrap) wrap.classList.remove("px-has-profile");

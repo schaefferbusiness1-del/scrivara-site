@@ -1,37 +1,24 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js  ->  window.__mlsCopilotActions   (ca-1.0.0)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.0)
  * ---------------------------------------------------------------------------
- * MAKES THE MLS ASSISTANT / COPILOT MORE CAPABLE, WITHOUT TOUCHING THE BACKEND.
+ * The base Studio Copilot canonically persists and renders reply metadata
+ * (actions, followups, artifact). This companion never intercepts /api/copilot,
+ * never clones a response, and never adds a second block to #copilotThread.
  *
- * server.js's POST /api/copilot ALREADY returns { ok, reply, actions[], followups[],
- * artifact } (actions: {label, kind:'openPatient'|'startVisit'|'navigate'|'build', arg},
- * followups: string[], artifact: {kind,title,content,to,subject}) -- but the live
- * frontend pipeline (feat_mls_asst_fix.js -> aiAsk()) only reads `d.reply` and
- * silently drops actions/followups/artifact. This module recovers them and turns
- * them into REAL, clickable affordances in the SAME assistant thread, without
- * modifying feat_mls_asst_fix.js or the chat pipeline it owns.
- *
- * HOW (non-invasive):
- *   1. Wrap window.fetch, narrowly: only requests whose URL ends with
- *      "/api/copilot" (not /api/copilot/edit or /api/copilot/email) are peeked
- *      at, via response.clone().json() -- the ORIGINAL Response is returned
- *      untouched to whatever called fetch (feat_mls_asst_fix.js's aiAsk), so
- *      that pipeline is completely unaffected. Every other fetch passes through
- *      with zero overhead.
- *   2. After the peeked reply lands, poll briefly for the assistant thread
- *      (#mlsAsstPanel .as-thread) to render the new AI bubble (aiAsk() appends
- *      it asynchronously), then append ONE "smart affordances" block right
- *      after it: followup chips + action buttons + an artifact/draft card.
+ * The floating Assistant uses the same canonical conversation but its simple
+ * text renderer does not paint metadata. This module subscribes to that shared
+ * persisted store and decorates only #mlsAsstPanel .as-thread, keyed by the
+ * canonical message identity. Repeated notifications remain exactly-once.
  *
  * WHAT THE AFFORDANCES DO (all call REAL existing app functions; nothing new
  * is invented, nothing bypasses existing safety rails):
  *   - followup chip        -> window.__mlsAsstFix._handleSend(text)  (same as typing it)
  *   - action kind=navigate  -> window.showView(view)
- *   - action kind=openPatient -> matches a patient by name (getPatients()/Who's
- *     Next list) and opens their chart via window.__mlsPick.select / openPatient
- *   - action kind=startVisit  -> showView('visit'), fills the hero name/DOB,
- *     and STOPS THERE -- recording only starts if the user also clicks the
- *     visit tab's own Start-visit control. (No auto-start from a chat click.)
+ *   - action kind=openPatient -> resolves a same-namespace stable ID or one
+ *     unique name match, then opens via the canonical patient-selection path;
+ *     ambiguous names fail closed.
+ *   - action kind=startVisit  -> canonically selects that exact patient, opens
+ *     Visit, and STOPS -- recording only starts from the Visit control.
  *   - action kind=build     -> showView('studio') and PREFILLS (never auto-
  *     sends) the Studio Copilot's own input box with the arg text, so the user
  *     reviews and sends it themselves.
@@ -49,21 +36,12 @@
  * Idempotent, additive, reversible: window.__mlsCopilotActions.revert()
  * ASCII-only. try/catch throughout. No PHI logged.
  *
- * v1.0.1 HOTFIX (2026-07-10): fixed a live bug where using AI Studio's OWN
- * inline Copilot chat (#copilotThread, the real everyday surface, hosted by
- * __mlsCopilotInline) appeared to "open a new sidebar." Root cause: this
- * module hardcoded the separate floating "MLS Assistant" panel (#mlsAsstPanel)
- * as the only place it would render into, even though both surfaces post to
- * the same /api/copilot endpoint. Now the target thread is resolved to
- * whichever Copilot surface is actually on-screen at request time (Studio's
- * inline thread preferred), and silently dropped if neither is visible --
- * see pickThread()/studioThread()/assistantThread() below.
  * ==========================================================================*/
 (function () {
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-1.0.1';
+  var VERSION = 'ca-2.0.0';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -97,14 +75,89 @@
   }
 
   /* ---------------- data helpers (read-only, no PHI logged) ---------------- */
+  var PATIENT_ID_KEYS = ['id', 'patientId', 'patient_id', 'pid', 'mrn', 'externalId', 'external_id', 'athenaId', 'athena_id', 'chartId', 'chart_id'];
   function getPatients() { return safe(function () { return (window.getPatients && window.getPatients()) || []; }, []); }
-  function findPatientByName(name) {
-    name = String(name || '').trim().toLowerCase(); if (!name) return null;
-    var list = safe(function () { return (window.__mlsWhosNext && window.__mlsWhosNext.activeList && window.__mlsWhosNext.activeList()) || []; }, []);
-    for (var i = 0; i < list.length; i++) { if (String(list[i].name || '').toLowerCase().indexOf(name) >= 0) return list[i]; }
-    var ps = getPatients();
-    for (var j = 0; j < ps.length; j++) { if (String(ps[j].name || '').toLowerCase().indexOf(name) >= 0) return ps[j]; }
+  function idValue(patient, key) {
+    return patient && Object.prototype.hasOwnProperty.call(patient, key) && patient[key] != null ? String(patient[key]).trim() : '';
+  }
+  function normName(value) { return String(value || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+  function sameStablePatient(a, b) {
+    var matched = 0;
+    for (var i = 0; i < PATIENT_ID_KEYS.length; i++) {
+      var av = idValue(a, PATIENT_ID_KEYS[i]), bv = idValue(b, PATIENT_ID_KEYS[i]);
+      if (!av || !bv) continue;
+      if (av !== bv) return false;
+      matched++;
+    }
+    return matched > 0;
+  }
+  function patientPool() {
+    var combined = [];
+    var next = safe(function () { return (window.__mlsWhosNext && isFn(window.__mlsWhosNext.activeList)) ? window.__mlsWhosNext.activeList() : []; }, []) || [];
+    var stored = getPatients();
+    for (var i = 0; i < next.length; i++) combined.push(next[i]);
+    for (var j = 0; j < stored.length; j++) combined.push(stored[j]);
+    var out = [];
+    for (var k = 0; k < combined.length; k++) {
+      var patient = combined[k]; if (!patient || typeof patient !== 'object') continue;
+      var duplicate = false;
+      for (var oi = 0; oi < out.length; oi++) if (sameStablePatient(patient, out[oi])) { duplicate = true; break; }
+      if (duplicate) continue;
+      out.push(patient);
+    }
+    return out;
+  }
+  function explicitIdentity(target) {
+    if (target && typeof target === 'object') {
+      var ids = {};
+      for (var i = 0; i < PATIENT_ID_KEYS.length; i++) {
+        var value = idValue(target, PATIENT_ID_KEYS[i]); if (value) ids[PATIENT_ID_KEYS[i]] = value;
+      }
+      return Object.keys(ids).length ? ids : null;
+    }
+    var text = String(target || '').trim();
+    var match = text.match(/^(id|patientId|patient_id|pid|mrn|externalId|external_id|athenaId|athena_id|chartId|chart_id)\s*:\s*(.+)$/i);
+    if (match) {
+      var canonical = null;
+      for (var j = 0; j < PATIENT_ID_KEYS.length; j++) if (PATIENT_ID_KEYS[j].toLowerCase() === match[1].toLowerCase()) canonical = PATIENT_ID_KEYS[j];
+      if (canonical) { var out = {}; out[canonical] = String(match[2] || '').trim(); return out; }
+    }
     return null;
+  }
+  function resolvePatient(target) {
+    var pool = patientPool(), ids = explicitIdentity(target), matches = [], i, key;
+    if (ids) {
+      for (i = 0; i < pool.length; i++) {
+        var exact = true, compared = 0;
+        for (key in ids) {
+          compared++;
+          if (!idValue(pool[i], key) || idValue(pool[i], key) !== ids[key]) { exact = false; break; }
+        }
+        if (exact && compared) matches.push(pool[i]);
+      }
+      return matches.length === 1 ? { patient: matches[0], reason: 'stable-id' } :
+        { patient: null, reason: matches.length > 1 ? 'ambiguous-id' : 'not-found', count: matches.length };
+    }
+
+    var query = normName(target && typeof target === 'object' ? target.name : target);
+    if (!query) return { patient: null, reason: 'missing-target', count: 0 };
+
+    /* A raw string may be the app's primary `id`, but it is never compared to
+       MRN or another identifier namespace. */
+    var raw = String(target || '').trim(), idMatches = [];
+    for (i = 0; i < pool.length; i++) if (idValue(pool[i], 'id') === raw) idMatches.push(pool[i]);
+    if (idMatches.length === 1) return { patient: idMatches[0], reason: 'primary-id' };
+    if (idMatches.length > 1) return { patient: null, reason: 'ambiguous-id', count: idMatches.length };
+
+    var exactNames = [];
+    for (i = 0; i < pool.length; i++) if (normName(pool[i].name) === query) exactNames.push(pool[i]);
+    if (exactNames.length === 1) return { patient: exactNames[0], reason: 'exact-name' };
+    if (exactNames.length > 1) return { patient: null, reason: 'ambiguous-name', count: exactNames.length };
+
+    var partial = [];
+    for (i = 0; i < pool.length; i++) if (normName(pool[i].name).indexOf(query) >= 0) partial.push(pool[i]);
+    if (partial.length === 1) return { patient: partial[0], reason: 'unique-partial' };
+    return { patient: null, reason: partial.length > 1 ? 'ambiguous-name' : 'not-found', count: partial.length };
   }
   var VIEW_ALIASES = {
     home: 'visit', visit: 'visit', record: 'visit', recording: 'visit',
@@ -126,28 +179,49 @@
   function doNavigate(view) {
     safe(function () { if (isFn(window.showView)) window.showView(resolveView(view)); });
   }
-  function doOpenPatient(name) {
-    var p = findPatientByName(name);
-    if (!p) { toast('Could not find "' + name + '" -- pull the schedule or open Patients to search.'); return; }
-    safe(function () {
-      if (window.__mlsPick && isFn(window.__mlsPick.select)) window.__mlsPick.select(p.id);
-      else if (isFn(window.openPatient)) window.openPatient(p.id);
-    });
-    toast('Opened ' + (p.name || 'patient') + '’s chart.');
+  function targetLabel(target) {
+    if (target && typeof target === 'object') return String(target.name || target.id || target.patientId || target.mrn || 'that patient');
+    return String(target || 'that patient');
   }
-  function doStartVisit(name) {
-    safe(function () { if (isFn(window.showView)) window.showView('visit'); });
-    var p = name ? findPatientByName(name) : null;
-    if (p) {
-      safe(function () {
-        var nm = $('heroPtName'); if (nm) { nm.value = p.name || ''; nm.dispatchEvent(new Event('input', { bubbles: true })); }
-        var db = $('heroPtDob'); if (db) { db.value = p.dob || ''; db.dispatchEvent(new Event('input', { bubbles: true })); }
-        if (isFn(window._heroSyncName)) window._heroSyncName();
-      });
-      toast((p.name || 'Patient') + ' loaded on the Visit tab -- tap Start recording when ready.');
-    } else {
-      toast('Visit tab opened -- pick or pull a patient, then tap Start recording.');
+  function resolutionFailure(result, target) {
+    if (result && /^ambiguous/.test(result.reason || '')) toast('More than one patient matches "' + targetLabel(target) + '". Open Patients and choose the exact chart.');
+    else toast('Could not uniquely find "' + targetLabel(target) + '". Pull the schedule or open Patients to choose the exact chart.');
+  }
+  function selectResolvedPatient(patient) {
+    if (!patient || patient.id == null || String(patient.id).trim() === '') return false;
+    var id = patient.id;
+    try {
+      if (window.__mlsPick && isFn(window.__mlsPick.select)) return window.__mlsPick.select(id) !== false;
+      if (isFn(window.openPatient)) return window.openPatient(id) !== false;
+      if (isFn(window.selectPatient)) return window.selectPatient(id) !== false;
+    } catch (e) { return false; }
+    return false;
+  }
+  function doOpenPatient(target) {
+    var result = resolvePatient(target);
+    if (!result.patient) { resolutionFailure(result, target); return false; }
+    if (!selectResolvedPatient(result.patient)) {
+      toast('The exact patient was found, but the chart could not be selected safely. Open Patients and choose it there.');
+      return false;
     }
+    toast('Opened ' + (result.patient.name || 'patient') + '\'s chart.');
+    return true;
+  }
+  function doStartVisit(target) {
+    if (target == null || (typeof target !== 'object' && String(target).trim() === '')) {
+      safe(function () { if (isFn(window.showView)) window.showView('visit'); });
+      toast('Visit opened -- choose a patient, then tap Start recording when ready.');
+      return true;
+    }
+    var result = resolvePatient(target);
+    if (!result.patient) { resolutionFailure(result, target); return false; }
+    if (!selectResolvedPatient(result.patient)) {
+      toast('The exact patient was found, but MLS could not safely select that chart. Open Patients and choose it there.');
+      return false;
+    }
+    safe(function () { if (isFn(window.showView)) window.showView('visit'); });
+    toast((result.patient.name || 'Patient') + ' is selected on Visit -- tap Start recording when ready.');
+    return true;
   }
   function doBuild(promptText) {
     safe(function () { if (isFn(window.showView)) window.showView('studio'); });
@@ -165,45 +239,43 @@
     }, 150);
   }
   function runAction(a) {
-    if (!a) return;
-    if (a.kind === 'navigate') doNavigate(a.arg);
-    else if (a.kind === 'openPatient') doOpenPatient(a.arg);
-    else if (a.kind === 'startVisit') doStartVisit(a.arg);
-    else if (a.kind === 'build') doBuild(a.arg);
+    if (!a) return false;
+    if (a.kind === 'navigate') { doNavigate(a.arg); return true; }
+    if (a.kind === 'openPatient') return doOpenPatient(a.arg);
+    if (a.kind === 'startVisit') return doStartVisit(a.arg);
+    if (a.kind === 'build') { doBuild(a.arg); return true; }
+    return false;
   }
 
-  /* ---------------- rendering ---------------- */
-  /* v1.0.1 FIX -- root cause of "clicking/typing in Copilot opens a NEW
-     SIDEBAR (and misbehaving)": this module hardcoded #mlsAsstPanel (the
-     separate, floating "MLS Assistant" panel + FAB from feat_mls_asst_fix.js)
-     as THE Copilot thread. But the real, everyday Copilot surface users type
-     into is AI Studio's OWN inline chat (#copilotThread inside #copilotCard,
-     hosted by the live __mlsCopilotInline module -- see mls-connect.js's own
-     comments: "copilot thread in AI Studio via __mlsCopilotInline"). Both
-     surfaces POST to the same /api/copilot endpoint, so this module's
-     fetch-peek caught replies from either one but always waited on, and
-     rendered into, #mlsAsstPanel -- a panel the user never opened. That
-     unrelated panel filling with content is what read as "a new sidebar
-     opened." Fix: capture which thread is actually on-screen AT THE MOMENT
-     the request fires (not later, when the response resolves -- the user
-     could have navigated by then), preferring the real Studio inline thread
-     whenever it's visible, and drop silently (never fall back to a hidden,
-     unrelated panel) if neither is on-screen. */
-  function studioThread() {
-    return safe(function () {
-      var sv = document.getElementById('studioView');
-      var t = document.getElementById('copilotThread');
-      if (sv && sv.offsetParent !== null && t && t.offsetParent !== null) return t;
-      return null;
-    }, null);
-  }
+  /* ---------------- Assistant-only rendering ---------------- */
   function assistantThread() {
     return safe(function () {
       var p = $('mlsAsstPanel');
-      return (p && p.offsetParent !== null) ? p.querySelector('.as-thread') : null;
+      return p ? p.querySelector('.as-thread') : null;
     }, null);
   }
-  function pickThread() { return studioThread() || assistantThread(); }
+
+  function submitFollowup(question) {
+    var q = String(question || '').trim(); if (!q) return;
+    safe(function () { if (window.__mlsAsstFix && isFn(window.__mlsAsstFix._handleSend)) window.__mlsAsstFix._handleSend(q); });
+  }
+
+  function uniquePayload(payload) {
+    var seen = {}, actions = [], followups = [];
+    var aa = payload && Array.isArray(payload.actions) ? payload.actions : [];
+    for (var i = 0; i < aa.length; i++) {
+      var a = aa[i]; if (!a || typeof a !== 'object') continue;
+      var ak = [a.kind || '', a.arg || '', a.label || ''].join('|');
+      if (seen['a:' + ak]) continue; seen['a:' + ak] = true; actions.push(a);
+    }
+    var ff = payload && Array.isArray(payload.followups) ? payload.followups : [];
+    for (var j = 0; j < ff.length; j++) {
+      var f = String(ff[j] || '').trim(); if (!f) continue;
+      var fk = f.toLowerCase(); if (seen['f:' + fk]) continue; seen['f:' + fk] = true; followups.push(f);
+    }
+    return { actions: actions, followups: followups,
+      artifact: payload && payload.artifact && typeof payload.artifact === 'object' ? payload.artifact : null };
+  }
 
   function sendEmail(btn, block, art) {
     var toEl = block.querySelector('.mlsca-to');
@@ -228,22 +300,27 @@
       .then(null, function () { btn.disabled = false; btn.textContent = 'Send email'; toast('Network error -- could not send.'); });
   }
 
-  function renderBlock(payload, t) {
+  function renderBlock(payload, t, messageKey, bubble) {
     if (!t) return;
-    var actions = Array.isArray(payload.actions) ? payload.actions : [];
-    var followups = Array.isArray(payload.followups) ? payload.followups : [];
-    var artifact = payload.artifact && typeof payload.artifact === 'object' ? payload.artifact : null;
+    messageKey = String(messageKey || 'message').replace(/"/g, '');
+    var already = safe(function () { return t.querySelector('[data-mlsca-message="' + messageKey + '"]'); }, null);
+    if (already) return;
+    var normalized = uniquePayload(payload);
+    var actions = normalized.actions;
+    var followups = normalized.followups;
+    var artifact = normalized.artifact;
     if (!actions.length && !followups.length && !artifact) return;
 
     var block = document.createElement('div');
     block.className = BLOCK_CLASS;
+    block.setAttribute('data-mlsca-message', messageKey);
 
     if (followups.length) {
       var fu = document.createElement('div'); fu.className = 'mlsca-fu';
       followups.forEach(function (q) {
         var chip = document.createElement('button'); chip.type = 'button'; chip.className = 'mlsca-chip';
         chip.textContent = q;
-        chip.onclick = function () { safe(function () { if (window.__mlsAsstFix && isFn(window.__mlsAsstFix._handleSend)) window.__mlsAsstFix._handleSend(q); }); };
+        chip.onclick = function () { submitFollowup(q); };
         fu.appendChild(chip);
       });
       block.appendChild(fu);
@@ -284,89 +361,101 @@
       }
       block.appendChild(art);
     }
-    t.appendChild(block);
+    if (bubble && bubble.parentNode === t) {
+      try { t.insertBefore(block, bubble.nextSibling || null); } catch (e) { t.appendChild(block); }
+    } else t.appendChild(block);
     safe(function () { block.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
   }
 
-  /* pending payloads waiting for their AI bubble to render. Each entry
-     remembers WHICH thread to render into (captured when the request fired,
-     see installFetchPeek) and how many children that thread had then -- once
-     the count grows (the reply rendered) or ~8s passes (safety timeout, in
-     case a thread's own bubble markup doesn't simply append), the affordance
-     block is rendered into that SAME thread. Generic child-count growth
-     (rather than a hardcoded ".as-msg.ai" selector) works for both the
-     Assistant panel's markup and Studio's own #copilotThread markup without
-     needing to know either one's exact bubble class names. */
-  var pending = [];
-  function drainPending() {
-    if (!pending.length) return;
-    var still = [];
-    for (var i = 0; i < pending.length; i++) {
-      var item = pending[i];
-      var t = item.target;
-      if (!t || !document.body.contains(t)) continue; // thread gone (nav'd away) -- drop silently
-      var grew = t.children.length > item.startCount;
-      var stale = (Date.now() - item.queuedAt) > 8000;
-      if (grew || stale) renderBlock(item.payload, t);
-      else still.push(item);
+  /* ---------------- canonical metadata subscription ---------------- */
+  var storeRef = null, storeUnsub = null, renderTimer = null, bootTimer = null, bootTries = 0, lifecycleEvents = [];
+  function canonicalStore() {
+    return safe(function () {
+      var store = window.__mlsCopilotConvo;
+      return store && isFn(store.all) && isFn(store.subscribe) ? store : null;
+    }, null);
+  }
+  function canonicalMessages() {
+    var store = canonicalStore();
+    if (store) return safe(function () { return store.all(); }, []) || [];
+    return safe(function () { return Array.isArray(window._copilotHistory) ? window._copilotHistory.slice() : []; }, []);
+  }
+  function hash(value) {
+    var s = String(value || ''), h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24); }
+    return (h >>> 0).toString(36);
+  }
+  function messageKey(message, index) {
+    return 'ca-msg-' + index + '-' + String(message && message.requestId != null ? message.requestId : 'persisted') + '-' +
+      hash(String(message && message.text || '') + JSON.stringify(uniquePayload(message || {})));
+  }
+  function renderAssistantAffordances() {
+    renderTimer = null;
+    var thread = assistantThread(); if (!thread) return false;
+    var messages = canonicalMessages();
+    var bubbles = safe(function () { return thread.querySelectorAll('.as-msg'); }, []) || [];
+    var valid = {};
+    for (var i = 0; i < messages.length; i++) {
+      var message = messages[i];
+      if (!message || message.role !== 'ai') continue;
+      var normalized = uniquePayload(message);
+      if (!normalized.actions.length && !normalized.followups.length && !normalized.artifact) continue;
+      var key = messageKey(message, i); valid[key] = true;
+      renderBlock(normalized, thread, key, bubbles[i] || null);
     }
-    pending = still;
+    var existing = safe(function () { return thread.querySelectorAll('[data-mlsca-message]'); }, []) || [];
+    for (var j = existing.length - 1; j >= 0; j--) {
+      var existingKey = safe(function (node) { return node.getAttribute('data-mlsca-message'); }.bind(null, existing[j]), '');
+      if (!valid[existingKey] && existing[j].parentNode) safe(function (node) { node.parentNode.removeChild(node); }.bind(null, existing[j]));
+    }
+    return true;
   }
-  var drainIv = setInterval(function () { safe(drainPending); }, 400);
-
-  /* ---------------- fetch wrap: peek /api/copilot only ---------------- */
-  var origFetch = null;
-  function isCopilotAsk(url) {
-    try { return /\/api\/copilot(\?|$)/.test(String(url || '').split('#')[0]); } catch (e) { return false; }
+  function scheduleSync() {
+    if (renderTimer != null) return;
+    renderTimer = setTimeout(renderAssistantAffordances, 0);
   }
-  function installFetchPeek() {
-    if (!isFn(window.fetch) || window.fetch.__mlsCaWrapped) return;
-    origFetch = window.fetch.bind(window);
-    var wrapped = function (input, init) {
-      var url = (typeof input === 'string') ? input : (input && input.url) || '';
-      var method = (init && init.method) || (typeof input === 'object' && input.method) || 'GET';
-      var p = origFetch(input, init);
-      if (String(method).toUpperCase() === 'POST' && isCopilotAsk(url)) {
-        /* capture NOW, while we still know where the user actually is --
-           by the time the response resolves they may have switched tabs */
-        var target = pickThread();
-        var startCount = target ? target.children.length : 0;
-        safe(function () {
-          p.then(function (resp) {
-            safe(function () {
-              resp.clone().json().then(function (d) {
-                if (target && d && d.ok && (Array.isArray(d.actions) && d.actions.length || Array.isArray(d.followups) && d.followups.length || d.artifact)) {
-                  pending.push({ payload: d, target: target, startCount: startCount, queuedAt: Date.now() });
-                }
-              }).then(null, function () {});
-            });
-          });
-        });
-      }
-      return p;
-    };
-    wrapped.__mlsCaWrapped = true;
-    window.fetch = wrapped;
+  function attachStore() {
+    var store = canonicalStore();
+    if (!store) return false;
+    if (store === storeRef) { scheduleSync(); return true; }
+    if (storeUnsub) safe(function () { storeUnsub(); });
+    storeRef = store;
+    storeUnsub = safe(function () { return store.subscribe(scheduleSync); }, null);
+    scheduleSync();
+    return true;
   }
-  function revertFetchPeek() {
-    if (origFetch && window.fetch && window.fetch.__mlsCaWrapped) window.fetch = origFetch;
-    origFetch = null;
+  function retryBoot() {
+    bootTimer = null; bootTries++;
+    var attached = attachStore(); scheduleSync();
+    if ((!attached || !assistantThread()) && bootTries < 40) bootTimer = setTimeout(retryBoot, 250);
+  }
+  function onLifecycle() { attachStore(); scheduleSync(); }
+  function bindLifecycle() {
+    if (lifecycleEvents.length || !isFn(window.addEventListener)) return;
+    ['mls:ui-ready', 'mls:copilot-ready', 'mls:view-changed', 'mls:panel-open'].forEach(function (name) {
+      safe(function () { window.addEventListener(name, onLifecycle, false); lifecycleEvents.push([name, onLifecycle]); });
+    });
+  }
+  function unbindLifecycle() {
+    for (var i = 0; i < lifecycleEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, lifecycleEvents[i]));
+    lifecycleEvents = [];
   }
 
   /* ---------------- boot / revert ---------------- */
   function boot() {
-    ensureCss();
-    installFetchPeek();
+    ensureCss(); bindLifecycle(); retryBoot();
   }
   function revert() {
-    safe(function () { clearInterval(drainIv); });
-    safe(revertFetchPeek);
+    if (storeUnsub) safe(function () { storeUnsub(); });
+    storeUnsub = null; storeRef = null;
+    if (renderTimer != null) { safe(function () { clearTimeout(renderTimer); }); renderTimer = null; }
+    if (bootTimer != null) { safe(function () { clearTimeout(bootTimer); }); bootTimer = null; }
+    unbindLifecycle();
     safe(function () { var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); });
     safe(function () {
       var blocks = document.querySelectorAll('.' + BLOCK_CLASS);
       for (var i = 0; i < blocks.length; i++) if (blocks[i].parentNode) blocks[i].parentNode.removeChild(blocks[i]);
     });
-    pending = [];
     try { window.__mlsCopilotActions.installed = false; } catch (e) {}
   }
 
@@ -374,6 +463,9 @@
     installed: true,
     version: VERSION,
     asset: ASSET,
+    sync: function () { attachStore(); return renderAssistantAffordances(); },
+    resolvePatient: resolvePatient,
+    runAction: runAction,
     revert: revert
   };
 

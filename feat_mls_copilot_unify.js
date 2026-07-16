@@ -1,4 +1,4 @@
-/* feat_mls_copilot_unify.js  ->  window.__mlsCopilotUnify  (unify-1.0.0)  [Task 2]
+/* feat_mls_copilot_unify.js  ->  window.__mlsCopilotUnify  (unify-1.1.0)  [Task 2]
  *
  * ONE shared Copilot conversation across the two front-ends that used to keep
  * independent histories:
@@ -30,7 +30,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCopilotUnify", STORE = "__mlsCopilotConvo", VERSION = "unify-1.0.0";
+  var NS = "__mlsCopilotUnify", STORE = "__mlsCopilotConvo", VERSION = "unify-1.1.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---- self-gate: identical to feat_mls_asst_fix / the assistant panel ---- */
@@ -85,10 +85,31 @@
       baseSave(); notify();
       return m;
     },
-    pushPending: function (text) { try { arr().push({ role: "pending", text: text || "" }); } catch (e) {} notify(); },
-    dropPending: function () {
-      try { var a = arr(), i = a.length; while (i--) { if (a[i] && a[i].role === "pending") a.splice(i, 1); } } catch (e) {}
+    /* Return a concrete pending token and allow callers to remove only their
+       own request.  Omitting target preserves the legacy "drop all" behavior.
+       This prevents one Copilot surface from clearing another in-flight turn. */
+    pushPending: function (text, extra) {
+      var pending = { role: "pending", text: text || "" };
+      if (extra && typeof extra === "object") {
+        for (var k in extra) if (k !== "role" && k !== "text") pending[k] = extra[k];
+      }
+      try { arr().push(pending); } catch (e) {}
       notify();
+      return pending;
+    },
+    dropPending: function (target) {
+      var changed = false;
+      try {
+        var a = arr(), i = a.length;
+        while (i--) {
+          if (a[i] && a[i].role === "pending" && (!target || a[i] === target)) {
+            a.splice(i, 1); changed = true;
+            if (target) break;
+          }
+        }
+      } catch (e) {}
+      if (changed) { baseSave(); notify(); }
+      return changed;
     },
     reset: function () {
       try { window._copilotHistory = []; } catch (e) {}
@@ -246,7 +267,7 @@
   /* ===================================================================
    * boot
    * =================================================================== */
-  var bootIv = null, tries = 0;
+  var bootIv = null, tries = 0, lifecycleEvents = [];
   function tryWire() {
     var ok = true;
     if (!wireStudio()) ok = false;
@@ -256,26 +277,33 @@
     return ok;
   }
   function boot() {
-    if (tryWire()) { startHintPoll(); return; }
+    bindLifecycleEvents();
+    if (tryWire()) return;
     bootIv = setInterval(function () {
       tries++;
-      if (tryWire() || tries > 80) { clearInterval(bootIv); bootIv = null; startHintPoll(); }
-    }, 500);
+      if (tryWire() || tries >= 40) { clearInterval(bootIv); bootIv = null; }
+    }, 250);
   }
-  /* the "no patient" hint tracks patient-selection changes that don't touch the
-     conversation; a gentle poll keeps it correct without hooking selectPatient. */
-  var hintPoll = null, _lastNone = null;
-  function startHintPoll() {
-    stopHintPoll();
-    hintPoll = setInterval(function () {
-      try { var none = store.noActivePatient(); if (none !== _lastNone) { _lastNone = none; updateNoPatientHints(); } } catch (e) {}
-    }, 1500);
+  /* Canonical lifecycle events replace the old permanent 1.5s patient-hint
+     poll.  Late dependency recovery stays bounded; later UI-ready events can
+     still retry without keeping a timer alive forever. */
+  function bindLifecycleEvents() {
+    if (lifecycleEvents.length || !isFn(window.addEventListener)) return;
+    function onReady() { tryWire(); }
+    function onContext() { updateNoPatientHints(); }
+    [["mls:ui-ready", onReady], ["mls:copilot-ready", onReady], ["mls:view-changed", onReady],
+     ["mls:active-patient-changed", onContext], ["mls:patient-changed", onContext]].forEach(function (row) {
+      safe(function () { window.addEventListener(row[0], row[1], false); lifecycleEvents.push(row); });
+    });
   }
-  function stopHintPoll() { if (hintPoll) { clearInterval(hintPoll); hintPoll = null; } }
+  function unbindLifecycleEvents() {
+    for (var i = 0; i < lifecycleEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, lifecycleEvents[i]));
+    lifecycleEvents = [];
+  }
 
   function revert() {
     if (bootIv) { clearInterval(bootIv); bootIv = null; }
-    stopHintPoll();
+    unbindLifecycleEvents();
     unwireStudio();
     unwireSnapshot();
     removeHints();

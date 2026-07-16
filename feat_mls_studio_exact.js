@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.2.0-prod";
+  var VERSION = "sx-2.3.0-prod";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -30,7 +30,7 @@
   if (!isStaging() && window.__MLS_SX_PROD !== 1) { try { window.__mlsSx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "sxStyle", GRID_CLASS = "sx-grid";
-  var _obs = null, _t = null, _sched = null;
+  var _obs = null, _sched = null, _bootTimers = [];
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function imp(el, p, v) { try { if (el) el.style.setProperty(p, v, "important"); } catch (e) {} }
@@ -148,23 +148,42 @@
     if (v.getAttribute("data-sx-built") !== VERSION) v.setAttribute("data-sx-built", VERSION);
   }
 
-  function hookShowView() {
-    try { if (typeof window.showView === "function" && !window.__sxHook) { window.__sxHook = 1; var _o = window.showView; window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; }; } } catch (e) {}
-  }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { hookShowView(); build(); } catch (e) {}
-    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    try { build(); } catch (e) {}
+    try {
+      var v = $("studioView");
+      if (_obs && v) _obs.observe(v, { childList: true, subtree: true });
+    } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
+  function onViewChanged(ev) {
+    var d = ev && ev.detail;
+    if (!d || d.view === "studio" || d.previousView === "studio") schedule();
+  }
+  function clearBootTimers() {
+    try { _bootTimers.forEach(function (timer) { clearTimeout(timer); }); } catch (e) {}
+    _bootTimers = [];
+  }
   function boot() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    clearBootTimers();
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    try { window.addEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     applyAll();
-    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 10) clearInterval(_t); }, 800);
+    /* Bounded late-mount retries cover the initial asset wave. Normal updates are
+       owned by the Studio root observer and the canonical view event. */
+    [400, 1000, 2200, 4200, 7200].forEach(function (delay) {
+      _bootTimers.push(setTimeout(applyAll, delay));
+    });
   }
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_t) clearInterval(_t); } catch (e) {}
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    clearBootTimers();
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     var v = $("studioView");
     if (v) {
       /* move build + creations back to studioView (un-nest from sx-right), keep order sane */

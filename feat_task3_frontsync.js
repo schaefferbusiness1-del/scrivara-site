@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.4';
+  var VERSION = 't3-1.0.6';
   var wrapped = [], trackedTimeouts = [], destroyed = false;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -235,19 +235,22 @@
         if (!nk || !dk) { keep.push(x); continue; }
         var key = nk + '|' + dk + '|' + x.__t3t;
         var dayKeyD = nk + '|' + dk;
-        if (seen[key]) {                                                   /* exact duplicate (name+day+time) */
+        if (seen[key] && pickRowsSameIdentity(seen[key], x)) {             /* duplicate only after positive patient-identity proof */
           var prev = seen[key];
           if (!prev.patient_external_id && x.patient_external_id) { removed.push(prev); keep[keep.indexOf(prev)] = x; seen[key] = x; if (seen[dayKeyD] === prev) seen[dayKeyD] = x; }
           else removed.push(x);
           continue;
         }
-        if (seen[dayKeyD] && (!x.__t3t || !seen[dayKeyD].__t3t)) {         /* same patient same day, one timeless */
+        if (seen[dayKeyD] && pickRowsSameIdentity(seen[dayKeyD], x) && (!x.__t3t || !seen[dayKeyD].__t3t)) { /* same proven patient/day, one timeless */
           var prevD = seen[dayKeyD];
           if (!prevD.__t3t && x.__t3t) { removed.push(prevD); keep[keep.indexOf(prevD)] = x; seen[dayKeyD] = x; seen[key] = x; }
           else removed.push(x);
           continue;
         }
-        seen[key] = x; if (!seen[dayKeyD]) seen[dayKeyD] = x;
+        /* Keep the first identity in each bucket. A same-name/time row with a
+           contradictory patient identity remains visible and can never make a
+           later restore look uniquely safe. */
+        if (!seen[key]) seen[key] = x; if (!seen[dayKeyD]) seen[dayKeyD] = x;
         keep.push(x);
       }
       if (removed.length) {                                                /* prune display duplicates in place (reversible) */
@@ -296,7 +299,10 @@
         provIdx[x.__t3pk].byDate[x.appt_date] = (provIdx[x.__t3pk].byDate[x.appt_date] || 0) + 1;
       }
       Cal._provIdx = provIdx;
-      var sig = a.length + ':' + (a[0] && (a[0].id || a[0].name) || '') + ':' + (a[a.length - 1] && (a[a.length - 1].id || a[a.length - 1].name) || '') + ':' + (a[0] && a[0].appt_date || '');
+      /* Include every patient-identity field and DOB. Several hydration paths
+         enrich an existing appointment object in place, so length/edge-only
+         signatures left the Visit projection permanently stale. */
+      var sig = a.length + ':' + a.map(pickRowIdentitySig).join('|');
       var changed = sig !== Cal._sig; Cal._sig = sig;
       return changed;
     },
@@ -525,15 +531,25 @@
 
   /* ==================== 5. PATIENT SELECTOR (one surface) ================= */
   function viewingDate() {
-    var i = document.querySelector('.mlsnu-date') || document.querySelector('.as-date');
-    if (i && /^\d{4}-\d{2}-\d{2}$/.test(i.value)) return i.value;
-    var vis = [].filter.call(document.querySelectorAll('#visitView input[type="date"]'), function (x) { return x.offsetParent !== null; })[0];
-    if (vis && /^\d{4}-\d{2}-\d{2}$/.test(vis.value)) return vis.value;
+    /* The Visit workspace is always "now" in the account timezone.  Calendar
+       and Assistant date controls are independent and must never silently
+       replace the Visit patient list with another day. */
     return todayKey();
   }
   function canonicalList(date) {
     return Cal.rows({ date: date }).map(function (a) {
-      return { name: a.name || '', time: a.__t3t || '', reason: a.reason || '', dob: a.dob || '', provider: a.provider ? humanize(a.provider) : '', __pk: a.__t3pk || '' };
+      /* Preserve every namespace-qualified patient reference. The old
+         projection stripped these and forced the real click/restore path back
+         to unsafe name-only matching. */
+      return {
+        name: a.name || '', time: a.__t3t || '', reason: a.reason || '', dob: a.dob || '',
+        provider: a.provider ? humanize(a.provider) : '', __pk: a.__t3pk || '',
+        patient_external_id: a.patient_external_id || '', _mlsTargetPatientId: a._mlsTargetPatientId || '',
+        patientId: a.patientId || '', patient_id: a.patient_id || '',
+        athenaPatientId: a.athenaPatientId || '', athena_patient_id: a.athena_patient_id || '',
+        chartId: a.chartId || '', chart_id: a.chart_id || '',
+        mrn: a.mrn || '', athenaId: a.athenaId || '', athena_id: a.athena_id || ''
+      };
     });
   }
   var pickSig = '';
@@ -556,7 +572,7 @@
     var date = viewingDate();
     var list = canonicalList(date);
     var scope = Cal.getScope();
-    var sig = date + '|' + scope.pk + '|' + list.length + '|' + list.map(function (x) { return x.name + x.time; }).join(',');
+    var sig = date + '|' + scope.pk + '|' + list.length + '|' + list.map(pickRowIdentitySig).join(',');
     if (!force && sig === pickSig) return;
     pickSig = sig;
     S.set(6, 'run');
@@ -629,18 +645,179 @@
   }
 
   /* ---- selected-patient persistence (fix stale-after-refresh) ---- */
-  function persistPick(name, dob) {
-    if (!name) return;
-    safe(function () { lsSet('mlsSelPt3', JSON.stringify({ name: name, dob: dob || '', date: todayKey(), ts: Date.now() })); });
+  /* __T3_PICK_IDENTITY_START__ -- kept pure so adversarial identity fixtures
+     execute the exact production resolver without mounting the whole app. */
+  function pickClean(value) { return String(value == null ? '' : value).trim().toLowerCase(); }
+  function pickDobKey(value) {
+    var raw = String(value == null ? '' : value).trim(), m;
+    if ((m = raw.match(/^(\d{4})[-\/]?(\d{1,2})[-\/]?(\d{1,2})(?:\D|$)/))) return m[1] + ('0' + m[2]).slice(-2) + ('0' + m[3]).slice(-2);
+    if ((m = raw.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:\D|$)/))) return m[3] + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
+    raw = raw.replace(/\D/g, '');
+    if (/^(?:18|19|20|21)\d{6}$/.test(raw)) return raw;
+    if (/^\d{8}$/.test(raw)) return raw.slice(4) + raw.slice(0, 4);
+    return '';
+  }
+  function pickRefs(raw) {
+    raw = raw || {};
+    function values(keys, storedKey) {
+      var out = [], seen = {};
+      keys.forEach(function (key) {
+        var list = raw[key]; if (!Array.isArray(list)) list = [list];
+        list.forEach(function (value) { value = pickClean(value); if (value && !seen[value]) { seen[value] = 1; out.push(value); } });
+      });
+      var stored = raw.refs && raw.refs[storedKey]; if (!Array.isArray(stored)) stored = [stored];
+      stored.forEach(function (value) { value = pickClean(value); if (value && !seen[value]) { seen[value] = 1; out.push(value); } });
+      return out;
+    }
+    /* In this site model patientId/patient_id are local chart aliases. Athena
+       source identifiers have their own explicit athenaPatientId/chartId
+       namespace. Values never match merely because their text is equal. */
+    var local = values(['patient_external_id', '_mlsTargetPatientId', 'patientId', 'patient_id'], 'local');
+    var athena = values(['athenaPatientId', 'athena_patient_id', 'chartId', 'chart_id'], 'athena');
+    var mrn = values(['mrn', 'athenaId', 'athena_id'], 'mrn');
+    return {
+      local: local[0] || '', athena: athena[0] || '', mrn: mrn[0] || '',
+      _invalid: !!((raw.refs && raw.refs._invalid) || local.length > 1 || athena.length > 1 || mrn.length > 1)
+    };
+  }
+  function pickHasRefs(refs) { return !!(refs && (refs.local || refs.athena || refs.mrn)); }
+  function pickStableMatch(saved, row) {
+    var want = pickRefs(saved), have = pickRefs(row), exact = false, keys = ['local', 'athena', 'mrn'];
+    if (want._invalid || have._invalid || !pickHasRefs(want)) return false;
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (!want[key] || !have[key]) continue;
+      if (want[key] !== have[key]) return false; /* same-namespace contradiction */
+      exact = true;
+    }
+    return exact; /* equal text in a different namespace is never identity */
+  }
+  function pickRowsCompatible(left, right) {
+    var a = pickRefs(left), b = pickRefs(right), keys = ['local', 'athena', 'mrn'];
+    if (a._invalid || b._invalid) return false;
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i]; if (a[key] && b[key] && a[key] !== b[key]) return false;
+    }
+    var an = nameKey(left && left.name), bn = nameKey(right && right.name);
+    if (an && bn && an !== bn) return false;
+    var ad = pickDobKey(left && left.dob), bd = pickDobKey(right && right.dob);
+    if (ad && bd && ad !== bd) return false;
+    return true;
+  }
+  function pickRowsSameIdentity(left, right) {
+    if (!pickRowsCompatible(left, right)) return false;
+    var a = pickRefs(left), b = pickRefs(right), keys = ['local', 'athena', 'mrn'];
+    if (a._invalid || b._invalid) return false;
+    /* Compatibility is only the absence of a contradiction. Dedupe needs
+       positive same-namespace proof; two identical demographic rows with no
+       stable reference must remain visible so restore can see the ambiguity. */
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i]; if (a[key] && b[key] && a[key] === b[key]) return true;
+    }
+    return false;
+  }
+  function pickRowIdentitySig(row) {
+    row = row || {};
+    var refs = pickRefs(row);
+    return [
+      pickClean(row.id || row.appointmentId || row.appointment_id),
+      nameKey(row.name), pickDobKey(row.dob),
+      refs.local, refs.athena, refs.mrn, refs._invalid ? '!' : '',
+      String(row.appt_date || ''), String(row.__t3t || row.time || '')
+    ].join('~');
+  }
+  function resolveSavedPick(saved, rows) {
+    saved = saved || {}; rows = Array.isArray(rows) ? rows : [];
+    var refs = pickRefs(saved), matches, first, i;
+    if (!saved.name || refs._invalid) return null;
+    if (pickHasRefs(refs)) {
+      matches = rows.filter(function (row) { return pickStableMatch(saved, row); });
+      if (!matches.length) return null;
+      first = matches[0];
+      for (i = 1; i < matches.length; i++) if (!pickRowsCompatible(first, matches[i])) return null;
+      return first;
+    }
+    var dob = pickDobKey(saved.dob);
+    if (!dob) return null; /* a saved name by itself is never safe to restore */
+    matches = rows.filter(function (row) { return nameKey(row && row.name) === nameKey(saved.name) && pickDobKey(row && row.dob) === dob; });
+    return matches.length === 1 ? matches[0] : null; /* duplicate demographics fail closed */
+  }
+  function resolveStoredPick(row, patients) {
+    row = row || {}; patients = Array.isArray(patients) ? patients : [];
+    var refs = pickRefs(row), matches;
+    if (refs._invalid) return null;
+    function asScheduleIdentity(patient) {
+      return {
+        name: patient && patient.name, dob: patient && patient.dob,
+        patient_external_id: patient && patient.id,
+        _mlsTargetPatientId: patient && patient._mlsTargetPatientId,
+        patientId: patient && patient.patientId,
+        patient_id: patient && patient.patient_id,
+        athenaPatientId: patient && patient.athenaPatientId,
+        athena_patient_id: patient && patient.athena_patient_id,
+        chartId: patient && patient.chartId,
+        chart_id: patient && patient.chart_id,
+        mrn: patient && patient.mrn,
+        athenaId: patient && patient.athenaId,
+        athena_id: patient && patient.athena_id
+      };
+    }
+    if (refs.local) {
+      matches = patients.filter(function (patient) {
+        var identity = asScheduleIdentity(patient), patientRefs = pickRefs(identity);
+        return !patientRefs._invalid && patientRefs.local === refs.local && pickRowsCompatible(row, identity);
+      });
+      return matches.length === 1 ? matches[0] : null;
+    }
+    var dob = pickDobKey(row.dob); if (!row.name || !dob) return null;
+    matches = patients.filter(function (patient) {
+      var identity = asScheduleIdentity(patient);
+      return !pickRefs(identity)._invalid && nameKey(patient && patient.name) === nameKey(row.name) &&
+        pickDobKey(patient && patient.dob) === dob && pickRowsCompatible(row, identity);
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
+  /* __T3_PICK_IDENTITY_END__ */
+  function persistPick(nameOrRow, dob) {
+    var row = (nameOrRow && typeof nameOrRow === 'object') ? nameOrRow : { name: nameOrRow, dob: dob || '' };
+    var name = String(row.name || '').trim(); if (!name) return;
+    var refs = pickRefs(row);
+    if (refs._invalid) { safe(function () { lsDel('mlsSelPt3'); }); return; }
+    /* Generic Who's Next clicks expose only the hero fields. Capture stable
+       refs only when the current-day name+DOB identifies exactly one row. */
+    if (!pickHasRefs(refs) && pickDobKey(row.dob)) {
+      var exact = Cal.rows({ date: todayKey(), all: true }).filter(function (candidate) {
+        return nameKey(candidate && candidate.name) === nameKey(name) && pickDobKey(candidate && candidate.dob) === pickDobKey(row.dob);
+      });
+      if (exact.length === 1) { row = exact[0]; refs = pickRefs(row); }
+    }
+    safe(function () { lsSet('mlsSelPt3', JSON.stringify({ name: String(row.name || name), dob: String(row.dob || dob || ''), refs: refs, date: todayKey(), ts: Date.now() })); });
   }
   function wrapHeroPick() {
     var cur = window._heroPickPatient;
     if (!isFn(cur) || cur.__t3Wrapped) return;
     var w = function (i) {
+      var a = (window._heroTodayList || [])[i] || {};
+      var patients = safe(function () { return isFn(window.getPatients) ? window.getPatients() : []; }, []);
+      var refs = pickRefs(a), chart = resolveStoredPick(a, patients);
+      var sameName = patients.filter(function (patient) { return nameKey(patient && patient.name) === nameKey(a.name); });
+      if (refs._invalid || (refs.local && !chart) || (!chart && sameName.length)) {
+        safe(function () { if (isFn(window.toast)) window.toast('Could not safely match that schedule row to one patient chart. Open Patients and choose the exact chart.', 'err'); });
+        return false;
+      }
       var r = cur.apply(this, arguments);
+      if (r === false) return false;
       safe(function () {
-        var a = (window._heroTodayList || [])[i] || {};
-        persistPick(a.name, a.dob);
+        var active = isFn(window.activePatient) ? window.activePatient() : null;
+        if (chart && (!active || String(active.id || '') !== String(chart.id || '')) && isFn(window.selectPatient)) {
+          window.selectPatient(chart.id); active = chart;
+        }
+        if (active && nameKey(active.name) === nameKey(a.name) && (!pickDobKey(a.dob) || !pickDobKey(active.dob) || pickDobKey(a.dob) === pickDobKey(active.dob))) {
+          var persisted = {};
+          Object.keys(a).forEach(function (key) { persisted[key] = a[key]; });
+          if (!persisted.patient_external_id) persisted.patient_external_id = active.id || '';
+          persistPick(persisted);
+        }
         S.set(7, 'run'); S.set(7, 'ok');
       });
       return r;
@@ -660,14 +837,20 @@
       var have = (Cal._full || window._calAppts || []).length;
       if (!have) { if (Date.now() - restoreT0 > 90000) restoredPick = true; return; }  /* data not loaded yet: retry, don't clear */
       restoredPick = true;
-      var inStore = Cal.rows({ date: v.date, all: true }).some(function (a) { return nameKey(a.name) === nameKey(v.name); });
-      if (!inStore) { lsDel('mlsSelPt3'); return; }                         /* patient no longer on today -> clear */
+      var restored = resolveSavedPick(v, Cal.rows({ date: v.date, all: true }));
+      if (!restored) { lsDel('mlsSelPt3'); return; }                        /* missing, ambiguous, or contradicted -> clear */
       var nm = $('heroPtName'), db = $('heroPtDob');
-      if (nm && !String(nm.value || '').trim()) {                           /* only fill an EMPTY box: never clobber typing */
-        nm.value = v.name; if (db && v.dob && !String(db.value || '').trim()) db.value = v.dob;
-        safe(function () { if (isFn(window._heroSyncName)) window._heroSyncName(); });
-        S.set(7, 'run'); S.set(7, 'ok');
-      }
+      if (!nm || String(nm.value || '').trim()) return;                     /* never override deliberate typing */
+      var chart = resolveStoredPick(restored, safe(function () { return isFn(window.getPatients) ? window.getPatients() : []; }, []));
+      if (!chart || !chart.id || !isFn(window.selectPatient)) { lsDel('mlsSelPt3'); return; }
+      window.selectPatient(chart.id);                                      /* canonical owner updates every patient surface */
+      var activeId = safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ((isFn(window.activePatient) && window.activePatient() || {}).id || ''); }, '');
+      if (String(activeId || '') !== String(chart.id || '')) { lsDel('mlsSelPt3'); return; }
+      nm.value = String(chart.name || restored.name || v.name || '');
+      if (db && !String(db.value || '').trim()) db.value = String(chart.dob || restored.dob || v.dob || '');
+      safe(function () { if (isFn(window._heroSyncName)) window._heroSyncName(); });
+      persistPick(Object.assign({}, restored, { patient_external_id: chart.id, name: chart.name || restored.name, dob: chart.dob || restored.dob }));
+      S.set(7, 'run'); S.set(7, 'ok');
     });
   }
 
@@ -797,6 +980,8 @@
     version: VERSION,
     cal: Cal,
     status: S,
+    resolveSavedPick: resolveSavedPick,
+    resolveStoredPick: resolveStoredPick,
     rerender: rerenderAll,
     revert: function () {
       destroyed = true;
