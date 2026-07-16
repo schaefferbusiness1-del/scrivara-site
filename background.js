@@ -9047,7 +9047,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               if (!(await sleepWithinReadDeadline(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180)))))) break;
             } while (Date.now() < frameProofDeadline);
-            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId) } } };
+            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed', d2: { hadFrame: detailFrames.length, urlBoundChecked: !!(expected && expected.encounterId), rowType: String((snap && snap.type) || '').slice(0, 60), hadDetailFrame: !!detailFrame, frameUrlTail: detailFrame ? String(detailFrame.url || '').split('/').slice(-1)[0].split('?')[0].slice(0, 40) : '' } } };
 
             /* Re-prove the parent patient after the child frame opens. A tab or
                chart switch during the two clicks invalidates this encounter. */
