@@ -337,3 +337,13 @@ assert.strictEqual(study.narrativeNumbersOk('Improvement was 87.3 percent.', dig
   assert.match(JSON.stringify(knee.model), /Cohort fallback/);
   console.log('study-question-fallback: ok');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+
+/* junk single-letter identity must never shred the document */
+(function () {
+  const ids = [{ name: 'a', dob: '', mrn: '' }, { name: 'Jane Example', dob: '1980-02-03', mrn: 'MRN-7788' }];
+  const out = study.deidentifyText('Cohort fallback: the phrase matched all patients. Jane Example seen, MRN-7788.', ids);
+  assert.strictEqual(out.indexOf('f[redacted]llb[redacted]ck'), -1, 'single-letter identities must be ignored');
+  assert.match(out, /Cohort fallback: the phrase matched all patients/);
+  assert.ok(!/Jane Example|MRN-7788/.test(out), 'real identities still redacted');
+  console.log('study-junk-identity: ok');
+})();

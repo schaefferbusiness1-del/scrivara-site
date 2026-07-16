@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.2.1';
+  var VERSION = 'sr-2.2.2';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -714,10 +714,14 @@
     var out = S(text);
     (identities || []).forEach(function (id) {
       var values = [id && id.name, id && id.dob, id && id.mrn];
-      values.forEach(function (v, idx) {
+      values.forEach(function (v) {
         v = S(v).trim();
-        if (!v || (idx === 2 && v.length < 4)) return;
-        try { out = out.replace(new RegExp(escapeRx(v), 'gi'), '[redacted]'); } catch (e) {}
+        /* junk identity values (a real store contained a patient literally
+           named "a") must never shred the whole document: require length >= 4
+           and whole-word boundaries for the blanket replacement. Multi-word
+           name forms are additionally handled by redactNameVariants below. */
+        if (!v || v.length < 4) return;
+        try { out = out.replace(new RegExp('\\b' + escapeRx(v) + '\\b', 'gi'), '[redacted]'); } catch (e) {}
       });
       out = redactNameVariants(out, id && id.name);
       out = redactDobVariants(out, id && id.dob);
