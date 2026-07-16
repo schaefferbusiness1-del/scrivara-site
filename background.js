@@ -2387,6 +2387,19 @@ function mlsAthenaTeachWatcherFn(config) {
     if (await tabVisible(tab.id)) return 'strip';
     await qpSleep(700);
     if (await tabVisible(tab.id)) return 'strip';
+    /* Live 2026-07-16: after a service-worker restart the strip can sit with
+       IDENTICAL bounds under the doctor's window, and a same-bounds update is
+       a no-op that never raises it. Two REAL bounds changes (12px out, then
+       back) force a raise + repaint without focusing anything. */
+    if (QP.winId != null && QP.strip) {
+      try {
+        await chrome.windows.update(QP.winId, { left: QP.strip.left - 12, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
+        await qpSleep(150);
+        await chrome.windows.update(QP.winId, { left: QP.strip.left, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
+      } catch (eJiggle) {}
+      await qpSleep(600);
+      if (await tabVisible(tab.id)) return 'strip';
+    }
     /* still covered (doctor re-maximized / another app on top): read anyway,
        throttled, under the callers' existing budgets. Nudge ONCE, never focus. */
     if (!QP.flashed) { QP.flashed = true; try { if (QP.winId != null) chrome.windows.update(QP.winId, { drawAttention: true }); } catch (e) {} }
@@ -5135,7 +5148,23 @@ var mlsProv = (function () {
            even when the weekstrip click WORKED. Verify weekstrip navs by the SELECTED
            day tab instead. */
         if (found.via === 'weekstrip') {
-          const chk2X = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, found.visibleStart || ''], func: function (want, expectedStart) {
+          /* Live 2026-07-16: after an extension reload the quiet work-strip can
+             sit occluded, so Athena's day click lands but the selection never
+             renders ("no selected day" while the strip is verifiably clickable).
+             Re-ensure visibility (the ensure now jiggles a covered strip), then
+             re-click and re-verify - up to two extra rounds - before failing. */
+          let hit = null, shown = '';
+          for (let va = 0; va < 3 && !hit; va++) {
+            if (va) {
+              try { if (self.__mlsQpEnsure) await __gotoSettle(self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id), Math.min(9000, __gotoLeft()), 'the strip re-render'); } catch (eVaQp) {}
+              if (!(await __gotoWait(1500, 'the selected-day re-render'))) { __gotoDeadline('the selected-day re-render'); return; }
+              const regx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(20000, __gotoLeft()), 'date re-click');
+              const rehits = ((regx && regx.r) || []).map((r) => r && r.result).filter(Boolean);
+              const refound = rehits.find((h) => h.found) || null;
+              if (refound) found = refound;
+              if (!(await __gotoWait(2500, 'the selected-day settle'))) { __gotoDeadline('the selected-day settle'); return; }
+            }
+            const chk2X = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, found.visibleStart || ''], func: function (want, expectedStart) {
             try {
               var nav = document.querySelector('.calendar-nav'); if (!nav) return null;
               function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
@@ -5168,10 +5197,11 @@ var mlsProv = (function () {
               return null;
             } catch (e) { return null; }
           } }, Math.min(8000, __gotoLeft()), 'selected-day verification');
-          const chk2 = (chk2X && chk2X.r) || [];
-          const oks = (chk2 || []).map((r) => r && r.result).filter(Boolean);
-          const hit = oks.find((o) => o.match);
-          const shown = (oks[0] && oks[0].sel) || '';
+            const chk2 = (chk2X && chk2X.r) || [];
+            const oks = (chk2 || []).map((r) => r && r.result).filter(Boolean);
+            hit = oks.find((o) => o.match) || null;
+            shown = (oks[0] && oks[0].sel) || shown;
+          }
           return __gotoRespond({ ok: !!hit, supported: true, via: 'weekstrip', schedDate: hit ? date : shown, diag: GDIAG, error: hit ? '' : ('athena week strip shows ' + (shown || 'no selected day') + ' instead of ' + date + '.') });
         }
         const chkX = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaReadHeaderDate }, Math.min(8000, __gotoLeft()), 'date-header verification');
@@ -7042,7 +7072,16 @@ async function mlsSchedDomInline(doc, CFG){
           const strictNameMatch = (observed, expected) => {
             const have = nameTokensStrict(observed), need = nameTokensStrict(expected);
             if (have.length < 2 || need.length < 2) return false;
-            return have.indexOf(need[0]) >= 0 && have.indexOf(need[need.length - 1]) >= 0;
+            /* Live 2026-07-16: athena's banner can TRUNCATE a long compound
+               surname ("Ann Cubbage-Reil" for "Ann Cubbage-Reilly"), which
+               failed the exact-token gate on the RIGHT patient (DOB exact).
+               The LAST token may match by >=4-char prefix in either direction;
+               the first token stays exact and every DOB/MRN gate plus the
+               strong-mismatch veto are unchanged, so a truly different
+               patient still fails closed. */
+            const lastNeed = need[need.length - 1];
+            const lastOk = have.some((h) => h === lastNeed || (h.length >= 4 && lastNeed.length >= 4 && (h.indexOf(lastNeed) === 0 || lastNeed.indexOf(h) === 0)));
+            return have.indexOf(need[0]) >= 0 && lastOk;
           };
           const dobPartsStrict = (s) => {
             const m = String(s || '').match(/\b(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})\b/);
@@ -8823,8 +8862,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
     if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
     var have = {}; haveName.forEach(function (w) { have[w] = 1; });
-    var hits = 0; wantName.forEach(function (w) { if (have[w]) hits++; });
-    var nameOk = hits >= 2 && have[wantName[0]] && have[wantName[wantName.length - 1]];
+    /* Truncated-banner surname (see strictNameMatch): the LAST want-token may
+       match a live token by >=4-char prefix in either direction. First token
+       stays exact; the DOB/MRN equality gates below are unchanged. */
+    function lastTokenOk(wantLast) {
+      if (have[wantLast]) return true;
+      if (wantLast.length < 4) return false;
+      return haveName.some(function (h) { return h.length >= 4 && (h.indexOf(wantLast) === 0 || wantLast.indexOf(h) === 0); });
+    }
+    var hits = 0; wantName.forEach(function (w, wi) { if (have[w] || (wi === wantName.length - 1 && lastTokenOk(w))) hits++; });
+    var nameOk = hits >= 2 && have[wantName[0]] && lastTokenOk(wantName[wantName.length - 1]);
     if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
     /* DOB is preferred when frozen. MRN is the exact fallback for records that
        intentionally omit DOB. Never accept a name-only chart. */
