@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.6.2';
+  var VERSION = 'oni-2.6.3';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -278,6 +278,17 @@
   }
 
   /* Keep exact chart-owned identity values out of the model's discretion. */
+  /* oni-2.6.3: identity facts (patient/DOB/dates/provider) ALWAYS stamp — a
+     wrong identity is never acceptable. CONTENT facts (procedure) stamp only
+     into an empty or placeholder-only line: a template's own "PROCEDURE:
+     [FILL: side] sacroiliac joint injection…" is fixed wording the raw
+     schedule string ("L SI joint inj P") must never clobber — doing so
+     deleted a required fixed fragment and made fidelity unsatisfiable. */
+  var SOFT_FACTS={procedure:1};
+  function placeholderOnlyTail(tail){
+    var t=S(tail).trim(); if(!t) return true;
+    return /^(?:\s*(?:\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,})\s*)+$/i.test(t);
+  }
   function forceFacts(note, facts) {
     facts=facts||{};
     /* Only the FIRST line per heading is stamped — a repeated heading (a
@@ -287,6 +298,7 @@
       var h=headingLabel(line), colon=line.indexOf(':');
       if(!h||colon<0||used[h]||!Object.prototype.hasOwnProperty.call(facts,h))return line;
       used[h]=1;
+      if(SOFT_FACTS[h] && !placeholderOnlyTail(line.slice(colon+1)))return line;
       var value=S(facts[h]).trim()||'[['+h.replace(/\s+/g,'_')+']]';
       return line.slice(0,colon+1)+' '+value;
     }).join('\n');
@@ -323,6 +335,8 @@
       /* A colon-less ALL-CAPS line is a literal document title, never a fillable field. */
       if(colon<0){out.push(seg.head);seg.body.forEach(function(b){out.push(b);});return;}
       var tail=S(seg.head.slice(colon+1)), bodyJoined=seg.body.join('\n'), hasBody=S(bodyJoined).trim(), hasSlot=/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(tail+'\n'+bodyJoined);
+      /* content facts never clobber a template line with real fixed wording */
+      if(exact && SOFT_FACTS[seg.h] && !placeholderOnlyTail(tail)){exact='';delete usedFact[seg.h];}
       if(exact){out.push(seg.head.slice(0,colon+1)+' '+exact);}
       else if(S(tail).trim()&&!hasSlot){out.push(seg.head);}
       else if(!hasBody&&!hasSlot){out.push(seg.head+(cand.length?(' '+cand.join('\n')):(' [['+seg.h.replace(/\s+/g,'_')+']]')));}

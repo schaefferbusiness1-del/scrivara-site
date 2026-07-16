@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.5.0';
+  var VERSION = 'onf-2.5.1';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -498,8 +498,12 @@
     var l = S(label).toLowerCase();
     var ctx = (S(row && row.proc) + ' ' + S(row && row.appt && row.appt.reason) + ' ' + patientHistText(row)).toLowerCase();
     if (/laterality|\bside\b/.test(l)) {
-      if (/bilateral|both sides|\bb\/l\b/.test(ctx)) return 'Bilateral';
-      var lft = /\bleft\b|\blt\b|left[- ]sided/.test(ctx), rgt = /\bright\b|\brt\b|right[- ]sided/.test(ctx);
+      /* single-letter side markers ("L SI joint inj") count only in the
+         PROCEDURE text itself — the wider chart context is too noisy */
+      var procTxt = (S(row && row.proc) + ' ' + S(row && row.appt && row.appt.reason)).toLowerCase();
+      if (/bilateral|both sides|\bb\s*\/\s*l\b/.test(ctx) || /\bb\s*\/\s*l\b/.test(procTxt)) return 'Bilateral';
+      var lft = /\bleft\b|\blt\b|left[- ]sided/.test(ctx) || /(^|[^a-z0-9])l(?=[^a-z0-9])/.test(procTxt);
+      var rgt = /\bright\b|\brt\b|right[- ]sided/.test(ctx) || /(^|[^a-z0-9])r(?=[^a-z0-9])/.test(procTxt);
       if (lft && !rgt) return 'Left';
       if (rgt && !lft) return 'Right';
       return '';

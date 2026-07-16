@@ -165,7 +165,19 @@ async function main() {
   assert.strictEqual(probs[0], 'Sacroiliac joint pain', 'problems were not ranked by procedure relevance: ' + JSON.stringify(probs));
   assert(probs.indexOf('Lumbar back pain') >= 0, 'a chart problem was dropped');
 
-  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized, chart fills history/diagnosis (incl. raw Onset extraction)');
+  // 9) oni-2.6.3: a template PROCEDURE line carrying its own fixed wording
+  //    ("[FILL: side] sacroiliac joint injection under fluoroscopy") must not
+  //    be clobbered by the raw schedule string — that deleted a required
+  //    fixed fragment and made fidelity unsatisfiable (live Claire M. case).
+  const SITPL = 'OPERATIVE REPORT\nPROCEDURE: [FILL: side] sacroiliac joint injection under fluoroscopy\nCONSENT: Obtained.\nDISPOSITION: Recovered; follow-up [FILL: interval].';
+  aiQueue.push(SITPL);   // model returns the template as-is (slots intact)
+  aiCalls = 0;
+  const si = await api.generate('Qa Alpha', '2026-07-17', 'L SI joint inj P', SITPL, { dob: '1970-01-15', patientId: 'p1' });
+  assert.strictEqual(aiCalls, 1, 'fixed-wording PROCEDURE line still failed first-pass fidelity');
+  assert(si.note.includes('sacroiliac joint injection under fluoroscopy'), 'the raw schedule string clobbered the template procedure line');
+  assert(!si.note.includes('L SI joint inj P'), 'raw schedule shorthand leaked into the note');
+
+  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized, chart fills history/diagnosis (incl. raw Onset extraction), fixed-wording procedure lines survive');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
