@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.4.0';
+  var VERSION = 'onf-2.4.1';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -357,13 +357,39 @@
   /* onf-2.3.0: history / diagnosis blanks fill from the patient's OWN chart —
      problems list + latest documented plan. Chart-grounded only, never
      invented; when the chart has nothing, the field stays for the doctor. */
+  /* onf-2.4.1: real pulled charts keep problems INSIDE the Athena visit raw
+     ("<name> - Onset: MM/DD/YYYY") with p.problems empty — the integrity
+     owner's chartProblems() extracts + procedure-ranks them; local fallback
+     mirrors it for load-order safety. */
+  function rowProblems(p, row) {
+    var proc = S(row && (row.proc || (row.appt && row.appt.reason))).trim();
+    var viaOni = safe(function () {
+      var oni = window.__mlsOpNoteIntegrity;
+      return oni && typeof oni.chartProblems === 'function' ? oni.chartProblems(p, proc) : null;
+    }, null);
+    if (viaOni && viaOni.length) return viaOni;
+    var out = [], seen = {};
+    var direct = S(p.problems).replace(/\s+/g, ' ').trim();
+    if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
+    if (!out.length) {
+      var raw = ''; safe(function () { (p.visits || []).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); });
+      var re = /([A-Z][A-Za-z0-9 ,()\/-]{2,60}?)\s*-\s*Onset:\s*\d{1,2}\/\d{1,2}\/\d{2,4}/g, m;
+      while ((m = re.exec(raw)) !== null && out.length < 6) {
+        var nm = S(m[1]).trim();
+        while (/^(problems?|reviewed|problem list|active|list)\s+/i.test(nm)) nm = nm.replace(/^(problems?|reviewed|problem list|active|list)\s+/i, '');
+        if (nm.length > 2 && !seen[nm.toLowerCase()]) { seen[nm.toLowerCase()] = 1; out.push(nm); }
+      }
+    }
+    return out;
+  }
   function chartValue(label, row) {
     var l = S(label).toLowerCase();
     if (!/history|diagnosis|indication/.test(l)) return '';
     if (/postoperative|post ?op/.test(l)) return '';         /* postop stays the template's own value */
     var p = chartPatient(row); if (!p) return '';
-    var problems = S(p.problems).replace(/\s+/g, ' ').trim();
-    if (/diagnosis|indication/.test(l)) return problems.split(/[;\n]/)[0].trim().slice(0, 140);
+    var probList = rowProblems(p, row);
+    if (/diagnosis|indication/.test(l)) return S(probList[0] || '').slice(0, 140);
+    var problems = probList.slice(0, 3).join('; ');
     var bits = [], age = chartAge(p), sex = S(p.sex || p.gender).trim();
     if (age && sex) bits.push(age + '-year-old ' + sex);
     if (problems) bits.push((bits.length ? 'with ' : '') + problems);

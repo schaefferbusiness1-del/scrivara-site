@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.6.0';
+  var VERSION = 'oni-2.6.1';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -375,10 +375,38 @@
      filled DETERMINISTICALLY from the exact patient's own chart (problems +
      latest documented plan) — chart-grounded only, never invented. A slot the
      chart cannot answer stays visible for the doctor / fill box. */
-  function fillChartSlots(note, p, ctx) {
+  /* Real pulled charts keep the problem list INSIDE the Athena visit raw
+     ("<Problem name> - Onset: MM/DD/YYYY"), with p.problems empty. Extract
+     those verbatim names, ranked by overlap with THIS procedure so an SI
+     injection picks "Sacroiliac joint pain" over "Lumbar back pain". */
+  function chartProblems(p, procedure) {
+    var out = [], seen = {};
+    var direct = S(p.problems).replace(/\s+/g, ' ').trim();
+    if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
+    if (!out.length) {
+      var raw = '';
+      try { (p.visits || []).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); } catch (e) {}
+      var re = /([A-Z][A-Za-z0-9 ,()\/-]{2,60}?)\s*-\s*Onset:\s*\d{1,2}\/\d{1,2}\/\d{2,4}/g, m;
+      while ((m = re.exec(raw)) !== null && out.length < 6) {
+        var nm = S(m[1]).trim();
+        while (/^(problems?|reviewed|problem list|active|list)\s+/i.test(nm)) nm = nm.replace(/^(problems?|reviewed|problem list|active|list)\s+/i, '');
+        if (nm.length > 2 && !seen[nm.toLowerCase()]) { seen[nm.toLowerCase()] = 1; out.push(nm); }
+      }
+    }
+    if (out.length > 1 && S(procedure).trim()) {
+      var pt = normText(procedure).split(/\s+/).filter(function (w) { return w.length >= 3; });
+      out.sort(function (a, b) {
+        function sc(x) { var n = normText(x), s = 0; pt.forEach(function (w) { if (n.indexOf(w) >= 0) s += w.length; }); return s; }
+        return sc(b) - sc(a);
+      });
+    }
+    return out;
+  }
+  function fillChartSlots(note, p, ctx, procedure) {
     if (!p) return S(note);
-    var problems = S(p.problems).replace(/\s+/g, ' ').trim();
-    var diag = problems.split(/[;\n]/)[0].trim().slice(0, 140);
+    var probList = chartProblems(p, procedure);
+    var problems = probList.slice(0, 3).join('; ');
+    var diag = S(probList[0] || '').slice(0, 140);
     var age = 0;
     try { var d = new Date(S(p.dob)); if (!isNaN(d.getTime())) { var now = new Date(); age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; if (age <= 0 || age >= 130) age = 0; } } catch (e) {}
     var sex = S((ctx && ctx.sex) || p.sex || p.gender).trim();
@@ -440,7 +468,7 @@
     if(ctx.providerNpi)facts.npi=ctx.providerNpi;
     if(ctx.facility)facts.facility=ctx.facility;
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
-    first.note=fillChartSlots(forceFacts(first.note,facts),p,ctx);
+    first.note=fillChartSlots(forceFacts(first.note,facts),p,ctx,procedure);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
     if(histApi&&histApi.installed){
       histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
@@ -460,9 +488,9 @@
     var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
-    repaired.note=fillChartSlots(forceFacts(repaired.note,facts),p,ctx);
+    repaired.note=fillChartSlots(forceFacts(repaired.note,facts),p,ctx,procedure);
     var check2=fidelity(repaired.note,tplText);
-    if(!check2.pass){repaired.note=fillChartSlots(reanchor(repaired.note,tplText,facts),p,ctx);check2=fidelity(repaired.note,tplText);}
+    if(!check2.pass){repaired.note=fillChartSlots(reanchor(repaired.note,tplText,facts),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
   }
@@ -490,6 +518,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

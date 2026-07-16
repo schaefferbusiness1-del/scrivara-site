@@ -153,7 +153,19 @@ async function main() {
   assert(charted.note.includes('Most recent plan: Proceed with caudal epidural steroid injection'), 'latest documented plan missing from history');
   assert(charted.note.includes('Preoperative Diagnosis: Lumbar spondylosis M47.816'), 'preop diagnosis not filled from the chart problems list');
 
-  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized, chart fills history/diagnosis');
+  // 8) real pulled-chart shape: p.problems is EMPTY and the problem list lives
+  //    in the Athena visit raw as "<name> - Onset: MM/DD/YYYY"; extraction is
+  //    verbatim and ranked by relevance to THIS procedure.
+  const rawShaped = {
+    id: 'p2', name: 'Qa Raw', dob: '1948-02-05', sex: 'F', problems: '',
+    visits: [{ raw: 'Print Practice Header MURRA ... Problems Reviewed Problems Lumbar back pain - Onset: 01/20/2026 Sacroiliac joint pain - Onset: 01/20/2026 Pain in pelvis - Onset: 01/20/2026 Medications ...' }]
+  };
+  const probs = api.chartProblems(rawShaped, 'L SI joint injection');
+  assert(probs.length >= 3, 'Onset-format problems were not extracted from visit raw');
+  assert.strictEqual(probs[0], 'Sacroiliac joint pain', 'problems were not ranked by procedure relevance: ' + JSON.stringify(probs));
+  assert(probs.indexOf('Lumbar back pain') >= 0, 'a chart problem was dropped');
+
+  console.log('PASS op-note heading/content fidelity: long heading lines keep headings, first-pass success, reanchor keeps clinical content, past-note templates sanitized, chart fills history/diagnosis (incl. raw Onset extraction)');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
