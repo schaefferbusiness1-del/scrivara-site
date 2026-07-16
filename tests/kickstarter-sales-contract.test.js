@@ -12,9 +12,12 @@ assert(/target="_blank" rel="noopener noreferrer"/.test(html), 'external Kicksta
 for (const amount of ['$135', '$230', '$315', '$810', '$1,575', '$4,000']) {
   assert(html.includes(amount), `founder ladder must include ${amount}`);
 }
-for (const discount of ['10% off', '21% off', '30% off', '40% off', '50% off', '71% off']) {
+/* bce9c2c sales redesign re-priced the founder ladder (+$15 tiers); the old
+   amounts stay visible as strike-through "was" prices, the live discounts are
+   now this set. */
+for (const discount of ['47% off', '48% off', '55% off', '65% off', '80% off']) {
   assert(html.includes(discount), `founder ladder must include ${discount}`);
 }
 
-assert(html.includes('Up to 8 providers · 5 years · website value $14,000'), 'top reward must match the five-year, eight-provider offer');
+assert(html.includes('Up to 8 providers · 5 years · website value $20,000'), 'top reward must match the five-year, eight-provider offer');
 console.log('PASS Kickstarter sales contract: working preview URL, full incentive ladder, and safe external links');

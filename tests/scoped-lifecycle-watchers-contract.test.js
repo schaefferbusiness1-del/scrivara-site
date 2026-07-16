@@ -35,7 +35,7 @@ assert(!/\.offsetParent|getComputedStyle\s*\(/.test(patients), 'Patients reconci
 assert(patients.includes('window.addEventListener("mls:view-changed", onViewChanged)') && patients.includes('window.removeEventListener("mls:view-changed", onViewChanged)'), 'Patients view event lifecycle is incomplete');
 
 assert(studio.includes('_obs.observe(v, { childList: true, subtree: true })'), 'AI Studio observer must be scoped to #studioView');
-assert(studio.includes('var VERSION = "sx-2.3.0-prod"'), 'AI Studio scoped lifecycle release version was not advanced');
+assert(studio.includes('var VERSION = "sx-2.4.0-prod"'), 'AI Studio scoped lifecycle release version was not advanced');
 assert(!studio.includes('_obs.observe(document.documentElement'), 'AI Studio still observes every DOM mutation in the app');
 assert(!/window\.showView\s*=\s*function/.test(studio), 'AI Studio must not permanently wrap global showView');
 assert(!/setInterval\s*\(/.test(studio), 'AI Studio late-mount recovery must be bounded');
@@ -73,7 +73,7 @@ assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled'
 
 [
   'feat_mls_patients_exact.js?v=20260716px120',
-  'feat_mls_studio_exact.js?v=20260716sx230',
+  'feat_mls_studio_exact.js?v=20260716sx240',
   'feat_mls_patientpick.js?v=20260716pick161',
   'feat_mls_simple_exact.js?v=20260716simx141'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
