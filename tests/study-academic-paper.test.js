@@ -188,3 +188,99 @@ assert.strictEqual(study.narrativeNumbersOk('Improvement was 87.3 percent.', dig
   console.error(error);
   process.exitCode = 1;
 });
+
+/* ---------- sr-2.1.0 injection-cohort accuracy ---------- */
+(function () {
+  // abbreviation + brand-steroid synonym matching, both directions
+  const q = { type: 'x', detail: 'LESI performed at L4-L5 without complication' };
+  assert.strictEqual(study.recordMentions(q, 'lumbar epidural steroid injection'), true,
+    'chart "LESI" must match a lumbar epidural steroid injection request');
+  assert.strictEqual(study.recordMentions(
+    { type: 'x', detail: 'Kenalog injected into the right knee joint' }, 'steroid injection knee'), true,
+    'brand corticosteroid must normalize to steroid');
+  assert.strictEqual(study.recordMentions(
+    { type: 'x', detail: 'cervical epidural steroid injection C6-C7' }, 'CESI'), true);
+  assert.strictEqual(study.recordMentions(
+    { type: 'x', detail: 'trigger point injections bilateral trapezius' }, 'TPI'), true);
+  assert.strictEqual(study.recordMentions(
+    { type: 'x', detail: 'lumbar epidural steroid injection' }, 'knee injection'), false,
+    'different procedure must NOT match');
+
+  // cohort selection: only patients whose history documents the injection
+  const envInj = {
+    getPatients() {
+      return [
+        { id: 'a', name: 'Match Abbrev', dob: '1960-01-02', visits: [
+          { date: '2026-02-10', type: 'Procedure', detail: 'pain 8/10 before procedure. LESI at L4-L5 today.' },
+          { date: '2026-04-11', type: 'Follow-up', detail: 'doing better, pain 3/10 since the epidural.' }
+        ] },
+        { id: 'b', name: 'Match Brand', dob: '1955-03-04', visits: [
+          { date: '2026-01-05', type: 'Visit', detail: 'pain 7/10; lumbar epidural with Kenalog performed.' },
+          { date: '2026-03-06', type: 'Visit', detail: 'improved, pain 4/10.' }
+        ] },
+        { id: 'c', name: 'No Match', dob: '1970-05-06', visits: [
+          { date: '2026-02-01', type: 'Visit', detail: 'knee osteoarthritis, pain 6/10, PT referral only.' }
+        ] }
+      ];
+    },
+    getNotes() { return []; }, _calAppts: [], sgFix: { buildAll() { return []; } }
+  };
+  const recs = study.collectStoredRecords(envInj);
+  const injSpec = study.parseStudySpec('Study outcomes for patients who received lumbar epidural steroid injections, all time');
+  assert.strictEqual(injSpec.cohort.mode, 'keyword');
+  const injScoped = study.applyScope(recs, injSpec, new Date('2026-07-16T12:00:00Z'));
+  assert.strictEqual(injScoped.patientCount, 2, 'exactly the two injection patients must be included');
+  const included = injScoped.patients.map((p) => p.name).sort();
+  assert.deepStrictEqual(included, ['Match Abbrev', 'Match Brand']);
+
+  const injDeid = study.deidentifyPatients(injScoped.patients, new Date('2026-07-16T12:00:00Z'));
+  const injModel = study.buildReportModel(injSpec, injDeid, {
+    scope: injScoped.scope, resolvedCohort: 'Records matching lumbar epidural steroid injections',
+    identities: injScoped.patients.map((p) => ({ name: p.name, dob: p.dob, mrn: p.mrn }))
+  });
+  const construction = injModel.sections.find((s) => s.key === 'cohort-construction');
+  assert.ok(construction, 'cohort-construction section required for keyword cohorts');
+  assert.strictEqual(construction.table.rows.length, 2, 'one membership-evidence row per included patient');
+  assert.ok(construction.table.rows.every((r) => Number(r[1]) >= 1), 'every included patient must show at least one matching visit');
+
+  // procedure-anchored outcomes: baseline at/before index visit vs after
+  assert.ok(injModel.matchEvidence && injModel.matchEvidence.anchored.length === 2,
+    'both patients have pre and post index-visit pain scores');
+  const outcomes = injModel.sections.find((s) => s.key === 'outcomes');
+  assert.match(outcomes.paragraphs.join(' '), /Procedure-anchored analysis/);
+  const changes = injModel.matchEvidence.anchored.map((a) => a.change).sort((x, y) => x - y);
+  assert.deepStrictEqual(changes, [-5, -3], 'anchored changes must be 8->3 and 7->4');
+  console.log('study-injection-cohort: ok');
+})();
+
+/* same-visit rule: knee dx in one visit + epidural in another must NOT make a "knee injection" cohort */
+(function () {
+  const envX = {
+    getPatients() {
+      return [{ id: 'x', name: 'Cross Visit', dob: '1962-04-05', visits: [
+        { date: '2026-01-10', type: 'Office visit', detail: 'Knee osteoarthritis discussed, conservative care.' },
+        { date: '2026-02-10', type: 'Procedure', detail: 'Lumbar epidural steroid injection performed.' }
+      ] }];
+    }, getNotes() { return []; }, _calAppts: [], sgFix: { buildAll() { return []; } }
+  };
+  const recsX = study.collectStoredRecords(envX);
+  const specKnee = study.parseStudySpec('Study outcomes for patients who received knee injections, all time');
+  const scopedKnee = study.applyScope(recsX, specKnee, new Date('2026-07-16T12:00:00Z'));
+  assert.strictEqual(scopedKnee.patientCount, 0, 'cross-visit token mixing must not create cohort membership');
+  const specLesi = study.parseStudySpec('Study outcomes for patients who received lumbar epidural steroid injections, all time');
+  assert.strictEqual(study.applyScope(recsX, specLesi, new Date('2026-07-16T12:00:00Z')).patientCount, 1,
+    'the genuinely documented procedure must still match');
+  console.log('study-samevisit-cohort: ok');
+})();
+
+/* proximity rule: term tokens must sit in one phrase, not merely one note */
+(function () {
+  const farApart = { type: 'Procedure', detail: 'Lumbar epidural steroid injection at L4-L5 under fluoroscopic guidance, no complications, tolerated well. Post-procedure instructions reviewed with the patient in detail including activity modification and warning signs. Assessment: knee osteoarthritis.' };
+  assert.strictEqual(study.recordMentions(farApart, 'knee injection'), false,
+    'knee dx sentence far from an epidural must not read as a knee injection');
+  assert.strictEqual(study.recordMentions(farApart, 'lumbar epidural steroid injection'), true);
+  assert.strictEqual(study.recordMentions(
+    { type: 'Procedure', detail: 'Injection of steroid into the left knee under ultrasound guidance today.' }, 'knee injection'), true,
+    'a genuine knee injection phrase must still match');
+  console.log('study-proximity-cohort: ok');
+})();

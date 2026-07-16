@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.0.0';
+  var VERSION = 'sr-2.1.0';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -436,8 +436,28 @@
   function searchTokens(value) {
     value = lower(value)
       .replace(/\bl[\s-]*spine\b/g, ' lumbar ')
+      .replace(/\bc[\s-]*spine\b/g, ' cervical ')
+      .replace(/\bt[\s-]*spine\b/g, ' thoracic ')
       .replace(/\blumbosacral\b/g, ' lumbar ')
+      /* procedure abbreviations expand to their canonical phrase on BOTH the
+         query side and the chart side, so "LESI" documentation matches a
+         "lumbar epidural steroid injection" request and vice versa. */
+      .replace(/\blesi\b/g, ' lumbar epidural injection ')
+      .replace(/\bcesi\b/g, ' cervical epidural injection ')
+      .replace(/\btesi\b/g, ' thoracic epidural injection ')
       .replace(/\besi\b/g, ' epidural injection ')
+      .replace(/\btpi\b/g, ' trigger point injection ')
+      .replace(/\brfa\b/g, ' radiofrequency ablation ')
+      .replace(/\brhizotomy\b/g, ' radiofrequency ablation ')
+      .replace(/\bmbb\b/g, ' medial branch block ')
+      .replace(/\b(?:sij|si joint)\b/g, ' sacroiliac joint ')
+      /* named/brand corticosteroids and "cortisone" all normalize to steroid */
+      .replace(/\b(?:cortisone|corticosteroid|kenalog|triamcinolone|depo[\s-]*medrol|methylprednisolone|dexamethasone|betamethasone|celestone)\b/g, ' steroid ')
+      /* "epidural steroid injection" and "epidural injection" are the same
+         procedure family in charts; drop the optional steroid token so
+         neither side fails on it. */
+      .replace(/\bepidural\s+steroid\s+injections?\b/g, ' epidural injection ')
+      .replace(/\bsteroid\s+epidural\s+injections?\b/g, ' epidural injection ')
       .replace(/\bshots?\b/g, ' injection ')
       .replace(/\b(?:injected|injecting|injections?)\b/g, ' injection ');
     return value.replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean).map(function (word) {
@@ -446,18 +466,112 @@
       return word;
     });
   }
+  function tokenSatisfied(bag, token) {
+    if (bag[token]) return true;
+    /* Clinical equivalence: charts often document "lumbar epidural with
+       Kenalog" without the word "injection" — an epidural IS an injection,
+       as are documented blocks and ablations. Only the generic delivery
+       token is relaxed; anatomic and procedure tokens must match exactly. */
+    if (token === 'injection') return !!(bag.epidural || bag.block || bag.ablation);
+    return false;
+  }
   function keywordMatch(patient, terms) {
-    var hay = searchTokens(S(patient._chartText) + ' ' + (patient.visits || []).map(function (v) { return v.type + ' ' + v.detail; }).join(' '));
-    var bag = {}; hay.forEach(function (token) { bag[token] = 1; });
+    /* Cohort membership requires the whole term to be documented within ONE
+       visit record (or within the stored problem/chart summary alone) — a
+       patient-wide token bag would include a knee-arthritis patient in a
+       "knee injection" cohort because an unrelated visit mentions an
+       injection elsewhere. */
     return (terms || []).some(function (term) {
       var wanted = searchTokens(term);
-      return wanted.length && wanted.every(function (token) { return !!bag[token]; });
+      if (!wanted.length) return false;
+      var hit = (patient.visits || []).some(function (v) { return recordMentions(v, term); });
+      if (hit) return true;
+      var chartBag = {};
+      searchTokens(S(patient._chartText)).forEach(function (token) { chartBag[token] = 1; });
+      return wanted.every(function (token) { return tokenSatisfied(chartBag, token); });
     });
   }
+  var MENTION_WINDOW = 12;
   function recordMentions(record, term) {
-    var bag = {}; searchTokens(S(record.type) + ' ' + S(record.detail)).forEach(function (token) { bag[token] = 1; });
+    var tokens = searchTokens(S(record.type) + ' ' + S(record.detail));
     var wanted = searchTokens(term);
-    return wanted.length && wanted.every(function (token) { return !!bag[token]; });
+    if (!wanted.length) return false;
+    var positions = {};
+    tokens.forEach(function (token, index) { (positions[token] = positions[token] || []).push(index); });
+    function positionsFor(token) {
+      var own = positions[token] || [];
+      if (token !== 'injection') return own;
+      /* same clinical equivalence as tokenSatisfied: an epidural/block/
+         ablation token is itself the injection mention. */
+      return own.concat(positions.epidural || [], positions.block || [], positions.ablation || []);
+    }
+    var lists = [], distinct = {};
+    for (var w = 0; w < wanted.length; w++) {
+      if (distinct[wanted[w]]) continue;
+      distinct[wanted[w]] = 1;
+      var pos = positionsFor(wanted[w]);
+      if (!pos.length) return false;
+      lists.push(pos);
+    }
+    if (lists.length === 1) return true;
+    /* Multi-token terms must sit close together in ONE phrase: "epidural
+       injection ... assessment: knee osteoarthritis" is not a knee injection.
+       Sliding minimal-window over the merged position lists. */
+    var events = [];
+    lists.forEach(function (pos, listIndex) {
+      pos.forEach(function (p) { events.push([p, listIndex]); });
+    });
+    events.sort(function (a, b) { return a[0] - b[0]; });
+    var need = lists.length, have = 0, counts = {}, left = 0;
+    for (var right = 0; right < events.length; right++) {
+      var addList = events[right][1];
+      counts[addList] = (counts[addList] || 0) + 1;
+      if (counts[addList] === 1) have++;
+      while (have === need) {
+        if (events[right][0] - events[left][0] < MENTION_WINDOW) return true;
+        var dropList = events[left][1];
+        counts[dropList]--;
+        if (!counts[dropList]) have--;
+        left++;
+      }
+    }
+    return false;
+  }
+  /* Per-patient proof of cohort membership for keyword (procedure) cohorts:
+     which visits documented the requested term, and where the pain evidence
+     sits relative to the FIRST documented matching visit (the index visit). */
+  function cohortMatchEvidence(patients, terms) {
+    terms = (terms || []).map(function (term) { return S(term).trim(); }).filter(Boolean);
+    var rows = [], anchored = [], chartOnly = 0;
+    (patients || []).forEach(function (p) {
+      var matches = [];
+      (p.visits || []).forEach(function (v) {
+        if (terms.some(function (term) { return recordMentions(v, term); })) matches.push(v);
+      });
+      var datedMatches = matches.filter(function (v) { return v.date; })
+        .sort(function (a, b) { return a.date.localeCompare(b.date); });
+      var indexDate = datedMatches.length ? datedMatches[0].date : '';
+      var code = p.code || p.name;
+      if (!matches.length) chartOnly++;
+      rows.push({
+        code: code,
+        matchingVisits: matches.length,
+        totalVisits: (p.visits || []).length,
+        firstMatched: indexDate,
+        lastMatched: datedMatches.length ? datedMatches[datedMatches.length - 1].date : '',
+        chartTextOnly: !matches.length
+      });
+      if (!indexDate) return;
+      var baseline = null, post = null;
+      (p.visits || []).forEach(function (v) {
+        var score = documentedPainScore(v);
+        if (score == null || !v.date) return;
+        if (v.date <= indexDate && (!baseline || v.date >= baseline.date)) baseline = { date: v.date, score: score };
+        if (v.date > indexDate && (!post || v.date >= post.date)) post = { date: v.date, score: score };
+      });
+      if (baseline && post) anchored.push({ code: code, baseline: baseline.score, post: post.score, change: post.score - baseline.score });
+    });
+    return { rows: rows, anchored: anchored, chartTextOnly: chartOnly, terms: terms };
   }
   function documentedPainScore(record) {
     var match = S(record && record.detail).match(/\bpain[^0-9]{0,14}(10|[0-9])\s*(?:\/\s*10)?\b/i);
@@ -912,6 +1026,29 @@
       paragraphs: ['Table 1 summarizes the included cohort. Only values explicitly stored in MLS are reported; nothing was inferred from missing fields.'],
       table: { title: 'Table 1. Cohort characteristics', columns: ['Characteristic', 'Value'], rows: demoRows }
     });
+    var matchEvidence = null;
+    if (spec.cohort.mode === 'keyword' && (safeSpec.cohort.keywords || []).length) {
+      matchEvidence = cohortMatchEvidence(patients, safeSpec.cohort.keywords);
+      var constructionParas = [
+        'Every included patient is listed below with the exact documentation that qualified them for the cohort "' + safeSpec.cohort.keywords.join(' / ') + '": how many of their stored visits mention the requested procedure/term, and the first and last month it was documented. Inclusion is verifiable against the evidence appendix.'
+      ];
+      if (matchEvidence.chartTextOnly) {
+        constructionParas.push(matchEvidence.chartTextOnly + ' patient(s) matched only on their stored problem/chart summary rather than a specific visit record; they are flagged in the table and contribute no procedure-anchored outcome.');
+      }
+      sections.push({
+        key: 'cohort-construction',
+        heading: 'Results: cohort construction and match evidence',
+        paragraphs: constructionParas,
+        table: {
+          title: 'Cohort membership evidence (per coded patient)',
+          columns: ['Patient', 'Matching visits', 'Total visits', 'First documented', 'Last documented'],
+          rows: matchEvidence.rows.map(function (r) {
+            return [r.code, r.chartTextOnly ? 'chart summary only' : String(r.matchingVisits), String(r.totalVisits),
+              r.firstMatched || '-', r.lastMatched || '-'];
+          })
+        }
+      });
+    }
     if (demo.topMeds.length) {
       sections.push({
         key: 'medications',
@@ -965,6 +1102,18 @@
       if (painChanges.length) {
         outcomeParas.push('Among ' + painChanges.length + ' patients with at least two dated scores, mean baseline (first documented) score was ' + fmt(mean(baselineScores)) + '/10 and mean final documented score was ' + fmt(mean(finalScores)) + '/10. Mean first-to-last change was ' + fmt(mean(painChanges)) + ' points' + (painCi ? ' (95% CI ' + fmt(painCi.low) + ' to ' + fmt(painCi.high) + ')' : '') + ' (descriptive; not causal).');
         outcomeParas.push(responders + ' of ' + painChanges.length + ' patients (' + fmt(100 * responders / painChanges.length) + '%) had a documented improvement of 2 or more points between their first and last dated score.');
+      }
+      if (matchEvidence && matchEvidence.anchored.length) {
+        var anchoredChanges = matchEvidence.anchored.map(function (a) { return a.change; });
+        var anchoredCi = ci95(anchoredChanges);
+        var anchoredResponders = anchoredChanges.filter(function (delta) { return delta <= -2; }).length;
+        outcomeParas.push('Procedure-anchored analysis: for ' + matchEvidence.anchored.length + ' patients with a documented pain score at or before their FIRST documented "' + safeSpec.cohort.keywords.join(' / ') + '" visit and another score after it, mean documented pain moved from ' +
+          fmt(mean(matchEvidence.anchored.map(function (a) { return a.baseline; }))) + '/10 before the index visit to ' +
+          fmt(mean(matchEvidence.anchored.map(function (a) { return a.post; }))) + '/10 after (mean change ' + fmt(mean(anchoredChanges)) +
+          (anchoredCi ? ', 95% CI ' + fmt(anchoredCi.low) + ' to ' + fmt(anchoredCi.high) : '') + '); ' +
+          anchoredResponders + ' improved by 2 or more points. Dates are month-precision, so same-month before/after ordering is conservative; this remains descriptive documentation, not a treatment effect.');
+      } else if (matchEvidence) {
+        outcomeParas.push('No patient had documented pain scores both before and after their first documented "' + safeSpec.cohort.keywords.join(' / ') + '" visit, so no procedure-anchored change is reported.');
       }
       sections.push({ key: 'outcomes', heading: 'Results: documented outcomes', paragraphs: outcomeParas, figureId: allScores.length >= 4 ? 'fig-pain' : undefined });
     }
@@ -1069,6 +1218,7 @@
       'Absence of a documented finding does not prove the finding was absent.',
       'Clinical interpretation, compliance review, and any required IRB determination remain the responsibility of the practice.'
     ];
+    if (spec.cohort.mode === 'keyword') limitations.push('Cohort membership is text-mention based: all words of the requested term must appear close together within one visit record (or the stored problem summary). A documented mention is treated as received, and negated mentions are not distinguished. Use the cohort-construction table as the per-patient audit trail.');
     if (meta.scope && meta.scope.excludedUndated) limitations.push(meta.scope.excludedUndated + ' undated records were excluded because the request specified a date window.');
     if (meta.scope && meta.scope.excludedOutOfRange) limitations.push(meta.scope.excludedOutOfRange + ' records fell outside the requested date window.');
     if (meta.duplicateVisitsRemoved) limitations.push(meta.duplicateVisitsRemoved + ' duplicate visit records were removed before analysis.');
@@ -1120,6 +1270,7 @@
       provenance: sourceCounts,
       comparison: comparison,
       demographics: demo,
+      matchEvidence: matchEvidence,
       codeSignals: codeSignals,
       aiNarrative: false,
       deidentified: false,
@@ -1875,6 +2026,7 @@
     shouldSubmitKey: shouldSubmitKey,
     executeSpec: executeSpec,
     collectCodeSignals: collectCodeSignals,
+    cohortMatchEvidence: cohortMatchEvidence,
     aiNarrative: aiNarrative,
     applyNarrative: applyNarrative,
     narrativeNumbersOk: narrativeNumbersOk,
