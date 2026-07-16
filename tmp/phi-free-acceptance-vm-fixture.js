@@ -9,9 +9,9 @@ const COLLECTOR_SOURCE = fs.readFileSync(COLLECTOR_PATH, "utf8");
 const TARGET_DATE = "2026-07-15";
 const CARD_KEYS = ["problems", "meds", "allergies", "summary", "vitals", "history"];
 const BUILD = Object.freeze({
-  importerVersion: "si-1.7.3",
+  importerVersion: "si-1.7.4",
   extensionVersion: "2.9.25",
-  assetVersion: "b319",
+  assetVersion: "b320",
   importerSha256: "a".repeat(64),
   extensionSha256: "b".repeat(64),
   assetSha256: "c".repeat(64)
@@ -452,7 +452,7 @@ function createHarness(config) {
     __mlsPhiFreeAcceptanceExpectedDate: TARGET_DATE,
     __mlsPhiFreeAcceptanceExpectedBuild: Object.assign({}, BUILD),
     __mlsExtReportedVersion: "2.9.25",
-    __MLS_AV: "b319",
+    __MLS_AV: "b320",
     addEventListener(type, listener) {
       if (!listeners[type]) listeners[type] = [];
       listeners[type].push(listener);
@@ -550,7 +550,7 @@ function createHarness(config) {
     return result;
   }
   window.__mlsSI = {
-    version: "si-1.7.3",
+    version: "si-1.7.4",
     authoritativeStatusForDay() {
       const count = config.emptyDay === true ? 0 : Number(config.canonicalCount || 1);
       return { available: true, exact: true, sourceCount: count, activeCount: count, missingCount: 0, unclassifiedCount: 0 };

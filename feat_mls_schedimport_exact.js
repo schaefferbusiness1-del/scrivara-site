@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.3";
+  var VERSION = "si-1.7.4";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -1820,6 +1820,42 @@
     }
     historyBatchRunning = true;
     var stopAfterTimeout = false;
+    /* User preference: pull the six-card chart history WITHOUT opening every
+       encounter body (much faster day prep). Default ON (full visits). Read
+       once per batch so one mid-batch toggle flip cannot split semantics. */
+    var pullVisitBodies = safe(function () {
+      var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
+      var v = k ? localStorage.getItem(k) : null;
+      return v == null ? true : v !== "0";
+    }, true);
+    /* si-1.7.4 SPEED (evidence-driven): the live b319 timing run measured the
+       server parse+persist at 16.6s/patient vs 9.7s for the Athena chart
+       open+read — 63% of wall clock spent while the Athena tab sits idle.
+       saveOrganizedHistory touches ONLY the parse server and the local store
+       (never the Athena bridge), so when the visits stage is skipped the
+       batch now OVERLAPS patient N's parse with patient N+1's chart open.
+       Identity semantics are unchanged: every gate inside the parse/persist
+       chain still runs and still fail-closes; a failed pipelined parse gets
+       ONE deferred full re-run (fresh chart open + verify + sequential
+       parse) after the main sweep — same retry budget the inline path had.
+       With full visit bodies ON the batch stays strictly sequential (the
+       visits reader needs THIS patient's chart on screen). */
+    var pipelineParses = [];
+    function launchPipelinedParse(entry, parseArgs) {
+      entry.one.parsePipelined = true;
+      var t0 = Date.now();
+      entry.promise = saveOrganizedHistory(parseArgs.target, parseArgs.row, parseArgs.rd, parseArgs.readStartedAt, parseArgs.deadlineAt, parseArgs.requestId).then(function (organizedResult) {
+        entry.stageMs.parseSave += Date.now() - t0;
+        entry.one.chartCoverage = organizedResult.chartCoverage; entry.one.profileCoverage = organizedResult.profileCoverage; entry.one.clinicalFieldCount = organizedResult.clinicalFieldCount; entry.one.dobVerified = organizedResult.dobVerified === true;
+        entry.one.organized = !!(entry.one.profileCoverage && entry.one.profileCoverage.complete === true);
+        entry.one.chartReason = "";
+      }, function (parseErr) {
+        entry.stageMs.parseSave += Date.now() - t0;
+        entry.one.chartReason = String(parseErr && parseErr.message || parseErr || "chart-parse-failed").slice(0, 120);
+        if (parseErr && parseErr.mlsEchoes) entry.one.chartEchoes = parseErr.mlsEchoes;
+      });
+      pipelineParses.push(entry);
+    }
     try {
       for (var i = 0; i < rows.length; i++) {
         if (Date.now() >= batchDeadlineAt) {
@@ -1867,9 +1903,20 @@
             var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
             rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
-            __parseT0 = Date.now();
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
-            var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : ""));
+            var parseRequestId = patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
+            if (!stopAfterTimeout && pullVisitBodies !== true) {
+              /* si-1.7.4: visits are skipped, so nothing after this point needs
+                 THIS patient's chart on screen. Launch the parse+persist chain
+                 (server + local store only) and move straight to the next
+                 patient's chart open. Failures settle onto this receipt entry
+                 and get one deferred full re-run after the sweep. */
+              launchPipelinedParse({ one: one, row: row, target: target, stageMs: stageMs, startedAt: patientReadStartedAt },
+                { target: target, row: row, rd: rd, readStartedAt: chartReadStartedAt, deadlineAt: parseDeadlineAt, requestId: parseRequestId });
+              break;
+            }
+            __parseT0 = Date.now();
+            var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, parseRequestId);
             stageMs.parseSave += Date.now() - __parseT0;
             __parseT0 = 0;
             one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
@@ -1891,19 +1938,14 @@
             break;
           }
         }
-        /* User preference: pull the six-card chart history WITHOUT opening
-           every encounter body (much faster day prep). Default ON (full
-           visits). Skipping is recorded honestly on the receipt — a skipped
-           stage is never reported as verified encounter bodies. */
-        var pullVisitBodies = safe(function () {
-          var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
-          var v = k ? localStorage.getItem(k) : null;
-          return v == null ? true : v !== "0";
-        }, true);
+        /* Skipping visits is recorded honestly on the receipt — a skipped
+           stage is never reported as verified encounter bodies. A pipelined
+           entry's organizationComplete lands at finalization, after its
+           parse settles. */
         if (!stopAfterTimeout && pullVisitBodies !== true) {
           one.visitsComplete = true;
           one.visitsSkipped = true;
-          one.organizationComplete = one.organized;
+          if (one.parsePipelined !== true) one.organizationComplete = one.organized;
         } else if (!stopAfterTimeout) {
           var __visitsT0 = Date.now();
           try {
@@ -1970,15 +2012,57 @@
         }
         if(one.visitsSkipped!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
         one.stageMs = { chartMs: stageMs.chart, parseSaveMs: stageMs.parseSave, visitsMs: stageMs.visits, visitSaveMs: stageMs.visitSave, totalMs: Date.now() - patientReadStartedAt };
-        one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
-        if (!one.complete) {
-          one.reason = one.chartReason || one.visitsReason || "history-partial";
-          receipt.retry.push(frozenRetryEntry(row, target, one.reason));
+        if (one.parsePipelined !== true) {
+          one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
+          if (!one.complete) {
+            one.reason = one.chartReason || one.visitsReason || "history-partial";
+            receipt.retry.push(frozenRetryEntry(row, target, one.reason));
+          }
         }
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
           break;
+        }
+      }
+      /* si-1.7.4 finalization: settle every pipelined parse, give each failed
+         one the SAME single full re-run the inline path had (fresh chart
+         open + verify + sequential parse — the tab moved on since this
+         patient's read), then evaluate completeness honestly in order. */
+      for (var pw = 0; pw < pipelineParses.length; pw++) { try { await pipelineParses[pw].promise; } catch (ePipe) {} }
+      for (var pf = 0; pf < pipelineParses.length; pf++) {
+        var pEntry = pipelineParses[pf], pOne = pEntry.one;
+        if (!pOne.organized && !/timeout|deadline/i.test(String(pOne.chartReason || "")) && Date.now() + 300000 < batchDeadlineAt) {
+          pOne.chartRetried = true; pOne.parseDeferredRetried = true;
+          var pRetryDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+          var pRetryReadStartedAt = Date.now();
+          var __dChartT0 = Date.now(), __dParseT0 = 0;
+          try {
+            var pRetryChartDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 110000);
+            var rdRetry = await boundedUntil(window._assistReadChart(pEntry.target, function () {}, { requestId: pOne.requestId + "-chart-d2", deadlineAt: pRetryChartDeadlineAt }), pRetryChartDeadlineAt, "chart-read-deadline-exceeded");
+            pEntry.stageMs.chart += Date.now() - __dChartT0;
+            __dParseT0 = Date.now();
+            var pRetryParseDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 120000);
+            var organizedRetry = await saveOrganizedHistory(pEntry.target, pEntry.row, rdRetry, pRetryReadStartedAt, pRetryParseDeadlineAt, pOne.requestId + "-parse-d2");
+            pEntry.stageMs.parseSave += Date.now() - __dParseT0;
+            pOne.chartCoverage = organizedRetry.chartCoverage; pOne.profileCoverage = organizedRetry.profileCoverage; pOne.clinicalFieldCount = organizedRetry.clinicalFieldCount; pOne.dobVerified = organizedRetry.dobVerified === true;
+            pOne.organized = !!(pOne.profileCoverage && pOne.profileCoverage.complete === true);
+            pOne.chartReason = "";
+          } catch (pRetryErr) {
+            if (__dParseT0) { pEntry.stageMs.parseSave += Date.now() - __dParseT0; } else { pEntry.stageMs.chart += Date.now() - __dChartT0; }
+            pOne.chartReason = String(pRetryErr && pRetryErr.message || pRetryErr || "chart-read-failed").slice(0, 120);
+            if (pRetryErr && pRetryErr.mlsEchoes) pOne.chartEchoes = pRetryErr.mlsEchoes;
+            if (/timeout|deadline/i.test(pOne.chartReason)) receipt.timedOut = true;
+          }
+        }
+        pOne.organizationComplete = pOne.organized;
+        /* Pipelined totalMs is SELF time (chart + parse + visits stages), not
+           wall time to finalization — wall time would double-count overlap. */
+        pOne.stageMs = { chartMs: pEntry.stageMs.chart, parseSaveMs: pEntry.stageMs.parseSave, visitsMs: pEntry.stageMs.visits, visitSaveMs: pEntry.stageMs.visitSave, totalMs: pEntry.stageMs.chart + pEntry.stageMs.parseSave + pEntry.stageMs.visits };
+        pOne.complete = !!(pOne.identityVerified && pOne.dobVerified === true && pOne.organized && pOne.organizationComplete && pOne.visitsComplete);
+        if (!pOne.complete) {
+          pOne.reason = pOne.chartReason || pOne.visitsReason || "history-partial";
+          receipt.retry.push(frozenRetryEntry(pEntry.row, pEntry.target, pOne.reason));
         }
       }
     } finally { historyBatchRunning = false; }

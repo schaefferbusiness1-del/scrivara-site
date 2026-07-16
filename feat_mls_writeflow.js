@@ -1,5 +1,13 @@
 /* =============================================================================
- * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.6.0)
+ * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.7.0)
+ * wf2-1.7.0 (2026-07-16): the exact-visit context prefers the REAL Athena
+ *   appointment id resolved from the day's schedule-import index (keyed
+ *   appointment-id:<id> -> {backendAppointmentId, patientId, appt_date}).
+ *   The calendar row's `id` is the BACKEND row id (live: Adam 3794 vs Athena
+ *   52585118) - numeric, so it passed shape checks and would only fail at the
+ *   live probe as context-mismatch. Resolution accepts exactly ONE index
+ *   match on (backend row id + patient + day); anything else keeps the prior
+ *   behavior and still fail-closes at the probe. No gate is weakened.
  * wf2-1.6.0 (2026-07-14): one reviewed imaging, PT, referral, or DME
  *   order can use a dedicated exact-catalog Athena adapter. Each order remains
  *   an independent immutable row and needs its own read-only probe and fresh
@@ -66,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.6.0';
+  var VERSION = 'wf2-1.7.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -171,6 +179,28 @@
     }
     return out;
   }
+  /* The calendar row's `id` is the BACKEND appointment row id, not Athena's.
+     The day's schedule-import index (written by the exact importer) maps the
+     REAL Athena appointment id to that backend row id + immutable patient id
+     + day. Accept only an exactly-one match; otherwise return '' and let the
+     caller keep its prior value (the live probe still fail-closes). */
+  function athenaAppointmentIdFromImportIndex(pid, backendRowId, day) {
+    try {
+      if (!pid || !backendRowId || !day || typeof window.uns !== 'function') return '';
+      var raw = localStorage.getItem(window.uns('schedImportIndexV1::' + day));
+      if (!raw) return '';
+      var rows = (JSON.parse(raw) || {}).rows || {};
+      var matches = [];
+      Object.keys(rows).forEach(function (k) {
+        var m = /^appointment-id:(\d+)$/.exec(k), e = rows[k];
+        if (!m || !e) return;
+        if (S(e.backendAppointmentId).trim() === S(backendRowId).trim() &&
+            S(e.patientId).trim() === S(pid).trim() &&
+            S(e.appt_date).trim() === S(day).trim()) matches.push(m[1]);
+      });
+      return matches.length === 1 ? matches[0] : '';
+    } catch (e) { return ''; }
+  }
   /* Use a schedule expectation only when it is traceable to an explicit visit
      context or one unambiguous closest appointment for this exact patient. */
   function expectedVisitContext(patient, opts) {
@@ -202,7 +232,7 @@
     var day = suppliedDate || visitDay(hit.day_local || hit.appt_date || hit.start_at);
     var provider = suppliedProvider || apptProvider(hit);
     if (!day || !provider) return null;
-    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || S(hit.id || ''), encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
+    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || athenaAppointmentIdFromImportIndex(pid, hit.id, day) || S(hit.id || ''), encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
   }
   function statusEl(opts) {
     try {

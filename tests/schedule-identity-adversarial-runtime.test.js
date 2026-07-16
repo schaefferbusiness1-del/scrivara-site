@@ -162,6 +162,7 @@ context._assistReadChart = (target, _onStatus, request) => {
   const requestId = String(request && request.requestId || `chart-${assistCalls}`);
   const base = { text, requestId, chartName: target.name, chartDob: target.dob, chartMrn: target.mrn };
   if (assistMode === 'missing-coverage') return Promise.resolve(base);
+  if (assistMode === 'missing-coverage-once') { assistMode = 'complete'; return Promise.resolve(base); }
   base.coverageReceipt = {
     kind: 'athena-chart-coverage', complete: true, readerVersion: '2.9.19-chart-r3', identityObserved: true, truncated: false,
     requestId, capturedAt: Date.now(), expectedClinicalFrames: 2, readClinicalFrames: 2, boundClinicalFrames: 2,
@@ -198,7 +199,7 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.7.3');
+assert(api && api.version === 'si-1.7.4');
 
 (async () => {
   const bootstrapDate = '2026-07-22';
@@ -478,6 +479,50 @@ assert(api && api.version === 'si-1.7.3');
   assert.strictEqual(JSON.stringify(stamps).includes(patients[0].name), false, 'timing stamps must stay PHI-free');
   const failedStamps = unproven.patients[0].stageMs;
   assert(failedStamps && Number.isFinite(failedStamps.chartMs), 'failed patients must still carry chart-stage timing evidence');
+  assert.notStrictEqual(proven.patients[0].parsePipelined, true, 'full-visit batches must stay strictly sequential (the visits reader needs THIS chart on screen)');
+
+  /* si-1.7.4 PIPELINED PARSE (visit bodies skipped only): patient N's server
+     parse+persist overlaps patient N+1's chart open. Every identity gate
+     still runs; a failed pipelined parse gets exactly ONE deferred full
+     re-run (fresh chart open + verify + sequential parse) after the sweep;
+     receipt order and honest failure semantics are unchanged. */
+  {
+    store.set('identity-test::pullVisitBodies', '0');
+    assistMode = 'missing-coverage-once'; /* first chart read lacks coverage -> pipelined parse fails -> deferred re-run heals */
+    const rowA = {
+      patient_external_id: patients[0].id, _mlsTargetPatientId: patients[0].id,
+      _mlsTargetDob: patients[0].dob, _mlsTargetMrn: patients[0].mrn,
+      name: patients[0].name, dob: patients[0].dob, mrn: patients[0].mrn
+    };
+    const rowB = {
+      patient_external_id: patients[1].id, _mlsTargetPatientId: patients[1].id,
+      _mlsTargetDob: patients[1].dob, _mlsTargetMrn: patients[1].mrn,
+      name: patients[1].name, dob: patients[1].dob, mrn: patients[1].mrn
+    };
+    const callsBefore = assistCalls;
+    const piped = await api._runHistoryBatch([rowA, rowB], [], () => {});
+    assert.strictEqual(piped.complete, true, 'pipelined batch with one deferred-healed parse must end complete');
+    assert.strictEqual(piped.patients.length, 2);
+    assert.strictEqual(piped.patients[0].patientId, patients[0].id, 'pipelined receipts must keep batch order');
+    assert.strictEqual(piped.patients[0].parsePipelined, true, 'skip-visits batches must pipeline the parse');
+    assert.strictEqual(piped.patients[1].parsePipelined, true);
+    assert.strictEqual(piped.patients[0].parseDeferredRetried, true, 'failed pipelined parse must get its one deferred full re-run');
+    assert.strictEqual(piped.patients[0].complete, true, 'the deferred re-run must heal the patient honestly');
+    assert.strictEqual(piped.patients[1].complete, true);
+    assert.strictEqual(piped.patients[0].visitsSkipped, true, 'skipping visits must stay honestly recorded');
+    assert.strictEqual(assistCalls - callsBefore, 3, 'exactly one deferred fresh chart re-read (2 first-pass + 1 retry), never more');
+    const pipedStamps = piped.patients[0].stageMs;
+    assert(pipedStamps && Number.isFinite(pipedStamps.parseSaveMs) && pipedStamps.totalMs >= pipedStamps.chartMs, 'pipelined receipts must carry self-time stage stamps');
+    /* Ambiguity/regression guard: a pipelined parse failure that CANNOT heal
+       still fails closed with an honest reason and a retry entry. */
+    assistMode = 'missing-coverage';
+    const failedPiped = await api._runHistoryBatch([rowA], [], () => {});
+    assert.strictEqual(failedPiped.complete, false, 'an unhealable pipelined parse must stay failed');
+    assert.strictEqual(failedPiped.patients[0].reason, 'chart-coverage-unproven', 'pipelined failures must keep their exact reason');
+    assert.strictEqual(failedPiped.failures >= 1, true, 'pipelined failures must land in the retry lane');
+    assistMode = 'complete';
+    store.delete('identity-test::pullVisitBodies');
+  }
 
   console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, and full visit-reader receipt');
 })().catch(err => { console.error(err); process.exit(1); });

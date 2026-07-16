@@ -92,6 +92,7 @@ const tests = [
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
   'provider-roster-machine-echo-collapse.test.js',
+  'writeflow-athena-appointment-id-resolution.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',
