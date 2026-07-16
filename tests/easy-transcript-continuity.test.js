@@ -15,7 +15,7 @@ const flow = source.slice(start, end);
    through every #ez3Wrap innerHTML rewrite. The old false-confidence version
    of this test only exercised the flow reconciler; the engine-rewrite path is
    now covered by easy-lane-engine-rewrite-runtime.test.js. */
-assert(flow.includes("var VERSION = 'fl-1.6.0'"), 'persistent transcript lifecycle release is not installed');
+assert(flow.includes("var VERSION = 'fl-1.6.1'"), 'persistent transcript lifecycle release is not installed');
 assert(!flow.includes('function nativeDoctorScreen()'), 'transient native-doctor state still owns transcript mounting');
 assert(!/nativeDoctor[\s\S]{0,180}\.ez3fl-record[\s\S]{0,80}remove\(/.test(flow), 'native doctor reconciliation can still remove the transcript lane');
 assert(flow.includes("var mountedLanes = body.querySelectorAll('.ez3fl-record')"), 'easy flow does not reconcile one persistent transcript lane');

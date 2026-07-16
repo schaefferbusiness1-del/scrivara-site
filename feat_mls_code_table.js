@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_code_table.js  ->  window.__mlsCodeTable   (ct-1.0.0)
+ * feat_mls_code_table.js  ->  window.__mlsCodeTable   (ct-1.1.0)
  * -----------------------------------------------------------------------------
  * PRACTICE BILLING / ICD-10-CPT CODE TABLE (owner-requested, b173).
  *
@@ -30,7 +30,7 @@
   'use strict';
   try { if (window.__mlsCodeTable && window.__mlsCodeTable.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ct-1.0.0';
+  var VERSION = 'ct-1.1.0';
   var STORE_KEY = 'mls_code_table_v1';
   var MAX_ENTRIES = 4000;          /* hard cap so a giant paste can't bloat storage */
   var PROMPT_MAX = 6000;           /* chars of table injected into a prompt */
@@ -122,6 +122,9 @@
     entries = (entries || []).filter(function (e) { return e && e.desc && e.code; }).slice(0, MAX_ENTRIES);
     var obj = { v: 1, entries: entries, updated: nowTs() };
     safe(function () { localStorage.setItem(STORE_KEY, JSON.stringify(obj)); });
+    /* ct-1.1.0: one canonical announcement so every consumer (Settings card,
+       note drafting, op-note coding, studies, pay report) can refresh */
+    safe(function () { window.dispatchEvent(new CustomEvent('mls:codetable-updated', { detail: { count: entries.length } })); });
     return obj;
   }
   function nowTs() { return safe(function () { return (window.Date && Date.now) ? Date.now() : 0; }, 0) || 0; }
@@ -172,7 +175,7 @@
     if (document.getElementById(STYLE_ID)) return;
     var s = document.createElement('style'); s.id = STYLE_ID;
     s.textContent = [
-      '#' + MODAL_ID + '{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;font-family:inherit}',
+      '#' + MODAL_ID + '{position:fixed;inset:0;z-index:2147483200;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;font-family:inherit}',
       '#' + MODAL_ID + ' .ctcard{background:#fff;color:#1E2B24;width:min(680px,94vw);max-height:88vh;overflow:auto;border-radius:14px;padding:20px 22px;box-shadow:0 18px 60px rgba(0,0,0,.35)}',
       '#' + MODAL_ID + ' h3{margin:0 0 4px;font-size:17px}',
       '#' + MODAL_ID + ' .ctsub{font-size:12.5px;color:#5b6b80;margin:0 0 12px;line-height:1.45}',

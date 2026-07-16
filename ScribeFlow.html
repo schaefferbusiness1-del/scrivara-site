@@ -7451,12 +7451,31 @@ async function loadCalendar(){
   _calInit();
   var grid=document.getElementById('calGrid');
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>'; return; }
+  /* Paint immediately from the last known rows so the calendar is never a
+     blank grid for two sequential network round-trips. The fresh fetch then
+     replaces the rows and re-renders. */
   try{
-    var r=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}});
-    if(r.status===401){ if(typeof handle401==='function') handle401(); return; }
-    var d=await r.json(); _calAppts=d.appointments||[]; _calMe=d.me||{};
-  }catch(e){ _calAppts=[]; }
-  try{ var pr=await fetch(bkBase()+'/api/providers',{headers:{Authorization:'Bearer '+bkToken()}}); if(pr.ok){ var pd=await pr.json(); _calProviders=pd.providers||[]; } }catch(e){ _calProviders=[]; }
+    if(!(_calAppts&&_calAppts.length)){
+      var cachedCal=localStorage.getItem(uns('calApptsCache'));
+      if(cachedCal){ var cd=JSON.parse(cachedCal); if(cd&&Array.isArray(cd.appointments)&&cd.appointments.length){ _calAppts=cd.appointments; _calMe=cd.me||{}; if(Array.isArray(cd.providers)&&cd.providers.length&&!(_calProviders&&_calProviders.length)) _calProviders=cd.providers; } }
+    }
+  }catch(e){}
+  if(_calAppts&&_calAppts.length){ renderCalendar(); renderCalCheckin(); }
+  else if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Loading appointments…</div>';
+  /* both requests in parallel — the providers list must not delay appointments */
+  var _calResults=await Promise.all([
+    fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}).catch(function(){ return null; }),
+    fetch(bkBase()+'/api/providers',{headers:{Authorization:'Bearer '+bkToken()}}).catch(function(){ return null; })
+  ]);
+  var r=_calResults[0], pr=_calResults[1];
+  if(r&&r.status===401){ if(typeof handle401==='function') handle401(); return; }
+  try{
+    if(r&&r.ok){ var d=await r.json(); _calAppts=d.appointments||[]; _calMe=d.me||{}; }
+    else if(!(_calAppts&&_calAppts.length)){ _calAppts=[]; }
+  }catch(e){ if(!(_calAppts&&_calAppts.length)) _calAppts=[]; }
+  try{ if(pr&&pr.ok){ var pd=await pr.json(); _calProviders=pd.providers||[]; } }catch(e){ _calProviders=_calProviders||[]; }
+  /* bounded snapshot for the instant next-open paint; quota-safe */
+  try{ localStorage.setItem(uns('calApptsCache'), JSON.stringify({appointments:(_calAppts||[]).slice(0,800), me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)})); }catch(e){}
   renderCalendar(); renderCalCheckin();
 }
 function _calFilterVal(){
@@ -7467,7 +7486,7 @@ function _calFilterVal(){
 function renderCalendar(){
   _calInit();
   if(!_calRefDate){ _calRefDate=(typeof _acctTodayKey==='function'?_acctTodayKey():''); if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); } }
-  ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; b.style.background=on?'var(--brand,#2E6A4B)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; } });
+  ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; var bg=on?'var(--brand,#2E6A4B)':'#fff', fg=on?'#fff':'var(--ink)'; if(b.style.background!==bg) b.style.background=bg; if(b.style.color!==fg) b.style.color=fg; } });
   if(_calMode==='week') return _calRenderWeek();
   if(_calMode==='day') return _calRenderDay();
   return _calRenderMonth();
@@ -7476,12 +7495,23 @@ function renderCalendar(){
    Appointment start_at is stored in UTC. Show every time in the ACCOUNT's time zone
    (default US Eastern — change by setting the 'acctTz' pref) and in 12-hour AM/PM. ===== */
 function _acctTz(){ try{ var t=localStorage.getItem(uns('acctTz')); return (t&&t.trim())?t.trim():'America/New_York'; }catch(e){ return 'America/New_York'; } }
+/* Constructing Intl.DateTimeFormat is expensive (~0.2-1 ms). The calendar and
+   day-progress surfaces format times PER APPOINTMENT per render, so a busy
+   month used to build hundreds of formatters on every open — the visible
+   calendar lag. Cache one formatter per (site, timeZone). */
+var _mlsTzFmtCache={};
+function _mlsTzFmt(site, opts){
+  var k=site+'|'+(opts.timeZone||'');
+  var f=_mlsTzFmtCache[k];
+  if(!f){ f=new Intl.DateTimeFormat('en-US',opts); _mlsTzFmtCache[k]=f; }
+  return f;
+}
 /* One shared account-clock truth for Calendar, front desk, guided patient highlighting,
    and day-relative workflows. Browser/device time zones must never move a practice day. */
 function _acctNowParts(d){
   try{
     d=d||new Date(); var out={};
-    new Intl.DateTimeFormat('en-US',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(d).forEach(function(p){ out[p.type]=p.value; });
+    _mlsTzFmt('acctParts',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(d).forEach(function(p){ out[p.type]=p.value; });
     var h=parseInt(out.hour,10); if(h===24) h=0;
     return {year:parseInt(out.year,10),month:parseInt(out.month,10),day:parseInt(out.day,10),hour:h,minute:parseInt(out.minute,10)};
   }catch(e){ var n=d||new Date(); return {year:n.getFullYear(),month:n.getMonth()+1,day:n.getDate(),hour:n.getHours(),minute:n.getMinutes()}; }
@@ -7492,7 +7522,7 @@ function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.
 /* Minutes-since-midnight of an appointment IN the account time zone (from a UTC ISO start_at). */
 function _apptMinsTz(iso){
   try{ var d=new Date(iso); if(isNaN(d.getTime())) return null;
-    var ps=new Intl.DateTimeFormat('en-US',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_acctTz()}).formatToParts(d);
+    var ps=_mlsTzFmt('apptHM',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_acctTz()}).formatToParts(d);
     var hh=0,mm=0; ps.forEach(function(p){ if(p.type==='hour')hh=parseInt(p.value,10); if(p.type==='minute')mm=parseInt(p.value,10); });
     if(hh===24) hh=0; return hh*60+mm;
   }catch(e){ return null; }
@@ -7502,7 +7532,7 @@ function _apptHHMMTz(v){ v=String(v||''); if(!v) return ''; if(/T/.test(v)){ var
 /* Friendly 12-hour "9:00 AM" — accepts a UTC ISO start_at (→account TZ) OR a bare local "HH:MM". */
 function _fmtApptTime(v){
   v=String(v||''); if(!v) return '';
-  if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}); }catch(e){} }
+  if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return _mlsTzFmt('appt12',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}).format(d); }catch(e){} }
   /* b242: an EXPLICIT meridian in the input is authoritative — "4:00 PM" must never
      re-format as 4:00 AM (the hh<12 default below is only for meridian-less input). */
   var mx=v.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(mx){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
@@ -7552,7 +7582,7 @@ function _acctWallToUtcIso(dateKey, hhmm){
     var m=String(hhmm||'').match(/(\d{1,2}):(\d{2})/); if(!m||!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey||''))) return null;
     var Y=+dateKey.slice(0,4), Mo=+dateKey.slice(5,7), D=+dateKey.slice(8,10), H=+m[1], Mi=+m[2];
     var asUTC=Date.UTC(Y,Mo-1,D,H,Mi);
-    var dtf=new Intl.DateTimeFormat('en-US',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    var dtf=_mlsTzFmt('acctParts',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     var o={}; dtf.formatToParts(new Date(asUTC)).forEach(function(p){ o[p.type]=p.value; });
     var shown=Date.UTC(+o.year,+o.month-1,+o.day,(o.hour==='24'?0:+o.hour),+o.minute);
     var offset=shown-asUTC;             // how far the account TZ is ahead of UTC at that instant
@@ -9387,21 +9417,36 @@ async function _studioHandleRpc(req, source){
     return reply(false,null,'Unknown method.');
   }catch(e){ reply(false,null,'Bridge error.'); }
 }
+/* Failures must be LOUD: the 13px muted status line under the composer was
+   the only feedback, so a gated or failed build read as "the Build tab does
+   nothing". Every failure now also toasts, and the real backend reasons
+   (402 inactive access, 403 non-clinician) get honest, specific messages. */
+function studioFail(message){
+  studioStatus(message,'#b4231e');
+  try{ if(typeof toast==='function') toast(message,'err'); }catch(e){}
+}
 async function generateStudioWidget(){
   var prompt=((document.getElementById('studioPrompt')||{}).value||'').trim();
-  if(!prompt){ studioStatus('Describe what you want to build first.','#b4231e'); return; }
-  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ studioStatus('Sign in to build widgets.','#b4231e'); return; }
+  if(!prompt){ studioFail('Describe what you want to build first.'); var pi=document.getElementById('studioPrompt'); if(pi) pi.focus(); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){
+    studioFail(bkToken&&typeof bkToken==='function'&&!bkToken()&&typeof backendMode==='function'&&!backendMode()
+      ? 'The widget builder needs the MLS cloud AI, which this local/demo session cannot reach. Sign in on mlsscribe.com to build widgets.'
+      : 'Sign in to build widgets.');
+    return;
+  }
   var btn=document.getElementById('studioGenBtn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Building…'; }
   studioStatus('Building your widget… this takes a few seconds.');
   try{
     var r=await fetch(bkBase()+'/api/widget/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:prompt})});
     var d=await r.json().catch(function(){return {};});
-    if(r.status===403){ studioStatus('Widget builder is for clinician accounts.','#b4231e'); return; }
-    if(!r.ok||!d.html){ studioStatus(d.error||'Could not build the widget. Try rephrasing.','#b4231e'); return; }
+    if(r.status===402){ studioFail(d.error||'Your MLS access is inactive — renew your subscription to use the widget builder.'); return; }
+    if(r.status===403){ studioFail('Widget builder is for clinician accounts.'); return; }
+    if(r.status===401){ if(typeof handle401==='function') handle401(); studioFail('Your session expired — sign in again to build widgets.'); return; }
+    if(!r.ok||!d.html){ studioFail(d.error||'Could not build the widget. Try rephrasing.'); return; }
     try{ if(typeof loadCalendar==='function' && (typeof _calAppts==='undefined' || !_calAppts || !_calAppts.length)) await loadCalendar(); }catch(e){}
     renderStudioWidget(d.html, prompt);
     studioStatus('Done. Review it below, then Save it to keep it.','#1c7a43');
-  }catch(e){ studioStatus('Network error while building.','#b4231e'); }
+  }catch(e){ studioFail('Network error while building — check your connection and try again.'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✨ Build it'; } }
 }
 function renderStudioWidget(html, title){
@@ -15200,7 +15245,9 @@ function _athenaLocalDay(ts){
   var d=new Date(ts||Date.now());
   try{
     var out={};
-    new Intl.DateTimeFormat('en-US',{timeZone:(typeof _acctTz==='function'?_acctTz():'America/New_York'),year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d).forEach(function(p){out[p.type]=p.value;});
+    var _aldTz=(typeof _acctTz==='function'?_acctTz():'America/New_York');
+    var _aldFmt=(typeof _mlsTzFmt==='function')?_mlsTzFmt('athenaDay',{timeZone:_aldTz,year:'numeric',month:'2-digit',day:'2-digit'}):new Intl.DateTimeFormat('en-US',{timeZone:_aldTz,year:'numeric',month:'2-digit',day:'2-digit'});
+    _aldFmt.formatToParts(d).forEach(function(p){out[p.type]=p.value;});
     if(out.year&&out.month&&out.day)return out.year+'-'+out.month+'-'+out.day;
   }catch(e){}
   return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
@@ -23753,7 +23800,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b336';
+  window.__MLS_AV='b337';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

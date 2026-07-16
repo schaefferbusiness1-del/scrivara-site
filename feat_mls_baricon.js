@@ -1,4 +1,4 @@
-/* feat_mls_baricon.js -> window.__mlsBarIcons (bi-1.0.0)
+/* feat_mls_baricon.js -> window.__mlsBarIcons (bi-1.1.0)
  * ITEM 15: On the white patient-context bar (#mlsCtxBar .mlsctx-actions),
  * convert ONLY the Chart / Visit / History / Schedule pill buttons from text
  * labels to clear inline-SVG ICONS. Same height/position/order. Each gets an
@@ -17,7 +17,7 @@
   "use strict";
   try { if (window.__mlsBarIcons && window.__mlsBarIcons.installed) return; } catch (e) { return; }
 
-  var VERSION = "bi-1.0.0";
+  var VERSION = "bi-1.1.0";
   var STYLE_ID = "mlsBarIconCss";
   var BAR_ID = "mlsCtxBar";
   var FLAG = "__mlsBarIconified";
@@ -65,7 +65,7 @@
     safe(function () { (document.head || document.documentElement).appendChild(s); });
   }
 
-  var _obs = null;
+  var _obs = null, _sentinel = null, _mountWatch = null, _barRef = null;
 
   function apply() {
     var bar = safe(function () { return document.getElementById(BAR_ID); });
@@ -87,23 +87,53 @@
   function applyGuarded() {
     if (_obs) safe(function () { _obs.disconnect(); });
     safe(apply);
-    if (_obs) safe(function () {
-      var bar = document.getElementById(BAR_ID);
-      if (bar) _obs.observe(bar, { childList: true, subtree: true });
-    });
+    if (_obs) safe(function () { if (_barRef && _barRef.isConnected) _obs.observe(_barRef, { childList: true, subtree: true }); });
+  }
+
+  /* bi-1.1.0: the icons vanished on real accounts. The bar mounts on the FIRST
+     active patient — often long after boot — but 1.0.0 only observed a bar
+     that already existed plus an 8-second startup poll, so a late mount (or a
+     wholesale bar-node replacement) left the pills as plain text forever.
+     Now: a self-disconnecting mount watcher attaches the real observer the
+     moment #mlsCtxBar exists, and a direct-parent childList sentinel
+     re-attaches after any wholesale bar replacement (the b311 pattern). */
+  function ensureAttached() {
+    var bar = safe(function () { return document.getElementById(BAR_ID); });
+    if (!bar) return false;
+    if (bar !== _barRef) {
+      _barRef = bar;
+      applyGuarded();
+      safe(function () {
+        if (_sentinel) _sentinel.disconnect();
+        if (bar.parentNode) _sentinel && _sentinel.observe(bar.parentNode, { childList: true });
+      });
+    } else {
+      safe(apply);
+    }
+    return true;
   }
 
   function boot() {
     injectCss();
     _obs = safe(function () { return new MutationObserver(function () { applyGuarded(); }); }, null);
-    applyGuarded();
-    // also poll briefly in case the bar mounts late
-    var n = 0, t = setInterval(function () { n++; applyGuarded(); if (n >= 20) clearInterval(t); }, 400);
+    _sentinel = safe(function () { return new MutationObserver(function () { ensureAttached(); }); }, null);
+    if (!ensureAttached()) {
+      _mountWatch = safe(function () {
+        return new MutationObserver(function () {
+          if (ensureAttached() && _mountWatch) { safe(function () { _mountWatch.disconnect(); }); _mountWatch = null; }
+        });
+      }, null);
+      safe(function () { if (_mountWatch && document.body) _mountWatch.observe(document.body, { childList: true, subtree: true }); });
+    }
+    // short startup poll still covers pre-body edge cases, then stops
+    var n = 0, t = setInterval(function () { n++; ensureAttached(); if (n >= 20) clearInterval(t); }, 400);
   }
 
   function revert() {
     safe(function () { if (_obs) _obs.disconnect(); });
-    _obs = null;
+    safe(function () { if (_sentinel) _sentinel.disconnect(); });
+    safe(function () { if (_mountWatch) _mountWatch.disconnect(); });
+    _obs = null; _sentinel = null; _mountWatch = null; _barRef = null;
     safe(function () {
       var bar = document.getElementById(BAR_ID);
       if (!bar) return;

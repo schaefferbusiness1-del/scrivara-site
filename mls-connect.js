@@ -28908,6 +28908,7 @@
     { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Practice & provider', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
     { k:'note defaults format model comment style', name:'Note defaults', where:'Settings -> Notes & AI -> Note defaults', how:'Set the default note format, model, comment, and documentation style.', route:'settings:notes' },
     { k:'ai personalization preferences instructions', name:'AI personalization', where:'Settings -> Notes & AI -> AI personalization', how:'Control the instructions and defaults used when MLS drafts clinical work.', route:'settings:notes' },
+    { k:'billing codes icd cpt hcpcs code table upload practice coding', name:'Practice billing codes (ICD-10 / CPT)', where:'Settings -> Notes & AI -> Practice billing codes', how:'Upload or paste your practice’s diagnosis→ICD-10 and procedure→CPT table. When set, every place MLS drafts or fills codes (notes, template fills, op-notes, studies) uses your exact codes; with no table the AI fills its best current standard code.', route:'settings:notes' },
     { k:'display theme text size compact layout', name:'Display settings', where:'Settings -> Display', how:'Change theme, text size, and layout density.', route:'settings:display' },
     { k:'provider preferences signature followup intake questions', name:'Provider preferences', where:'Settings -> Notes & AI -> Provider preferences', how:'Set signature, follow-up, and patient-intake preferences.', route:'settings:notes' },
     { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Features & navigation -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
@@ -31731,7 +31732,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b328';
+  window.__MLS_AV = window.__MLS_AV || 'b337';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32022,7 +32023,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b328';
+  var MLS_APP_BUILD='2026-07-16-b337';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38756,8 +38757,26 @@
       } catch(e){}
     }
     function tick(){ applyLock(); }
+    /* Locked controls have pointer-events:none, so clicking "✨ Build it" (or
+       any Studio control) produced NOTHING — the lock card sits at the top of
+       the page and is easy to scroll past, which read as "the Build tab is
+       broken". Explain on every locked click and bring the card into view. */
+    function onLockedClick(ev){
+      try {
+        if (isPrem()) return;
+        var sv = document.getElementById('studioView');
+        if (!sv || !sv.contains(ev.target)) return;
+        var lk = document.getElementById(LOCK_ID);
+        if (lk && lk.contains(ev.target)) return;
+        var dimmed = ev.target.closest && ev.target.closest('[data-mls-prem-dim]');
+        if (!dimmed) return;
+        try { if (typeof window.toast === 'function') window.toast('AI Studio — Copilot, the widget builder and studies — is a Premium feature. Contact your administrator to enable it.', 'err'); } catch(e){}
+        try { if (lk && lk.scrollIntoView) lk.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
+      } catch(e){}
+    }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick);
     tick();
+    document.addEventListener('click', onLockedClick, true);
     var n=0, iv=setInterval(function(){ tick(); if(++n>20) clearInterval(iv); }, 500);
     try {
       var mo = new MutationObserver(function(){
@@ -38946,7 +38965,7 @@
 }catch(e){}})();
 ;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623c1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
 
-;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260716ui114';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260716ui115';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260716vt102';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -39020,7 +39039,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_offtab_navhide.js"]'))return;var s=document.createElement('script');s.src='feat_mls_offtab_navhide.js?v=20260625oth1c1';s.setAttribute('data-mls-asset','feat_mls_offtab_navhide.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item13: off App-tabs disappear from nav (kept in Menu) -- 6b nav half (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fillblank.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fillblank.js?v=20260625of1c1';s.setAttribute('data-mls-asset','feat_mls_opnote_fillblank.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item14: restore one-click fill-in-the-blank op note (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260625bi1c1';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260716bi110';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1c1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item16: After-visit summary trigger added to History view (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item17: Visit-timeline rows open the real per-visit detail (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
@@ -40283,7 +40302,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260713wd2';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260716onf240';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260712ct100c1';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260716oni260';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: exact procedure-class matching, sticky manual picks, exact-patient history signals, and fail-closed selected-template fidelity */

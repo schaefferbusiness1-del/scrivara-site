@@ -861,6 +861,50 @@
     renderIntakeEditor(editor, false);
   }
 
+  /* Billing-codes card (owner request): the ct-1.1.0 upload editor existed but
+     had NO entry point anywhere in the UI. Settings -> Notes & AI now owns it.
+     One canonical store (window.__mlsCodeTable) already feeds every consumer:
+     note drafting, template fills, op-note coding, and natural-language
+     studies. This card is display+launcher only; the editor owns the data. */
+  function billingCodesCount() {
+    return safe(function () {
+      return (W.__mlsCodeTable && typeof W.__mlsCodeTable.count === 'function') ? W.__mlsCodeTable.count() : null;
+    }, null);
+  }
+  function refreshBillingCodesCard() {
+    var status = byId('mlsSetCodeTableStatus');
+    if (!status) return;
+    var n = billingCodesCount();
+    var text = n == null ? 'The billing-code module has not loaded yet — reload MLS if this persists.'
+      : (n === 0 ? 'No practice table uploaded — the AI fills its best current standard ICD-10/CPT code for each diagnosis.'
+        : n + ' practice code' + (n === 1 ? '' : 's') + ' loaded — used everywhere MLS drafts or fills codes (notes, templates, op-notes, studies).');
+    if (status.textContent !== text) status.textContent = text;
+    var button = byId('mlsSetCodeTableOpen');
+    if (button) button.disabled = (n == null);
+  }
+  function ensureBillingCodesField(notes) {
+    if (!notes) return;
+    var field = byId('mlsSetCodeTableField');
+    if (!field) {
+      field = document.createElement('div');
+      field.id = 'mlsSetCodeTableField';
+      field.className = 'field';
+      field.innerHTML =
+        '<label>Practice billing codes (ICD-10 / CPT)</label>' +
+        '<div class="set-desc" id="mlsSetCodeTableStatus"></div>' +
+        '<button type="button" class="btn-ghost" id="mlsSetCodeTableOpen" style="margin-top:6px">⚕ Upload / manage code table</button>';
+      field.querySelector('#mlsSetCodeTableOpen').addEventListener('click', function () {
+        safe(function () { if (W.__mlsCodeTable && typeof W.__mlsCodeTable.openEditor === 'function') W.__mlsCodeTable.openEditor(); });
+      });
+      if (!refreshBillingCodesCard.__bound) {
+        refreshBillingCodesCard.__bound = true;
+        W.addEventListener('mls:codetable-updated', refreshBillingCodesCard);
+      }
+    }
+    if (field.parentNode !== notes) notes.appendChild(field);
+    refreshBillingCodesCard();
+  }
+
   function rearrangeSettingsFields(sections) {
     var sectionByGroup = {};
     sections.forEach(function (section) {
@@ -869,6 +913,7 @@
     });
     var account = sectionByGroup.account, practice = sectionByGroup.practice;
     var features = sectionByGroup.features;
+    ensureBillingCodesField(sectionByGroup.notes);
 
     var legacyNameField = closestField(byId('docName'));
     if (legacyNameField) markHidden(legacyNameField, 'duplicate-provider-name');
