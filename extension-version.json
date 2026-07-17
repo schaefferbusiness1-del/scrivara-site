@@ -1,5 +1,5 @@
 {
-  "version": "2.9.33",
+  "version": "2.9.34",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.33 - Order-group rows are no longer silently skipped during history pulls: each administrative order group row is filed as its own dated index entry (outside the verified clinical chain, so every existing completeness proof is unchanged), and the pull narrates it instead of appearing to skip every other visit. Includes the v2.9.32 speed and Mac changes."
+  "notes": "v2.9.34 - Restores the proven history-read pacing after two large day pulls failed with the v2.9.32 faster cadence; history reads run at the pre-change, live-verified rhythm again. Keeps the order-group indexing (no more silently skipped administrative rows), the multi-Athena-tab write/teach support, and the Mac fixes."
 }

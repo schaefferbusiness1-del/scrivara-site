@@ -7115,7 +7115,7 @@ async function mlsSchedDomInline(doc, CFG){
               const qpSettled = await chartSettle(self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id), 8000);
               if (!qpSettled || !qpSettled.ok || chartExpired()) { chartFailDeadline('quiet Athena work-tab setup'); return; }
             }
-            if (!(await chartWait(1800))) { chartFailDeadline('clinical chart load'); return; } /* v2.9.32: shorter first settle - the loop keeps re-probing under the same budget */
+            if (!(await chartWait(3200))) { chartFailDeadline('clinical chart load'); return; }
             continue;
           }
           if (navClicked) {
@@ -7129,7 +7129,7 @@ async function mlsSchedDomInline(doc, CFG){
           }
           noClickRounds++;
           if (briefingNow && noClickRounds >= 5 && !navClicked) break; /* exam-prep with nothing safe to click -> fail honestly below */
-          if (!(await chartWait(bootstrapReadyEarly ? 600 : (polls < 3 ? 1200 : 2400)))) { chartFailDeadline('clinical chart readiness'); return; } /* v2.9.32: faster early polls, same acceptance + budgets */
+          if (!(await chartWait(bootstrapReadyEarly ? 900 : 2400))) { chartFailDeadline('clinical chart readiness'); return; }
         }
         if (chartExpired()) { chartFailDeadline('clinical chart readiness'); return; }
         const V59 = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
@@ -11711,7 +11711,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
           }
         }
       }
-      if (!ident) await sleep(400); /* v2.9.32 speed: cadence only - 15s deadline + identity gate unchanged */
+      if (!ident) await sleep(800);
     }
     if (!ident && nameOnlyHit) ident = nameOnlyHit; /* deadline: fall back to the name-matched candidate -> the DOB gate below refuses honestly */
     /* ---- 4) IDENTITY GATE - refuse honestly BEFORE any click/read ---------- */
@@ -11807,14 +11807,14 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
     var railDeadline = Date.now() + 12000; /* absolute deadline, short sleeps */
     while (!clicked && Date.now() < railDeadline) {
       clicked = clickRailByAttr('visits') || clickRailLabel('Visits');
-      if (!clicked) await sleep(350); /* v2.9.32 speed: cadence only */
+      if (!clicked) await sleep(700);
     }
     if (!clicked) return { ok: false, reason: 'no-rail', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The left-rail "Visits" item was not found on the open chart. Refusing to read any other surface as if it were the verified Visits pane (wf_6) - nothing was captured.' };
     /* ---- 6) wait for the "Visits and Cases" pane (light DOM, live-verified:
        fully readable via innerText). Absolute deadline + short sleeps. */
     var paneDeadline = Date.now() + 16000, paneSeen = false, paneText = '';
     while (Date.now() < paneDeadline) {
-      await sleep(300); /* v2.9.32 speed: cadence only */
+      await sleep(500);
       try { paneText = String((W.document.body && W.document.body.innerText) || ''); } catch (eP) { paneText = ''; }
       if (/visits\s+and\s+cases/i.test(paneText)) { paneSeen = true; break; }
     }
@@ -11828,13 +11828,13 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       try { clickRailByAttr('visits') || clickRailLabel('Visits'); } catch (eRe) {}
       var paneDeadline2 = Date.now() + 10000;
       while (Date.now() < paneDeadline2) {
-        await sleep(300); /* v2.9.32 speed: cadence only */
+        await sleep(500);
         try { paneText = String((W.document.body && W.document.body.innerText) || ''); } catch (eP2) { paneText = ''; }
         if (/visits\s+and\s+cases/i.test(paneText)) { paneSeen = true; break; }
       }
     }
     if (!paneSeen) return { ok: false, reason: 'no-pane', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'Clicked the Visits rail item but the "Visits and Cases" pane did not render (retried once with menu-close recovery). No visits were read.' };
-    await sleep(600); /* v2.9.32: shorter pre-settle - the v2.03 settle-poll below owns hydration correctness */
+    await sleep(1200); /* let the entry list hydrate */
     /* ---- 7) the SHOW control - ONLY the trivially safe case: a real <select>
        carrying an "All Events" option that is not yet selected (native value
        setter + change event, then settle). Custom dropdowns / button menus are
@@ -11851,7 +11851,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
         var desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
         if (desc && desc.set) desc.set.call(sels[sx], opts[allIx].value); else sels[sx].selectedIndex = allIx;
         try { sels[sx].dispatchEvent(new W.Event('change', { bubbles: true })); } catch (eC) {}
-        await sleep(800); /* v2.9.32: the settle-poll below still verifies the re-rendered list */
+        await sleep(1500);
         break;
       }
     } catch (eShow) {}
@@ -11936,7 +11936,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
         parsed = again;
         continue;
       }
-      await sleep(400); /* v2.9.32 speed: cadence only; the 800ms stability confirmation above is unchanged */
+      await sleep(700);
       parsed = parseEntries();
     }
     /* v2.01 HONESTY INVARIANT (live root-cause of 'no-visits-on-chart' on charts
