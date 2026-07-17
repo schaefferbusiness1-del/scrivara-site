@@ -643,8 +643,10 @@
    meds, "should I…", symptoms/diagnosis) BEFORE it ever reaches the model
    and routes it to the office instead.
    Backend: POST /api/patient/request  (credentialed patient session)
-     body { type, category, ...fields, message, submittedAt }
-     -> { ok:true, ref? }.  If the route isn't deployed yet (404) or the
+     body { type, category, ...fields, message, submittedAt, clientRequestId }
+     -> { ok:true, ref, status, notification }. GET /api/patient/requests
+     reconciles durable receipts for this exact patient. If the route isn't
+     deployed yet (404) or the
      network fails, the patient gets a graceful "please call the office"
      fallback with the office phone — nothing is silently lost.
    No Athena. No PHI in URLs. READ-ONLY toward records.
@@ -661,6 +663,10 @@
     return { phone:c.phone||"", email:c.email||"", practice:c.practice||"your care team" };
   }
   function tel(p){ return String(p||"").replace(/[^0-9+]/g,""); }
+  function requestId(){
+    try{ if(window.crypto&&typeof window.crypto.randomUUID==="function") return "portal:"+window.crypto.randomUUID(); }catch(e){}
+    return "portal:"+Date.now().toString(36)+":"+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  }
 
   /* ---- read the patient's own medication names from the rendered list ---- */
   function medNames(){
@@ -691,7 +697,12 @@
     ".mlsm .res{border-radius:10px;padding:12px 14px;font-size:13.5px;margin-top:14px}"+
     ".mlsm .res.ok{background:#EAF1EE;border:1px solid #CBDFD3;color:#2E6A4B}"+
     ".mlsm .res.warn{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636}"+
-    ".mlsm .callbtn{display:inline-block;margin-top:8px;background:var(--good);color:#fff;text-decoration:none;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px}";
+    ".mlsm .callbtn{display:inline-block;margin-top:8px;background:var(--good);color:#fff;text-decoration:none;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px}"+
+    ".reqhistory{margin-top:15px;border-top:1px solid var(--line);padding-top:12px}"+
+    ".reqhistory h3{font-size:13px;margin:0 0 7px;color:var(--blue-d)}"+
+    ".reqhistory-list{display:grid;gap:7px}"+
+    ".reqreceipt{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#FCFBF8;font-size:12.5px}"+
+    ".reqreceipt b{color:var(--blue-d)}.reqreceipt .rr-meta{color:var(--muted);margin-top:2px}";
   document.head.appendChild(st);
 
   /* ---- the request-type definitions ---- */
@@ -747,11 +758,12 @@
   };
 
   /* ---- modal ---- */
-  var back=null;
-  function closeModal(){ if(back){ back.remove(); back=null; } }
+  var back=null, openClientRequestId="";
+  function closeModal(){ if(back){ back.remove(); back=null; } openClientRequestId=""; }
   function openReq(key, prefillMsg){
     var T=TYPES[key]; if(!T) return;
     closeModal();
+    openClientRequestId=requestId();
     back=document.createElement("div"); back.className="mlsm-back";
     back.addEventListener("click", function(e){ if(e.target===back) closeModal(); });
     var pre = prefillMsg ? '<div style="font-size:13px;color:var(--muted);margin-top:8px">Prefilled from your message: “'+esc(prefillMsg)+'”</div>' : '';
@@ -783,16 +795,23 @@
       setTimeout(function(){ res.className="res warn"; res.innerHTML="You're previewing sample data. Sign in to your real portal account to send requests to the office."; btn.disabled=false; btn.textContent=old; }, 400);
       return;
     }
-    var payload=Object.assign({ type:key, category:T.cat, submittedAt:new Date().toISOString() }, data);
+    var payload=Object.assign({ type:key, category:T.cat, submittedAt:new Date().toISOString(), clientRequestId:openClientRequestId }, data);
     var rqHdrs={"Content-Type":"application/json"}, rqCreds="include";
     try{ var rqTok=window.__mlsPortalSess&&window.__mlsPortalSess.get(); if(rqTok){ rqHdrs.Authorization="Bearer "+rqTok; rqCreds="omit"; } }catch(e){}
     fetch(API+"/api/patient/request",{ method:"POST", credentials:rqCreds, headers:rqHdrs, body:JSON.stringify(payload) })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
       .then(function(x){
         if(x.ok && x.j && x.j.ok!==false){
+          var note=x.j.notification||{};
+          var notifyText=note.delivered ? " The doctor email notification was sent." :
+            (note.status==="failed" ? " The office queue received it, but the doctor email could not be confirmed." :
+            " The office queue received it; email delivery is not currently confirmed.");
           res.className="res ok";
-          res.innerHTML="✓ Sent to "+esc(office().practice)+". They’ll follow up with you"+(key==="refill"?" once a provider reviews it":"")+". <b>This is a request, not an approval.</b>"+(x.j.ref?(" Reference: "+esc(String(x.j.ref))):"");
-          btn.textContent="Sent"; setTimeout(closeModal, 2600); return;
+          res.innerHTML="✓ Registered with "+esc(office().practice)+". They’ll follow up with you"+(key==="refill"?" after a provider reviews it":"")+". <b>This is a request, not a prescription or approval.</b>"+notifyText+(x.j.ref?("<br><b>Reference: "+esc(String(x.j.ref))+"</b>"):"");
+          btn.textContent="Submitted"; btn.disabled=true;
+          var cancel=$("mReqCancel"); if(cancel) cancel.textContent="Close";
+          loadRequests();
+          return;
         }
         if(x.status===401){ res.className="res warn"; res.textContent="Your session ended — please sign in again, then resend."; btn.disabled=false; btn.textContent=old; return; }
         // 404 (route not deployed) or other error -> graceful office fallback
@@ -811,6 +830,42 @@
   }
   window.__mlsOpenReq=openReq; // exposed for the chat guard + card buttons
 
+  function receiptDate(value){
+    try{ var d=new Date(value); if(!isNaN(d.getTime())) return d.toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }catch(e){}
+    return "";
+  }
+  function renderRequests(rows){
+    var host=$("mlsReqHistoryList"); if(!host) return;
+    rows=Array.isArray(rows)?rows:[];
+    if(!rows.length){ host.innerHTML='<div class="empty" style="padding:2px 0">No portal requests yet.</div>'; return; }
+    host.innerHTML=rows.slice(0,8).map(function(row){
+      var status=row.status==="reviewed"?"Reviewed by the office":"Submitted for review";
+      var notify=row.notification&&row.notification.delivered?"Doctor email sent":"Office queue registered";
+      var when=receiptDate(row.created_at);
+      return '<div class="reqreceipt"><b>'+esc(row.category||"Portal request")+'</b> · '+esc(status)+
+        '<div class="rr-meta">'+esc(row.ref||"")+(when?(" · "+esc(when)):"")+" · "+esc(notify)+'</div></div>';
+    }).join("");
+  }
+  function requestFetch(path,opts){
+    opts=opts||{}; opts.headers=Object.assign({"Content-Type":"application/json"},opts.headers||{});
+    var token=""; try{ token=window.__mlsPortalSess&&window.__mlsPortalSess.get(); }catch(e){}
+    if(token){ opts.headers.Authorization="Bearer "+token; opts.credentials="omit"; } else opts.credentials="include";
+    return fetch(API+path,opts);
+  }
+  var requestsLoading=false;
+  function loadRequests(){
+    var host=$("mlsReqHistoryList"); if(!host||requestsLoading) return Promise.resolve();
+    if(isDemo()){ host.innerHTML='<div class="empty" style="padding:2px 0">Sample preview only — sign in to register and track real requests.</div>'; return Promise.resolve(); }
+    requestsLoading=true; host.innerHTML='<div class="empty" style="padding:2px 0">Checking your submitted requests…</div>';
+    return requestFetch("/api/patient/requests").then(function(r){
+      if(r.status===401) throw {auth:true};
+      return r.json().catch(function(){return {};}).then(function(j){ if(!r.ok) throw j; return j; });
+    }).then(function(j){ renderRequests(j&&j.requests); })
+      .catch(function(err){ host.innerHTML='<div class="empty" style="padding:2px 0">'+(err&&err.auth?"Sign in again to see request status.":"Request status is temporarily unavailable. Your reference receipt remains valid.")+'</div>'; })
+      .then(function(){ requestsLoading=false; });
+  }
+  window.__mlsPortalRequests={ open:openReq, refresh:loadRequests };
+
   /* ---- inject the "Requests & messages" card into the signed-in view ---- */
   function injectCard(){
     if($("mlsReqCard")) return;
@@ -826,15 +881,17 @@
         '<button class="reqbtn" data-req="injection"><span class="ic">💉</span><span>Injection timing<small>Ask when you’re due</small></span></button>'+
         '<button class="reqbtn" data-req="pain"><span class="ic">🩹</span><span>Pain medicine<small>Route to the office</small></span></button>'+
         '<button class="reqbtn" data-req="message"><span class="ic">✉️</span><span>Message the office<small>Send a general note</small></span></button>'+
-      '</div>';
+      '</div>'+
+      '<div class="reqhistory"><h3>My submitted requests</h3><div id="mlsReqHistoryList" class="reqhistory-list"><div class="empty" style="padding:2px 0">Sign in to see request status.</div></div></div>';
     grid.parentNode.insertBefore(card, grid);
     card.addEventListener("click", function(e){ var b=e.target.closest?e.target.closest(".reqbtn"):null; if(b) openReq(b.getAttribute("data-req")); });
+    var app=$("app"); if(app&&!app.classList.contains("hide")) loadRequests();
   }
   // #app flips from .hide to shown on login/demo — watch for it, and try now.
   injectCard();
   try{
     var app=$("app");
-    var mo=new MutationObserver(function(){ if(app && !app.classList.contains("hide")) injectCard(); });
+    var mo=new MutationObserver(function(){ if(app && !app.classList.contains("hide")){ injectCard(); loadRequests(); } });
     if(app) mo.observe(app,{attributes:true,attributeFilter:["class"]});
   }catch(e){}
 
