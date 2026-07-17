@@ -112,10 +112,16 @@
     deleteGroup: function (id) { var db = loadAll(); db.groups = db.groups.filter(function (g) { return g.id !== id; }); saveAll(db); },
     addPatient: function (groupId, p) {
       var db = loadAll(); var g = db.groups.filter(function (x) { return x.id === groupId; })[0]; if (!g) return null;
-      var key = ((p.name || '').trim().toLowerCase()) + '|' + ((p.dob || '').trim());
-      var existing = g.patients.filter(function (x) { return (((x.name || '').toLowerCase()) + '|' + (x.dob || '')) === key; })[0];
-      if (existing) { if (p.visits) mergeVisits(existing, p.visits); saveAll(db); return existing; }
-      var np = { id: uid('pt'), name: (p.name || '').trim(), dob: (p.dob || '').trim(), mrn: (p.mrn || '').trim(), addedAt: nowISO(), visits: [] };
+      /* b385: two DIFFERENT patients with the same name and NO DOB used to
+         merge into one row ("john smith|"). Name-only identity is never
+         sufficient (same rule as _opResolvePatient): merge only when a
+         non-empty DOB matches too, or when MRNs match exactly. */
+      var dob = (p.dob || '').trim(), nameKey = (p.name || '').trim().toLowerCase(), mrn = (p.mrn || '').trim();
+      var existing = null;
+      if (dob) existing = g.patients.filter(function (x) { return ((x.name || '').toLowerCase()) === nameKey && ((x.dob || '').trim()) === dob; })[0];
+      if (!existing && mrn) existing = g.patients.filter(function (x) { return ((x.mrn || '').trim()) === mrn && (x.mrn || '').trim() !== ''; })[0];
+      if (existing) { if (p.visits) mergeVisits(existing, p.visits); saveAll(db); existing._merged = true; return existing; }
+      var np = { id: uid('pt'), name: (p.name || '').trim(), dob: dob, mrn: mrn, addedAt: nowISO(), visits: [] };
       if (p.visits) mergeVisits(np, p.visits);
       g.patients.push(np); saveAll(db); return np;
     },
@@ -134,7 +140,10 @@
           return { date: h.date, type: h.type || 'Visit', detail: h.note != null ? h.note : (h.detail || ''), source: 'import' };
         });
         var np = API.addPatient(groupId, { name: p.name, dob: p.dob, mrn: p.mrn, visits: visits });
-        if (np) { addedP++; addedV += (np.visits ? np.visits.length : 0); }
+        /* b385: count only genuinely NEW patients and the visits supplied in
+           THIS import — merged existing patients inflated the toast. */
+        if (np && !np._merged) { addedP++; }
+        if (np) { addedV += visits.length; delete np._merged; }
       });
       return { patients: addedP, visits: addedV };
     },
@@ -406,7 +415,13 @@
 
   function refreshGroups(wrap) {
     var sel = wrap.querySelector('#mls-sg-group'); var groups = API.list();
+    /* b385 ROOT FIX: rebuilding options reset the <select> to the FIRST group,
+       so the next add silently landed in the wrong group (the task7 timer
+       patch only masked this). Preserve the doctor's selection across the
+       rebuild whenever that group still exists. */
+    var prev = sel.value;
     sel.innerHTML = groups.map(function (g) { return '<option value="' + g.id + '">' + esc(g.name) + ' (' + g.patients.length + ')</option>'; }).join('') || '<option value="">— no groups yet —</option>';
+    if (prev && groups.some(function (g) { return g.id === prev; })) sel.value = prev;
     refreshPatients(wrap);
   }
   function refreshPatients(wrap) {

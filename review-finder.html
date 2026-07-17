@@ -178,7 +178,26 @@ function doc(){return {name:$('dName').value,spec:$('dSpec').value,practice:$('d
 function copyText(t){ try{ navigator.clipboard.writeText(String(t||'')); }catch(e){} }
 function copyOut(id){ var el=$(id); copyText(el?el.innerText:''); }
 var CAP={}; // per-platform {rating, count, missing}
-function load(){ try{ var d=JSON.parse(localStorage.getItem('mlsRF')||'{}'); if(d.doc){ ['name','spec','practice','city','google','site'].forEach(function(k){ var el=$('d'+k.charAt(0).toUpperCase()+k.slice(1)); if(k==='name')el=$('dName'); if(el&&d.doc[k])el.value=d.doc[k]; }); } CAP=d.cap||{}; }catch(e){} }
+/* b385: auto-fill from the MLS Settings the doctor already saved. Settings
+   keys are account-namespaced (sf_u::<email>::<key>); on a single-account
+   device the prefix is unambiguous. Only fills fields the mlsRF blob hasn't
+   set — an explicit entry here always wins. */
+function settingsPrefill(){
+  var out={};
+  try{
+    var prefixes={};
+    for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); var m=/^(sf_u::.+::)(?:practiceName|providerName|docname)$/.exec(k); if(m && localStorage.getItem(k)) prefixes[m[1]]=1; }
+    var pre=Object.keys(prefixes);
+    if(pre.length===1){
+      var g=function(suffix){ try{ return localStorage.getItem(pre[0]+suffix)||''; }catch(e){ return ''; } };
+      out.practice=g('practiceName'); out.name=g('providerName')||g('docname'); out.spec=g('docspec');
+      out.google=g('googleBusinessUrl');
+      var addr=g('clinicAddress'); if(addr){ var parts=addr.split(','); out.city=(parts.length>=2?parts.slice(-2).join(',').trim():addr); }
+    }
+  }catch(e){}
+  return out;
+}
+function load(){ try{ var d=JSON.parse(localStorage.getItem('mlsRF')||'{}'); var pf=settingsPrefill(); d.doc=d.doc||{}; ['name','spec','practice','city','google','site'].forEach(function(k){ var el=$('d'+k.charAt(0).toUpperCase()+k.slice(1)); if(k==='name')el=$('dName'); if(!el)return; if(d.doc[k])el.value=d.doc[k]; else if(pf[k])el.value=pf[k]; }); CAP=d.cap||{}; }catch(e){} }
 function save(){ try{ localStorage.setItem('mlsRF', JSON.stringify({doc:doc(),cap:CAP})); }catch(e){} $('savedMsg').textContent='Saved.'; setTimeout(function(){$('savedMsg').textContent='';},1500); renderPlatforms(); dash(); }
 function renderPlatforms(){
   var d=doc();
@@ -476,7 +495,7 @@ load(); renderPlatforms(); dash();
   setTimeout(function(){ try{ window.__repScan(); }catch(e){} }, 400);
 })();
 </script>
-<script src="mls_reviews_scrape_app.js?v=20260710b"></script>
+<script src="mls_reviews_scrape_app.js?v=20260718c"></script>
 <script>
   /* Add one native hover explanation only where the compact label is not self-explanatory. */
   (function(){

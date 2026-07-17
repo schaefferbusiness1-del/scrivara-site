@@ -12010,7 +12010,7 @@
 })();
 
 
-;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1c1-B177";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
+;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718rr1c2-B177";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
 
 ;(function(){try{var A="feat_mls_best_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708bd1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* best-doctors lane: per-visit rating engine satellite */
 
@@ -32028,7 +32028,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b386';
+  window.__MLS_AV = window.__MLS_AV || 'b387';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32319,7 +32319,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b386';
+  var MLS_APP_BUILD='2026-07-17-b387';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -32869,7 +32869,7 @@
   "use strict";
   if(window.__mlsSmartAsk) return; window.__mlsSmartAsk=true;
   function pool(){ return window._calAppts||[]; }
-  function meName(){ try{ if(typeof window.getProviderName==='function'){ var n=window.getProviderName(); if(n) return n; } }catch(e){} return 'Matthew Schaeffer, MD'; }
+  function meName(){ try{ if(typeof window.getProviderName==='function'){ var n=window.getProviderName(); if(n) return n; } }catch(e){} try{ if(typeof window.getName==='function'){ var n2=window.getName(); if(n2) return n2; } }catch(e){} try{ return (window.bkUser&&window.bkUser.name)||''; }catch(e){} return ''; }
   function pretty(p){ if(!p) return 'Unassigned'; if(p.indexOf('_')<0) return p; var m=p.split('_'); var cred=m.length>2?m.slice(2).join(' ').replace(/_/g,' '):''; return m[1]+' '+m[0]+(cred?', '+cred:''); }
   function provKey(r){ return r.provider||r.doctor_user_id||'Unassigned'; }
   function reasonText(r){ return (r.reason||r.appt_type||r.type||'').trim(); }
@@ -39002,7 +39002,7 @@
   try {
     var LOCK_ID = 'mlsStudioPremiumLock';
     function isPrem(){
-      /* b384: demo/logged-out sessions are NEVER locked — same philosophy as
+      /* b387: demo/logged-out sessions are NEVER locked — same philosophy as
          pmg-1.0.0 ("demos and the logged-out tour keep showing the full
          product") and generateStudioWidget's own sign-in messaging, which
          assumes the controls are reachable. The server still gates every AI
@@ -39420,7 +39420,7 @@
 ;(function(){try{var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dk1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630as1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
 ;(function(){try{var A="feat_mls_legal_pay_setup.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630lps1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: legal Stripe pay setup (window.__mlsLegalPaySetup) */
-;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
+;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sg1c2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
 ;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714sa2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
 ;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
 
@@ -40596,7 +40596,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.1.0, mic chip on focus, insert-at-caret, direct toggleFor API for the easy lane, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
-;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260717sr230";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
+;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sr231";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260716pr203';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/Send owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260716lb200';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* shared request-owned progress: real counts/stages, deadlines, stale rejection, retry/cancel, refresh recovery; begin/end remain compatible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260717tl100';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */

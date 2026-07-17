@@ -55,9 +55,19 @@
     try {
       var chip = $('mlsProvChip'); if (chip && chip.textContent) { var m = chip.textContent.replace(/pulling as:?/i, '').replace(/^\s+|\s+$/g, ''); if (m) return m; }
     } catch (e) {}
+    /* b385: prefer the Settings provider name over the account email-name. */
+    try { if (typeof getProviderName === 'function') { var pn = getProviderName(); if (pn) return pn; } } catch (e) {}
     try { return (window.bkUser && (window.bkUser.name || window.bkUser.docname)) || ''; } catch (e) { return ''; }
   }
-  function practiceName() { try { return lsGet('practiceName') || (window.bkUser && window.bkUser.practice) || ''; } catch (e) { return ''; } }
+  function practiceName() {
+    /* b385: this read the RAW 'practiceName' key, but Settings stores it
+       account-namespaced (uns('practiceName')) — so review requests always
+       shipped an EMPTY practice. Read the Settings getter; the bkUser.practice
+       fallback never existed server-side and is dropped. */
+    try { if (typeof getPracticeName === 'function') { var v = getPracticeName(); if (v) return v; } } catch (e) {}
+    try { if (typeof window.uns === 'function') return lsGet(window.uns('practiceName')) || ''; } catch (e) {}
+    return '';
+  }
   function visitType() {
     try { var s = $('specialtyPreset'); if (s && s.value) return s.value; } catch (e) {}
     return '';
@@ -144,7 +154,10 @@
     var context = {
       doctor: ctx.doctor || providerName(),
       practice: ctx.practice || practiceName(),
-      city: ctx.city || (lsGet('clinicCity') || ''),
+      city: ctx.city || (function () { /* b385: 'clinicCity' was never set anywhere; derive from the Settings clinic address */
+        try { if (typeof getClinicAddress === 'function') { var a = getClinicAddress(); if (a) { var parts = a.split(','); if (parts.length >= 2) return parts.slice(-2).join(',').trim(); return a; } } } catch (e) {}
+        return '';
+      })(),
       visitType: ctx.visitType || visitType(),
       links: ctx.links || reviewLinks(),
       patientName: (p && p.name) || '',

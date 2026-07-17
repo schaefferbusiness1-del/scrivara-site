@@ -68,7 +68,25 @@
   }
   function notesOf(p) { try { return (p && isFn(window.patientNotes)) ? (window.patientNotes(p.id) || []) : []; } catch (e) { return []; } }
   function docsOf(p) { return (p && Array.isArray(p.docs)) ? p.docs.slice() : []; }
-  function providerName() { try { return isFn(window.getName) ? (window.getName() || '') : ''; } catch (e) { return ''; } }
+  function providerName() {
+    /* b385: prefer the Settings provider name; the legacy docname is the fallback. */
+    try { if (isFn(window.getProviderName)) { var pn = window.getProviderName(); if (pn) return pn; } } catch (e) {}
+    try { return isFn(window.getName) ? (window.getName() || '') : ''; } catch (e) { return ''; }
+  }
+  function providerIdentityBlock() {
+    /* b385: pre-fill the physician identity from Settings instead of leaving
+       bracketed placeholders — name, credentials, NPI, practice. Anything
+       missing stays a placeholder for the physician to complete. */
+    var name = providerName();
+    var cred = ''; try { if (isFn(window.getProviderCred)) cred = window.getProviderCred() || ''; } catch (e) {}
+    var npi = ''; try { if (isFn(window.getNpi)) npi = window.getNpi() || ''; } catch (e) {}
+    var prac = ''; try { if (isFn(window.getPracticeName)) prac = window.getPracticeName() || ''; } catch (e) {}
+    var line1 = (name ? name : '[Physician name]') + (cred ? ', ' + cred : '');
+    var out = line1;
+    if (prac) out += '\n' + prac;
+    if (npi) out += '\nNPI: ' + npi;
+    return out;
+  }
 
   /* provider of an athena visit row: explicit field first, else the raw line
      "<type>\n<MM-DD-YYYY[ h:mm AM]>, <Provider>, <Cred>, <Specialty>" */
@@ -653,7 +671,7 @@
     var secs = SECTIONS.slice();
     if (questions) secs.splice(12, 0, ['XIII-A. ANSWERS TO COUNSEL’S QUESTIONS', 'Restate and explicitly answer EACH of counsel’s questions, one by one, grounding each answer in the documented record. Where the record cannot answer a question, say it is undeterminable from the record provided.']);
     var ctx = buildCaseContext();
-    var caption = 'MEDICAL-LEGAL NARRATIVE REPORT' + (p && p.name ? '\nRe: ' + p.name + (p.dob ? ' (DOB ' + p.dob + ')' : '') : '') + '\nDate of report: ' + new Date().toLocaleDateString() + '\nDRAFT — for physician review and signature';
+    var caption = 'MEDICAL-LEGAL NARRATIVE REPORT' + (p && p.name ? '\nRe: ' + p.name + (p.dob ? ' (DOB ' + p.dob + ')' : '') : '') + '\nDate of report: ' + new Date().toLocaleDateString() + '\nPrepared by: ' + providerIdentityBlock().replace(/\n/g, ' | ') + '\nDRAFT — for physician review and signature';
     _generating = true;
     if (btn) { btn.disabled = true; }
     var outParts = [caption];

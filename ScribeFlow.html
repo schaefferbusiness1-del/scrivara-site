@@ -2131,6 +2131,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <option value="signed">✅ Signed</option>
         <option value="unsigned">● Unsigned</option>
         <option value="draft">📝 Drafts</option>
+        <option value="imports">📥 Chart imports</option>
       </select>
       <span id="histCount" class="mini" style="color:var(--muted)"></span>
     </div>
@@ -3046,7 +3047,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </label>
       </div>
 
-      <!-- b384: this was a checkbox wired to a hard-false reader (a deliberate
+      <!-- b387: this was a checkbox wired to a hard-false reader (a deliberate
            write-safety neuter) — a visible switch connected to nothing. State
            the guarantee as fact instead of showing a dead control. -->
       <div class="field">
@@ -3293,7 +3294,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
         </ol>
       </div>
-      <!-- b384: the "Rated on MLS" website-badge console existed but had NO
+      <!-- b387: the "Rated on MLS" website-badge console existed but had NO
            entry point anywhere in the app (reachable only by typed URL). -->
       <div class="row tight" style="margin-top:12px">
         <a class="btn-ghost" style="font-size:14px;padding:9px 15px;text-decoration:none" href="mls-widgets.html" target="_blank" rel="noopener">🔖 Website badges — embed "Rated on MLS" on your site</a>
@@ -6141,7 +6142,7 @@ function getPatients(){
 var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null;
 function savePatients(arr){
   var __json=JSON.stringify(arr);
-  /* b384 perf: identical content + untouched storage → skip the multi-MB LZ
+  /* b387 perf: identical content + untouched storage → skip the multi-MB LZ
      compress and the write outright. Render/sweep paths re-save unchanged
      rosters more often than they change them. The getItem identity check
      keeps external writers (other tabs, imports) honest. */
@@ -10879,14 +10880,14 @@ function opPrepRender(){
     h+='<label class="mini" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">(auto-matched)</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
-    h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
+    h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
         /* b240: the one-at-a-time blank walker is RETIRED (owner: exactly ONE way to
            fill a blank). [[key]] blanks now surface in the same "Fields" box (onf-1.8.0)
            as [FILL:] tokens — all visible at once, directly above the note text. */
       }
-      h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value">'+esc(row.note||'')+'</textarea>';
+      h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value;window._opPrep['+i+'].edited=(this.value!==window._opPrep['+i+']._genNote)">'+esc(row.note||'')+'</textarea>';
       h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
     }
     h+='</div>';
@@ -10909,6 +10910,16 @@ function _opNeedleHtml(i, mf, row){
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
 async function opPrepGenerateOne(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
+  /* b387: a successful re-draft used to silently overwrite the doctor's hand
+     edits. Edited drafts now need a second, explicit click to discard. */
+  if(row.edited && !row._confirmRedraft){
+    row._confirmRedraft=true;
+    try{ toast('This draft has your manual edits. Click "↻ Discard my edits & re-draft?" again to replace them with a fresh draft.','err'); }catch(e){}
+    try{ opPrepRender(); }catch(e){}
+    setTimeout(function(){ try{ if(row._confirmRedraft){ row._confirmRedraft=false; opPrepRender(); } }catch(e){} },10000);
+    return;
+  }
+  row._confirmRedraft=false;
   var tpl=getTemplateById(row.tplId);
   if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
@@ -10923,6 +10934,7 @@ async function opPrepGenerateOne(i){
     if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
+    row._genNote=row.note; row.edited=false; /* b387: fresh draft = pristine baseline for the edit guard */
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
@@ -10948,8 +10960,14 @@ function opPrepAutosaveDraft(i){
 async function opPrepGenerateAll(){
   var rows=window._opPrep||[]; var st=document.getElementById('opPrepStatus');
   if(!getTemplates().length){ try{ toast('Upload your op-note templates first (📄 Templates).','err'); }catch(e){} return; }
-  for(var i=0;i<rows.length;i++){ if(st) st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…'; try{ await opPrepGenerateOne(i); }catch(e){} }
-  if(st) st.textContent='✅ Drafted all '+rows.length+' op note'+(rows.length===1?'':'s')+'. Fill any blanks, then save each to the chart.';
+  /* b387: "Draft all" never touches a row the doctor hand-edited. */
+  var skipped=0, drafted=0;
+  for(var i=0;i<rows.length;i++){
+    if(rows[i].edited){ skipped++; continue; }
+    if(st) st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';
+    try{ await opPrepGenerateOne(i); drafted++; }catch(e){}
+  }
+  if(st) st.textContent='✅ Drafted '+drafted+' op note'+(drafted===1?'':'s')+(skipped?(' — '+skipped+' with your manual edits left untouched'):'')+'. Fill any blanks, then save each to the chart.';
 }
 /* ===== GUIDED BLANK FILLER — walk DOWN the op note, prompting for each missing detail one at
    a time (in document order), until none are left. ===== */
@@ -11965,7 +11983,16 @@ function renderHistory(){
   let _plm=null; const _plistMap=()=>{ if(!_plm){ _plm=new Map(); try{ (typeof getPatients==='function'?getPatients():[]).forEach(x=>{ if(x)_plm.set(x.id,x); }); }catch(e){} } return _plm; };
   const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
   const total=ordered.length;
-  if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
+  /* b387 History cleanup: bulk chart pulls save one "Athena chart import"
+     receipt note per patient with a fresh timestamp — after a big pull they
+     buried every real visit under a wall of near-identical rows. In the
+     default (All) view they now collapse into ONE summary row; the new
+     "📥 Chart imports" filter shows them all. Nothing is deleted. */
+  const _isImportNote=(n)=>{ try{ return String(n.cc||'')==='Athena chart import' || /^.+ — Athena chart import$/.test(String(n.cc||'')); }catch(e){ return false; } };
+  let _importNotes=[];
+  if(fv==='imports'){ ordered=ordered.filter(_isImportNote); }
+  else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
+  else if(!q){ _importNotes=ordered.filter(_isImportNote); if(_importNotes.length>3){ ordered=ordered.filter(n=>!_isImportNote(n)); } else { _importNotes=[]; } }
   if(q){ ordered=ordered.filter(n=>{ const d=new Date(n.updated||n.created||Date.now()); const ds=(d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); const hay=[_pname(n), n.cc||'', n.text||n.soap||'', ds, (n.signed?'signed':(n.isDraft?'draft':'unsigned')), (n.kind||'')].join(' \n ').toLowerCase(); return hay.indexOf(q)>=0; }); }
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
   if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
@@ -11982,7 +12009,10 @@ function renderHistory(){
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
     const kindTag = n.kind==='opnote' ? ' <span class="badge" style="background:#eef0ff;color:#2E6A4B;border-color:#EAF1EE">💉 Op note</span>' : '';
-    const cc = esc(n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint'));
+    /* b387: LLM filler phrases used to become row titles verbatim. */
+    let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
+    if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
+    const cc = esc(_ccRaw);
     const patName = esc(_pname(n));
     const isOrphan = ap && !n.patientId;
     const orphanTag = isOrphan ? ' <span class="badge draft" style="background:#fdf6e3;color:#b8860b;border-color:#f0e0b0">⚠ Unassigned</span>' : '';
@@ -11994,14 +12024,15 @@ function renderHistory(){
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
-        <div class="t">${patName} — ${cc}${kindTag}${orphanTag}</div>
-        <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}</div>
+        <div class="t">${patName} — ${cc}</div>
+        <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}${kindTag}${orphanTag}</div>
       </div>
       ${pushBtn}
       ${attachBtn}
       <button class="del" title="Delete" onclick="event.stopPropagation();deleteNote('${n.id}')">🗑</button>
     </div>`;
   }).join('');
+  if(_importNotes.length){ _histHtml='<div class="hist-item" style="cursor:pointer" onclick="var f=document.getElementById(\'histFilter\');if(f){f.value=\'imports\';renderHistory();}"><span class="ic">📥</span><div class="hist-main"><div class="t">'+_importNotes.length+' Athena chart-import receipt'+(_importNotes.length===1?'':'s')+'</div><div class="s">Collapsed to keep your real visits on top — click to view them all</div></div></div>'+_histHtml; }
   if(_histCapped) _histHtml+='<div class="muted" style="padding:10px 12px;font-size:13px;color:#6a829c">Showing the '+HIST_CAP+' most recent of '+total+' visits — use the search box above to find older ones.</div>';
   if(list._mlsSig!==_histHtml||!list.childElementCount){ list.innerHTML=_histHtml; list._mlsSig=_histHtml; }
 }
@@ -23889,7 +23920,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b386';
+  window.__MLS_AV='b387';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -4,7 +4,7 @@ const assert = require('assert');
 const path = require('path');
 const study = require(path.join(__dirname, '..', 'feat_mls_study_request.js'));
 
-assert.strictEqual(study.version, 'sr-2.3.0');
+assert.strictEqual(study.version, 'sr-2.3.1');
 
 const outcomes = study.parseStudySpec(
   'Build a 30 page retrospective outcomes study of patients who received lumbar epidural injections in the last 12 months',

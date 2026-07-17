@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.3.0';
+  var VERSION = 'sr-2.3.1';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -1586,7 +1586,10 @@
     }
 
     /* ------- cover page ------- */
-    doc.setTextColor(32, 64, 52); text('MLS Scribe', 12, { bold: true, after: 28 });
+    /* b385: the letterhead is the PRACTICE's paper, not the vendor's. */
+    var letterheadName = 'MLS Scribe';
+    try { if (typeof getPracticeName === 'function') { var pn = getPracticeName(); if (pn) letterheadName = pn + ' — via MLS Scribe'; } } catch (e) {}
+    doc.setTextColor(32, 64, 52); text(letterheadName, 12, { bold: true, after: 28 });
     doc.setTextColor(20, 28, 24); text(model.title, 22, { bold: true, after: 14 });
     text('Generated ' + new Date(model.generatedAt).toLocaleString(), 10, { after: 18 });
     text(model.patientCount + ' coded patients | ' + model.visitCount + ' stored visit records', 12, { bold: true, after: 16 });

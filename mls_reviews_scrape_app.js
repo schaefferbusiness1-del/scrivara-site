@@ -137,7 +137,17 @@
     try { if (typeof window.doc === 'function') { var d = window.doc(); if (d && (d.name || d.practice)) return { doctor: d.name || '', practice: d.practice || '', city: d.city || '', spec: d.spec || '' }; } } catch (e) {}
     try {
       var saved = JSON.parse(lsGet('mlsRF') || '{}');
-      if (saved && saved.doc) return { doctor: saved.doc.name || '', practice: saved.doc.practice || '', city: saved.doc.city || '', spec: saved.doc.spec || '' };
+      if (saved && saved.doc && (saved.doc.name || saved.doc.practice)) return { doctor: saved.doc.name || '', practice: saved.doc.practice || '', city: saved.doc.city || '', spec: saved.doc.spec || '' };
+    } catch (e) {}
+    /* b385: Settings fallback — in-app this satellite can read the getters. */
+    try {
+      var d2 = { doctor: '', practice: '', city: '', spec: '' };
+      if (typeof getProviderName === 'function') d2.doctor = getProviderName() || '';
+      if (!d2.doctor && typeof getName === 'function') d2.doctor = getName() || '';
+      if (typeof getPracticeName === 'function') d2.practice = getPracticeName() || '';
+      if (typeof getSpec === 'function') d2.spec = getSpec() || '';
+      if (typeof getClinicAddress === 'function') { var a = getClinicAddress() || ''; var p = a.split(','); d2.city = p.length >= 2 ? p.slice(-2).join(',').trim() : a; }
+      if (d2.doctor || d2.practice) return d2;
     } catch (e) {}
     return { doctor: '', practice: '', city: '', spec: '' };
   }
