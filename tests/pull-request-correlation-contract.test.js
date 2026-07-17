@@ -79,9 +79,13 @@ assert(si.includes('schedule-parse-timeout'),
 const rlAt = connect.indexOf("version: 'rl-2.0.0'");
 assert(rlAt > 0, 'relay module is not rl-2.0.0');
 const rl = connect.slice(connect.lastIndexOf('__mlsRelayLink rl-', rlAt) >= 0 ? connect.lastIndexOf('/* ===== __mlsRelayLink', rlAt) : rlAt, connect.indexOf('__mlsPhoneHome ph-', rlAt));
-/* right office computer: role-gated agent + device-targeted polling */
-assert(rl.includes('function agentEligible()'), 'agent is not office-role gated');
-assert(rl.includes("dr.effectiveRole() === 'office'"), 'agentEligible does not require the office role');
+/* right computer: role-gated agent + device-targeted polling. pdp-1.0.0
+   widened eligibility to office OR secondary, but a secondary computer may
+   ONLY poll targeted jobs (never legacy untargeted office work). */
+assert(rl.includes('function agentEligible()'), 'agent is not role gated');
+assert(rl.includes("r === 'office' || r === 'secondary'"), 'agentEligible must allow exactly office/secondary');
+assert(rl.includes("&targetedOnly=1"), 'secondary agent does not poll targetedOnly');
+assert(rl.includes('if (sec && !did) { agentBusy = false; return; }'), 'secondary agent may poll without a device id');
 assert(rl.includes('/api/relay/jobs/next' + "' + (did ? ('?deviceId="), 'agent does not poll with its deviceId');
 assert(rl.includes('targetDeviceId: targetDeviceId'), 'phone jobs are not targeted at the office device');
 assert(rl.includes('(presence && presence.officeId)'), 'phone does not take the target from presence.officeId');

@@ -31973,7 +31973,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b364';
+  window.__MLS_AV = window.__MLS_AV || 'b365';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32264,7 +32264,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b364';
+  var MLS_APP_BUILD='2026-07-17-b365';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41805,7 +41805,13 @@
     window.postMessage({ source: 'mls-app', type: 'mlsPing' }, '*');
   } catch (e) {}
   api.extPresent = function () { try { return extSeen || !!window.__mlsExtReportedVersion; } catch (e) { return extSeen; } };
-  api.shouldRelay = function () { return authed() && !api.extPresent(); };
+  api.shouldRelay = function () {
+    if (!authed()) return false;
+    /* pdp-1.0.0: an explicit "pull runs on <another computer>" choice relays
+       even from a desktop that could pull locally. Auto/self keeps old behavior. */
+    try { var tpk = window.__mlsPullTarget, ppk = tpk && tpk.get ? tpk.get() : null; if (ppk && ppk.id && !ppk.self) return true; } catch (e) {}
+    return !api.extPresent();
+  };
 
   /* =================== DESKTOP AGENT =================== */
   var agentBusy = false;
@@ -41903,16 +41909,21 @@
       setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
     });
   }
-  /* rl-2.0.0: only the OFFICE computer executes phone jobs. A secondary laptop
-     with the extension must never grab a job meant for the office machine
-     (wrong Athena session, wrong place). No role module / no role chosen yet
-     = legacy behavior so pre-registry accounts don't regress. */
+  /* rl-2.0.0/pdp-1.0.0: the OFFICE computer executes phone jobs; a SECONDARY
+     computer also runs the agent but polls targetedOnly=1, so it can only
+     take jobs the doctor explicitly aimed at it via the pull-device picker 
+     it can never grab an untargeted job meant for the office machine (wrong
+     Athena session, wrong place). No role module / no role chosen yet =
+     legacy behavior so pre-registry accounts don't regress. */
   function agentEligible() {
     try {
       var dr = window.__mlsDeviceRole;
-      if (dr && typeof dr.effectiveRole === 'function') return dr.effectiveRole() === 'office';
+      if (dr && typeof dr.effectiveRole === 'function') { var r = dr.effectiveRole(); return r === 'office' || r === 'secondary'; }
     } catch (e) {}
     return true;
+  }
+  function agentSecondary() {
+    try { var dr = window.__mlsDeviceRole; return !!(dr && typeof dr.effectiveRole === 'function' && dr.effectiveRole() === 'secondary'); } catch (e) { return false; }
   }
   function agentDeviceId() {
     try { var dr = window.__mlsDeviceRole; return (dr && dr.deviceId) ? String(dr.deviceId) : ''; } catch (e) { return ''; }
@@ -41923,7 +41934,9 @@
     if (!authed() || !api.extPresent() || !agentEligible()) return;
     agentBusy = true;
     var did = agentDeviceId();
-    fetch(base() + '/api/relay/jobs/next' + (did ? ('?deviceId=' + encodeURIComponent(did)) : ''), { headers: H() })
+    var sec = agentSecondary();
+    if (sec && !did) { agentBusy = false; return; }
+    fetch(base() + '/api/relay/jobs/next' + (did ? ('?deviceId=' + encodeURIComponent(did) + (sec ? '&targetedOnly=1' : '')) : ''), { headers: H() })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         var job = j && j.job;
@@ -42065,6 +42078,10 @@
     function stat(m) { try { if (hooks.onStatus) hooks.onStatus(m); } catch (e) {} }
     function done(ok, msg) { try { if (hooks.onDone) hooks.onDone(ok, msg); } catch (e) {} }
     if (!authed()) { done(false, 'Sign in first.'); return; }
+    /* pdp-1.0.0: the doctor may have chosen WHICH computer runs Athena pulls.
+       self/auto = null here, keeping the office-computer default. */
+    var pick = null;
+    try { var tpick = window.__mlsPullTarget; pick = tpick && tpick.get ? tpick.get() : null; if (pick && (pick.self || !pick.id)) pick = null; } catch (e) { pick = null; }
     /* duplicate-tap / reload race: if THIS phone already has an active job for
        the same date, resume it instead of queuing a second pull. A DIFFERENT
        date while one is running gets an honest single-flight refusal — the
@@ -42082,7 +42099,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
       .then(function (p) {
-        if (p && p.ok && !(p.online && p.ext)) {
+        if (!pick && p && p.ok && !(p.online && p.ext)) {
           var who = p.officeName ? ('Your office computer "' + p.officeName + '"') : 'No office computer is connected';
           var when = p.ageSec != null ? ' (last seen ' + (p.ageSec < 120 ? p.ageSec + 's' : Math.round(p.ageSec / 60) + 'm') + ' ago)' : '';
           done(false, who + (p.officeName ? ' is not reachable' : '') + when + '. Open MLS there with the MLS Assist extension' + (p.officeName ? '' : ', and set its role to "Office computer" in Settings → Integrations') + ', then try again.');
@@ -42091,8 +42108,8 @@
         queueJob(p || null);
       });
     function queueJob(presence) {
-      var officeWho = presence && presence.officeName ? ('"' + presence.officeName + '"') : 'your office computer';
-      var targetDeviceId = (presence && presence.officeId) || '';
+      var officeWho = pick && pick.name ? ('"' + pick.name + '"') : (presence && presence.officeName ? ('"' + presence.officeName + '"') : 'your office computer');
+      var targetDeviceId = (pick && pick.id) || (presence && presence.officeId) || '';
       var requestId = 'rlq-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       var provider = hooks.provider || null;
       stat('Asking ' + officeWho + ' to pull ' + date + '…');
@@ -42943,3 +42960,4 @@
 ;(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{var A='feat_mls_strip_day_couple.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717sdc100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sdc-1.0.0: two-way top-header <-> day-strip patient coupling + same patient chip strip on non-today days via xdc exact opener */
 ;(function(){try{var A='feat_mls_premium_gate.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717pmg100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pmg-1.0.0: plan-level truth - Pay Report + Reviews upsell instead of opening for signed-in non-Premium; demo/logged-out untouched */
+;(function(){try{var A='feat_mls_pull_device_picker.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717pdp100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pdp-1.0.0: choose which registered computer runs Athena pulls (office/secondary); relay targets exact deviceId; phones excluded as pullers */
