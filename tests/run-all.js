@@ -117,6 +117,7 @@ const tests = [
   'visit-single-transcript-contract.test.js',
   'onboarding-tour-v2-contract.test.js',
   'device-role-contract.test.js',
+  'extension-health-contract.test.js',
   'pull-request-correlation-contract.test.js'
 ];
 

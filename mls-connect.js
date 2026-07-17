@@ -31964,7 +31964,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b346';
+  window.__MLS_AV = window.__MLS_AV || 'b347';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32255,7 +32255,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b346';
+  var MLS_APP_BUILD='2026-07-16-b347';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42534,5 +42534,238 @@
     try { clearInterval(beatIv); clearInterval(cardIv); } catch (e) {}
     try { var c = $('mlsDrCard'); if (c) c.remove(); var b = $('mlsDrBanner'); if (b) b.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsDeviceRole;
+  };
+})();
+
+/* ===== __mlsExtHealth eh-1.0.0 (2026-07-16 - Extension Health screen,
+ * device-role lane follow-on).
+ * One honest place that answers "is the extension actually working?":
+ *   installed/enabled - fresh mlsPing -> mlsPong each time the card opens
+ *                       (never a cached boot flag),
+ *   version           - pong version vs the site's published
+ *                       extension-version.json (update nudge when behind),
+ *   deep diagnostics  - mlsExtHealth -> background snapshot (granted
+ *                       permissions, armed alarms = the service-worker
+ *                       suspension backstops, athenaOne tabs incl. DISCARDED
+ *                       count - Mac Memory-Saver silently unloads background
+ *                       tabs), degrades honestly when the installed build
+ *                       predates the verb,
+ *   office heartbeat  - /api/relay/devices (dr-1.0.0 registry),
+ *   last pull         - newest schedImportIndexV1::YYYY-MM-DD ledger day.
+ * EVERY failure row carries a SAFE recovery action: re-check button, install/
+ * update link, wake-the-tab instructions, role fix pointer - nothing
+ * destructive, nothing automatic.
+ * Surfaces: Settings > Integrations card (below the devices card) + a Menu
+ * row that opens Settings and scrolls to it. Reversible: revert(). ES5. */
+(function () {
+  if (window.__mlsExtHealth) return;
+  var api = { installed: true, version: 'eh-1.0.0' };
+  window.__mlsExtHealth = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function tok() { try { return (typeof window.bkToken === 'function') ? window.bkToken() : ''; } catch (e) { return ''; } }
+  function base() { try { return (typeof window.bkBase === 'function') ? window.bkBase() : ''; } catch (e) { return ''; } }
+  function authed() { try { return typeof window.backendMode === 'function' && window.backendMode() && !!tok(); } catch (e) { return false; } }
+  function H() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() }; }
+
+  /* ---- probes ---- */
+  function pingExt(cb) { /* fresh round-trip, 2.5s budget */
+    var done = false;
+    function onMsg(ev) {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong' || done) return;
+      done = true; try { window.removeEventListener('message', onMsg); } catch (e) {}
+      cb({ ok: true, version: d.version || '', buildId: d.buildId || '' });
+    }
+    window.addEventListener('message', onMsg);
+    try { window.postMessage({ source: 'mls-app', type: 'mlsPing' }, '*'); } catch (e) {}
+    setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} cb({ ok: false }); } }, 2500);
+  }
+  function deepHealth(cb) { /* needs ext build with mlsExtHealth (queued v2.9.26+) */
+    var done = false;
+    function onMsg(ev) {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsExtHealthResult' || done) return;
+      done = true; try { window.removeEventListener('message', onMsg); } catch (e) {}
+      cb(d.resp || null);
+    }
+    window.addEventListener('message', onMsg);
+    try { window.postMessage({ source: 'mls-app', type: 'mlsExtHealth' }, '*'); } catch (e) {}
+    setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} cb(null); } }, 3000);
+  }
+  function publishedVersion(cb) {
+    fetch('extension-version.json?cb=' + Date.now())
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { cb(j && (j.version || j.latest) || null); })
+      .catch(function () { cb(null); });
+  }
+  function verCmp(a, b) { /* '2.9.25' vs '2.9.9' - numeric per segment */
+    var x = String(a || '').split('.'), y = String(b || '').split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var d = (parseInt(x[i], 10) || 0) - (parseInt(y[i], 10) || 0);
+      if (d) return d;
+    }
+    return 0;
+  }
+  function lastPullDay() {
+    try {
+      var best = null;
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i) || '';
+        var m = k.match(/schedImportIndexV1::(\d{4}-\d{2}-\d{2})$/);
+        if (m && (!best || m[1] > best)) best = m[1];
+      }
+      return best;
+    } catch (e) { return null; }
+  }
+  function officeStatus(cb) {
+    if (!authed()) { cb(null); return; }
+    fetch(base() + '/api/relay/devices', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { cb(j && j.ok ? j : null); })
+      .catch(function () { cb(null); });
+  }
+
+  /* ---- rendering ---- */
+  function row(ok, label, detail, action) {
+    return '<div style="display:flex;align-items:flex-start;gap:8px;border:1px solid #EFEDE6;border-radius:9px;padding:8px 11px;margin:5px 0;font:500 12px \'Public Sans\',system-ui,sans-serif;color:#1A211C">' +
+      '<span style="flex:0 0 auto;margin-top:1px">' + (ok === true ? '✅' : ok === false ? '❌' : 'ℹ️') + '</span>' +
+      '<span style="min-width:0"><b>' + label + '</b> — ' + detail +
+      (action ? '<br><span style="color:#79837C">Fix: ' + action + '</span>' : '') +
+      '</span></div>';
+  }
+  function renderInto(el) {
+    el.innerHTML = '<p class="set-desc" style="margin:6px 0">Running checks…</p>';
+    var out = { rows: [] };
+    var pendingCount = 3;
+    function flush() {
+      if (--pendingCount > 0) return;
+      el.innerHTML = out.rows.join('');
+    }
+    /* 1+2: install + version, then deep health only if installed */
+    pingExt(function (p) {
+      if (!p.ok) {
+        var role = null;
+        try { role = window.__mlsDeviceRole && window.__mlsDeviceRole.role && window.__mlsDeviceRole.role(); } catch (e) {}
+        if (role === 'phone' || role === 'secondary') {
+          out.rows.push(row(null, 'Extension', 'not installed on this device — expected for a ' + (role === 'phone' ? 'phone' : 'secondary computer') + '. Athena pulls run on your office computer.', null));
+        } else {
+          out.rows.push(row(false, 'Extension', 'not answering. It is missing, disabled, or Chrome suspended it.',
+            'open <b>chrome://extensions</b> (type it in the address bar), make sure “MLS Assist” exists and its toggle is ON, then press ↻ Re-check. Not installed? <a href="get-extension.html" target="_blank" rel="noopener" style="color:#2E6A4B">Get the extension</a>.'));
+        }
+        pendingCount -= 1; /* skip the deep-health probe */
+        flush();
+        return;
+      }
+      publishedVersion(function (pub) {
+        if (pub && verCmp(p.version, pub) < 0) {
+          out.rows.push(row(false, 'Extension v' + esc(p.version), 'installed and answering, but the practice’s published version is v' + esc(pub) + '.',
+            '<a href="get-extension.html" target="_blank" rel="noopener" style="color:#2E6A4B">Download the update</a>, then reload it at chrome://extensions.'));
+        } else {
+          out.rows.push(row(true, 'Extension v' + esc(p.version), 'installed, enabled, and answering' + (pub ? ' (latest published: v' + esc(pub) + ')' : '') + '.', null));
+        }
+        flush();
+      });
+      deepHealth(function (h) {
+        if (!h || !h.ok) {
+          out.rows.push(row(null, 'Deep diagnostics', 'this extension build does not report permissions/alarms/tab state yet (added in v2.9.26).', null));
+          flush(); return;
+        }
+        var perms = (h.permissions && h.permissions.permissions) || [];
+        var need = ['storage', 'tabs', 'scripting', 'alarms'];
+        var missing = [];
+        for (var i = 0; i < need.length; i++) { if (perms.indexOf(need[i]) < 0) missing.push(need[i]); }
+        out.rows.push(missing.length
+          ? row(false, 'Permissions', 'missing: ' + esc(missing.join(', ')) + '. Reads/pulls will fail.', 'remove and re-add the extension from <a href="get-extension.html" target="_blank" rel="noopener" style="color:#2E6A4B">the download page</a> so Chrome re-grants them.')
+          : row(true, 'Permissions', 'all required permissions granted (' + perms.length + ' total).', null));
+        var alarms = h.alarms || [];
+        out.rows.push(alarms.length
+          ? row(true, 'Background worker', 'alive; ' + alarms.length + ' watchdog alarm' + (alarms.length === 1 ? '' : 's') + ' armed (survives sleep/wake and worker suspension).', null)
+          : row(null, 'Background worker', 'alive, but no watchdog alarms are armed right now (normal when idle).', null));
+        if (h.athena) {
+          if (h.athena.tabs === 0) {
+            out.rows.push(row(false, 'athenaOne tab', 'no athenaOne tab is open in this Chrome.', 'open athenaOne and sign in, then pulls can run here.'));
+          } else if (h.athena.discarded > 0) {
+            out.rows.push(row(false, 'athenaOne tab', h.athena.discarded + ' of ' + h.athena.tabs + ' athenaOne tab(s) were put to sleep by Chrome (Memory Saver does this to background tabs, especially on Macs). A sleeping tab cannot answer reads.',
+              'click the athenaOne tab once to wake it. To stop it recurring: Chrome Settings → Performance → add athenahealth.com to “Always keep these sites active”.'));
+          } else {
+            out.rows.push(row(true, 'athenaOne tab', h.athena.tabs + ' tab(s) open and awake.', null));
+          }
+        }
+        if (h.platform && h.platform.os) {
+          var osMap = { mac: 'macOS', win: 'Windows', linux: 'Linux', cros: 'ChromeOS' };
+          out.rows.push(row(true, 'Platform', esc(osMap[h.platform.os] || h.platform.os) + ' (' + esc(h.platform.arch || '') + ')' + (h.workerBootAt ? ' · worker up ' + Math.round((Date.now() - h.workerBootAt) / 60000) + 'm' : ''), null));
+        }
+        flush();
+      });
+    });
+    /* 3: office heartbeat + last pull (independent of the extension) */
+    officeStatus(function (j) {
+      if (j) {
+        if (j.officeOnline) {
+          out.rows.push(row(true, 'Office computer', '“' + esc(j.office.name) + '” connected — last heartbeat ' + j.office.ageSec + 's ago.', null));
+        } else if (j.office) {
+          out.rows.push(row(false, 'Office computer', '“' + esc(j.office.name) + '” has not heartbeated recently.', 'wake that machine and keep MLS open there with the extension.'));
+        } else {
+          out.rows.push(row(false, 'Office computer', 'no device has the Office computer role yet.', 'on the machine with the extension, Settings → Integrations → set role to “Office computer”.'));
+        }
+      }
+      var lp = lastPullDay();
+      var today = '';
+      try { today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); } catch (e) {}
+      if (lp) {
+        out.rows.push(row(lp >= today ? true : null, 'Last schedule pull', 'newest imported day on this device: ' + esc(lp) + '.', lp >= today ? null : 'pull today from the Visit page if you expected fresher data.'));
+      } else {
+        out.rows.push(row(null, 'Last schedule pull', 'no imported days on this device yet (normal for phones/secondary computers — pulls import on the office computer and sync down).', null));
+      }
+      flush();
+    });
+  }
+
+  /* ---- card + menu row ---- */
+  function ensureCard() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      if ($('mlsEhCard')) return;
+      var heads = modal.querySelectorAll('.set-head'); var host = null;
+      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+      if (!host) return;
+      var card = document.createElement('div');
+      card.id = 'mlsEhCard'; card.className = 'field';
+      card.innerHTML = '<label style="font-weight:600">🩺 Extension health</label>' +
+        '<p class="set-desc" style="margin:4px 0 6px">Live checks with a safe fix for anything red. Nothing here changes Athena.</p>' +
+        '<button type="button" id="mlsEhRecheck" style="border:1px solid #E4E1D8;background:#FCFBF8;color:#1A211C;font:600 12px \'Public Sans\',system-ui,sans-serif;border-radius:8px;padding:7px 12px;cursor:pointer;margin:0 0 4px">↻ Re-check</button>' +
+        '<div id="mlsEhRows"></div>';
+      host.appendChild(card);
+      $('mlsEhRecheck').addEventListener('click', function () { renderInto($('mlsEhRows')); });
+      renderInto($('mlsEhRows'));
+    } catch (e) {}
+  }
+  function ensureMenuRow() {
+    try {
+      var menu = $('mlsTbMenuPanel');
+      if (!menu || $('mlsEhMenuRow')) return;
+      var mi = document.createElement('button');
+      mi.id = 'mlsEhMenuRow'; mi.className = 'mlsTbItem'; mi.type = 'button';
+      mi.innerHTML = '🩺 Extension health';
+      mi.addEventListener('click', function () {
+        try { menu.classList.remove('open'); menu.style.display = ''; } catch (e) {}
+        try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+        setTimeout(function () {
+          try { ensureCard(); var c = $('mlsEhCard'); if (c) c.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+        }, 450);
+      });
+      var sRow = null;
+      for (var i = 0; i < menu.children.length; i++) { if (/settings/i.test(menu.children[i].textContent || '')) { sRow = menu.children[i]; break; } }
+      if (sRow) menu.insertBefore(mi, sRow); else menu.appendChild(mi);
+    } catch (e) {}
+  }
+  var iv = setInterval(function () { try { ensureCard(); ensureMenuRow(); } catch (e) {} }, 1700);
+  api.renderInto = renderInto;
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { var c = $('mlsEhCard'); if (c) c.remove(); var m = $('mlsEhMenuRow'); if (m) m.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsExtHealth;
   };
 })();
