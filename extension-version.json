@@ -1,5 +1,5 @@
 {
-  "version": "2.9.34",
+  "version": "2.9.35",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.34 - Restores the proven history-read pacing after two large day pulls failed with the v2.9.32 faster cadence; history reads run at the pre-change, live-verified rhythm again. Keeps the order-group indexing (no more silently skipped administrative rows), the multi-Athena-tab write/teach support, and the Mac fixes."
+  "notes": "v2.9.35 - Pulls no longer create, move, or resize any browser window: the narrow side-strip Athena window is gone. During a pull MLS only selects the Athena tab in whatever window it already lives in, and the read proceeds even if that window stays in the background. Includes v2.9.34 (restored proven history pacing), order-group indexing, multi-tab write/teach, and the Mac fixes."
 }

@@ -2441,62 +2441,16 @@ function mlsAthenaTeachWatcherFn(config) {
 
   async function ensureBody(tab, senderTabId) {
     if (await tabVisible(tab.id)) return 'visible'; /* already on screen (incl. doctor parked on athena) */
-
-    /* strip exists? re-assert it (user may have minimized it or covered it) —
-       never focus. Live-measured: an unfocused bounds update RAISES the window
-       above whatever covers it without stealing focus, so re-applying the strip
-       bounds is the covered-mid-run recovery. */
-    if (QP.active && QP.winId != null) {
-      try {
-        var w0 = await chrome.windows.get(QP.winId);
-        if (w0.state === 'minimized') await chrome.windows.update(QP.winId, { state: 'normal' });
-        if (QP.strip) await chrome.windows.update(QP.winId, { left: QP.strip.left, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
-      } catch (e) { QP.active = false; QP.winId = null; }
-    }
-
-    if (!QP.active) {
-      /* the doctor's window = the window of the asking app tab, else last focused */
-      var hostWin = null;
-      try { if (senderTabId != null) { var st = await chrome.tabs.get(senderTabId); hostWin = await chrome.windows.get(st.windowId); } } catch (e) {}
-      if (!hostWin) { try { hostWin = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }); } catch (e) {} }
-      var athWin = null;
-      try { athWin = await chrome.windows.get(tab.windowId, { populate: true }); } catch (e) {}
-      var soloAthena = !!(athWin && athWin.tabs && athWin.tabs.length === 1 && athWin.tabs[0].id === tab.id);
-      var base = (hostWin && hostWin.state !== 'minimized') ? hostWin : athWin;
-      if (!base) return 'limp';
-      var b = { left: base.left | 0, top: base.top | 0, width: base.width | 0, height: base.height | 0 };
-      var stripW = Math.min(780, Math.max(520, Math.floor(b.width * 0.3)));
-      var strip = { left: b.left + b.width - stripW, top: b.top, width: stripW, height: b.height };
-
-      /* Never resize/unmaximize the user's working window for a READ. The
-         unfocused Athena strip overlays the right edge; if the compositor still
-         occludes it, callers use their bounded limp-mode retries. */
-      QP.hostWinId = null; QP.hostOrig = null;
-
-      if (soloAthena) {
-        /* athena already has its own window: just place it — never focus it */
-        QP.winId = tab.windowId; QP.soloWin = true; QP.orig = null;
-        QP.athOrig = athWin ? { left: athWin.left, top: athWin.top, width: athWin.width, height: athWin.height, state: athWin.state } : null;
-        try {
-          var aw = await chrome.windows.get(tab.windowId);
-          if (aw.state !== 'normal') await chrome.windows.update(tab.windowId, { state: 'normal' });
-          await chrome.windows.update(tab.windowId, { left: strip.left, top: strip.top, width: strip.width, height: strip.height });
-        } catch (e) {}
-      } else {
-        QP.orig = { windowId: tab.windowId, index: tab.index, active: !!tab.active }; QP.soloWin = false; QP.athOrig = null;
-        try {
-          var nw = await chrome.windows.create({ tabId: tab.id, focused: false, type: 'normal', left: strip.left, top: strip.top, width: strip.width, height: strip.height });
-          QP.winId = (nw && nw.id != null) ? nw.id : null;
-        } catch (e) { QP.winId = null; }
-      }
-      QP.athenaTabId = tab.id; QP.active = QP.winId != null; QP.flashed = false; QP.strip = strip;
-      persist();
-      if (!QP.active) return 'limp';
-    }
-
-    /* The moved tab should normally already be active in the unfocused strip.
-       If a human selected another tab/window after setup, never override that
-       choice merely to make Athena visible; proceed throttled in limp mode. */
+    /* v2.9.35 owner directive: a read must NEVER create, move, or resize a
+       browser window. The old quiet-pull work-strip (windows.create at preset
+       bounds, cross-display moves, raise-jiggles) confused the doctor and was
+       the most Mac-fragile surface in the extension (fullscreen spaces,
+       occlusion throttling, display arrangement). The ONLY action allowed
+       now is selecting the Athena tab inside whatever window it already
+       lives in - and only when that would not displace a tab the doctor is
+       actively using. If the Athena window stays hidden or occluded, the
+       read proceeds throttled ('limp') under the callers' existing budgets
+       and bounded retries, exactly like the covered-strip case before. */
     try {
       var t2 = await chrome.tabs.get(tab.id);
       if (!t2.active) {
@@ -2508,56 +2462,6 @@ function mlsAthenaTeachWatcherFn(config) {
     if (await tabVisible(tab.id)) return 'strip';
     await qpSleep(700);
     if (await tabVisible(tab.id)) return 'strip';
-    /* Live 2026-07-16: after a service-worker restart the strip can sit with
-       IDENTICAL bounds under the doctor's window, and a same-bounds update is
-       a no-op that never raises it. Two REAL bounds changes (12px out, then
-       back) force a raise + repaint without focusing anything. */
-    if (QP.winId != null && QP.strip) {
-      try {
-        await chrome.windows.update(QP.winId, { left: QP.strip.left - 12, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
-        await qpSleep(150);
-        await chrome.windows.update(QP.winId, { left: QP.strip.left, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
-      } catch (eJiggle) {}
-      await qpSleep(600);
-      if (await tabVisible(tab.id)) return 'strip';
-    }
-    /* Live 2026-07-16 (screenshot-verified): the doctor was working in a
-       maximized window that fully covered the strip - occluded tabs stop
-       rendering and every read stalls. When a SECOND display exists, move the
-       strip to a display that does NOT contain the doctor's window and
-       re-check. Never focuses anything; single-display setups keep the
-       existing limp behavior. */
-    try {
-      if (QP.winId != null && chrome.system && chrome.system.display && chrome.system.display.getInfo) {
-        var displays = await chrome.system.display.getInfo();
-        if (displays && displays.length > 1) {
-          var hostWin2 = null;
-          try { if (senderTabId != null) { var st2 = await chrome.tabs.get(senderTabId); hostWin2 = await chrome.windows.get(st2.windowId); } } catch (eH2) {}
-          if (!hostWin2) { try { hostWin2 = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }); } catch (eH3) {} }
-          var hx = hostWin2 ? (hostWin2.left | 0) + ((hostWin2.width | 0) / 2) : 0;
-          var hy = hostWin2 ? (hostWin2.top | 0) + ((hostWin2.height | 0) / 2) : 0;
-          var other = null;
-          for (var di = 0; di < displays.length; di++) {
-            var wa = displays[di].workArea || displays[di].bounds;
-            if (!wa) continue;
-            var containsHost = hx >= wa.left && hx < wa.left + wa.width && hy >= wa.top && hy < wa.top + wa.height;
-            if (!containsHost) { other = wa; break; }
-          }
-          if (other) {
-            var stripW2 = Math.min(900, Math.max(520, Math.floor(other.width * 0.45)));
-            var alt = { left: other.left + other.width - stripW2, top: other.top, width: stripW2, height: other.height };
-            try { var aw2 = await chrome.windows.get(QP.winId); if (aw2.state !== 'normal') await chrome.windows.update(QP.winId, { state: 'normal' }); } catch (eAw2) {}
-            await chrome.windows.update(QP.winId, { left: alt.left, top: alt.top, width: alt.width, height: alt.height });
-            QP.strip = alt; persist();
-            await qpSleep(700);
-            if (await tabVisible(tab.id)) return 'strip';
-          }
-        }
-      }
-    } catch (eAltDisplay) {}
-    /* still covered (doctor re-maximized / another app on top): read anyway,
-       throttled, under the callers' existing budgets. Nudge ONCE, never focus. */
-    if (!QP.flashed) { QP.flashed = true; try { if (QP.winId != null) chrome.windows.update(QP.winId, { drawAttention: true }); } catch (e) {} }
     return 'limp';
   }
 
