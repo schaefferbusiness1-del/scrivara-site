@@ -12861,3 +12861,140 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
   });
 })();
 /* ATHENA_ACTION_V2_HANDLER_START */ /* contract boundary: generic v2 writer ends above; supervised handler is isolated earlier in this file */
+
+/* ===== MLS EXT HEALTH (device-role lane, 2026-07-16). Read-only snapshot
+ * for the MLS Extension Health screen: version, granted permissions, armed
+ * alarms (the service-worker suspension backstops), athenaOne tab presence
+ * incl. DISCARDED tabs (Mac Memory-Saver silently unloads background tabs -
+ * a discarded Athena tab cannot answer reads until reawakened), platform,
+ * and worker boot time. Separate listener, own verb - touches no existing
+ * router. Never reads chart content; operational metadata only. */
+try { if (typeof self !== 'undefined' && !self.__mlsWorkerBootAt) self.__mlsWorkerBootAt = Date.now(); } catch (e) {}
+chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (!msg || msg.type !== 'mlsExtHealthRequest') return;
+  (async function () {
+    var out = { ok: true, at: Date.now() };
+    try { var m = chrome.runtime.getManifest(); out.version = m.version; out.versionName = m.version_name || m.version; } catch (e) {}
+    try { out.permissions = await chrome.permissions.getAll(); } catch (e) { out.permissions = null; }
+    try {
+      var alarms = await chrome.alarms.getAll();
+      out.alarms = alarms.map(function (a) { return { name: a.name, periodInMinutes: a.periodInMinutes || null }; });
+    } catch (e) { out.alarms = null; }
+    try {
+      var tabs = await chrome.tabs.query({ url: '*://*.athenahealth.com/*' });
+      var discarded = 0;
+      for (var i = 0; i < tabs.length; i++) { if (tabs[i].discarded || tabs[i].status === 'unloaded') discarded++; }
+      out.athena = { tabs: tabs.length, discarded: discarded };
+    } catch (e) { out.athena = null; }
+    try { out.platform = await chrome.runtime.getPlatformInfo(); } catch (e) { out.platform = null; }
+    try { out.workerBootAt = self.__mlsWorkerBootAt || null; } catch (e) { out.workerBootAt = null; }
+    try { sendResponse(out); } catch (e) {}
+  })();
+  return true;
+});
+
+/* ===== MLS ATHENA WINDOW/TAB GUARD (device-role lane, 2026-07-16 night).
+ * Owner report: the Mac Athena issue may be caused by extension window
+ * resizing. Code-confirmed risks in the quiet-pull strip machinery (all
+ * reached through chrome.windows.update, which every caller invokes by
+ * property lookup - so this late wrapper covers them without touching the
+ * QP module):
+ *   1. macOS FULLSCREEN: forcing state:'normal' / moving a fullscreen window
+ *      yanks it out of its macOS Space (Windows: benign, mac: visibly
+ *      disruptive and can strand the doctor's Athena window). On mac ONLY,
+ *      bounds/state changes aimed at a fullscreen window are dropped
+ *      (focused:true passes through - write-path foregrounding unchanged).
+ *   2. STALE STRIP BOUNDS: QP.strip rehydrates from storage.session; after a
+ *      display-arrangement change (MacBook undocked overnight) those
+ *      coordinates can place the Athena window entirely OFF-SCREEN. Any
+ *      bounds update whose target rect intersects no current display is
+ *      dropped (all platforms - fully off-screen is always wrong).
+ * Plus browser-side session protection (policy-compliant: this does NOT
+ * defeat Athena's own idle timeout and never synthesizes activity):
+ *   3. autoDiscardable=false is asserted on athenanet tabs every 5 minutes
+ *      (alarm, survives worker suspension) - Chrome Memory-Saver can no
+ *      longer silently unload the signed-in Athena tab, which is the
+ *      browser-side path to a forced re-login.
+ * Read-only otherwise; reversible by removing this block. */
+(function () {
+  'use strict';
+  if (self.__mlsAthWinGuard) return;
+  var G = { version: 'awg-1.0.0', platform: '', dropsFullscreen: 0, dropsOffscreen: 0, discardGuards: 0 };
+  self.__mlsAthWinGuard = G;
+  try { chrome.runtime.getPlatformInfo(function (pi) { try { G.platform = (pi && pi.os) || ''; } catch (e) {} }); } catch (e) {}
+
+  /* pure decision helper (unit-testable): returns the SAFE update object,
+     null if the update should be skipped entirely. */
+  G.decide = function (win, updates, displays, platform) {
+    var u = updates || {};
+    var hasBounds = ('left' in u) || ('top' in u) || ('width' in u) || ('height' in u);
+    var forcesState = ('state' in u) && win && u.state !== win.state;
+    /* rule 1: mac fullscreen - never move/resize/de-fullscreen for unfocused
+       maintenance; an explicit focused:true (user-facing action) passes. */
+    if (platform === 'mac' && win && win.state === 'fullscreen' && u.focused !== true && (hasBounds || forcesState)) {
+      var rest = {};
+      for (var k in u) { if (k !== 'left' && k !== 'top' && k !== 'width' && k !== 'height' && k !== 'state') rest[k] = u[k]; }
+      return Object.keys(rest).length ? { updates: rest, reason: 'mac-fullscreen-bounds-dropped' } : { updates: null, reason: 'mac-fullscreen-skip' };
+    }
+    /* rule 2: fully off-screen bounds - drop the bounds keys. */
+    if (hasBounds && displays && displays.length) {
+      var L = ('left' in u) ? u.left : (win ? win.left : 0);
+      var T = ('top' in u) ? u.top : (win ? win.top : 0);
+      var W = ('width' in u) ? u.width : (win ? win.width : 100);
+      var Hh = ('height' in u) ? u.height : (win ? win.height : 100);
+      var visible = false;
+      for (var i = 0; i < displays.length; i++) {
+        var wa = displays[i].workArea || displays[i].bounds;
+        if (!wa) continue;
+        var ix = Math.min(L + W, wa.left + wa.width) - Math.max(L, wa.left);
+        var iy = Math.min(T + Hh, wa.top + wa.height) - Math.max(T, wa.top);
+        if (ix > 40 && iy > 40) { visible = true; break; } /* >40px of real overlap */
+      }
+      if (!visible) {
+        var rest2 = {};
+        for (var k2 in u) { if (k2 !== 'left' && k2 !== 'top' && k2 !== 'width' && k2 !== 'height') rest2[k2] = u[k2]; }
+        return Object.keys(rest2).length ? { updates: rest2, reason: 'offscreen-bounds-dropped' } : { updates: null, reason: 'offscreen-skip' };
+      }
+    }
+    return { updates: u, reason: 'pass' };
+  };
+
+  var realUpdate = chrome.windows.update.bind(chrome.windows);
+  chrome.windows.update = function (windowId, updates, cb) {
+    var needCheck = updates && (('left' in updates) || ('top' in updates) || ('width' in updates) || ('height' in updates) || ('state' in updates));
+    if (!needCheck) return cb ? realUpdate(windowId, updates, cb) : realUpdate(windowId, updates);
+    var finish = function (result) { /* promise-or-callback, matching the real API */
+      if (cb) { result.then(function (w) { cb(w); }, function () { cb(undefined); }); return undefined; }
+      return result;
+    };
+    return finish((async function () {
+      var win = null, displays = null;
+      try { win = await chrome.windows.get(windowId); } catch (e) {}
+      try { if (chrome.system && chrome.system.display && chrome.system.display.getInfo) displays = await chrome.system.display.getInfo(); } catch (e) {}
+      var d = G.decide(win, updates, displays, G.platform);
+      if (d.reason === 'mac-fullscreen-skip' || d.reason === 'mac-fullscreen-bounds-dropped') G.dropsFullscreen++;
+      if (d.reason === 'offscreen-skip' || d.reason === 'offscreen-bounds-dropped') G.dropsOffscreen++;
+      if (!d.updates) return win || undefined; /* skipped entirely: report current state */
+      return realUpdate(windowId, d.updates);
+    })());
+  };
+
+  /* rule 3: keep Chrome from discarding signed-in athenanet tabs. */
+  async function guardAthenaTabs() {
+    try {
+      var tabs = await chrome.tabs.query({ url: '*://*.athenahealth.com/*' });
+      for (var i = 0; i < tabs.length; i++) {
+        var t = tabs[i];
+        if (t.autoDiscardable !== false) {
+          try { await chrome.tabs.update(t.id, { autoDiscardable: false }); G.discardGuards++; } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  G.guardAthenaTabs = guardAthenaTabs;
+  try { chrome.alarms.create('mlsAthGuard', { periodInMinutes: 5 }); } catch (e) {}
+  try {
+    chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsAthGuard') guardAthenaTabs(); });
+  } catch (e) {}
+  try { setTimeout(guardAthenaTabs, 3000); } catch (e) {}
+})();

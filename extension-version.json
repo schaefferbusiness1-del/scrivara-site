@@ -1,5 +1,5 @@
 {
-  "version": "2.9.25",
+  "version": "2.9.26",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.25 - Verified first-pass day reads: the full schedule and every patient's chart history read with exact identity proof (name, DOB, MRN, appointment id) on each step. Encounter notes that render in the visit slideout are captured faithfully, abbreviated patient banners match safely, background pulls keep working while you work fullscreen, and every read still fails closed on any identity or coverage doubt. Includes the reviewed in-note Athena write flow with explicit per-click confirmation - nothing is saved, signed, billed, or ordered by the assistant."
+  "notes": "v2.9.26 - Extension health diagnostics + Athena window protection. The Extension Health screen (Settings -> Integrations) can now read deep diagnostics straight from the extension: granted permissions, watchdog alarms, athenaOne tab state including tabs Chrome's Memory Saver has silently unloaded, platform, and worker uptime - each red row with a safe fix. Also new: the Athena window guard - on Mac, maintenance window moves can no longer yank a fullscreen athenaOne out of its Space or park it off-screen after a display change, and athenaOne tabs are marked keep-active so Memory Saver cannot discard the signed-in tab (which previously forced a fresh login). Reads and writes are unchanged from v2.9.25's verified flow."
 }
