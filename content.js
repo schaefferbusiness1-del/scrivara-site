@@ -35,7 +35,9 @@
   /* v1.55: mlsAppGoHome added — the app-side day/month history orchestrator needs to
      return athenaOne to the CLINICAL SCHEDULE (home) between patients so each patient's
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsExtHealth: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsExtHealth: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1 };
+  /* ^ wsg-1.0.0: five write-safety verbs — mlsAppReviewScreen (extension-side review overlay),
+     mlsAppTeachRecall/DryRun/Forget/MemoryList (taught-destination memory; all read-only). */
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -98,7 +100,10 @@
           if (actionable) {
             try { var cs = getComputedStyle(t), rect = t.getBoundingClientRect(); actionable = cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.05 && rect.width > 2 && rect.height > 2; } catch (eVisible) { actionable = false; }
           }
-          if (actionable && /^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(action) && _mlsActionLabelMatches(action, label)) {
+          /* wsg-1.0.0: gestures arm ONLY for note-lane actions. sign_encounter,
+             place_order and stage_billing are preview-only — no arm can exist,
+             so no execute request can ever leave this page for them. */
+          if (actionable && /^(write_note|save_draft)$/.test(action) && _mlsActionLabelMatches(action, label)) {
             _mlsAthenaActionGesture = {
               action: action,
               until: Date.now() + 20000,
@@ -519,6 +524,57 @@
       }
       return;
     }
+    /* MLS_WRITE_SAFETY_REVIEW_SCREEN (rvs-1.0.0): the app posts a manifest of
+       proposed Athena writes; the EXTENSION classifies each row through
+       MLSWriteSafety (note text / diagnosis / billing / order-like /
+       medication / referral / other), shows what would be written and where,
+       and returns only policy-selectable + user-checked row ids. Orders,
+       prescriptions, referrals, billing and diagnoses render locked,
+       preview-only. Renders locally; no background round-trip; no writes. */
+    if (d.type === 'mlsAppReviewScreen') {
+      try {
+        if (!window.MLSReviewScreen || !window.MLSWriteSafety) {
+          reply({ source: 'mls-ext', type: 'mlsAppReviewScreenResult', requestId: mlsStr(d.requestId, 100), resp: { ok: false, reason: 'review-module-missing', error: 'The write-safety review module failed to load. Nothing was shown or written.' } });
+          return;
+        }
+        var rvsModel = window.MLSReviewScreen.buildReviewModel(d.manifest && typeof d.manifest === 'object' ? d.manifest : {});
+        var rvsRequestId = mlsStr(d.requestId, 100);
+        window.MLSReviewScreen.render(rvsModel, function (result) {
+          reply({ source: 'mls-ext', type: 'mlsAppReviewScreenResult', requestId: rvsRequestId, resp: result });
+        });
+      } catch (eRvs) {
+        reply({ source: 'mls-ext', type: 'mlsAppReviewScreenResult', requestId: mlsStr(d.requestId, 100), resp: { ok: false, reason: 'review-error', error: 'The review screen could not be rendered. Nothing was written.' } });
+      }
+      return;
+    }
+    /* MLS_WRITE_SAFETY_TEACH_MEMORY (tdm-1.0.0): read-only recall/dry-run/
+       forget/list for taught destinations remembered per practice + provider +
+       action + section. Dry-run locates the stored destination in the live
+       Athena tab WITHOUT clicking, typing, focusing, or mutating anything and
+       reports valid | layout-changed | not-found (stale entries are never
+       recalled). Authorization is unchanged — writes still flow through the
+       supervised probe/execute contract. */
+    if (d.type === 'mlsAppTeachRecall' || d.type === 'mlsAppTeachDryRun' || d.type === 'mlsAppTeachForget' || d.type === 'mlsAppTeachMemoryList') {
+      var tmVerb = d.type;
+      var tmType = tmVerb === 'mlsAppTeachRecall' ? 'mlsTeachMemoryRecallRequest'
+        : tmVerb === 'mlsAppTeachDryRun' ? 'mlsTeachMemoryDryRunRequest'
+        : tmVerb === 'mlsAppTeachForget' ? 'mlsTeachMemoryForgetRequest'
+        : 'mlsTeachMemoryListRequest';
+      try {
+        chrome.runtime.sendMessage({
+          type: tmType,
+          practiceId: mlsStr(d.practiceId, 20),
+          provider: mlsStr(d.provider, 200),
+          action: mlsStr(d.action, 80),
+          sectionLabel: mlsStr(d.sectionLabel, 240)
+        }, function (resp) {
+          reply({ source: 'mls-ext', type: tmVerb + 'Result', requestId: mlsStr(d.requestId, 100), resp: resp || { ok: false, reason: 'no-response' } });
+        });
+      } catch (eTm) {
+        reply({ source: 'mls-ext', type: tmVerb + 'Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, reason: 'extension-error' } });
+      }
+      return;
+    }
     /* Supervised typed Athena actions. `probe` is read-only and obtains one
        short-lived background token. An execute request additionally consumes a
        fresh trusted-click arm captured from data-mls-athena-action above. */
@@ -531,6 +587,14 @@
       var mutating = athMode === 'execute';
       if (!/^(probe|execute)$/.test(athMode) || !/^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(athAction)) {
         reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'bad-action', error: 'Choose one typed note, billing, save, sign, or single reviewed-order action.' } });
+        return;
+      }
+      /* MLS_WRITE_SAFETY_BRIDGE_GATE (wsg-1.0.0): sign/order/billing lanes are
+         PREVIEW-ONLY. Probe stays available so the review screen can show where
+         content would go; execute is refused here, in the background gate, in
+         the driver, and by the athenanet synthetic-click interceptor. */
+      if (mutating && (athAction === 'sign_encounter' || athAction === 'place_order' || athAction === 'stage_billing')) {
+        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'write-safety-final-action-blocked', error: 'This action is preview-only by write-safety policy. Review it, then perform the final step yourself in athenaOne. Nothing was changed.' } });
         return;
       }
       var previewHash = mlsStr(d.previewHash, 160);
@@ -624,6 +688,11 @@
           clientOrderId: orderClientOrderId,
           noteText: mlsStr(d.noteText != null ? d.noteText : (d.payload && d.payload.noteText), 180000),
           notePolicy: mlsStr(d.notePolicy || (d.payload && d.payload.notePolicy) || 'empty_only', 40),
+          /* wsg-1.0.0: optional app-supplied expectations — when present the
+             background verifies them fail-closed before any mutation. */
+          isTest: d.isTest === true,
+          expectedAccount: mlsStr(d.expectedAccount, 120),
+          expectedPracticeId: mlsStr(d.expectedPracticeId, 20),
           sections: safeNoteSections(d.sections || (d.payload && d.payload.sections)),
           taughtDestination: safeTaughtDestination(d.taughtDestination || (d.payload && d.payload.taughtDestination)),
           userGesture: mutating,

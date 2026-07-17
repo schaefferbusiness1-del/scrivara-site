@@ -98,8 +98,30 @@ const actionEl = {
 };
 capturedClick({ isTrusted: false, target: actionEl });
 assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click armed an Athena mutation');
+/* wsg-1.0.0 CONTRACT CHANGE (owner directive: billing/orders/sign are
+   PREVIEW-ONLY): even a browser-trusted click on a final/financial action can
+   no longer arm a mutation — only the note lanes (write_note / save_draft)
+   arm. The billing element stays for probe/preview; execute is refused at the
+   bridge, the background gate, the driver, and the interceptor. */
 capturedClick({ isTrusted: true, target: actionEl });
-assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'stage_billing');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'trusted click on a preview-only lane (stage_billing) must NOT arm');
+const noteEl = {
+  textContent: 'Confirm Write reviewed note',
+  value: '',
+  disabled: false,
+  getBoundingClientRect: () => ({ width: 180, height: 40 }),
+  getAttribute: name => ({
+    'data-mls-athena-action': 'write_note',
+    'data-mls-preview-hash': 'preview-123',
+    'aria-label': '',
+    title: ''
+  })[name] || '',
+  closest: selector => selector.includes('data-mls-athena-action') || selector.startsWith('button') ? noteEl : null
+};
+capturedClick({ isTrusted: false, target: noteEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click armed a note write');
+capturedClick({ isTrusted: true, target: noteEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'write_note');
 assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, 'preview-123');
 assert(gateContext._mlsAthenaActionGesture.serial, 'trusted click did not mint a one-use gesture proof');
 assert(gateContext._mlsAthenaActionGesture.until > Date.now(), 'trusted click authorization was not fresh');

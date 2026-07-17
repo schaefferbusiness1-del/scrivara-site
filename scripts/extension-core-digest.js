@@ -1,7 +1,7 @@
 'use strict';
 /* Deterministic MLS Assist extension CORE digest.
  *
- * The core digest is the SHA-256 over the 16 NON-manifest release files, in
+ * The core digest is the SHA-256 over the 19 NON-manifest release files, in
  * release order, hashing `name + NUL + bytes + NUL` for each file. The
  * manifest is excluded because the digest itself is published inside
  * manifest.version_name ("<version>+core-sha256:<digest>"), which the live
@@ -31,6 +31,9 @@ const CORE_FILES = [
   'offscreen.js',
   'feat_codes_driver.js',
   'ext_reviews_reader.js',
+  'write_safety_guard.js',
+  'review_screen.js',
+  'teach_destination_memory.js',
   'icon-16.png',
   'icon-32.png',
   'icon-48.png',

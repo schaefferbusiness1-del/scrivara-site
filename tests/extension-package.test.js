@@ -23,6 +23,9 @@ const EXPECTED_FILES = [
   'offscreen.js',
   'feat_codes_driver.js',
   'ext_reviews_reader.js',
+  'write_safety_guard.js',
+  'review_screen.js',
+  'teach_destination_memory.js',
   'icon-16.png',
   'icon-32.png',
   'icon-48.png',
@@ -205,7 +208,7 @@ assert(builderListMatch, 'build_extension_zip.py must declare PACKAGE_FILES');
 const builderFiles = Array.from(builderListMatch[1].matchAll(/"([^"]+)"/g), match => match[1]);
 assertSameList(builderFiles, EXPECTED_FILES, 'build_extension_zip.py');
 
-assert.strictEqual(new Set(EXPECTED_FILES).size, 17, 'release allowlist must contain 17 unique files');
+assert.strictEqual(new Set(EXPECTED_FILES).size, 20, 'release allowlist must contain 20 unique files'); /* wsg-1.0.0: +write_safety_guard.js, review_screen.js, teach_destination_memory.js */
 for (const name of EXPECTED_FILES) {
   assert.strictEqual(path.posix.basename(name), name, `release entry must be at ZIP root: ${name}`);
   assert(!name.includes('\\') && !name.includes('..'), `unsafe release entry: ${name}`);

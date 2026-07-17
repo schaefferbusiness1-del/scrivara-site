@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "2.9.26",
-  "version_name": "2.9.26+core-sha256:03b3527b5155ab7198a2db60223a5fabb3f429a2e3d8e850105e5b774d004e39",
+  "version": "2.9.27",
+  "version_name": "2.9.27+core-sha256:5b18b9dd4e5b92286be638f97955c454db57d610ab3c5f38f2704f9e856ba9bd",
   "description": "AI scribe + supervised autopilot for any web EMR. Captures visits, drafts notes, and acts on screen with your approval.",
   "permissions": [
     "storage",
@@ -25,7 +25,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "MLS Assist \u2014 settings",
+    "default_title": "MLS Assist — settings",
     "default_icon": {
       "16": "icon-16.png",
       "32": "icon-32.png",
@@ -39,6 +39,17 @@
   "content_scripts": [
     {
       "matches": [
+        "https://athenanet.athenahealth.com/*"
+      ],
+      "js": [
+        "write_safety_guard.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
         "<all_urls>"
       ],
       "exclude_matches": [
@@ -49,6 +60,8 @@
         "*://*.github.dev/*"
       ],
       "js": [
+        "write_safety_guard.js",
+        "review_screen.js",
         "content.js",
         "mls-popup.js",
         "ext_reviews_reader.js"

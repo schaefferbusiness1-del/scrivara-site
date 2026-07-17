@@ -106,7 +106,7 @@ assert(retryHandle && retried && retryHandle.id === retried.id, 'working retry c
 assert.strictEqual(retryHandle.snapshot().status, 'retrying');
 
 const expiring = api.start({ key: 'deadline', timeoutMs: 1000 });
-const deadline = timeouts.filter(t => !t.cleared && t.ms === 1000).pop();
+const deadline = timeouts.filter(t => !t.cleared && t.ms > 900 && t.ms <= 1000).pop(); /* deadlineAt - now() loses a few ms under load — an exact 1000 match flakes */
 assert(deadline, 'job deadline was not armed');
 deadline.fn();
 assert.strictEqual(api.get(expiring.id).status, 'timed_out', 'indefinite job did not reach timed_out');
