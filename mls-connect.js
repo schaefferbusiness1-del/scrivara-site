@@ -31921,7 +31921,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b343';
+  window.__MLS_AV = window.__MLS_AV || 'b344';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32212,7 +32212,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b343';
+  var MLS_APP_BUILD='2026-07-16-b344';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -40815,7 +40815,7 @@
  * ensure interval (1.2s, write-only-when-missing). */
 (function () {
   if (window.__mlsDaySwitch) return;
-  var api = { installed: true, version: 'ds-1.2.1' };
+  var api = { installed: true, version: 'ds-1.3.0' };
   window.__mlsDaySwitch = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -40855,7 +40855,14 @@
     '#mlsDsList .ds-tm{color:#2E6A4B;min-width:70px;}',
     '#mlsDsList .ds-dob{color:#79837C;font-weight:500;font-size:12px;}',
     '#mlsDsList .ds-pv{margin-left:auto;color:#8A8F86;font-weight:500;font-size:11.5px;}',
-    '#mlsDsList .ds-empty{color:#79837C;font:500 13px system-ui;padding:6px 2px;}'
+    '#mlsDsList .ds-empty{color:#79837C;font:500 13px system-ui;padding:6px 2px;}',
+    /* ds-1.3.0: a non-today selection OWNS the Visit body. The engine keeps
+       rendering TODAY (hero, "Pull today\'s patients", Choose patient) — with
+       Friday selected on the strip that read as mismatched days. Hide the
+       engine wrap (display only, nothing is destroyed) while another day is
+       selected; Back to Today restores it instantly. */
+    '#mlsEz3Body.mls-ds-otherday>#ez3Wrap{display:none!important;}',
+    '#mlsDsList .ds-otherday-note{font:600 12px system-ui;color:#8A5A22;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:8px;padding:7px 10px;margin:0 0 8px;}'
   ].join('\n');
   (document.head || document.documentElement).appendChild(st);
 
@@ -40891,6 +40898,7 @@
             esc(fmtDay(DS.day)) + ' - ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' loaded' +
             (collapsed ? ' <span class="ds-hint">(tap to expand)</span>' : '') + '</div>';
     if (!collapsed) {
+      h += '<div class="ds-otherday-note">You are viewing ' + esc(fmtDay(DS.day)) + ' — not today. Recording and today’s patients come back with “Back to Today”.</div>';
       if (!rows.length) h += '<div class="ds-empty">Nothing loaded for this day yet - tap "Pull this day" to get it from Athena, or it may genuinely be empty.</div>';
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
@@ -40910,8 +40918,12 @@
 
   function syncStrip() {
     var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
-    if (lb) lb.innerHTML = (DS.day === todayKey() ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
-    if (tb) tb.style.display = (DS.day === todayKey()) ? 'none' : '';
+    var isToday = (DS.day === todayKey());
+    if (lb) lb.innerHTML = (isToday ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
+    if (tb) tb.style.display = isToday ? 'none' : '';
+    /* ds-1.3.0: the selected day owns the body — never show today's patients
+       under a Friday header (owner report: "days should never be mismatched") */
+    try { var body = $('mlsEz3Body'); if (body && body.classList.contains('mls-ds-otherday') !== !isToday) body.classList.toggle('mls-ds-otherday', !isToday); } catch (e) {}
   }
   function setDay(k) { DS.day = k; syncStrip(); renderList(); }
   function shift(n) { var d = parseKey(DS.day); d.setDate(d.getDate() + n); setDay(keyOf(d)); }
@@ -41112,6 +41124,8 @@
            anchor to the .ez3fl-record lane, so when b321 stabilized the lane
            deeper in the layout the day selector silently sank with it. */
         if (body.firstChild !== existing) body.insertBefore(existing, body.firstChild);
+        /* a rebuilt #mlsEz3Body loses the other-day body class — reassert it */
+        syncStrip();
         return;
       }
       var strip = document.createElement('div'); strip.id = 'mlsDsStrip';
