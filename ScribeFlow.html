@@ -1395,7 +1395,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="recComms" style="display:none;margin-top:12px"></div>
       <div id="recSettings" style="display:none;margin-top:12px"></div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
-        <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
+        <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="__mlsDebRender('pt',renderPatients)">
         <span class="pt-count" id="ptCount"></span>
       </div>
       <div id="ptEmpty" class="empty"><span class="big">👤</span>No patients yet. Press <b>＋ New patient</b> to add one.</div>
@@ -2124,7 +2124,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
 
     <div id="histSearchRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px">
-      <input id="histSearch" oninput="renderHistory()" placeholder="🔎 Search history — patient, date, procedure, diagnosis, any word in the note…" style="flex:1;min-width:220px;font-size:14px;padding:9px 13px;border:1px solid var(--line);border-radius:10px">
+      <input id="histSearch" oninput="__mlsDebRender('hist',renderHistory)" placeholder="🔎 Search history — patient, date, procedure, diagnosis, any word in the note…" style="flex:1;min-width:220px;font-size:14px;padding:9px 13px;border:1px solid var(--line);border-radius:10px">
       <select id="histFilter" onchange="renderHistory()" style="font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:9px" title="Filter by type">
         <option value="">All visits</option>
         <option value="opnote">💉 Op notes</option>
@@ -6117,8 +6117,22 @@ function _mlsPtsEncode(json){
 }
 window.__mlsPtsDecode=_mlsPtsDecode;
 window.__mlsPtsEncode=_mlsPtsEncode;
-function getPatients(){ try{return JSON.parse(_mlsPtsDecode(localStorage.getItem(uns('patients'))))||[];}catch(e){return [];} }
+/* b376 perf: memoize the base read on RAW string identity. The multi-MB LZ
+   decode + JSON.parse runs once per stored change instead of on every call —
+   this matters most at boot, before the bundle's store-cache wrap installs.
+   Returns a fresh top-level array (same aliasing depth as the wrap). */
+var __mlsPtsMemo=null;
+function getPatients(){
+  try{
+    var raw=localStorage.getItem(uns('patients'));
+    if(__mlsPtsMemo&&__mlsPtsMemo.raw===raw)return __mlsPtsMemo.arr.slice();
+    var arr=JSON.parse(_mlsPtsDecode(raw))||[];
+    if(Array.isArray(arr))__mlsPtsMemo={raw:raw,arr:arr};
+    return Array.isArray(arr)?arr.slice():arr;
+  }catch(e){return [];}
+}
 function savePatients(arr){
+  __mlsPtsMemo=null; /* never serve a pre-write parse after a write */
   var packed=_mlsPtsEncode(JSON.stringify(arr));
   try{ localStorage.setItem(uns('patients'),packed); }
   catch(eq){
@@ -6198,7 +6212,32 @@ function ptInitials(name){
   if(!parts.length) return '?';
   return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
 }
-function patientNotes(id){ return getNotes().filter(n=>n.patientId===id); }
+/* b376 perf: patientNotes was a full-store scan per call — renderPatients calls
+   it once per row (150 rows × every note in the account). Index notes by
+   patientId once per store version instead. Map keys use SameValueZero, which
+   matches the old strict-equality filter for real ids; when no version source
+   exists yet (pre-bundle boot) the index is rebuilt per call, which costs what
+   the old filter did. Returns a fresh array either way. */
+var __mlsNotesIdx={ver:-1,map:null};
+function patientNotes(id){
+  try{
+    var sc=window.__mlsStoreCache;
+    var v=(sc&&typeof sc.ver==='function')?sc.ver():NaN;
+    if(!(__mlsNotesIdx.map&&!isNaN(v)&&__mlsNotesIdx.ver===v)){
+      var all=getNotes()||[], m=new Map();
+      for(var i=0;i<all.length;i++){ var n=all[i]; var key=n?n.patientId:undefined; var b=m.get(key); if(b)b.push(n); else m.set(key,[n]); }
+      __mlsNotesIdx={ver:isNaN(v)?-1:v,map:m};
+    }
+    var got=__mlsNotesIdx.map.get(id);
+    var out=got?got.slice():[];
+    if(isNaN(v))__mlsNotesIdx={ver:-1,map:null};
+    return out;
+  }catch(e){ try{return getNotes().filter(function(n){return n.patientId===id;});}catch(_){return [];} }
+}
+/* b376 perf: shared 150ms trailing debounce for keystroke-driven list renders
+   (ptSearch / histSearch). On a 1,500-patient roster each keystroke used to
+   sort + rebuild the full list synchronously. */
+window.__mlsDebRender=(function(){var t={};return function(key,fn){ if(typeof fn!=='function')return; clearTimeout(t[key]); t[key]=setTimeout(function(){ try{fn();}catch(e){} },150); };})();
 
 /* ---------- SERVER SYNC (hosted mode only) ----------
    Patients live in localStorage as the source of truth on each device.
@@ -11904,13 +11943,22 @@ function renderHistory(){
   // ---- Search + type filter so the doctor can find anything fast ----
   const qEl=document.getElementById('histSearch'); const q=(qEl&&qEl.value?qEl.value:'').trim().toLowerCase();
   const fEl=document.getElementById('histFilter'); const fv=fEl?fEl.value:'';
-  const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=(typeof getPatients==='function'?getPatients():[]).find(x=>x.id===n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
+  /* b376 perf: name fallback used to call getPatients().find PER NOTE — one
+     full-roster copy per unnamed note. Build the id map lazily, once. */
+  let _plm=null; const _plistMap=()=>{ if(!_plm){ _plm=new Map(); try{ (typeof getPatients==='function'?getPatients():[]).forEach(x=>{ if(x)_plm.set(x.id,x); }); }catch(e){} } return _plm; };
+  const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
   const total=ordered.length;
   if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
   if(q){ ordered=ordered.filter(n=>{ const d=new Date(n.updated||n.created||Date.now()); const ds=(d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); const hay=[_pname(n), n.cc||'', n.text||n.soap||'', ds, (n.signed?'signed':(n.isDraft?'draft':'unsigned')), (n.kind||'')].join(' \n ').toLowerCase(); return hay.indexOf(q)>=0; }); }
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
   if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
+  /* b376 perf: bound the DOM like renderPatients does (PT_CAP). A chart with
+     hundreds of visits rendered every row on every pass; search still runs
+     over the full set above, so nothing becomes unfindable. */
+  const HIST_CAP=200;
+  const _histCapped=ordered.length>HIST_CAP;
+  if(_histCapped) ordered=ordered.slice(0,HIST_CAP);
   var _histHtml=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -11937,6 +11985,7 @@ function renderHistory(){
       <button class="del" title="Delete" onclick="event.stopPropagation();deleteNote('${n.id}')">🗑</button>
     </div>`;
   }).join('');
+  if(_histCapped) _histHtml+='<div class="muted" style="padding:10px 12px;font-size:13px;color:#6a829c">Showing the '+HIST_CAP+' most recent of '+total+' visits — use the search box above to find older ones.</div>';
   if(list._mlsSig!==_histHtml||!list.childElementCount){ list.innerHTML=_histHtml; list._mlsSig=_histHtml; }
 }
 
@@ -19710,7 +19759,7 @@ function agSyncSignState(){
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
 /* The cover stays up through cloud hydration and a stable first-frame window.
    It is deliberately bounded: an optional service can slow startup, never trap it. */
-const SF_GATE_MIN_MS=4500, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
+const SF_GATE_MIN_MS=1800, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
 /* "Ready" is a hand-off signal, not another loading step.  Keep it readable
    for one beat, then reveal the already-stable app in under 200 ms. */
 const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120;
@@ -23823,7 +23872,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b375';
+  window.__MLS_AV='b376';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

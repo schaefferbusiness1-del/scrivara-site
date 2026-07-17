@@ -83,6 +83,7 @@ const tests = [
   'premium-gate-runtime.test.js',
   'pull-device-picker-runtime.test.js',
   'perf-sweep-contract.test.js',
+  'patient-scale-perf-contract.test.js',
   'patient-card-contrast-contract.test.js',
   'patient-store-compression-runtime.test.js',
   'visit-shell-merge-alias-survival.test.js',

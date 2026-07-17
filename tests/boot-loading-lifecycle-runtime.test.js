@@ -52,9 +52,9 @@ function harness(ready, assetsSettled = true) {
   fast.context.api.setStart(0); fast.context.api.setToken(1);
   let fastResult = 'pending';
   fast.context.api.wait(1, false).then(v => { fastResult = v; });
-  await fast.advance(4499);
-  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the 4.5-second minimum');
-  await fast.advance(4620);
+  await fast.advance(1799);
+  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the 1.8-second minimum');
+  await fast.advance(1920);
   assert.strictEqual(fastResult, true, 'stable ready UI did not release at the minimum');
 
   const deferred = harness(true, false);

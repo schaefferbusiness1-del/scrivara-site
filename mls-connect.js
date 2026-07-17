@@ -14,13 +14,33 @@
   try { if (window.__mlsStoreCache) return; } catch (e) { return; }
   var TTL_MS = 30000;
   var api = {
-    version: 'sc-1.1.0', enabled: true, early: true,
+    version: 'sc-1.2.0', enabled: true, early: true,
     stats: { hits: 0, misses: 0, fallbacks: 0, invalidations: 0 }, _wrapped: []
   };
+  /* b376 perf: every localStorage write (any key) bumps VER; cross-tab writes
+     arrive via the storage event. An unchanged VER proves the stored blob
+     cannot have changed, so reads skip getItem + the full string compare. */
+  var VER = { n: 1 };
+  (function () {
+    try {
+      var proto = Object.getPrototypeOf(window.localStorage);
+      if (proto && typeof proto.setItem === 'function' && !proto.setItem.__mlsScVer) {
+        ['setItem', 'removeItem', 'clear'].forEach(function (m) {
+          var orig = proto[m];
+          if (typeof orig !== 'function') return;
+          var w = function () { VER.n++; return orig.apply(this, arguments); };
+          w.__mlsScVer = 1;
+          proto[m] = w;
+        });
+      }
+      window.addEventListener('storage', function () { VER.n++; });
+    } catch (e) {}
+  })();
+  api.ver = function () { return VER.n; };
   function wrapPair(getName, keySuffix) {
     var orig = window[getName];
     if (typeof orig !== 'function') return;
-    var cache = { key: null, str: null, val: null, at: 0 };
+    var cache = { key: null, str: null, val: null, at: 0, ver: -1 };
     function currentKey() {
       try { return (typeof window.uns === 'function') ? window.uns(keySuffix) : null; }
       catch (e) { return null; }
@@ -31,12 +51,17 @@
       try {
         k = currentKey();
         if (!k) { api.stats.fallbacks++; return orig(); }
+        var nowV = Date.now();
+        if (cache.val && cache.key === k && cache.ver === VER.n && (nowV - cache.at) < TTL_MS) {
+          api.stats.hits++; return cache.val.slice();
+        }
         s = localStorage.getItem(k);
       } catch (e) { api.stats.fallbacks++; return orig(); }
-      if (s == null || s === '') { cache.key = k; cache.str = s; cache.val = null; return []; }
+      if (s == null || s === '') { cache.key = k; cache.str = s; cache.val = null; cache.ver = VER.n; return []; }
       var now = Date.now();
       if (cache.val && cache.key === k && cache.str === s && now - cache.at < TTL_MS) {
-        api.stats.hits++; return cache.val.slice();
+        api.stats.hits++; cache.ver = VER.n; /* string proven identical: re-arm the fast path */
+        return cache.val.slice();
       }
       api.stats.misses++;
       var v;
@@ -45,7 +70,7 @@
          stored string, so packed writes invalidate exactly like plain ones. */
       try { v = JSON.parse(typeof window.__mlsPtsDecode === 'function' ? window.__mlsPtsDecode(s) : s) || []; } catch (e) { v = []; }
       if (!Array.isArray(v)) return v;
-      cache.key = k; cache.str = s; cache.val = v; cache.at = now;
+      cache.key = k; cache.str = s; cache.val = v; cache.at = now; cache.ver = VER.n;
       return v.slice();
     }
     wrapped.__mlsStoreCache = true; wrapped.__orig = orig;
@@ -7978,19 +8003,39 @@
   function scrubAll() {
     try {
       var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
-      if (!ps.length) return;
-      var fixed = 0;
+      if (!ps.length) return 0;
+      var fixed = 0, dirty = [];
       for (var i = 0; i < ps.length; i++) {
         var p = ps[i]; var s = p && p.summary;
         if (typeof s === 'string' && s.length > 80 && hasCode(s)) {
           var c = strip(s);
-          if (c && c !== s) { p.summary = c; fixed++; try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (e) {} }
+          if (c && c !== s) { p.summary = c; p.updated = Date.now(); fixed++; dirty.push(p); }
         }
       }
-      if (fixed) { window.__mlsSanitizeV2.cleaned += fixed; try { console.log('[MLS sanitize v2] retroactively cleaned ' + fixed + ' summar' + (fixed === 1 ? 'y' : 'ies')); } catch (e) {} try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {} }
+      if (fixed) {
+        /* b376 perf: ONE local write for the whole pass (was a full-blob
+           LZ-compress + setItem per fixed patient — O(n²) on a dirty sweep).
+           Server mirror stays per-patient best-effort, same as upsertPatient. */
+        try { if (typeof window.savePatients === 'function') window.savePatients(ps); } catch (e) {}
+        for (var d = 0; d < dirty.length; d++) { try { if (typeof window.syncPatientToServer === 'function') window.syncPatientToServer(dirty[d]); } catch (e) {} }
+        window.__mlsSanitizeV2.cleaned += fixed; try { console.log('[MLS sanitize v2] retroactively cleaned ' + fixed + ' summar' + (fixed === 1 ? 'y' : 'ies')); } catch (e) {} try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+      }
+      return fixed;
     } catch (e) {}
+    return 0;
   }
-  function tick() { window.__mlsSanitizeV2.passes++; patch(); scrubAll(); }
+  /* b376 perf: self-retire once the corpus is proven clean. patch() keeps the
+     write-time sanitizer installed, so new summaries are stripped at the
+     source; 5 consecutive clean sweeps means the retroactive pass is done.
+     Manual recovery stays available via __mlsSanitizeV2._scrub(). */
+  var cleanRuns = 0;
+  function tick() {
+    window.__mlsSanitizeV2.passes++; patch();
+    var f = scrubAll();
+    if (f > 0) { cleanRuns = 0; return; }
+    cleanRuns++;
+    if (cleanRuns >= 5 && iv) { try { clearInterval(iv); } catch (e) {} iv = null; window.__mlsSanitizeV2.retired = true; }
+  }
   var iv = null; try { iv = setInterval(tick, 2500); } catch (e) {} tick();
 
   window.__mlsSanitizeV2.strip = strip; window.__mlsSanitizeV2.hasCode = hasCode; window.__mlsSanitizeV2.isCode = isCode; window.__mlsSanitizeV2._scrub = scrubAll;
@@ -31983,7 +32028,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b375';
+  window.__MLS_AV = window.__MLS_AV || 'b376';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32274,7 +32319,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b375';
+  var MLS_APP_BUILD='2026-07-17-b376';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
