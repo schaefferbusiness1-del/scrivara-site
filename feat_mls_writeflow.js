@@ -965,13 +965,13 @@
   function teachStateFor(manifest, row) {
     var teacher = destinationTeacher();
     if (!teacher || typeof teacher.statusFor !== 'function') return { state: 'failed', message: 'MLS Assist destination teaching is unavailable.' };
-    try { return teacher.statusFor(manifest, row) || { state: 'idle', message: 'No destination taught for this exact row.' }; } catch (e) { return { state: 'failed', message: 'MLS Assist destination teaching is unavailable.' }; }
+    try { return teacher.statusFor(manifest, row) || { state: 'idle', message: 'Not taught yet. Open the destination screen in athenaOne FIRST, then click Teach destination.' }; } catch (e) { return { state: 'failed', message: 'MLS Assist destination teaching is unavailable.' }; }
   }
   function teachingHtml(manifest, row) {
     if (!row || row.capability !== 'ready' || !row.action) return '';
     var learned = taughtDestinationFor(manifest, row), status = teachStateFor(manifest, row);
     var state = S(status.state || (learned ? 'captured' : 'idle')).toLowerCase();
-    var message = S(status.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: teach the exact Athena field/control.')).trim();
+    var message = S(status.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: open the destination screen in athenaOne FIRST, then click Teach destination - your next Athena click is captured, never activated.')).trim();
     var color = state === 'captured' ? '#205c43' : ((state === 'failed' || state === 'expired') ? '#8b2525' : '#6d5010');
     return '<div data-mls-teach-row="' + esc(row.id) + '" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:7px;padding-top:7px;border-top:1px dashed #dbe7e0">' +
       '<button type="button" data-mls-teach-start="' + esc(row.id) + '" style="border:1px solid #bfd4c8;background:#f7fbf9;color:#204034;border-radius:8px;padding:5px 8px;font-size:11.5px;font-weight:750;cursor:pointer">' + (learned ? 'Re-teach destination' : 'Teach destination') + '</button>' +
@@ -998,7 +998,7 @@
     if (status) {
       var color = value === 'captured' ? '#205c43' : ((value === 'failed' || value === 'expired') ? '#8b2525' : '#6d5010');
       status.style.color = color; status.setAttribute('data-state', value);
-      status.innerHTML = '<b>' + esc(value === 'idle' ? 'READY TO TEACH' : value.toUpperCase()) + ':</b> ' + esc(S(current.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: teach the exact Athena field/control.')));
+      status.innerHTML = '<b>' + esc(value === 'idle' ? 'READY TO TEACH' : value.toUpperCase()) + ':</b> ' + esc(S(current.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: open the destination screen in athenaOne FIRST, then click Teach destination - your next Athena click is captured, never activated.')));
     }
   }
   function wireUnifiedTeaching(state, card) {
@@ -1050,6 +1050,21 @@
     if (el) { el.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#205c43' : '#6d5010'); el.textContent = message; }
     actionSay(state.sourceOpts, message, kind);
   }
+  function unifiedRecheckButton(state, rowId) {
+    /* wf2-1.9.0: read-only re-probe on demand; the button lives inside the
+       status line and is wiped by the next unifiedStatus repaint. */
+    if (!state || state.closed) return;
+    var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
+    if (!el) return;
+    try {
+      if (document.getElementById('mlsAthenaUnifiedRecheck')) return;
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'mlsAthenaUnifiedRecheck'; btn.textContent = 'Check Athena again';
+      btn.style.cssText = 'display:block;margin-top:7px;border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:6px 12px;font:700 12px inherit;cursor:pointer';
+      btn.addEventListener('click', function () { try { btn.remove(); } catch (e2) {} probeUnifiedRow(state, rowId); });
+      el.appendChild(btn);
+    } catch (e3) {}
+  }
   function validatedUnifiedProbe(patient, probe) {
     var ctx = probe && probe.context || {};
     var token = S(probe && (probe.actionToken || probe.token)).trim();
@@ -1100,7 +1115,16 @@
       clientOrderId: row.action === 'place_order' ? S(row.payload.order && row.payload.order.clientOrderId).trim() : ''
     }, 'mlsAppAthenaActionV2Result', 90000).then(function (probe) {
       if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
-      if (!probe || !probe.ok) { unifiedStatus(state, S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.', 'err'); return; }
+      if (!probe || !probe.ok) {
+        /* wf2-1.9.0 QoL: a refused read-only probe is almost always fixable by
+           the doctor. Say HOW, and offer one explicit re-check instead of
+           making them reopen the whole review. */
+        var probeErr = S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.';
+        if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + S(probe && probe.reason))) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        unifiedStatus(state, probeErr, 'err');
+        unifiedRecheckButton(state, row.id);
+        return;
+      }
       var lock = validatedUnifiedProbe(state.manifest.patient, probe);
       if (!lock.ok) { unifiedStatus(state, lock.error, 'err'); return; }
       var exactWrite = row.action === 'sign_encounter' ? findVerifiedWrite(lock.patient, state.manifest.previewHash, proofOpts, row.payload, lock.context) : null;

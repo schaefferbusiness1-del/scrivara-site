@@ -147,10 +147,12 @@
       'practice-mismatch': 'The open Athena tab is a different practice. Nothing was changed.',
       'token-expired': 'The confirmation window expired — start the action again.',
       'fresh-trusted-click-required': 'Click the action button again to confirm.',
+      'extension-error': 'MLS Assist was updated or reloaded and this tab lost its connection. Refresh this MLS tab (Ctrl+R), then run the pull again.',
       'no-athena-tab': 'Open one signed-in Athena tab, then retry.',
       'ambiguous-athena-tabs': 'More than one Athena tab is open — leave exactly one, then retry.',
       'outcome-uncertain': 'Could not verify the outcome — check Athena before relying on it.'
     };
+    if (/^extension error\b/i.test(String(fallback || ''))) return map['extension-error'];
     return map[String(reason || '')] || fallback || ('Blocked: ' + text(reason || 'unknown', 60));
   }
 
@@ -466,7 +468,18 @@
     if (!jobsAll.length) {
       var em = document.createElement('div'); em.className = 'ps-empty'; em.textContent = 'Nothing running.'; p.appendChild(em);
     }
-    jobsAll.slice(0, 8).forEach(function (j) {
+    /* ps-1.1.0 QoL: a dozen identical failed runs (e.g. every auto-pull from a
+       tab whose bridge was orphaned by an extension reload) stacked a dozen
+       identical cards. Collapse same label+status+message terminal neighbors
+       into one card with an honest repeat count. */
+    var groupedJobs = [];
+    jobsAll.forEach(function (j) {
+      var prev = groupedJobs[groupedJobs.length - 1];
+      var sig = (j.label || j.kind || '') + '|' + j.status + '|' + (j.message || '');
+      if (prev && !ACTIVE_STATUS[j.status] && !ACTIVE_STATUS[prev.status] && prev._sig === sig) { prev._dupes += 1; return; }
+      j._sig = sig; j._dupes = 1; groupedJobs.push(j);
+    });
+    groupedJobs.slice(0, 8).forEach(function (j) {
       var row = document.createElement('div'); row.className = 'ps-job';
       var top = document.createElement('div'); top.className = 'ps-top';
       var label = document.createElement('span'); label.className = 'ps-label'; label.textContent = j.label || j.kind || 'Working';
@@ -478,6 +491,7 @@
       if (j.selectedDate) bits.push(j.selectedDate);
       bits.push(elapsed((j.finishedAt || now()) - j.startedAt) + (ACTIVE_STATUS[j.status] ? ' elapsed' : ''));
       if (j.attempt > 1) bits.push('attempt ' + j.attempt + (j.maxAttempts > 1 ? ' of ' + j.maxAttempts : ''));
+      if (j._dupes > 1) bits.push('repeated ' + j._dupes + ' times');
       var ctx = document.createElement('div'); ctx.className = 'ps-ctx'; ctx.textContent = bits.join(' · '); row.appendChild(ctx);
       if (Array.isArray(j.stages) && j.stages.length) {
         var ul = document.createElement('ul'); ul.className = 'ps-stages';
