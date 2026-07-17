@@ -1,5 +1,5 @@
 {
-  "version": "2.9.39",
+  "version": "2.9.40",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.39 - Encounter rows on athenaOne's streamlined chart layout now actually expand during history pulls: the reader clicks them with a real pointer-event sequence (verified live - the layout ignores plain scripted clicks). Includes v2.9.38 and v2.9.37."
+  "notes": "v2.9.40 - Faster history pulls: the chart-identity stage polls readiness on a quicker early cadence and uses a shorter first settle after opening a chart. All acceptance gates, identity proofs, budgets, and retries are unchanged - only idle waiting shrank. (These pacing values were cleared of blame for the earlier failures: those reproduced identically with them reverted and were traced to athena layout and tab issues fixed in v2.9.36-v2.9.39.)"
 }

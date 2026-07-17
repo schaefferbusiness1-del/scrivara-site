@@ -7028,7 +7028,7 @@ async function mlsSchedDomInline(doc, CFG){
               const qpSettled = await chartSettle(self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id), 8000);
               if (!qpSettled || !qpSettled.ok || chartExpired()) { chartFailDeadline('quiet Athena work-tab setup'); return; }
             }
-            if (!(await chartWait(3200))) { chartFailDeadline('clinical chart load'); return; }
+            if (!(await chartWait(1800))) { chartFailDeadline('clinical chart load'); return; } /* v2.9.40 speed: shorter first settle - the identity loop keeps re-probing under the same budget; cadence exonerated by the v2.9.34-36 reverted-run forensics */
             continue;
           }
           if (navClicked) {
@@ -7042,7 +7042,7 @@ async function mlsSchedDomInline(doc, CFG){
           }
           noClickRounds++;
           if (briefingNow && noClickRounds >= 5 && !navClicked) break; /* exam-prep with nothing safe to click -> fail honestly below */
-          if (!(await chartWait(bootstrapReadyEarly ? 900 : 2400))) { chartFailDeadline('clinical chart readiness'); return; }
+          if (!(await chartWait(bootstrapReadyEarly ? 600 : (polls < 3 ? 1200 : 2400)))) { chartFailDeadline('clinical chart readiness'); return; } /* v2.9.40 speed: faster early polls, same acceptance + budgets */
         }
         if (chartExpired()) { chartFailDeadline('clinical chart readiness'); return; }
         const V59 = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
