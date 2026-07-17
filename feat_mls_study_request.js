@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.2.2';
+  var VERSION = 'sr-2.3.0';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -878,7 +878,8 @@
       stored:1, evidence:1, pages:1, page:1, last:1, past:1, month:1, months:1, year:1, years:1,
       from:1, through:1, with:1, without:1, who:1, what:1, when:1, where:1, which:1, were:1,
       have:1, had:1, received:1, compare:1, versus:1, outcomes:1, outcome:1, retrospective:1,
-      this:1, that:1, these:1, those:1, their:1, them:1, then:1, than:1, into:1, about:1, paper:1 };
+      this:1, that:1, these:1, those:1, their:1, them:1, then:1, than:1, into:1, about:1, paper:1,
+      make:1, every:1, single:1, give:1, show:1, want:1, need:1, please:1, also:1, using:1, include:1, data:1 };
     var seen = {}, out = [];
     searchTokens(question).forEach(function (term) {
       if (term.length < 4 || stop[term] || /^\d+$/.test(term) || seen[term]) return;
@@ -886,6 +887,7 @@
     });
     return out.slice(0, 10);
   }
+  var MED_LIST_ARTIFACT = /^(?:date|name|surescripts|check now|status|source|sig|qty|quantity|refills?|start|stop|unknown|none|active|inactive|medications?|list|dose|directions|notes?)$/;
   function demographicsSummary(patients) {
     var ages = [], sexCounts = { male: 0, female: 0, other: 0, 'not recorded': 0 };
     var medCounts = {}, allergyCounts = {}, withMeds = 0, withAllergies = 0, withProblems = 0;
@@ -895,7 +897,9 @@
       if ((p.meds || []).length) withMeds++;
       if ((p.allergies || []).length) withAllergies++;
       if (S(p.problems).trim()) withProblems++;
-      (p.meds || []).forEach(function (m) { var k = lower(m).slice(0, 60); if (k) medCounts[k] = (medCounts[k] || 0) + 1; });
+      /* sr-2.3.0: EHR-import artifacts ("date", "name", "surescripts", field
+         labels) are not medications and previously polluted Table 2. */
+      (p.meds || []).forEach(function (m) { var k = lower(m).slice(0, 60); if (k && !MED_LIST_ARTIFACT.test(k)) medCounts[k] = (medCounts[k] || 0) + 1; });
       (p.allergies || []).forEach(function (a) { var k = lower(a).slice(0, 60); if (k) allergyCounts[k] = (allergyCounts[k] || 0) + 1; });
     });
     return {
@@ -929,9 +933,48 @@
       });
     });
     var sourceCounts = countBy(visits, function (v) { return v.source; });
-    var typeCounts = countBy(visits, function (v) { return v.type; });
+    /* sr-2.3.0: encounter types arrive with provider-name suffixes appended
+       ("est20, Jane Doe, PA-C, ..."); count on the base type so variants merge.
+       Raw types stay untouched in appendix rows. */
+    function normEncounterType(t) { var s = S(t).trim(); var cut = s.indexOf(','); if (cut > 0) s = s.slice(0, cut).trim(); return s || 'Visit'; }
+    var typeCounts = countBy(visits, function (v) { return normEncounterType(v.type); });
     var demo = demographicsSummary(patients);
     var codeSignals = meta.codeSignals || null;
+    /* sr-2.3.0: deterministic procedure-signal analysis. A signal is a text or
+       encounter-type mention (never a billing assertion), matched against a
+       fixed spine/pain/PM&R lexicon so "study every procedure" style requests
+       get a real procedure section instead of raw keyword echoes. */
+    var PROC_LEXICON = [
+      ['Epidural steroid injection (ESI)', /\bepidural\b|\besi\b/],
+      ['Sacroiliac / SI joint injection', /\bsacroiliac\b|\bsi\s+joint\b/],
+      ['Facet / medial branch block', /\bfacet\b|\bmedial\s+branch\b|\bmbb\b/],
+      ['Radiofrequency ablation (RFA)', /\bradio\s?frequency\b|\brfa\b|\bablation\b/],
+      ['Trigger point injection', /\btrigger\s+point\b/],
+      ['Nerve block', /\bnerve\s+block\b/],
+      ['EMG / nerve conduction study', /\bemg\b|\bnerve\s+conduction\b|\bncs\b/],
+      ['Fluoroscopy-guided procedure', /\bfluoro(?:scop\w*)?\b/],
+      ['Kyphoplasty / vertebroplasty', /\bkyphoplasty\b|\bvertebroplasty\b/],
+      ['Spinal cord stimulator (SCS)', /\bspinal\s+cord\s+stim\w*|\bscs\b|\bstimulator\b/],
+      ['Intracept / basivertebral ablation', /\bintracept\b|\bbasivertebral\b/],
+      ['PRP / regenerative injection', /\bprp\b|\bplatelet[-\s]rich\b/],
+      ['Botulinum toxin injection', /\bbotox\b|\bbotulinum\b/],
+      ['Discography', /\bdiscogra\w+\b/],
+      ['Injection (any documented)', /\binject\w*\b/]
+    ];
+    function visitProcHay(v) { return lower(S(v.type) + ' ' + S(v.detail)); }
+    var procStats = PROC_LEXICON.map(function (entry) {
+      var pts = {}, count = 0;
+      visits.forEach(function (v) { if (entry[1].test(visitProcHay(v))) { count++; pts[v.code] = 1; } });
+      return { label: entry[0], visits: count, patients: Object.keys(pts).length };
+    }).filter(function (r) { return r.visits > 0; });
+    var procAnyPts = {}, procAnyVisits = 0, procByProvider = {};
+    visits.forEach(function (v) {
+      if (!PROC_LEXICON.some(function (e) { return e[1].test(visitProcHay(v)); })) return;
+      procAnyVisits++; procAnyPts[v.code] = 1;
+      var pm = S(v.detail).match(/Provider:\s*([^|]+)/i);
+      var prov = pm ? pm[1].trim() : 'Not recorded';
+      procByProvider[prov] = (procByProvider[prov] || 0) + 1;
+    });
     var firstPain = {}, lastPain = {}, datedPain = pain.filter(function (p) { return !!p.date; });
     datedPain.slice().sort(function (a, b) { return a.date.localeCompare(b.date); }).forEach(function (p) {
       if (!firstPain[p.code]) firstPain[p.code] = p;
@@ -945,7 +988,13 @@
     var responders = painChanges.filter(function (delta) { return delta <= -2; }).length;
     var painCi = ci95(painChanges);
     var allScores = pain.map(function (x) { return x.score; });
-    var monthKeys = Object.keys(byMonth).sort();
+    /* sr-2.3.0: pre-2000 "visit" months are DOB/import bleed, not encounters;
+       they distorted the temporal axis (e.g. 1937-12). Excluded from the
+       monthly table/figure only, disclosed in limitations. */
+    var monthKeysAll = Object.keys(byMonth).sort();
+    var implausibleMonthRecords = monthKeysAll.filter(function (k) { return k < '2000-01'; })
+      .reduce(function (a, k) { return a + byMonth[k]; }, 0);
+    var monthKeys = monthKeysAll.filter(function (k) { return k >= '2000-01'; });
     var perPatient = (patients || []).map(function (p) { return (p.visits || []).length; });
     /* Evidence-supported ceiling: richer per-visit narrative, tables, figures,
        and case summaries justify more pages per unit of evidence than sr-1,
@@ -1085,6 +1134,18 @@
         rows: topCounts(typeCounts, 15).map(function (x) { return [x[0], String(x[1])]; }) },
       figureId: 'fig-types'
     });
+    var procParas = procStats.length ? [
+      procAnyVisits + ' of ' + visits.length + ' included visit records (' + fmt(100 * procAnyVisits / Math.max(1, visits.length)) + '%) carry at least one documented procedure signal, across ' + Object.keys(procAnyPts).length + ' distinct patients. A signal is a text or encounter-type mention matched against a fixed procedure lexicon; it is not a billing assertion.',
+      'The most frequently documented procedure signal was "' + procStats.slice().sort(function (a, b) { return b.visits - a.visits; })[0].label + '".'
+    ] : ['No documented procedure signals matched the procedure lexicon in the included records. Absence of a documented mention is absence of evidence, not proof no procedure occurred.'];
+    sections.push({
+      key: 'procedures',
+      heading: 'Results: documented procedures',
+      paragraphs: procParas,
+      table: procStats.length ? { title: 'Documented procedure signals', columns: ['Procedure signal', 'Visit records', 'Distinct patients'],
+        rows: procStats.slice().sort(function (a, b) { return b.visits - a.visits; }).map(function (r) { return [r.label, String(r.visits), String(r.patients)]; }) } : undefined,
+      bullets: procStats.length ? topCounts(procByProvider, 8).map(function (x) { return 'Procedure-signal visit records with ' + x[0] + ': ' + x[1]; }) : undefined
+    });
     if (monthKeys.length) {
       sections.push({
         key: 'temporal',
@@ -1176,14 +1237,18 @@
       });
     }
     if (spec.studyType === 'custom') {
-      var qTerms = meaningfulQuestionTerms(safeSpec.question);
-      if (qTerms.length) {
+      /* sr-2.3.0: only report terms that actually appear. A list of imperative
+         words (or typos) with "0 of N" counts is noise, not analysis. */
+      var qHits = meaningfulQuestionTerms(safeSpec.question).map(function (term) {
+        return [term, visits.filter(function (v) { return recordMentions(v, term); }).length];
+      }).filter(function (x) { return x[1] > 0; });
+      if (qHits.length) {
         sections.push({
           key: 'question-terms',
           heading: 'Results: question-specific documentation',
           paragraphs: ['These are documentation counts, not inferred diagnoses or causal effects.'],
-          bullets: qTerms.map(function (term) {
-            return term + ': mentioned in ' + visits.filter(function (v) { return recordMentions(v, term); }).length + ' of ' + visits.length + ' included visit records';
+          bullets: qHits.map(function (x) {
+            return x[0] + ': mentioned in ' + x[1] + ' of ' + visits.length + ' included visit records';
           })
         });
       }
@@ -1200,12 +1265,11 @@
         bullets: safety.map(function (x) { return x[0] + ': ' + x[1] + ' visit records'; })
       });
     }
-    /* Case-level summaries: one grounded paragraph per coded patient. This is
-       real per-patient evidence (not filler) and is what carries large cohorts
-       to full-length papers; the PDF renderer still stops at the evidence
-       ceiling. */
-    var CASE_CAP = 25;
-    var caseParas = (patients || []).slice(0, CASE_CAP).map(function (p) {
+    /* sr-2.3.0: case-level patient lines are real per-patient evidence, but
+       they belong at the END of the report as an appendix — after every
+       analytic section — and they now cover ALL included patients (the page
+       ceiling truncates naturally; the Excel export always has the full set). */
+    var caseParas = (patients || []).map(function (p) {
       var vs = p.visits || [];
       var datedVs = vs.filter(function (v) { return v.date; });
       var span = datedVs.length ? (datedVs[0].date + (datedVs.length > 1 ? ' through ' + datedVs[datedVs.length - 1].date : '')) : 'undated records only';
@@ -1219,23 +1283,13 @@
       if (S(p.problems).trim()) line += ' Problem summary: ' + S(p.problems).slice(0, 220) + '.';
       return line;
     });
-    if (caseParas.length) {
-      var caseIntro = ['One summary per coded patient, drawn verbatim from stored, identifier-scrubbed documentation.'];
-      if ((patients || []).length > CASE_CAP) {
-        caseIntro.push('Showing the first ' + CASE_CAP + ' of ' + patients.length + ' coded patients so the analytic sections keep priority; every remaining patient appears row-by-row in the limited-data Excel export.');
-      }
-      sections.push({
-        key: 'cases',
-        heading: 'Case-level summaries (capped)',
-        paragraphs: caseIntro.concat(caseParas)
-      });
-    }
     var discussion = [
       'Within the stated limits, the included documentation supports the descriptive findings above: ' + patients.length + ' patients contributed ' + visits.length + ' deduplicated visit records' + (monthKeys.length ? ' across ' + monthKeys.length + ' calendar months' : '') + '.',
+      procStats.length ? ('Documented procedure signals appeared in ' + procAnyVisits + ' visit records across ' + Object.keys(procAnyPts).length + ' patients (see "Results: documented procedures"); these are documentation mentions matched against a fixed lexicon, suitable for utilization review and hypothesis generation.') : null,
       pain.length ? ('Documented pain scoring was available for a subset of encounters (' + pain.length + ' scores), and any change estimates reflect only patients with repeated dated documentation. Undocumented outcomes are reported as absent evidence, not as negative findings.') : 'Structured outcome scores were not documented in this cohort, so the report is limited to utilization and composition findings.',
       'Because this is a single-practice, non-randomized, documentation-based review, the appropriate use of this draft is internal quality review, hypothesis generation, and preparation for a formally designed study with IRB oversight.'
     ];
-    sections.push({ key: 'discussion', heading: 'Discussion', paragraphs: discussion });
+    sections.push({ key: 'discussion', heading: 'Discussion', paragraphs: discussion.filter(Boolean) });
     var limitations = (meta.cohortFallback ? [deidentifyText(meta.cohortFallback, identities)] : []).concat([
       'This is a retrospective descriptive report from data stored in MLS, not a randomized or causal analysis.',
       'Absence of a documented finding does not prove the finding was absent.',
@@ -1245,6 +1299,7 @@
     if (meta.scope && meta.scope.excludedUndated) limitations.push(meta.scope.excludedUndated + ' undated records were excluded because the request specified a date window.');
     if (meta.scope && meta.scope.excludedOutOfRange) limitations.push(meta.scope.excludedOutOfRange + ' records fell outside the requested date window.');
     if (meta.duplicateVisitsRemoved) limitations.push(meta.duplicateVisitsRemoved + ' duplicate visit records were removed before analysis.');
+    if (implausibleMonthRecords) limitations.push(implausibleMonthRecords + ' dated record' + (implausibleMonthRecords === 1 ? '' : 's') + ' carried an implausible pre-2000 visit date (likely an imported date-of-birth artifact) and ' + (implausibleMonthRecords === 1 ? 'was' : 'were') + ' excluded from the temporal analysis only.');
     if (meta.ambiguousRecordsSkipped) limitations.push(meta.ambiguousRecordsSkipped + ' records without a unique stable-ID or exact unique name+DOB match were excluded to prevent cross-patient mixing.');
     if (meta.identityConflicts) limitations.push(meta.identityConflicts + ' records with conflicting namespace-qualified identifiers were excluded for identity safety.');
     if (!painChanges.length && spec.studyType === 'outcomes') limitations.push('The records do not support a longitudinal pain-change estimate for two or more measurements per patient.');
@@ -1278,6 +1333,16 @@
         'Report policy: stop when evidence is exhausted; never add filler or invented results.'
       ]
     });
+    if (caseParas.length) {
+      sections.push({
+        key: 'cases',
+        heading: 'Appendix A. Case-level patient index',
+        paragraphs: [
+          'One compact line per coded patient, drawn from stored, identifier-scrubbed documentation. Patient-level detail is intentionally kept at the end of the report, after every analytic section.',
+          'This index covers ALL ' + patients.length + ' included patients and truncates only at the report page ceiling; the complete set is always available row-by-row in the limited-data Excel export.'
+        ].concat(caseParas)
+      });
+    }
     return {
       title: typeLabel(spec.studyType) + ' - limited-data MLS study draft',
       generatedAt: new Date().toISOString(),
@@ -1544,16 +1609,21 @@
     });
 
     if (!truncated && model.appendixRows.length) {
-      var APPENDIX_CAP = 150;
-      heading('Limited-data evidence appendix');
-      text('One row per included stored visit. Common direct identifiers are scrubbed where detectable; clinician/privacy review is still required.', 9, { after: 8 });
+      /* sr-2.3.0: compact rows — a short excerpt instead of the full note
+         body. Full verbatim text lives in the Excel export; multi-page SOAP
+         dumps no longer crowd out the analytic sections. */
+      var APPENDIX_CAP = 400;
+      heading('Appendix B. Limited-data visit rows (compact)');
+      text('One compact row per included stored visit (short excerpt only — full text is in the limited-data Excel export). Common direct identifiers are scrubbed where detectable; clinician/privacy review is still required.', 9, { after: 8 });
       if (model.appendixRows.length > APPENDIX_CAP) {
         text('Showing the first ' + APPENDIX_CAP + ' of ' + model.appendixRows.length + ' included visit rows; the COMPLETE row set is in the limited-data Excel export. The analytic sections above always take priority over raw rows.', 9, { bold: true, after: 8 });
       }
       model.appendixRows.slice(0, APPENDIX_CAP).some(function (r, idx) {
         if (!need(42) && truncated) return true;
         if (!text((idx + 1) + '. ' + r.code + ' | ' + (r.date || 'date not recorded') + ' | ' + r.type + ' | source: ' + r.source, 9, { bold: true, after: 2 })) return true;
-        if (r.detail && !text(r.detail, 8.5, { indent: 10, after: 7 })) return true;
+        var excerpt = S(r.detail);
+        if (excerpt.length > 220) excerpt = excerpt.slice(0, 220) + ' ... [full text in the Excel export]';
+        if (excerpt && !text(excerpt, 8.5, { indent: 10, after: 7 })) return true;
         return truncated;
       });
     }

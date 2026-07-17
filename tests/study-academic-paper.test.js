@@ -92,10 +92,20 @@ const model = study.buildReportModel(spec, deid, {
 const headings = model.sections.map((x) => x.heading);
 ['Abstract', 'Introduction and objective', 'Methods and provenance', 'Statistical methods',
  'Results: cohort characteristics', 'Results: documented coding signals (practice code table)',
- 'Case-level summaries (capped)', 'Discussion', 'Data quality and limitations', 'Conclusion',
+ 'Results: documented procedures',
+ 'Appendix A. Case-level patient index', 'Discussion', 'Data quality and limitations', 'Conclusion',
  'Reproducibility record'].forEach((h) => {
   assert.ok(headings.indexOf(h) >= 0, 'missing academic section: ' + h);
 });
+/* sr-2.3.0: patient-level content must sit at the END — after every analytic
+   section, Discussion, Conclusion, and the reproducibility record. */
+assert.ok(headings.indexOf('Appendix A. Case-level patient index') > headings.indexOf('Reproducibility record'),
+  'case-level patient index must come after the reproducibility record');
+assert.ok(headings.indexOf('Results: documented procedures') < headings.indexOf('Discussion'),
+  'procedure analysis must be part of the analytic body');
+const casesSection = model.sections.find((x) => x.key === 'cases');
+assert.ok(casesSection && casesSection.paragraphs.length >= deid.length,
+  'case index must cover ALL included patients (no mid-report cap)');
 assert.ok(model.figures.length >= 2, 'monthly + type figures expected');
 assert.ok(model.sections.some((x) => x.table && x.table.rows.length), 'tables expected');
 assert.ok(!/Patient Number|MRN-100/i.test(JSON.stringify(model)), 'model must stay identifier-free');
@@ -326,8 +336,12 @@ assert.strictEqual(study.narrativeNumbersOk('Improvement was 87.3 percent.', dig
   const modelText = JSON.stringify(res.model);
   assert.match(modelText, /Cohort fallback: the phrase/, 'the fallback must be disclosed in the paper');
   const cases = res.model.sections.find((s) => s.key === 'cases');
-  assert.ok(cases.paragraphs.filter((p) => /^P\d{3}:/.test(p)).length <= 25, 'case-level summaries capped at 25 patients');
-  assert.match(cases.paragraphs.join(' '), /Showing the first 25 of 40 coded patients/);
+  /* sr-2.3.0: the case index covers ALL patients and lives at the END of the
+     report (after the reproducibility record); the page ceiling truncates. */
+  assert.strictEqual(cases.paragraphs.filter((p) => /^P\d{3}:/.test(p)).length, 40, 'case index must cover all 40 patients');
+  const hs = res.model.sections.map((s) => s.heading);
+  assert.ok(hs.indexOf('Appendix A. Case-level patient index') > hs.indexOf('Reproducibility record'), 'case index must be the final section');
+  assert.match(cases.paragraphs.join(' '), /This index covers ALL 40 included patients/);
   assert.ok(res.model.supportedPageCeiling <= 30, '80 visits over 40 patients stays a focused paper, not a head-count dump');
 
   /* a REAL procedure term that matches nothing still falls back with disclosure, never a dead end */
