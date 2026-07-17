@@ -1858,8 +1858,10 @@
        chain still runs and still fail-closes; a failed pipelined parse gets
        ONE deferred full re-run (fresh chart open + verify + sequential
        parse) after the main sweep — same retry budget the inline path had.
-       With full visit bodies ON the batch stays strictly sequential (the
-       visits reader needs THIS patient's chart on screen). */
+       si-1.8.0: with full visit bodies ON, the parse now overlaps the SAME
+       patient's visits read instead (the parse never needs the screen) and is
+       awaited before saveVerifiedVisits, whose history-organization proof
+       reads what the parse persisted. */
     var pipelineParses = [];
     function launchPipelinedParse(entry, parseArgs) {
       entry.one.parsePipelined = true;
@@ -1875,6 +1877,44 @@
         if (parseErr && parseErr.mlsEchoes) entry.one.chartEchoes = parseErr.mlsEchoes;
       });
       pipelineParses.push(entry);
+    }
+    async function collectOverlapParse(overlap, one, stageMs, patientDeadlineAt) {
+      /* Settle the overlapped parse; on a non-timeout failure give it ONE
+         bounded sequential re-run (same rd - the chart was verified when it
+         was read), then apply exactly what the inline path applied. */
+      if (!overlap) return;
+      var outcome = await overlap.settled;
+      stageMs.parseSave += Date.now() - overlap.t0;
+      if (!outcome.ok && !/timeout|deadline/i.test(String(outcome.e && outcome.e.message || "")) && Date.now() + 300000 < batchDeadlineAt) {
+        /* si-1.7.2 semantics preserved: the single bounded retry is a FULL
+           fresh open+verify+parse (never a bare re-parse of a possibly stale
+           read) - exactly what the inline path did, deferred post-visits. */
+        one.chartRetried = true;
+        var __rpChartT0 = Date.now(), __rpParseT0 = 0;
+        try {
+          var reChartDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 110000);
+          var reReadStartedAt = Date.now();
+          var rdRetry = await boundedUntil(window._assistReadChart(overlap.args.target, function () {}, { requestId: overlap.args.requestId + "-r2chart", deadlineAt: reChartDeadlineAt }), reChartDeadlineAt, "chart-read-deadline-exceeded");
+          stageMs.chart += Date.now() - __rpChartT0;
+          __rpParseT0 = Date.now();
+          var reParseDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 120000);
+          outcome = { ok: true, r: await saveOrganizedHistory(overlap.args.target, overlap.args.row, rdRetry, reReadStartedAt, reParseDeadlineAt, overlap.args.requestId + "-r2") };
+          stageMs.parseSave += Date.now() - __rpParseT0;
+        } catch (reParseErr) {
+          if (__rpParseT0) { stageMs.parseSave += Date.now() - __rpParseT0; } else { stageMs.chart += Date.now() - __rpChartT0; }
+          outcome = { ok: false, e: reParseErr };
+        }
+      }
+      if (outcome.ok) {
+        var organizedResult = outcome.r;
+        one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage = organizedResult.profileCoverage; one.clinicalFieldCount = organizedResult.clinicalFieldCount; one.dobVerified = organizedResult.dobVerified === true;
+        one.organized = !!(one.profileCoverage && one.profileCoverage.complete === true);
+        one.chartReason = "";
+      } else {
+        one.chartReason = String(outcome.e && outcome.e.message || outcome.e || "chart-parse-failed").slice(0, 120);
+        if (outcome.e && outcome.e.mlsEchoes) one.chartEchoes = outcome.e.mlsEchoes;
+        if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; }
+      }
     }
     try {
       for (var i = 0; i < rows.length; i++) {
@@ -1913,7 +1953,7 @@
            persist. One graded run now shows exactly where the seconds go
            BEFORE any sleep is converted to a readiness poll. */
         var stageMs = { chart: 0, parseSave: 0, visits: 0, visitSave: 0 };
-        var rd = null, chartAttempt = 0;
+        var rd = null, chartAttempt = 0, overlapParse = null;
         while (true) {
           chartAttempt++;
           var __chartT0 = Date.now(), __parseT0 = 0;
@@ -1935,13 +1975,12 @@
                 { target: target, row: row, rd: rd, readStartedAt: chartReadStartedAt, deadlineAt: parseDeadlineAt, requestId: parseRequestId });
               break;
             }
-            __parseT0 = Date.now();
-            var organizedResult = await saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, parseRequestId);
-            stageMs.parseSave += Date.now() - __parseT0;
-            __parseT0 = 0;
-            one.chartCoverage = organizedResult.chartCoverage; one.profileCoverage=organizedResult.profileCoverage; one.clinicalFieldCount=organizedResult.clinicalFieldCount; one.dobVerified=organizedResult.dobVerified===true;
-            one.organized = !!(one.profileCoverage&&one.profileCoverage.complete===true);
-            one.chartReason = "";
+            /* si-1.8.0: launch the parse+persist chain now and let it run
+               while the visits stage below reads THIS chart. It is awaited in
+               collectOverlapParse before saveVerifiedVisits. */
+            overlapParse = { t0: Date.now(), args: { target: target, row: row, rd: rd, readStartedAt: chartReadStartedAt, deadlineAt: parseDeadlineAt, requestId: parseRequestId } };
+            overlapParse.settled = saveOrganizedHistory(target, row, rd, chartReadStartedAt, parseDeadlineAt, parseRequestId)
+              .then(function (r) { return { ok: true, r: r }; }, function (e) { return { ok: false, e: e }; });
             break;
           } catch (chartErr) {
             if (__parseT0) { stageMs.parseSave += Date.now() - __parseT0; } else { stageMs.chart += Date.now() - __chartT0; }
@@ -2002,6 +2041,7 @@
               }
               throw new Error(vErrText);
             }
+            await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); overlapParse = null;
             var __visitSaveT0 = Date.now();
             var savedVisits = saveVerifiedVisits(target, vr);
             stageMs.visitSave = Date.now() - __visitSaveT0;
@@ -2028,6 +2068,7 @@
               }
             }
           } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
+          if (overlapParse) { try { await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); } catch (eOverlapLate) {} overlapParse = null; }
           stageMs.visits = Date.now() - __visitsT0;
         }
         if(one.visitsSkipped!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
