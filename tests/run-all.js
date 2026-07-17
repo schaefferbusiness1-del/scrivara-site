@@ -80,6 +80,7 @@ const tests = [
   'portal-invite-placement-runtime.test.js',
   'portal-request-reliability-runtime.test.js',
   'strip-day-couple-runtime.test.js',
+  'premium-gate-runtime.test.js',
   'patient-card-contrast-contract.test.js',
   'patient-store-compression-runtime.test.js',
   'visit-shell-merge-alias-survival.test.js',
