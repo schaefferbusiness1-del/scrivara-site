@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ps-1.0.0 progress panel preview (untracked demo harness)</title>
+<style>body{font:14px "Public Sans",system-ui,sans-serif;background:#FDFCF9;color:#1A211C;padding:24px;max-width:640px}button{margin:4px;padding:8px 12px;border:1px solid #D9E2DC;border-radius:8px;background:#fff;cursor:pointer;font-weight:600}h1{font-size:18px}</style>
+</head>
+<body>
+<h1>ps-1.0.0 panel preview — synthetic bridge replay</h1>
+<p>This harness loads the REAL feat_mls_loading_calm.js + feat_mls_progress_stages.js and posts the same postMessage traffic the app/extension exchange. Nothing here talks to Athena.</p>
+<div>
+  <button onclick="seqConnect()">1. Connect</button>
+  <button onclick="seqSchedule()">2. Schedule pull (partial 18/20)</button>
+  <button onclick="seqHistory()">3. History pull (3 charts, 1 fail)</button>
+  <button onclick="seqStaging()">4. Staging write (verify)</button>
+  <button onclick="seqBlocked()">5. Blocked order (write-safety)</button>
+  <button onclick="openPanel()">Open panel</button>
+</div>
+<script src="feat_mls_loading_calm.js"></script>
+<script src="feat_mls_progress_stages.js"></script>
+<script>
+function post(d){ window.postMessage(d, '*'); }
+function openPanel(){ window.__mlsProgressStages.panel.open(); }
+function seqConnect(){
+  post({source:'mls-app',type:'mlsPing'});
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsPong',version:'2.9.26'}); }, 1200);
+  openPanel();
+}
+function seqSchedule(){
+  post({source:'mls-app',type:'mlsAppPullSchedule',requestId:'req-demo-1',day:'07/17/2026',provider:'Matthew Schaeffer MD'});
+  setTimeout(function(){
+    post({source:'mls-ext',type:'mlsAppScheduleResult',requestId:'req-demo-1',resp:{ok:true,schedDate:'07/17/2026',appts:new Array(18).fill({}),receipt:{complete:false,expectedCount:20,parsedCount:18}}});
+  }, 2500);
+  openPanel();
+}
+function seqHistory(){
+  window.__mlsProgressStages.expect('history',{total:3,provider:'Matthew Schaeffer MD'});
+  post({source:'mls-app',type:'mlsAppReadChart',name:'Adam J Schaeffer'});
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppChartResult',resp:{ok:true}}); post({source:'mls-app',type:'mlsAppReadChart',name:'Laura Z'}); }, 1800);
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppChartResult',resp:{error:'chart-identity-unverified'}}); post({source:'mls-app',type:'mlsAppReadChart',name:'Third Patient'}); }, 3600);
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppChartResult',resp:{ok:true}}); }, 5200);
+  openPanel();
+}
+function seqStaging(){
+  post({source:'mls-app',type:'mlsAppAthenaActionV2',mode:'probe',action:'write_note',requestId:'req-demo-w1',expectedPatient:{name:'Adam J Schaeffer'},expectedContext:{provider:'Matthew Schaeffer MD',visitDate:'07/17/2026'}});
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppAthenaActionV2Result',resp:{ok:true,readOnly:true,actionToken:'t1',context:{}}}); }, 1500);
+  setTimeout(function(){ post({source:'mls-app',type:'mlsAppAthenaActionV2',mode:'execute',action:'write_note',requestId:'req-demo-w1',expectedPatient:{name:'Adam J Schaeffer'}}); }, 3200);
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppAthenaActionV2Result',resp:{ok:true,written:true,verified:true}}); }, 5000);
+  openPanel();
+}
+function seqBlocked(){
+  post({source:'mls-app',type:'mlsAppAthenaActionV2',mode:'probe',action:'place_order',requestId:'req-demo-o1',expectedPatient:{name:'Adam J Schaeffer'}});
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppAthenaActionV2Result',resp:{ok:true,readOnly:true,actionToken:'t2'}}); }, 900);
+  setTimeout(function(){ post({source:'mls-app',type:'mlsAppAthenaActionV2',mode:'execute',action:'place_order',requestId:'req-demo-o1'}); }, 1800);
+  setTimeout(function(){ post({source:'mls-ext',type:'mlsAppAthenaActionV2Result',resp:{ok:false,blocked:true,reason:'write-safety-final-action-blocked'}}); }, 2600);
+  openPanel();
+}
+</script>
+</body>
+</html>
