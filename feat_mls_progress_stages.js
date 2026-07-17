@@ -40,7 +40,7 @@
   'use strict';
   if (window.__mlsProgressStages && window.__mlsProgressStages.installed) return;
 
-  var VERSION = 'ps-1.0.0';
+  var VERSION = 'ps-1.0.1';
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -159,11 +159,24 @@
   /* ------------------------------------------------------------------ *
    * Connection state (ping/pong evidence).                              *
    * ------------------------------------------------------------------ */
-  var conn = { lastPing: 0, lastPong: 0, everConnected: false, pingTimer: null };
+  var conn = { lastPing: 0, lastPong: 0, everConnected: false, pingTimer: null, autoConnects: 0 };
   function onPing() {
     conn.lastPing = now();
     var silent = !conn.lastPong || (now() - conn.lastPong > 90000);
     if (silent && !activeFlow('connect') && !activeFlow('reconnect')) {
+      /* ps-1.0.1 (Codex-flagged): on a device that has NEVER had the extension
+         answer, every background ping used to spawn a doomed 20s "Connecting
+         to Athena" job that timed out and was immediately recreated — an
+         endless passive loop on phones / extension-less machines. Rules:
+         relay/phone devices never auto-spawn a local connect job (their pulls
+         run on the office computer by design), and elsewhere we stop after 2
+         consecutive doomed auto-jobs; any real pong re-arms everything. */
+      if (!conn.everConnected) {
+        try { var rl = window.__mlsRelayLink; if (rl && typeof rl.shouldRelay === 'function' && rl.shouldRelay()) return; } catch (e) {}
+        try { var dr = window.__mlsDeviceRole; if (dr && typeof dr.effectiveRole === 'function' && dr.effectiveRole() === 'phone') return; } catch (e) {}
+        if (conn.autoConnects >= 2) return;
+        conn.autoConnects++;
+      }
       if (conn.everConnected) ensure('reconnect', {});
       else ensure('connect', {});
     }
@@ -177,7 +190,7 @@
     }, 6000);
   }
   function onPong(d) {
-    conn.lastPong = now(); conn.everConnected = true;
+    conn.lastPong = now(); conn.everConnected = true; conn.autoConnects = 0;
     if (conn.pingTimer) { clearTimeout(conn.pingTimer); conn.pingTimer = null; }
     var v = text(d && d.version, 20);
     finish('connect', 'complete', 'Connected' + (v ? ' — MLS Assist v' + v : '') + '.');

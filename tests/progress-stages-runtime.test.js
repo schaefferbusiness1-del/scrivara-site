@@ -71,7 +71,15 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed && lb.version === 'lb-2.0.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.0.0', 'progress-stages module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.0.1', 'progress-stages module missing');
+/* ps-1.0.1: extension-less devices must not loop doomed auto "Connecting to
+   Athena" jobs (Codex-flagged passive loop). Relay/phone devices never
+   auto-spawn one; elsewhere the streak caps at 2 until a real pong re-arms. */
+const psSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'feat_mls_progress_stages.js'), 'utf8');
+assert(psSrc.includes('rl.shouldRelay === \'function\' && rl.shouldRelay()) return;'), 'relay devices can loop doomed connect jobs again');
+assert(psSrc.includes("dr.effectiveRole() === 'phone') return;"), 'phone devices can loop doomed connect jobs again');
+assert(psSrc.includes('if (conn.autoConnects >= 2) return;'), 'doomed connect-job streak cap was lost');
+assert(psSrc.includes('conn.everConnected = true; conn.autoConnects = 0;'), 'pong no longer re-arms the connect-job cap');
 assert(messageListeners.length >= 1, 'observer did not attach a message listener');
 
 function post(data) { messageListeners.forEach(fn => fn({ data })); }

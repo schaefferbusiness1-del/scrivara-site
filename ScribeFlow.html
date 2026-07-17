@@ -3047,7 +3047,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </label>
       </div>
 
-      <!-- b388: this was a checkbox wired to a hard-false reader (a deliberate
+      <!-- b390: this was a checkbox wired to a hard-false reader (a deliberate
            write-safety neuter) — a visible switch connected to nothing. State
            the guarantee as fact instead of showing a dead control. -->
       <div class="field">
@@ -3294,7 +3294,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
         </ol>
       </div>
-      <!-- b388: the "Rated on MLS" website-badge console existed but had NO
+      <!-- b390: the "Rated on MLS" website-badge console existed but had NO
            entry point anywhere in the app (reachable only by typed URL). -->
       <div class="row tight" style="margin-top:12px">
         <a class="btn-ghost" style="font-size:14px;padding:9px 15px;text-decoration:none" href="mls-widgets.html" target="_blank" rel="noopener">🔖 Website badges — embed "Rated on MLS" on your site</a>
@@ -3341,7 +3341,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="note" style="margin:2px 0 10px">Once your EMR is connected, MLS can automatically pull <b>every patient</b> (and their visit history) out of your EMR each night and back them up here — running on our server, so your office computer doesn't need to be on. Stored encrypted, same as in-app charts.</p>
       <div style="background:#eafaf0;border:1px solid #bfe6cf;border-radius:10px;padding:10px 13px;margin:0 0 10px;font-size:13px;color:#1c7a43">🩺 <b>No Athena developer API? You don't need it.</b> MLS Assist (the browser extension) runs this exact nightly backup straight from your signed-in EMR tab — no API access required. Click the MLS Assist toolbar icon → set the <b>Nightly EMR backup</b> time there. (Leave Chrome open and the EMR signed in overnight.) The server-side version below is only for practices that have full Athena API access.</div>
       <div id="emrSyncBox" style="background:#F6FBF8;border:1px solid #d7e6fb;border-radius:10px;padding:12px 14px">
-        <!-- b388: this is the FHIR/API nightly backup — a DIFFERENT system from
+        <!-- b390: this is the FHIR/API nightly backup — a DIFFERENT system from
              the Visit tab's "Pull this day" (which reads athenaOne through the
              MLS Assist extension on your office computer). Say so, and be
              honest about connection scope. -->
@@ -6147,7 +6147,7 @@ function getPatients(){
 var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null;
 function savePatients(arr){
   var __json=JSON.stringify(arr);
-  /* b388 perf: identical content + untouched storage → skip the multi-MB LZ
+  /* b390 perf: identical content + untouched storage → skip the multi-MB LZ
      compress and the write outright. Render/sweep paths re-save unchanged
      rosters more often than they change them. The getItem identity check
      keeps external writers (other tabs, imports) honest. */
@@ -10915,7 +10915,7 @@ function _opNeedleHtml(i, mf, row){
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
 async function opPrepGenerateOne(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
-  /* b388: a successful re-draft used to silently overwrite the doctor's hand
+  /* b390: a successful re-draft used to silently overwrite the doctor's hand
      edits. Edited drafts now need a second, explicit click to discard. */
   if(row.edited && !row._confirmRedraft){
     row._confirmRedraft=true;
@@ -10939,7 +10939,7 @@ async function opPrepGenerateOne(i){
     if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
-    row._genNote=row.note; row.edited=false; /* b388: fresh draft = pristine baseline for the edit guard */
+    row._genNote=row.note; row.edited=false; /* b390: fresh draft = pristine baseline for the edit guard */
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
@@ -10965,7 +10965,7 @@ function opPrepAutosaveDraft(i){
 async function opPrepGenerateAll(){
   var rows=window._opPrep||[]; var st=document.getElementById('opPrepStatus');
   if(!getTemplates().length){ try{ toast('Upload your op-note templates first (📄 Templates).','err'); }catch(e){} return; }
-  /* b388: "Draft all" never touches a row the doctor hand-edited. */
+  /* b390: "Draft all" never touches a row the doctor hand-edited. */
   var skipped=0, drafted=0;
   for(var i=0;i<rows.length;i++){
     if(rows[i].edited){ skipped++; continue; }
@@ -11988,7 +11988,7 @@ function renderHistory(){
   let _plm=null; const _plistMap=()=>{ if(!_plm){ _plm=new Map(); try{ (typeof getPatients==='function'?getPatients():[]).forEach(x=>{ if(x)_plm.set(x.id,x); }); }catch(e){} } return _plm; };
   const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
   const total=ordered.length;
-  /* b388 History cleanup: bulk chart pulls save one "Athena chart import"
+  /* b390 History cleanup: bulk chart pulls save one "Athena chart import"
      receipt note per patient with a fresh timestamp — after a big pull they
      buried every real visit under a wall of near-identical rows. In the
      default (All) view they now collapse into ONE summary row; the new
@@ -12014,7 +12014,7 @@ function renderHistory(){
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
     const kindTag = n.kind==='opnote' ? ' <span class="badge" style="background:#eef0ff;color:#2E6A4B;border-color:#EAF1EE">💉 Op note</span>' : '';
-    /* b388: LLM filler phrases used to become row titles verbatim. */
+    /* b390: LLM filler phrases used to become row titles verbatim. */
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     const cc = esc(_ccRaw);
@@ -20883,7 +20883,7 @@ async function loadEmrSync(){
       : '🟡 No EMR connected yet. Connect your EMR first (this needs Athena API/developer access for your practice). The schedule below will save and start working the moment the EMR is connected.';
     const st=document.getElementById('emrSyncStatus');
     if(st) st.innerHTML = (d.lastRun? ('Last run '+new Date(d.lastRun).toLocaleString()+'. '+_emrSyncFmtResult(d.lastResult)) : 'Has not run yet.');
-    /* b388: a failing nightly backup used to be invisible unless this panel
+    /* b390: a failing nightly backup used to be invisible unless this panel
        was reopened. Make the failure loud where the schedule lives. */
     try{
       if(d.lastRun && d.lastResult && d.lastResult.ok===false && st){
@@ -23932,7 +23932,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b389';
+  window.__MLS_AV='b390';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
