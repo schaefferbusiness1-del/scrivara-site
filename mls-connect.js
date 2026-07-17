@@ -31921,7 +31921,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b344';
+  window.__MLS_AV = window.__MLS_AV || 'b345';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32212,7 +32212,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b344';
+  var MLS_APP_BUILD='2026-07-16-b345';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41827,6 +41827,14 @@
      computer is reachable before the doctor relies on it. 45s, fetch-driven. */
   function beacon() {
     if (!authed() || !api.extPresent()) return;
+    /* dr-1.0.0: only the OFFICE computer claims office presence. A secondary
+       laptop that happens to have the extension must not make phones believe
+       the office machine is on. (No role module / no role chosen yet =
+       legacy behavior, so nothing regresses for older accounts.) */
+    try {
+      var dr = window.__mlsDeviceRole;
+      if (dr && typeof dr.effectiveRole === 'function' && dr.effectiveRole() !== 'office') return;
+    } catch (e) {}
     fetch(base() + '/api/relay/presence', { method: 'POST', headers: H(), body: JSON.stringify({ ext: true }) }).catch(function () {});
   }
   var beaconIv = setInterval(function () { try { beacon(); } catch (e) {} }, 45000);
@@ -41847,15 +41855,19 @@
       if (!bar) {
         bar = document.createElement('div'); bar.id = 'mlsRlPhoneBar';
         bar.style.cssText = 'display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:9px 13px;margin:0 0 10px;font:600 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;box-shadow:0 1px 2px rgba(20,33,28,.04)';
-        bar.innerHTML = '<span>📱 Phone mode</span><span id="mlsRlPresence" style="color:#79837C;font-weight:500">— checking your office computer…</span>';
+        var roleLbl = '📱 Phone mode';
+        try { var dr0 = window.__mlsDeviceRole; if (dr0 && dr0.role && dr0.role() === 'secondary') roleLbl = '💻 Remote mode'; } catch (e) {}
+        bar.innerHTML = '<span>' + roleLbl + '</span><span id="mlsRlPresence" style="color:#79837C;font-weight:500">— checking your office computer…</span>';
         body.insertBefore(bar, body.firstChild);
       }
       fetch(base() + '/api/relay/presence', { headers: H() })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (p) {
           var el = $('mlsRlPresence'); if (!el || !p) return;
-          if (p.online && p.ext) { el.textContent = '— office computer connected ✓ (' + (p.ageSec != null ? p.ageSec + 's ago' : 'just now') + '). Pulls you start here run there.'; el.style.color = '#2E6A4B'; }
-          else { el.textContent = '— office computer NOT reachable ✗. Open MLS there (with the extension) to pull from Athena.'; el.style.color = '#8A5A00'; }
+          var who = p.officeName ? ('"' + p.officeName + '"' + (p.officeOs ? ' (' + p.officeOs + ')' : '')) : 'office computer';
+          if (p.online && p.ext) { el.textContent = '— ' + who + ' connected ✓ (last heartbeat ' + (p.ageSec != null ? p.ageSec + 's ago' : 'just now') + '). Pulls you start here run there.'; el.style.color = '#2E6A4B'; }
+          else if (p.officeName) { el.textContent = '— ' + who + ' NOT reachable ✗ (last heartbeat ' + (p.ageSec != null ? Math.round(p.ageSec / 60) + 'm ago' : 'unknown') + '). Open MLS there with the extension.'; el.style.color = '#8A5A00'; }
+          else { el.textContent = '— no office computer set up yet ✗. On the machine with the MLS Assist extension, open Settings → Integrations and set its role to "Office computer".'; el.style.color = '#8A5A00'; }
         }).catch(function () {});
     } catch (e) {}
   }
@@ -41869,12 +41881,30 @@
     function stat(m) { try { if (hooks.onStatus) hooks.onStatus(m); } catch (e) {} }
     function done(ok, msg) { try { if (hooks.onDone) hooks.onDone(ok, msg); } catch (e) {} }
     if (!authed()) { done(false, 'Sign in first.'); return; }
+    stat('Checking your office computer…');
+    /* dr-1.0.0 FAIL-FAST: don't queue a job into the void. If the office
+       computer hasn't heartbeated recently, say so NOW with the fix, instead
+       of 64 polls of "Waiting for your office computer…". A presence-check
+       network error falls through to the old path (never block on a hiccup). */
+    fetch(base() + '/api/relay/presence', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (p) {
+        if (p && p.ok && !(p.online && p.ext)) {
+          var who = p.officeName ? ('Your office computer "' + p.officeName + '"') : 'No office computer is connected';
+          var when = p.ageSec != null ? ' (last seen ' + (p.ageSec < 120 ? p.ageSec + 's' : Math.round(p.ageSec / 60) + 'm') + ' ago)' : '';
+          done(false, who + (p.officeName ? ' is not reachable' : '') + when + '. Open MLS there with the MLS Assist extension' + (p.officeName ? '' : ', and set its role to "Office computer" in Settings → Integrations') + ', then try again.');
+          return;
+        }
+        queueJob();
+      });
+    function queueJob() {
     stat('Asking your office computer to pull ' + date + '…');
     fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({ kind: 'pullDay', payload: { date: date } }) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || !j.ok) { done(false, (j && j.error) || 'Could not queue the request.'); return; }
-        var id = j.id, tries = 0;
+        var id = j.id, tries = 0, queuedPolls = 0;
         var pi = setInterval(function () {
           tries++;
           if (tries > 64) { clearInterval(pi); done(false, 'No answer from the office computer — make sure MLS is open there with the extension, then try again.'); return; }
@@ -41882,7 +41912,15 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (s) {
               var job = s && s.job; if (!job) return;
-              if (job.status === 'queued') stat('Waiting for your office computer… (MLS must be open there)');
+              if (job.status === 'queued') {
+                queuedPolls++;
+                /* dr-1.0.0: a healthy office computer takes the job within
+                   ~8s (it polls every 4s). 30s still queued = it went away
+                   (sleep/lid closed/tab closed) — say so instead of grinding
+                   out the full 160s. */
+                if (queuedPolls > 12) { clearInterval(pi); done(false, 'Your office computer never picked the request up — it may have gone to sleep or MLS was closed there. Wake it, keep MLS open with the extension, then try again.'); return; }
+                stat('Waiting for your office computer… (MLS must be open there)');
+              }
               if (job.status === 'taken') stat('Your office computer is pulling from Athena…');
               if (job.status === 'done') {
                 clearInterval(pi);
@@ -41896,6 +41934,7 @@
         }, 2500);
       })
       .catch(function () { done(false, 'Network error — try again.'); });
+    }
   };
 
   /* =================== QR PAIRING CARD (Settings > Integrations) =================== */
@@ -41989,7 +42028,20 @@
     try {
       if (sessionStorage.getItem('mls_phone_mode') === '1') return true;
       if (sessionStorage.getItem('mls_phone_mode') === '0') return false;
-      return window.innerWidth <= 760 && !extPresent();
+      /* dr-1.0.0 (device-role fix): an EXPLICIT role always wins — a MacBook/
+         laptop set to "office" or "secondary" NEVER gets the phone UI, no
+         matter how narrow its window is. */
+      var dr = window.__mlsDeviceRole;
+      if (dr && typeof dr.role === 'function') {
+        var r = dr.role();
+        if (r) return r === 'phone';
+      }
+      /* No role chosen yet: only true handheld EVIDENCE counts (mobile UA +
+         touch). Window width is NOT evidence — that was the bug that put
+         narrow-windowed MacBooks/Windows laptops into phone mode. */
+      var handheld = /iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
+        ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+      return handheld && !extPresent();
     } catch (e) { return false; }
   }
 
@@ -42147,5 +42199,297 @@
     try { clearInterval(iv); } catch (e) {}
     try { st.remove(); document.body.classList.remove('mls-phone'); var b = $('mlsPhExit'); if (b) b.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsPhoneHome;
+  };
+})();
+
+/* ===== __mlsDeviceRole dr-1.0.0 (2026-07-16 - EXPLICIT device roles.
+ * Owner problem: MacBooks/Windows laptops were misidentified as phones
+ * (the old signal was window width), laptops got stuck on "waiting for
+ * office computer", and stale sessions confused everyone.
+ * THE MODEL: every signed-in device has one explicit role -
+ *   office     = the machine with the MLS Assist extension that runs Athena
+ *                pulls (there should be exactly one; it beacons presence),
+ *   secondary  = another computer (MacBook at home, second laptop) - full
+ *                app UI, pulls relay to the office computer,
+ *   phone      = handheld/remote - stripped phone UI, pulls relay too.
+ * Role is chosen by the user (a one-time suggestion card proposes one from
+ * EVIDENCE - extension present / mobile UA+touch - never window size) and is
+ * stored per device in localStorage. Every device heartbeats id+role+name+
+ * os+browser to /api/relay/devices/heartbeat (45s); Settings > Integrations
+ * gets a "This device & connected devices" card: current role, device name
+ * (renamable), OS, browser, the connected office computer + its last
+ * heartbeat, every account device with online/stale state, change-role
+ * control, and Forget for stale rows.
+ * Consumers: __mlsPhoneHome.wantPhone() and __mlsRelayLink.beacon() consult
+ * this module (edits in those modules, same build).
+ * Reversible: revert(). ES5. */
+(function () {
+  if (window.__mlsDeviceRole) return;
+  var api = { installed: true, version: 'dr-1.0.0' };
+  window.__mlsDeviceRole = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
+  function tok() { try { return (typeof window.bkToken === 'function') ? window.bkToken() : ''; } catch (e) { return ''; } }
+  function base() { try { return (typeof window.bkBase === 'function') ? window.bkBase() : ''; } catch (e) { return ''; } }
+  function authed() { try { return typeof window.backendMode === 'function' && window.backendMode() && !!tok(); } catch (e) { return false; } }
+  function H() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() }; }
+  function ls(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /* ---- stable device identity ---- */
+  var DID = ls('mls_device_id');
+  if (!DID || !/^[A-Za-z0-9_-]{6,64}$/.test(DID)) {
+    DID = 'dv_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    lsSet('mls_device_id', DID);
+  }
+  api.deviceId = DID;
+
+  /* ---- environment facts (display + suggestion evidence; UA never decides
+     a role on its own - it only feeds the SUGGESTION the user confirms) ---- */
+  function detectOS() {
+    try {
+      var ua = navigator.userAgent || '';
+      var p = (navigator.userAgentData && navigator.userAgentData.platform) || '';
+      if (/Windows/i.test(p) || /Windows NT/i.test(ua)) return 'Windows';
+      if (/iPhone|iPod/i.test(ua)) return 'iOS';
+      if (/iPad/i.test(ua)) return 'iPadOS';
+      if (/macOS|Mac OS X|Macintosh/i.test(p + ' ' + ua)) {
+        /* modern iPads present as Macintosh - touch tells them apart */
+        return ((navigator.maxTouchPoints || 0) > 1) ? 'iPadOS' : 'macOS';
+      }
+      if (/Android/i.test(p + ' ' + ua)) return 'Android';
+      if (/CrOS/i.test(ua)) return 'ChromeOS';
+      if (/Linux/i.test(p + ' ' + ua)) return 'Linux';
+    } catch (e) {}
+    return 'Unknown OS';
+  }
+  function detectBrowser() {
+    try {
+      var ua = navigator.userAgent || '';
+      if (/Edg\//.test(ua)) return 'Edge';
+      if (/OPR\//.test(ua)) return 'Opera';
+      if (/CriOS\//.test(ua)) return 'Chrome (iOS)';
+      if (/FxiOS\//.test(ua)) return 'Firefox (iOS)';
+      if (/Firefox\//.test(ua)) return 'Firefox';
+      if (/Chrome\//.test(ua)) return 'Chrome';
+      if (/Safari\//.test(ua)) return 'Safari';
+    } catch (e) {}
+    return 'Unknown browser';
+  }
+  var OS = detectOS(), BROWSER = detectBrowser();
+  api.os = OS; api.browser = BROWSER;
+  function handheldEvidence() {
+    try {
+      return /iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
+        ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+    } catch (e) { return false; }
+  }
+  function extPresent() {
+    try { var rl = window.__mlsRelayLink; return rl && rl.extPresent ? rl.extPresent() : !!window.__mlsExtReportedVersion; } catch (e) { return false; }
+  }
+
+  var ROLES = { office: 'Office computer', secondary: 'Secondary computer', phone: 'Phone / remote' };
+  function validRole(r) { return r === 'office' || r === 'secondary' || r === 'phone'; }
+  api.role = function () { var r = ls('mls_device_role'); return validRole(r) ? r : null; };
+  api.suggestRole = function () {
+    try { if (sessionStorage.getItem('mls_phone_mode') === '1') return 'phone'; } catch (e) {}
+    if (handheldEvidence()) return 'phone';
+    if (extPresent()) return 'office';
+    return 'secondary';
+  };
+  api.effectiveRole = function () { return api.role() || api.suggestRole(); };
+  api.setRole = function (r) {
+    if (!validRole(r)) return false;
+    lsSet('mls_device_role', r);
+    /* phone role also drives the stripped UI flag the ph module reads */
+    try {
+      if (r === 'phone') sessionStorage.setItem('mls_phone_mode', '1');
+      else sessionStorage.setItem('mls_phone_mode', '0');
+    } catch (e) {}
+    /* re-render surfaces that captured the old role */
+    try { var pb = $('mlsRlPhoneBar'); if (pb) pb.remove(); } catch (e) {}
+    try { if (window.__mlsPhoneHome && window.__mlsPhoneHome.ensure) window.__mlsPhoneHome.ensure(); } catch (e) {}
+    try { if (window.__mlsRelayLink && window.__mlsRelayLink.phoneBarTick) window.__mlsRelayLink.phoneBarTick(); } catch (e) {}
+    heartbeat();
+    toast('This device is now: ' + ROLES[r] + '.', 'ok');
+    try { renderPanelRows(); } catch (e) {}
+    return true;
+  };
+  api.name = function () { return ls('mls_device_name') || (OS + ' · ' + BROWSER); };
+  api.setName = function (n) {
+    n = String(n || '').trim().slice(0, 80);
+    if (!n) return false;
+    lsSet('mls_device_name', n);
+    heartbeat();
+    return true;
+  };
+
+  /* ---- heartbeat ---- */
+  var lastBeat = 0;
+  function heartbeat() {
+    if (!authed()) return;
+    lastBeat = Date.now();
+    fetch(base() + '/api/relay/devices/heartbeat', {
+      method: 'POST', headers: H(),
+      body: JSON.stringify({ deviceId: DID, role: api.effectiveRole(), name: api.name(), os: OS, browser: BROWSER, ext: extPresent() })
+    }).catch(function () {});
+  }
+  api.heartbeat = heartbeat;
+  var beatIv = setInterval(function () { try { heartbeat(); } catch (e) {} }, 45000);
+  setTimeout(function () { try { heartbeat(); } catch (e) {} }, 4000);
+  try {
+    document.addEventListener('visibilitychange', function () {
+      /* wake-from-sleep / tab-refocus: heartbeat immediately so "last seen"
+         is honest within seconds, not 45s (Mac lid-close case) */
+      if (document.visibilityState === 'visible' && Date.now() - lastBeat > 15000) heartbeat();
+    });
+  } catch (e) {}
+
+  /* ---- first-run role confirmation (never silently classify) ---- */
+  function roleBanner() {
+    try {
+      if (!authed() || api.role()) { var ex = $('mlsDrBanner'); if (ex) ex.remove(); return; }
+      try { if (sessionStorage.getItem('mls_dr_banner_snooze') === '1') return; } catch (e) {}
+      if ($('mlsDrBanner')) return;
+      var body = $('mlsEz3Body'); if (!body) return;
+      var sug = api.suggestRole();
+      var card = document.createElement('div');
+      card.id = 'mlsDrBanner';
+      card.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:10px 13px;margin:0 0 10px;font:600 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;box-shadow:0 1px 2px rgba(20,33,28,.04)';
+      function btn(role, label) {
+        var solid = role === sug;
+        return '<button type="button" class="mlsDrPick" data-role="' + role + '" style="border:1px solid ' + (solid ? '#204034' : '#E4E1D8') + ';background:' + (solid ? '#204034' : '#FCFBF8') + ';color:' + (solid ? '#fff' : '#1A211C') + ";font:600 12px 'Public Sans',system-ui,sans-serif;border-radius:8px;padding:7px 12px;cursor:pointer\">" + label + (solid ? ' (suggested)' : '') + '</button>';
+      }
+      card.innerHTML = '<span>What is this device? <span style="color:#79837C;font-weight:500">(' + esc(OS) + ' · ' + esc(BROWSER) + ')</span></span>' +
+        btn('office', '🖥 Office computer') + btn('secondary', '💻 Secondary computer') + btn('phone', '📱 Phone / remote') +
+        '<button type="button" id="mlsDrSnooze" title="Ask me later" style="margin-left:auto;border:0;background:transparent;color:#79837C;font-size:16px;cursor:pointer;line-height:1">×</button>';
+      body.insertBefore(card, body.firstChild);
+      var picks = card.querySelectorAll('.mlsDrPick');
+      for (var i = 0; i < picks.length; i++) {
+        picks[i].addEventListener('click', function () { api.setRole(this.getAttribute('data-role')); var c = $('mlsDrBanner'); if (c) c.remove(); });
+      }
+      $('mlsDrSnooze').addEventListener('click', function () { try { sessionStorage.setItem('mls_dr_banner_snooze', '1'); } catch (e) {} card.remove(); });
+    } catch (e) {}
+  }
+
+  /* ---- Settings > Integrations: devices card ---- */
+  function ago(sec) {
+    if (sec == null) return 'unknown';
+    if (sec < 5) return 'just now';
+    if (sec < 120) return sec + 's ago';
+    if (sec < 7200) return Math.round(sec / 60) + 'm ago';
+    return Math.round(sec / 3600) + 'h ago';
+  }
+  function fetchDevices(cb) {
+    if (!authed()) { cb(null); return; }
+    fetch(base() + '/api/relay/devices', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { cb(j && j.ok ? j : null); })
+      .catch(function () { cb(null); });
+  }
+  function renderPanelRows() {
+    var rows = $('mlsDrRows'); if (!rows) return;
+    var roleNow = api.role();
+    var head = $('mlsDrThisLine');
+    if (head) head.innerHTML = '<b>' + esc(api.name()) + '</b> · ' + esc(OS) + ' · ' + esc(BROWSER) +
+      ' · role: <b>' + esc(roleNow ? ROLES[roleNow] : (ROLES[api.suggestRole()] + ' (suggested, not confirmed)')) + '</b>' +
+      (extPresent() ? ' · extension ✓' : '');
+    var seg = $('mlsDrSeg');
+    if (seg) {
+      var bs = seg.querySelectorAll('button[data-role]');
+      for (var i = 0; i < bs.length; i++) {
+        var on = bs[i].getAttribute('data-role') === roleNow;
+        bs[i].style.background = on ? '#204034' : '#FCFBF8';
+        bs[i].style.color = on ? '#fff' : '#1A211C';
+        bs[i].style.borderColor = on ? '#204034' : '#E4E1D8';
+      }
+    }
+    rows.innerHTML = '<p class="set-desc" style="margin:6px 0">Loading devices…</p>';
+    fetchDevices(function (j) {
+      if (!rows.isConnected) return;
+      if (!j) { rows.innerHTML = '<p class="set-desc" style="margin:6px 0">Could not load the device list (offline or signed out).</p>'; return; }
+      var offLine = '';
+      if (j.office) {
+        offLine = j.officeOnline
+          ? '<p class="set-desc" style="margin:6px 0;color:#2E6A4B">Office computer: <b>' + esc(j.office.name) + '</b> (' + esc(j.office.os || '') + ') — connected ✓, last heartbeat ' + ago(j.office.ageSec) + '.</p>'
+          : '<p class="set-desc" style="margin:6px 0;color:#8A5A00">Office computer: <b>' + esc(j.office.name) + '</b> — NOT reachable ✗, last heartbeat ' + ago(j.office.ageSec) + '. Open MLS there with the extension.</p>';
+      } else {
+        offLine = '<p class="set-desc" style="margin:6px 0;color:#8A5A00">No office computer yet — on the machine with the MLS Assist extension, set its role to “Office computer” here.</p>';
+      }
+      var html = offLine;
+      if (!j.devices.length) html += '<p class="set-desc" style="margin:6px 0">No devices have checked in yet (devices appear within ~45s of opening MLS while signed in).</p>';
+      for (var i = 0; i < j.devices.length; i++) {
+        var d = j.devices[i];
+        var mine = d.id === DID;
+        html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #EFEDE6;border-radius:9px;padding:7px 10px;margin:5px 0;font:500 12px \'Public Sans\',system-ui,sans-serif;color:#1A211C">' +
+          '<span style="width:8px;height:8px;border-radius:99px;background:' + (d.online ? '#2E6A4B' : '#B7BBB2') + '" title="' + (d.online ? 'online' : 'stale') + '"></span>' +
+          '<b>' + esc(d.name) + '</b>' + (mine ? ' <span style="color:#2E6A4B">(this device)</span>' : '') +
+          '<span style="color:#79837C">' + esc(ROLES[d.role] || d.role) + ' · ' + esc(d.os || '?') + ' · ' + esc(d.browser || '?') + (d.ext ? ' · extension ✓' : '') + '</span>' +
+          '<span style="color:' + (d.online ? '#2E6A4B' : '#8A5A00') + '">last heartbeat ' + ago(d.ageSec) + '</span>' +
+          (mine ? '' : '<button type="button" class="mlsDrForget" data-id="' + esc(d.id) + '" style="margin-left:auto;border:1px solid #E4E1D8;background:#FCFBF8;color:#B23B3B;font:600 11px system-ui;border-radius:7px;padding:4px 9px;cursor:pointer">Forget</button>') +
+          '</div>';
+      }
+      rows.innerHTML = html;
+      var fs = rows.querySelectorAll('.mlsDrForget');
+      for (var k = 0; k < fs.length; k++) {
+        fs[k].addEventListener('click', function () {
+          var id = this.getAttribute('data-id'); var b = this; b.disabled = true;
+          fetch(base() + '/api/relay/devices/' + encodeURIComponent(id) + '/forget', { method: 'POST', headers: H() })
+            .then(function () { toast('Device forgotten. It will reappear if it signs in again.', 'ok'); renderPanelRows(); })
+            .catch(function () { b.disabled = false; toast('Could not forget that device - try again.', 'err'); });
+        });
+      }
+    });
+  }
+  api.renderPanelRows = renderPanelRows;
+  function segBtnCss() { return "border:1px solid #E4E1D8;background:#FCFBF8;color:#1A211C;font:600 12px 'Public Sans',system-ui,sans-serif;border-radius:8px;padding:7px 12px;cursor:pointer"; }
+  function ensureCard() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      if ($('mlsDrCard')) return;
+      var heads = modal.querySelectorAll('.set-head'); var host = null;
+      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+      if (!host) return;
+      var card = document.createElement('div');
+      card.id = 'mlsDrCard'; card.className = 'field';
+      card.innerHTML = '<label style="font-weight:600">🖥 This device & connected devices</label>' +
+        '<p class="set-desc" id="mlsDrThisLine" style="margin:4px 0 8px"></p>' +
+        '<div id="mlsDrSeg" style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
+        '<button type="button" data-role="office" style="' + segBtnCss() + '">🖥 Office computer</button>' +
+        '<button type="button" data-role="secondary" style="' + segBtnCss() + '">💻 Secondary computer</button>' +
+        '<button type="button" data-role="phone" style="' + segBtnCss() + '">📱 Phone / remote</button>' +
+        '<button type="button" id="mlsDrRename" style="' + segBtnCss() + '">✎ Rename</button>' +
+        '<button type="button" id="mlsDrRefresh" style="' + segBtnCss() + '">↻ Refresh</button>' +
+        '</div>' +
+        '<p class="set-desc" style="margin:2px 0 6px;color:#79837C">The office computer is the machine with the MLS Assist extension that runs Athena pulls. Phones and secondary computers send their pulls to it.</p>' +
+        '<div id="mlsDrRows"></div>';
+      host.appendChild(card);
+      var segBtns = card.querySelectorAll('#mlsDrSeg button[data-role]');
+      for (var b = 0; b < segBtns.length; b++) {
+        segBtns[b].addEventListener('click', function () {
+          var r = this.getAttribute('data-role');
+          if (r === 'office' && !extPresent()) {
+            if (!window.confirm('This device does not report the MLS Assist extension, so it cannot run Athena pulls yet. Set it as the Office computer anyway?')) return;
+          }
+          api.setRole(r);
+        });
+      }
+      $('mlsDrRename').addEventListener('click', function () {
+        var n = window.prompt('Name this device (shown to your other devices):', api.name());
+        if (n != null && api.setName(n)) { toast('Device renamed.', 'ok'); renderPanelRows(); }
+      });
+      $('mlsDrRefresh').addEventListener('click', function () { heartbeat(); renderPanelRows(); });
+      renderPanelRows();
+    } catch (e) {}
+  }
+  var cardIv = setInterval(function () { try { ensureCard(); roleBanner(); } catch (e) {} }, 1600);
+  setTimeout(function () { try { roleBanner(); } catch (e) {} }, 3500);
+
+  api.revert = function () {
+    try { clearInterval(beatIv); clearInterval(cardIv); } catch (e) {}
+    try { var c = $('mlsDrCard'); if (c) c.remove(); var b = $('mlsDrBanner'); if (b) b.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsDeviceRole;
   };
 })();
