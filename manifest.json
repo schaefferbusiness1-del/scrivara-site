@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "2.9.35",
-  "version_name": "2.9.35+core-sha256:2b6e49ba36910173e8952e1529b5a54c95d701fb041feeb552d1cc58b4e82627",
+  "version": "2.9.36",
+  "version_name": "2.9.36+core-sha256:dc04b97e290081e54a226634ccbd5b32f36c7cfc951202163096d26dbd41f51e",
   "description": "AI scribe + supervised autopilot for any web EMR. Captures visits, drafts notes, and acts on screen with your approval.",
   "permissions": [
     "storage",

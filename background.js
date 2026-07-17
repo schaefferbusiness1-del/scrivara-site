@@ -2440,6 +2440,15 @@ function mlsAthenaTeachWatcherFn(config) {
   }
 
   async function ensureBody(tab, senderTabId) {
+    /* v2.9.36: establish the quiet-work LEASE first - mlsPickAthenaTab pins
+       every later read in this cohort to this EXACT tab, so a second signed-in
+       Athena tab can never hop the batch mid-run (the same-frame-name-mismatch
+       / wrong-tab class). The watchdog release clears the lease as before.
+       No window is ever created, moved, or resized (v2.9.35 directive). */
+    QP.athenaTabId = tab.id; QP.winId = null; QP.soloWin = false; QP.orig = null; QP.athOrig = null; QP.strip = null;
+    QP.hostWinId = null; QP.hostOrig = null;
+    QP.active = true; QP.flashed = false;
+    persist();
     if (await tabVisible(tab.id)) return 'visible'; /* already on screen (incl. doctor parked on athena) */
     /* v2.9.35 owner directive: a read must NEVER create, move, or resize a
        browser window. The old quiet-pull work-strip (windows.create at preset
