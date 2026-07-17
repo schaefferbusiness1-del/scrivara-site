@@ -30,6 +30,7 @@ const tests = [
   'day-progress-time-runtime.test.js',
   'day-progress-responsive-layout-contract.test.js',
   'cross-day-appointment-context-runtime.test.js',
+  'visit-active-controls-contrast-contract.test.js',
   'easy-transcript-continuity.test.js',
   'easy-lane-engine-rewrite-runtime.test.js',
   'easy-pause-resume-runtime.test.js',

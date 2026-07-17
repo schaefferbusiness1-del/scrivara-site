@@ -5748,7 +5748,8 @@
        card — but ACTIVE (.on) chips keep their dark fills, so they stay white. */
     '#mlsEz3 .ez3-sm:not(.pri),#mlsEz3 .ez3-exbtn:not(.rec):not(.send),#mlsEz3 .ez3-qchip:not(.on),#mlsEz3 .ez3-chip:not(.on),#mlsEz3 .ez3-more{color:#1A211C !important;}',
     '#mlsEz3 .ez3-warnbar{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;font-weight:650 !important;}',
-    '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
+    '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;font-weight:800 !important;box-shadow:0 0 0 2px rgba(32,64,52,.24) !important;}',
+    '#mlsEz3 .ez3-qchip.on.seen{opacity:1 !important;}',
     /* 1d) Easy step-flow sub-states on the light card */
     '#mlsEz3 .ez3-back{color:#55605A !important;}',
     '#mlsEz3 .ez3-badge.dob{color:#1A211C !important;background:#F2F0E9 !important;border-color:#E4E1D8 !important;}',
@@ -10495,7 +10496,7 @@
   'use strict';
   if (window.__mlsUxPhoneMicRestore) { return; }
 
-  var api = { ver: '1.0.0', phoneMicOpens: 0, pasteOpens: 0 };
+  var api = { ver: '1.0.1', phoneMicOpens: 0, pasteOpens: 0 };
   window.__mlsUxPhoneMicRestore = api;
 
   function safe(fn, fallback) {
@@ -10585,6 +10586,14 @@
       row.id = ROW_ID;
       row.className = 'ez3-row2';
       row.style.cssText = 'margin-top:6px';
+      /* The Visit theme intentionally left-aligns ordinary secondary rows.
+         This standalone two-button capture row is one visual unit, so center
+         it explicitly; inline !important outranks the shared row rule while
+         leaving every other Visit action row unchanged. */
+      row.style.setProperty('justify-content', 'center', 'important');
+      row.style.setProperty('align-items', 'center', 'important');
+      row.style.setProperty('flex-wrap', 'wrap', 'important');
+      row.style.setProperty('width', '100%', 'important');
 
       var pmBtn = document.createElement('button');
       pmBtn.type = 'button';
