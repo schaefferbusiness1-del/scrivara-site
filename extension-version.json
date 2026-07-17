@@ -1,5 +1,5 @@
 {
-  "version": "2.9.29",
+  "version": "2.9.30",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.29 - Everything from v2.9.28's adaptive window sizing plus the office build's field-proven extras, now published for every machine: a crash self-diagnostic (worker errors are recorded the moment they happen and shown in Extension health, so a dead worker is never a mystery again), faster chart reads (per-stage timing receipts and a quicker identity re-confirm when the first read already proved the right patient - saves about 1.5s per chart), and the write-safety review layer exactly as tested live. No behavior changes to pulls or writes."
+  "notes": "v2.9.30 - Teach destination now survives real use: the watching window grows from 60 seconds to 5 minutes, and a click on the wrong spot (or an unlabelable element) no longer ends the session - MLS says what happened and keeps watching until you click the exact field. Wrong-patient clicks still stop immediately. Everything else unchanged from v2.9.29."
 }

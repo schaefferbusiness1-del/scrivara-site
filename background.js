@@ -1495,7 +1495,7 @@ function mlsAthenaTeachWatcherFn(config) {
     config = config || {};
     var KEY = '__mlsDestinationTeachWatcherV2';
     var prior = globalThis[KEY];
-    var sessionId = String(config.sessionId || ''), timeoutMs = Math.max(5000, Math.min(60000, Number(config.timeoutMs || 60000)));
+    var sessionId = String(config.sessionId || ''), timeoutMs = Math.max(5000, Math.min(300000, Number(config.timeoutMs || 180000)));
     if (!sessionId) return { ok: false, state: 'failed', reason: 'missing-session' };
     if (config.mode === 'cancel') {
       /* A late cancel may never tear down a newer watcher installed in the same
@@ -2027,8 +2027,11 @@ function mlsAthenaTeachWatcherFn(config) {
         }
         var target = teachTarget(msg.target);
         if (!validTeachTarget(target)) {
-          await retireTeachSession(capturedSession, 'invalid-target', 'The clicked Athena element did not produce a robust selector and section label.');
-          return { ok: false, state: 'failed', reason: 'invalid-target' };
+          /* v2.9.30: a non-teachable click no longer ends the session. The gesture
+             was consumed (nothing ran in Athena), so keep watching and say so. */
+          teachProgress(capturedSession, 'waiting', { ok: true, message: 'That element cannot be taught (no stable label). Still watching - click the exact destination field.' });
+          await teachWatcher(capturedSession.athenaTabId, { mode: 'start', sessionId: requestId, timeoutMs: Math.max(5000, capturedSession.expiresAt - Date.now()) });
+          return { ok: true, state: 'waiting', reason: 'invalid-target-retry' };
         }
         var checked = await injectOnce(capturedSession.athenaTabId, {
           mode: 'teach', action: capturedSession.action, expectedPatient: capturedSession.patient, expectedContext: capturedSession.context,
@@ -2040,8 +2043,15 @@ function mlsAthenaTeachWatcherFn(config) {
         }
         if (!checked || !checked.ok || checked.targetValidated !== true || !checked.contextVerified || !lockedContextShape(checked.context)) {
           var why = clean(checked && (checked.reason || checked.error)) || 'destination-unverified';
-          await retireTeachSession(capturedSession, why, why === 'patient-mismatch' ? 'The open Athena chart is not the patient in this review. Nothing was captured.' : 'That click is not inside the exact typed Athena destination for this patient and action. Nothing was captured.');
-          return { ok: false, state: 'failed', reason: why };
+          if (why === 'patient-mismatch') {
+            await retireTeachSession(capturedSession, why, 'The open Athena chart is not the patient in this review. Nothing was captured.');
+            return { ok: false, state: 'failed', reason: why };
+          }
+          /* v2.9.30: a wrong-spot click no longer ends the session - it was
+             consumed, nothing changed in Athena. Keep watching until timeout. */
+          teachProgress(capturedSession, 'waiting', { ok: true, message: 'Not the destination yet (' + why + '). Still watching - get the exact encounter screen open, then click the exact field.' });
+          await teachWatcher(capturedSession.athenaTabId, { mode: 'start', sessionId: requestId, timeoutMs: Math.max(5000, capturedSession.expiresAt - Date.now()) });
+          return { ok: true, state: 'waiting', reason: why + '-retry' };
         }
         var validatedTarget = teachTarget(checked.target || target);
         if (!detachTeachSession(capturedSession)) return { ok: false, state: 'expired', reason: 'session-expired' };
@@ -2084,7 +2094,7 @@ function mlsAthenaTeachWatcherFn(config) {
       /* Register the pending session before the first await. An immediate Cancel
          can now mark/remove it, and every later await verifies ownership before
          it is allowed to install a watcher. */
-      var timeoutMs = Math.max(5000, Math.min(60000, Number(msg.timeoutMs || 60000))), now = Date.now();
+      var timeoutMs = Math.max(5000, Math.min(300000, Number(msg.timeoutMs || 180000))), now = Date.now();
       var session = { requestId: requestId, appTabId: sender.tab.id, athenaTabId: null, action: action, binding: binding, patient: patient, context: context, issuedAt: now, expiresAt: now + timeoutMs, timer: null, cancelled: false };
       teachSessions[requestId] = session;
       /* One browser-wide teaching gesture at a time. Retire every older exact
