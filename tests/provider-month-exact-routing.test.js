@@ -367,6 +367,17 @@ function assertLateRosterRefresh() {
     }
   });
   assert(calendarRefreshes > 0, 'late canonical roster ingestion must refresh visible Calendar provider chips');
+
+  // pr-sticky: an evidence-free read (empty weekend day, no provider headers,
+  // no error, no conflict) must NOT revoke a session-verified receipt. This is
+  // the exact live failure that made the first clinic day after a weekend fail
+  // its all-provider roster gate on every month pull.
+  assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, true, 'verified receipt missing before the evidence-free read');
+  context.__mlsProviderRoster.ingestResp({ ok: true, text: '', appts: [] });
+  assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, true, 'an evidence-free empty-day read revoked the verified roster receipt');
+  // A read carrying a schedule error is contrary evidence and must still downgrade.
+  context.__mlsProviderRoster.ingestResp({ ok: false, error: 'schedule read failed', text: '', appts: [] });
+  assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, false, 'an errored read must still downgrade the receipt (fail-closed)');
 }
 
 async function main() {

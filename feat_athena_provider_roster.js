@@ -804,7 +804,26 @@
           };
         } else _cacheSanitized = false; /* a fresh exact clean sweep supersedes an old polluted cache */
       }
-      var receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason, requestEchoConflict ? null : boundOperation);
+      /* pr-sticky (live 2026-07-17 month-pull finding): an evidence-free read
+         must not revoke a session-verified roster. Empty weekend days return
+         no provider headers, and their reads used to overwrite the complete
+         receipt with no-provider-headers - so the FIRST clinic day after a
+         weekend always failed its all-provider roster gate ("roster was not
+         verified") and the month pull lost that day, deterministically, on
+         every run. A read downgrades the receipt only when it carries actual
+         contrary evidence: a structured roster (the contamination checks
+         above), a schedule-read error, an identity conflict, or a
+         request-echo conflict. Fail-closed paths are unchanged. */
+      var receipt;
+      var evidenceFree = !structuredRosterRaw.length && !r.error && !requestEchoConflict &&
+        !structuredIdentityConflict && !mergeIdentityConflict &&
+        !(receiptInput && receiptInput.complete === true);
+      if (evidenceFree && lastReceipt && lastReceipt.complete === true && !_cacheSanitized) {
+        receipt = lastReceipt;
+        diag.receiptKept = 'evidence-free-read-kept-verified-receipt';
+      } else {
+        receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason, requestEchoConflict ? null : boundOperation);
+      }
       diag.providerNames = afterList.map(function (e) { return e.name; }).slice(0, 50);
       diag.added = afterList.length - before;
       diag.receipt = receipt;
