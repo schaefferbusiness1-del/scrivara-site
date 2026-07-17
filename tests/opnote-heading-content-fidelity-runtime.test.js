@@ -139,14 +139,20 @@ async function main() {
 
   // 7) oni-2.6.0: [[history]] / [[preoperative_diagnosis]] slots the model
   //    leaves behind are filled from the patient's OWN chart, never invented.
-  const clean2 = api.sanitizeTemplate(BLOB);
+  assert.strictEqual(api.templateCompatibility('Caudal ESI', { text: BLOB }).pass, false,
+    'an incompatible past MBB note was accepted as a caudal template');
+  const CAUDAL_BLOB = BLOB
+    .replace('Bilateral L3 and L4 medial branch blocks (mbbs) and L5 dorsal ramus blocks', 'Caudal epidural steroid injection')
+    .replace('Facet syndrome, lumbar spondylosis', 'Lumbar radiculopathy')
+    .replace('L4/5, L5/S1 zygapophysial (facet) joint pain', 'lumbar radicular pain');
+  const clean2 = api.sanitizeTemplate(CAUDAL_BLOB);
   const lazyDraft = clean2
     .replace('[[patient]]', 'Qa Alpha').replace('[[patient_dob]]', '1970-01-15')
     .replace('[[physician]]', 'Dr. Test').replace('[[date_of_operation]]', '2026-07-17')
     .replace('[[procedure]]', 'Caudal ESI');   // history + preop diagnosis placeholders left in
   aiQueue.push(lazyDraft);
   aiCalls = 0;
-  const charted = await api.generate('Qa Alpha', '2026-07-17', 'Caudal ESI', BLOB, { dob: '1970-01-15', patientId: 'p1', sex: 'F' });
+  const charted = await api.generate('Qa Alpha', '2026-07-17', 'Caudal ESI', CAUDAL_BLOB, { dob: '1970-01-15', patientId: 'p1', sex: 'F' });
   assert(!/\[\[history\]\]/.test(charted.note), 'the history slot was left as a placeholder');
   assert(!/\[\[preoperative_diagnosis\]\]/.test(charted.note), 'the preop-diagnosis slot was left as a placeholder');
   assert(/\d+-year-old F with Lumbar spondylosis/.test(charted.note), 'chart-derived history sentence missing');

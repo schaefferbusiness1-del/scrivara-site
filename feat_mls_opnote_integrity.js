@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.6.0
+ * MLS op-note integrity  oni-2.7.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,10 +13,21 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.6.3';
+  var VERSION = 'oni-2.7.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
+  var generationByKey={},generationByPatient={};
+  var GENERATION_STAGES=['Confirming procedure','Loading validated template','Applying provider defaults','Applying facility defaults','Drafting procedure section','Drafting findings','Checking side and level','Checking required fields','Running final consistency check','Note ready'];
+
+  function shortHash(value){var h=2166136261,s=S(value);for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
+  function generationKey(dateStr,procedure,tplText,ctx){return [S(ctx&&ctx.patientId).trim(),S(dateStr).trim(),normText(procedure),normText(ctx&&(ctx.providerId||ctx.provider)),normText(ctx&&(ctx.facilityId||ctx.facility)),shortHash(tplText)].join('|');}
+  function generationPatientKey(name,ctx){return S(ctx&&ctx.patientId).trim()||('unverified:'+normText(name));}
+  function generationStage(ctx,stage,operation){
+    var h=ctx&&ctx.__mlsProgressHandle;if(!h)return;
+    var i=GENERATION_STAGES.indexOf(stage),patch={operation:operation||stage,current:i>=0?i+1:0,total:GENERATION_STAGES.length};
+    try{h.stage(stage,patch);}catch(e){}
+  }
 
   function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ''); } catch (e) {} }
   function templates() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
@@ -73,6 +84,117 @@
     for (var i = 0; i < CLASSES.length; i++) if (CLASSES[i][1].test(n)) return CLASSES[i][0];
     return '';
   }
+
+  /* Clinical identity is not one fuzzy string. Parse each requested fact into
+     its own field so a common template can never silently turn Left L2 into
+     bilateral S1, change region, or swap an approach. */
+  function procedureEvidence(text) {
+    var raw=S(text), lines=raw.split(/\r?\n/), picked=[];
+    for(var i=0;i<lines.length;i++){
+      var line=S(lines[i]).trim(); if(!line)continue;
+      if(i<2&&/\b(?:operative|procedure|injection|block|ablation|tfesi|esi|rfa|stimulator|intracept)\b/i.test(line))picked.push(line);
+      else if(/^(?:operative\s+)?procedure(?:s)?(?:\s+performed)?\s*:|^laterality(?:\s+and\s+levels)?\s*:|^levels?\s*:|^approach\s*:/i.test(line))picked.push(line);
+    }
+    return (picked.length?picked.join(' '):raw.slice(0,1600)).slice(0,3000);
+  }
+  function sideOf(text) {
+    var raw=S(text), n=raw.toLowerCase();
+    var bilateral=/\bbilateral\b|\bb\s*\/\s*l\b|\bboth\s+sides?\b/.test(n);
+    var left=/\bleft\b/.test(n)||/(^|[\s(:,;\-])l(?=\s+(?:[clts]\s*\d|si\b|sacroiliac\b|knee\b|hip\b|shoulder\b|genicular\b))/i.test(raw);
+    var right=/\bright\b/.test(n)||/(^|[\s(:,;\-])r(?=\s+(?:[clts]\s*\d|si\b|sacroiliac\b|knee\b|hip\b|shoulder\b|genicular\b))/i.test(raw);
+    if(bilateral||(left&&right))return 'bilateral';
+    return left?'left':(right?'right':'');
+  }
+  function levelsOf(text) {
+    var raw=S(text).toUpperCase().replace(/[–—]/g,'-'), seen={}, out=[];
+    function add(prefix,num){num=Number(num);if(!/^[CLTS]$/.test(prefix)||num<1||num>12)return;var level=prefix+num;if(!seen[level]){seen[level]=1;out.push(level);}}
+    var range=/\b([CLTS])\s*(\d{1,2})\s*-\s*(?:([CLTS])\s*)?(\d{1,2})\b/g,m;
+    while((m=range.exec(raw))){var p1=m[1],p2=m[3]||p1,a=Number(m[2]),b=Number(m[4]);if(p1===p2&&a<=b&&b-a<=6){for(var x=a;x<=b;x++)add(p1,x);}else{add(p1,a);add(p2,b);}}
+    var one=/\b([CLTS])\s*(\d{1,2})\b/g;
+    while((m=one.exec(raw)))add(m[1],m[2]);
+    var order={C:0,T:1,L:2,S:3};
+    out.sort(function(a,b){return order[a.charAt(0)]-order[b.charAt(0)]||Number(a.slice(1))-Number(b.slice(1));});
+    return out;
+  }
+  function regionOf(text,levels) {
+    var n=normText(text), flags={}; levels=levels||levelsOf(text);
+    if(/\bcervical\b/.test(n))flags.cervical=1;
+    if(/\bthoracic\b/.test(n))flags.thoracic=1;
+    if(/\b(lumbar|lumbo sacral|lumbosacral)\b/.test(n))flags.lumbar=1;
+    if(/\b(sacral|sacroiliac|si joint|caudal)\b/.test(n))flags.sacral=1;
+    if(/\b(genicular|knee)\b/.test(n))flags.knee=1;
+    levels.forEach(function(l){var p=l.charAt(0);if(p==='C')flags.cervical=1;else if(p==='T')flags.thoracic=1;else if(p==='L')flags.lumbar=1;else if(p==='S')flags.sacral=1;});
+    if(flags.lumbar&&flags.sacral)return 'lumbosacral';
+    var names=['cervical','thoracic','lumbar','sacral','knee'].filter(function(k){return flags[k];});
+    return names.length===1?names[0]:(names.length?names.join('+'):'');
+  }
+  function approachOf(text) {
+    var n=normText(text);
+    if(/\b(tfesi|transforaminal)\b/.test(n))return 'transforaminal';
+    if(/\binterlaminar\b/.test(n))return 'interlaminar';
+    if(/\bcaudal\b/.test(n))return 'caudal';
+    return '';
+  }
+  function procedureFacts(text) {
+    var evidence=procedureEvidence(text), levels=levelsOf(evidence);
+    return {procedureType:procClass(evidence),region:regionOf(evidence,levels),side:sideOf(evidence),levels:levels,levelCount:levels.length,approach:approachOf(evidence),evidence:evidence};
+  }
+  function sameRegion(a,b){
+    if(!a||!b)return true;
+    if(a===b)return true;
+    if(a==='lumbosacral'&&(b==='lumbar'||b==='sacral'))return true;
+    if(b==='lumbosacral'&&(a==='lumbar'||a==='sacral'))return true;
+    return false;
+  }
+  function sameLevels(a,b){a=(a||[]).slice().sort();b=(b||[]).slice().sort();return a.length===b.length&&a.every(function(v,i){return v===b[i];});}
+  function compareFacts(requested,actual,requirePresent,fields) {
+    fields=fields||['procedureType','region','side','levels','levelCount','approach'];var errors=[];
+    function check(field,label,eq){var want=requested[field],got=actual[field],has=Array.isArray(want)?want.length:!!want;if(!has)return;if(requirePresent&&!(Array.isArray(got)?got.length:got)){errors.push({field:field,code:'missing_'+field,message:'Draft did not clearly preserve requested '+label+'.'});return;}if((Array.isArray(got)?got.length:got)&&!eq(want,got))errors.push({field:field,code:'mismatch_'+field,message:'Requested '+label+' conflicts with draft/template '+label+'.'});}
+    if(fields.indexOf('procedureType')>=0)check('procedureType','procedure type',function(a,b){return a===b;});
+    if(fields.indexOf('region')>=0)check('region','anatomical region',sameRegion);
+    if(fields.indexOf('side')>=0)check('side','side',function(a,b){return a===b;});
+    if(fields.indexOf('levels')>=0)check('levels','exact level(s)',sameLevels);
+    if(fields.indexOf('levelCount')>=0&&requested.levelCount)check('levelCount','number of levels',function(a,b){return Number(a)===Number(b);});
+    if(fields.indexOf('approach')>=0)check('approach','approach',function(a,b){return a===b;});
+    return errors;
+  }
+  function scopeValue(v) {
+    if(v&&typeof v==='object')return S(v.id||v.providerId||v.facilityId||v.name||v.label).trim();
+    return S(v).trim();
+  }
+  function templateScopeErrors(tpl,ctx) {
+    tpl=tpl||{};ctx=ctx||{};var errors=[];
+    function check(kind,expected,actual){
+      expected=scopeValue(expected);actual=scopeValue(actual);
+      if(!expected)return;
+      if(!actual){errors.push({field:kind,code:'missing_'+kind+'_scope',message:'The selected template is '+kind+'-specific, but the current '+kind+' is unresolved.'});return;}
+      if(normText(expected)!==normText(actual))errors.push({field:kind,code:'mismatch_'+kind,message:'The selected template belongs to a different '+kind+'.'});
+    }
+    check('provider',tpl.providerId||tpl.provider_id||tpl.providerName||tpl.provider,ctx.providerId||ctx.provider_id||ctx.providerName||ctx.provider);
+    check('facility',tpl.facilityId||tpl.facility_id||tpl.facilityName||tpl.facility,ctx.facilityId||ctx.facility_id||ctx.facilityName||ctx.facility);
+    return errors;
+  }
+  function templateCompatibility(procedure,tpl,ctx) {
+    var requested=procedureFacts(procedure), templateText=S(tpl&&tpl.name)+' '+((tpl&&tpl.keywords)||[]).join(' ')+' '+S(tpl&&tpl.text).slice(0,2400), actual=procedureFacts(templateText);
+    var fields=['procedureType','region','approach'];
+    if(tpl&&tpl.validatedFacts===true)fields=['procedureType','region','side','levels','levelCount','approach'];
+    var errors=compareFacts(requested,actual,false,fields).concat(templateScopeErrors(tpl,ctx));
+    return {pass:!errors.length,errors:errors,requested:requested,template:actual};
+  }
+  function templateFields(note,tpl) {
+    var n=normText(note), t=normText(tpl&&tpl.text), errors=[];
+    var required=(tpl&&Array.isArray(tpl.requiredFields))?tpl.requiredFields:[];
+    var prohibited=(tpl&&Array.isArray(tpl.prohibitedFields))?tpl.prohibitedFields:[];
+    required.forEach(function(f){var key=normText(f);if(key&&n.indexOf(key)<0)errors.push({field:'requiredFields',code:'missing_required_field',message:'Required template field is missing: '+S(f).slice(0,80)});});
+    prohibited.forEach(function(f){var key=normText(f);if(key&&n.indexOf(key)>=0)errors.push({field:'prohibitedFields',code:'prohibited_field',message:'Prohibited field is present: '+S(f).slice(0,80)});});
+    if(n.indexOf('fluoroscopy time')>=0&&t.indexOf('fluoroscopy time')<0)errors.push({field:'prohibitedFields',code:'unrequested_fluoroscopy_time',message:'Fluoroscopy time is not required by the validated template.'});
+    return errors;
+  }
+  function clinicalConsistency(note,procedure,tpl,ctx) {
+    var requested=procedureFacts(procedure), actual=procedureFacts(procedureEvidence(note));
+    var errors=compareFacts(requested,actual,true).concat(templateFields(note,tpl||{})).concat(templateScopeErrors(tpl,ctx));
+    return {pass:!errors.length,errors:errors,requested:requested,actual:actual};
+  }
   function templateClass(t) {
     var trusted = S(t && t.name) + ' ' + ((t && t.keywords) || []).join(' ');
     return procClass(trusted) || procClass(S(t && t.text).slice(0, 2400));
@@ -82,13 +204,15 @@
     return normText(text).split(/\s+/).filter(function (w) { return w.length > 1 && !stop[w]; });
   }
   function rank(procedure) {
-    var proc = normText(procedure), pc = procClass(proc), pt = tokens(proc), list = templates();
+    var proc = normText(procedure), pc = procClass(proc), pf=procedureFacts(procedure), pt = tokens(proc), list = templates();
     return list.map(function (t, index) {
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
       var body = normText(S(t.text).slice(0, 1800));
-      var tc = templateClass(t), score = 0;
+      var tc = templateClass(t), score = 0, compat=templateCompatibility(procedure,t);
       if (pc && tc) score += pc === tc ? 120 : -120;
       else if (pc && !tc) score -= 25;
+      if(!compat.pass)score-=240;
+      else if(pc){var tf=compat.template;if(pf.region&&tf.region&&sameRegion(pf.region,tf.region))score+=12;if(pf.approach&&tf.approach&&pf.approach===tf.approach)score+=18;}
       pt.forEach(function (w) {
         var special = /^(tfesi|esi|mbb|rfa|scs|bvn|caudal|interlaminar|genicular|facet|sacroiliac|intracept|kyphoplasty|vertebroplasty|discogram|trigger|bursa|l[1-5]|s[1-4]|c[1-8]|t\d{1,2})$/.test(w);
         if (name.indexOf(w) >= 0) score += special ? 6 : 3;
@@ -97,13 +221,14 @@
       ['left','right','bilateral','cervical','thoracic','lumbar'].forEach(function (w) {
         if (proc.indexOf(w) >= 0 && (name.indexOf(w) >= 0 || body.indexOf(w) >= 0)) score += 2;
       });
-      return { tpl:t, score:score, procClass:pc, tplClass:tc, index:index };
+      return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index };
     }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
   function best(procedure) {
     var r = rank(procedure), top = r[0], second = r[1], list = templates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
-    if (list.length === 1) return { tpl:top.tpl, confident:true, reason:'only template', score:top.score };
+    if(!top.compatible)return {tpl:null,candidate:top.tpl,confident:false,reason:'template conflicts with requested procedure',score:top.score,conflicts:top.conflicts,ranked:r};
+    if (list.length === 1) return { tpl:top.tpl, confident:true, reason:'only compatible template', score:top.score };
     var classExact = !!(top.procClass && top.tplClass && top.procClass === top.tplClass);
     var margin = top.score - (second ? second.score : 0);
     var confident = classExact || (top.score >= 10 && margin >= 4);
@@ -233,7 +358,7 @@
        is, so a draft that fills a section on the heading line itself can never
        lose that heading relative to the short placeholder line in the template. */
     if(!m && t.length>90) return '';
-    var common=/^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of procedure|date of operation|date of service|provider|physician|surgeon|assistant|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|type of anesthesia|indications?(?: for procedure)?|history|consent|findings?|technique|description of procedure|estimated blood loss|fluoroscopy time|injectate(?: per point)?|laterality|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|plan|follow.?up|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
+    var common=/^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of procedure|date of operation|date of service|provider|provider name|provider npi|provider license|provider credentials|npi|license|physician|surgeon|assistant|facility|facility address|practice|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|type of anesthesia|indications?(?: for procedure)?|history|consent|findings?|technique|description of procedure|estimated blood loss|fluoroscopy time|injectate(?: per point)?|laterality|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|plan|follow.?up|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
     var caps=label.length>2 && label===label.toUpperCase() && /[A-Z]/.test(label);
     if(!m && !caps) return '';
     if(!common && !caps) return '';
@@ -304,6 +429,22 @@
     }).join('\n');
   }
 
+  /* Fill only explicitly marked clinical slots. This preserves the provider's
+     fixed procedure wording while preventing a visible [FILL: side] from
+     becoming an excuse to omit a known side or exact level. */
+  function fillProcedureSlots(note,procedure) {
+    var f=procedureFacts(procedure), typeLabels={tfesi:'transforaminal epidural steroid injection',interlaminar_esi:'interlaminar epidural steroid injection',caudal_esi:'caudal epidural steroid injection',facet_mbb:'medial branch block',facet_rfa:'medial branch radiofrequency ablation',si_injection:'sacroiliac joint injection'};
+    var values={
+      side:f.side?f.side.charAt(0).toUpperCase()+f.side.slice(1):'',laterality:f.side?f.side.charAt(0).toUpperCase()+f.side.slice(1):'',
+      level:f.levels.join(', '),levels:f.levels.join(', '),'exact level':f.levels.join(', '),'exact levels':f.levels.join(', '),
+      'level count':f.levelCount?S(f.levelCount):'','number of levels':f.levelCount?S(f.levelCount):'',
+      approach:f.approach?f.approach.charAt(0).toUpperCase()+f.approach.slice(1):'',
+      region:f.region?f.region.charAt(0).toUpperCase()+f.region.slice(1):'','anatomical region':f.region?f.region.charAt(0).toUpperCase()+f.region.slice(1):'',
+      'procedure type':typeLabels[f.procedureType]||''
+    };
+    return S(note).replace(/\[\[([^\]]+)\]\]|\[(?:FILL\s*:\s*)?([^\]]+)\]|\{\{([^}]+)\}\}/gi,function(all,a,b,c){var key=normText(a||b||c).replace(/_/g,' '),value=values[key];return value||all;});
+  }
+
   function sourceSections(note) {
     var out={}, cur=null;
     S(note).split(/\r?\n/).forEach(function(line){
@@ -367,12 +508,12 @@
         and history can never survive into a new patient's draft. Everything
         else (the doctor's own standard technique wording) is kept verbatim. */
   var SPLIT_TITLES = /(^|\s+)(OPERATIVE REPORT|PROCEDURE NOTE)(?=\s)/g;
-  var SPLIT_LABELS = ['description of procedure','indications for procedure','estimated blood loss','postoperative diagnosis','post-operative diagnosis','preoperative diagnosis','pre-operative diagnosis','medications injected','date of operation','date of procedure','date of service','type of anesthesia','fluoroscopy time','date of birth','patient name','patient dob','patient','complications','disposition','indications','indication','anesthesia','physician','technique','laterality','injectate','follow-up','diagnosis','specimens','findings','procedure','provider','surgeon','consent','history','needle','levels','plan','mrn','dob','age','sex'];
+  var SPLIT_LABELS = ['description of procedure','indications for procedure','estimated blood loss','postoperative diagnosis','post-operative diagnosis','preoperative diagnosis','pre-operative diagnosis','medications injected','date of operation','date of procedure','date of service','type of anesthesia','fluoroscopy time','provider credentials','provider license','provider npi','provider name','facility address','date of birth','patient name','patient dob','patient','complications','disposition','indications','indication','anesthesia','facility','practice','physician','technique','laterality','injectate','follow-up','diagnosis','specimens','findings','procedure','provider','surgeon','consent','history','needle','levels','plan','npi','license','mrn','dob','age','sex'];
   /* boundary includes start-of-string/line so a label at position 0 is
      consumed WHOLE — otherwise the bare-word alternative ("diagnosis") could
      split "PREOPERATIVE DIAGNOSIS:" in the middle of the label itself */
   var SPLIT_RX = new RegExp('(^|\\s+)((?:' + SPLIT_LABELS.join('|').replace(/-/g, '\\-') + ')\\s*:)', 'gi');
-  var SCRUB_HEADINGS = /^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of operation|date of procedure|date of service|physician|provider|surgeon|history|procedure|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|indications?(?: for procedure)?)$/i;
+  var SCRUB_HEADINGS = /^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of operation|date of procedure|date of service|physician|provider|provider name|provider npi|provider license|provider credentials|npi|license|surgeon|facility|facility address|practice|history|procedure|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|indications?(?: for procedure)?)$/i;
   function sanitizeTemplate(tplText) {
     var t = S(tplText);
     t = t.replace(SPLIT_TITLES, '\n$2\n');
@@ -463,20 +604,28 @@
     return out.join('\n');
   }
 
-  async function generate(name,dateStr,procedure,tplText,ctx) {
+  async function generateOnce(name,dateStr,procedure,tplText,ctx) {
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
+    generationStage(ctx,'Confirming procedure','Verifying the exact patient and requested procedure.');
     var p=exactPatient(name,ctx.dob,ctx.patientId);
     if(!p||!S(ctx.patientId).trim()||S(p.id)!==S(ctx.patientId)){
       var ie=new Error('Op-note generation stopped: exact patient identity could not be verified.');ie.code='MLS_OPNOTE_IDENTITY';throw ie;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
+    generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
+    var selectedTpl=null;
+    try{var all=templates();for(var ti=0;ti<all.length;ti++){if(S(all[ti]&&all[ti].text)===S(tplText)){selectedTpl=all[ti];break;}}}catch(e){}
+    var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx);
+    if(!tplCheck.pass){var tce=new Error('Draft stopped: the selected template conflicts with the requested procedure type, region, or approach. Choose a compatible validated template.');tce.code='MLS_OPNOTE_TEMPLATE_CONFLICT';tce.details=tplCheck;throw tce;}
     /* a past-note "template" becomes structured + prior-patient-free before
        anything downstream (prompt, fidelity, reanchor, airing) sees it */
     tplText=sanitizeTemplate(tplText);
+    generationStage(ctx,'Applying provider defaults','Applying only explicit provider identity and validated provider scope.');
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
+    generationStage(ctx,'Applying facility defaults','Applying only the current facility identity and validated facility scope.');
     var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
     /* When the verified-history owner is ready it is the sole history source;
        do not also trust or duplicate a caller-supplied ctx.history string. */
@@ -487,18 +636,26 @@
     var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
     if(ctx.sex)facts.sex=ctx.sex;
-    if(ctx.provider){facts.provider=ctx.provider;facts.physician=ctx.provider;facts.surgeon=ctx.provider;}
-    if(ctx.providerNpi)facts.npi=ctx.providerNpi;
-    if(ctx.facility)facts.facility=ctx.facility;
+    if(ctx.provider){facts.provider=ctx.provider;facts['provider name']=ctx.provider;facts.physician=ctx.provider;facts.surgeon=ctx.provider;}
+    if(ctx.providerNpi){facts.npi=ctx.providerNpi;facts['provider npi']=ctx.providerNpi;}
+    if(ctx.providerLicense){facts.license=ctx.providerLicense;facts['provider license']=ctx.providerLicense;}
+    if(ctx.facility){facts.facility=ctx.facility;facts.practice=ctx.facility;}
+    if(ctx.facilityAddress)facts['facility address']=ctx.facilityAddress;
+    if(ctx.__mlsProgressHandle)opts.mlsRequestId=ctx.__mlsProgressHandle.requestId;
+    generationStage(ctx,'Drafting procedure section','The model is drafting the complete template-owned procedure note.');
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
-    first.note=fillChartSlots(forceFacts(first.note,facts),p,ctx,procedure);
+    generationStage(ctx,'Drafting findings','Preserving chart-grounded findings and filling explicit clinical slots.');
+    first.note=fillChartSlots(fillProcedureSlots(forceFacts(first.note,facts),procedure),p,ctx,procedure);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
     if(histApi&&histApi.installed){
       histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
       if(!histValidation||!histValidation.ok){var ve=new Error('Op-note generation stopped because the exact patient or verified history changed while the draft was being created.');ve.code='MLS_OPNOTE_IDENTITY';ve.reason=histValidation&&histValidation.reason||'history-binding-invalid';throw ve;}
     }
-    var check=fidelity(first.note,tplText);
-    if(check.pass){first.note=airSections(first.note);first.templateFidelity=check;window.__mlsLastOpFidelityPass=true;return first;}
+    generationStage(ctx,'Checking side and level','Comparing procedure type, region, side, exact levels, level count, and approach.');
+    var check=fidelity(first.note,tplText), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
+    generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
+    generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
+    if(check.pass&&clinical.pass){first.note=airSections(first.note);first.templateFidelity=check;first.clinicalConsistency=clinical;return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */
@@ -506,16 +663,56 @@
     if(histApi&&histApi.installed&&(!histBinding||S(histBinding.patientId)!==S(p.id))){var he=new Error('Op-note repair stopped because verified patient history was not bound to the draft.');he.code='MLS_OPNOTE_IDENTITY';throw he;}
     var stillExact=exactPatient(name,ctx.dob,ctx.patientId);
     if(!stillExact||S(stillExact.id)!==S(p.id)){var pe=new Error('Op-note repair stopped because the patient changed during generation.');pe.code='MLS_OPNOTE_IDENTITY';throw pe;}
-    var repairSys='Repair the draft so it follows the selected template exactly. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.';
+    var repairSys='Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.';
     var frozenHistory=histBinding&&S(histBinding.context);
     var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
-    repaired.note=fillChartSlots(forceFacts(repaired.note,facts),p,ctx,procedure);
+    repaired.note=fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure);
+    generationStage(ctx,'Checking side and level','Rechecking the repaired procedure facts.');
     var check2=fidelity(repaired.note,tplText);
-    if(!check2.pass){repaired.note=fillChartSlots(reanchor(repaired.note,tplText,facts),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
+    if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplText,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
-    repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
+    generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
+    var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
+    generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
+    if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
+    repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
+  }
+
+  function copyCtx(ctx){var out={};ctx=ctx||{};for(var k in ctx)if(Object.prototype.hasOwnProperty.call(ctx,k)&&k!=='__mlsProgressHandle')out[k]=ctx[k];return out;}
+  function generate(name,dateStr,procedure,tplText,ctx) {
+    ctx=ctx||{};
+    var gkey=generationKey(dateStr,procedure,tplText,ctx),existing=generationByKey[gkey];
+    if(existing&&!existing.settled)return existing.promise;
+    var pkey=generationPatientKey(name,ctx),prior=generationByPatient[pkey];
+    if(prior&&!prior.settled){prior.obsolete=true;try{if(prior.progress)prior.progress.cancel('Superseded by a newer op-note request.');}catch(e){}}
+    var entry={key:gkey,patientKey:pkey,settled:false,obsolete:false,canceled:false,progress:null,promise:null};
+    var runCtx=copyCtx(ctx),provided=ctx.__mlsProgressHandle,progressApi=window.__mlsLoadingCalm;
+    if(provided)entry.progress=provided;
+    else if(progressApi&&progressApi.installed&&isFn(progressApi.start)){
+      var retryCtx=copyCtx(ctx);
+      entry.progress=progressApi.start({
+        key:'opnote:'+pkey,kind:'opnote',label:'Generating operative note',stages:GENERATION_STAGES,total:GENERATION_STAGES.length,
+        timeoutMs:3*60*1000,replace:true,cancelable:true,maxAttempts:2,patient:name,provider:ctx.provider,selectedDate:dateStr,
+        cancel:function(){entry.canceled=true;},
+        retry:function(next){var c=copyCtx(retryCtx);c.__mlsProgressHandle=next;var retried=generate(name,dateStr,procedure,tplText,c);if(retried&&isFn(retried.catch))retried.catch(function(){});return retried;}
+      });
+    }
+    if(entry.progress)runCtx.__mlsProgressHandle=entry.progress;
+    generationByKey[gkey]=entry;generationByPatient[pkey]=entry;
+    entry.promise=Promise.resolve().then(function(){return generateOnce(name,dateStr,procedure,tplText,runCtx);}).then(function(result){
+      if(entry.obsolete||generationByPatient[pkey]!==entry){var se=new Error('An older op-note response was ignored because a newer request is active.');se.code='MLS_OPNOTE_STALE';throw se;}
+      if(entry.canceled){var ce=new Error('Op-note generation was canceled safely.');ce.code='MLS_OPNOTE_CANCELED';throw ce;}
+      window.__mlsLastOpFidelityPass=true;
+      generationStage(runCtx,'Note ready','The template and requested clinical facts passed final validation.');
+      if(entry.progress)entry.progress.complete('Operative note ready.');
+      return result;
+    }).catch(function(err){
+      if(!(err&&(err.code==='MLS_OPNOTE_STALE'||err.code==='MLS_OPNOTE_CANCELED'))&&entry.progress)entry.progress.fail(err);
+      throw err;
+    }).then(function(result){entry.settled=true;if(generationByKey[gkey]===entry)delete generationByKey[gkey];if(generationByPatient[pkey]===entry)delete generationByPatient[pkey];return result;},function(err){entry.settled=true;if(generationByKey[gkey]===entry)delete generationByKey[gkey];if(generationByPatient[pkey]===entry)delete generationByPatient[pkey];throw err;});
+    return entry.promise;
   }
   /* These markers deliberately stop the two legacy heartbeat wrappers from
      taking ownership back after this final template-fidelity owner installs. */
@@ -536,11 +733,11 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}await one(i);var ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{});if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, or approach.';toast(window.__mlsLastOpFidelityError,'err');return false;}}await one(i);var ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
     var all=window.opPrepGenerateAll;
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();
