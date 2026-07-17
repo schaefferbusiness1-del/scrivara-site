@@ -115,6 +115,16 @@ function bootConnTruth() {
   assert(/chrome:\/\/extensions, find MLS Assist, press ↻ Reload/.test(sc),
     'the ext-crashed message must name the one-click fix');
 
+  /* ---------------- 2b. asst_fix prober (third verdict writer) pins -------- */
+  const af = read('feat_mls_asst_fix.js');
+  assert(/requestId: reqId/.test(af), 'asst_fix probes must stamp requestId');
+  assert(/d\.requestId && d\.requestId !== reqId/.test(af), 'asst_fix probes must ignore foreign-stamped replies');
+  assert(/extension-error\|bridge-error/.test(af), 'asst_fix must classify extension-runtime failure');
+  assert(/chrome:\/\/extensions, find MLS Assist, press Reload/.test(af), 'asst_fix ext-crash verdict must name the reload fix');
+  // the ext-error branch must be checked BEFORE the generic no-tab sign-in fallbacks
+  assert(af.indexOf('extension-error|bridge-error') < af.indexOf('open one and sign in'),
+    'asst_fix must classify extension-error before blaming sign-in');
+
   /* ---------------- 3. writeback-safety: reason-truthful hard block -------- */
   const wbsWin = { __mlsConnTruth: null };
   const wbsDoc = {

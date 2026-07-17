@@ -144,19 +144,26 @@
     } catch (e) { return null; }
   }
 
+  var connReqSeq = 0;
   function connRequest(type, replyType, timeoutMs) {
     return new Promise(function (resolve) {
       var done = false;
+      /* 2026-07-17: stamp + correlate. The bridge echoes requestId (b346), so a
+         probe can no longer settle on ANOTHER surface's reply (the old comment
+         in connCheck describes exactly this hazard). Id-less replies (mlsPong)
+         still pass. */
+      var reqId = "mlsaf" + (++connReqSeq) + "_" + Date.now().toString(36);
       var handler = function (ev) {
         var d = ev && ev.data;
         if (!d || typeof d !== "object" || d.source !== "mls-ext" || d.type !== replyType) return;
+        if (d.requestId && d.requestId !== reqId) return; /* someone else's reply */
         if (done) return; done = true;
         try { window.removeEventListener("message", handler, false); } catch (e) {}
         clearTimeout(t);
         if (replyType === "mlsPong") { resolve({ ok: true }); }
         else {
           var r = d.resp || {};
-          resolve({ ok: r.ok === true, signin: looksSignin(r), athena: hostIsAthena(r) });
+          resolve({ ok: r.ok === true, signin: looksSignin(r), athena: hostIsAthena(r), reason: String(r.reason || r.error || "").slice(0, 120) });
         }
       };
       var t = setTimeout(function () {
@@ -165,7 +172,7 @@
         resolve({ ok: false, timedOut: true });
       }, timeoutMs);
       window.addEventListener("message", handler, false);
-      try { window.postMessage({ source: "mls-app", type: type }, "*"); }
+      try { window.postMessage({ source: "mls-app", type: type, requestId: reqId }, "*"); }
       catch (e) { if (!done) { done = true; clearTimeout(t); try { window.removeEventListener("message", handler, false); } catch (e2) {} resolve({ ok: false }); } }
     });
   }
@@ -195,6 +202,13 @@
         var athenaOk = (s.athena === null) ? true : !!s.athena;
         if (s.ok && !s.signin && athenaOk) {
           return connSetState("connected", "athenaOne connected -- a signed-in tab is readable.");
+        }
+        /* 2026-07-17: an 'extension-error' control reply = chrome.runtime threw
+           in the content bridge (worker crashed / extension invalidated). That
+           is NOT "Athena signed out" — a real signed-in session got blamed for
+           it live. Name the actual one-click fix. */
+        if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(s.reason || "")) {
+          return connSetState("error", "MLS Assist hit an internal error and needs a reload -- open chrome://extensions, find MLS Assist, press Reload. athenaOne itself may still be signed in.");
         }
         if (s.signin) {
           return connSetState("no-tab", "Your athenaOne tab is on the sign-in page -- sign in and open your Day schedule, then it will connect.");
