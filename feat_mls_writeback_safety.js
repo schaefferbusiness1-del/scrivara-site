@@ -53,7 +53,7 @@
   'use strict';
   if (window.__mlsWritebackSafety && window.__mlsWritebackSafety.installed) return;
 
-  var VERSION = 'wbs-1.0.0';
+  var VERSION = 'wbs-1.1.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var DESTINATION = 'athenaOne encounter (open chart)';
 
@@ -168,7 +168,16 @@
     /* athena reachability */
     var athena = ctx.athena === 'connected' || ctx.athena === 'disconnected' ? ctx.athena : 'unknown';
     if (athena === 'disconnected') {
-      hardBlocks.push({ code: 'ATHENA_DISCONNECTED', label: 'athenaOne is signed out or unavailable', detail: 'MLS Assist reports no live athenaOne. Sign in to athenaOne, open the patient chart, then try again.' });
+      /* wbs-1.1.0: use the LIVE probe reason when the caller supplies one —
+         the hard-coded "Sign in to athenaOne" text blamed a signed-in session
+         when the real failure was the extension runtime needing a reload. */
+      var athenaWhy = S(ctx.athenaReason).replace(/\s+/g, ' ').trim().slice(0, 220);
+      var extIssue = /extension|MLS Assist.*(reload|internal error)|worker/i.test(athenaWhy);
+      hardBlocks.push({
+        code: 'ATHENA_DISCONNECTED',
+        label: extIssue ? 'MLS Assist cannot reach athenaOne (extension needs a reload)' : 'athenaOne is signed out or unavailable',
+        detail: athenaWhy || 'MLS Assist reports no live athenaOne. Sign in to athenaOne, open the patient chart, then try again.'
+      });
     } else if (athena === 'unknown') {
       warnings.push({ code: 'ATHENA_UNKNOWN', label: 'athenaOne connection unconfirmed', detail: 'MLS Assist will re-verify the open chart at write time and refuse if it is not this patient.' });
     }
@@ -286,6 +295,7 @@
       noteProvider: null,             /* not reliably parseable; left null -> provider WARNING, not block */
       activeProvider: providerName(),
       athena: (api._athenaState || athenaState)(),
+      athenaReason: (function () { try { var ct = window.__mlsConnTruth; return (ct && ct.state && String(ct.state.reason || '').slice(0, 220)) || ''; } catch (e) { return ''; } })(),
       sections: panel ? panelSections(panel) : [],
       visitDate: (function () { try { var pp = activePt(); return pp && (pp.lastVisit || pp.visitDate) || ''; } catch (e) { return ''; } })()
     };

@@ -1,6 +1,6 @@
 'use strict';
 
-/* Extension Health contract (eh-1.0.0, 2026-07-16). Pins the owner-mandated
+/* Extension Health contract (eh-1.1.0, 2026-07-17  adds crashed-runtime truth rows). Pins the owner-mandated
  * shape: installed/enabled/version/permissions/heartbeat/last-pull checks,
  * and EVERY failure paired with a SAFE recovery action (links, re-check,
  * wake-the-tab instructions) — never a destructive or automatic one. */
@@ -14,7 +14,7 @@ const ehStart = connect.indexOf('__mlsExtHealth eh-1');
 assert(ehStart > 0, 'extension-health module not installed');
 const eh = connect.slice(ehStart);
 
-assert(/version: 'eh-1\.0\.0'/.test(eh), 'eh version marker missing');
+assert(/version: 'eh-1\.1\.0'/.test(eh), 'eh version marker missing');
 
 /* installed/enabled must be a FRESH round-trip, not a cached boot flag */
 assert(/mlsPing/.test(eh) && /mlsPong/.test(eh), 'install check must be a fresh ping round-trip');

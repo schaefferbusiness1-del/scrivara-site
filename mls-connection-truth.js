@@ -61,7 +61,7 @@
   'use strict';
 
   var NS = '__mlsConnTruth';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   // Idempotent boot — never install twice.
   if (typeof window !== 'undefined' && window[NS] && window[NS].installed) {
@@ -169,6 +169,10 @@
       pending[id] = function (data) {
         if (done) return;
         if (!data || data.type !== replyType) return;
+        /* v1.2.0: the bridge echoes requestId (b346) — a reply stamped with a
+           DIFFERENT id belongs to another surface (e.g. a live pull) and must
+           not settle this probe. Id-less replies (mlsPong) still pass. */
+        if (data.requestId && data.requestId !== id) return;
         done = true;
         clearTimeout(timer);
         delete pending[id];
@@ -184,7 +188,7 @@
       };
 
       try {
-        win.postMessage({ source: 'mls-app', type: type, __mlsConnTruthId: id }, '*');
+        win.postMessage({ source: 'mls-app', type: type, __mlsConnTruthId: id, requestId: id }, '*');
       } catch (e) {
         if (done) return;
         done = true;
@@ -237,6 +241,18 @@
                 status: 'connected',
                 ext: true, tab: true,
                 reason: 'athenaOne connected — a signed-in tab is readable.',
+                at: Date.now()
+              });
+            }
+            /* v1.2.0: an 'extension-error' control reply means chrome.runtime
+               threw in the content bridge — the extension runtime is dead, NOT
+               Athena. Telling the user to "sign in to athenaOne" here is wrong
+               and has misled a real signed-in session. Name the real fix. */
+            if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(schedRes.reason || '')) {
+              return setState({
+                status: 'error',
+                ext: false, tab: false,
+                reason: 'MLS Assist hit an internal error and needs a reload — open chrome://extensions, find MLS Assist, press Reload. athenaOne itself may still be signed in.',
                 at: Date.now()
               });
             }

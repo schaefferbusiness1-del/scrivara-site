@@ -216,12 +216,19 @@
     var t = safe(function () { return W.__mlsPullBusyAt || 0; }, 0);
     return (now() - t) < 45000;
   }
+  var bridgeReqSeq = 0;
   function bridgeRequest(type, replyType, timeoutMs, extra) {
     return new Promise(function (resolve) {
       var done = false;
+      /* Correlate: the content bridge echoes requestId on schedule/goto
+         replies (b346). Without this, a probe could consume ANOTHER
+         surface's reply — e.g. a concurrent pull's lease refusal — and
+         report a false disconnect. Id-less replies (mlsPong) still pass. */
+      var reqId = 'mlssc' + (++bridgeReqSeq) + '_' + Date.now().toString(36);
       function onMsg(e) {
         var d = e && e.data;
         if (!d || typeof d !== 'object' || d.source !== 'mls-ext' || d.type !== replyType) return;
+        if (d.requestId && d.requestId !== reqId) return; /* someone else's reply */
         if (done) return;
         done = true;
         safe(function () { W.removeEventListener('message', onMsg); });
@@ -236,6 +243,7 @@
       });
       var payload = { source: 'mls-app', type: type };
       if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) payload[k] = extra[k]; } }
+      payload.requestId = reqId;
       safe(function () { W.postMessage(payload, W.location.origin); });
     });
   }
@@ -243,6 +251,14 @@
     // Reads ONLY: resp.ok (bool), resp.signin (bool), host of resp.url. Never text/title. No PHI.
     var resp = d && d.data && d.data.resp;
     if (!resp || typeof resp !== 'object') return { state: 'unknown', why: 'Empty reply from the extension.' };
+    /* Extension RUNTIME failure ≠ Athena signed out. The content bridge answers
+       'extension-error' the instant chrome.runtime throws (worker crashed /
+       Chrome invalidated the extension). Blaming Athena here sent the owner to
+       sign in to a session that was fine — name the real fix instead. */
+    var ctl = (String(resp.reason || '') + ' ' + String(resp.error || '')).slice(0, 200);
+    if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(ctl)) {
+      return { state: 'ext-crashed', why: 'MLS Assist hit an internal error and needs a reload — open chrome://extensions, find MLS Assist, press ↻ Reload. athenaOne itself may still be signed in.' };
+    }
     if (resp.error) {
       var em = String(resp.error).slice(0, 160);
       if (/no athena|no tab|not found|no http/i.test(em)) return { state: 'no-tab', why: 'No athenaOne tab found.' };
@@ -335,6 +351,13 @@
                 conn.evidence.probeFail = now();
                 conn.probing = false;
                 setVerdict('disconnected', 'no-tab', cls.why);
+                return connPublicState();
+              }
+              if (cls.state === 'ext-crashed') {
+                // definitive, but the culprit is the EXTENSION RUNTIME — say so.
+                conn.evidence.probeFail = now();
+                conn.probing = false;
+                setVerdict('disconnected', 'no-extension', cls.why);
                 return connPublicState();
               }
               attempt++;
