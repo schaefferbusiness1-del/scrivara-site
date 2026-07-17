@@ -75,4 +75,35 @@ assert(si.includes('schedule-parse-deadline-exceeded'),
 assert(si.includes('schedule-parse-timeout'),
   'schedule parse timeout does not produce a terminal fail reason');
 
-console.log('PASS pull-request correlation contract: engine+bridgeOnce correlated, loadCalendar newest-wins, si/engine lease exclusion, bounded parse');
+/* ---- 6. rl-2.0.0 mobile<->desktop sync contract ---- */
+const rlAt = connect.indexOf("version: 'rl-2.0.0'");
+assert(rlAt > 0, 'relay module is not rl-2.0.0');
+const rl = connect.slice(connect.lastIndexOf('__mlsRelayLink rl-', rlAt) >= 0 ? connect.lastIndexOf('/* ===== __mlsRelayLink', rlAt) : rlAt, connect.indexOf('__mlsPhoneHome ph-', rlAt));
+/* right office computer: role-gated agent + device-targeted polling */
+assert(rl.includes('function agentEligible()'), 'agent is not office-role gated');
+assert(rl.includes("dr.effectiveRole() === 'office'"), 'agentEligible does not require the office role');
+assert(rl.includes('/api/relay/jobs/next' + "' + (did ? ('?deviceId="), 'agent does not poll with its deviceId');
+assert(rl.includes('targetDeviceId: targetDeviceId'), 'phone jobs are not targeted at the office device');
+assert(rl.includes('(presence && presence.officeId)'), 'phone does not take the target from presence.officeId');
+/* frozen date/provider + requestId travel; the phone verifies the echo */
+assert(rl.includes("dedupeKey: 'pullDay|' + date + '|'"), 'duplicate commands are not deduped server-side');
+assert(rl.includes('payload: { date: date, provider: provider, requestId: requestId }'),
+  'job payload does not freeze date/provider/requestId');
+assert(rl.includes('pulled !== date'), 'phone does not verify the pulled-day echo before claiming success');
+assert(rl.includes('requestedDate: date'), 'agent result does not echo the requested date');
+/* honest disconnects + reload recovery + progress mirroring */
+assert(rl.includes("job.status === 'lost'"), 'phone does not surface lost executors');
+assert(rl.includes("job.status === 'canceled'"), 'phone does not surface canceled jobs');
+assert(rl.includes('function makeProgressPoster('), 'agent does not relay live progress');
+assert(rl.includes('job.progress && job.progress.note'), 'phone does not mirror per-patient progress');
+assert(rl.includes("var ACTIVE_KEY = 'mlsRlActiveJob'"), 'active job is not persisted for reload recovery');
+assert(rl.includes('Rejoining the Athena pull'), 'reload does not rejoin the in-flight pull');
+assert(rl.includes('api.cancelActive'), 'no cancel affordance for the active job');
+assert(rl.includes('is still running on'), 'no single-flight refusal for a different-date pull');
+/* timeout ladder fits a real full-history day (old 150s starved 20-patient days) */
+assert(rl.includes('510000'), 'agent pull deadline no longer fits a full-history day');
+assert(rl.includes('tries > 252'), 'phone polling window no longer fits a full-history day');
+/* at-most-once execution per job id on the agent */
+assert(rl.includes('if (executedJobs[job.id])'), 'agent can execute the same job twice');
+
+console.log('PASS pull-request correlation contract: engine+bridgeOnce correlated, loadCalendar newest-wins, si/engine lease exclusion, bounded parse, rl-2.0.0 sync');

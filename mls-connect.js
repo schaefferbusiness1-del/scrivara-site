@@ -31964,7 +31964,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b348';
+  window.__MLS_AV = window.__MLS_AV || 'b349';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32255,7 +32255,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b348';
+  var MLS_APP_BUILD='2026-07-16-b349';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41758,7 +41758,22 @@
  * Reversible: revert(). ES5. */
 (function () {
   if (window.__mlsRelayLink) return;
-  var api = { installed: true, version: 'rl-1.0.0', agentRuns: 0 };
+  /* rl-2.0.0 (2026-07-16, schedule/relay lane): mobile<->desktop sync hardening.
+   *  - RIGHT office computer: jobs are TARGETED at the registry's office
+   *    deviceId; the agent polls with its own id and only runs when this
+   *    device's role is office (legacy no-role accounts keep old behavior).
+   *  - FROZEN date/provider + requestId travel in the job payload; the phone
+   *    verifies the receipt's date before claiming success.
+   *  - LIVE per-patient progress relays to the phone (job /progress).
+   *  - Honest disconnects: backend marks silent executors 'lost'; phone shows
+   *    it; cancel = stop waiting (Athena work is not aborted mid-flight; the
+   *    idempotent pull finishing late is recorded but never shown as success).
+   *  - Reload-during-pull: the active job id persists in sessionStorage and
+   *    polling resumes after a phone reload.
+   *  - Idempotency: dedupeKey coalesces duplicate/delayed submits server-side;
+   *    timeout ladder now fits real full-history pulls (agent 8.5m < lost
+   *    150s-silence < phone wait 10.5m < job TTL 15m). */
+  var api = { installed: true, version: 'rl-2.0.0', agentRuns: 0 };
   window.__mlsRelayLink = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -41796,19 +41811,50 @@
       method: 'POST', headers: H(), body: JSON.stringify({ ok: !!ok, data: data == null ? null : data, error: error || null })
     }).catch(function () {});
   }
+  /* rl-2.0.0: throttled live progress up to the server so the PHONE sees real
+     per-patient status ("Reading verified history 3 of 7..."), and learns of a
+     cancel via the response without a second polling channel. */
+  function makeProgressPoster(jobId) {
+    var lastAt = 0, canceled = false;
+    return {
+      canceled: function () { return canceled; },
+      post: function (note) {
+        var now = Date.now();
+        if (now - lastAt < 3000) return;
+        lastAt = now;
+        fetch(base() + '/api/relay/jobs/' + encodeURIComponent(jobId) + '/progress', {
+          method: 'POST', headers: H(), body: JSON.stringify({ note: String(note || '').slice(0, 200) })
+        }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) { if (j && (j.status === 'canceled' || j.status === 'lost')) canceled = true; })
+          .catch(function () {});
+      }
+    };
+  }
   function runPullDay(job) {
     return new Promise(function (res) {
       var si = window.__mlsSI;
-      var date = (job.payload && job.payload.date) || '';
+      var pl = job.payload || {};
+      var date = pl.date || '';
       if (!si || typeof si.pull !== 'function' || !date) { res({ ok: false, error: 'day-pull engine unavailable on the office computer' }); return; }
       var settled = false;
+      var prog = makeProgressPoster(job.id);
       function fin(ok, err, receipt) {
         if (settled) return;
         settled = true;
-        res({ ok: ok, data: ok ? { pulled: date, receipt: receipt || null } : (receipt ? { receipt: receipt } : null), error: err || null });
+        /* the phone VERIFIES this echo — a receipt for any other day can never
+           read as success for the day the phone asked about */
+        res({ ok: ok, data: { pulled: ok ? date : '', requestedDate: date, requestId: job.requestId || pl.requestId || '', reason: (receipt && receipt.reason) || '', receipt: ok ? (receipt || null) : (receipt || null) }, error: err || null });
       }
       try {
-        var p = si.pull({ date: date, onStatus: function (m) { try { lb(true, '📱 Phone pull — ' + String(m || '').slice(0, 70)); } catch (e) {} } });
+        var opts = { date: date, onStatus: function (m) {
+          try { lb(true, '📱 Phone pull — ' + String(m || '').slice(0, 70)); } catch (e) {}
+          try { prog.post(m); } catch (e2) {}
+        } };
+        /* frozen provider travels when the phone scoped one; absent = the
+           same all-providers day pull the desktop button runs */
+        if (pl.provider) opts.provider = pl.provider;
+        if (pl.includeHistory === false) opts.includeHistory = false;
+        var p = si.pull(opts);
         if (p && typeof p.then === 'function') {
           p.then(function (r) {
             if (r && r.ok === true && r.complete === true) fin(true, null, r);
@@ -41821,7 +41867,10 @@
             }
           }, function (e2) { fin(false, (e2 && e2.message) || 'pull failed'); });
         } else { fin(false, 'day-pull engine returned no verifiable completion receipt'); }
-        setTimeout(function () { fin(false, 'pull timed out on the office computer'); }, 150000);
+        /* rl-2.0.0: 150s starved real full-history days (a 20-patient day runs
+           4-6 minutes) — the office computer now gets the same order of budget
+           the desktop button gets, still inside the job's 15-min TTL. */
+        setTimeout(function () { fin(false, 'pull timed out on the office computer'); }, 510000);
       } catch (e3) { fin(false, 'pull could not start (is athenaOne open?)'); }
     });
   }
@@ -41844,15 +41893,35 @@
       setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
     });
   }
+  /* rl-2.0.0: only the OFFICE computer executes phone jobs. A secondary laptop
+     with the extension must never grab a job meant for the office machine
+     (wrong Athena session, wrong place). No role module / no role chosen yet
+     = legacy behavior so pre-registry accounts don't regress. */
+  function agentEligible() {
+    try {
+      var dr = window.__mlsDeviceRole;
+      if (dr && typeof dr.effectiveRole === 'function') return dr.effectiveRole() === 'office';
+    } catch (e) {}
+    return true;
+  }
+  function agentDeviceId() {
+    try { var dr = window.__mlsDeviceRole; return (dr && dr.deviceId) ? String(dr.deviceId) : ''; } catch (e) { return ''; }
+  }
+  var executedJobs = {};
   function agentTick() {
     if (agentBusy) return;
-    if (!authed() || !api.extPresent()) return;
+    if (!authed() || !api.extPresent() || !agentEligible()) return;
     agentBusy = true;
-    fetch(base() + '/api/relay/jobs/next', { headers: H() })
+    var did = agentDeviceId();
+    fetch(base() + '/api/relay/jobs/next' + (did ? ('?deviceId=' + encodeURIComponent(did)) : ''), { headers: H() })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         var job = j && j.job;
         if (!job) { agentBusy = false; return; }
+        /* idempotency: a job id executes AT MOST once on this device, even if
+           a server hiccup ever re-hands it */
+        if (executedJobs[job.id]) { agentBusy = false; return; }
+        executedJobs[job.id] = 1;
         api.agentRuns++;
         lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : 'read a chart…'));
         toast('📱 Phone request received — running it here (' + job.kind + ').', '');
@@ -41919,15 +41988,85 @@
   api.phoneBarTick = phoneBarTick;
 
   /* =================== PHONE SIDE =================== */
+  /* rl-2.0.0: one shared poller for fresh pulls AND reload-resume. The active
+     job persists in sessionStorage so a phone reload mid-pull picks the SAME
+     job back up instead of orphaning it (and instead of double-pulling). */
+  var ACTIVE_KEY = 'mlsRlActiveJob';
+  function readActive() {
+    try { var v = JSON.parse(sessionStorage.getItem(ACTIVE_KEY) || 'null'); return (v && v.id && Date.now() - Number(v.at || 0) < 12 * 60 * 1000) ? v : null; } catch (e) { return null; }
+  }
+  function writeActive(v) { try { if (v) sessionStorage.setItem(ACTIVE_KEY, JSON.stringify(v)); else sessionStorage.removeItem(ACTIVE_KEY); } catch (e) {} }
+  api.activeJob = readActive;
+  api.cancelActive = function () {
+    var a = readActive();
+    if (!a) return Promise.resolve(false);
+    writeActive(null);
+    return fetch(base() + '/api/relay/jobs/' + encodeURIComponent(a.id) + '/cancel', { method: 'POST', headers: H() })
+      .then(function () { return true; }, function () { return true; });
+  };
+  function pollJob(id, date, officeWho, hooks) {
+    hooks = hooks || {};
+    function stat(m) { try { if (hooks.onStatus) hooks.onStatus(m); } catch (e) {} }
+    function done(ok, msg) { writeActive(null); try { if (hooks.onDone) hooks.onDone(ok, msg); } catch (e) {} }
+    var who = officeWho || 'your office computer';
+    var tries = 0, queuedPolls = 0;
+    var pi = setInterval(function () {
+      tries++;
+      /* 10.5 min — covers a real full-history day (agent budget 8.5m) with slack */
+      if (tries > 252) { clearInterval(pi); done(false, 'The pull is taking unusually long. It may still finish on ' + who + ' — pulled data syncs to this phone automatically. You can also retry from here.'); return; }
+      fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
+        .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (s && s.gone) { clearInterval(pi); done(false, 'That request expired on the server. Pull again.'); return; }
+          var job = s && s.job; if (!job) return;
+          if (job.status === 'queued') {
+            queuedPolls++;
+            /* a healthy office computer takes the job within ~8s (it polls
+               every 4s). 30s still queued = it went away — say so instead of
+               grinding out the full window. */
+            if (queuedPolls > 12) { clearInterval(pi); done(false, who + ' never picked the request up — it may have gone to sleep or MLS was closed there. Wake it, keep MLS open with the extension, then try again.'); return; }
+            stat('Waiting for ' + who + '… (MLS must be open there)');
+          }
+          if (job.status === 'taken') {
+            /* rl-2.0.0: mirror the office computer's REAL per-patient progress */
+            var note = job.progress && job.progress.note;
+            stat(note ? (who + ': ' + note) : (who + ' is pulling from Athena…'));
+          }
+          if (job.status === 'lost') { clearInterval(pi); done(false, (job.result && job.result.error) || (who + ' stopped responding mid-pull. Wake it and retry.')); return; }
+          if (job.status === 'canceled') { clearInterval(pi); done(false, 'Canceled. ' + who + ' may still finish the Athena work already in flight; anything pulled syncs here automatically.'); return; }
+          if (job.status === 'done') {
+            clearInterval(pi);
+            if (job.result && job.result.ok) {
+              /* verify the receipt echoes the day WE asked for — a mixed-up
+                 result must never read as success for this date */
+              var pulled = job.result.data && job.result.data.pulled;
+              if (pulled && date && pulled !== date) { done(false, 'The office computer answered with a different day (' + pulled + ' instead of ' + date + '). Nothing was assumed — pull again.'); return; }
+              stat('Pulled — syncing to this phone…');
+              try { if (typeof window.loadPatientsFromServer === 'function') window.loadPatientsFromServer(); } catch (e) {}
+              setTimeout(function () { done(true, date + ' pulled on ' + who + ' — synced here.'); }, 2500);
+            } else { done(false, who + ' reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
+          }
+        }).catch(function () {});
+    }, 2500);
+    return pi;
+  }
   api.pullDay = function (date, hooks) {
     hooks = hooks || {};
     function stat(m) { try { if (hooks.onStatus) hooks.onStatus(m); } catch (e) {} }
     function done(ok, msg) { try { if (hooks.onDone) hooks.onDone(ok, msg); } catch (e) {} }
     if (!authed()) { done(false, 'Sign in first.'); return; }
+    /* duplicate-tap / reload race: if THIS phone already has an active job for
+       the same date, resume it instead of queuing a second pull. A DIFFERENT
+       date while one is running gets an honest single-flight refusal — the
+       office computer runs one pull at a time, so a second queued job would
+       otherwise sit "queued" long enough to trip the went-away bail falsely. */
+    var already = readActive();
+    if (already && already.date === date) { stat('Resuming the pull already in progress…'); pollJob(already.id, date, already.who || '', hooks); return; }
+    if (already) { done(false, 'A pull for ' + already.date + ' is still running on ' + (already.who || 'your office computer') + '. Wait for it to finish, or cancel it and try again.'); return; }
     stat('Checking your office computer…');
     /* dr-1.0.0 FAIL-FAST: don't queue a job into the void. If the office
        computer hasn't heartbeated recently, say so NOW with the fix, instead
-       of 64 polls of "Waiting for your office computer…". A presence-check
+       of a minute of "Waiting for your office computer…". A presence-check
        network error falls through to the old path (never block on a hiccup). */
     fetch(base() + '/api/relay/presence', { headers: H() })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -41939,46 +42078,50 @@
           done(false, who + (p.officeName ? ' is not reachable' : '') + when + '. Open MLS there with the MLS Assist extension' + (p.officeName ? '' : ', and set its role to "Office computer" in Settings → Integrations') + ', then try again.');
           return;
         }
-        queueJob();
+        queueJob(p || null);
       });
-    function queueJob() {
-    stat('Asking your office computer to pull ' + date + '…');
-    fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({ kind: 'pullDay', payload: { date: date } }) })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (!j || !j.ok) { done(false, (j && j.error) || 'Could not queue the request.'); return; }
-        var id = j.id, tries = 0, queuedPolls = 0;
-        var pi = setInterval(function () {
-          tries++;
-          if (tries > 64) { clearInterval(pi); done(false, 'No answer from the office computer — make sure MLS is open there with the extension, then try again.'); return; }
-          fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (s) {
-              var job = s && s.job; if (!job) return;
-              if (job.status === 'queued') {
-                queuedPolls++;
-                /* dr-1.0.0: a healthy office computer takes the job within
-                   ~8s (it polls every 4s). 30s still queued = it went away
-                   (sleep/lid closed/tab closed) — say so instead of grinding
-                   out the full 160s. */
-                if (queuedPolls > 12) { clearInterval(pi); done(false, 'Your office computer never picked the request up — it may have gone to sleep or MLS was closed there. Wake it, keep MLS open with the extension, then try again.'); return; }
-                stat('Waiting for your office computer… (MLS must be open there)');
-              }
-              if (job.status === 'taken') stat('Your office computer is pulling from Athena…');
-              if (job.status === 'done') {
-                clearInterval(pi);
-                if (job.result && job.result.ok) {
-                  stat('Pulled — syncing to this phone…');
-                  try { if (typeof window.loadPatientsFromServer === 'function') window.loadPatientsFromServer(); } catch (e) {}
-                  setTimeout(function () { done(true, date + ' pulled on your office computer — synced here.'); }, 2500);
-                } else { done(false, 'The office computer reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
-              }
-            }).catch(function () {});
-        }, 2500);
-      })
-      .catch(function () { done(false, 'Network error — try again.'); });
+    function queueJob(presence) {
+      var officeWho = presence && presence.officeName ? ('"' + presence.officeName + '"') : 'your office computer';
+      var targetDeviceId = (presence && presence.officeId) || '';
+      var requestId = 'rlq-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+      var provider = hooks.provider || null;
+      stat('Asking ' + officeWho + ' to pull ' + date + '…');
+      fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({
+        kind: 'pullDay',
+        payload: { date: date, provider: provider, requestId: requestId },
+        requestId: requestId,
+        targetDeviceId: targetDeviceId,
+        /* server-side idempotency: a delayed duplicate of this exact command
+           (retry tap, flaky network resubmit) coalesces onto the SAME job */
+        dedupeKey: 'pullDay|' + date + '|' + (provider && (provider.stableKey || provider.name) || 'all')
+      }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) { done(false, (j && j.error) || 'Could not queue the request.'); return; }
+          writeActive({ id: j.id, date: date, who: officeWho, at: Date.now() });
+          if (j.dup) stat('That day is already being pulled — joining the run in progress…');
+          pollJob(j.id, date, officeWho, hooks);
+        })
+        .catch(function () { done(false, 'Network error — try again.'); });
     }
   };
+  /* rl-2.0.0 reload-resume: a phone reload mid-pull rejoins its job instead of
+     orphaning it. Quiet toast-driven — the day strip repaints on completion. */
+  setTimeout(function () {
+    try {
+      var a = readActive();
+      if (!a || !authed()) return;
+      if (!phoneMode && !api.shouldRelay()) return;
+      toast('Rejoining the Athena pull that was running before the reload…', '');
+      pollJob(a.id, a.date, a.who || '', {
+        onStatus: function () {},
+        onDone: function (ok, msg) {
+          toast(msg, ok ? 'ok' : 'err');
+          try { var ds = window.__mlsDaySwitch; if (ds && typeof ds.renderList === 'function') ds.renderList(); } catch (e) {}
+        }
+      });
+    } catch (e) {}
+  }, 5000);
 
   /* =================== QR PAIRING CARD (Settings > Integrations) =================== */
   var PHONE_URL = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
