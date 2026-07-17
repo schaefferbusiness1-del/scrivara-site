@@ -631,7 +631,7 @@
     }
     var priorWriteReceipt = action === 'sign_encounter' ? findAnyVerifiedWrite(patient, previewHash, opts, payload) : null;
     if (action === 'sign_encounter' && (!S(opts.receiptSessionId) || !priorWriteReceipt || !priorWriteReceipt.noteWriteProof)) {
-      actionSay(opts, 'Sign & Save is locked until this receipt verifies that this exact reviewed note was written to the exact Athena encounter. Use Write reviewed note first; nothing was changed.', 'err');
+      actionSay(opts, 'Sign & Save unlocks right after this receipt verifies the note write. Run Write reviewed note first, then sign with your own confirmation; nothing was changed.', 'err');
       return Promise.resolve({ ok: false, error: 'verified-note-write-required' });
     }
     athenaActionRunning = true;
@@ -937,7 +937,7 @@
       var priorWrite = !commonBlock ? findAnyVerifiedWrite(patient, previewHash, proofOpts, notePayload) : null;
       addRow({ id: 'sign-encounter', action: 'sign_encounter', kind: 'sign', label: ATHENA_ACTIONS.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
         capability: priorWrite && priorWrite.noteWriteProof ? 'ready' : 'blocked',
-        reason: priorWrite && priorWrite.noteWriteProof ? '' : 'Sign & Save requires a still-valid proof that this exact note was already written and verified in this exact receipt. It is never auto-chained from a new write.',
+        reason: priorWrite && priorWrite.noteWriteProof ? '' : 'Signing stays in your hands — not forbidden, just sequenced. Sign & Save requires a verified write proof from this exact review, so this row unlocks the moment the note write above is verified, then asks for your own separate confirmation. It is never auto-chained from a new write, and MLS never signs on its own.',
         consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
     }
     rows.sort(function (a, b) { return a.order - b.order || a.id.localeCompare(b.id); });
@@ -1088,7 +1088,7 @@
     unifiedStatus(state, 'Checking the exact Athena patient, encounter, destination, and control read-only for ' + row.label + '...', '');
     var proofOpts = { receiptSessionId: state.manifest.receiptSessionId };
     var priorWrite = row.action === 'sign_encounter' ? findAnyVerifiedWrite(state.manifest.patient, state.manifest.previewHash, proofOpts, row.payload) : null;
-    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Sign & Save is locked. Re-open this review after an exact verified note write, then explicitly select Sign & Save.', 'err'); return; }
+    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Sign & Save unlocks after a verified note write in this review. Run Write reviewed note first, then re-open and select Sign & Save — it always asks for your own confirmation.', 'err'); return; }
     var bridgeProbePatient = bridgePatient(state.manifest.patient);
     var taughtDestination = taughtDestinationFor(state.manifest, row);
     bridge('mlsAppAthenaActionV2', {
@@ -1218,7 +1218,7 @@
       var statusColor = blocked ? '#8b2525' : '#7a5a16';
       return '<div data-manifest-row="' + esc(row.id) + '" style="padding:9px 0;border-top:1px solid #e3ebe6">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (selectable ? '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '" aria-label="Select ' + esc(row.label) + '">' : '') + '<b style="color:#203b2e">' + esc(payload.orderTypeLabel || row.label) + '</b>' +
-        '<span style="font-size:10px;font-weight:850;color:' + statusColor + ';border:1px solid currentColor;border-radius:999px;padding:1px 6px">' + esc((row.reviewStatus || row.capability).toUpperCase()) + '</span></div>' +
+        '<span style="font-size:10px;font-weight:850;color:' + statusColor + ';border:1px solid currentColor;border-radius:999px;padding:1px 6px">' + esc((row.action === 'sign_encounter' && row.capability === 'blocked') ? 'AFTER WRITE · YOUR CONFIRM' : (row.reviewStatus || row.capability).toUpperCase()) + '</span></div>' +
         '<div style="font-size:11.5px;color:#385b49;margin-top:2px"><b>Destination:</b> ' + esc(row.destination) + '</div>' +
         '<div style="font-size:11.5px;color:#52675c;margin-top:2px"><b>Source:</b> ' + esc(row.source || payload.sourceLabel || 'Provider-entered draft') + ' &middot; <b>Capability:</b> ' + esc(row.capability.toUpperCase()) + '</div>' +
         '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#204034">Review complete proposed order</summary>' +
