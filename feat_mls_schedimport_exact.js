@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.4";
+  var VERSION = "si-1.7.5";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -2095,16 +2095,41 @@
     });
   }
 
+  /* b346: si pulls and the EZ3 staff/month engine share ONE Athena tab but used
+     to hold DIFFERENT locks (Web Lock here, window.__mlsSchedulePullLease in the
+     engine) — a month pull and a day pull could interleave goto-date/reads and
+     each would fail with "athena showed X instead of Y". si now (a) refuses to
+     start while a fresh foreign page lease exists and (b) claims that same
+     lease slot while running, so the engine's claimPullLease refuses in the
+     other direction. Cross-tab exclusion stays on the Web Lock. */
+  var SI_LEASE_ID = "mls-si-managed-" + Math.random().toString(36).slice(2, 8);
+  function foreignPullLease() {
+    var l = safe(function () { return window.__mlsSchedulePullLease; }, null);
+    if (!l || l.id === SI_LEASE_ID) return null;
+    if (Date.now() - Number(l.at || 0) > 180000) return null;
+    return l;
+  }
+  function claimSiLease() {
+    safe(function () { window.__mlsSchedulePullLease = { id: SI_LEASE_ID, kind: "si-pull", at: Date.now() }; });
+  }
+  function releaseSiLease() {
+    safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) delete window.__mlsSchedulePullLease; });
+  }
   function runManagedAthenaOperation(task, busyFactory) {
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
     }
     if (pullRunning) return Promise.resolve(busy("same-tab"));
+    if (foreignPullLease()) return Promise.resolve(busy("same-tab"));
     pullRunning = true;
-    var operationStarted = false;
+    var operationStarted = false, leaseTouch = null;
     function start() {
       operationStarted = true;
       safe(function () { window.__mlsPullBusyAt = Date.now(); });
+      claimSiLease();
+      /* keep the page lease fresh for the whole run (history batches run for
+         minutes; the engine treats >180s-old leases as stale) */
+      leaseTouch = setInterval(function () { safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) { l.at = Date.now(); window.__mlsPullBusyAt = l.at; } }); }, 25000);
       return Promise.resolve().then(task);
     }
     var operation;
@@ -2119,11 +2144,15 @@
     }
     return Promise.resolve(operation).then(function (value) {
       pullRunning = false;
+      if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
+      releaseSiLease();
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) releaseManagedAthenaWorkspace();
       return value;
     }, function (error) {
       pullRunning = false;
+      if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
+      releaseSiLease();
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) releaseManagedAthenaWorkspace();
       throw error;
@@ -2329,10 +2358,20 @@
            could turn a real appointment into a guessed time (including the repeated 6 PM
            symptom). Only fall back to text parsing when the extension supplied no rows. */
         var exactRows = domApptsFromResp(r, readDay);
+        /* b346: the text-parse fallback can call an async parser; a hung parser
+           used to leave the pull at "Finding patients..." forever. Bound it to
+           an absolute deadline so this stage always terminates. */
         var parsedP = exactRows.length
           ? Promise.resolve(exactRows)
-          : Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, []));
+          : boundedUntil(
+              Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, [])),
+              Date.now() + 25000, "schedule-parse-deadline-exceeded"
+            ).catch(function (parseErr) {
+              onStatus("The schedule text parse did not finish in time. Nothing was imported; retry.", "err");
+              return { __parseTimedOut: true };
+            });
         return parsedP.then(function (parsed) {
+          if (parsed && parsed.__parseTimedOut) return fail("schedule-parse-timeout", { scheduleReceipt: r.receipt, retry: { schedule: true } });
           parsed = Array.isArray(parsed) ? parsed : [];
           /* keep each appt OWN parsed date; importAppts scopes to `date` and files each
              appointment on its real day -- no whole-week-onto-one-day smear. */

@@ -115,7 +115,9 @@ const tests = [
   'comp-report-contract.test.js',
   'prep-summary-debris.test.js',
   'visit-single-transcript-contract.test.js',
-  'onboarding-tour-v2-contract.test.js'
+  'onboarding-tour-v2-contract.test.js',
+  'device-role-contract.test.js',
+  'pull-request-correlation-contract.test.js'
 ];
 
 for (const test of tests) {

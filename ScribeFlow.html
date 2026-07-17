@@ -7449,6 +7449,12 @@ function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointmen
 function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
 async function loadCalendar(){
   _calInit();
+  /* b346 newest-wins: overlapping loadCalendar calls race — an older in-flight
+     /api/appointments response (started BEFORE a pull imported new rows) can
+     land after the newer one and overwrite _calAppts + the instant-paint cache
+     with pre-import data. Every call takes a sequence number; only the newest
+     call may apply its response or write the cache. */
+  var _calSeq=(window.__mlsCalLoadSeq=(window.__mlsCalLoadSeq||0)+1);
   var grid=document.getElementById('calGrid');
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>'; return; }
   /* Paint immediately from the last known rows so the calendar is never a
@@ -7468,12 +7474,14 @@ async function loadCalendar(){
     fetch(bkBase()+'/api/providers',{headers:{Authorization:'Bearer '+bkToken()}}).catch(function(){ return null; })
   ]);
   var r=_calResults[0], pr=_calResults[1];
+  if(_calSeq!==window.__mlsCalLoadSeq) return; /* b346: a newer loadCalendar superseded this one — its response is stale, never apply or cache it */
   if(r&&r.status===401){ if(typeof handle401==='function') handle401(); return; }
   try{
-    if(r&&r.ok){ var d=await r.json(); _calAppts=d.appointments||[]; _calMe=d.me||{}; }
+    if(r&&r.ok){ var d=await r.json(); if(_calSeq!==window.__mlsCalLoadSeq) return; _calAppts=d.appointments||[]; _calMe=d.me||{}; }
     else if(!(_calAppts&&_calAppts.length)){ _calAppts=[]; }
   }catch(e){ if(!(_calAppts&&_calAppts.length)) _calAppts=[]; }
-  try{ if(pr&&pr.ok){ var pd=await pr.json(); _calProviders=pd.providers||[]; } }catch(e){ _calProviders=_calProviders||[]; }
+  try{ if(pr&&pr.ok){ var pd=await pr.json(); if(_calSeq===window.__mlsCalLoadSeq) _calProviders=pd.providers||[]; } }catch(e){ _calProviders=_calProviders||[]; }
+  if(_calSeq!==window.__mlsCalLoadSeq) return;
   /* bounded snapshot for the instant next-open paint; quota-safe */
   try{ localStorage.setItem(uns('calApptsCache'), JSON.stringify({appointments:(_calAppts||[]).slice(0,800), me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)})); }catch(e){}
   renderCalendar(); renderCalCheckin();
@@ -23800,7 +23808,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b345';
+  window.__MLS_AV='b346';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -18426,16 +18426,28 @@
   function bridge(reqType, payload, replyType, timeoutMs, onProgress) {
     return new Promise(function (res) {
       var done = false, timeoutWait = null;
+      /* b346 correlation: every request carries its own id, and a reply that
+         carries a DIFFERENT id belongs to another in-flight request (an
+         __mlsSI pull, a relay job, a second surface's probe) — it must never
+         settle this one. Replies without any id (older extension) keep the
+         legacy first-reply behavior. The extension echoes requestId on both
+         the envelope and resp since v2.9.15. */
+      var reqId = 'ez3-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+      function replyIdOf(d) { return String((d && (d.requestId || d.id)) || (d && d.resp && (d.resp.requestId || d.resp.id)) || ''); }
       function fin(v) { if (done) return; done = true; if (timeoutWait && timeoutWait.cancel) timeoutWait.cancel('settled'); try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext') return;
-        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { safe(function () { onProgress(d.message); }); return; }
+        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { var pgId = replyIdOf(d); if (!pgId || pgId === reqId) safe(function () { onProgress(d.message); }); return; }
         if (d.type !== replyType) return;
+        var gotId = replyIdOf(d);
+        if (gotId && gotId !== reqId) return;
         fin(d.resp !== undefined ? d.resp : d);
       }
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      if (msg.requestId != null) reqId = String(msg.requestId);
+      msg.id = reqId; msg.requestId = reqId;
       touchPullLease();
       safe(function () { window.postMessage(msg, '*'); });
       timeoutWait = bgWait(timeoutMs || 15000);
@@ -19516,14 +19528,21 @@
   function bridgeOnce(reqType, replyType, timeoutMs, payload) {
     return new Promise(function (res) {
       var done = false;
+      /* b346 correlation: same contract as the engine bridge — a reply that
+         echoes a different request id belongs to someone else's pull. */
+      var reqId = 'prf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
       function fin(v) { if (done) return; done = true; safe(function () { window.removeEventListener('message', on, false); }); res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== replyType) return;
+        var gotId = String((d.requestId || d.id) || (d.resp && (d.resp.requestId || d.resp.id)) || '');
+        if (gotId && gotId !== reqId) return;
         fin(d.resp !== undefined ? d.resp : d);
       }
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      if (msg.requestId != null) reqId = String(msg.requestId);
+      msg.id = reqId; msg.requestId = reqId;
       safe(function () { window.postMessage(msg, '*'); });
       setTimeout(function () { fin(null); }, timeoutMs || 8000);
     });
@@ -22684,16 +22703,24 @@
   function bridge(reqType, payload, replyType, timeoutMs, onProgress) {
     return new Promise(function (res) {
       var done = false;
+      /* b346 correlation: reject replies that carry a different request id
+         (another module's in-flight pull); id-less replies keep legacy flow. */
+      var reqId = 'ez3d-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+      function replyIdOf(d) { return String((d && (d.requestId || d.id)) || (d && d.resp && (d.resp.requestId || d.resp.id)) || ''); }
       function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext') return;
-        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { safe(function () { onProgress(d.message); }); return; }
+        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { var pgId = replyIdOf(d); if (!pgId || pgId === reqId) safe(function () { onProgress(d.message); }); return; }
         if (d.type !== replyType) return;
+        var gotId = replyIdOf(d);
+        if (gotId && gotId !== reqId) return;
         fin(d.resp !== undefined ? d.resp : d);
       }
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      if (msg.requestId != null) reqId = String(msg.requestId);
+      msg.id = reqId; msg.requestId = reqId;
       safe(function () { window.postMessage(msg, '*'); });
       setTimeout(function () { fin(null); }, timeoutMs || 15000);
     });
@@ -24579,16 +24606,24 @@
   function bridge(reqType, payload, replyType, timeoutMs, onProgress) {
     return new Promise(function (res) {
       var done = false;
+      /* b346 correlation: reject replies that carry a different request id
+         (another module's in-flight pull); id-less replies keep legacy flow. */
+      var reqId = 'ez3d-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+      function replyIdOf(d) { return String((d && (d.requestId || d.id)) || (d && d.resp && (d.resp.requestId || d.resp.id)) || ''); }
       function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext') return;
-        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { safe(function () { onProgress(d.message); }); return; }
+        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { var pgId = replyIdOf(d); if (!pgId || pgId === reqId) safe(function () { onProgress(d.message); }); return; }
         if (d.type !== replyType) return;
+        var gotId = replyIdOf(d);
+        if (gotId && gotId !== reqId) return;
         fin(d.resp !== undefined ? d.resp : d);
       }
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      if (msg.requestId != null) reqId = String(msg.requestId);
+      msg.id = reqId; msg.requestId = reqId;
       safe(function () { window.postMessage(msg, '*'); });
       setTimeout(function () { fin(null); }, timeoutMs || 15000);
     });
@@ -26075,16 +26110,24 @@
   function bridge(reqType, payload, replyType, timeoutMs, onProgress) {
     return new Promise(function (res) {
       var done = false;
+      /* b346 correlation: reject replies that carry a different request id
+         (another module's in-flight pull); id-less replies keep legacy flow. */
+      var reqId = 'ez3d-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+      function replyIdOf(d) { return String((d && (d.requestId || d.id)) || (d && d.resp && (d.resp.requestId || d.resp.id)) || ''); }
       function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext') return;
-        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { safe(function () { onProgress(d.message); }); return; }
+        if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { var pgId = replyIdOf(d); if (!pgId || pgId === reqId) safe(function () { onProgress(d.message); }); return; }
         if (d.type !== replyType) return;
+        var gotId = replyIdOf(d);
+        if (gotId && gotId !== reqId) return;
         fin(d.resp !== undefined ? d.resp : d);
       }
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      if (msg.requestId != null) reqId = String(msg.requestId);
+      msg.id = reqId; msg.requestId = reqId;
       safe(function () { window.postMessage(msg, '*'); });
       setTimeout(function () { fin(null); }, timeoutMs || 15000);
     });
@@ -31921,7 +31964,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b345';
+  window.__MLS_AV = window.__MLS_AV || 'b346';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32212,7 +32255,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-16-b345';
+  var MLS_APP_BUILD='2026-07-16-b346';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -39200,7 +39243,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.4 - exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.5 - exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
