@@ -32051,7 +32051,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b391';
+  window.__MLS_AV = window.__MLS_AV || 'b392';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32342,7 +32342,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b391';
+  var MLS_APP_BUILD='2026-07-17-b392';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -39025,7 +39025,7 @@
   try {
     var LOCK_ID = 'mlsStudioPremiumLock';
     function isPrem(){
-      /* b390: demo/logged-out sessions are NEVER locked — same philosophy as
+      /* b392: demo/logged-out sessions are NEVER locked — same philosophy as
          pmg-1.0.0 ("demos and the logged-out tour keep showing the full
          product") and generateStudioWidget's own sign-in messaging, which
          assumes the controls are reachable. The server still gates every AI
@@ -41937,7 +41937,7 @@
       var pl = job.payload || {};
       var date = pl.date || '';
       if (!si || typeof si.pull !== 'function' || !date) { res({ ok: false, error: 'day-pull engine unavailable on the office computer' }); return; }
-      /* b390: if this office computer ALREADY knows athenaOne is signed out or
+      /* b392: if this office computer ALREADY knows athenaOne is signed out or
          the extension is down, fail the job instantly with the precise verdict
          instead of burning a full pull attempt into a generic reason code.
          Fail-open: no verdict / 'checking' / stale module ⇒ run the pull. */
@@ -42093,7 +42093,7 @@
         try { var dr0 = window.__mlsDeviceRole; if (dr0 && dr0.role && dr0.role() === 'secondary') roleLbl = '💻 Remote mode'; } catch (e) {}
         bar.innerHTML = '<span>' + roleLbl + '</span><span id="mlsRlPresence" style="color:#79837C;font-weight:500">— checking your office computer…</span>';
         body.insertBefore(bar, body.firstChild);
-        /* b390: one-time explainer so a new phone user knows the model without
+        /* b392: one-time explainer so a new phone user knows the model without
            ever having seen the desktop QR card. */
         try {
           if (!localStorage.getItem('mlsRlPhoneIntroSeen')) {
@@ -42110,7 +42110,7 @@
         .then(function (p) {
           var el = $('mlsRlPresence'); if (!el || !p) return;
           var who = p.officeName ? ('"' + p.officeName + '"' + (p.officeOs ? ' (' + p.officeOs + ')' : '')) : 'office computer';
-          /* b390: four HONEST states instead of a two-way online&&ext collapse —
+          /* b392: four HONEST states instead of a two-way online&&ext collapse —
              offline, extension-crashed, Athena-signed-out, and truly ready. */
           if (p.online && p.ext && p.officeAth === 'no-tab') { el.textContent = '— ' + who + ' is on, but athenaOne is SIGNED OUT there. Sign in to athenaOne on that computer, then pull from here.'; el.style.color = '#8A5A00'; }
           else if (p.online && p.ext) { el.textContent = '— ' + who + ' connected ✓' + (p.officeAth === 'connected' ? ' · athenaOne signed in ✓' : '') + ' (last heartbeat ' + (p.ageSec != null ? p.ageSec + 's ago' : 'just now') + '). Pulls you start here run there.'; el.style.color = '#2E6A4B'; }
@@ -42216,7 +42216,7 @@
         if (!pick && p && p.ok && !(p.online && p.ext)) {
           var who = p.officeName ? ('Your office computer "' + p.officeName + '"') : 'No office computer is connected';
           var when = p.ageSec != null ? ' (last seen ' + (p.ageSec < 120 ? p.ageSec + 's' : Math.round(p.ageSec / 60) + 'm') + ' ago)' : '';
-          /* b390: "not reachable (last seen 5s ago)" was self-contradicting when
+          /* b392: "not reachable (last seen 5s ago)" was self-contradicting when
              the extension had crashed — the machine WAS reachable. Say which
              problem it actually is, with the fix that actually works. */
           if (p.online && !p.ext && p.officeName) {
@@ -42226,7 +42226,7 @@
           done(false, who + (p.officeName ? ' is not reachable' : '') + when + '. Open MLS there with the MLS Assist extension' + (p.officeName ? '' : ', and set its role to "Office computer" in Settings → Integrations') + ', then try again.');
           return;
         }
-        /* b390: honest early stop when the office is up but athenaOne is signed
+        /* b392: honest early stop when the office is up but athenaOne is signed
            out — instead of burning a full pull attempt to find out. */
         if (!pick && p && p.ok && p.online && p.ext && p.officeAth === 'no-tab') {
           var who2 = p.officeName ? ('your office computer "' + p.officeName + '"') : 'your office computer';
@@ -42674,7 +42674,7 @@
     fetch(base() + '/api/relay/devices/heartbeat', {
       method: 'POST', headers: H(),
       body: JSON.stringify({ deviceId: DID, role: api.effectiveRole(), name: api.name(), os: OS, browser: BROWSER, ext: extPresent(),
-        /* b390: the office's Athena-session verdict rides the heartbeat so a
+        /* b392: the office's Athena-session verdict rides the heartbeat so a
            PHONE can know BEFORE pulling whether athenaOne is signed in here.
            States: connected | no-tab | no-extension | error | checking | ''.
            describe() reads the module's LIVE state (the exported .state
