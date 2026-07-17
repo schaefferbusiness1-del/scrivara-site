@@ -9240,7 +9240,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [];
+      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [];
       async function sleepWithinReadDeadline(ms) {
         var remaining = Math.max(0, readDeadline - Date.now());
         if (!remaining) return false;
@@ -9261,6 +9261,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            them honestly on the receipt instead of failing the whole batch. */
         if (/^\s*order\s*group\b/i.test(String(snap.type || ''))) {
           administrativeRows.push({ index: i, type: String(snap.type || '').slice(0, 60) });
+          /* v2.9.32: the doctor SEES these rows in athena's list - dropping
+             them silently looked like "skipping every other visit". They
+             have no clinical note body (the fresh-frame proof fails on them
+             deterministically), so each row's own visible line is filed as
+             an INDEX-ONLY administrative entry OUTSIDE the verified
+             clinical chain, and the skip is narrated instead of silent. */
+          administrativeVisits.push({
+            date: snap.date || '', type: String(snap.type || '').slice(0, 80), raw: String(snap.rowText || '').slice(0, 1200),
+            cpt: [], icd10: [], source: 'athena-order-group-index',
+            indexOnly: true, administrative: true, fullDetail: false, bodyMinimal: false,
+            encounterIndex: i, encounterId: (expected && expected.encounterId) || '', sourceVisitKey: (expected && expected.rowKey) || '', rowKey: (expected && expected.rowKey) || ''
+          });
+          emit(appTabId, frozenRequestId, 'Indexed order group ' + (i + 1) + ' of ' + total + ' (administrative row - no clinical note body).', i + 1, total);
           continue;
         }
         attemptedCount++;
@@ -9504,7 +9517,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
       emit(appTabId, frozenRequestId, 'Read all ' + visits.length + ' full encounter(s).', visits.length, total);
-      return { ok: true, identity: identity, visits: visits, diag: diag, strategy: 'bound-click', found: total, receipt: receipt };
+      return { ok: true, identity: identity, visits: visits, administrativeVisits: administrativeVisits, diag: diag, strategy: 'bound-click', found: total, receipt: receipt };
     }).catch(function (e) {
       return { ok: false, identity: identity, visits: [], diag: diag, receipt: { complete: false, indexComplete: !!enumRes, bodyComplete: false, fullDetail: false }, error: String((e && e.message) || e) };
     }).then(function (res) {

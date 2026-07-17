@@ -1,5 +1,5 @@
 {
-  "version": "2.9.32",
+  "version": "2.9.33",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.32 - History pulls are faster: the chart and visits readers now check for readiness more often instead of sleeping through fixed delays. Every deadline, identity gate, and completeness check is unchanged - only the waiting got shorter. Also Mac-ready: install instructions cover macOS and the microphone message explains the Mac system permission. Everything else unchanged from v2.9.31."
+  "notes": "v2.9.33 - Order-group rows are no longer silently skipped during history pulls: each administrative order group row is filed as its own dated index entry (outside the verified clinical chain, so every existing completeness proof is unchanged), and the pull narrates it instead of appearing to skip every other visit. Includes the v2.9.32 speed and Mac changes."
 }

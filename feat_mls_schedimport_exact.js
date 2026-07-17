@@ -1798,11 +1798,31 @@
       for (var po = 0; po < acceptedAliases.length; po++) if (sharesAlias(persistedAliases, acceptedAliases[po])) owners++;
       if (owners !== 1) throw new Error("visits-persistence-alias-collision");
     }
+    /* v2.9.32 order-group entries: filed AFTER the strict clinical proof
+       chain, as UNVERIFIED index-only rows (source athena-order-group-index)
+       that reconcile intentionally never deletes. A failure here can never
+       break the verified receipt - it only skips the extra entries. Re-pull
+       is idempotent: an entry is added only when no stored visit already
+       carries the same date + trimmed row text (or the same encounter id). */
+    var administrativeSaved=0;
+    safe(function(){
+      var adminRows=Array.isArray(r.administrativeVisits)?r.administrativeVisits:[];
+      if(!adminRows.length||!isFn(vm.addVisit)) return;
+      var existing=safe(function(){return vm.getVisits(patientById(target.patientId))||[];},[]);
+      function adminKey(v){var eid=String(v&&(v.encounterId||v.encounterID)||"").trim().toLowerCase();var body=String(v&&(v.raw||v.text||v.note||v.detail)||"").replace(/\s+/g," ").trim().toLowerCase();return (String(v&&v.date||"")+"|"+(eid||body)).slice(0,400);}
+      var seenKeys={};
+      existing.forEach(function(v){seenKeys[adminKey(v)]=1;});
+      adminRows.forEach(function(row){
+        if(!row||!String(row.raw||"").trim()) return;
+        var key=adminKey(row); if(!key||seenKeys[key]) return; seenKeys[key]=1;
+        if(vm.addVisit(target.patientId,row,{source:"athena-order-group-index",indexOnly:true,administrative:true,bodyComplete:false})) administrativeSaved++;
+      });
+    });
     var organization=safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
     if(!organization||organization.ok!==true) throw new Error("history-organization-unproven");
     var refreshedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
+    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
   async function runHistoryBatch(rows, unresolved, onStatus) {
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
