@@ -17,7 +17,7 @@
     version: 'sc-1.2.0', enabled: true, early: true,
     stats: { hits: 0, misses: 0, fallbacks: 0, invalidations: 0 }, _wrapped: []
   };
-  /* b376 perf: every localStorage write (any key) bumps VER; cross-tab writes
+  /* b377 perf: every localStorage write (any key) bumps VER; cross-tab writes
      arrive via the storage event. An unchanged VER proves the stored blob
      cannot have changed, so reads skip getItem + the full string compare. */
   var VER = { n: 1 };
@@ -8013,7 +8013,7 @@
         }
       }
       if (fixed) {
-        /* b376 perf: ONE local write for the whole pass (was a full-blob
+        /* b377 perf: ONE local write for the whole pass (was a full-blob
            LZ-compress + setItem per fixed patient — O(n²) on a dirty sweep).
            Server mirror stays per-patient best-effort, same as upsertPatient. */
         try { if (typeof window.savePatients === 'function') window.savePatients(ps); } catch (e) {}
@@ -8024,7 +8024,7 @@
     } catch (e) {}
     return 0;
   }
-  /* b376 perf: self-retire once the corpus is proven clean. patch() keeps the
+  /* b377 perf: self-retire once the corpus is proven clean. patch() keeps the
      write-time sanitizer installed, so new summaries are stripped at the
      source; 5 consecutive clean sweeps means the retroactive pass is done.
      Manual recovery stays available via __mlsSanitizeV2._scrub(). */
@@ -32028,7 +32028,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b376';
+  window.__MLS_AV = window.__MLS_AV || 'b377';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32319,7 +32319,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b376';
+  var MLS_APP_BUILD='2026-07-17-b377';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

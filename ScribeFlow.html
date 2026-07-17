@@ -6117,7 +6117,7 @@ function _mlsPtsEncode(json){
 }
 window.__mlsPtsDecode=_mlsPtsDecode;
 window.__mlsPtsEncode=_mlsPtsEncode;
-/* b376 perf: memoize the base read on RAW string identity. The multi-MB LZ
+/* b377 perf: memoize the base read on RAW string identity. The multi-MB LZ
    decode + JSON.parse runs once per stored change instead of on every call —
    this matters most at boot, before the bundle's store-cache wrap installs.
    Returns a fresh top-level array (same aliasing depth as the wrap). */
@@ -6212,7 +6212,7 @@ function ptInitials(name){
   if(!parts.length) return '?';
   return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
 }
-/* b376 perf: patientNotes was a full-store scan per call — renderPatients calls
+/* b377 perf: patientNotes was a full-store scan per call — renderPatients calls
    it once per row (150 rows × every note in the account). Index notes by
    patientId once per store version instead. Map keys use SameValueZero, which
    matches the old strict-equality filter for real ids; when no version source
@@ -6234,7 +6234,7 @@ function patientNotes(id){
     return out;
   }catch(e){ try{return getNotes().filter(function(n){return n.patientId===id;});}catch(_){return [];} }
 }
-/* b376 perf: shared 150ms trailing debounce for keystroke-driven list renders
+/* b377 perf: shared 150ms trailing debounce for keystroke-driven list renders
    (ptSearch / histSearch). On a 1,500-patient roster each keystroke used to
    sort + rebuild the full list synchronously. */
 window.__mlsDebRender=(function(){var t={};return function(key,fn){ if(typeof fn!=='function')return; clearTimeout(t[key]); t[key]=setTimeout(function(){ try{fn();}catch(e){} },150); };})();
@@ -11943,7 +11943,7 @@ function renderHistory(){
   // ---- Search + type filter so the doctor can find anything fast ----
   const qEl=document.getElementById('histSearch'); const q=(qEl&&qEl.value?qEl.value:'').trim().toLowerCase();
   const fEl=document.getElementById('histFilter'); const fv=fEl?fEl.value:'';
-  /* b376 perf: name fallback used to call getPatients().find PER NOTE — one
+  /* b377 perf: name fallback used to call getPatients().find PER NOTE — one
      full-roster copy per unnamed note. Build the id map lazily, once. */
   let _plm=null; const _plistMap=()=>{ if(!_plm){ _plm=new Map(); try{ (typeof getPatients==='function'?getPatients():[]).forEach(x=>{ if(x)_plm.set(x.id,x); }); }catch(e){} } return _plm; };
   const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
@@ -11953,7 +11953,7 @@ function renderHistory(){
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
   if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
-  /* b376 perf: bound the DOM like renderPatients does (PT_CAP). A chart with
+  /* b377 perf: bound the DOM like renderPatients does (PT_CAP). A chart with
      hundreds of visits rendered every row on every pass; search still runs
      over the full set above, so nothing becomes unfindable. */
   const HIST_CAP=200;
@@ -23872,7 +23872,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b376';
+  window.__MLS_AV='b377';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
