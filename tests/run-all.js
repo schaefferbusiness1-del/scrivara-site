@@ -70,6 +70,7 @@ const tests = [
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
+  'template-library-runtime.test.js',
   'staging-history-writeflow-parity.test.js',
   'active-patient-sync-status.test.js',
   'voice-dock-layout-contract.test.js',

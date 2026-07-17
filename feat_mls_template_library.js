@@ -1,0 +1,189 @@
+/* =============================================================================
+ * MLS versioned template library  tl-1.0.0
+ * Authenticated template sets are encrypted/versioned by the backend. Existing
+ * local templates remain the offline fallback until a server set is explicitly
+ * activated. Imports are preview-first and local edits become recoverable
+ * versions with optimistic stale-device rejection.
+ * ========================================================================== */
+(function () {
+  'use strict';
+  if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
+
+  var VERSION='tl-1.0.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false};
+  var originals={},uploadRuns={},activeUpload=null;
+  var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
+  var PREVIEW_STAGES=['Validating import','Checking ownership','Comparing versions','Preparing import preview'];
+  var COMMIT_STAGES=['Validating import','Checking duplicates','Writing atomic version','Verifying committed version'];
+
+  function esc(v){return S(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function byId(id){return document.getElementById(id);}
+  function hosted(){try{return isFn(window.backendMode)&&window.backendMode()&&isFn(window.bkToken)&&!!window.bkToken();}catch(e){return false;}}
+  function uid(prefix){try{if(window.crypto&&isFn(window.crypto.randomUUID))return prefix+window.crypto.randomUUID();}catch(e){}return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  function setFor(id){for(var i=0;i<state.sets.length;i++)if(state.sets[i]&&state.sets[i].id===id)return state.sets[i];return null;}
+  function cloneTemplates(list){try{return JSON.parse(JSON.stringify(Array.isArray(list)?list:[]));}catch(e){return [];}}
+  function currentLocal(){try{return isFn(window.getTemplates)?(window.getTemplates()||[]):[];}catch(e){return [];}}
+  function status(message,error){state.status=S(message);if(arguments.length>1)state.statusError=!!error;var el=byId('tlStatus');if(el){el.textContent=state.status;el.style.color=state.statusError?'#a12c2c':'#35536f';}}
+  function progressStart(opts){var api=window.__mlsLoadingCalm;try{return api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){return null;}}
+  function progressStage(handle,stage,current,total,operation){try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
+  function progressLink(handle,response){try{var id=response&&response.headers&&response.headers.get('X-Job-ID'),api=window.__mlsLoadingCalm;if(handle&&id&&api&&isFn(api.linkServer))api.linkServer(handle.id,id);}catch(e){}}
+
+  async function request(path,options){
+    options=options||{};if(!hosted())throw Object.assign(new Error('Sign in to use the cloud template library.'),{code:'TEMPLATE_OFFLINE'});
+    var requestId=options.requestId||uid('req-'),headers={'Authorization':'Bearer '+window.bkToken(),'X-Request-ID':requestId};
+    if(options.body!==undefined)headers['Content-Type']='application/json';if(options.idempotencyKey)headers['Idempotency-Key']=options.idempotencyKey;
+    var response=await window.fetch(window.bkBase()+path,{method:options.method||'GET',headers:headers,body:options.body===undefined?undefined:JSON.stringify(options.body),signal:options.signal});
+    progressLink(options.progress,response);var data={};try{data=await response.json();}catch(e){}
+    if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;throw err;}
+    return data;
+  }
+
+  function css(){
+    if(byId('mlsTlCss'))return;var st=document.createElement('style');st.id='mlsTlCss';st.textContent=[
+      '#tlPanel{border:1px solid #cfe0d7;background:linear-gradient(135deg,#f5faf7,#f7f9ff);border-radius:13px;padding:13px 14px;margin:0 0 14px;color:#19352a}',
+      '#tlPanel h4{margin:0 0 3px;font-size:14px}#tlPanel .tl-sub{font-size:11.5px;color:#5b6d65;margin:0 0 9px}',
+      '#tlPanel .tl-grid{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(130px,.8fr) minmax(130px,1fr);gap:8px;align-items:end}',
+      '#tlPanel label{font-size:10.5px;font-weight:750;color:#476057}#tlPanel input,#tlPanel select{box-sizing:border-box;width:100%;margin-top:3px;border:1px solid #bfd1c7;border-radius:8px;background:#fff;padding:7px 8px;font-size:12px}',
+      '#tlPanel .tl-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}#tlPanel button,.tl-import-review button{border:1px solid #bcd0c5;border-radius:8px;background:#fff;color:#204034;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer}',
+      '#tlPanel button:hover,.tl-import-review button:hover{background:#edf6f1}.tl-active{margin-top:8px;border-radius:8px;background:#e8f5ed;padding:7px 9px;font-size:11.5px}.tl-warn{background:#fff5df!important;color:#795c19!important}',
+      '#tlConflict{display:none;margin-top:8px;border:1px solid #e6bf68;background:#fff7e4;border-radius:9px;padding:8px 10px;font-size:11.5px;color:#684f17}#tlConflict button{margin:7px 5px 0 0}',
+      '#tlVersions{margin-top:8px;max-height:150px;overflow:auto;font-size:11px}.tl-ver{display:flex;gap:8px;align-items:center;border-top:1px solid #dce8e1;padding:5px 0}.tl-ver span{flex:1}',
+      '.tl-import-review{border:1px solid #c9dccf;background:#f7fbf8;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:12px;color:#29493d}.tl-counts{display:flex;gap:6px;flex-wrap:wrap;margin:7px 0}.tl-count{border-radius:999px;background:#e8f1ec;padding:3px 8px;font-weight:750}.tl-count.bad{background:#fdeaea;color:#982c2c}',
+      '@media(max-width:760px){#tlPanel .tl-grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){#tlPanel .tl-grid{grid-template-columns:1fr}#tlPanel .tl-actions button{flex:1 1 45%}}'
+    ].join('\n');(document.head||document.documentElement).appendChild(st);
+  }
+
+  function ensurePanel(){
+    css();var modal=byId('templatesModal'),anchor=byId('tplList');if(!modal||!anchor||byId('tlPanel'))return;
+    var panel=document.createElement('section');panel.id='tlPanel';panel.setAttribute('aria-label','Versioned template library');panel.innerHTML=
+      '<h4>☁ Versioned template library</h4><p class="tl-sub">The active set follows this signed-in account. Imports are previewed first; older versions remain recoverable.</p>'+
+      '<div class="tl-grid"><label>Template set<select id="tlSetSelect"></select></label><label>Import scope<select id="tlScope"><option value="account">This account</option><option value="provider">This provider</option><option value="practice">This practice</option></select></label><label>Facility association<input id="tlFacility" placeholder="Optional facility"></label></div>'+
+      '<div class="tl-grid" style="margin-top:7px"><label>Set name<input id="tlSetName" placeholder="My validated templates"></label><div></div><div></div></div>'+
+      '<div class="tl-actions"><button data-tl="refresh">↻ Refresh</button><button data-tl="activate">✓ Activate selected</button><button data-tl="new">＋ New empty set</button><button data-tl="history">History</button><button data-tl="archive">Archive</button><button data-tl="migrate">Move device templates to cloud</button></div>'+
+      '<div id="tlActive" class="tl-active"></div><div id="tlStatus" role="status" aria-live="polite"></div><div id="tlConflict"></div><div id="tlVersions"></div>';
+    anchor.parentElement.insertBefore(panel,anchor);panel.addEventListener('click',panelClick);byId('tlSetSelect').addEventListener('change',function(){state.selectedSetId=this.value;renderPanel();});renderPanel();
+  }
+
+  function renderPanel(){
+    ensurePanel();var select=byId('tlSetSelect');if(!select)return;
+    var options='<option value="">— new set (not active) —</option>';
+    state.sets.forEach(function(set){options+='<option value="'+esc(set.id)+'">'+esc(set.name)+(set.active?' · ACTIVE':'')+(set.status==='archived'?' · archived':'')+' · v'+set.version+'</option>';});
+    select.innerHTML=options;if(!setFor(state.selectedSetId))state.selectedSetId=state.activeSetId||'';select.value=state.selectedSetId;
+    var selected=setFor(state.selectedSetId),active=setFor(state.activeSetId),activeEl=byId('tlActive');
+    if(active)activeEl.innerHTML='<b>Active now:</b> '+esc(active.name)+' · v'+active.version+' · '+active.templateCount+' template'+(active.templateCount===1?'':'s')+' · '+esc(active.scope);
+    else activeEl.innerHTML='<b>No cloud set is active.</b> Device templates remain unchanged until you explicitly activate a set.';
+    activeEl.className='tl-active'+(active?'':' tl-warn');
+    byId('tlScope').value=selected?selected.scope:'account';byId('tlFacility').value=selected?(selected.facility||''):'';byId('tlSetName').value=selected?(selected.name||''):'';
+    var activate=byId('tlPanel').querySelector('[data-tl="activate"]'),archive=byId('tlPanel').querySelector('[data-tl="archive"]');
+    activate.disabled=!selected||selected.active||selected.status==='archived';archive.disabled=!selected;archive.textContent=selected&&selected.status==='archived'?'Unarchive':'Archive';
+    var migrate=byId('tlPanel').querySelector('[data-tl="migrate"]');migrate.style.display=!state.activeSetId&&currentLocal().length?'':'none';
+    status(state.status);renderConflict();
+  }
+
+  function renderConflict(){
+    var box=byId('tlConflict');if(!box)return;if(!state.conflict){box.style.display='none';box.innerHTML='';return;}
+    box.style.display='block';box.innerHTML='<b>A newer cloud version exists.</b> Your device changes were kept here and were not silently uploaded. Review the newest version or retry your changes on top of it.<br><button data-tl-conflict="retry">Retry my device changes</button><button data-tl-conflict="server">Discard device changes</button>';
+    box.onclick=function(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-conflict]'):null;if(!b)return;var conflict=state.conflict,action=b.getAttribute('data-tl-conflict');if(action==='server'){state.conflict=null;if(conflict.serverSet&&conflict.serverSet.active)applySet(conflict.serverSet);if(conflict.kind==='import')state.pending=null;status('Device changes discarded; the newest cloud version remains authoritative.',false);renderPanel();}else if(action==='retry'){state.conflict=null;if(conflict.kind==='import'&&state.pending){state.pending.body.expectedVersion=Number(conflict.serverSet&&conflict.serverSet.version)||state.pending.body.expectedVersion;commitPending();}else persistSnapshot(cloneTemplates(conflict.localTemplates||(conflict.body&&conflict.body.templates)||currentLocal()));}};
+  }
+
+  function applySet(set){
+    if(!set||!Array.isArray(set.templates))return;state.applying=true;
+    try{(originals.setTemplates||window.setTemplates)(cloneTemplates(set.templates));if(isFn(window.uns)){localStorage.setItem(window.uns('templateSetActive'),set.id);localStorage.setItem(window.uns('templateSetVersion'),S(set.version));}}
+    finally{state.applying=false;}
+    state.activeSetId=set.id;state.activeVersion=Number(set.version)||0;state.activeTemplates=cloneTemplates(set.templates);state.hydrated=true;
+    try{if(isFn(window.renderTemplateList))window.renderTemplateList();if(isFn(window.renderTemplateActiveSelect))window.renderTemplateActiveSelect();}catch(e){}
+  }
+
+  function refresh(options){
+    options=options||{};if(!hosted()){ensurePanel();status('Offline/local mode: device templates are still available.',false);return Promise.resolve(false);}
+    if(state.refreshPromise)return state.refreshPromise;var handle=options.silent?null:progressStart({key:'template-library:refresh',kind:'template_library',label:'Refreshing template library',stages:['Loading template sets','Checking active set','Applying active version'],total:3,timeoutMs:45000,replace:true,cancelable:false});
+    state.refreshPromise=(async function(){
+      try{
+        progressStage(handle,'Loading template sets',1,3,'Loading account-scoped template sets.');var data=await request('/api/template-sets?includeArchived=1',{requestId:handle&&handle.requestId,progress:handle});
+        state.sets=Array.isArray(data.sets)?data.sets:[];state.activeSetId=data.activeSetId||'';if(!state.selectedSetId)state.selectedSetId=state.activeSetId;
+        progressStage(handle,'Checking active set',2,3,'Checking the explicitly selected active set.');
+        if(state.activeSetId&&options.applyActive!==false){var detail=await request('/api/template-sets/'+encodeURIComponent(state.activeSetId),{requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying active version',3,3,'Applying the newest active version to this device.');applySet(detail.set);}
+        else state.hydrated=true;
+        status('Template library refreshed.',false);renderPanel();if(handle)handle.complete('Template library refreshed.');return true;
+      }catch(error){status(error.message,true);if(handle)handle.fail(error);renderPanel();return false;}
+      finally{state.refreshPromise=null;}
+    })();return state.refreshPromise;
+  }
+
+  function importBody(custom){
+    custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];
+    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:custom.scope||(byId('tlScope')&&byId('tlScope').value)||(selected&&selected.scope)||'account',facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true};}),removeTemplateIds:custom.removeTemplateIds||[]};
+  }
+
+  function countsHtml(counts){var keys=['added','updated','duplicated','rejected','unchanged','removed'];return '<div class="tl-counts">'+keys.map(function(key){return '<span class="tl-count '+(key==='rejected'?'bad':'')+'">'+key+': '+(Number(counts&&counts[key])||0)+'</span>';}).join('')+'</div>';}
+  function renderImportPreview(preview){
+    var box=byId('tplMultiResult');if(!box)return;var rejected=(preview.detail&&preview.detail.rejected)||[];
+    box.innerHTML='<div class="tl-import-review"><b>Import preview — nothing saved yet</b>'+countsHtml(preview.counts)+'<div>Resulting set: '+preview.proposedTemplateCount+' template'+(preview.proposedTemplateCount===1?'':'s')+'.</div>'+
+      (rejected.length?'<div style="color:#982c2c;margin-top:5px">'+rejected.map(function(x){return esc((x.name||'Row '+(x.index+1))+': '+x.reason);}).join('<br>')+'</div>':'')+
+      '<label style="display:block;margin:8px 0"><input type="checkbox" id="tlActivateAfter" style="width:auto"> Activate this set after commit'+(preview.targetSetId?' (current selection remains active if already active)':'')+'</label>'+
+      '<button data-tl-import="commit" '+(preview.canCommit?'':'disabled')+'>Commit one recoverable version</button> <button data-tl-import="cancel">Cancel</button></div>';
+    box.onclick=importClick;try{box.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){}
+  }
+
+  function previewImport(custom,providedHandle){
+    if(!hosted()){if(isFn(originals.tplAddSplit))return Promise.resolve(originals.tplAddSplit());return Promise.resolve(false);}
+    var body=importBody(custom),fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~');
+    var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,retry:function(next){previewImport(custom,next);}});
+    return (async function(){try{
+      progressStage(handle,'Validating import',0,body.templates.length,'Validating selected templates.');var data=await request('/api/template-imports/preview',{method:'POST',body:body,requestId:handle&&handle.requestId,progress:handle});
+      progressStage(handle,'Comparing versions',body.templates.length,body.templates.length,'Comparing against the selected set version.');state.pending={body:body,preview:data.preview,idempotencyKey:uid('tpl-import-'),fromForm:custom&&custom.fromForm};
+      progressStage(handle,'Preparing import preview',body.templates.length,body.templates.length,'Waiting for explicit commit.');renderImportPreview(data.preview);if(handle)handle.complete('Import preview ready. Nothing has been saved.');return data.preview;
+    }catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);throw error;}})();
+  }
+
+  function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending();else if(action==='cancel'){state.pending=null;state.editingId='';var box=byId('tplMultiResult');if(box){box.onclick=null;box.innerHTML='';}}}
+  function commitPending(providedHandle){
+    if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');body.activate=!!(activate&&activate.checked);
+    var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:true,retry:function(next){commitPending(next);}});
+    return (async function(){try{
+      progressStage(handle,'Validating import',0,body.templates.length,'Rechecking preview ownership and version.');var data=await request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:pending.idempotencyKey,requestId:handle&&handle.requestId,progress:handle});var result=data.result;
+      progressStage(handle,'Verifying committed version',body.templates.length,body.templates.length,'Applying the committed active version when selected.');
+      if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate))applySet(result.set);
+      state.pending=null;window._tplPendingSplit=[];if(pending.fromForm&&isFn(window.clearTplForm))window.clearTplForm();state.editingId='';
+      var box=byId('tplMultiResult');if(box)box.innerHTML='<div class="tl-import-review"><b>Import '+esc(result.status)+'.</b>'+countsHtml(result.counts)+(result.set&&!result.set.active?'<button data-tl-activate="'+esc(result.set.id)+'">Activate imported set</button>':'')+'</div>';
+      if(box)box.onclick=function(ev){var a=ev.target&&ev.target.closest?ev.target.closest('[data-tl-activate]'):null;if(a)activateSet(a.getAttribute('data-tl-activate'));};
+      await refresh({applyActive:false,silent:true});if(handle)handle.complete(result.status==='partial'?'Import completed with rejected rows.':'Templates imported.');return result;
+    }catch(error){status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}})();
+  }
+
+  function activateSet(id){var handle=progressStart({key:'template-set:activate',kind:'template_library',label:'Activating template set',stages:['Validating selection','Loading version','Applying templates'],total:3,timeoutMs:60000,replace:true,cancelable:false});return (async function(){try{progressStage(handle,'Validating selection',1,3);var data=await request('/api/template-sets/'+encodeURIComponent(id)+'/activate',{method:'POST',body:{},requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying templates',3,3);applySet(data.set);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Template set activated.');return true;}catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);return false;}})();}
+  function archiveSelected(){var set=setFor(state.selectedSetId);if(!set)return;var verb=set.status==='archived'?'unarchive':'archive';if(verb==='archive'){var yes=true;try{yes=window.confirm('Archive "'+set.name+'"? Its versions remain recoverable.');}catch(e){}if(!yes)return;}request('/api/template-sets/'+encodeURIComponent(set.id)+'/'+verb,{method:'POST',body:{}}).then(function(){status(verb==='archive'?'Template set archived.':'Template set restored.',false);return refresh({silent:true});}).catch(function(error){status(error.message,true);renderPanel();});}
+  function showHistory(){var set=setFor(state.selectedSetId),box=byId('tlVersions');if(!set||!box)return;request('/api/template-sets/'+encodeURIComponent(set.id)+'/versions').then(function(data){box.innerHTML=(data.versions||[]).map(function(v){return '<div class="tl-ver"><span>Version '+v.version+(v.current?' · current':'')+' · '+esc(v.createdAt||'')+'</span>'+(v.current?'':'<button data-tl-restore="'+v.version+'">Restore as new version</button>')+'</div>';}).join('')||'No versions.';box.onclick=function(ev){var b=ev.target&&ev.target.closest?ev.target.closest('[data-tl-restore]'):null;if(b)restoreVersion(set.id,b.getAttribute('data-tl-restore'));};}).catch(function(error){status(error.message,true);renderPanel();});}
+  function restoreVersion(id,version){var yes=true;try{yes=window.confirm('Restore version '+version+' as a new recoverable version?');}catch(e){}if(!yes)return;request('/api/template-sets/'+encodeURIComponent(id)+'/versions/'+encodeURIComponent(version)+'/restore',{method:'POST',body:{}}).then(function(data){if(data.set.active)applySet(data.set);status('Version '+version+' restored as version '+data.set.version+'.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
+  function createEmpty(){request('/api/template-sets',{method:'POST',body:{name:(byId('tlSetName')&&byId('tlSetName').value)||'New template set',scope:(byId('tlScope')&&byId('tlScope').value)||'account',facility:(byId('tlFacility')&&byId('tlFacility').value)||''}}).then(function(data){state.selectedSetId=data.set.id;status('Empty set created. It is not active until you choose Activate.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
+
+  function panelClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl]'):null;if(!b)return;var action=b.getAttribute('data-tl');if(action==='refresh')refresh();else if(action==='activate'&&state.selectedSetId)activateSet(state.selectedSetId);else if(action==='new')createEmpty();else if(action==='history')showHistory();else if(action==='archive')archiveSelected();else if(action==='migrate'){var local=currentLocal();if(!local.length)return;state.sourceFilenames=['Legacy device template library'];previewImport({templates:local,targetSetId:null,setName:'Migrated device templates',scope:'account'}).catch(function(){});}}
+
+  async function loadConflictVersion(){
+    await refresh({applyActive:false,silent:true});if(!state.conflict)return;var targetId=(state.conflict.body&&state.conflict.body.targetSetId)||state.activeSetId;if(!targetId)return;
+    try{var detail=await request('/api/template-sets/'+encodeURIComponent(targetId));if(detail&&detail.set){state.conflict.serverSet=detail.set;if(detail.set.active){state.activeVersion=Number(detail.set.version)||state.activeVersion;state.activeTemplates=cloneTemplates(detail.set.templates);}}}catch(e){}
+  }
+
+  function persistSnapshot(list,providedHandle,providedIdempotencyKey){
+    if(!hosted()||!state.activeSetId||state.applying)return Promise.resolve(false);if(state.snapshotSaving){state.snapshotQueued=true;return Promise.resolve(false);}state.snapshotSaving=true;
+    var local=cloneTemplates(list),localIds={};local.forEach(function(t){if(t&&t.id)localIds[t.id]=1;});var removed=state.activeTemplates.filter(function(t){return t&&t.id&&!localIds[t.id];}).map(function(t){return t.id;});
+    var body={targetSetId:state.activeSetId,expectedVersion:state.activeVersion,setName:(setFor(state.activeSetId)||{}).name,templates:local,removeTemplateIds:removed};var idem=providedIdempotencyKey||uid('tpl-edit-');
+    var handle=providedHandle||progressStart({key:'template-library:save',kind:'template_library',label:'Saving template changes',stages:COMMIT_STAGES,total:local.length,timeoutMs:120000,replace:true,cancelable:true,retry:function(next){persistSnapshot(local,next,idem);}});
+    return request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:idem,requestId:handle&&handle.requestId,progress:handle}).then(function(data){if(data.result&&data.result.set)applySet(data.result.set);if(handle)handle.complete('Template changes saved as version '+data.result.version+'.');status('Template changes saved as recoverable version '+data.result.version+'.',false);renderPanel();return true;}).catch(function(error){status(error.message,true);state.conflict={kind:'snapshot',body:body,localTemplates:local};if(error.code==='TEMPLATE_VERSION_CONFLICT')return loadConflictVersion().then(function(){status('A newer cloud version exists. Your unsaved device change was preserved for review and retry.',true);renderPanel();if(handle)handle.fail(error);return false;});renderPanel();if(handle)handle.fail(error);return false;}).finally(function(){state.snapshotSaving=false;if(state.snapshotQueued){state.snapshotQueued=false;scheduleSnapshot(currentLocal());}});
+  }
+  function scheduleSnapshot(list){clearTimeout(state.snapshotTimer);var snapshot=cloneTemplates(list);state.snapshotTimer=setTimeout(function(){persistSnapshot(snapshot);},500);}
+
+  function wrapFunctions(){
+    if(isFn(window.setTemplates)&&!window.setTemplates.__tl){originals.setTemplates=window.setTemplates;var setWrap=function(list){var out=originals.setTemplates.apply(this,arguments);if(!state.applying&&state.hydrated&&state.activeSetId)scheduleSnapshot(list);return out;};setWrap.__tl=true;window.setTemplates=setWrap;}
+    if(isFn(window.openTemplates)&&!window.openTemplates.__tl){originals.openTemplates=window.openTemplates;var openWrap=function(){var out=originals.openTemplates.apply(this,arguments);ensurePanel();refresh();return out;};openWrap.__tl=true;window.openTemplates=openWrap;}
+    if(isFn(window.tplAddSplit)&&!window.tplAddSplit.__tl){originals.tplAddSplit=window.tplAddSplit;var addWrap=function(){return hosted()?previewImport().catch(function(){}):originals.tplAddSplit.apply(this,arguments);};addWrap.__tl=true;window.tplAddSplit=addWrap;}
+    if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){if(!hosted())return originals.saveTemplateFromForm.apply(this,arguments);var name=S((byId('tplName')||{}).value).trim(),text=S((byId('tplText')||{}).value).trim();if(!name){if(isFn(window.toast))window.toast('Name the template first.','err');return false;}if(!text){if(isFn(window.toast))window.toast('No template text — upload a file or paste text first.','err');return false;}var keywords=S((byId('tplKeywords')||{}).value).split(',').map(function(x){return x.trim().toLowerCase();}).filter(Boolean);state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[{id:state.editingId||'',name:name,text:text,keywords:keywords,keep:true}];return previewImport({fromForm:true}).catch(function(){});};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
+    if(isFn(window.editTemplate)&&!window.editTemplate.__tl){originals.editTemplate=window.editTemplate;var editWrap=function(id){state.editingId=id;return originals.editTemplate.apply(this,arguments);};editWrap.__tl=true;window.editTemplate=editWrap;}
+    if(isFn(window._tplReadAnyFile)&&!window._tplReadAnyFile.__tl){originals.readFile=window._tplReadAnyFile;var readWrap=async function(file){var out=await originals.readFile.apply(this,arguments);if(activeUpload){activeUpload.done++;progressStage(activeUpload.handle,'Parsing template content',activeUpload.done,activeUpload.total,'Parsed '+S(file&&file.name||'file')+'.');}return out;};readWrap.__tl=true;window._tplReadAnyFile=readWrap;}
+    if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:10*60*1000,replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}
+  }
+
+  function install(){wrapFunctions();ensurePanel();if(hosted())setTimeout(function(){refresh({silent:true});},0);}
+  window.__mlsTemplateLibrary={installed:true,version:VERSION,state:state,refresh:refresh,previewImport:previewImport,commitPending:commitPending,activateSet:activateSet,applySet:applySet,persistSnapshot:persistSnapshot,render:renderPanel,_request:request,_importBody:importBody};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
+})();
