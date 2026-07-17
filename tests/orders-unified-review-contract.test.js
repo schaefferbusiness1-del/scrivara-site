@@ -136,7 +136,7 @@ assert(!/sendToEMRviaAssist|\{\s*text\s*:/.test(sendOrdersSource), 'Orders butto
 
 assert(flowSource.includes('Orders proposed for Athena'), 'compact final-review Orders summary is missing');
 assert(flowSource.includes('Review complete proposed order'), 'order details are not expandable in the final review');
-assert(flowSource.includes('<b>Source:</b>') && flowSource.includes('<b>Capability:</b>'), 'compact summary omits source or safe capability');
+assert(flowSource.includes('<b>Source:</b>') && flowSource.includes('<b>Handled by:</b>'), 'compact summary omits source or the handled-by capability disclosure'); /* b387 commercial copy: "Capability: BLOCKED" became "Handled by: you, in athenaOne" - same disclosure, human wording */
 assert(!/renderAiSuggestedOrders\(so\);\s*try\s*\{\s*_autoSaveAiOrders\(/.test(scribeSource), 'generation still auto-accepts AI order suggestions');
 assert(/function _autoSaveAiOrders\(\)\{\s*return false;\s*\}/.test(scribeSource), 'legacy auto-save hook is not fail-closed');
 assert(scribeSource.includes("_source:'ai-suggestion', _reviewStatus:'accepted'"), 'explicit AI-suggestion acceptance is not recorded');

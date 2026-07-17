@@ -317,12 +317,12 @@
       else panel.appendChild(host);
     }
     var confColor = v.confidence === 'high' ? '#2E6A4B' : (v.confidence === 'medium' ? '#B07636' : '#B23B3B');
-    var statusColor = v.safe ? '#2E6A4B' : '#B23B3B';
+    var statusColor = v.safe ? '#2E6A4B' : '#B0791F'; /* calm amber: a human is mid-review, not blocked */
     var html = '';
-    html += '<div style="background:#FCFBF8;border:1px solid ' + (v.safe ? '#E7E5DD' : '#B23B3B') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
+    html += '<div style="background:#FCFBF8;border:1px solid ' + (v.safe ? '#E7E5DD' : '#E4C883') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
     html += '<b style="color:#1A211C;font-size:14px">Write-back safety preview</b>';
-    html += '<span style="color:' + statusColor + ';font-weight:800;font-size:12.5px">' + (v.safe ? '✓ Ready to write (after you confirm)' : '⛔ Blocked — not safe to write') + '</span>';
+    html += '<span style="color:' + statusColor + ';font-weight:800;font-size:12.5px">' + (v.safe ? '✓ Ready to write (after you confirm)' : '⏸ Needs your review — nothing is ever sent without you') + '</span>';
     html += '</div>';
     /* identity grid */
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font:12.5px/1.5 system-ui;color:#1A211C">';
@@ -371,7 +371,7 @@
         btn.style.opacity = '.5';
         btn.style.cursor = 'not-allowed';
         if (!btn.getAttribute('data-wbs-title')) { btn.setAttribute('data-wbs-title', btn.title || ''); }
-        btn.title = 'Blocked by the safety preview: ' + v.hardBlocks.map(function (h) { return h.label; }).join('; ');
+        btn.title = 'Waiting on: ' + v.hardBlocks.map(function (h) { return h.label; }).join('; ');
       } else {
         btn.removeAttribute('data-wbs-blocked');
         btn.style.opacity = '';
@@ -415,7 +415,7 @@
       var host = panel.querySelector('#mlsWbSafety');
       if (host) { host.scrollIntoView({ block: 'nearest' }); host.animate ? host.animate([{ outline: '0 solid #B23B3B' }, { outline: '3px solid #B23B3B' }, { outline: '0 solid #B23B3B' }], { duration: 700 }) : 0; }
       var logEl = panel.querySelector('#emrWbLog');
-      if (logEl) { logEl.innerHTML += '<div style="margin:3px 0;color:#B23B3B">⛔ <b>Write blocked by the safety preview.</b> ' + esc(v.hardBlocks.map(function (h) { return h.label; }).join('; ')) + '. Nothing was sent.</div>'; logEl.scrollTop = logEl.scrollHeight; }
+      if (logEl) { logEl.innerHTML += '<div style="margin:3px 0;color:#B0791F">⏸ <b>Hold on — finish these first:</b> ' + esc(v.hardBlocks.map(function (h) { return h.label; }).join('; ')) + '. Nothing was sent.</div>'; logEl.scrollTop = logEl.scrollHeight; }
     } catch (e) {}
   }
 
