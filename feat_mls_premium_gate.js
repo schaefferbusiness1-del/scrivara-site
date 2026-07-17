@@ -19,7 +19,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsPremiumGate", VERSION = "pmg-1.0.0";
+  var NS = "__mlsPremiumGate", VERSION = "pmg-1.1.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   var disposed = false, lastToast = 0;
@@ -41,16 +41,23 @@
     });
   }
 
-  /* A control counts as a Pay Report or Reviews opener by id or by its own
-     visible label — robust to the several re-homed copies of these buttons. */
+  /* A control counts as a gated opener by id or by its own visible label —
+     robust to the several re-homed copies of these buttons.
+     pmg-1.1.0 adds the Visit-view widget-deck builder openers: the deck lives
+     OUTSIDE #studioView, so the Studio premium lock never covered it, and
+     /api/widget/* is premium-only server-side — a Standard account reached a
+     builder whose generate step could only 403. Same friendly-layer rule:
+     signed-in non-premium only; demo/logged-out never blocked. */
   var PAY_IDS = { mlsCompBtn: 1, mlsPrvbBtn: 1 };
   var REV_IDS = { ez3sReviews: 1, mlsPtab_reviews: 1 };
+  var WIDGET_IDS = { mlsWdNew: 1, mlsWdStudio: 1 };
   function gateTarget(el) {
     var b = el && el.closest ? el.closest("button, [role=button], .navtab, a") : null;
     if (!b) return "";
     var id = String(b.id || "");
     if (PAY_IDS[id]) return "Pay Report";
     if (REV_IDS[id]) return "Reviews & reputation";
+    if (WIDGET_IDS[id]) return "The custom widget builder";
     var t = String(b.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
     if (t.length > 60) return "";
     if (/pay report/.test(t)) return "Pay Report";

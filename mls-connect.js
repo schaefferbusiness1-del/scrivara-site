@@ -32028,7 +32028,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b383';
+  window.__MLS_AV = window.__MLS_AV || 'b384';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32319,7 +32319,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b383';
+  var MLS_APP_BUILD='2026-07-17-b384';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -39002,6 +39002,13 @@
   try {
     var LOCK_ID = 'mlsStudioPremiumLock';
     function isPrem(){
+      /* b384: demo/logged-out sessions are NEVER locked — same philosophy as
+         pmg-1.0.0 ("demos and the logged-out tour keep showing the full
+         product") and generateStudioWidget's own sign-in messaging, which
+         assumes the controls are reachable. The server still gates every AI
+         call, so an open demo UI enforces nothing less. Only a SIGNED-IN
+         non-premium account sees the lock. */
+      try { var u0 = (typeof bkUser !== 'undefined' && bkUser) || window.bkUser || null; if (!u0) return true; } catch(e){ return true; }
       try { if (typeof effectivePremium === 'function') return !!effectivePremium(); } catch(e){}
       try { var u = (typeof bkUser !== 'undefined' && bkUser) || (window.bkUser) || {}; return !!(u.premium || u.isAdmin); } catch(e){}
       return true; // fail-open: never lock out a user on a detection error (server still enforces)
@@ -39012,7 +39019,7 @@
       d.setAttribute('style','border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center;background:var(--card-2,rgba(123,92,255,0.05));margin:0 0 14px;');
       d.innerHTML = '<div style="font-size:26px;line-height:1;margin-bottom:6px">🔒</div>'
         + '<div style="font-weight:700;margin-bottom:4px">Premium feature</div>'
-        + '<p class="sub" style="margin:0">AI Studio — MLS Copilot and custom widgets — is a Premium ($150) feature. Contact your administrator to enable it.</p>';
+        + '<p class="sub" style="margin:0">AI Studio — MLS Copilot and custom widgets — is a Premium feature. Upgrade your plan or contact your administrator to enable it.</p>';
       return d;
     }
     function applyLock(){
@@ -39291,7 +39298,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260716idle1';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260716sx240';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260716sx240';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (PROD via __MLS_SX_PROD, set in __mlsFixPackB34) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260716idle1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
 
@@ -43014,5 +43021,5 @@
 ;(function(){try{var A='feat_mls_cross_day_context.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717xdc100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* xdc-1.0.0: exact non-today appointment -> patient/date-bound full workspace; no pull or Athena action */
 ;(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{var A='feat_mls_strip_day_couple.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717sdc100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sdc-1.0.0: two-way top-header <-> day-strip patient coupling + same patient chip strip on non-today days via xdc exact opener */
-;(function(){try{var A='feat_mls_premium_gate.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717pmg100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pmg-1.0.0: plan-level truth - Pay Report + Reviews upsell instead of opening for signed-in non-Premium; demo/logged-out untouched */
+;(function(){try{var A='feat_mls_premium_gate.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260718pmg110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pmg-1.1.0: plan-level truth - Pay Report + Reviews + widget-deck builder openers upsell instead of opening for signed-in non-Premium; demo/logged-out untouched */
 ;(function(){try{var A='feat_mls_pull_device_picker.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717pdp100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pdp-1.0.0: choose which registered computer runs Athena pulls (office/secondary); relay targets exact deviceId; phones excluded as pullers */

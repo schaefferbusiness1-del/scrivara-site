@@ -11,7 +11,7 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 new Function(source); // syntax gate
 
 assert(connect.includes("feat_mls_premium_gate.js';"), 'pmg satellite is not injected by mls-connect.js');
-assert(connect.includes('?v=20260717pmg100'), 'pmg satellite injection is not cache-busted');
+assert(connect.includes('?v=20260718pmg110'), 'pmg satellite injection is not cache-busted');
 
 function fakeBtn(id, text) {
   const b = { id, textContent: text, closest: (sel) => b };
@@ -38,7 +38,7 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'feat_mls_premium_gate.js' });
 
 const api = window.__mlsPremiumGate;
-assert(api && api.installed && api.version === 'pmg-1.0.0', 'premium gate did not install');
+assert(api && api.installed && api.version === 'pmg-1.1.0', 'premium gate did not install');
 
 // target detection by id and by label
 assert.strictEqual(api._test.gateTarget(fakeBtn('mlsCompBtn', 'x')), 'Pay Report');
@@ -46,6 +46,10 @@ assert.strictEqual(api._test.gateTarget(fakeBtn('mlsPrvbBtn', 'x')), 'Pay Report
 assert.strictEqual(api._test.gateTarget(fakeBtn('', '💵 Pay Report')), 'Pay Report');
 assert.strictEqual(api._test.gateTarget(fakeBtn('ez3sReviews', 'x')), 'Reviews & reputation');
 assert.strictEqual(api._test.gateTarget(fakeBtn('', '⭐ Reviews & reputation')), 'Reviews & reputation');
+/* pmg-1.1.0: the Visit-view widget-deck builder openers are gated too —
+   /api/widget/* is premium-only server-side, so the UI must match. */
+assert.strictEqual(api._test.gateTarget(fakeBtn('mlsWdNew', 'x')), 'The custom widget builder');
+assert.strictEqual(api._test.gateTarget(fakeBtn('mlsWdStudio', 'x')), 'The custom widget builder');
 assert.strictEqual(api._test.gateTarget(fakeBtn('', 'Start recording')), '', 'non-premium control must not match');
 
 // logged out / demo -> never blocks

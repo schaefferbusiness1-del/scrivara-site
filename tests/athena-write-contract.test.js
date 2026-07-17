@@ -129,7 +129,10 @@ assert(savedPlan.includes('savedBinding.identityConflict'), 'saved history must 
 assert(!savedPlan.includes('activePatient'), 'saved history routing must not borrow the currently active patient');
 assert(savedPlan.includes('_athenaPushPlan') && !savedPlan.includes('postMessage'));
 assert(app.includes('function getAutoSendEMR(){ return false; }'));
-assert(app.includes('Show the Athena routing review after signing'));
+/* b384: the inert auto-send checkbox was replaced by the guarantee stated as
+   fact — Settings still communicates review-always / never-auto-send. */
+assert(app.includes('MLS always stops for your review before anything reaches Athena'));
+assert(!app.includes('id="autoSendEMR"'), 'the dead auto-send switch must not return');
 assert(app.includes('Review EMR route'));
 assert(!app.includes('Auto-send signed notes to the EMR'), 'settings must not promise a disabled automatic write');
 assert(!app.includes('>📤 Send to EMR</button>'), 'preview-only controls must not be labeled as a send');

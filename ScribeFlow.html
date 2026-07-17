@@ -3046,11 +3046,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </label>
       </div>
 
+      <!-- b384: this was a checkbox wired to a hard-false reader (a deliberate
+           write-safety neuter) — a visible switch connected to nothing. State
+           the guarantee as fact instead of showing a dead control. -->
       <div class="field">
-        <label for="autoSendEMR" style="display:flex;align-items:center;gap:9px;cursor:pointer">
-          <input type="checkbox" id="autoSendEMR" style="width:17px;height:17px;cursor:pointer" onchange="applyAutoSendPreview(this.checked)">
-          <span>Show the Athena routing review after signing <span style="font-weight:400;color:var(--muted)">(shows the note, Dx/CPT suggestions, and their intended destinations; it never signs or submits automatically)</span></span>
-        </label>
+        <span style="display:flex;align-items:center;gap:9px"><span aria-hidden="true">🛡️</span>
+          <span>MLS always stops for your review before anything reaches Athena <span style="font-weight:400;color:var(--muted)">(the routing review shows the note, Dx/CPT suggestions, and their destinations; nothing is ever signed or submitted automatically)</span></span>
+        </span>
       </div>
     </div>
     </div><!-- /Display section -->
@@ -3290,6 +3292,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
           <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
         </ol>
+      </div>
+      <!-- b384: the "Rated on MLS" website-badge console existed but had NO
+           entry point anywhere in the app (reachable only by typed URL). -->
+      <div class="row tight" style="margin-top:12px">
+        <a class="btn-ghost" style="font-size:14px;padding:9px 15px;text-decoration:none" href="mls-widgets.html" target="_blank" rel="noopener">🔖 Website badges — embed "Rated on MLS" on your site</a>
       </div>
       <details style="margin-top:12px">
         <summary style="cursor:pointer;font-size:13px;color:var(--muted)">Advanced: Developer API key (FHIR API / server use)</summary>
@@ -6131,11 +6138,21 @@ function getPatients(){
     return Array.isArray(arr)?arr.slice():arr;
   }catch(e){return [];}
 }
+var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null;
 function savePatients(arr){
+  var __json=JSON.stringify(arr);
+  /* b384 perf: identical content + untouched storage → skip the multi-MB LZ
+     compress and the write outright. Render/sweep paths re-save unchanged
+     rosters more often than they change them. The getItem identity check
+     keeps external writers (other tabs, imports) honest. */
+  if(__mlsPtsLastSaved!==null&&__mlsPtsLastSaved===__json){
+    try{ if(localStorage.getItem(uns('patients'))===__mlsPtsLastPacked)return; }catch(e){}
+  }
   __mlsPtsMemo=null; /* never serve a pre-write parse after a write */
-  var packed=_mlsPtsEncode(JSON.stringify(arr));
-  try{ localStorage.setItem(uns('patients'),packed); }
+  var packed=_mlsPtsEncode(__json);
+  try{ localStorage.setItem(uns('patients'),packed); __mlsPtsLastSaved=__json; __mlsPtsLastPacked=packed; }
   catch(eq){
+    __mlsPtsLastSaved=null; __mlsPtsLastPacked=null;
     /* Quota: free clearly regenerable caches once, retry, and if it still
        fails surface it loudly — a silent no-op here corrupts pulled history. */
     try{
@@ -23872,7 +23889,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b383';
+  window.__MLS_AV='b384';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

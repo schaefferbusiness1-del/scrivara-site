@@ -10,9 +10,19 @@
 (function () {
   'use strict';
   if (window.__mlsLegalPayWidget) return;            // dedupe across reloads
-  var api = window.__mlsLegalPayWidget = { version: '1.1.0' };
+  var api = window.__mlsLegalPayWidget = { version: '1.2.0' };
 
-  var BASE = 'https://scrivara-backend.onrender.com';
+  /* b383: follow the app's backend base (bkBase) like every other satellite;
+     the hardcoded host is only the last-resort fallback. */
+  function BASEF() {
+    try { if (typeof bkBase === 'function') { var b = bkBase(); if (b) return b; } } catch (e) {}
+    try { if (typeof window.bkBase === 'function') { var b2 = window.bkBase(); if (b2) return b2; } } catch (e) {}
+    return 'https://scrivara-backend.onrender.com';
+  }
+  function say(msg) {
+    try { if (typeof window.toast === 'function') { window.toast(msg, 'err'); return; } } catch (e) {}
+    try { alert(msg); } catch (e) {}
+  }
   var BANNER_ID = 'mlsLegalPayBanner';
   var MOUNT_IDS = ['legalCard', 'legalReqView'];     // top of the legal section
   var POLL_MS = 20000;                               // connect-status poll cadence
@@ -28,7 +38,7 @@
     var t = token();
     if (!t || state.checking) return;
     state.checking = true;
-    fetch(BASE + '/api/connect/status', { headers: { 'Authorization': 'Bearer ' + t } })
+    fetch(BASEF() + '/api/connect/status', { headers: { 'Authorization': 'Bearer ' + t } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (j && typeof j.ready !== 'undefined') state.ready = (j.ready === true);
@@ -40,9 +50,9 @@
 
   function startOnboarding(btn) {
     var t = token();
-    if (!t) { alert('Please sign in first.'); return; }
+    if (!t) { say('Please sign in first.'); return; }
     if (btn) { btn.disabled = true; btn.textContent = 'Opening Stripe…'; }
-    fetch(BASE + '/api/connect/onboard', {
+    fetch(BASEF() + '/api/connect/onboard', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' },
       body: '{}'
@@ -50,9 +60,9 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j && j.url) { window.location.href = j.url; }
-        else { reset(btn); alert('Could not start Stripe onboarding. Please try again.'); }
+        else { reset(btn); say('Could not start Stripe onboarding. Please try again.'); }
       })
-      .catch(function () { reset(btn); alert('Could not reach the payments service. Please try again.'); });
+      .catch(function () { reset(btn); say('Could not reach the payments service. Please try again.'); });
   }
   function reset(btn) { if (btn) { btn.disabled = false; btn.textContent = 'Set up payments'; } }
 
