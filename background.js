@@ -13010,6 +13010,60 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   return true;
 });
 
+/* ===== vdc-1.0.0 PHI-SAFE VISITS DOM CENSUS (read-only diagnostic) =========
+ * Structure only: hostnames, selector hit-counts, tag/class/attr-NAME row
+ * signatures. Never emits patient text (single boolean regex for the literal
+ * "Visits and Cases" heading). Used to adapt the r4 bodies enumerator to
+ * athena layout changes on evidence instead of guesses. */
+(function () {
+  'use strict';
+  try { if (self.__mlsVdcWired) return; self.__mlsVdcWired = 1; } catch (e) {}
+  function vdcDriver() {
+    try {
+      var d = document, out = { host: '', path: '', sel: {}, visitsPane: false, rows: [] };
+      try { out.host = String(location.hostname || '').slice(0, 60); out.path = String(location.pathname || '').slice(0, 90); } catch (eLoc) {}
+      var SELS = ['li.encounter-list-item', 'div.clickable.accordion-trigger', '[class*="accordion-trigger"]', '.accordion-header', 'span.slideout-trigger-open', '[class*="slideout-trigger"]', '[data-encounter-id]', '[class*="encounter"]', '[class*="streamlined"]', '[class*="visits"]', 'li'];
+      for (var i = 0; i < SELS.length; i++) { try { out.sel[SELS[i]] = d.querySelectorAll(SELS[i]).length; } catch (eSel) { out.sel[SELS[i]] = -1; } }
+      try { out.visitsPane = /visits\s+and\s+cases/i.test(String((d.body && d.body.innerText) || '').slice(0, 300000)); } catch (eHead) {}
+      var cands = [];
+      try { cands = Array.prototype.slice.call(d.querySelectorAll('li.encounter-list-item,[data-encounter-id]')).slice(0, 8); } catch (eC1) {}
+      if (!cands.length && out.visitsPane) { try { cands = Array.prototype.slice.call(d.querySelectorAll('[class*="encounter"] li, [class*="visits"] li, li')).slice(0, 10); } catch (eC2) {} }
+      for (var c = 0; c < cands.length; c++) {
+        var el = cands[c];
+        var row = { tag: el.tagName, cls: String(el.className || '').slice(0, 90), attrs: [], kids: [] };
+        try { for (var a = 0; a < el.attributes.length && row.attrs.length < 10; a++) row.attrs.push(String(el.attributes[a].name).slice(0, 40)); } catch (eA) {}
+        try {
+          var ds = el.querySelectorAll('*');
+          for (var k = 0; k < ds.length && row.kids.length < 14; k++) {
+            var cls = String(ds[k].className || '').trim().slice(0, 80);
+            var sig = ds[k].tagName + (cls ? '.' + cls.replace(/\s+/g, '.') : '');
+            if (row.kids.indexOf(sig) < 0) row.kids.push(sig);
+          }
+        } catch (eK) {}
+        out.rows.push(row);
+      }
+      return out;
+    } catch (e) { return { err: String((e && e.message) || e).slice(0, 120) }; }
+  }
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsVisitsCensusRequest') return;
+    var fromApp = false;
+    try { var su = new URL(sender && sender.tab && sender.tab.url || ''); fromApp = su.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(su.hostname); } catch (eS) {}
+    if (!fromApp) { sendResponse({ ok: false, reason: 'sender-not-app' }); return; }
+    (async function () {
+      try {
+        var all = await chrome.tabs.query({});
+        var tab = await mlsPickAthenaTab(all, { athenaOnly: true });
+        if (!tab) { sendResponse({ ok: false, reason: 'no-athena-tab' }); return; }
+        var r = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, world: 'ISOLATED', func: vdcDriver });
+        var frames = (r || []).map(function (fr) { return { frameId: fr.frameId, r: fr && fr.result }; }).filter(function (fr) { return fr.r; });
+        sendResponse({ ok: true, tabId: tab.id, frames: frames });
+      } catch (e) { sendResponse({ ok: false, reason: 'census-error', error: String((e && e.message) || e).slice(0, 160) }); }
+    })();
+    return true;
+  });
+})();
+
 /* ===== MLS ATHENA WINDOW/TAB GUARD (device-role lane; awg-2.0.0 2026-07-17).
  * Owner-confirmed: the quiet-pull machinery keeps Athena in a PRESET-size
  * strip window (hard 520-780px floor/cap computed from the host window, with

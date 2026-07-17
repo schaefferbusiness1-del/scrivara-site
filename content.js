@@ -268,6 +268,14 @@
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsFgStateResult', resp: { error: 'extension error' } }); }
     }
+    // vdc-1.0.0: PHI-safe visits DOM census (structure only - no patient text).
+    if (d.type === 'mlsVisitsCensus') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsVisitsCensusRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsVisitsCensusResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsVisitsCensusResult', resp: { error: 'extension error' } }); }
+    }
     // v1.77: read-only identity diagnostic (initials + scores only, no PHI).
     if (d.type === 'mlsIdDiag') {
       try {

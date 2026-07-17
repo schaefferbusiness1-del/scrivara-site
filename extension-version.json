@@ -1,5 +1,5 @@
 {
-  "version": "2.9.40",
+  "version": "2.9.41",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.40 - Faster history pulls: the chart-identity stage polls readiness on a quicker early cadence and uses a shorter first settle after opening a chart. All acceptance gates, identity proofs, budgets, and retries are unchanged - only idle waiting shrank. (These pacing values were cleared of blame for the earlier failures: those reproduced identically with them reverted and were traced to athena layout and tab issues fixed in v2.9.36-v2.9.39.)"
+  "notes": "v2.9.41 - Adds a privacy-safe layout diagnostic (structure only, never patient text) used to adapt the encounter-body reader to athenaOne layout changes on real evidence. No behavior change to pulls or writes; includes v2.9.40 speed."
 }
