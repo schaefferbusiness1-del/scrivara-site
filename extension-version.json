@@ -1,5 +1,5 @@
 {
-  "version": "2.9.37",
+  "version": "2.9.38",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.37 - Two fixes. History bodies: athena stopped exposing the exact expand-control class the reader clicked, which failed every encounter body instantly; the reader now recognizes several same-row expand-control shapes, retries that failure with the existing bounded reopen, and records a redacted diagnostic when a row still will not open. Console noise: the extension no longer creates its timing worker on unrelated sites (Gmail and other strict pages logged security-policy errors on every load); it is created only when needed on MLS and athena pages."
+  "notes": "v2.9.38 - Encounter bodies read again on athenaOne's newer streamlined chart layout: when a verified encounter row exposes no known expand control, the reader now tries any safe clickable inside that row and finally the row itself (destructive controls are always refused), while the existing frame-proof chain still decides what counts as a real body. Includes v2.9.37 (retryable expand failures + diagnostics, no console errors on other sites)."
 }

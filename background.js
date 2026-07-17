@@ -8449,6 +8449,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           } catch (eToggle) {}
           if (!target) {
+            /* v2.9.38 streamlined layout: athena's newer chart renders
+               li.encounter-list-item rows with NO accordion-trigger class at
+               all (live d2: screening/vitals/attribution subtree). Fall back
+               to any visible generic clickable INSIDE this verified row with
+               the destructive-label guard, then to the row element itself.
+               A wrong toggle cannot fabricate a body - the URL-bound frame /
+               content-delta proof downstream still decides. */
+            try {
+              var genToggles = Array.prototype.slice.call(row.querySelectorAll('.accordion-header,[aria-expanded],a[href],button,[role="link"],[role="button"],div.clickable,[class*="clickable"]'));
+              for (var gt0 = 0; gt0 < genToggles.length; gt0++) {
+                if (!visible(genToggles[gt0])) continue;
+                if (excluded(txt(genToggles[gt0]))) continue;
+                target = genToggles[gt0]; break;
+              }
+            } catch (eGenToggle) {}
+            if (!target && !excluded(indexText(row))) target = row;
+          }
+          if (!target) {
             var rowShape = { kids: 0, open: false, classes: [] };
             try {
               rowShape.kids = row.childElementCount || 0;
