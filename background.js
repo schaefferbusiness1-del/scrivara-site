@@ -8483,7 +8483,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           try { var c = row.querySelector && row.querySelector('.accordion-header,[aria-expanded],a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
         }
         if (!visitActionAllowed()) return visitDeadlineFailure({ binding: liveBinding });
-        try { target.click(); } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
+        /* v2.9.39: athena's streamlined rows ignore a bare element.click() (a
+           REAL human click expands them - live-verified on the same chart the
+           walker failed). Dispatch the full pointer sequence the visits-pane
+           driver already uses, then the plain click as a fallback. Read-only
+           navigation on the same verified row target; nothing else changed. */
+        try {
+          try { target.scrollIntoView({ block: 'center' }); } catch (eScroll) {}
+          try {
+            var clickWin = (target.ownerDocument && target.ownerDocument.defaultView) || window;
+            var clickRect = target.getBoundingClientRect(), clickX = clickRect.left + clickRect.width / 2, clickY = clickRect.top + clickRect.height / 2;
+            var clickOpts = { bubbles: true, cancelable: true, view: clickWin, clientX: clickX, clientY: clickY };
+            ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach(function (evName) {
+              try { target.dispatchEvent(new clickWin[evName.indexOf('pointer') === 0 ? 'PointerEvent' : 'MouseEvent'](evName, clickOpts)); } catch (eEvt) {}
+            });
+          } catch (eSeq) {}
+          target.click();
+        } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
       }
       if (!visitActionAllowed()) return visitDeadlineFailure({ binding: liveBinding });
       try { window.__mlsVisitReadBinding = { index: idx, rowKey: liveBinding.rowKey, encounterId: liveBinding.encounterId || '', date: liveBinding.date || '', preDetailHashes: preDetailHashes, preRowHash: alreadyOpen ? '' : preRowHash, preRowLen: alreadyOpen ? (Number(liveBinding.indexTextLen) || 0) : rowTextPre.length, alreadyOpen: alreadyOpen, stage: 'accordion-requested', at: Date.now() }; } catch (e3) {}

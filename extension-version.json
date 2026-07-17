@@ -1,5 +1,5 @@
 {
-  "version": "2.9.38",
+  "version": "2.9.39",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.38 - Encounter bodies read again on athenaOne's newer streamlined chart layout: when a verified encounter row exposes no known expand control, the reader now tries any safe clickable inside that row and finally the row itself (destructive controls are always refused), while the existing frame-proof chain still decides what counts as a real body. Includes v2.9.37 (retryable expand failures + diagnostics, no console errors on other sites)."
+  "notes": "v2.9.39 - Encounter rows on athenaOne's streamlined chart layout now actually expand during history pulls: the reader clicks them with a real pointer-event sequence (verified live - the layout ignores plain scripted clicks). Includes v2.9.38 and v2.9.37."
 }
