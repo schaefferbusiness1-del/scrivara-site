@@ -145,11 +145,20 @@ for (const action of ['stage_billing', 'save_draft', 'sign_encounter']) {
 }
 assert(/unknown-action/.test(handler), 'unknown actions must fail closed');
 assert(/mode[^\n]*(probe|execute)/.test(handler), 'handler must have explicit probe and execute modes');
-assert(/ambiguous-athena-tabs/.test(handler), 'multiple unlocked Athena tabs must fail closed');
-const tabPicker = between(handler, 'async function pickExactAthena', 'async function injectOnce');
-const countAthenaTabs = tabPicker.indexOf('candidates.length !== 1');
-const useRememberedTarget = tabPicker.indexOf('__mlsWriteTarget');
-assert(countAthenaTabs >= 0 && (useRememberedTarget < 0 || countAthenaTabs < useRememberedTarget), 'multiple Athena tabs must fail closed before a remembered target is considered');
+assert(/ambiguous-athena-tabs/.test(handler), 'ambiguous Athena targets must fail closed');
+/* v2.9.31 multi-tab contract: the write lane no longer demands a single
+ * signed-in Athena tab. Instead the probe must scan EVERY signed-in tab
+ * read-only and proceed only when exactly one tab verifies the expected
+ * patient+encounter context. Zero tabs and duplicate verified encounters
+ * both fail closed, and a remembered target may never pick the tab. */
+const tabPicker = between(handler, 'async function pickAthenaWriteCandidates', 'async function injectOnce');
+assert(/!candidates\.length/.test(tabPicker), 'zero signed-in Athena tabs must fail closed');
+assert(tabPicker.indexOf('__mlsWriteTarget') < 0, 'a remembered target must never pick the write tab');
+const probeScan = between(handler, 'var tab = null, probe = null, probeFailure = null, verifiedTabCount = 0;', "if (action === 'sign_encounter')");
+assert(/athCandidates\.length/.test(probeScan), 'the probe must iterate every signed-in Athena tab');
+assert(/contextVerified/.test(probeScan) && /lockedContextShape\(athProbe\.context\)/.test(probeScan), 'a tab only counts as verified after full context verification');
+assert(/verifiedTabCount\s*>\s*1/.test(handler) && /ambiguous-athena-tabs/.test(between(handler, 'verifiedTabCount > 1', 'noteWriteProofFailure')), 'duplicate verified encounters across Athena tabs must fail closed as ambiguous');
+assert(/if \(!tab \|\| !probe\) return probeFailure/.test(handler), 'zero verified tabs must return the honest probe failure, never proceed');
 
 /* The execute capability is bound end to end. Every mismatch must be rejected
  * before the driver is injected and therefore before any DOM mutation. */
@@ -177,8 +186,9 @@ assert(/delete\s+[^;]*token|\.delete\([^)]*token|(?:rec|token)[^;]*\.used\s*=\s*
  * the token's old tab id would miss a newly opened second Athena tab. */
 const executeSection = handler.slice(handler.indexOf("if (!appSender(sender))"), handler.indexOf(executeMutation));
 assert(/liveCandidates\s*=\s*exactAthenaTabs\(await\s+chrome\.tabs\.query\(\{\}\)\)/.test(executeSection), 'execute must re-query all tabs and then filter the signed-in Athena set');
-assert(/liveCandidates\.length\s*!==\s*1/.test(executeSection), 'execute must reject zero or multiple signed-in Athena tabs');
-assert(/Number\(liveCandidates\[0\]\.id\)\s*!==\s*Number\(rec\.athenaTabId\)/.test(executeSection), 'the sole live Athena tab must be the token-locked tab');
+assert(/lockedLive\s*=\s*liveCandidates\.filter/.test(executeSection), 'execute must locate the token-locked tab inside the live signed-in set');
+assert(/Number\(lt\.id\)\s*===\s*Number\(rec\.athenaTabId\)/.test(executeSection), 'the execute gate must match the token-locked tab id against the live signed-in set');
+assert(/lockedLive\.length\s*!==\s*1/.test(executeSection), 'execute must reject when the token-locked tab is not present exactly once in the signed-in Athena set');
 assert(!/chrome\.tabs\.get\(rec\.athenaTabId\)/.test(executeSection), 'execute must not validate only the remembered Athena tab');
 
 /* Omitting any member of the probed encounter fingerprint is a mismatch, as

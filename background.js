@@ -1833,13 +1833,16 @@ function mlsAthenaTeachWatcherFn(config) {
   function exactAthenaTabs(all) {
     return (all || []).filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
   }
-  async function pickExactAthena(sender, expectedPatient, all) {
-    /* Final/financial actions are stricter than read and narrative-draft lanes:
-       more than one signed-in Athena tab is always ambiguous, even if an older
-       read flow remembered a target. */
+  async function pickAthenaWriteCandidates(all) {
+    /* v2.9.31 multi-tab support: more than one signed-in Athena tab no longer
+       blocks the supervised lane by itself. Ambiguity moved to the encounter
+       level - the probe injects read-only into EVERY signed-in Athena tab and
+       proceeds only when exactly one tab verifies the expected patient and
+       encounter context. Zero signed-in tabs and duplicate verified
+       encounters still fail closed. */
     var candidates = exactAthenaTabs(all);
-    if (candidates.length !== 1) return { __error: candidates.length ? 'ambiguous-athena-tabs' : 'no-athena-tab', __message: candidates.length ? 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was changed.' : 'Open one signed-in Athena tab, then retry. Nothing was changed.' };
-    return candidates[0];
+    if (!candidates.length) return { __error: 'no-athena-tab', __message: 'Open one signed-in Athena tab, then retry. Nothing was changed.' };
+    return candidates;
   }
   async function injectOnce(tabId, payload) {
     /* Intentionally one TOP-frame injection: no allFrames, no retry/reload. */
@@ -2112,10 +2115,15 @@ function mlsAthenaTeachWatcherFn(config) {
       }
       var tabs = exactAthenaTabs(await chrome.tabs.query({}));
       if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled before the watcher started.' };
-      if (tabs.length !== 1) {
+      if (!tabs.length) {
         clearTeachSession(session);
-        return { ok: false, state: 'failed', reason: tabs.length ? 'ambiguous-athena-tabs' : 'no-athena-tab', message: tabs.length ? 'Leave exactly one signed-in Athena tab open, then try again.' : 'Open one signed-in Athena tab, then try again.' };
+        return { ok: false, state: 'failed', reason: 'no-athena-tab', message: 'Open one signed-in Athena tab, then try again.' };
       }
+      /* v2.9.31: multiple signed-in Athena tabs no longer abort teaching. The
+         watcher arms in the most recently used Athena tab and the status
+         message says so; clicks in other Athena tabs are not captured. */
+      if (tabs.length > 1) tabs.sort(function (ta, tb) { return (Number(tb.lastAccessed) || 0) - (Number(ta.lastAccessed) || 0); });
+      var teachTabNote = tabs.length > 1 ? ' Multiple Athena tabs are open - the most recently used one is being watched; click the destination in that exact tab.' : '';
       session.athenaTabId = tabs[0].id;
       var framesBefore = await teachFrameSnapshot(session.athenaTabId);
       if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled while Athena was being checked.' };
@@ -2145,8 +2153,8 @@ function mlsAthenaTeachWatcherFn(config) {
         if (!teachCurrent(session)) return;
         retireTeachSession(session, 'timeout', 'The read-only watcher expired. Nothing was captured or changed.', 'expired');
       }, timeoutMs + 50);
-      teachProgress(session, 'waiting', { ok: true, message: 'Waiting for the next Athena click. That teaching click will be blocked from activating the control.' });
-      return { ok: true, state: 'waiting', requestId: requestId, expiresAt: session.expiresAt, message: 'Connected. Waiting for the next Athena click.' };
+      teachProgress(session, 'waiting', { ok: true, message: 'Waiting for the next Athena click. That teaching click will be blocked from activating the control.' + teachTabNote });
+      return { ok: true, state: 'waiting', requestId: requestId, expiresAt: session.expiresAt, message: 'Connected. Waiting for the next Athena click.' + teachTabNote };
     })().then(function (result) { try { sendResponse(result); } catch (e) {} }).catch(function (e) { try { sendResponse({ ok: false, state: 'failed', reason: 'watcher-error', message: String((e && e.message) || e).slice(0, 220) }); } catch (e2) {} });
     return true;
   });
@@ -2240,14 +2248,25 @@ function mlsAthenaTeachWatcherFn(config) {
       }
       if (mode === 'probe') {
         if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
-        var all = await chrome.tabs.query({}), tab = await pickExactAthena(sender, p, all);
-        if (tab && tab.__error) return { ok: false, blocked: true, reason: tab.__error, error: tab.__message };
+        var all = await chrome.tabs.query({}), athCandidates = await pickAthenaWriteCandidates(all);
+        if (athCandidates && athCandidates.__error) return { ok: false, blocked: true, reason: athCandidates.__error, error: athCandidates.__message };
+        /* Probe every signed-in Athena tab read-only. Exactly ONE tab must
+           verify the expected patient+encounter context; zero verified tabs
+           returns the first honest probe failure, and duplicate verified
+           encounters fail closed as ambiguous-athena-tabs. The token minted
+           below stays bound to the single verified tab id. */
+        var tab = null, probe = null, probeFailure = null, verifiedTabCount = 0;
+        for (var athIdx = 0; athIdx < athCandidates.length; athIdx++) {
+          var athProbe = await injectOnce(athCandidates[athIdx].id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
+          if (athProbe && athProbe.ok && athProbe.contextVerified && lockedContextShape(athProbe.context)) { verifiedTabCount++; if (!tab) { tab = athCandidates[athIdx]; probe = athProbe; } }
+          else if (!probeFailure) probeFailure = athProbe && athProbe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (athProbe || { ok: false, blocked: true, reason: 'context-unverified' });
+        }
+        if (verifiedTabCount > 1) return { ok: false, blocked: true, reason: 'ambiguous-athena-tabs', error: 'The same verified encounter matched in more than one signed-in Athena tab. Close the duplicate encounter tab, then retry. Nothing was changed.' };
+        if (!tab || !probe) return probeFailure || { ok: false, blocked: true, reason: 'context-unverified' };
         if (action === 'sign_encounter') {
           proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
           if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
         }
-        var probe = await injectOnce(tab.id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
-        if (!probe || !probe.ok || !probe.contextVerified || !lockedContextShape(probe.context)) return probe && probe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (probe || { ok: false, blocked: true, reason: 'context-unverified' });
         if (action === 'sign_encounter' && !matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, probe.context)) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch', error: 'The verified note write does not match this encounter.' };
         if ((dateKey(c.visitDate) && dateKey(c.visitDate) !== dateKey(probe.context.visitDate)) ||
             (norm(c.provider) && norm(c.provider) !== norm(probe.context.provider)) ||
@@ -2299,11 +2318,15 @@ function mlsAthenaTeachWatcherFn(config) {
       if (!probeContextMatches(msg.probeContext, rec.locked)) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (msg.userGesture !== true || !clean(msg.gestureProof)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
       if (action === 'place_order' && (clean(msg.gestureRowHash) !== rec.rowHash || clean(msg.gestureClientOrderId) !== rec.clientOrderId)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
-      /* Re-query the complete tab set at the last pre-mutation gate. A token
-         cannot remain valid if another signed-in Athena tab appeared, the
-         locked tab signed out, or a different Athena tab replaced it. */
+      /* Re-query the complete tab set at the last pre-mutation gate. The
+         token stays bound to the exact tab that verified this encounter at
+         probe time; that tab must still be open and signed in. Other Athena
+         tabs no longer invalidate the token - the execute injection targets
+         only rec.athenaTabId and the driver re-verifies patient identity and
+         encounter context inside that tab before any mutation. */
       var liveCandidates = exactAthenaTabs(await chrome.tabs.query({}));
-      if (liveCandidates.length !== 1 || Number(liveCandidates[0].id) !== Number(rec.athenaTabId)) return { ok: false, blocked: true, reason: 'token-tab-mismatch', error: liveCandidates.length > 1 ? 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was changed.' : 'The locked Athena tab is no longer the only signed-in Athena tab. Nothing was changed.' };
+      var lockedLive = liveCandidates.filter(function (lt) { return Number(lt.id) === Number(rec.athenaTabId); });
+      if (lockedLive.length !== 1) return { ok: false, blocked: true, reason: 'token-tab-mismatch', error: 'The Athena tab this action was verified in is no longer open and signed in. Nothing was changed.' };
       if (executeBusy) return { ok: false, blocked: true, reason: 'outcome-uncertain', detail: 'another-athena-action-is-running', noAutomaticChaining: 'no-automatic-chaining' };
       if (action === 'sign_encounter') {
         if (!noteWriteProofId || noteWriteProofId !== rec.noteWriteProof) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch' };
