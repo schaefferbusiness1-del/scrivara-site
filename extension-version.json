@@ -1,5 +1,5 @@
 {
-  "version": "2.9.36",
+  "version": "2.9.37",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.36 - Multi-tab pulls are now pinned: the first read of a pull leases the exact Athena tab and every later read in that run stays on it, so opening extra Athena tabs can no longer make histories land in the wrong tab or fail with frame-name mismatches. Keeps v2.9.35 (no window creation/moving/resizing ever) and everything before it."
+  "notes": "v2.9.37 - Two fixes. History bodies: athena stopped exposing the exact expand-control class the reader clicked, which failed every encounter body instantly; the reader now recognizes several same-row expand-control shapes, retries that failure with the existing bounded reopen, and records a redacted diagnostic when a row still will not open. Console noise: the extension no longer creates its timing worker on unrelated sites (Gmail and other strict pages logged security-policy errors on every load); it is created only when needed on MLS and athena pages."
 }

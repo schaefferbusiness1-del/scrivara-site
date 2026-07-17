@@ -8437,10 +8437,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              its visible descendant opens the exact historical encounter row. */
           target = null;
           try {
-            var rowToggles = Array.prototype.slice.call(row.querySelectorAll('div.clickable.accordion-trigger'));
-            for (var rt0 = 0; rt0 < rowToggles.length; rt0++) if (visible(rowToggles[rt0])) { target = rowToggles[rt0]; break; }
+            /* v2.9.37: the exact class pair div.clickable.accordion-trigger went
+               missing live (every body read failed accordion-trigger-missing with
+               zero retries). Widen to visible SAME-ROW expand-control shapes -
+               still read-only navigation inside one verified encounter row - and
+               report the row's redacted DOM shape when nothing matches. */
+            var toggleSelectors = ['div.clickable.accordion-trigger', 'div.accordion-trigger', '[class*="accordion-trigger"]', '.accordion-header', '[aria-expanded]'];
+            for (var ts0 = 0; ts0 < toggleSelectors.length && !target; ts0++) {
+              var rowToggles = Array.prototype.slice.call(row.querySelectorAll(toggleSelectors[ts0]));
+              for (var rt0 = 0; rt0 < rowToggles.length; rt0++) if (visible(rowToggles[rt0])) { target = rowToggles[rt0]; break; }
+            }
           } catch (eToggle) {}
-          if (!target) return { clicked: false, reason: 'accordion-trigger-missing', binding: liveBinding };
+          if (!target) {
+            var rowShape = { kids: 0, open: false, classes: [] };
+            try {
+              rowShape.kids = row.childElementCount || 0;
+              rowShape.open = isOpenRow(row);
+              var shapeEls = Array.prototype.slice.call(row.querySelectorAll('*')).slice(0, 40);
+              for (var sh0 = 0; sh0 < shapeEls.length && rowShape.classes.length < 12; sh0++) {
+                var cls = String(shapeEls[sh0].className || '').trim().slice(0, 60);
+                if (cls && rowShape.classes.indexOf(cls) < 0) rowShape.classes.push(cls);
+              }
+            } catch (eShape) {}
+            return { clicked: false, reason: 'accordion-trigger-missing', binding: liveBinding, d2: rowShape };
+          }
         } else {
           try { var c = row.querySelector && row.querySelector('.accordion-header,[aria-expanded],a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
         }
@@ -9348,7 +9368,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         var attempt = await runBoundAttempt(detailWaitMs);
         var retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
+        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
         /* 2026-07-15 live: one cold reopen was not enough for encounter-frame-not-refreshed on slow charts (one stale body failed the whole day batch). Allow a SECOND bounded reopen for the same retryable reasons while the read deadline permits. */
         var coldTries = 0;
         while (coldRetryable && coldTries < 2 && Date.now() + 1000 < readDeadline) {
@@ -9357,7 +9377,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await sleepWithinReadDeadline(coldRetryPauseMs);
           attempt = await runBoundAttempt(coldRetryWaitMs);
           retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
+          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
         }
         if (attempt.failure) {
           failures.push({ index: i, reason: attempt.failure.reason || 'detail-read-failed', d2: attempt.failure.d2 || null });

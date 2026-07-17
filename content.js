@@ -1541,23 +1541,34 @@
         if (entry && entry.active) armWindowFallback(entry);
       });
     }
-    try {
-      if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && URL.createObjectURL) {
-        workerUrl = URL.createObjectURL(new Blob([
-          "var t={};onmessage=function(e){var d=e.data||{},id=String(d.id||'');" +
-          "if(d.action==='cancel'){if(t[id]){clearTimeout(t[id]);delete t[id];}return;}" +
-          "if(d.action!=='arm'||!id)return;if(t[id])clearTimeout(t[id]);" +
-          "t[id]=setTimeout(function(){delete t[id];postMessage({id:id});},Math.max(0,Number(d.deadlineAt||0)-Date.now()));};"
-        ], { type: 'text/javascript' }));
-        worker = new Worker(workerUrl);
-        worker.onmessage = function (event) {
-          var id = String(event && event.data && event.data.id || ''), entry = callbacks[id];
-          if (!entry) return;
-          entry.fire();
-        };
-        worker.onerror = failWorker;
-      }
-    } catch (e) { worker = null; }
+    /* v2.9.37: LAZY construction. Eagerly creating a blob Worker on every
+       page made strict-CSP sites (Gmail, accounts.google) log a violation on
+       every load. This worker is only ever ARMED by the MLS app's managed
+       read requests, so pages that never send one (all of the web) now never
+       construct it; a CSP-blocked attempt is terminal for the page and the
+       window-timer fallback takes over. */
+    var workerBlocked = false;
+    function ensureWorker() {
+      if (worker || workerBlocked) return worker;
+      try {
+        if (typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && URL.createObjectURL) {
+          workerUrl = URL.createObjectURL(new Blob([
+            "var t={};onmessage=function(e){var d=e.data||{},id=String(d.id||'');" +
+            "if(d.action==='cancel'){if(t[id]){clearTimeout(t[id]);delete t[id];}return;}" +
+            "if(d.action!=='arm'||!id)return;if(t[id])clearTimeout(t[id]);" +
+            "t[id]=setTimeout(function(){delete t[id];postMessage({id:id});},Math.max(0,Number(d.deadlineAt||0)-Date.now()));};"
+          ], { type: 'text/javascript' }));
+          worker = new Worker(workerUrl);
+          worker.onmessage = function (event) {
+            var id = String(event && event.data && event.data.id || ''), entry = callbacks[id];
+            if (!entry) return;
+            entry.fire();
+          };
+          worker.onerror = failWorker;
+        }
+      } catch (e) { worker = null; workerBlocked = true; }
+      return worker;
+    }
     return {
       arm: function (deadlineAt, callback) {
         var at = Number(deadlineAt || 0);
@@ -1580,7 +1591,7 @@
         entry.fire = fire; callbacks[id] = entry;
         if (at <= Date.now()) {
           fire();
-        } else if (worker) {
+        } else if (ensureWorker()) {
           try { worker.postMessage({ action: 'arm', id: id, deadlineAt: deadlineAt }); }
           catch (e) { failWorker(); }
         } else armWindowFallback(entry);
