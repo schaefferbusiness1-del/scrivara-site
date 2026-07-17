@@ -2569,6 +2569,14 @@
     opts = opts || {};
     var month = String(opts.month || "");
     var dates = monthDateKeys(month);
+    /* smp-1.2.0: an explicit opts.dates allow-list narrows the run to those
+       days (used by Retry failed days). Entries are validated against the
+       canonical month keys, so a stray date can never widen or shift the run. */
+    if (Array.isArray(opts.dates) && opts.dates.length) {
+      var onlyDates = {};
+      opts.dates.forEach(function (d) { onlyDates[String(d || "").slice(0, 10)] = 1; });
+      dates = dates.filter(function (d) { return onlyDates[d] === 1; });
+    }
     var includeHistory = opts.includeHistory !== false;
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true });

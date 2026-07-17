@@ -58,6 +58,8 @@ for (const [label, block, method] of [
   assert(!block.includes('mlsAppPullSchedule'), `${label} must not invoke the legacy bridge directly`);
 }
 assert(staffMonth.includes('requireRosterForAll: true'), 'all-provider month pull must require a complete canonical roster');
+assert(staffMonth.includes('retryDates'), 'Retry failed days must re-run only the recorded failed days');
+assert(staffMonth.includes('dates: retryDates || undefined'), 'the failed-day subset must reach the exact pullMonth route');
 
 const assistantPullStart = assistantSource.indexOf('function doPullHonest(');
 const assistantPullEnd = assistantSource.indexOf('function takeoverPullButton(', assistantPullStart);
@@ -453,6 +455,15 @@ async function main() {
   assert.strictEqual(second.totals.created, 0);
   assert.strictEqual(second.totals.skipped, 1);
   assert.strictEqual(h.backendRows.length, 1, 'repeat month pull duplicated an appointment');
+
+  // A dates allow-list narrows the run to exactly those days (Retry failed
+  // days). Entries outside the month are dropped, never widening the run.
+  const gotoBeforeSubset = h.gotoDates.length;
+  const subset = await api.pullMonth({ month: '2026-02', provider: h.providerAlpha, dates: ['2026-02-03', '2026-09-09'] });
+  assert.strictEqual(subset.ok, true);
+  assert.strictEqual(subset.days.length, 1, 'dates allow-list must narrow the month run');
+  assert.strictEqual(subset.days[0].date, '2026-02-03');
+  assert.deepStrictEqual(h.gotoDates.slice(gotoBeforeSubset), ['2026-02-03'], 'subset retry must visit only the requested day');
 
   // A single incomplete schedule receipt makes the whole month retryable and
   // cannot be promoted to a successful month.

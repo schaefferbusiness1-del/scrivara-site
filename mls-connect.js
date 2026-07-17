@@ -18759,13 +18759,17 @@
       });
     });
   }
-  function startMonthPull(retryOnly) {
+  function startMonthPull(retryOnly, rosterRetried) {
     if (P && P.running) return;
     var exact = safe(function () { return window.__mlsSI; }, null);
     var exactMonthEl = $('ez3sMonth'), exactMonth = exactMonthEl ? exactMonthEl.value : prevYm();
     var exactRange = pullMonthRange(exactMonth);
     if (!exactRange) { toast(exactMonth > nowYm() ? 'That month has not happened yet - pick a past month.' : 'Pick a month first.'); return; }
     if (!(exact && isFn(exact.pullMonth) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', 'The verified exact month-pull engine is still loading.'); return; }
+    /* smp-1.2.0: Retry failed days re-runs ONLY the failed days (captured
+       before freshPull resets them), not the whole verified month. A retry
+       click with nothing recorded as failed falls back to the full month. */
+    var retryDates = (retryOnly === true && P && Array.isArray(P.failedDays) && P.failedDays.length) ? P.failedDays.slice() : null;
     var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: true });
     if (!exactGate || !exactGate.ok) {
       /* smp-1.1.0 (owner ask 2026-07-17): never tell the user to stage Athena by
@@ -18774,7 +18778,7 @@
          live schedule grid, and retry the gate ONCE. The manual instructions
          only surface if the automatic attempt still cannot verify the roster
          (e.g. athena signed out - the extension never signs in unattended). */
-      if (retryOnly !== 'roster-retry') {
+      if (!rosterRetried) {
         pSet('ez3PullNow', 'Setting up Athena automatically…');
         pSet('ez3PullNow2', 'MLS is opening the Athena Day schedule and verifying your provider roster — no clicks needed.');
         plog('Provider roster not verified yet — opening the Athena Day schedule automatically…');
@@ -18783,7 +18787,7 @@
           return readSchedule();
         }).then(function (r0) {
           if (r0 && r0.ok === true && canonicalR && isFn(canonicalR.ingestResp)) safe(function () { canonicalR.ingestResp(r0); });
-        }).then(null, function () {}).then(function () { startMonthPull('roster-retry'); });
+        }).then(null, function () {}).then(function () { startMonthPull(retryOnly, true); });
         return;
       }
       pSet('ez3PullNow', (exactGate && exactGate.error) || 'The full Athena provider roster is not verified yet.');
@@ -18793,9 +18797,17 @@
     }
     var exactProviderLabel = exactGate.provider === 'all' ? 'all' : exactGate.provider.name;
     P = freshPull(exactRange, exactProviderLabel); P.running = true; P.cancelled = false;
-    pSet('ez3PullNow', 'Starting verified exact month pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
+    if (retryDates) {
+      pSet('ez3PullNow', 'Retrying ' + retryDates.length + ' failed day' + (retryDates.length === 1 ? '' : 's') + '...');
+      pSet('ez3PullNow2', 'Only the days that did not verify are re-pulled; verified days are left alone.');
+      plog('Retrying only the failed days: ' + retryDates.join(', '));
+    } else {
+      pSet('ez3PullNow', 'Starting verified exact month pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.');
+    }
+    pCounts();
     Promise.resolve(exact.pullMonth({
       month: exactMonth,
+      dates: retryDates || undefined,
       provider: exactGate.provider,
       includeHistory: true,
       onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
@@ -32051,7 +32063,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b392';
+  window.__MLS_AV = window.__MLS_AV || 'b393';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32342,7 +32354,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b392';
+  var MLS_APP_BUILD='2026-07-17-b393';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
