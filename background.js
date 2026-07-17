@@ -1,3 +1,33 @@
+/* MLS_TOP_ERROR_TRAP (wet-1.1.0, 2026-07-17 schedule lane)  FIRST statement of the worker.
+ * The v2.9.26 AllVisits run and the v2.9.27 write probe both killed the service worker and
+ * left it BOOT-LOOPING with no log (only a chrome://extensions Reload  which clears session
+ * storage  revived it). Registering the error listeners before ANY other code means even a
+ * top-level evaluation crash is persisted to chrome.storage.local (mlsWorkerErrorLogV1) and
+ * surfaced through the mlsExtHealth verb. PHI-free; never throws; never blocks. */
+try {
+  var __mlsTrapWrite = function (kind, message, stackHead) {
+    try {
+      chrome.storage.local.get('mlsWorkerErrorLogV1', function (bag) {
+        try {
+          var log = (bag && Array.isArray(bag.mlsWorkerErrorLogV1)) ? bag.mlsWorkerErrorLogV1 : [];
+          log.push({ at: Date.now(), kind: String(kind).slice(0, 30), message: String(message == null ? '' : message).slice(0, 300), stack: String(stackHead == null ? '' : stackHead).slice(0, 400) });
+          while (log.length > 16) log.shift();
+          chrome.storage.local.set({ mlsWorkerErrorLogV1: log });
+        } catch (eTrapInner) {}
+      });
+    } catch (eTrapOuter) {}
+  };
+  var __mlsTrapHead = function (stack) {
+    try { return String(stack || '').split(String.fromCharCode(10)).slice(0, 5).join(' | '); } catch (e) { return ''; }
+  };
+  self.addEventListener('error', function (ev) {
+    try { __mlsTrapWrite('error', (ev && ev.message) + ' @' + (ev && ev.filename ? String(ev.filename).split('/').pop() : '?') + ':' + (ev && ev.lineno), __mlsTrapHead(ev && ev.error && ev.error.stack)); } catch (e) {}
+  });
+  self.addEventListener('unhandledrejection', function (ev) {
+    try { var r = ev && ev.reason; __mlsTrapWrite('unhandledrejection', r && (r.message || r), __mlsTrapHead(r && r.stack)); } catch (e) {}
+  });
+  __mlsTrapWrite('boot', 'worker evaluation started v' + ((chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '?'), '');
+} catch (eTrapSetup) {}
 try { importScripts('feat_codes_driver.js'); } catch (e) {}
 try { importScripts('write_safety_guard.js', 'teach_destination_memory.js'); } catch (e) {} /* wsg-1.0.0 + tdm-1.0.0; a load failure fail-closes final actions at the gate below */
 function mlsHostOnly(u){ try { return new URL(u).hostname; } catch (e) { return ''; } }
@@ -162,7 +192,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     var sleep = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
     var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
     if (!ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
-    /* MLS_WRITE_SAFETY_DRIVER_GUARD_START (wsg-1.0.0) - self-contained in-page
+    /* MLS_WRITE_SAFETY_DRIVER_GUARD_START (wsg-1.0.0)  self-contained in-page
        defense in depth. The driver refuses to EXECUTE final/financial actions
        and clickOnce refuses ANY control whose own label or machine name marks a
        final/irrevocable action (sign, sign off, submit, send, approve, finalize,
@@ -2015,7 +2045,7 @@ function mlsAthenaTeachWatcherFn(config) {
         }
         var validatedTarget = teachTarget(checked.target || target);
         if (!detachTeachSession(capturedSession)) return { ok: false, state: 'expired', reason: 'session-expired' };
-        /* MLS_TEACH_MEMORY_HOOK_START (tdm-1.0.0) - remember the validated,
+        /* MLS_TEACH_MEMORY_HOOK_START (tdm-1.0.0)  remember the validated,
            PHI-free layout record so this destination survives per practice/
            provider/layout. Recall is a hint only; writes still re-validate. */
         try {
@@ -2150,7 +2180,7 @@ function mlsAthenaTeachWatcherFn(config) {
       var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
       var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
       if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
-      /* MLS_WRITE_SAFETY_GATE_START (wsg-1.0.0) - sign/order/billing lanes are
+      /* MLS_WRITE_SAFETY_GATE_START (wsg-1.0.0)  sign/order/billing lanes are
          PREVIEW-ONLY: probe stays available for the review screen; execute is
          refused here, again inside the driver, and the athenanet synthetic-click
          interceptor is the final backstop. Also enforces the Adam-only (7833832)
@@ -2271,7 +2301,7 @@ function mlsAthenaTeachWatcherFn(config) {
         if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId) };
         proofRecord.used = true; // the immediate pre-injection Sign attempt consumes the proof
       }
-      /* MLS_WRITE_SAFETY_CONTEXT_GATE_START (wsg-1.0.0) - verify the signed-in
+      /* MLS_WRITE_SAFETY_CONTEXT_GATE_START (wsg-1.0.0)  verify the signed-in
          account (when the app supplied an expectation) and that the live Athena
          tab's practice id matches the locked encounter's practice id. Supplied
          expectations that cannot be verified BLOCK (fail-closed). */
@@ -6968,6 +6998,8 @@ async function mlsSchedDomInline(doc, CFG){
           if (!visible.length || !visible.every((candidate) => exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && String(candidate.dob || '').replace(/\D/g, '') === selectedDob)) return false;
           return visible.some((candidate) => typeof candidate.frameId === 'number' && exactOpenLease.appointmentNavigationFrameIds.indexOf(candidate.frameId) >= 0);
         };
+        /* v2.9.27 SPEED (schedule lane): when round 1 already proves the FULL bootstrap identity (banner-grade, all frames agree, appointment-frame-bound), the mandatory second confirmation round follows after a SHORT settle instead of the full 2.4s  acceptance semantics unchanged (round 2 re-probes and must re-pass). */
+        let bootstrapReadyEarly = false;
         while (!chartExpired() && Date.now() - T0 < BUDGET_MS) {
           polls++;
           /* v1.63: 15s -> 20s. A heavy-but-alive chart load could eat two 15s injection
@@ -7020,6 +7052,7 @@ async function mlsSchedDomInline(doc, CFG){
               if (sIdent && (!cand || cand.via !== 'banner' || (sIdent.score || 0) > (cand.score || 0))) cand = sIdent;
             }
           }
+          bootstrapReadyEarly = !!(bootstrapIdentity && cand && cand.name && expectName && nmm(cand.name, expectName) && bootstrapIdentityReady(cand, identityFrameResults));
           /* the RIGHT patient found (any via) -> done */
           if (cand && cand.name && expectName && nmm(cand.name, expectName) && (!bootstrapIdentity || (polls >= 2 && bootstrapIdentityReady(cand, identityFrameResults)))) { ident = cand; if (!bootstrapIdentity) try { self.__mlsExpectOpen = null; } catch (e) {} break; }
           /* no expectation: a banner IS the open chart -> done (pre-v1.60 behavior, banner-only) */
@@ -7063,7 +7096,7 @@ async function mlsSchedDomInline(doc, CFG){
           }
           noClickRounds++;
           if (briefingNow && noClickRounds >= 5 && !navClicked) break; /* exam-prep with nothing safe to click -> fail honestly below */
-          if (!(await chartWait(2400))) { chartFailDeadline('clinical chart readiness'); return; }
+          if (!(await chartWait(bootstrapReadyEarly ? 900 : 2400))) { chartFailDeadline('clinical chart readiness'); return; }
         }
         if (chartExpired()) { chartFailDeadline('clinical chart readiness'); return; }
         const V59 = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
@@ -7105,6 +7138,7 @@ async function mlsSchedDomInline(doc, CFG){
           try { self.__mlsExpectOpen = null; } catch (eClearBootstrapLease2) {}
           return chartRespond({
             ok: true, opened: true, bootstrapIdentity: true,
+            stageMs: { total: Date.now() - chartRequestStartedAt, identity: Date.now() - T0, polls: polls },
             appointmentId: expectedAppointmentId, athenaTabId: exactOpenLease.tabId,
             chartName: String(ident.name || ''), chartDob: String(ident.dob || ''), chartMrn: String(ident.mrn || ''), via: String(ident.via || ''),
             identityBootstrapReceipt: {
@@ -7117,6 +7151,7 @@ async function mlsSchedDomInline(doc, CFG){
             }
           });
         }
+        const __identDoneAt = Date.now(); /* v2.9.27 stage timing: identity loop ended, text read begins */
         let results = [];
         {
           const tx = await chartExec({ target: { tabId: tab.id, allFrames: true }, func: () => {
@@ -7254,7 +7289,7 @@ async function mlsSchedDomInline(doc, CFG){
           if (chartReceiptStrict.complete) {
             try { self.__mlsVerifiedReadTarget = { tabId: tab.id, name: want, dob: wantDob, mrn: wantMrn, at: Date.now(), requestId: chartReceiptStrict.requestId }; } catch (eReadLease) {}
           }
-          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
+          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { chartRespond({ ok: false, error: String((e && e.message) || e) }); }
     })();
@@ -7736,7 +7771,7 @@ async function mlsSchedDomInline(doc, CFG){
           return sendResponse({ error: match.status === 'mismatch' ? 'Patient mismatch — refusing to write into this chart.' : 'Could not confidently verify the patient — refusing to write.', blocked: true, patientStatus: match.status });
         }
 
-        /* MLS_WRITE_SAFETY_PASTE_GATE_START (wsg-1.0.0) - Adam-only TEST policy
+        /* MLS_WRITE_SAFETY_PASTE_GATE_START (wsg-1.0.0)  Adam-only TEST policy
            on the generic paste lane (athenanet targets are already refused
            above): test-marked content may only reach Adam J Schaeffer
            (7833832); any write to Adam must be TEST-marked and free of real
@@ -12956,6 +12991,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     } catch (e) { out.athena = null; }
     try { out.platform = await chrome.runtime.getPlatformInfo(); } catch (e) { out.platform = null; }
     try { out.workerBootAt = self.__mlsWorkerBootAt || null; } catch (e) { out.workerBootAt = null; }
+    try { var errBag = await chrome.storage.local.get('mlsWorkerErrorLogV1'); out.workerErrors = (errBag && errBag.mlsWorkerErrorLogV1) || []; } catch (e) { out.workerErrors = null; } /* wet-1.1.0: crash log rides the health verb */
     try { sendResponse(out); } catch (e) {}
   })();
   return true;

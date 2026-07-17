@@ -74,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.7.0';
+  var VERSION = 'wf2-1.8.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -227,6 +227,17 @@
       var t = NaN; try { t = new Date(a.start_at || (visitDay(a.appt_date) + 'T12:00:00')).getTime(); } catch (e) {}
       return { row: a, distance: isNaN(t) ? Number.MAX_SAFE_INTEGER : Math.abs(t - ref) };
     }).sort(function (x, y) { return x.distance - y.distance; });
+    /* wf2-1.8.0: an MLS-only calendar row (one the day's schedule-import index cannot
+       map to a real Athena appointment) can never match an open Athena encounter at
+       write time, so binding to it guarantees a context-unverified refusal even when
+       the patient's true Athena appointment is one row away. Prefer the nearest row
+       that RESOLVES an Athena id; when none resolve, the prior nearest-row behavior
+       stands (the live probe stays the fail-closed arbiter either way). */
+    var resolvable = rows.filter(function (x) {
+      var d0 = visitDay(x.row.day_local || x.row.appt_date || x.row.start_at);
+      return !!(d0 && athenaAppointmentIdFromImportIndex(pid, x.row.id, d0));
+    });
+    if (resolvable.length) rows = resolvable;
     if (rows.length > 1 && rows[0].distance === rows[1].distance && String(rows[0].row.id || '') !== String(rows[1].row.id || '')) return null;
     var hit = rows[0].row;
     var day = suppliedDate || visitDay(hit.day_local || hit.appt_date || hit.start_at);

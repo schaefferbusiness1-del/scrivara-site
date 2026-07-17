@@ -35,9 +35,9 @@
   /* v1.55: mlsAppGoHome added — the app-side day/month history orchestrator needs to
      return athenaOne to the CLINICAL SCHEDULE (home) between patients so each patient's
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsExtHealth: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1 };
-  /* ^ wsg-1.0.0: five write-safety verbs — mlsAppReviewScreen (extension-side review overlay),
+  /* wsg-1.0.0: five write-safety verbs added — mlsAppReviewScreen (extension-side review overlay),
      mlsAppTeachRecall/DryRun/Forget/MemoryList (taught-destination memory; all read-only). */
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];

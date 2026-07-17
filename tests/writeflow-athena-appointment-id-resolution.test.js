@@ -17,7 +17,7 @@ const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8');
-assert(src.includes("var VERSION = 'wf2-1.7.0'"), 'writeflow version must be wf2-1.7.0');
+assert(src.includes("var VERSION = 'wf2-1.8.0'"), 'writeflow version must be wf2-1.8.0');
 
 function makeContext(indexRows, calAppts) {
   const store = new Map();
@@ -116,4 +116,35 @@ function manifestFor(indexRows, calAppts) {
   assert.strictEqual(manifest.visit.appointmentId, '99999999', 'an explicitly supplied appointment id must never be overridden');
 }
 
-console.log('PASS unified manifest resolves the real Athena appointment id from the day import index; no-match/ambiguous/supplied paths preserved');
+// 5. wf2-1.8.0: an MLS-only row that is CLOSER in time must not outrank the
+//    patient's real (index-resolvable) Athena appointment. Live hit 2026-07-17:
+//    Adam's MLS-only Sat-2AM scaffold (backend 3821, no Athena counterpart) was
+//    nearest by clock and bound the manifest to a visit date Athena doesn't
+//    have, guaranteeing "context-unverified" on every write while his true Wed
+//    appointment (52585118) sat one row away.
+{
+  const MLS_ONLY_FUTURE_ROW = {
+    id: '3821', patient_external_id: 'mr85n5sdkd6o', name: 'Adam J Schaeffer', dob: '03/24/2006',
+    provider: '', appt_date: '2026-07-18', day_local: '2026-07-18',
+    start_at: '2026-07-18T06:00:00.000Z', status: 'booked'
+  };
+  const manifest = manifestFor({
+    'appointment-id:52585118': { state: 'done', patientId: 'mr85n5sdkd6o', backendAppointmentId: '3794', appt_date: '2026-07-16' }
+  }, [MLS_ONLY_FUTURE_ROW, ADAM_ROW]);
+  assert.strictEqual(manifest.visit.appointmentId, '52585118', 'the index-resolvable real appointment must outrank a nearer MLS-only row');
+  assert.strictEqual(manifest.visit.visitDate, '7/16/2026', 'visit date must come from the resolvable row');
+}
+
+// 6. wf2-1.8.0 fail-open: when NO row resolves, the nearest-row behavior is
+//    unchanged (probe stays the arbiter).
+{
+  const MLS_ONLY_FUTURE_ROW = {
+    id: '3821', patient_external_id: 'mr85n5sdkd6o', name: 'Adam J Schaeffer', dob: '03/24/2006',
+    provider: 'Matthew Schaeffer, MD', appt_date: '2026-07-18', day_local: '2026-07-18',
+    start_at: '2026-07-18T06:00:00.000Z', status: 'booked'
+  };
+  const manifest = manifestFor(null, [MLS_ONLY_FUTURE_ROW, ADAM_ROW]);
+  assert(manifest.visit.appointmentId === '3821' || manifest.visit.appointmentId === '3794', 'without any index the nearest-row fallback must be preserved');
+}
+
+console.log('PASS unified manifest resolves the real Athena appointment id from the day import index; MLS-only rows never outrank resolvable ones; no-match/ambiguous/supplied paths preserved');

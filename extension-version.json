@@ -1,5 +1,5 @@
 {
-  "version": "2.9.28",
+  "version": "2.9.29",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.28 - Adaptive window sizing for Macs and smaller screens. The background Athena window is no longer held to a preset size: every window placement now adapts to the display that is actually there - its size is capped at the screen's usable area, it always lands fully on-screen (below the Mac menu bar), and stale saved positions from a different monitor setup (e.g. an undocked MacBook) are relocated onto the current display instead of being applied off-screen. Covers both moving and creating windows. Mac fullscreen protection, the keep-active guard against Chrome's Memory Saver unloading the signed-in Athena tab, and everything from v2.9.27's write-safety release are unchanged."
+  "notes": "v2.9.29 - Everything from v2.9.28's adaptive window sizing plus the office build's field-proven extras, now published for every machine: a crash self-diagnostic (worker errors are recorded the moment they happen and shown in Extension health, so a dead worker is never a mystery again), faster chart reads (per-stage timing receipts and a quicker identity re-confirm when the first read already proved the right patient - saves about 1.5s per chart), and the write-safety review layer exactly as tested live. No behavior changes to pulls or writes."
 }
