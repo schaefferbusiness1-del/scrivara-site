@@ -60,6 +60,26 @@
     _wrapped: []
   };
 
+  /* b366 perf: every localStorage write (any key) bumps VER; cross-tab writes
+     arrive via the storage event. An unchanged VER proves the stored blob
+     cannot have changed, so reads skip getItem + the full string compare. */
+  var VER = { n: 1 };
+  (function () {
+    try {
+      var proto = Object.getPrototypeOf(window.localStorage);
+      if (proto && typeof proto.setItem === 'function' && !proto.setItem.__mlsScVer) {
+        ['setItem', 'removeItem', 'clear'].forEach(function (m) {
+          var orig = proto[m];
+          if (typeof orig !== 'function') return;
+          var w = function () { VER.n++; return orig.apply(this, arguments); };
+          w.__mlsScVer = 1;
+          proto[m] = w;
+        });
+      }
+      window.addEventListener('storage', function () { VER.n++; });
+    } catch (e) {}
+  })();
+
   function wrapPair(getName, keySuffix) {
     var orig = window[getName];
     if (typeof orig !== 'function') return; /* base app not ready / renamed: do nothing */
@@ -77,16 +97,22 @@
       try {
         k = currentKey();
         if (!k) { api.stats.fallbacks++; return orig(); }
+        var nowV = Date.now();
+        if (cache.val && cache.key === k && cache.ver === VER.n && (nowV - cache.at) < TTL_MS) {
+          api.stats.hits++;
+          return cache.val.slice();
+        }
         s = localStorage.getItem(k);
       } catch (e) { api.stats.fallbacks++; return orig(); }
 
       if (s == null || s === '') { /* empty store: nothing to cache */
-        cache.key = k; cache.str = s; cache.val = null;
+        cache.key = k; cache.str = s; cache.val = null; cache.ver = VER.n;
         return [];
       }
       var now = Date.now();
       if (cache.val && cache.key === k && cache.str === s && (now - cache.at) < TTL_MS) {
         api.stats.hits++;
+        cache.ver = VER.n; /* string proven identical: re-arm the fast path */
         return cache.val.slice();
       }
       api.stats.misses++;
@@ -96,7 +122,7 @@
          stored string, so packed writes invalidate exactly like plain ones. */
       try { v = JSON.parse(typeof window.__mlsPtsDecode === 'function' ? window.__mlsPtsDecode(s) : s) || []; } catch (e) { v = []; }
       if (!Array.isArray(v)) return v; /* never cache non-array shapes; preserve base behavior */
-      cache.key = k; cache.str = s; cache.val = v; cache.at = now;
+      cache.key = k; cache.str = s; cache.val = v; cache.at = now; cache.ver = VER.n;
       return v.slice();
     }
     wrapped.__mlsStoreCache = true;

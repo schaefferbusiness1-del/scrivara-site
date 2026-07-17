@@ -153,7 +153,7 @@
   function start() {
     apply();                              // synchronous best-effort (host usually ready)
     if (!_applied) startFastApply();      // otherwise race the first render
-    _poll = setInterval(tick, 600);       // steady-state persist + late-apply
+    _poll = setInterval(tick, 1500);      // steady-state persist + late-apply (b366: 600ms was permanent idle churn)
   }
 
   // ===========================================================

@@ -98,7 +98,7 @@
 
   /* ---------------- item 11: guard the two doctor-facing "switch patient" actions ---------------- */
   function blockWhileCapturing(lockedName) {
-    safe(function () { window.alert("Recording is in progress for " + (lockedName || "the current patient") + ".\n\nStop the recording before switching patients - switching now risks the transcript or note ending up on the wrong patient."); });
+    safe(function () { var m = "Recording is in progress for " + (lockedName || "the current patient") + " - stop the recording before switching patients (switching now risks the transcript landing on the wrong patient)."; if (typeof window.toast === "function") window.toast(m, "err"); else window.alert(m); });
   }
   function confirmAbandon(lockedName) {
     return safe(function () { return window.confirm("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?"); }, true);

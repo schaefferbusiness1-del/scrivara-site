@@ -11357,6 +11357,7 @@
 
   /* ---------------- PART 1: marker unification ---------------- */
   function guard() {
+    if (api.done) return;
     api.guards++;
     var f = window._importPulledSchedule;
     if (typeof f !== 'function') return;
@@ -11368,6 +11369,10 @@
     for (i = 0; i < MARKS.length; i++) {
       m = MARKS[i];
       if (api.seen[m] && !f[m]) { try { f[m] = 1; api.stamped++; } catch (e) {} }
+    }
+    if (api.seen.__b49 && api.seen.__provWrap && api.seen.__prf && api.hygiene.installed) {
+      api.done = 1;
+      try { clearInterval(backstop); } catch (e) {}
     }
   }
   var nativeSetInterval = window.setInterval;
@@ -15485,7 +15490,7 @@
   }
   tick();
   /* fast pass for the boot veil (it appears within the first seconds only) */
-  var fast = setInterval(fixVeilLogo, 80);
+  var fast = setInterval(fixVeilLogo, 300);
   setTimeout(function () { try { clearInterval(fast); } catch (e) {} }, 15000);
   timers.push(fast);
   var iv = setInterval(tick, 1100);
@@ -15851,6 +15856,7 @@
 
   /* ---------------- PART 1: marker unification ---------------- */
   function guard() {
+    if (api.done) return;
     api.guards++;
     var f = window._importPulledSchedule;
     if (typeof f !== 'function') return;
@@ -15862,6 +15868,10 @@
     for (i = 0; i < MARKS.length; i++) {
       m = MARKS[i];
       if (api.seen[m] && !f[m]) { try { f[m] = 1; api.stamped++; } catch (e) {} }
+    }
+    if (api.seen.__b49 && api.seen.__provWrap && api.seen.__prf && api.hygiene.installed) {
+      api.done = 1;
+      try { clearInterval(backstop); } catch (e) {}
     }
   }
   var nativeSetInterval = window.setInterval;
@@ -31245,9 +31255,9 @@
   /* ---------- ticks ---------------------------------------------------------- */
   function tick() { try { css(); fixVeilLogo(); injectPay(); injectEmr(); dockDodge(); applyProv(); } catch (e) {} }
   tick();
-  var fast = setInterval(fixVeilLogo, 80); setTimeout(function () { try { clearInterval(fast); } catch (e) {} }, 15000);
+  var fast = setInterval(fixVeilLogo, 300); setTimeout(function () { try { clearInterval(fast); } catch (e) {} }, 15000);
   var iv = setInterval(tick, 900);
-  var mo; try { mo = new MutationObserver(function () { fixVeilLogo(); }); mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+  var mo; try { var _vRaf = 0; mo = new MutationObserver(function () { if (_vRaf) return; _vRaf = 1; (window.requestAnimationFrame || function (f) { return setTimeout(f, 50); })(function () { _vRaf = 0; fixVeilLogo(); }); }); mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 
   window.__mlsFixPackB34_revert = function () {
     try { clearInterval(iv); } catch (e) {}
@@ -31853,8 +31863,8 @@
     }catch(e){}
   }
   tick();
-  var iv=setInterval(tick,800);
-  var mo; try{ mo=new MutationObserver(function(){ tick(); }); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){}
+  var iv=setInterval(tick,2500);
+  var mo; try{ var _tickRaf=0; mo=new MutationObserver(function(){ if(_tickRaf) return; _tickRaf=1; (window.requestAnimationFrame||function(f){return setTimeout(f,50);})(function(){ _tickRaf=0; tick(); }); }); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){}
 
   window.__mlsEmrClarityB28_revert=function(){
     try{clearInterval(iv);}catch(e){}
@@ -31973,7 +31983,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b365';
+  window.__MLS_AV = window.__MLS_AV || 'b366';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32264,7 +32274,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b365';
+  var MLS_APP_BUILD='2026-07-17-b366';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -34154,8 +34164,8 @@
     }catch(e){}
   }
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1500);
+  try{ var _ijRaf=0; new MutationObserver(function(){ if(_ijRaf) return; _ijRaf=1; (window.requestAnimationFrame||function(f){return setTimeout(f,50);})(function(){ _ijRaf=0; inject(); }); }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  setInterval(inject, 6000);
 })();
 
 
@@ -34225,8 +34235,8 @@
     }catch(e){}
   }
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1500);
+  try{ var _ijRaf=0; new MutationObserver(function(){ if(_ijRaf) return; _ijRaf=1; (window.requestAnimationFrame||function(f){return setTimeout(f,50);})(function(){ _ijRaf=0; inject(); }); }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  setInterval(inject, 6000);
   if(document.readyState!=='loading') inject(); else document.addEventListener('DOMContentLoaded', inject);
 })();
 
@@ -34369,8 +34379,8 @@
     }catch(e){}
   }
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1500);
+  try{ var _ijRaf=0; new MutationObserver(function(){ if(_ijRaf) return; _ijRaf=1; (window.requestAnimationFrame||function(f){return setTimeout(f,50);})(function(){ _ijRaf=0; inject(); }); }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  setInterval(inject, 6000);
   if(document.readyState!=='loading') inject(); else document.addEventListener('DOMContentLoaded', inject);
 })();
 

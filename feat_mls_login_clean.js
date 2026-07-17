@@ -77,7 +77,19 @@
   function boot() {
     injectCSS();
     apply();
-    tickT = setInterval(apply, 800);
+    tickT = setInterval(function () {
+      apply();
+      /* b366: once signed in this module has nothing to restyle - drop to a
+         slow backstop instead of ticking at 800ms forever. */
+      try {
+        var a = gid('authScreen');
+        if (a && a.style.display === 'none' && !window.__mlsLoginCleanSlow) {
+          window.__mlsLoginCleanSlow = 1;
+          clearInterval(tickT);
+          tickT = setInterval(apply, 5000);
+        }
+      } catch (e) {}
+    }, 800);
     // react instantly to auth-state DOM changes / late FAB injection
     obs = new MutationObserver(function () { apply(); });
     safe(function () { obs.observe(document.body, { childList: true, subtree: false, attributes: true, attributeFilter: ['style', 'class'] }); });

@@ -243,7 +243,7 @@
   function start() {
     apply();                       // synchronous best-effort (host usually ready)
     if (!navTabs().length) startFast();
-    _poll = setInterval(tick, 500); // steady-state: react to live toggles + late tabs
+    _poll = setInterval(tick, 1500); // steady-state: react to live toggles + late tabs (b366: 500ms was permanent idle churn)
   }
 
   // ---- revert ---------------------------------------------------------------

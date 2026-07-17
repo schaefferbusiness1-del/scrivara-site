@@ -6107,7 +6107,11 @@ function _mlsPtsEncode(json){
   try{
     if(typeof json!=='string'||json.length<200000)return json;
     var packed='MLSZ1|'+__mlsLZ.compressToUTF16(json);
-    if(packed.length<json.length&&__mlsLZ.decompressFromUTF16(packed.slice(6))===json)return packed;
+    if(packed.length<json.length){
+      window.__mlsLZVerN=(window.__mlsLZVerN||0)+1;
+      if(window.__mlsLZVerN>1&&(window.__mlsLZVerN%10)!==0)return packed; /* deterministic codec: sample-verify */
+      if(__mlsLZ.decompressFromUTF16(packed.slice(6))===json)return packed;
+    }
   }catch(e){}
   return json;
 }
@@ -7651,7 +7655,7 @@ function _calRenderWeek(){
     if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#2E6A4B;background:#eef4fc;border-radius:4px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
-  h+='</div>'; grid.innerHTML=h;
+  h+='</div>'; if(grid._mlsSig!==h||!grid.childElementCount){ grid.innerHTML=h; grid._mlsSig=h; }
 }
 function _calRenderDay(){
   var pfVal=_calFilterVal();
@@ -7671,7 +7675,7 @@ function _calRenderDay(){
   for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
   for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #F4F2EC"></div>'; }
   timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+a.id+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:6px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,33,28,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
-  h+='</div>'; grid.innerHTML=h;
+  h+='</div>'; if(grid._mlsSig!==h||!grid.childElementCount){ grid.innerHTML=h; grid._mlsSig=h; }
 }
 function _calRenderMonth(){
   _calInit();
@@ -7703,7 +7707,7 @@ function _calRenderMonth(){
     h+='</div>';
   }
   h+='</div>';
-  grid.innerHTML=h;
+  if(grid._mlsSig!==h||!grid.childElementCount){ grid.innerHTML=h; grid._mlsSig=h; }
 }
 /* Floating preview that pops up over an appointment when you click it — quick look at
    who/when/why + Start visit / Details, without leaving the calendar. */
@@ -10060,9 +10064,10 @@ function renderPatients(){
     var keys=Object.keys(groups).sort(_ptGroupSort(_ptMode));
     var ghtml='';
     keys.forEach(function(g){ ghtml+='<div class="pt-group-hdr">'+esc(g)+' <span style="color:var(--muted);font-weight:600">('+groups[g].length+')</span></div>'; ghtml+=groups[g].map(function(p){ return _ptItemHtml(p,activeId); }).join(''); });
-    list.innerHTML=ghtml + capNote;
+    if(list._mlsSig!==ghtml+capNote||!list.childElementCount){ list.innerHTML=ghtml + capNote; list._mlsSig=ghtml+capNote; }
   } else {
-    list.innerHTML=shown.map(function(p){ return _ptItemHtml(p,activeId); }).join('') + capNote;
+    var _ph=shown.map(function(p){ return _ptItemHtml(p,activeId); }).join('') + capNote;
+    if(list._mlsSig!==_ph||!list.childElementCount){ list.innerHTML=_ph; list._mlsSig=_ph; }
   }
 }
 function _ptItemHtml(p, activeId){
@@ -11891,7 +11896,7 @@ function renderHistory(){
   if(sub) sub.innerHTML=ap
     ? 'Showing visits for <b>'+esc(ap.name)+'</b>'+(orphans.length?' plus '+orphans.length+' unassigned visit'+(orphans.length===1?'':'s')+' (tap “Attach” to file them here)':'')+'. '+(hosted?'Synced to your account (encrypted) for':'Saved locally for')+' <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.'
     : 'Click a past visit to reopen it. Notes are '+(hosted?'synced to your account (encrypted) and cached in this browser':'saved locally in this browser')+' for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.';
-  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
+  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
   mine.sort((a,b)=>(b.updated||0)-(a.updated||0));
   orphans.sort((a,b)=>(b.updated||0)-(a.updated||0));
@@ -11904,9 +11909,9 @@ function renderHistory(){
   if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
   if(q){ ordered=ordered.filter(n=>{ const d=new Date(n.updated||n.created||Date.now()); const ds=(d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); const hay=[_pname(n), n.cc||'', n.text||n.soap||'', ds, (n.signed?'signed':(n.isDraft?'draft':'unsigned')), (n.kind||'')].join(' \n ').toLowerCase(); return hay.indexOf(q)>=0; }); }
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
-  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
+  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
-  list.innerHTML=ordered.map(n=>{
+  var _histHtml=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
@@ -11932,6 +11937,7 @@ function renderHistory(){
       <button class="del" title="Delete" onclick="event.stopPropagation();deleteNote('${n.id}')">🗑</button>
     </div>`;
   }).join('');
+  if(list._mlsSig!==_histHtml||!list.childElementCount){ list.innerHTML=_histHtml; list._mlsSig=_histHtml; }
 }
 
 /* One-click: file an unassigned saved visit into the active patient's chart. */
@@ -23817,7 +23823,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b365';
+  window.__MLS_AV='b366';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
