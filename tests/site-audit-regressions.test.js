@@ -30,7 +30,7 @@ assert(loading.includes("p.setAttribute('role', 'status')"), 'busy pill needs st
 assert(loading.includes("p.setAttribute('aria-live', 'polite')"), 'busy pill needs polite announcements');
 assert(loading.includes("p.setAttribute('aria-hidden', 'true')") && loading.includes("p.setAttribute('aria-hidden', 'false')"), 'busy pill must leave and re-enter the accessibility tree with its visual state');
 assert(loading.includes('opacity:0;visibility:hidden;'), 'idle busy pill must be visually and semantically hidden');
-assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260714audit1"), 'the repaired loading asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260716lb200"), 'the shared progress asset needs a fresh deployment URL');
 
 assert.strictEqual((home.match(/id="mlsChatBtn"/g) || []).length, 1, 'homepage needs one sales-chat button');
 assert(home.includes('#mlsChatBtn{position:static;right:auto;bottom:auto;'), 'mobile sales chat must participate in layout instead of covering CTAs');
