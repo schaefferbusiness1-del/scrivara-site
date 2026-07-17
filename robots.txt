@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /index-staging.html
+Disallow: /ScribeFlow-staging.html
+Disallow: /ScribeFlow_test.html
+Disallow: /patient-portal-staging.html
+Disallow: /_dz_
+Disallow: /_compare.html
+Disallow: /_ps_preview.html
+Disallow: /AuthPilot.html
+Disallow: /offscreen.html
+Disallow: /popup.html
+
+Sitemap: https://mlsscribe.com/sitemap.xml

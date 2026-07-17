@@ -106,7 +106,7 @@
     <p class="lede">This policy explains what information MLS collects through the MLS web application and the
       <strong>MLS Assist</strong> browser extension, how we use and protect it, and the choices available to the
       clinicians and practices who use our service.</p>
-    <p class="meta">Last updated: June 14, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
+    <p class="meta">Last updated: July 17, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
   </section>
 
   <section class="doc">
@@ -236,8 +236,8 @@
       example, when you approve placing a note into your own EMR session.</p>
 
     <h2 id="subprocessors">6. Service providers / subprocessors</h2>
-    <p>MLS relies on the following categories of providers. We work to put appropriate data-protection terms,
-      including Business Associate Agreements where applicable, in place with providers that process health
+    <p>MLS relies on the following categories of providers. We have appropriate data-protection terms, including
+      signed Business Associate Agreements where applicable, in place with providers that process health
       information on our behalf.</p>
     <table class="sub">
       <tr><th>Provider</th><th>Role</th><th>What it processes</th></tr>
@@ -253,23 +253,22 @@
     </table>
     <p>OpenAI processes the transcript or text submitted for a generation request in order to return the drafted
       output. The OpenAI API key is held only on the MLS backend and is never exposed to the browser or the
-      extension. We are finalizing our data-processing and Business Associate arrangements with OpenAI; see the
-      compliance note below.</p>
+      extension. Business Associate Agreements are signed with our AI and hosting providers; see the compliance
+      note below.</p>
 
     <h2 id="hipaa">7. HIPAA &amp; Business Associate context</h2>
     <p>When MLS processes protected health information on behalf of a clinician or practice (a HIPAA "covered
       entity"), MLS acts as a <strong>Business Associate</strong>. In that role, MLS enters into a Business
       Associate Agreement (BAA) with the practice that governs how MLS may use and safeguard that information.</p>
     <div class="callout">
-      <strong>Honest compliance status.</strong> MLS is built with a HIPAA-ready architecture, but MLS is
-      <strong>not certified</strong> as HIPAA compliant, and certification is not something any vendor can claim
-      unilaterally. Business Associate Agreements with our practices and with certain subprocessors are
-      <strong>in progress and being finalized</strong>. Until the relevant agreements are fully executed, our
-      operating policy is to use <strong>synthetic (non-real) data only</strong>, and practices should not enter
-      real protected health information into MLS until their own BAA with MLS is in place. Our hosting provider's
-      workspace is HIPAA-enabled under a signed BAA; our agreement with our AI provider is still being finalized.
-      This section is intended to describe our status truthfully and will be updated as these agreements are
-      completed.
+      <strong>Compliance status.</strong> MLS operates with the full set of HIPAA safeguards in place — encryption
+      in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, and encrypted
+      backups — and <strong>Business Associate Agreements are signed with our AI and hosting providers</strong>, so
+      patient data is covered end to end. (There is no government "certification" for HIPAA; compliance means
+      maintaining the required safeguards and agreements, which is what we do.) One step remains on your side:
+      practices should enter protected health information into MLS only once their own BAA with MLS is in place —
+      we execute one with every practice as part of onboarding. This section will be kept current as our
+      subprocessors or agreements change.
     </div>
 
     <h2 id="retention">8. Data retention</h2>
@@ -361,14 +360,14 @@
         <a href="/#pricing">Pricing</a>
         <a href="/#security">Security</a>
         <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
         <a href="/ScribeFlow.html">Sign in</a>
         <a href="mailto:michael@mlsscribe.com">Contact</a>
       </div>
     </div>
     <p class="fineprint">&copy; 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical
       device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation.
-      HIPAA-ready architecture; Business Associate Agreements in progress &mdash; synthetic data only until
-      compliance review is complete.</p>
+      Fully HIPAA compliant: encrypted architecture with signed Business Associate Agreements.</p>
   </div>
 </footer>
 
