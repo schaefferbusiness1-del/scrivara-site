@@ -12961,35 +12961,64 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   return true;
 });
 
-/* ===== MLS ATHENA WINDOW/TAB GUARD (device-role lane, 2026-07-16 night).
- * Owner report: the Mac Athena issue may be caused by extension window
- * resizing. Code-confirmed risks in the quiet-pull strip machinery (all
- * reached through chrome.windows.update, which every caller invokes by
- * property lookup - so this late wrapper covers them without touching the
- * QP module):
- *   1. macOS FULLSCREEN: forcing state:'normal' / moving a fullscreen window
- *      yanks it out of its macOS Space (Windows: benign, mac: visibly
- *      disruptive and can strand the doctor's Athena window). On mac ONLY,
- *      bounds/state changes aimed at a fullscreen window are dropped
- *      (focused:true passes through - write-path foregrounding unchanged).
- *   2. STALE STRIP BOUNDS: QP.strip rehydrates from storage.session; after a
- *      display-arrangement change (MacBook undocked overnight) those
- *      coordinates can place the Athena window entirely OFF-SCREEN. Any
- *      bounds update whose target rect intersects no current display is
- *      dropped (all platforms - fully off-screen is always wrong).
- * Plus browser-side session protection (policy-compliant: this does NOT
- * defeat Athena's own idle timeout and never synthesizes activity):
- *   3. autoDiscardable=false is asserted on athenanet tabs every 5 minutes
- *      (alarm, survives worker suspension) - Chrome Memory-Saver can no
- *      longer silently unload the signed-in Athena tab, which is the
- *      browser-side path to a forced re-login.
+/* ===== MLS ATHENA WINDOW/TAB GUARD (device-role lane; awg-2.0.0 2026-07-17).
+ * Owner-confirmed: the quiet-pull machinery keeps Athena in a PRESET-size
+ * strip window (hard 520-780px floor/cap computed from the host window, with
+ * persisted bounds re-applied verbatim) - that fixed-size dependency is what
+ * breaks on Macs and smaller/narrower screens. awg-2.0.0 removes the harm at
+ * the API boundary: every window placement is ADAPTED to the display that is
+ * actually there, instead of trusting preset geometry (or, as in awg-1.0.0,
+ * merely dropping it when fully off-screen). All windows.update/windows.create
+ * callers go through property lookup, so this late wrapper covers the QP
+ * module without touching it.
+ *   1. macOS FULLSCREEN (unchanged from awg-1.0.0): unfocused maintenance
+ *      bounds/state changes aimed at a fullscreen window are dropped on mac
+ *      only (focused:true passes - write-path foregrounding unchanged).
+ *   2. ADAPTIVE BOUNDS (new): any bounds-bearing update/create is clamped to
+ *      the best current display's work area - width/height capped at the work
+ *      area, position clamped so the window is FULLY on that display. The
+ *      target display is the one with the largest overlap with the requested
+ *      rect; a fully off-screen rect (stale persisted strip after an undock /
+ *      display change) is relocated to the window's current display, else the
+ *      primary. No display info -> fail-open, bounds pass unchanged.
+ *   3. DISCARD GUARD (unchanged): autoDiscardable=false asserted on athenanet
+ *      tabs every 5 minutes (alarm) - Chrome Memory-Saver cannot silently
+ *      unload the signed-in Athena tab (the browser-side forced-relogin path).
+ *      Policy-compliant: never synthesizes activity; Athena's own idle
+ *      timeout is untouched.
  * Read-only otherwise; reversible by removing this block. */
 (function () {
   'use strict';
   if (self.__mlsAthWinGuard) return;
-  var G = { version: 'awg-1.0.0', platform: '', dropsFullscreen: 0, dropsOffscreen: 0, discardGuards: 0 };
+  var G = { version: 'awg-2.0.0', platform: '', dropsFullscreen: 0, adapts: 0, discardGuards: 0 };
   self.__mlsAthWinGuard = G;
   try { chrome.runtime.getPlatformInfo(function (pi) { try { G.platform = (pi && pi.os) || ''; } catch (e) {} }); } catch (e) {}
+
+  function workAreaOf(d) { return d && (d.workArea || d.bounds) || null; }
+  function overlapArea(L, T, W, H, wa) {
+    var ix = Math.min(L + W, wa.left + wa.width) - Math.max(L, wa.left);
+    var iy = Math.min(T + H, wa.top + wa.height) - Math.max(T, wa.top);
+    return (ix > 0 && iy > 0) ? ix * iy : 0;
+  }
+  /* pick the display the requested rect mostly lives on; fall back to the
+     window's current display, then the primary, then the first. */
+  function pickDisplay(displays, L, T, W, H, win) {
+    var best = null, bestA = 0, i, wa;
+    for (i = 0; i < displays.length; i++) {
+      wa = workAreaOf(displays[i]); if (!wa) continue;
+      var a = overlapArea(L, T, W, H, wa);
+      if (a > bestA) { bestA = a; best = displays[i]; }
+    }
+    if (!best && win) {
+      var cx = (win.left | 0) + ((win.width | 0) / 2), cy = (win.top | 0) + ((win.height | 0) / 2);
+      for (i = 0; i < displays.length; i++) {
+        wa = workAreaOf(displays[i]); if (!wa) continue;
+        if (cx >= wa.left && cx < wa.left + wa.width && cy >= wa.top && cy < wa.top + wa.height) { best = displays[i]; break; }
+      }
+    }
+    if (!best) { for (i = 0; i < displays.length; i++) { if (displays[i] && displays[i].isPrimary) { best = displays[i]; break; } } }
+    return best || displays[0] || null;
+  }
 
   /* pure decision helper (unit-testable): returns the SAFE update object,
      null if the update should be skipped entirely. */
@@ -13004,24 +13033,29 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       for (var k in u) { if (k !== 'left' && k !== 'top' && k !== 'width' && k !== 'height' && k !== 'state') rest[k] = u[k]; }
       return Object.keys(rest).length ? { updates: rest, reason: 'mac-fullscreen-bounds-dropped' } : { updates: null, reason: 'mac-fullscreen-skip' };
     }
-    /* rule 2: fully off-screen bounds - drop the bounds keys. */
+    /* rule 2 (awg-2.0.0): adapt bounds to the display that is actually there. */
     if (hasBounds && displays && displays.length) {
       var L = ('left' in u) ? u.left : (win ? win.left : 0);
       var T = ('top' in u) ? u.top : (win ? win.top : 0);
-      var W = ('width' in u) ? u.width : (win ? win.width : 100);
-      var Hh = ('height' in u) ? u.height : (win ? win.height : 100);
-      var visible = false;
-      for (var i = 0; i < displays.length; i++) {
-        var wa = displays[i].workArea || displays[i].bounds;
-        if (!wa) continue;
-        var ix = Math.min(L + W, wa.left + wa.width) - Math.max(L, wa.left);
-        var iy = Math.min(T + Hh, wa.top + wa.height) - Math.max(T, wa.top);
-        if (ix > 40 && iy > 40) { visible = true; break; } /* >40px of real overlap */
-      }
-      if (!visible) {
-        var rest2 = {};
-        for (var k2 in u) { if (k2 !== 'left' && k2 !== 'top' && k2 !== 'width' && k2 !== 'height') rest2[k2] = u[k2]; }
-        return Object.keys(rest2).length ? { updates: rest2, reason: 'offscreen-bounds-dropped' } : { updates: null, reason: 'offscreen-skip' };
+      var W = ('width' in u) ? u.width : (win ? win.width : 800);
+      var Hh = ('height' in u) ? u.height : (win ? win.height : 600);
+      var disp = pickDisplay(displays, L, T, W, Hh, win);
+      var wa = workAreaOf(disp);
+      if (wa) {
+        var W2 = Math.max(1, Math.min(W | 0, wa.width));
+        var H2 = Math.max(1, Math.min(Hh | 0, wa.height));
+        var L2 = Math.min(Math.max(L | 0, wa.left), wa.left + wa.width - W2);
+        var T2 = Math.min(Math.max(T | 0, wa.top), wa.top + wa.height - H2);
+        if (L2 !== L || T2 !== T || W2 !== W || H2 !== Hh) {
+          var adapted = {};
+          for (var k2 in u) adapted[k2] = u[k2];
+          /* pin every bound that moved so the final rect is the adapted one */
+          if (('left' in u) || L2 !== L) adapted.left = L2;
+          if (('top' in u) || T2 !== T) adapted.top = T2;
+          if (('width' in u) || W2 !== W) adapted.width = W2;
+          if (('height' in u) || H2 !== Hh) adapted.height = H2;
+          return { updates: adapted, reason: 'bounds-adapted' };
+        }
       }
     }
     return { updates: u, reason: 'pass' };
@@ -13041,9 +13075,30 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       try { if (chrome.system && chrome.system.display && chrome.system.display.getInfo) displays = await chrome.system.display.getInfo(); } catch (e) {}
       var d = G.decide(win, updates, displays, G.platform);
       if (d.reason === 'mac-fullscreen-skip' || d.reason === 'mac-fullscreen-bounds-dropped') G.dropsFullscreen++;
-      if (d.reason === 'offscreen-skip' || d.reason === 'offscreen-bounds-dropped') G.dropsOffscreen++;
+      if (d.reason === 'bounds-adapted') G.adapts++;
       if (!d.updates) return win || undefined; /* skipped entirely: report current state */
       return realUpdate(windowId, d.updates);
+    })());
+  };
+
+  /* awg-2.0.0: the strip's INITIAL window is born preset-sized through
+     windows.create - clamp it the same way (url/tabId/focused/type keys are
+     preserved untouched; only geometry adapts). */
+  var realCreate = chrome.windows.create.bind(chrome.windows);
+  chrome.windows.create = function (createData, cb) {
+    var cd = createData || {};
+    var hasBounds = ('left' in cd) || ('top' in cd) || ('width' in cd) || ('height' in cd);
+    if (!hasBounds) return cb ? realCreate(createData, cb) : realCreate(createData);
+    var finish = function (result) {
+      if (cb) { result.then(function (w) { cb(w); }, function () { cb(undefined); }); return undefined; }
+      return result;
+    };
+    return finish((async function () {
+      var displays = null;
+      try { if (chrome.system && chrome.system.display && chrome.system.display.getInfo) displays = await chrome.system.display.getInfo(); } catch (e) {}
+      var d = G.decide(null, cd, displays, G.platform);
+      if (d.reason === 'bounds-adapted') G.adapts++;
+      return realCreate(d.updates || cd);
     })());
   };
 

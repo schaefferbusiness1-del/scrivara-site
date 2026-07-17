@@ -121,6 +121,7 @@ const tests = [
   'device-role-contract.test.js',
   'extension-health-contract.test.js',
   'conn-status-truth-contract.test.js',
+  'athena-window-guard-contract.test.js',
   'pull-request-correlation-contract.test.js',
   'shared-progress-runtime.test.js',
   'opnote-clinical-consistency-runtime.test.js',
