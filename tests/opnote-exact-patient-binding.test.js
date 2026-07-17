@@ -33,7 +33,7 @@ assert(generate.includes('_opPatientCtx(row.appt.name,row.appt.dob,row.patientId
 assert(generate.includes('if(!ctx.patientId)'), 'generation does not fail closed when exact identity is unavailable');
 assert(genAi.includes('_opResolvePatient(name,ctx.dob,ctx.patientId)'), '_genOpNote does not independently re-verify immutable patient ownership');
 assert(genAi.includes('mlsOpNotePatientId:String(exactPatient.id)'), '_genOpNote does not carry immutable patient id to the aiCallRaw wrapper');
-assert(prepAsset.includes('return function (name, dob, patientId)'), 'op-note prep enhancement drops the immutable patient id argument');
+assert(prepAsset.includes('return function (name, dob, patientId, apptArg)'), 'op-note prep enhancement drops the immutable patient id argument or appointment scope');
 assert(prepAsset.includes("trim(base.patientId) !== suppliedId"), 'op-note prep enhancement does not reject identity loss/mutation');
 assert(proAsset.includes('mlsOpNotePatientId: String(exactPatient.id)'), 'professional op-note enhancement drops immutable patient id before aiCallRaw');
 assert(proAsset.includes("e.code === 'MLS_OPNOTE_IDENTITY'"), 'professional op-note enhancement swallows identity failures');

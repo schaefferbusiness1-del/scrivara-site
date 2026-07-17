@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.7.0
+ * MLS op-note integrity  oni-2.8.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.7.0';
+  var VERSION = 'oni-2.8.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -21,8 +21,12 @@
   var GENERATION_STAGES=['Confirming procedure','Loading validated template','Applying provider defaults','Applying facility defaults','Drafting procedure section','Drafting findings','Checking side and level','Checking required fields','Running final consistency check','Note ready'];
 
   function shortHash(value){var h=2166136261,s=S(value);for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
-  function generationKey(dateStr,procedure,tplText,ctx){return [S(ctx&&ctx.patientId).trim(),S(dateStr).trim(),normText(procedure),normText(ctx&&(ctx.providerId||ctx.provider)),normText(ctx&&(ctx.facilityId||ctx.facility)),shortHash(tplText)].join('|');}
-  function generationPatientKey(name,ctx){return S(ctx&&ctx.patientId).trim()||('unverified:'+normText(name));}
+  function requestedTemplateId(ctx){return S(ctx&&(ctx.templateId||ctx.tplId||ctx.selectedTemplateId)).trim();}
+  function generationKey(dateStr,procedure,tplText,ctx){
+    var pid=S(ctx&&ctx.patientId).trim(),tid=requestedTemplateId(ctx);
+    return ['patient:'+(pid||'unverified'),'dob:'+dobKey(ctx&&ctx.dob),'date:'+S(dateStr).trim(),'procedure:'+normText(procedure),'provider:'+normText(ctx&&(ctx.providerId||ctx.provider)),'facility:'+normText(ctx&&(ctx.facilityId||ctx.facility)),'template:'+(tid||('text-'+shortHash(tplText))),'body:'+shortHash(tplText)].join('|');
+  }
+  function generationPatientKey(name,ctx){var pid=S(ctx&&ctx.patientId).trim();return pid?('patient:'+pid):('unverified:'+normText(name)+'|dob:'+dobKey(ctx&&ctx.dob));}
   function generationStage(ctx,stage,operation){
     var h=ctx&&ctx.__mlsProgressHandle;if(!h)return;
     var i=GENERATION_STAGES.indexOf(stage),patch={operation:operation||stage,current:i>=0?i+1:0,total:GENERATION_STAGES.length};
@@ -76,7 +80,7 @@
     ['bursa_injection', /\b(bursa|trochanteric|subacromial)\b[\s\S]{0,40}\b(injection|aspiration)\b/],
     ['joint_injection', /\b(knee|hip|shoulder|glenohumeral|acromioclavicular)\b[\s\S]{0,45}\b(injection|arthrocentesis|2061[0-1])\b/],
     ['peripheral_nerve_block', /\b(occipital|suprascapular|ilioinguinal|intercostal|peripheral nerve)\b[\s\S]{0,45}\b(block|injection)\b/],
-    ['generic_esi', /\b(esi|epidural)\b[\s\S]{0,35}\b(injection|steroid)\b/]
+    ['generic_esi', /\besi\b|\bepidural\b[\s\S]{0,35}\b(injection|steroid)\b/]
   ];
 
   function procClass(text) {
@@ -181,6 +185,27 @@
     var errors=compareFacts(requested,actual,false,fields).concat(templateScopeErrors(tpl,ctx));
     return {pass:!errors.length,errors:errors,requested:requested,template:actual};
   }
+  function resolveSelectedTemplate(procedure,tplText,ctx){
+    var all=templates(),wanted=requestedTemplateId(ctx),matches=[],i,t;
+    if(wanted){
+      for(i=0;i<all.length;i++)if(S(all[i]&&(all[i].id||all[i].templateId))===wanted){t=all[i];break;}
+      if(!t)return {tpl:null,error:'The selected template is no longer available.',code:'MLS_OPNOTE_TEMPLATE_IDENTITY'};
+      if(S(t.text)!==S(tplText))return {tpl:null,error:'The selected template changed before drafting. Re-select it and retry.',code:'MLS_OPNOTE_TEMPLATE_STALE'};
+      return {tpl:t,source:'id'};
+    }
+    for(i=0;i<all.length;i++)if(S(all[i]&&all[i].text)===S(tplText))matches.push(all[i]);
+    if(matches.length===1)return {tpl:matches[0],source:'unique-text'};
+    if(matches.length>1){
+      /* Legacy/direct callers may not yet carry an id. Recover only when the
+         requested procedure and current scope identify exactly one candidate;
+         otherwise duplicate text is ambiguous and generation must fail closed. */
+      var compatible=matches.filter(function(candidate){return templateCompatibility(procedure,candidate,ctx).pass;}),pc=procClass(procedure),exact=compatible.filter(function(candidate){return pc&&templateClass(candidate)===pc;});
+      if(exact.length===1)return {tpl:exact[0],source:'unique-class'};
+      if(compatible.length===1)return {tpl:compatible[0],source:'unique-scope'};
+      return {tpl:null,error:'Multiple saved templates share this text. Re-select the intended template before drafting.',code:'MLS_OPNOTE_TEMPLATE_IDENTITY'};
+    }
+    return {tpl:{text:S(tplText)},source:'direct-text'};
+  }
   function templateFields(note,tpl) {
     var n=normText(note), t=normText(tpl&&tpl.text), errors=[];
     var required=(tpl&&Array.isArray(tpl.requiredFields))?tpl.requiredFields:[];
@@ -228,8 +253,16 @@
     var r = rank(procedure), top = r[0], second = r[1], list = templates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
     if(!top.compatible)return {tpl:null,candidate:top.tpl,confident:false,reason:'template conflicts with requested procedure',score:top.score,conflicts:top.conflicts,ranked:r};
-    if (list.length === 1) return { tpl:top.tpl, confident:true, reason:'only compatible template', score:top.score };
     var classExact = !!(top.procClass && top.tplClass && top.procClass === top.tplClass);
+    /* A one-template library is not clinical evidence. A blank/follow-up row
+       used to receive that template at score 0 merely because there was no
+       alternative. Require the same classified procedure-type proof that
+       makes a multi-template class match safe; explicit bulk/manual selection
+       remains available when the schedule genuinely carries no procedure. */
+    if (list.length === 1) {
+      if (classExact && top.score > 0) return { tpl:top.tpl, confident:true, reason:'procedure class', score:top.score };
+      return { tpl:null, candidate:top.tpl, confident:false, reason:'no classified procedure signal', score:top.score, ranked:r };
+    }
     var margin = top.score - (second ? second.score : 0);
     var confident = classExact || (top.score >= 10 && margin >= 4);
     return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:classExact?'procedure class':(confident?'keyword margin':'ambiguous'), score:top.score, margin:margin, ranked:r };
@@ -255,7 +288,11 @@
   function historyVisitBelongsTo(p, v) {
     if (!p || !v) return false;
     var pid=S(p.id).trim(), binding=S(v.identityBinding).trim();
-    var owner=S(binding||v.patientId||v.patientExternalId||v.patient_external_id||v._mlsTargetPatientId).trim();
+    var declaredPatientId=S(v.patientId).trim();
+    /* A verified binding cannot launder a contradictory row-level patient id.
+       Both fields are immutable ownership claims; disagreement fails closed. */
+    if(binding&&declaredPatientId&&binding!==declaredPatientId)return false;
+    var owner=S(binding||declaredPatientId||v.patientExternalId||v.patient_external_id||v._mlsTargetPatientId).trim();
     var remote=/athena|legacy|grab|pullrec/i.test(S(v.source));
     /* Athena-derived history may influence procedure matching only when the
        encounter carries the same immutable patient binding and its reader
@@ -360,8 +397,19 @@
     if(!m && t.length>90) return '';
     var common=/^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of procedure|date of operation|date of service|provider|provider name|provider npi|provider license|provider credentials|npi|license|physician|surgeon|assistant|facility|facility address|practice|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|procedure(?:s)?(?: performed)?|anesthesia|type of anesthesia|indications?(?: for procedure)?|history|consent|findings?|technique|description of procedure|estimated blood loss|fluoroscopy time|injectate(?: per point)?|laterality|complications?|specimens?|disposition(?: \/ post.?procedure plan)?|post.?procedure plan|plan|follow.?up|medications?(?: injected| administered)?|time.?out|preparation|diagnosis codes?(?: icd.?10)?|procedure codes?(?: cpt)?|cpt|icd.?10)$/i.test(label);
     var caps=label.length>2 && label===label.toUpperCase() && /[A-Z]/.test(label);
+    /* Uploaded templates routinely contain provider-defined Title Case
+       headings (for example, "Pre-Procedure Verification:"). Keep the guard
+       deliberately narrow: a short label-shaped colon line with no content is
+       a section, while an inline custom label must be title-like rather than a
+       prose sentence or a clock value. */
+    var custom=false;
+    if(m&&/^[A-Za-z][A-Za-z0-9 \/&()\-]{1,69}$/.test(label)){
+      var tail=S(t.slice(t.indexOf(':')+1)).trim(), words=label.split(/\s+/), minor=/^(?:a|an|and|or|of|the|to|for|with|without|per)$/i;
+      var titleLike=words.length<=6&&words.every(function(w,i){return minor.test(w)&&i>0||/^[A-Z0-9][A-Za-z0-9/&()\-]*$/.test(w);});
+      custom=!tail||titleLike;
+    }
     if(!m && !caps) return '';
-    if(!common && !caps) return '';
+    if(!common && !caps && !custom) return '';
     return normText(label);
   }
   function headings(text) {
@@ -372,7 +420,7 @@
   function fixedFragments(text) {
     var out=[];
     S(text).split(/\r?\n/).forEach(function(line){
-      var h=headingLabel(line), literal=S(line);
+      var h=headingLabel(line), literal=S(line), fullLiteral=literal;
       if(h){var colon=literal.indexOf(':');if(colon<0)return;literal=literal.slice(colon+1);}
       var masked=literal
         .replace(/\[\[[^\]]+\]\]/g,'\u0000').replace(/\[(?:FILL\s*:?\s*)?[^\]]+\]/gi,'\u0000')
@@ -380,8 +428,13 @@
       masked.split('\u0000').forEach(function(part){
         var n=normText(part), words=n?n.split(/\s+/):[];
         /* Short labels and variable-only lines are covered by the heading check.
-           Long literal clauses are template-owned boilerplate and must survive. */
+           Long literal clauses are template-owned boilerplate and must survive.
+           A short concrete value on a heading line is also template-owned —
+           e.g. "COMPLICATIONS: None." must not silently become a different
+           statement merely because it contains only one word. Bind that short
+           value to its heading so another incidental "none" cannot satisfy it. */
         if(words.length>=5 || n.length>=36)out.push(n);
+        else if(h&&n&&masked.indexOf('\u0000')<0)out.push(normText(fullLiteral));
       });
     });
     return out;
@@ -416,12 +469,15 @@
   }
   function forceFacts(note, facts) {
     facts=facts||{};
-    /* Only the FIRST line per heading is stamped — a repeated heading (a
-       second "Procedure:" carrying the technique narrative) is body text. */
+    /* Clinical headings stamp only the first occurrence because a second
+       "Procedure:" may begin technique prose. Identity headings are different:
+       every repeated Patient/DOB/MRN/etc. slot must receive the exact current
+       chart fact so no old identity placeholder/value can survive. */
     var used={};
     return S(note).split(/\r?\n/).map(function(line){
       var h=headingLabel(line), colon=line.indexOf(':');
-      if(!h||colon<0||used[h]||!Object.prototype.hasOwnProperty.call(facts,h))return line;
+      var repeatedIdentity=h&&IDENTITY_HEADINGS.test(h);
+      if(!h||colon<0||(used[h]&&!repeatedIdentity)||!Object.prototype.hasOwnProperty.call(facts,h))return line;
       used[h]=1;
       if(SOFT_FACTS[h] && !placeholderOnlyTail(line.slice(colon+1)))return line;
       var value=S(facts[h]).trim()||'[['+h.replace(/\s+/g,'_')+']]';
@@ -513,23 +569,97 @@
      consumed WHOLE — otherwise the bare-word alternative ("diagnosis") could
      split "PREOPERATIVE DIAGNOSIS:" in the middle of the label itself */
   var SPLIT_RX = new RegExp('(^|\\s+)((?:' + SPLIT_LABELS.join('|').replace(/-/g, '\\-') + ')\\s*:)', 'gi');
+  var IDENTITY_HEADINGS = /^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of operation|date of procedure|date of service|physician|provider|provider name|provider npi|provider license|provider credentials|npi|license|surgeon|facility|facility address|practice)$/i;
   var SCRUB_HEADINGS = /^(patient|patient name|patient dob|dob|date of birth|mrn|age|sex|gender|date|date of operation|date of procedure|date of service|physician|provider|provider name|provider npi|provider license|provider credentials|npi|license|surgeon|facility|facility address|practice|history|procedure|pre.?operative diagnosis|post.?operative diagnosis|diagnosis|indications?(?: for procedure)?)$/i;
+  function scrubHeadingMatch(line){return S(line).match(/^\s*([A-Za-z][A-Za-z /\-]{1,40}):(.*)$/);}
+  function scrubSlot(label){return normText(label).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
+  function concreteIdentityValue(value){value=S(value).trim();return value&&!/^the patient$/i.test(value)&&!/^same\b/i.test(value)&&!/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(value);}
+  function followingIdentityValue(lines,index){
+    for(var i=index+1;i<lines.length;i++){
+      var value=S(lines[i]).trim();if(!value)continue;
+      if(scrubHeadingMatch(lines[i]))return null;
+      /* Uppercase MRNs (e.g. OLD-7788) are values, not colon-less headings. */
+      if(/^(?:OPERATIVE REPORT|PROCEDURE NOTE|HISTORY|PROCEDURE|FINDINGS|TECHNIQUE|COMPLICATIONS|DISPOSITION)$/i.test(value))return null;
+      return concreteIdentityValue(value)?{index:i,value:value}:null;
+    }
+    return null;
+  }
+  function priorPatientNamePatterns(lines) {
+    var variants=[],seen={};
+    function add(parts){
+      parts=(parts||[]).filter(Boolean);if(parts.length<2)return;
+      var k=parts.join(' ').toLowerCase();if(seen[k])return;seen[k]=1;
+      variants.push(new RegExp('\\b'+parts.map(function(part){return part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}).join('[\\s,.-]+')+'\\b','gi'));
+    }
+    for(var i=0;i<lines.length;i++){
+      var m=scrubHeadingMatch(lines[i]);if(!m||!/^(patient|patient name)$/i.test(S(m[1]).trim()))continue;
+      var value=S(m[2]).trim(),following=!value?followingIdentityValue(lines,i):null;if(following)value=following.value;
+      if(!concreteIdentityValue(value))continue;
+      var comma=value.split(','),parts=value.match(/[A-Za-z][A-Za-z'\-]*/g)||[];
+      add(parts);
+      if(comma.length===2){var last=comma[0].match(/[A-Za-z][A-Za-z'\-]*/g)||[],first=comma[1].match(/[A-Za-z][A-Za-z'\-]*/g)||[];add(first.concat(last));}
+      else if(parts.length>=2)add([parts[parts.length-1]].concat(parts.slice(0,-1)));
+    }
+    return variants;
+  }
+  function priorIdentityValues(lines){
+    var out=[];
+    for(var i=0;i<lines.length;i++){
+      var m=scrubHeadingMatch(lines[i]);if(!m)continue;
+      var label=S(m[1]).trim();if(!IDENTITY_HEADINGS.test(label))continue;
+      var value=S(m[2]).trim(),following=!value?followingIdentityValue(lines,i):null;
+      if(following)value=following.value;
+      if(concreteIdentityValue(value))out.push({label:label,key:scrubSlot(label),value:value,headingLine:i,valueLine:following&&following.index});
+    }
+    return out;
+  }
+  function escapeRx(value){return S(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+  function scrubNarrativeIdentity(line,values){
+    var out=S(line);
+    values.forEach(function(item){
+      var v=escapeRx(item.value);if(!v)return;
+      if(/^(patient|patient name)$/i.test(item.label))return;
+      if(/^(patient dob|dob|date of birth)$/i.test(item.label)){
+        out=out.replace(new RegExp('(\\b(?:dob|date\\s+of\\s+birth|born(?:\\s+on)?)\\b\\s*(?:is|was|[:#-])?\\s*)'+v,'gi'),'$1[['+item.key+']]');
+      }else if(/^mrn$/i.test(item.label)){
+        out=out.replace(new RegExp('(\\bmrn\\b\\s*(?:is|was|[:#-])?\\s*)'+v,'gi'),'$1[[mrn]]');
+      }else if(/^age$/i.test(item.label)){
+        out=out.replace(new RegExp('\\b'+v+'(?=\\s*-?year-?old\\b)','gi'),'[[age]]');
+        out=out.replace(new RegExp('(\\bage\\b\\s*(?:is|was|[:#-])?\\s*)'+v+'\\b','gi'),'$1[[age]]');
+      }
+    });
+    return out;
+  }
   function sanitizeTemplate(tplText) {
     var t = S(tplText);
     t = t.replace(SPLIT_TITLES, '\n$2\n');
     t = t.replace(SPLIT_RX, '\n$2');
-    var lines = t.split(/\r?\n/), out = [], scrubbed = {};
+    var lines = t.split(/\r?\n/), namePatterns=priorPatientNamePatterns(lines), identityValues=priorIdentityValues(lines), skipLines={},multilineIdentity={};
+    identityValues.forEach(function(item){if(item.valueLine!=null)multilineIdentity[item.headingLine]=item;});
+    /* Scrubbing only the Patient: value left the same prior patient's name in
+       a following HISTORY/body sentence, which fidelity then treated as fixed
+       boilerplate. Neutralize only captured full-name variants; never remove a
+       lone first/last word that could also be legitimate clinical wording. */
+    if(namePatterns.length){
+      lines=lines.map(function(line){var outLine=S(line);namePatterns.forEach(function(rx){rx.lastIndex=0;outLine=outLine.replace(rx,'the patient');});return outLine;});
+    }
+    var out = [], scrubbed = {};
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i], m = line.match(/^\s*([A-Za-z][A-Za-z /\-]{1,40}):(.*)$/);
+      if(skipLines[i])continue;
+      var line = scrubNarrativeIdentity(lines[i],identityValues), m = scrubHeadingMatch(line);
       if (m && SCRUB_HEADINGS.test(m[1].trim())) {
         var label = m[1].trim(), key = label.toLowerCase(), val = S(m[2]).trim();
-        /* Only the FIRST occurrence of a heading is identity/case data; a
-           REPEATED heading (e.g. a second "Procedure:" carrying the technique
-           narrative) is the doctor's own body text and must stay verbatim.
-           "Same." back-references and already-placeholder values also stay. */
-        var keep = scrubbed[key] || !val || /^same\b/i.test(val) || /\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|_{2,}/i.test(val);
+        var identity=IDENTITY_HEADINGS.test(label), following=identity&&!val?(multilineIdentity[i]||followingIdentityValue(lines,i)):null;
+        if(following){skipLines[following.index!=null?following.index:following.valueLine]=1;val=following.value;}
+        /* Every repeated identity or patient-specific clinical value is
+           unsafe reusable input. The sole exception is a long duplicate
+           "Procedure:" narrative, which some uploaded notes use as their
+           technique paragraph; short procedure/laterality/level values are
+           still converted to a slot. */
+        var longProcedureNarrative=!identity&&scrubbed[key]&&/^procedure$/i.test(label)&&val.length>=80;
+        var keep = longProcedureNarrative || (!identity&&!val) || /^same\b/i.test(val) || /\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|_{2,}/i.test(val);
         scrubbed[key] = 1;
-        out.push(keep ? line : (line.slice(0, line.indexOf(':') + 1) + ' [[' + key.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + ']]'));
+        out.push(keep ? line : (line.slice(0, line.indexOf(':') + 1) + ' [[' + scrubSlot(key) + ']]'));
       } else out.push(line);
     }
     return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
@@ -549,7 +679,7 @@
     if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
     if (!out.length) {
       var raw = '';
-      try { (p.visits || []).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); } catch (e) {}
+      try { verifiedHistoryVisits(p).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); } catch (e) {}
       var re = /([A-Z][A-Za-z0-9 ,()\/-]{2,60}?)\s*-\s*Onset:\s*\d{1,2}\/\d{1,2}\/\d{2,4}/g, m;
       while ((m = re.exec(raw)) !== null && out.length < 6) {
         var nm = S(m[1]).trim();
@@ -579,12 +709,20 @@
     if (problems) bits.push((bits.length ? 'with ' : '') + problems);
     var hist = bits.join(' ');
     var plan = '';
-    try { var vs = p.visits || []; for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim(); } catch (e) {}
+    try {
+      var vs = verifiedHistoryVisits(p).slice();
+      vs.sort(function(a,b){return S(b&&(b.date||b.created)).localeCompare(S(a&&(a.date||a.created)));});
+      for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim();
+    } catch (e) {}
     if (plan) hist = [hist, 'Most recent plan: ' + plan.slice(0, 160)].filter(Boolean).join('. ');
     if (hist) hist = hist.replace(/\.+$/, '') + '.';
     return S(note)
       .replace(/\[\[(history|clinical_history|patient_history)\]\]/gi, function (m) { return hist || m; })
       .replace(/\[\[(pre_?operative_diagnosis|diagnosis|indication|indications|indications_for_procedure)\]\]/gi, function (m) { return diag || m; });
+  }
+
+  function patientAge(dob){
+    try{var d=new Date(S(dob));if(isNaN(d.getTime()))return null;var now=new Date(),age=now.getFullYear()-d.getFullYear();if(now.getMonth()<d.getMonth()||(now.getMonth()===d.getMonth()&&now.getDate()<d.getDate()))age--;return age>0&&age<130?age:null;}catch(e){return null;}
   }
 
   /* oni-2.4.0: a finished draft must READ like a document, not one blob.
@@ -614,16 +752,16 @@
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
-    var selectedTpl=null;
-    try{var all=templates();for(var ti=0;ti<all.length;ti++){if(S(all[ti]&&all[ti].text)===S(tplText)){selectedTpl=all[ti];break;}}}catch(e){}
+    var selectedResolution=resolveSelectedTemplate(procedure,tplText,ctx),selectedTpl=selectedResolution.tpl;
+    if(!selectedTpl){var tie=new Error(selectedResolution.error||'The selected template identity could not be verified.');tie.code=selectedResolution.code||'MLS_OPNOTE_TEMPLATE_IDENTITY';throw tie;}
     var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx);
     if(!tplCheck.pass){var tce=new Error('Draft stopped: the selected template conflicts with the requested procedure type, region, or approach. Choose a compatible validated template.');tce.code='MLS_OPNOTE_TEMPLATE_CONFLICT';tce.details=tplCheck;throw tce;}
     /* a past-note "template" becomes structured + prior-patient-free before
        anything downstream (prompt, fidelity, reanchor, airing) sees it */
     tplText=sanitizeTemplate(tplText);
     generationStage(ctx,'Applying provider defaults','Applying only explicit provider identity and validated provider scope.');
-    name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);
-    var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.facility)known.push('facility: '+ctx.facility);
+    name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);if(ctx.age==null)ctx.age=patientAge(ctx.dob);
+    var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
     generationStage(ctx,'Applying facility defaults','Applying only the current facility identity and validated facility scope.');
     var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
@@ -633,13 +771,16 @@
     var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
     var key=isFn(window.getKey)?window.getKey():'';
     var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
+    if(S(selectedTpl&&(selectedTpl.id||selectedTpl.templateId)).trim())opts.mlsOpNoteTemplateId=S(selectedTpl.id||selectedTpl.templateId).trim();
     var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
-    if(ctx.sex)facts.sex=ctx.sex;
+    if(ctx.age!=null)facts.age=S(ctx.age);
+    if(ctx.sex){facts.sex=ctx.sex;facts.gender=ctx.sex;}
     if(ctx.provider){facts.provider=ctx.provider;facts['provider name']=ctx.provider;facts.physician=ctx.provider;facts.surgeon=ctx.provider;}
     if(ctx.providerNpi){facts.npi=ctx.providerNpi;facts['provider npi']=ctx.providerNpi;}
     if(ctx.providerLicense){facts.license=ctx.providerLicense;facts['provider license']=ctx.providerLicense;}
-    if(ctx.facility){facts.facility=ctx.facility;facts.practice=ctx.facility;}
+    if(ctx.practice)facts.practice=ctx.practice;
+    if(ctx.facility)facts.facility=ctx.facility;
     if(ctx.facilityAddress)facts['facility address']=ctx.facilityAddress;
     if(ctx.__mlsProgressHandle)opts.mlsRequestId=ctx.__mlsProgressHandle.requestId;
     generationStage(ctx,'Drafting procedure section','The model is drafting the complete template-owned procedure note.');
@@ -720,6 +861,29 @@
   generate.__opnpWrapped=true;
   generate.__mlsOpTemplateOwner=true;
 
+  function rowGenerationCtx(row){
+    var ctx={},base=null,appt=row&&row.appt||{};
+    try{if(isFn(window._opPatientCtx))base=window._opPatientCtx(appt.name,appt.dob,row&&row.patientId);}catch(e){}
+    [base,row&&row._ctx].forEach(function(src){if(!src)return;for(var k in src)if(Object.prototype.hasOwnProperty.call(src,k))ctx[k]=src[k];});
+    ctx.templateId=S(row&&row.tplId);
+    if(!ctx.providerId)ctx.providerId=S(appt.providerId||appt.provider_id);
+    var apptProvider=S(appt.providerName||appt.provider_name||appt.provider).trim();
+    if(apptProvider){
+      var priorProvider=S(ctx.provider||ctx.providerName).toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+      var nextProvider=apptProvider.toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+      ctx.provider=apptProvider;ctx.providerName=apptProvider;
+      if(priorProvider&&nextProvider&&priorProvider!==nextProvider){delete ctx.providerNpi;delete ctx.providerLicense;delete ctx.providerCredentials;}
+    }
+    if(!ctx.facilityId)ctx.facilityId=S(appt.facilityId||appt.facility_id||appt.departmentId||appt.department_id);
+    var apptFacility=S(appt.facilityName||appt.facility_name||appt.departmentName||appt.department_name||appt.facility||appt.location).trim();
+    if(apptFacility){
+      var priorFacility=normText(ctx.facility||ctx.facilityName);
+      ctx.facility=apptFacility;ctx.facilityName=apptFacility;
+      if(priorFacility&&priorFacility!==normText(apptFacility))delete ctx.facilityAddress;
+    }
+    return ctx;
+  }
+
   function install() {
     try{if(window.__mlsOpMatchBoost&&isFn(window.__mlsOpMatchBoost.revert))window.__mlsOpMatchBoost.revert();}catch(e){}
     originals.rank=window._opRankTemplates; originals.newRow=window._opNewRow; originals.procChanged=window._opProcChanged; originals.autoTpl=window._opAutoTpl; originals.generate=window._genOpNote; originals.render=window.opPrepRender;
@@ -733,11 +897,11 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{});if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, or approach.';toast(window.__mlsLastOpFidelityError,'err');return false;}}await one(i);var ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, approach, provider, or facility.';toast(window.__mlsLastOpFidelityError,'err');return false;}}await one(i);var ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
     var all=window.opPrepGenerateAll;
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

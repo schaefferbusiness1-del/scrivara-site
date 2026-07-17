@@ -3441,7 +3441,7 @@
   <div class="modal" style="max-width:920px">
     <button class="modal-x" onclick="closeOpPrep()">×</button>
     <h3 id="opPrepHdr">💉 Prep op notes</h3>
-    <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. It then walks you through any case-specific blanks (needle size, doses…) one at a time, with dropdowns of what you’ve used before. Each draft auto-saves to History; press 💾 to finalize.</p>
+    <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. Any remaining case-specific details (needle size, doses…) appear together in one <b>Fields</b> box, after known Settings and your saved defaults are filled first. Each draft auto-saves to History; press 💾 to finalize.</p>
     <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
       <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
       <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
@@ -5419,7 +5419,7 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
   'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
-  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets'];
+  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1'];
 function syncPrefsToServer(){
   if(!backendMode()||!bkToken()) return;   // hosted mode only
   try{
@@ -5436,11 +5436,20 @@ function syncPrefsToServer(){
   }catch(e){ /* never block settings save */ }
 }
 async function loadPrefsFromServer(){
-  if(!backendMode()||!bkToken()) return;
+  if(!backendMode()) return;
+  // Freeze both halves of ownership before the first await. A slow response from
+  // account A must never populate account B after a same-tab account switch.
+  const frozenToken=bkToken();
+  const frozenEmail=String(session&&session.email||'').trim();
+  if(!frozenToken||!frozenEmail) return;
+  const frozenPrefix='sf_u::'+frozenEmail+'::';
+  const stillCurrent=()=>bkToken()===frozenToken && String(session&&session.email||'').trim()===frozenEmail;
   try{
-    const r=await fetch(bkBase()+'/api/prefs',{headers:{'Authorization':'Bearer '+bkToken()}});
+    const r=await fetch(bkBase()+'/api/prefs',{headers:{'Authorization':'Bearer '+frozenToken}});
+    if(!stillCurrent()) return;
     if(!r.ok) return;                      // incl. 401 — refreshMe handles auth
     let d={}; try{ d=await r.json(); }catch(e){ return; }
+    if(!stillCurrent()) return;
     const prefs=(d&&d.prefs)||null;
     if(!prefs||typeof prefs!=='object') return;
     let changed=false;
@@ -5448,9 +5457,11 @@ async function loadPrefsFromServer(){
       if(!Object.prototype.hasOwnProperty.call(prefs,k)) return;
       const sv=prefs[k];
       if(typeof sv!=='string') return;     // blob stores raw strings only
-      const local=localStorage.getItem(uns(k));
-      if(local===null||local===''){ localStorage.setItem(uns(k),sv); changed=true; } // server fills gaps; local wins
+      const key=frozenPrefix+k;
+      const local=localStorage.getItem(key);
+      if(local===null||local===''){ localStorage.setItem(key,sv); changed=true; } // server fills gaps; local wins
     });
+    if(!stillCurrent()) return;
     if(changed){
       try{ applyAppearance(); }catch(e){}
       try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
@@ -9952,6 +9963,34 @@ function _ptAge(dob){ try{ if(!dob) return null; var d=new Date(dob); if(isNaN(d
 function _ptBmi(p){ try{ if(!p) return null; if(p.bmi){ var b=parseFloat(p.bmi); if(b>0) return b; } var hay=[p.summary,p.vitals,p.problems,p.note].filter(Boolean).join(' \n '); var m=String(hay).match(/\bBMI\b[^0-9]{0,8}(\d{2}(?:\.\d)?)/i); if(m){ var v=parseFloat(m[1]); if(v>=10&&v<=90) return v; } return null; }catch(e){ return null; } }
 /* Spinal-needle length usually scales with body habitus: heavier patients need a longer needle. */
 function _predictNeedleSize(bmi){ if(bmi==null) return ''; return (bmi>=30) ? '5.0' : '3.5'; }
+function _opSetting(fn){ try{ return (typeof window[fn]==='function'?String(window[fn]()||'').trim():''); }catch(e){ return ''; } }
+function _opProviderDisplay(name,cred){
+  name=String(name||'').trim(); cred=String(cred||'').trim(); if(!name||!cred) return name;
+  try{ if(new RegExp('(^|[,\\s])'+cred.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.?\\s*$','i').test(name)) return name; }catch(e){}
+  return name+', '+cred;
+}
+function _opSavedDefault(key){ try{ var api=window.__mlsOpNoteFill; return api&&typeof api.getDefault==='function'?String(api.getDefault(key)||'').trim():''; }catch(e){ return ''; } }
+/* Canonical provider/practice/facility facts for op-note generation. Clinic
+   address belongs to the practice; it is never relabeled as an appointment
+   facility address. */
+function _opProviderFacilityCtx(appt){
+  appt=appt||{};
+  var configuredFacility=_opSetting('getFacilityName')||_opSavedDefault('facility_name');
+  var appointmentFacility=String(appt.facility||appt.location||appt.department||appt.dept||'').trim();
+  var ctx={
+    provider:_opProviderDisplay(_opSetting('getProviderName'),_opSetting('getProviderCred')),
+    providerNpi:_opSetting('getNpi'),
+    practice:_opSetting('getPracticeName'),
+    practiceAddress:_opSetting('getClinicAddress'),
+    practicePhone:_opSetting('getClinicPhone'),
+    facility:appointmentFacility||configuredFacility,
+    facilityAddress:''
+  };
+  // Only an explicitly facility-scoped getter may supply a facility address,
+  // and never when a schedule row names a different site.
+  if(!appointmentFacility) ctx.facilityAddress=_opSetting('getFacilityAddress');
+  return ctx;
+}
 /* Resolve op-note ownership by immutable patient id, or by one unique exact name+DOB pair.
    Never use a display-name-only match: two patients can legitimately have the same name. */
 function _opDobKey(v){
@@ -9977,30 +10016,33 @@ function _opResolvePatient(name,dob,patientId){
   }catch(e){ return null; }
 }
 /* Gather everything we already know about this exact patient for the op note. */
-function _opPatientCtx(name,dob,patientId){
+function _opPatientCtx(name,dob,patientId,appt){
   try{
     var p=_opResolvePatient(name,dob,patientId);
     if(!p) return {};
-    return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||'') };
+    var pf=_opProviderFacilityCtx(appt), out={ patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||'') };
+    Object.keys(pf).forEach(function(k){ if(pf[k]) out[k]=pf[k]; });
+    return out;
   }catch(e){ return {}; }
 }
-function _opNewRow(name, reason, dob, dateStr, patientId){
+function _opNewRow(name, reason, dob, dateStr, patientId, location){
   var rank=_opRankTemplates(reason||'');
-  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||''}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+  patientId=String(patientId||'');
+  return { patientId:patientId, appt:{patientId:patientId,name:name, reason:reason||'', dob:dob||'',location:String(location||'')}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
 function _opApptsForDay(key){
   try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-    .map(function(a){ return {patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||''), name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
+    .map(function(a){ return {patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||''), name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at), location:String(a.location||a.department||a.dept||a.facility||'')}; })
     .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function openOpPrep(dayKey){
   window._opPrepMode='all';
   if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
   window._opPrepDay=dayKey;
-  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId); });
+  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId, a.location); });
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 /* Re-load the all-patients list for a different day without closing the modal. */
@@ -10011,15 +10053,15 @@ function opPrepSetDayTomorrow(){ var d=new Date(); d.setDate(d.getDate()+1); ope
 function openOpPrepForPatient(pid){
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
-  var reason=''; try{
+  var reason='',location=''; try{
     var cal=((window._calAppts||[])||[]), exactId=cal.filter(function(a){ return String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'')===String(p.id||''); });
     var exactDob=cal.filter(function(a){ return String(a.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(p.name||'').trim().toLowerCase().replace(/\s+/g,' ') && _opDobKey(a.dob) && _opDobKey(a.dob)===_opDobKey(p.dob); });
     var matches=exactId.length?exactId:(exactDob.length===1?exactDob:[]);
     var ap=matches.sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0];
-    if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||'';
+    if(ap){ reason=ap.reason||p.reason||''; location=ap.location||ap.department||ap.dept||ap.facility||''; } else reason=p.reason||'';
   }catch(e){}
   window._opPrepMode='patient'; window._opPrepPatientId=p.id; window._opPrepPatientName=p.name;
-  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id) ];
+  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id, location) ];
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
@@ -10109,7 +10151,7 @@ function opPrepRender(){
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">(auto-matched)</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
     if(row.gen){
-      if(row.missing&&row.missing.length){
+      if(row.missing&&row.missing.length&&!_opCanonicalFillOwns()){
         h+=_opBlanksHtml(i, row);   // guided: walks DOWN the document, prompting one blank at a time until none remain
       }
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value">'+esc(row.note||'')+'</textarea>';
@@ -10119,6 +10161,7 @@ function opPrepRender(){
     return h;
   }).join('');
 }
+function _opCanonicalFillOwns(){ try{ return !!(window.__mlsOpNoteFill&&window.__mlsOpNoteFill.installed); }catch(e){ return false; } }
 function _isNeedleField(mf){ try{ var s=((mf.key||'')+' '+(mf.label||'')).toLowerCase(); return /needle/.test(s) || mf.key==='needle_size' || mf.key==='needle_gauge'; }catch(e){ return false; } }
 /* Needle-size picker: a dropdown of 3.5 / 5.0 / any previously-used custom size (it learns) / Other…,
    pre-set to the BMI-predicted length. Picking Other… reveals a free-text box. */
@@ -10139,7 +10182,8 @@ async function opPrepGenerateOne(i){
   if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
-    var ctx=_opPatientCtx(row.appt.name,row.appt.dob,row.patientId); row._ctx=ctx;
+    var ctx=_opPatientCtx(row.appt.name,row.appt.dob,row.patientId,row.appt);
+    ctx.templateId=String(row.tplId||''); row._ctx=ctx;
     if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;

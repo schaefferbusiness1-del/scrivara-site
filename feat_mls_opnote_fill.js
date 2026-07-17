@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.5.1';
+  var VERSION = 'onf-2.7.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -65,7 +65,14 @@
       '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-saved{font:800 9px system-ui;color:#1b5e20;background:#dff0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
+      '.onf-fillbox .onf-default{font:800 9px system-ui;color:#204034;background:#dce8fb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#204034;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
+      '.onf-fillbox .onf-field{min-width:0;}',
+      '.onf-fillbox .onf-field-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px;}',
+      '.onf-fillbox .onf-field-actions button{cursor:pointer;border:1px solid #c9d6e5;border-radius:999px;padding:3px 8px;background:#fff;color:#204034;font:700 10px/1.2 system-ui;max-width:100%;white-space:normal;text-align:left;}',
+      '.onf-fillbox .onf-field-actions button:hover{background:#eef4fb;}',
+      '.onf-fillbox .onf-field-actions button.onf-stop{color:#8a2a2a;border-color:#e8c6c6;}',
+      '.onf-fillbox .onf-recent{color:#5a4a24!important;border-color:#dcc78d!important;background:#fffaf0!important;}',
       '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
       '.onf-fillbox .onf-accept{cursor:pointer;border:0;border-radius:8px;padding:8px 15px;font:700 12.5px system-ui;background:#2E6A4B;color:#fff;}',
       '.onf-fillbox .onf-accept:hover{filter:brightness(1.08);}',
@@ -78,6 +85,25 @@
   function modalOpen() { var m = $('opPrepModal'); return !!(m && getComputedStyle(m).display !== 'none'); }
   function templates() { return safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []); }
   function tplPickers() { return safe(function () { return document.querySelectorAll('select[id^="opPrepTpl_"]'); }, []); }
+
+  /* Never persist clinician defaults or patient memory in uns()'s shared,
+     unresolved-account bucket. */
+  function scopedKey(suffix) {
+    return safe(function () {
+      if (!isFn(window.uns)) return '';
+      var key = S(window.uns(suffix));
+      if (!key || key.indexOf('sf_u::_::') === 0 || key.indexOf('::_::') >= 0) return '';
+      return key;
+    }, '') || '';
+  }
+  function readScoped(suffix, fallback) {
+    var key = scopedKey(suffix); if (!key) return fallback;
+    return safe(function () { var raw = localStorage.getItem(key); return raw == null ? fallback : raw; }, fallback);
+  }
+  function writeScoped(suffix, value) {
+    var key = scopedKey(suffix); if (!key) return false;
+    return safe(function () { localStorage.setItem(key, value); return true; }, false) === true;
+  }
 
   /* ================= PART A: bulk template assignment ================= */
   function assignedCount() {
@@ -119,14 +145,11 @@
       '<select id="mlsOnfBulkSel" title="These procedures aren\'t in the Athena schedule, so choose the template for this day\'s list">' + opts + '</select>' +
       '<button type="button" id="mlsOnfApplyAll">Apply to all</button>' +
       '<button type="button" class="ghost" id="mlsOnfApplyBlank">Only the blank ones</button>' +
-      '<button type="button" class="ghost" id="mlsOnfProfBtn" title="Set your provider name, NPI, facility and practice ONCE — they auto-fill on every note">⚙ Practice profile</button>' +
       '<button type="button" id="mlsOnfSaveAll" title="Finalize every drafted note into its patient\'s History — nothing is sent to Athena">✓ Save all drafted</button>' +
-      '<span class="onf-count"></span>' +
-      profileFormHtml();
+      '<span class="onf-count"></span>';
     list.parentNode.insertBefore(bar, list);
     var a = $('mlsOnfApplyAll'); if (a) a.addEventListener('click', function () { applyBulk(false); });
     var b = $('mlsOnfApplyBlank'); if (b) b.addEventListener('click', function () { applyBulk(true); });
-    var pb = $('mlsOnfProfBtn'); if (pb) pb.addEventListener('click', toggleProfileEditor);
     /* onf-2.4.0 (owner: "one or two clicks then it's done"): click 1 = Draft all,
        click 2 = this. Finalizes every drafted note into its patient's History
        via the app's own opPrepSave (exact-identity gated, never Athena). */
@@ -142,50 +165,7 @@
       if (!saved) { toast('Nothing drafted yet — press "Draft all op notes" first.', 'err'); return; }
       toast('✓ Saved ' + saved + ' note' + (saved === 1 ? '' : 's') + ' to History' + (skipped ? ' · ' + skipped + ' not drafted' : '') + (blanksLeft ? ' · ' + blanksLeft + ' blank(s) still marked in the text' : ''), blanksLeft ? 'err' : 'ok');
     });
-    var ps = $('mlsOnfProfSave'); if (ps) ps.addEventListener('click', saveProfileFromForm);
     updateBarCount();
-  }
-  /* ---- practice-profile editor (provider / NPI / facility / practice) ---- */
-  function profFld(lbl, key, val) {
-    return '<label style="display:flex;flex-direction:column;gap:3px;font:700 11px system-ui;color:#204034;">' + esc(lbl) +
-      '<input type="text" data-prof="' + key + '" value="' + esc(val || '') + '" style="padding:6px 8px;border:1px solid #EAF1EE;border-radius:7px;font:600 12.5px system-ui;"></label>';
-  }
-  function profileFormHtml() {
-    var p = seedProfile();
-    return '<div id="mlsOnfProfForm" style="display:none;flex-basis:100%;margin-top:9px;padding:11px 12px;border:1px dashed #C9DCD2;border-radius:10px;background:#fff;">' +
-      '<div style="font-weight:800;margin-bottom:7px;color:#204034;">Practice profile — set once, auto-fills every note (never fabricated)</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px;">' +
-      profFld('Operating provider', 'name', p.name) + profFld('Provider NPI', 'npi', p.npi) +
-      profFld('Facility / surgery center', 'facility', p.facility) + profFld('Practice / group name', 'practice', p.practice) +
-      '</div>' +
-      '<button type="button" id="mlsOnfProfSave" style="margin-top:9px;background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">Save profile</button>' +
-      '<span id="mlsOnfProfMsg" style="margin-left:9px;color:#2e7d43;font-weight:700;"></span></div>';
-  }
-  function toggleProfileEditor() { var f = $('mlsOnfProfForm'); if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'block' : 'none'; }
-  function saveProfileFromForm() {
-    var f = $('mlsOnfProfForm'); if (!f) return;
-    var p = provProfile();
-    Array.prototype.forEach.call(f.querySelectorAll('[data-prof]'), function (inp) { p[inp.getAttribute('data-prof')] = S(inp.value).trim(); });
-    saveProfile(p);
-    var m = $('mlsOnfProfMsg'); if (m) m.textContent = 'Saved ✓ — re-applying to all notes…';
-    /* re-seed the known (identity/profile) values on every open note so
-       facility / NPI / practice / provider fill NOW, then re-render each note. */
-    var tas = noteBoxes();
-    for (var i = 0; i < tas.length; i++) {
-      (function (ta) {
-        var row = safe(function () { return (window._opPrep || [])[+ta.id.replace('opPrepNote_', '')]; }, null);
-        safe(function () { reseedKnown(row); });
-        safe(function () { buildFillBox(ta); });
-      })(tas[i]);
-    }
-    setTimeout(function () { var mm = $('mlsOnfProfMsg'); if (mm) mm.textContent = 'Saved ✓'; }, 1600);
-  }
-  /* refresh the known/profile-derived values on a row after the profile changes */
-  function reseedKnown(row) {
-    if (!row || row._onfRaw == null) return;
-    row._onfVals = row._onfVals || {};
-    var tk = fillTokens(row._onfRaw);
-    for (var i = 0; i < tk.length; i++) { var kv = knownValue(tk[i], row); if (kv) row._onfVals[tk[i].toLowerCase()] = kv; }
   }
   /* onf-1.4.0: mark the row's procedure text from its assigned template so the
      readiness checklist's "Procedure" shows filled once a template is matched. */
@@ -287,9 +267,11 @@
     var key = S(p.id || p.mrn || p.name);
     var row = _mainRows[key];
     if (!row) {
-      row = _mainRows[key] = { __onfMain: true, proc: '', tplId: '', dateStr: todayDateStr(), appt: {} };
+      row = _mainRows[key] = { __onfMain: true, patientId: S(p.id), proc: '', tplId: '', dateStr: todayDateStr(), appt: {} };
     }
     /* refresh identity every pass — the active patient's record can gain a DOB/MRN */
+    row.patientId = S(p.id);
+    row.appt.patientId = S(p.id);
     row.appt.name = S(p.name).trim();
     row.appt.dob = S(p.dob).trim();
     row.appt.mrn = S(p.mrn || p.athenaId || '').trim();
@@ -309,17 +291,38 @@
     var hasBox = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox');
     return (hasTokens || hasBox) ? ta : null;
   }
-  function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length); }
+  /* Length + placeholder count missed equal-length clinician edits, so the next
+     tick could mistake an edited note for our prior render. Two cheap rolling
+     hashes make the gate content-sensitive without retaining another full note. */
+  function textSig(v) {
+    v = S(v);
+    var a = 2166136261, b = 5381;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charCodeAt(i);
+      a ^= c;
+      a = (a + ((a << 1) + (a << 4) + (a << 7) + (a << 8) + (a << 24))) >>> 0;
+      b = (((b << 5) + b) ^ c) >>> 0;
+    }
+    return (a >>> 0).toString(36) + '.' + (b >>> 0).toString(36);
+  }
+  function sigOf(ta) {
+    var v = (ta && ta.value) || '';
+    return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length) + '|' + textSig(v);
+  }
 
-  /* onf-1.3.0: AUTO-FILL fields the app already KNOWS. Provider/physician name,
-     patient name, DOB, MRN, procedure date, provider NPI/facility (from the
-     stored provider profile) should never be shown as a manual [FILL:] field --
-     they are silently pre-filled from the appointment + provider profile before
-     the fill box is built, so the clinician only sees genuinely unknown,
-     procedure-specific blanks (laterality, needle size, etc.). */
-  var PROFILE_KEY = 'mls_provider_profile';
-  function provProfile() { return safe(function () { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}') || {}; }, {}) || {}; }
-  function saveProfile(p) { safe(function () { localStorage.setItem(PROFILE_KEY, JSON.stringify(p || {})); }); }
+  /* Auto-fill only identity already known from this visit or canonical Settings. */
+  /* Practice/provider identity has one account-scoped source of truth. The
+     former global mls_provider_profile key is deliberately not read or written. */
+  function canonicalSetting(fn) { return safe(function () { return isFn(window[fn]) ? S(window[fn]()).trim() : ''; }, '') || ''; }
+  function provProfile() {
+    return {
+      name: canonicalSetting('getProviderName'),
+      cred: canonicalSetting('getProviderCred'),
+      npi: canonicalSetting('getNpi'),
+      practice: canonicalSetting('getPracticeName'),
+      facility: ''
+    };
+  }
   function apptProvider(appt) { return S((appt && (appt.provider_raw || appt.provider_key || appt.provider)) || '').replace(/_/g, ' ').trim(); }
   function commonApptProvider() {
     return safe(function () {
@@ -328,42 +331,44 @@
       var best = '', bc = 0; for (var k in t) if (t[k] > bc) { bc = t[k]; best = k; } return best;
     }, '') || '';
   }
-  /* Seed the practice profile ONCE with what we can DERIVE (the day's operating
-     provider name). NPI / facility / practice stay blank for the clinician to set
-     one time in the profile editor -- we NEVER fabricate an NPI or facility. */
+  /* Re-read canonical Settings every pass so edits apply immediately. An
+     appointment provider may fill this draft only and is never persisted. */
   function seedProfile() {
-    /* onf-2.3.0: the app SETTINGS already hold the doctor name, clinic/practice
-       name and NPI — pull them in so "practice name"-type blanks stop asking
-       for what the app already knows. Profile edits still win (only blanks are
-       seeded); we NEVER fabricate an NPI or facility. */
-    var p = provProfile(), dirty = false;
-    if (!S(p.name).trim()) {
-      var nm = safe(function () { return isFn(window.getName) ? S(window.getName()).trim() : ''; }, '') || commonApptProvider();
-      if (nm) { p.name = nm; dirty = true; }
-    }
-    if (!S(p.practice).trim()) {
-      var pr = safe(function () { return isFn(window.getPracticeName) ? S(window.getPracticeName()).trim() : ''; }, '');
-      if (pr) { p.practice = pr; dirty = true; }
-    }
-    if (!S(p.npi).trim()) {
-      var np = safe(function () { return isFn(window.getNpi) ? S(window.getNpi()).trim() : ''; }, '');
-      if (np) { p.npi = np; dirty = true; }
-    }
-    if (dirty) saveProfile(p);
+    var p = provProfile();
+    if (!S(p.name).trim()) p.name = commonApptProvider();
     return p;
   }
-  /* onf-2.3.0: exact chart-record lookup for the row's patient (name+DOB) */
+  function normPatientName(v) { return S(v).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function normPatientDob(v) { return S(v).replace(/\D/g, ''); }
+  function rowPatientId(row) {
+    var a = (row && row.appt) || {};
+    return S((row && row.patientId) || a.patientId || a.patient_external_id || a._mlsTargetPatientId || '').trim();
+  }
+  /* Clinical autofill requires immutable patient-id ownership. Name-only and
+     even name+DOB-only matching are not identity proof. */
   function chartPatient(row) {
     return safe(function () {
       var appt = row && row.appt; if (!appt) return null;
+      var pid = rowPatientId(row); if (!pid) return null;
       var pts = isFn(window.getPatients) ? window.getPatients() : [];
-      var nn = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, ''), wd = S(appt.dob).replace(/\D/g, ''), p = null;
+      var p = null;
       for (var i = 0; i < pts.length; i++) {
-        var q = pts[i]; if (!q || S(q.name).toLowerCase().replace(/[^a-z0-9]/g, '') !== nn) continue;
-        if (!wd || S(q.dob).replace(/\D/g, '') === wd) { p = q; break; } if (!p) p = q;
+        var q = pts[i]; if (q && S(q.id).trim() === pid) { p = q; break; }
       }
-      return p || null;
+      if (!p) return null;
+      if (S(appt.name).trim() && normPatientName(appt.name) !== normPatientName(p.name)) return null;
+      if (S(appt.dob).trim() && normPatientDob(appt.dob) !== normPatientDob(p.dob)) return null;
+      return p;
     }, null);
+  }
+  function verifiedHistoryVisits(p) {
+    if (!p) return [];
+    return safe(function () {
+      var oni = window.__mlsOpNoteIntegrity;
+      if (!oni || !isFn(oni._verifiedHistoryVisits)) return [];
+      var visits = oni._verifiedHistoryVisits(p);
+      return Array.isArray(visits) ? visits : [];
+    }, []) || [];
   }
   function chartAge(p) {
     return safe(function () {
@@ -391,7 +396,7 @@
     var direct = S(p.problems).replace(/\s+/g, ' ').trim();
     if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
     if (!out.length) {
-      var raw = ''; safe(function () { (p.visits || []).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); });
+      var raw = ''; safe(function () { verifiedHistoryVisits(p).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); });
       var re = /([A-Z][A-Za-z0-9 ,()\/-]{2,60}?)\s*-\s*Onset:\s*\d{1,2}\/\d{1,2}\/\d{2,4}/g, m;
       while ((m = re.exec(raw)) !== null && out.length < 6) {
         var nm = S(m[1]).trim();
@@ -414,54 +419,97 @@
     if (problems) bits.push((bits.length ? 'with ' : '') + problems);
     var head = bits.join(' ');
     var plan = '';
-    var vs = (p.visits || []); for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim();
+    var vs = verifiedHistoryVisits(p); for (var i = 0; i < vs.length && !plan; i++) plan = S(vs[i] && vs[i].plan).replace(/\s+/g, ' ').trim();
     var out = [head, plan ? ('Most recent plan: ' + plan.slice(0, 160)) : ''].filter(Boolean).join('. ');
     return out ? (out.replace(/\.+$/, '') + '.') : '';
   }
   /* the patient's own recent chart text (for deriving laterality / prior values) */
   function patientHistText(row) {
     return safe(function () {
-      var appt = row && row.appt; if (!appt) return '';
-      var pts = isFn(window.getPatients) ? window.getPatients() : [];
-      var nn = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, ''), wd = S(appt.dob).replace(/\D/g, ''), p = null;
-      for (var i = 0; i < pts.length; i++) {
-        var q = pts[i]; if (!q || S(q.name).toLowerCase().replace(/[^a-z0-9]/g, '') !== nn) continue;
-        if (!wd || S(q.dob).replace(/\D/g, '') === wd) { p = q; break; } if (!p) p = q;
-      }
+      var p = chartPatient(row);
       if (!p) return '';
-      var vs = (p.visits || []).slice(0, 3), parts = [S(p.problems), S(p.summary)];
+      var vs = verifiedHistoryVisits(p).slice(0, 3), parts = [S(p.problems), S(p.summary)];
       for (var v = 0; v < vs.length; v++) parts.push(S(vs[v].plan), S(vs[v].findings), S(vs[v].raw).slice(0, 400));
       return parts.join(' ');
     }, '') || '';
   }
-  /* onf-1.7.0: STABLE per-PATIENT key so known/entered fill values can be
-     remembered for that patient across future op notes. Prefer a numeric MRN;
-     else normalized name (+ DOB when present). */
+  /* Stable patient memory requires the row's immutable patient id. Display
+     names, DOBs and MRNs are not used as ownership substitutes. */
   function patientKey(row) {
-    var appt = (row && row.appt) || {};
-    var mrn = S(appt.athenaId || appt.mrn || '').replace(/\D/g, '');
-    if (mrn) return 'id:' + mrn;
-    var nm = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, '');
-    var dob = S(appt.dob).replace(/\D/g, '');
-    return nm ? ('nd:' + nm + (dob ? ('_' + dob) : '')) : '';
+    var pid = rowPatientId(row);
+    return pid ? ('pid:' + pid) : '';
   }
-  /* onf-1.7.0: per-patient fill MEMORY. Once a field value is known/entered for a
-     patient, it is saved under that patient's record (localStorage keyed by
-     patientKey) and pre-filled on their FUTURE op notes -- so the steroid /
-     medication (and any other stable value) never has to be re-typed. The doctor
-     still sees and can change every field before signing. Device-local; nothing
-     is written to Athena. */
-  var FILLMEM_PREFIX = 'mls_opfill_mem::';
+  /* Patient memory is nested in the resolved account namespace. Retired global
+     keys are not read because their owning clinician cannot be proven. */
+  var FILLMEM_PREFIX = 'opFillPatientMemV2::';
   function loadFillMem(row) {
     var k = patientKey(row); if (!k) return {};
-    return safe(function () { return JSON.parse(localStorage.getItem(FILLMEM_PREFIX + k) || '{}') || {}; }, {}) || {};
+    var raw = readScoped(FILLMEM_PREFIX + k, ''); if (!raw) return {};
+    return safe(function () { return JSON.parse(raw) || {}; }, {}) || {};
   }
   function saveFillMemValue(row, fieldKey, val) {
     var k = patientKey(row); if (!k || !fieldKey) return;
+    if (!scopedKey(FILLMEM_PREFIX + k)) return false;
     val = S(val).trim();
     var mem = loadFillMem(row);
     if (val) mem[fieldKey] = val; else delete mem[fieldKey];
-    safe(function () { localStorage.setItem(FILLMEM_PREFIX + k, JSON.stringify(mem)); });
+    return writeScoped(FILLMEM_PREFIX + k, JSON.stringify(mem));
+  }
+  /* Explicit defaults are separate from recent history. A previous answer is
+     suggested, but never silently promoted. */
+  var DEFAULTS_SUFFIX = 'opFieldDefaultsV1';
+  function fieldIdentity(label) { return S(label).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+  function anonymousField(label) {
+    var s = S(label).trim();
+    return /^after\s+["\u201c]/i.test(s) || (/\bafter\s+["\u201c]/i.test(s) && /\bbefore\s+["\u201c]/i.test(s));
+  }
+  function defaultEligible(label) {
+    if (anonymousField(label)) return false;
+    var l = S(label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!l) return false;
+    /* Account defaults are an allowlist, not a broad "anything except patient
+       identity" list. A clinical answer can be correct for one procedure and
+       dangerous for the next, so diagnosis/history/medication/anatomy/findings,
+       every date/time, implants/lots and procedure technique can never auto-fill
+       across patients. Only stable practice identity and non-clinical equipment
+       identification may be pinned. */
+    if (/(\bpatient\b|date|time|\bday\b|\bdob\b|birth|\bmrn\b|medical record|chart (number|id|no)|account (number|no)|\bage\b|\bsex\b|\bgender\b|diagnos|\bdx\b|indication|history|\bhpi\b|medical|surgical|medication|\bmeds?\b|\bdrug\b|steroid|anesthetic|injectate|contrast|allerg|procedure|\boperation\b|technique|anatom|\bsite\b|\bside\b|laterality|\blevel\b|finding|complication|blood loss|specimen|implant|\blot\b|dose|volume|concentration|sedation|anesthesia|vital|\bbmi\b|disposition|consent|timeout|prep|needle|catheter)/.test(l)) return false;
+    if (/\b(practice|clinic|facility|organization)\b/.test(l) && /\b(name|address|phone|fax)\b/.test(l)) return true;
+    if (/\b(npi|provider credentials?|physician credentials?|surgeon credentials?|license number|taxonomy)\b/.test(l)) return true;
+    if (/\b(operating provider|performing provider|performing physician|operating physician|surgeon name|dictated by)\b/.test(l)) return true;
+    if (/\b(equipment|fluoroscopy (machine|unit)|ultrasound (machine|unit)|c arm)\b/.test(l) && /\b(model|make|manufacturer|serial|identifier|name)\b/.test(l)) return true;
+    return false;
+  }
+  function loadDefaultsStore() {
+    var raw = readScoped(DEFAULTS_SUFFIX, ''); if (!raw) return { schema: 1, fields: {} };
+    var obj = safe(function () { return JSON.parse(raw); }, null);
+    if (!obj || typeof obj !== 'object' || !obj.fields || typeof obj.fields !== 'object') return { schema: 1, fields: {} };
+    return { schema: 1, fields: obj.fields };
+  }
+  function fieldDefault(label) {
+    if (!defaultEligible(label)) return null;
+    var rec = loadDefaultsStore().fields[fieldIdentity(label)];
+    if (!rec || typeof rec !== 'object' || !S(rec.value).trim()) return null;
+    return { label: S(rec.label || label), value: S(rec.value).trim(), updatedAt: +rec.updatedAt || 0 };
+  }
+  function saveFieldDefault(label, value) {
+    label = S(label).trim(); value = S(value).trim();
+    var id = fieldIdentity(label);
+    if (!id || !value || !defaultEligible(label) || !scopedKey(DEFAULTS_SUFFIX)) return false;
+    var store = loadDefaultsStore();
+    store.fields[id] = { label: label.slice(0, 160), value: value.slice(0, 2000), updatedAt: Date.now() };
+    var ok = writeScoped(DEFAULTS_SUFFIX, JSON.stringify(store));
+    safe(function () { if (ok && isFn(window.syncPrefsToServer)) window.syncPrefsToServer(); });
+    return ok;
+  }
+  function clearFieldDefault(label) {
+    var id = fieldIdentity(label); if (!id || !scopedKey(DEFAULTS_SUFFIX)) return false;
+    var store = loadDefaultsStore();
+    if (!Object.prototype.hasOwnProperty.call(store.fields, id)) return true;
+    delete store.fields[id];
+    var ok = writeScoped(DEFAULTS_SUFFIX, JSON.stringify(store));
+    safe(function () { if (ok && isFn(window.syncPrefsToServer)) window.syncPrefsToServer(); });
+    return ok;
   }
   /* onf-1.7.0: read the patient's ACTUAL chart history for the medication they
      were given, so a steroid / anesthetic NAME field is pre-filled from what is
@@ -556,6 +604,7 @@
     var appt = (row && row.appt) || {};
     var prof = seedProfile();   /* onf-2.3.0: Settings-backed (name/practice/NPI) */
     var prov = apptProvider(appt) || S(prof.name).trim();
+    if (prov && S(prof.cred).trim() && prov.toLowerCase().indexOf(S(prof.cred).trim().toLowerCase()) < 0) prov += ', ' + S(prof.cred).trim();
     var pname = S(appt.name).trim();
     var dob = S(appt.dob).trim();
     var mrn = S(appt.athenaId || appt.mrn || '').trim();
@@ -564,8 +613,8 @@
     /* An NPI field may only receive an actual NPI. Falling through to the
        generic provider-name rule put "Matthew Schaeffer, MD" in NPI blanks. */
     if (/\bnpi\b/.test(l)) return S(prof.npi).trim();
-    if (/(practice name|\bpractice\b|group name|group practice)/.test(l) && S(prof.practice || prof.facility).trim()) return S(prof.practice || prof.facility).trim();
-    if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l) && S(prof.facility || prof.practice).trim()) return S(prof.facility || prof.practice).trim();
+    if (/(practice name|\bpractice\b|group name|group practice)/.test(l) && S(prof.practice).trim()) return S(prof.practice).trim();
+    if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l) && S(prof.facility).trim()) return S(prof.facility).trim();
     if (isProv && prov) return prov;
     if (/(date of birth|birth ?date|\bdob\b)/.test(l) && dob) return dob;
     if (/(date of procedure|procedure date|date of service|service date|\bdos\b|date of operation|operation date|encounter date|todays date|today s date)/.test(l) && dt) return dt;
@@ -599,6 +648,11 @@
     var idx = ta.id.replace('opPrepNote_', '');
     var row = safe(function () { return (window._opPrep || [])[+idx]; }, null);
     if (!row || !row.appt) return;
+    /* A selected template owns the complete document structure. The integrity
+       layer already verifies patient identity and template fidelity before this
+       UI enhancer runs, so never prepend an MLS-only heading afterward. Keep
+       the legacy fallback only for genuinely untemplated drafts. */
+    if (S(row.tplId || row.templateId || (row._ctx && row._ctx.templateId)).trim()) return;
     var val = ta.value || '';
     if (!val.trim()) return;                                  /* not drafted yet */
     if (/(^|\n)\s*PATIENT\s*:/i.test(val)) return;            /* already has a patient header */
@@ -623,6 +677,215 @@
     for (var i = 0; i < tk.length; i++) { var v = vals && vals[tk[i].toLowerCase()]; if (v) out = replaceToken(out, tk[i], v); }
     return out;
   }
+  function renderLayout(raw, vals) {
+    raw = S(raw); vals = vals || {};
+    var re = /\[FILL:\s*([^\]]+?)\s*\]|\[\[([a-z0-9_]+)\]\]/gi, parts = [], rendered = '', at = 0, m;
+    function addLiteral(s) {
+      if (!s) return;
+      parts.push({ kind: 'literal', raw: s, rendered: s, renderStart: rendered.length, renderEnd: rendered.length + s.length });
+      rendered += s;
+    }
+    while ((m = re.exec(raw)) !== null) {
+      addLiteral(raw.slice(at, m.index));
+      var token = m[0], label = m[1] != null ? S(m[1]).trim() : keyToLabel(m[2]), key = label.toLowerCase();
+      var value = S(vals[key]), shown = value ? value : token;
+      parts.push({ kind: 'token', raw: token, rendered: shown, label: label, key: key, renderStart: rendered.length, renderEnd: rendered.length + shown.length });
+      rendered += shown;
+      at = m.index + token.length;
+    }
+    addLiteral(raw.slice(at));
+    return { rendered: rendered, parts: parts };
+  }
+  function editSpan(base, edited) {
+    base = S(base); edited = S(edited);
+    var start = 0, max = Math.min(base.length, edited.length);
+    while (start < max && base.charCodeAt(start) === edited.charCodeAt(start)) start++;
+    var tail = 0, bRemain = base.length - start, eRemain = edited.length - start;
+    while (tail < bRemain && tail < eRemain && base.charCodeAt(base.length - 1 - tail) === edited.charCodeAt(edited.length - 1 - tail)) tail++;
+    return { start: start, baseEnd: base.length - tail, editedEnd: edited.length - tail, replacement: edited.slice(start, edited.length - tail) };
+  }
+  function tokenTouched(part, span) {
+    if (!part || part.kind !== 'token') return false;
+    if (span.start === span.baseEnd) return span.start > part.renderStart && span.start < part.renderEnd;
+    return span.start < part.renderEnd && span.baseEnd > part.renderStart;
+  }
+  function cloneVals(vals) { var out = {}, k; for (k in (vals || {})) if (Object.prototype.hasOwnProperty.call(vals, k)) out[k] = vals[k]; return out; }
+  function pruneFieldState(row) {
+    var active = {}, tokens = fillTokens(row && row._onfRaw || ''), i, k;
+    for (i = 0; i < tokens.length; i++) active[tokens[i].toLowerCase()] = true;
+    for (k in (row._onfVals || {})) if (!active[k]) delete row._onfVals[k];
+    for (k in (row._onfDefaultKeys || {})) if (!active[k]) delete row._onfDefaultKeys[k];
+  }
+  /* Adopt a textarea edit as the new source of truth before any re-render.
+     The normal case (editing prose around a field) patches the raw template and
+     leaves every placeholder/control intact. Editing a field value directly is
+     reconciled back into that field when the result is unambiguous. A complex
+     cross-field edit materializes only the touched fields; untouched fields stay
+     live. The final fallback keeps the clinician's exact text, never our stale
+     render. */
+  function adoptRenderedEdits(row, edited) {
+    if (!row || row._onfRaw == null || row._onfLastRender == null) return false;
+    edited = S(edited);
+    var base = S(row._onfLastRender);
+    if (edited === base) return false;
+    var vals = row._onfVals || {}, layout = renderLayout(row._onfRaw, vals);
+    if (layout.rendered !== base) {
+      row._onfRaw = edited; row._onfVals = {}; row._onfDefaultKeys = {}; row._onfLastRender = edited;
+      return true;
+    }
+    var span = editSpan(base, edited), contained = null, i;
+    for (i = 0; i < layout.parts.length; i++) {
+      var pt = layout.parts[i];
+      if (pt.kind !== 'token') continue;
+      var inside = span.start >= pt.renderStart && span.baseEnd <= pt.renderEnd;
+      if (span.start === span.baseEnd) inside = span.start > pt.renderStart && span.start < pt.renderEnd;
+      if (inside) { contained = pt; break; }
+    }
+    if (contained) {
+      var candidateVals = cloneVals(vals), oldValue = contained.rendered;
+      candidateVals[contained.key] = oldValue.slice(0, span.start - contained.renderStart) + span.replacement + oldValue.slice(span.baseEnd - contained.renderStart);
+      if (candidateVals[contained.key] && applyVals(row._onfRaw, candidateVals) === edited) {
+        row._onfVals = candidateVals;
+        if (row._onfDefaultKeys) delete row._onfDefaultKeys[contained.key];
+        row._onfLastRender = edited;
+        return true;
+      }
+    }
+    var hybrid = '', maps = [];
+    for (i = 0; i < layout.parts.length; i++) {
+      var part = layout.parts[i], materialize = tokenTouched(part, span);
+      var piece = (part.kind === 'token' && !materialize) ? part.raw : part.rendered;
+      maps.push({ baseStart: part.renderStart, baseEnd: part.renderEnd, hybridStart: hybrid.length, hybridEnd: hybrid.length + piece.length, direct: piece.length === (part.renderEnd - part.renderStart) });
+      hybrid += piece;
+    }
+    function mapBoundary(pos) {
+      if (pos <= 0) return 0;
+      for (var x = 0; x < maps.length; x++) {
+        var mp = maps[x];
+        if (pos === mp.baseStart) return mp.hybridStart;
+        if (pos === mp.baseEnd) return mp.hybridEnd;
+        if (pos > mp.baseStart && pos < mp.baseEnd) {
+          if (mp.direct) return mp.hybridStart + (pos - mp.baseStart);
+          return mp.hybridStart + Math.round((pos - mp.baseStart) * (mp.hybridEnd - mp.hybridStart) / Math.max(1, mp.baseEnd - mp.baseStart));
+        }
+      }
+      return hybrid.length;
+    }
+    var hs = mapBoundary(span.start), he = mapBoundary(span.baseEnd);
+    var nextRaw = hybrid.slice(0, hs) + span.replacement + hybrid.slice(he);
+    if (applyVals(nextRaw, vals) === edited) {
+      row._onfRaw = nextRaw; row._onfLastRender = edited; pruneFieldState(row); return true;
+    }
+    row._onfRaw = edited; row._onfVals = {}; row._onfDefaultKeys = {}; row._onfLastRender = edited;
+    return true;
+  }
+  function freshRawDraft(row, value) {
+    var normalized = normalizeAnonBlanks(value), now = fillTokens(normalized);
+    if (!now.length) return '';
+    if (!row || row._onfRaw == null) return normalized;
+    var old = {}, i; fillTokens(row._onfRaw).forEach(function (label) { old[label.toLowerCase()] = true; });
+    for (i = 0; i < now.length; i++) {
+      var key = now[i].toLowerCase();
+      if (!old[key] || (row._onfVals && row._onfVals[key])) return normalized;
+    }
+    return '';
+  }
+  function resetRawDraft(row, raw) {
+    row._onfRaw = raw; row._onfVals = {}; row._onfDefaultKeys = {}; row._onfLastRender = null;
+  }
+  function acceptExternalEdit(row, value) {
+    if (!row) return false;
+    var fresh = freshRawDraft(row, value);
+    if (fresh) { resetRawDraft(row, fresh); return true; }
+    return adoptRenderedEdits(row, value);
+  }
+  function wireTextareaEdits(ta) {
+    if (!ta || !isFn(ta.addEventListener) || ta.__mlsOnfEditWired) return;
+    ta.__mlsOnfEditWired = true;
+    ta.addEventListener('input', function () {
+      var row = rowFor(ta);
+      if (!row || row._onfWriting) return;
+      acceptExternalEdit(row, ta.value || '');
+    });
+  }
+  function writeRendered(ta, row, value) {
+    value = S(value);
+    if (!ta) return;
+    if (row) row._onfWriting = true;
+    try {
+      if ((ta.value || '') !== value) {
+        ta.value = value;
+        safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
+      }
+      if (row) row._onfLastRender = value;
+    } finally { if (row) row._onfWriting = false; }
+  }
+  function existingFillBox(ta) {
+    if (!ta) return null;
+    var immediate = ta.previousElementSibling;
+    var existing = immediate && immediate.classList && immediate.classList.contains('onf-fillbox') ? immediate : null;
+    var all = safe(function () { return document.querySelectorAll('.onf-fillbox'); }, []) || [];
+    for (var i = 0; i < all.length; i++) {
+      var box = all[i], owner = safe(function (b) { return function () { return b.getAttribute('data-onf-for'); }; }(box), '');
+      if (box !== immediate && owner !== ta.id) continue;
+      if (!existing) existing = box;
+      else if (box !== existing) safe(function (b) { return function () { if (b.parentNode) b.parentNode.removeChild(b); else if (isFn(b.remove)) b.remove(); }; }(box));
+    }
+    if (existing) safe(function () { existing.setAttribute('data-onf-for', ta.id); });
+    return existing;
+  }
+  function openDraftBoxes() {
+    return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"],#' + MAIN_ID); }, []) || [];
+  }
+  function refreshOpenFillBoxes() {
+    var boxes = openDraftBoxes();
+    for (var i = 0; i < boxes.length; i++) safe(function (ta) { return function () { buildFillBox(ta); }; }(boxes[i]));
+  }
+  /* A pin applies only to the exact normalized label in drafts that are already
+     open. The raw template stays untouched; only that placeholder's value map
+     changes, preserving template headings and fixed wording. */
+  function applyDefaultToBoxes(label, value, boxes, repaint) {
+    var wanted = fieldIdentity(label), changed = 0;
+    boxes = boxes || [];
+    if (!wanted || !defaultEligible(label)) return 0;
+    for (var i = 0; i < boxes.length; i++) {
+      var ta = boxes[i], row = rowFor(ta); if (!row || row._onfRaw == null) continue;
+      var tokens = fillTokens(row._onfRaw), matched = false;
+      row._onfVals = row._onfVals || {}; row._onfDefaultKeys = row._onfDefaultKeys || {};
+      for (var t = 0; t < tokens.length; t++) {
+        if (fieldIdentity(tokens[t]) !== wanted) continue;
+        var tokenKey = tokens[t].toLowerCase(), protectedValue = knownValue(tokens[t], row);
+        if (!protectedValue) protectedValue = historyMed(tokens[t], row) || chartValue(tokens[t], row);
+        if (!protectedValue) protectedValue = templateDefault(tokens[t], row);
+        if (!protectedValue) protectedValue = loadFillMem(row)[tokenKey];
+        if (protectedValue) continue;
+        row._onfVals[tokenKey] = value;
+        row._onfDefaultKeys[tokenKey] = true;
+        matched = true;
+      }
+      if (!matched) continue;
+      var out = applyVals(row._onfRaw, row._onfVals);
+      writeRendered(ta, row, out);
+      if (isPrepBox(ta)) {
+        var idx = +ta.id.replace('opPrepNote_', '');
+        safe(function () { if (window._opPrep && window._opPrep[idx]) window._opPrep[idx].note = out; });
+        safe(function () { if (isFn(window.opPrepAutosaveDraft)) window.opPrepAutosaveDraft(idx); });
+      }
+      changed++;
+    }
+    if (repaint !== false) refreshOpenFillBoxes();
+    return changed;
+  }
+  function applyDefaultToOpen(label, value) { return applyDefaultToBoxes(label, value, openDraftBoxes(), true); }
+  function stopDefaultInOpen(label) {
+    var wanted = fieldIdentity(label), boxes = openDraftBoxes();
+    for (var i = 0; i < boxes.length; i++) {
+      var row = rowFor(boxes[i]); if (!row || !row._onfDefaultKeys) continue;
+      var tokens = fillTokens(row._onfRaw || '');
+      for (var t = 0; t < tokens.length; t++) if (fieldIdentity(tokens[t]) === wanted) delete row._onfDefaultKeys[tokens[t].toLowerCase()];
+    }
+    refreshOpenFillBoxes();
+  }
   /* onf-1.4.0: RAW-TEMPLATE + VALUES model. The drafted note is kept verbatim as
      the raw template; every [FILL:] field is PRE-FILLED (known identity/profile
      value, or a safe smart-default best-guess) and the note is rendered from
@@ -639,15 +902,8 @@
     return safe(function () {
       var direct = parseFloat(row && (row.bmi || (row.appt && row.appt.bmi)));
       if (direct > 0) return direct;
-      var appt = row && row.appt; if (!appt) return 0;
-      var pts = isFn(window.getPatients) ? window.getPatients() : [];
-      var nn = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, ''), wd = S(appt.dob).replace(/\D/g, '');
-      for (var i = 0; i < pts.length; i++) {
-        var q = pts[i]; if (!q || S(q.name).toLowerCase().replace(/[^a-z0-9]/g, '') !== nn) continue;
-        if (wd && S(q.dob).replace(/\D/g, '') !== wd) continue;
-        var b = parseFloat(q.bmi); return b > 0 ? b : 0;
-      }
-      return 0;
+      var p = chartPatient(row); if (!p) return 0;
+      var b = parseFloat(p.bmi); return b > 0 ? b : 0;
     }, 0) || 0;
   }
   function needleOpts(row) {
@@ -703,7 +959,8 @@
     } catch (e) {}
     return '';
   }
-  function buildOptions(label, cur, row) {
+  function priorValues(label) {
+    if (!scopedKey('opFieldVals')) return [];
     var key = S(label).toLowerCase();
     /* history was written under the space form by this box and under the
        snake_case form by the retired ScribeFlow walker — read BOTH */
@@ -712,6 +969,12 @@
       var a = window.getOpFieldVals(key) || [], b = window.getOpFieldVals(labelToKey(label)) || [];
       return a.concat(b);
     }, []) || [];
+    var out = [], seen = {};
+    prev.forEach(function (v) { v = S(v).trim(); var n = v.toLowerCase(); if (v && !seen[n]) { seen[n] = 1; out.push(v); } });
+    return out;
+  }
+  function buildOptions(label, cur, row) {
+    var prev = priorValues(label);
     var opts = [], seen = {};
     function add(v) { v = S(v).trim(); if (!v || seen[v.toLowerCase()]) return; seen[v.toLowerCase()] = 1; opts.push(v); }
     add(cur);
@@ -719,53 +982,59 @@
     altGuesses(label, row).forEach(add);      /* then the standard alternatives */
     return opts;
   }
+  function resolveInitialField(label, row, patientMem) {
+    var spec = fieldSpec(label), value = knownValue(label, row);
+    if (value) return { value: value, kind: 'known' };
+    value = historyMed(label, row);
+    if (value) { saveFillMemValue(row, S(label).toLowerCase(), value); return { value: value, kind: 'history' }; }
+    value = chartValue(label, row);
+    if (value) return { value: value, kind: 'history' };
+    value = templateDefault(label, row);
+    if (value) return { value: value, kind: 'template' };
+    value = patientMem && patientMem[S(label).toLowerCase()];
+    if (value) return { value: value, kind: 'saved' };
+    var pinned = fieldDefault(label);
+    if (pinned) return { value: pinned.value, kind: 'default' };
+    value = smartDefault(label, spec, row);
+    return value ? { value: value, kind: 'suggested' } : { value: '', kind: 'blank' };
+  }
   function buildFillBox(ta) {
     var prep = isPrepBox(ta);
     var idx = prep ? ta.id.replace('opPrepNote_', '') : 'main';
     var row = rowFor(ta);
-    var existing = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox')
-      ? ta.previousElementSibling : null;
-    /* establish / reset the raw template: a fresh AI draft is any note that has
-       [FILL:] tokens and is NOT our own last render (identical to applyVals(raw)). */
+    var existing = existingFillBox(ta);
+    /* A newly generated raw draft resets field state. Any other difference from
+       our last render is first adopted into the raw+values model, so re-opening
+       or ticking the Fields box can never roll back clinician prose edits. */
     if (row) {
-      var lastRender = row._onfRaw != null ? applyVals(row._onfRaw, row._onfVals || {}) : null;
-      if (/\[FILL:|\[\[[a-z0-9_]+\]\]|_{3,}|\[not dictated[^\]]*\]/i.test(ta.value || '') && ta.value !== lastRender) { row._onfRaw = normalizeAnonBlanks(ta.value); row._onfVals = {}; }
+      var fresh = freshRawDraft(row, ta.value || '');
+      if (fresh) resetRawDraft(row, fresh);
+      else if (row._onfLastRender != null && S(ta.value) !== S(row._onfLastRender)) adoptRenderedEdits(row, ta.value || '');
+      wireTextareaEdits(ta);
     }
     var raw = (row && row._onfRaw != null) ? row._onfRaw : (ta.value || '');
     var tokens = fillTokens(raw);
-    if (!tokens.length) { if (existing) existing.parentNode.removeChild(existing); return; }
+    if (!tokens.length) { if (existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
     css();
     var vals = (row && row._onfVals) || {}, meta = {};
     var pmem = row ? loadFillMem(row) : {};                      /* onf-1.7.0: this patient's saved fills */
     for (var t = 0; t < tokens.length; t++) {
-      var lab = tokens[t], key = lab.toLowerCase(), spec0 = fieldSpec(lab);
+      var lab = tokens[t], key = lab.toLowerCase();
       if (vals[key] == null) {
-        var kv = knownValue(lab, row);
-        if (kv) { vals[key] = kv; meta[key] = 'known'; }
-        else if (pmem[key]) { vals[key] = pmem[key]; meta[key] = 'saved'; }        /* remembered for this patient */
-        else {
-          var hm = historyMed(lab, row);                                          /* from the patient's chart history */
-          if (!hm) { hm = chartValue(lab, row); if (hm) { vals[key] = hm; meta[key] = 'history'; } }   /* onf-2.3.0: history/diagnosis from the chart itself (not memorized — the chart is re-read each draft) */
-          else { vals[key] = hm; meta[key] = 'history'; saveFillMemValue(row, key, hm); }
-          if (!hm) {
-            var td = templateDefault(lab, row);                                   /* the template's OWN standard value */
-            if (td) { vals[key] = td; meta[key] = 'template'; }
-            else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }
-          }
-        }
-      } else meta[key] = vals[key] ? 'set' : 'blank';
+        var resolved = resolveInitialField(lab, row, pmem);
+        vals[key] = resolved.value; meta[key] = resolved.kind;
+        if (resolved.kind === 'default') { row._onfDefaultKeys = row._onfDefaultKeys || {}; row._onfDefaultKeys[key] = true; }
+      } else meta[key] = vals[key] ? ((row && row._onfDefaultKeys && row._onfDefaultKeys[key]) ? 'default' : 'set') : 'blank';
     }
     if (row) row._onfVals = vals;
     /* render the note from raw + current values */
     var rendered = applyVals(raw, vals);
-    if (rendered !== (ta.value || '')) {
-      ta.value = rendered;
-      safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
-      if (prep) safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = rendered; });
-    }
+    writeRendered(ta, row, rendered);
+    if (prep) safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = rendered; });
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
     box.className = 'onf-fillbox';
+    safe(function () { box.setAttribute('data-onf-for', ta.id); });
     var rowsHtml = tokens.map(function (label) {
       var key = label.toLowerCase(), spec = fieldSpec(label), cur = vals[key] || '', kind = meta[key] || 'blank';
       var fid = 'onfF_' + idx + '_' + key.replace(/[^a-z0-9]+/g, '_'), ctrl;
@@ -788,10 +1057,24 @@
       }
       var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
         : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
+        : kind === 'default' ? ' <span class="onf-default">your default</span>'
         : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
         : kind === 'template' ? ' <span class="onf-hist">from template</span>'
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
-      return '<label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>';
+      var acts = [], recent = priorValues(label)[0] || '', def = fieldDefault(label);
+      var reusableSurface = kind !== 'known' && kind !== 'history' && kind !== 'template';
+      if (reusableSurface && recent && S(recent).toLowerCase() !== S(cur).toLowerCase()) {
+        acts.push('<button type="button" class="onf-recent" data-onf-recent-control="' + esc(fid) + '" data-onf-recent-value="' + esc(recent) + '">Last used: ' + esc(recent) + ' — use</button>');
+      }
+      if (reusableSurface && defaultEligible(label)) {
+        if (!def) acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">☆ Use every time</button>');
+        else {
+          acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">Change default</button>');
+          acts.push('<button type="button" class="onf-stop" data-onf-default-act="clear" data-onf-default-label="' + esc(label) + '">Stop using</button>');
+        }
+      }
+      return '<div class="onf-field"><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>' +
+        (acts.length ? ('<div class="onf-field-actions">' + acts.join('') + '</div>') : '') + '</div>';
     }).join('');
     var blanks = 0; for (var m in meta) if (meta[m] === 'blank') blanks++;
     /* onf-2.4.0 (owner: "one or two clicks then it's done"): the accept step IS
@@ -800,10 +1083,10 @@
     var saveBtn = prep ? ('<div style="margin-top:9px;display:flex;align-items:center;gap:9px;">' +
       '<button type="button" class="onf-accept" data-onf-accept="' + idx + '">✓ Looks right — save to History' + (blanks ? (' (' + blanks + ' blank' + (blanks === 1 ? '' : 's') + ' left)') : '') + '</button>' +
       '<span style="font:600 10.5px system-ui;color:#7a5310;">saves to this patient’s History only — never sent to Athena</span></div>') : '';
-    box.innerHTML = '<div class="onf-h">✏️ Fields (' + tokens.length + ') — pre-filled with best guesses; change any in one click' + (blanks ? ' · <b>' + blanks + '</b> still need a value' : '') + '</div>' +
+    box.innerHTML = '<div class="onf-h">✏️ Fields (' + tokens.length + ') — known facts and your saved defaults fill first' + (blanks ? ' · <b>' + blanks + '</b> still need a value' : '') + '</div>' +
       '<div class="onf-grid">' + rowsHtml + '</div>' +
-      '<div class="onf-note">Every field is pre-selected from the patient + procedure context. Changing one updates the note instantly.</div>' + saveBtn;
-    if (!existing) ta.parentNode.insertBefore(box, ta);
+      '<div class="onf-note">Anything uncertain stays editable. “Use every time” applies only after you choose it, and changing a field updates this draft instantly.</div>' + saveBtn;
+    if (!existing || ta.previousElementSibling !== box) ta.parentNode.insertBefore(box, ta);
     var acc = box.querySelector('[data-onf-accept]');
     if (acc) acc.addEventListener('click', function () {
       safe(function () { if (isFn(window.opPrepSave)) window.opPrepSave(+acc.getAttribute('data-onf-accept')); });
@@ -815,11 +1098,14 @@
           if (!row) return;
           var label = el.getAttribute('data-onf-label'), val = S(el.value).trim();
           row._onfVals = row._onfVals || {}; row._onfVals[label.toLowerCase()] = val;
+          row._onfDefaultKeys = row._onfDefaultKeys || {};
+          var pinnedNow = fieldDefault(label);
+          if (pinnedNow && pinnedNow.value === val) row._onfDefaultKeys[label.toLowerCase()] = true;
+          else delete row._onfDefaultKeys[label.toLowerCase()];
           saveFillMemValue(row, label.toLowerCase(), val);   /* per-patient memory (onf-1.7.0) */
-          safe(function () { if (val && typeof window.addOpFieldVal === 'function') window.addOpFieldVal(label.toLowerCase(), val); });  /* cross-patient dropdown history */
+          safe(function () { if (val && scopedKey('opFieldVals') && typeof window.addOpFieldVal === 'function') window.addOpFieldVal(label.toLowerCase(), val); });  /* account-scoped dropdown history */
           var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
-          ta.value = out;
-          safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
+          writeRendered(ta, row, out);
           if (prep) {
             safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
             /* keep the draft autosaved as blanks fill in (parity with the retired walker) */
@@ -849,6 +1135,31 @@
         if (ctrl.tagName === 'INPUT') ctrl.addEventListener('blur', handler);
       })(ctrls[i]);
     }
+    var recentBtns = box.querySelectorAll('[data-onf-recent-control]');
+    for (var r = 0; r < recentBtns.length; r++) recentBtns[r].addEventListener('click', function () {
+      var ctrl = $(this.getAttribute('data-onf-recent-control')), val = S(this.getAttribute('data-onf-recent-value'));
+      if (!ctrl || !val) return;
+      if (ctrl.tagName === 'SELECT' && !Array.prototype.some.call(ctrl.options || [], function (o) { return S(o.value) === val; })) {
+        var opt = document.createElement('option'); opt.value = val; opt.textContent = val; ctrl.appendChild(opt);
+      }
+      ctrl.value = val;
+      safe(function () { ctrl.dispatchEvent(new Event('change', { bubbles: true })); });
+    });
+    var defBtns = box.querySelectorAll('[data-onf-default-act]');
+    for (var d = 0; d < defBtns.length; d++) defBtns[d].addEventListener('click', function () {
+      var label = S(this.getAttribute('data-onf-default-label')), act = this.getAttribute('data-onf-default-act');
+      if (act === 'clear') {
+        if (!clearFieldDefault(label)) { toast('Sign in fully before changing op-note defaults.', 'err'); return; }
+        stopDefaultInOpen(label);
+        toast('Stopped using that answer automatically.', 'ok');
+        return;
+      }
+      var ctrl = $(this.getAttribute('data-onf-default-control')), val = S(ctrl && ctrl.value).trim();
+      if (!val || val === OTHER) { toast('Choose or type the answer first.', 'err'); return; }
+      if (!saveFieldDefault(label, val)) { toast(!defaultEligible(label) ? 'Only stable practice, provider, facility, or equipment identity can be saved as a reusable default.' : 'Sign in fully before saving an op-note default.', 'err'); return; }
+      applyDefaultToOpen(label, val);
+      toast('Saved — this answer will fill the same field in future op notes.', 'ok');
+    });
   }
 
   /* ================= PART C: repair dead "Upload templates" buttons =================
@@ -952,6 +1263,14 @@
     installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js',
     applyBulk: applyBulk, _fillTokens: fillTokens, _fieldSpec: fieldSpec, _replaceToken: replaceToken,
     _patientKey: patientKey, _loadFillMem: loadFillMem, _saveFillMemValue: saveFillMemValue, _historyMed: historyMed,
+    getDefault: function (labelOrKey) { var d = fieldDefault(labelOrKey); return d ? d.value : ''; },
+    _setDefault: saveFieldDefault, _clearDefault: clearFieldDefault, _applyDefaultToOpen: applyDefaultToOpen, _applyDefaultToBoxes: applyDefaultToBoxes,
+    _priorValues: priorValues, _anonymousField: anonymousField, _defaultEligible: defaultEligible,
+    _scopedKey: scopedKey, _fieldDefault: fieldDefault, _applyVals: applyVals, _sigOf: sigOf,
+    _adoptRenderedEdits: adoptRenderedEdits, _acceptExternalEdit: acceptExternalEdit, _existingFillBox: existingFillBox,
+    _knownValue: knownValue, _buildOptions: buildOptions, _resolveInitialField: resolveInitialField, _buildFillBox: buildFillBox, _ensureHeader: ensureHeader,
+    _chartPatient: chartPatient, _chartValue: chartValue, _patientHistText: patientHistText,
+    _verifiedHistoryVisits: verifiedHistoryVisits, _profile: provProfile,
     wireUploadButtons: wireUploadButtons, tick: tick, revert: revert
   };
 

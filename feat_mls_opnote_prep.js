@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.4.0';
+  var VERSION = 'opnp-1.6.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -73,6 +73,7 @@
    * An 'ambiguous' or name-only-with-conflict result is a SAFETY STOP for
    * saving to a chart (the caller must not silently pick one).
    * ======================================================================= */
+  function immutablePatientId(appt, rowPatientId) { appt = appt || {}; return trim(rowPatientId || appt.patientId || appt._mlsTargetPatientId || ''); }
   function apptId(appt) { appt = appt || {}; return S(appt.athenaId || appt.mrn || appt.patient_external_id || appt.externalId || ''); }
   function ptId(p) { p = p || {}; return S(p.athenaId || p.mrn || p.id || ''); }
 
@@ -85,15 +86,27 @@
     var t = S(s).trim(), d = digits(t);
     return d.length >= 4 && d.length <= 15 && d.length >= t.length - 3;
   }
-  function resolvePatient(appt) {
+  function resolvePatient(appt, rowPatientId) {
     appt = appt || {};
     var out = { patient: null, status: 'no-record', warnings: [] };
     var pts = getPts();
+    var exactId = immutablePatientId(appt, rowPatientId);
     var rawId = apptId(appt);
     var wantName = nname(appt.name);
     var wantDob = normDob(appt.dob);
 
-    // Tier 0: EXACT internal record id — schedule rows carry the app's own
+    // Tier 0: EXACT row / appointment patient id. If supplied, it owns the
+    // decision and may not fall through to an ambiguous name+DOB match.
+    if (exactId) {
+      for (var ix = 0; ix < pts.length; ix++) {
+        if (S(pts[ix].id) === exactId) { out.patient = pts[ix]; out.status = 'id-match'; return out; }
+      }
+      out.status = 'ambiguous';
+      out.warnings.push('The exact patient id on this op-note row no longer matches a chart record — refusing to guess.');
+      return out;
+    }
+
+    // Tier 0b: EXACT internal record id from the schedule's external-id field.
     // patient id; a byte-identical match is the safest key there is.
     if (rawId) {
       for (var i0 = 0; i0 < pts.length; i0++) {
@@ -139,6 +152,7 @@
    * (2)+(3) PROVIDER + FACILITY context (from the app's own settings getters).
    * ======================================================================= */
   function pick() { for (var i = 0; i < arguments.length; i++) { var f = arguments[i]; try { if (isFn(window[f])) { var v = trim(window[f]()); if (v) return v; } } catch (e) {} } return ''; }
+  function savedDefault(key) { try { var api = window.__mlsOpNoteFill; return api && isFn(api.getDefault) ? trim(api.getDefault(key)) : ''; } catch (e) { return ''; } }
   // provider name + credential, WITHOUT doubling if the stored name already
   // carries the credential (real data: getProviderName()="Jane Doe, MD",
   // getProviderCred()="MD" -> "Jane Doe, MD", not "Jane Doe, MD, MD").
@@ -150,22 +164,29 @@
     try { if (new RegExp('(^|[,\\s])' + q + '\\.?\\s*$', 'i').test(name)) return name; } catch (e) {}
     return name + ', ' + cred;
   }
+  function providerIdentityKey(value) {
+    return trim(value).toLowerCase()
+      .replace(/\b(?:md|do|np|npi|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
   function providerFacilityCtx() {
-    /* opnp-1.2.0: overlay the PRACTICE PROFILE (set once in op-prep, key
-       mls_provider_profile) so operating provider / NPI / facility / practice
-       fill on every note's attestation instead of showing [[blank]] warnings.
-       The profile wins when set; otherwise fall back to the app's own getters. */
-    var prof = {}; try { prof = JSON.parse(localStorage.getItem('mls_provider_profile') || '{}') || {}; } catch (e) {}
+    /* Settings are the single account-scoped source of provider/practice facts.
+       Never read the retired global mls_provider_profile key: it had no account
+       owner and could leak values between clinicians. Practice and facility are
+       separate facts; a group name must never be silently used as an ASC/site. */
     var ctx = {
-      provider: trim(prof.name) || pick('getProviderName', 'getName'),
+      provider: pick('getProviderName', 'getName'),
       cred: pick('getProviderCred'),
       spec: pick('getSpec'),
-      npi: trim(prof.npi) || pick('getNpi', 'getNPI'),
+      npi: pick('getNpi', 'getNPI'),
       license: pick('getLicense', 'getProviderLicense'),
       dea: pick('getDea', 'getDEA'),
-      facility: trim(prof.facility) || trim(prof.practice) || pick('getPracticeName'),
-      facilityAddress: pick('getClinicAddress'),
-      facilityPhone: pick('getClinicPhone')
+      practice: pick('getPracticeName'),
+      practiceAddress: pick('getClinicAddress'),
+      practicePhone: pick('getClinicPhone'),
+      facility: pick('getFacilityName') || savedDefault('facility_name'),
+      facilityAddress: pick('getFacilityAddress'),
+      facilityPhone: pick('getFacilityPhone')
     };
     return ctx;
   }
@@ -183,7 +204,7 @@
     // procedure date
     add('date', 'Procedure date', !!trim(row && row.dateStr), 'error');
     // patient identity
-    var res = resolvePatient(appt);
+    var res = resolvePatient(appt, row && row.patientId);
     var idOk = (res.status === 'id-match' || res.status === 'name-dob-match');
     add('identity', 'Patient identity (ID/DOB verified)', idOk, 'error');
     // procedure text
@@ -195,7 +216,7 @@
     add('provider', 'Operating provider name', !!pf.provider, 'warn');
     add('npi', 'Provider NPI', !!pf.npi, 'warn');
     // facility
-    add('facility', 'Facility / practice', !!pf.facility, 'warn');
+    add('facility', 'Facility', !!pf.facility, 'warn');
 
     var ok = true, blockingSave = false;
     for (var i = 0; i < items.length; i++) {
@@ -212,19 +233,39 @@
     var ctx = {}, k;
     if (baseCtx) for (k in baseCtx) { if (baseCtx.hasOwnProperty(k)) ctx[k] = baseCtx[k]; }
     var pf = providerFacilityCtx();
-    // provider + identifiers -> the note MUST name the operating provider.
-    if (pf.provider) ctx.provider = providerDisplay(pf);
-    if (pf.spec) ctx.providerSpecialty = pf.spec;
-    if (pf.npi) ctx.providerNpi = pf.npi;
-    if (pf.license) ctx.providerLicense = pf.license;
-    if (pf.dea) ctx.providerDea = pf.dea;
-    // facility.
-    var fac = pf.facility;
-    // an appointment-level location, if the schedule row carried one, overrides.
-    var loc = appt ? trim(appt.facility || appt.location || appt.department || appt.dept || '') : '';
-    if (loc) fac = loc;
-    if (fac) ctx.facility = fac;
-    if (pf.facilityAddress) ctx.facilityAddress = pf.facilityAddress;
+    /* Appointment/base context outranks account Settings for provider identity.
+       If a different appointment provider is selected, do not pair that name
+       with the signed-in provider's NPI/license. */
+    var configuredProvider = providerDisplay(pf);
+    var apptProvider = appt ? trim(appt.providerName || appt.provider_name || appt.provider || '') : '';
+    var baseProvider = trim(ctx.provider || ctx.providerName || '');
+    var chosenProvider = apptProvider || baseProvider || configuredProvider;
+    var sameAsConfigured = !chosenProvider || !configuredProvider || providerIdentityKey(chosenProvider) === providerIdentityKey(configuredProvider);
+    if (chosenProvider) { ctx.provider = chosenProvider; ctx.providerName = chosenProvider; }
+    var apptNpi = appt ? trim(appt.providerNpi || appt.provider_npi || '') : '';
+    if (apptNpi) ctx.providerNpi = apptNpi;
+    else if (!sameAsConfigured) { delete ctx.providerNpi; delete ctx.providerLicense; delete ctx.providerDea; delete ctx.providerCredentials; }
+    else {
+      if (pf.npi && !ctx.providerNpi) ctx.providerNpi = pf.npi;
+      if (pf.license && !ctx.providerLicense) ctx.providerLicense = pf.license;
+      if (pf.dea && !ctx.providerDea) ctx.providerDea = pf.dea;
+    }
+    if (pf.spec && !ctx.providerSpecialty) ctx.providerSpecialty = pf.spec;
+    if (pf.practice && !ctx.practice) ctx.practice = pf.practice;
+
+    /* A schedule/base facility outranks the account default. Practice address
+       remains practice-only, and a different site never borrows the configured
+       facility's address. */
+    var baseFacility = trim(ctx.facility || ctx.facilityName || '');
+    var loc = appt ? trim(appt.facilityName || appt.facility_name || appt.facility || appt.location || appt.department || appt.dept || '') : '';
+    var fac = loc || baseFacility || pf.facility;
+    if (fac) { ctx.facility = fac; ctx.facilityName = fac; }
+    if (pf.practiceAddress && !ctx.practiceAddress) ctx.practiceAddress = pf.practiceAddress;
+    if (pf.practicePhone && !ctx.practicePhone) ctx.practicePhone = pf.practicePhone;
+    var apptFacilityAddress = appt ? trim(appt.facilityAddress || appt.facility_address || '') : '';
+    if (apptFacilityAddress) ctx.facilityAddress = apptFacilityAddress;
+    else if (loc) delete ctx.facilityAddress;
+    else if (!baseFacility && pf.facilityAddress) ctx.facilityAddress = pf.facilityAddress;
     return ctx;
   }
 
@@ -246,7 +287,9 @@
       + (pf.license ? ('   State license: ' + pf.license) : '')
       + (pf.dea ? ('   DEA: ' + pf.dea) : ''));
     L.push('Facility: ' + (pf.facility || '[[facility_name]]'));
-    if (pf.facilityAddress) L.push(pf.facilityAddress);
+    if (pf.facilityAddress) L.push('Facility address: ' + pf.facilityAddress);
+    if (pf.practice) L.push('Practice: ' + pf.practice);
+    if (pf.practiceAddress) L.push('Practice address: ' + pf.practiceAddress);
     L.push('(DRAFT — not submitted to athenaOne. Review, edit, and sign in your EMR.)');
     return '\n\n' + L.join('\n') + '\n';
   }
@@ -338,26 +381,30 @@
     // dob passthrough only (NO name-based id guess — id is carried positionally
     // via the openOpPrep wrapper, which knows the row order).
     wrap('_opNewRow', function (orig) {
-      return function (name, reason, dob, dateStr) {
+      return function (name, reason, dob, dateStr, patientId) {
         var row = orig.apply(this, arguments);
-        try { if (row && row.appt) row.appt.dob = row.appt.dob || S(dob || ''); } catch (e) {}
+        try { if (row && row.appt) { row.patientId = trim(row.patientId || patientId); row.appt.patientId = trim(row.appt.patientId || row.patientId); row.appt.dob = row.appt.dob || S(dob || ''); } } catch (e) {}
         return row;
       };
     });
 
     // (1) identity-safe patient ctx + (2)(3) provider/facility enrichment.
     wrap('_opPatientCtx', function (orig) {
-      return function (name, dob, patientId) {
+      return function (name, dob, patientId, apptArg) {
         /* The base app now owns exact resolution by immutable app patient id.
            Preserve that result verbatim: this enhancement may add provider and
            facility facts, but it may never re-resolve by active patient/name. */
-        var base = {}, appt = null, suppliedId = trim(patientId);
-        try { base = orig.apply(this, arguments) || {}; } catch (e) { base = {}; }
+        var base = {}, appt = (apptArg && typeof apptArg === 'object') ? apptArg : null, suppliedId = trim(patientId || (appt && (appt.patientId || appt._mlsTargetPatientId)));
         try {
           var rows = window._opPrep || [], ai = window.__opnpActiveIdx;
           var row = (ai != null && rows[ai]) ? rows[ai] : null;
-          if (row && trim(row.patientId) === suppliedId && row.appt && nname(row.appt.name) === nname(name)) appt = row.appt;
+          if (row && row.appt && nname(row.appt.name) === nname(name) && (!dob || !row.appt.dob || normDob(row.appt.dob) === normDob(dob))) {
+            var rowId = trim(row.patientId || row.appt.patientId || row.appt._mlsTargetPatientId);
+            if (!suppliedId) suppliedId = rowId;
+            if (rowId === suppliedId) appt = row.appt;
+          }
         } catch (e2) {}
+        try { base = orig.call(this, name, dob, suppliedId, appt) || {}; } catch (e) { base = {}; }
         if (!suppliedId || trim(base.patientId) !== suppliedId) {
           base = {};
           base._idStatus = suppliedId ? 'id-mismatch' : 'missing-id';
@@ -393,6 +440,14 @@
       return function (name, dateStr, procedure, tplText, ctx) {
         var enriched = enrichCtx(name, ctx || {}, null);
         var pf = providerFacilityCtx();
+        // Carry the exact schedule-level facility through to the deterministic
+        // footer, without borrowing the practice clinic's address.
+        if (enriched.provider) { pf.provider = enriched.provider; pf.cred = ''; }
+        if (enriched.providerNpi) pf.npi = enriched.providerNpi;
+        if (enriched.practice) pf.practice = enriched.practice;
+        if (enriched.practiceAddress) pf.practiceAddress = enriched.practiceAddress;
+        if (enriched.facility && enriched.facility !== pf.facility) { pf.facility = enriched.facility; pf.facilityAddress = ''; }
+        else if (enriched.facility) pf.facility = enriched.facility;
         var p;
         try { p = orig.call(this, name, dateStr, procedure, tplText, enriched); } catch (e) { p = null; }
         if (!p || typeof p.then !== 'function') {
@@ -415,12 +470,15 @@
         try {
           var rows = window._opPrep || [];
           if (rows.length === 1 && rows[0] && rows[0].appt) {
-            var nm = rows[0].appt.name, best = null;
+            rows[0].appt.patientId = trim(rows[0].appt.patientId || rows[0].patientId || pid);
+            var nm = rows[0].appt.name, wantDob = normDob(rows[0].appt.dob), exactRowId = trim(rows[0].patientId || rows[0].appt.patientId || pid), best = null;
             var all = (window._calAppts || []) || [];
             var todayKey = dayKeyOf(new Date());
             for (var j = 0; j < all.length; j++) {
               var a = all[j];
-              if (nname(a.name) !== nname(nm)) continue;
+              var aid = trim(a.patient_external_id || a._mlsTargetPatientId || a.patientId || '');
+              if (exactRowId && aid) { if (aid !== exactRowId) continue; }
+              else if (nname(a.name) !== nname(nm) || (wantDob && normDob(a.dob) !== wantDob)) continue;
               var dk = S(a.appt_date || S(a.start_at || '').slice(0, 10));
               if (dk >= todayKey && (!best || dk < best)) best = dk;   // soonest UPCOMING procedure day
             }
@@ -449,6 +507,7 @@
             for (var i = 0; i < rows.length; i++) {
               if (!rows[i] || !rows[i].appt) continue;
               rows[i].appt.athenaId = S(raw[i].patient_external_id || raw[i].athenaId || raw[i].mrn || '');
+              rows[i].appt.patientId = trim(rows[i].patientId || raw[i].patient_external_id || raw[i]._mlsTargetPatientId || raw[i].patientId || '');
               rows[i].appt.location = S(raw[i].location || raw[i].department || raw[i].dept || raw[i].facility || '');
               rows[i].appt.dob = rows[i].appt.dob || S(raw[i].dob || '');
             }
@@ -465,7 +524,7 @@
         try {
           var row = (window._opPrep || [])[i];
           if (row && row.appt) {
-            var res = resolvePatient(row.appt);
+            var res = resolvePatient(row.appt, row.patientId);
             if (res.status === 'ambiguous') {
               var msg = document.getElementById('opPrepMsg_' + i);
               if (msg) { msg.style.color = '#b4231e'; msg.innerHTML = '⛔ Not saved — ' + esc(res.warnings[0] || 'patient identity could not be confirmed') + ' Open the patient in the Patients tab to confirm, then save.'; }
@@ -579,15 +638,17 @@
     var fails = [], t = 0;
     function ok(cond, label) { t++; if (!cond) fails.push(label); }
     var g = {}, gi;
-    var gk = ['getProviderName', 'getProviderCred', 'getSpec', 'getNpi', 'getPracticeName',
-              'getClinicAddress', 'getPatients', '_calAppts', 'getTemplateById', '_opApptsForDay'];
+    var gk = ['getProviderName', 'getProviderCred', 'getSpec', 'getNpi', 'getPracticeName', 'getFacilityName',
+              'getFacilityAddress', 'getClinicAddress', 'getPatients', '_calAppts', 'getTemplateById', '_opApptsForDay'];
     for (gi = 0; gi < gk.length; gi++) { g[gk[gi]] = window[gk[gi]]; }
     try {
       window.getProviderName = function () { return 'Jane Vresilovic'; };
       window.getProviderCred = function () { return 'MD'; };
       window.getSpec = function () { return 'PM&R'; };
       window.getNpi = function () { return '1234567890'; };
-      window.getPracticeName = function () { return 'POSM ASC West Chester'; };
+      window.getPracticeName = function () { return 'POSM Pain Group'; };
+      window.getFacilityName = function () { return 'POSM ASC West Chester'; };
+      window.getFacilityAddress = function () { return '700 ASC Drive'; };
       window.getClinicAddress = function () { return '600 E Marshall St'; };
 
       var mockPts = [
@@ -621,10 +682,14 @@
       ok(e.provider === 'Jane Vresilovic, MD', 'T7 provider name+cred in ctx');
       ok(e.providerNpi === '1234567890', 'T8 NPI in ctx');
       ok(e.facility === 'POSM ASC West Chester', 'T9 facility in ctx');
+      ok(e.practice === 'POSM Pain Group', 'T9a practice remains separate from facility');
+      ok(e.practiceAddress === '600 E Marshall St', 'T9aa clinic address remains practice-scoped');
+      ok(e.facilityAddress === '700 ASC Drive', 'T9ab facility address requires a facility-scoped getter');
       ok(e.dob === '03/24/1980', 'T9b base ctx preserved');
       // appt location overrides facility
       var e2 = enrichCtx('John Smith', {}, { location: 'Main OR Suite 3' });
       ok(e2.facility === 'Main OR Suite 3', 'T10 appt location overrides facility');
+      ok(!e2.facilityAddress && e2.practiceAddress === '600 E Marshall St', 'T10a appointment facility never borrows practice address');
 
       // (4) readiness — full green
       var rowFull = { dateStr: 'Monday, July 13, 2026', proc: 'Left L5-S1 TFESI', tplId: 'tpl1', appt: { name: 'John Smith', dob: '03/24/1980', athenaId: '7001' } };
