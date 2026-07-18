@@ -97,6 +97,17 @@ function makeSandbox() {
 
 assert(pmSource.includes("version: 'pm-1.0.1'"), 'patient-merge deferral release marker missing');
 
+/* si-1.7.9 (live 2026-07-18): the MANUAL history retry enters runHistoryBatch
+ * without pull()'s busy stamping, so the deferred merge fired MID-RETRY and
+ * clobbered fresh saves (retry claimed 5 recovered, storage kept 2). The
+ * batch itself must keep __mlsPullBusyAt fresh on every entry path. */
+{
+  const stamps = siSource.match(/window\.__mlsPullBusyAt = Date\.now\(\); \}\); \/\* si-1\.7\.9/g) || [];
+  assert(stamps.length >= 2, 'runHistoryBatch must stamp the busy signal per patient AND at finalization');
+  const batchStart = siSource.indexOf('historyBatchRunning = true;\n    /* si-1.7.9');
+  assert(batchStart > 0, 'runHistoryBatch must stamp the busy signal at batch start');
+}
+
 /* ------------- part 2: si-1.7.6 counted import statuses (contract) ------- */
 assert(siSource.includes('onEach: onEachImport'),
   'the day pull must pass the counting onEach into importAppts');

@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.8";
+  var VERSION = "si-1.7.9";
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -1863,6 +1863,15 @@
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
     }
     historyBatchRunning = true;
+    /* si-1.7.9 (LIVE 2026-07-18, owner's machine): the MANUAL history retry
+       enters this batch WITHOUT pull()'s __mlsPullBusyAt stamping, so the
+       pm-1.0.1 deferred dup-merge timer fired MID-RETRY and rewrote the
+       patient store over the retry's fresh saves — the retry honestly
+       reported 5 recovered, then storage verification found only 2 kept.
+       The batch itself now keeps the busy stamp fresh (start + every
+       patient + finalization) so EVERY entry path defers the merge; the
+       stamp ages out 90s after the last touch (pull() still zeroes its own). */
+    safe(function () { window.__mlsPullBusyAt = Date.now(); });
     var stopAfterTimeout = false;
     /* User preference: pull the six-card chart history WITHOUT opening every
        encounter body (much faster day prep). Default ON (full visits). Read
@@ -1942,6 +1951,7 @@
     }
     try {
       for (var i = 0; i < rows.length; i++) {
+        safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: keep the merge deferred for the whole batch */
         if (Date.now() >= batchDeadlineAt) {
           receipt.timedOut = true; stopAfterTimeout = true;
           for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
@@ -2116,6 +2126,7 @@
          patient's read), then evaluate completeness honestly in order. */
       for (var pw = 0; pw < pipelineParses.length; pw++) { try { await pipelineParses[pw].promise; } catch (ePipe) {} }
       for (var pf = 0; pf < pipelineParses.length; pf++) {
+        safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: finalization saves are still merge-unsafe */
         var pEntry = pipelineParses[pf], pOne = pEntry.one;
         if (!pOne.organized && !/timeout|deadline/i.test(String(pOne.chartReason || "")) && Date.now() + 300000 < batchDeadlineAt) {
           pOne.chartRetried = true; pOne.parseDeferredRetried = true;
