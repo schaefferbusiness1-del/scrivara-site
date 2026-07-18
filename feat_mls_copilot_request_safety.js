@@ -8,7 +8,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.1.0";
+  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.1.1";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -172,8 +172,10 @@
       else if (!response.ok) ownerHistory.push({ role: "ai", text: data.error || ("Copilot could not answer (server status " + response.status + "). Try again."), requestId: token.id });
       else {
         var meta = uniqueMeta(data, token.id);
+        var normalizedActions = isFn(window._copilotNormalizeActions)
+          ? window._copilotNormalizeActions(q, meta.actions) : meta.actions;
         ownerHistory.push({ role: "ai", text: data.reply || "Copilot returned no answer. Try rephrasing the question.", requestId: token.id,
-          actions: meta.actions, followups: meta.followups, artifact: meta.artifact });
+          actions: normalizedActions, followups: meta.followups, artifact: meta.artifact });
       }
       return true;
     } catch (e1) {

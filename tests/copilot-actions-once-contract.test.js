@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 assert(source.includes("var VERSION = 'ca-2.0.2'"));
 /* ca-2.0.2: unknown model-drift kinds resolve to a REAL view or say so —
@@ -18,6 +19,23 @@ assert(!source.includes('installFetchPeek') && !source.includes('__mlsCaWrapped'
 assert(!source.includes('window.fetch ='), 'action asset still replaces the shared fetch function');
 assert(!source.includes("fetch(base + '/api/copilot',"), 'action asset still issues or parses a second base Copilot request');
 assert(source.includes("fetch(base + '/api/copilot/email'"), 'explicit user-clicked email route was accidentally removed');
+
+const normalizeStart = appSource.indexOf('function _copilotTopPatientsByVisits');
+const normalizeEnd = appSource.indexOf('function _copilotRenderThread', normalizeStart);
+assert(normalizeStart >= 0 && normalizeEnd > normalizeStart, 'client response action normalizer is missing');
+const normalizeContext = { Array, String, Object, RegExp };
+vm.runInNewContext(appSource.slice(normalizeStart, normalizeEnd), normalizeContext, { filename: 'ScribeFlow-copilot-normalizer.js' });
+const localTopActions = normalizeContext._copilotNormalizeActions('Who are my top patients by visit count?', undefined);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(localTopActions)), [{ label: 'View Top Patients', kind: 'navigate', arg: 'patients' }], 'local visit-count answer did not receive the canonical action');
+const dedupedTopActions = normalizeContext._copilotNormalizeActions('top patients with the most visits', [
+  { label: 'View Patient List', kind: 'navigate', arg: 'patients' },
+  { label: 'View Top Patients', kind: 'navigate', arg: 'patients' },
+  { label: 'View Appointments', kind: 'navigate', arg: 'calendar' }
+]);
+assert.strictEqual(dedupedTopActions.filter(a => a.label === 'View Top Patients').length, 1, 'top-patient action was duplicated');
+assert.strictEqual(dedupedTopActions.some(a => a.label === 'View Patient List'), false, 'generic patient navigation was not replaced');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(normalizeContext._copilotNormalizeActions('What are the top problems?', []))), [], 'unrelated answers were given a patient action');
+assert(appSource.includes('actions:_copilotNormalizeActions(q,d.actions||[])'), 'Copilot success path bypasses the client response action normalizer');
 
 function hasClass(node, cls) { return String(node.className || '').split(/\s+/).includes(cls); }
 function walk(rootNode) {

@@ -9889,6 +9889,23 @@ function _copilotRenderChips(){
 }
 function copilotChip(btn){ var i=document.getElementById('copilotInput'); if(i){ i.value=btn.textContent; } copilotAsk(); }
 function copilotChipText(t){ var i=document.getElementById('copilotInput'); if(i){ i.value=t; } copilotAsk(); }
+/* Local analytics may satisfy visit-count questions before /api/copilot reaches
+   the backend. Normalize the canonical action client-side as the final response
+   boundary so both local and AI answers expose the same working route. */
+function _copilotTopPatientsByVisits(question){
+  var q=String(question||'');
+  return /\btop\s+patients?\b.*\bvisits?\b/i.test(q) || /patients?.{0,40}(?:visit count|most visits|highest visits)/i.test(q);
+}
+function _copilotNormalizeActions(question, actions){
+  var list=Array.isArray(actions)?actions.filter(function(a){ return a&&typeof a==='object'; }):[];
+  if(!_copilotTopPatientsByVisits(question)) return list;
+  var rest=list.filter(function(a){
+    var label=String(a.label||''), kind=String(a.kind||'').toLowerCase(), arg=String(a.arg||'').toLowerCase();
+    return !((kind==='navigate'&&/\bpatients?\b/.test(arg)) || /\b(?:view|navigate|open)\b.*\bpatients?\b/i.test(label));
+  });
+  rest.unshift({label:'View Top Patients',kind:'navigate',arg:'patients'});
+  return rest.slice(0,4);
+}
 function _copilotRenderThread(){
   var box=document.getElementById('copilotThread'); if(!box) return;
   if(!_copilotHistory.length){
@@ -10000,7 +10017,7 @@ async function copilotAsk(){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     if(r.status===403){ _copilotHistory.push({role:'ai',text:'Copilot is available on clinician accounts.'}); }
     else if(!r.ok){ _copilotHistory.push({role:'ai',text:(d.error||'Copilot had trouble answering. Try again.')}); }
-    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[],artifact:d.artifact||null}); }
+    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:_copilotNormalizeActions(q,d.actions||[]),followups:d.followups||[],artifact:d.artifact||null}); }
   }catch(e){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
@@ -24109,7 +24126,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b399';
+  window.__MLS_AV='b400';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

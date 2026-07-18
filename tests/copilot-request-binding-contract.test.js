@@ -7,6 +7,11 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_request_safety.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const normalizeStart = appSource.indexOf('function _copilotTopPatientsByVisits');
+const normalizeEnd = appSource.indexOf('function _copilotRenderThread', normalizeStart);
+assert(normalizeStart >= 0 && normalizeEnd > normalizeStart, 'client Copilot action normalizer is missing');
+const normalizeSource = appSource.slice(normalizeStart, normalizeEnd);
 
 function deferred() {
   let resolve;
@@ -14,8 +19,8 @@ function deferred() {
   return { promise, resolve };
 }
 
-function makeHarness() {
-  const input = { value: 'summarize this patient', style: {} };
+function makeHarness(prompt = 'summarize this patient') {
+  const input = { value: prompt, style: {} };
   const chips = { innerHTML: '' };
   const send = { disabled: false };
   const nodes = { copilotInput: input, copilotChips: chips, copilotSendBtn: send };
@@ -55,6 +60,7 @@ function makeHarness() {
       currentVisitAthenaEpoch = epoch;
     }
   `, context);
+  vm.runInContext(normalizeSource, context, { filename: 'ScribeFlow-copilot-normalizer.js' });
   vm.runInContext(source, context, { filename: 'feat_mls_copilot_request_safety.js' });
   return {
     context, request, calls, requestOptions, toasts,
@@ -81,6 +87,7 @@ function makeHarness() {
   assert(stale.toasts.some(t => /discarded/i.test(t)), 'patient switch did not produce an honest discarded-result notice');
 
   const stable = makeHarness();
+  assert.strictEqual(stable.context.__mlsCopilotRequestSafety.version, 'crs-1.1.1');
   const stableRun = stable.context.copilotAsk();
   stable.request.resolve({ ok: true, status: 200, json: () => Promise.resolve({
     reply: 'Safe answer',
@@ -93,6 +100,16 @@ function makeHarness() {
   assert.strictEqual(safeAnswer.actions.length, 1, 'duplicate Copilot response action survived normalization');
   assert.strictEqual(safeAnswer.followups.length, 1, 'duplicate Copilot follow-up survived normalization');
   assert.strictEqual(stable.context._copilotHistory.some(m => m.role === 'pending'), false);
+
+  const localTop = makeHarness('Who are my top patients by visit count?');
+  const localTopRun = localTop.context.copilotAsk();
+  localTop.request.resolve({ ok: true, status: 200, json: () => Promise.resolve({ reply: 'Local visit-count answer' }) });
+  assert.strictEqual(await localTopRun, true);
+  const localTopAnswer = localTop.context._copilotHistory.find(m => m.role === 'ai' && m.text === 'Local visit-count answer');
+  assert(localTopAnswer, 'production request-safety owner dropped the local visit-count answer');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(localTopAnswer.actions)), [
+    { label: 'View Top Patients', kind: 'navigate', arg: 'patients' }
+  ], 'production request-safety owner bypassed the top-patient action normalizer');
 
   const limited = makeHarness();
   const limitedRun = limited.context.copilotAsk();
