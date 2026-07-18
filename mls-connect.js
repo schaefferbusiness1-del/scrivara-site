@@ -32081,7 +32081,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b400';
+  window.__MLS_AV = window.__MLS_AV || 'b401';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32372,7 +32372,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-18-b400';
+  var MLS_APP_BUILD='2026-07-18-b401';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -40652,7 +40652,7 @@
 ;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sr231";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260716pr203';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/Send owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260716lb200';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* shared request-owned progress: real counts/stages, deadlines, stale rejection, retry/cancel, refresh recovery; begin/end remain compatible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260717tl100';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260718tl110';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_staff_hub.js"]'))return;var s=document.createElement('script');s.src='feat_mls_staff_hub.js?v=20260714sh2';s.setAttribute('data-mls-asset','feat_mls_staff_hub.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE staff-account system: real receptionist + restricted nursing login provisioning (window.__mlsStaffHub sh-1.1.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260713cmd1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */

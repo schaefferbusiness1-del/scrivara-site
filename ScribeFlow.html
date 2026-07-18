@@ -11566,15 +11566,24 @@ async function _tplSplitOneInto(text, fallbackName){
     try{
       var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
       var d=await r.json().catch(function(){return {};});
-      if(r.status===403){ _tplMultiStatus('Template splitting is available on clinician accounts.','#b4231e'); return; }
+      if(r.status===403) break;   // AI split unavailable on this account — the per-file fallback below still keeps the file
       if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||fallbackName||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
     }catch(e){}
   }
   // If the AI found nothing in this file, keep the file itself as a single template.
   if(_tplPendingSplit.length===before && text.trim()){ _tplPendingSplit.push({ name:fallbackName||('Template '+(_tplPendingSplit.length+1)), text:text.trim(), keep:true }); }
 }
+/* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
+   (files were joined with \f) — never a dead end that demands a sign-in. */
+function _tplPerFileFallback(text){
+  _tplPendingSplit=String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){return { name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };});
+  _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
+  if(!_tplPendingSplit.length){ _tplMultiStatus('No readable text found in those files.','#b4231e'); return; }
+  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' (one per file). Review and add:','#1c7a43');
+  _renderTplSplitPreview();
+}
 async function tplAiSplit(text){
-  if(!backendMode()||!bkToken()){ _tplMultiStatus('Sign in to split templates with AI.','#b4231e'); return; }
+  if(!backendMode()||!bkToken()){ _tplPerFileFallback(text); return; }
   var chunks=_tplChunk(text, 6000);
   _tplPendingSplit=[];
   for(var ci=0; ci<chunks.length; ci++){
@@ -11582,13 +11591,13 @@ async function tplAiSplit(text){
     try{
       var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
       var d=await r.json().catch(function(){return {};});
-      if(r.status===403){ _tplMultiStatus('Template splitting is available on clinician accounts.','#b4231e'); return; }
+      if(r.status===403) break;   // AI split unavailable on this account — fall through to the per-file fallback
       if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
     }catch(e){}
   }
   _tplPendingSplit.forEach(function(t){ t.name=_tplTypeName(t.text, t.name); });   // name by note TYPE, not patient
   _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
-  if(!_tplPendingSplit.length){ _tplMultiStatus('Couldn’t detect separate templates — try the single-template upload below.','#b4231e'); return; }
+  if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
   _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+'. Review and add the ones you want:','#1c7a43');
   _renderTplSplitPreview();
 }
@@ -24126,7 +24135,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b400';
+  window.__MLS_AV='b401';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

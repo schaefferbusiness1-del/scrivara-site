@@ -9,8 +9,8 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.0.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
-  var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false};
+  var VERSION='tl-1.1.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
   var PREVIEW_STAGES=['Validating import','Checking ownership','Comparing versions','Preparing import preview'];
@@ -18,7 +18,11 @@
 
   function esc(v){return S(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function byId(id){return document.getElementById(id);}
-  function hosted(){try{return isFn(window.backendMode)&&window.backendMode()&&isFn(window.bkToken)&&!!window.bkToken();}catch(e){return false;}}
+  function hosted(){if(state.unsupported)return false;try{return isFn(window.backendMode)&&window.backendMode()&&isFn(window.bkToken)&&!!window.bkToken();}catch(e){return false;}}
+  /* The deployed backend may not serve the template-set endpoints yet. A 404 on
+     any of them means "cloud library unavailable" — flip to device-only mode
+     (the proven local flow) instead of surfacing dead-end errors. */
+  function markUnsupported(){state.unsupported=true;var panel=byId('tlPanel');if(panel)panel.style.display='none';}
   function uid(prefix){try{if(window.crypto&&isFn(window.crypto.randomUUID))return prefix+window.crypto.randomUUID();}catch(e){}return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2);}
   function setFor(id){for(var i=0;i<state.sets.length;i++)if(state.sets[i]&&state.sets[i].id===id)return state.sets[i];return null;}
   function cloneTemplates(list){try{return JSON.parse(JSON.stringify(Array.isArray(list)?list:[]));}catch(e){return [];}}
@@ -34,7 +38,7 @@
     if(options.body!==undefined)headers['Content-Type']='application/json';if(options.idempotencyKey)headers['Idempotency-Key']=options.idempotencyKey;
     var response=await window.fetch(window.bkBase()+path,{method:options.method||'GET',headers:headers,body:options.body===undefined?undefined:JSON.stringify(options.body),signal:options.signal});
     progressLink(options.progress,response);var data={};try{data=await response.json();}catch(e){}
-    if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;throw err;}
+    if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;if(response.status===404&&!(raw&&raw.code)){markUnsupported();err.code='TEMPLATE_UNSUPPORTED';err.message='Cloud template sync is not available on this server yet — templates stay on this device.';}throw err;}
     return data;
   }
 
@@ -105,7 +109,7 @@
         if(state.activeSetId&&options.applyActive!==false){var detail=await request('/api/template-sets/'+encodeURIComponent(state.activeSetId),{requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying active version',3,3,'Applying the newest active version to this device.');applySet(detail.set);}
         else state.hydrated=true;
         status('Template library refreshed.',false);renderPanel();if(handle)handle.complete('Template library refreshed.');return true;
-      }catch(error){status(error.message,true);if(handle)handle.fail(error);renderPanel();return false;}
+      }catch(error){if(error&&error.code==='TEMPLATE_UNSUPPORTED'){state.hydrated=true;if(handle)handle.complete('Device templates ready.');return false;}status(error.message,true);if(handle)handle.fail(error);renderPanel();return false;}
       finally{state.refreshPromise=null;}
     })();return state.refreshPromise;
   }
@@ -176,8 +180,19 @@
   function wrapFunctions(){
     if(isFn(window.setTemplates)&&!window.setTemplates.__tl){originals.setTemplates=window.setTemplates;var setWrap=function(list){var out=originals.setTemplates.apply(this,arguments);if(!state.applying&&state.hydrated&&state.activeSetId)scheduleSnapshot(list);return out;};setWrap.__tl=true;window.setTemplates=setWrap;}
     if(isFn(window.openTemplates)&&!window.openTemplates.__tl){originals.openTemplates=window.openTemplates;var openWrap=function(){var out=originals.openTemplates.apply(this,arguments);ensurePanel();refresh();return out;};openWrap.__tl=true;window.openTemplates=openWrap;}
-    if(isFn(window.tplAddSplit)&&!window.tplAddSplit.__tl){originals.tplAddSplit=window.tplAddSplit;var addWrap=function(){return hosted()?previewImport().catch(function(){}):originals.tplAddSplit.apply(this,arguments);};addWrap.__tl=true;window.tplAddSplit=addWrap;}
-    if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){if(!hosted())return originals.saveTemplateFromForm.apply(this,arguments);var name=S((byId('tplName')||{}).value).trim(),text=S((byId('tplText')||{}).value).trim();if(!name){if(isFn(window.toast))window.toast('Name the template first.','err');return false;}if(!text){if(isFn(window.toast))window.toast('No template text — upload a file or paste text first.','err');return false;}var keywords=S((byId('tplKeywords')||{}).value).split(',').map(function(x){return x.trim().toLowerCase();}).filter(Boolean);state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[{id:state.editingId||'',name:name,text:text,keywords:keywords,keep:true}];return previewImport({fromForm:true}).catch(function(){});};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
+    if(isFn(window.tplAddSplit)&&!window.tplAddSplit.__tl){originals.tplAddSplit=window.tplAddSplit;var addWrap=function(){
+      if(!hosted())return originals.tplAddSplit.apply(this,arguments);
+      var self=this,args=arguments,btn=null;
+      try{var box=byId('tplMultiResult');btn=box?box.querySelector('button[onclick*="tplAddSplit"]'):null;if(btn){btn.disabled=true;btn.textContent='⏳ Adding templates…';}}catch(e){}
+      /* Cloud preview failed (endpoint missing, session expired, server error):
+         nothing was saved server-side, so fall back to the proven device add —
+         the user's selection must never silently vanish. */
+      return previewImport().catch(function(){
+        try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
+        return originals.tplAddSplit.apply(self,args);
+      }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
+    };addWrap.__tl=true;window.tplAddSplit=addWrap;}
+    if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){if(!hosted())return originals.saveTemplateFromForm.apply(this,arguments);var name=S((byId('tplName')||{}).value).trim(),text=S((byId('tplText')||{}).value).trim();if(!name){if(isFn(window.toast))window.toast('Name the template first.','err');return false;}if(!text){if(isFn(window.toast))window.toast('No template text — upload a file or paste text first.','err');return false;}var keywords=S((byId('tplKeywords')||{}).value).split(',').map(function(x){return x.trim().toLowerCase();}).filter(Boolean);state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[{id:state.editingId||'',name:name,text:text,keywords:keywords,keep:true}];var selfS=this,argsS=arguments;return previewImport({fromForm:true}).catch(function(){try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving the template on this device instead.','ok');}catch(e){}window._tplPendingSplit=[];return originals.saveTemplateFromForm.apply(selfS,argsS);});};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
     if(isFn(window.editTemplate)&&!window.editTemplate.__tl){originals.editTemplate=window.editTemplate;var editWrap=function(id){state.editingId=id;return originals.editTemplate.apply(this,arguments);};editWrap.__tl=true;window.editTemplate=editWrap;}
     if(isFn(window._tplReadAnyFile)&&!window._tplReadAnyFile.__tl){originals.readFile=window._tplReadAnyFile;var readWrap=async function(file){var out=await originals.readFile.apply(this,arguments);if(activeUpload){activeUpload.done++;progressStage(activeUpload.handle,'Parsing template content',activeUpload.done,activeUpload.total,'Parsed '+S(file&&file.name||'file')+'.');}return out;};readWrap.__tl=true;window._tplReadAnyFile=readWrap;}
     if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:10*60*1000,replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}

@@ -252,9 +252,9 @@ function staticContracts() {
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260717tl100'));
+    assert(loader.includes('feat_mls_template_library.js?v=20260718tl110'));
   }
-  assert(liveLoader.indexOf('feat_mls_loading_calm.js?v=20260716lb200') < liveLoader.indexOf('feat_mls_template_library.js?v=20260717tl100'), 'shared progress must install before template lifecycle wiring');
+  assert(liveLoader.indexOf('feat_mls_loading_calm.js?v=20260716lb200') < liveLoader.indexOf('feat_mls_template_library.js?v=20260718tl110'), 'shared progress must install before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');
   assert(/function _tplMultiDrop[\s\S]{0,350}tplMultiFile\(\{target:\{files:fs/.test(html), 'drag/drop must use the same wrapped batch importer');
 }
