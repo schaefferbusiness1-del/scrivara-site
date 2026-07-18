@@ -4696,11 +4696,15 @@ function startSession(email){
        milliseconds for the visible UI bundle. Aborting this generation also
        prevents a late identity response from repainting after reveal. */
     const _gateTimeout=new Promise(resolve=>{
-      _gatePhaseTimer=setTimeout(()=>{
+      /* Same hidden-window rule as the session deadline below: a throttled
+         background tab must not abort a healthy identity/compliance check. */
+      const _armGate=ms=>{ _gatePhaseTimer=setTimeout(()=>{
+        if(document.hidden){ _armGate(5000); return; }
         _startupOpts.cancelled=true;
         try{ if(_startupController) _startupController.abort(); }catch(e){}
         resolve(false);
-      },10000);
+      },ms); };
+      _armGate(10000);
     });
     const _gateCheck=Promise.race([_gateAttempt,_gateTimeout]).then(value=>{
       clearTimeout(_gatePhaseTimer);
@@ -4726,12 +4730,18 @@ function startSession(email){
        after the gate phase for the large first-run UI bundle and quiet-frame
        verification. No optional endpoint can trap the user indefinitely. */
     const _deadline=new Promise(resolve=>{
-      _deadlineTimer=setTimeout(()=>{
+      /* Hidden/occluded windows throttle timers and pause rAF, stretching a
+         healthy startup well past any wall-clock budget — and nobody is
+         watching the gate there. Re-arm instead of aborting while hidden; the
+         deadline bites again as soon as the window is visible. */
+      const _armDeadline=ms=>{ _deadlineTimer=setTimeout(()=>{
+        if(document.hidden){ _armDeadline(8000); return; }
         _startupOpts.cancelled=true;
         try{ if(_startupController) _startupController.abort(); }catch(e){}
         try{ if(typeof window.__mlsAbortUiBundle==='function') window.__mlsAbortUiBundle('session-deadline'); }catch(e){}
         resolve(_gateDecision===true);
-      },30200);
+      },ms); };
+      _armDeadline(30200);
     });
     _sessionReady=Promise.race([_hydrate,_deadline]).then(gated=>{
       clearTimeout(_gatePhaseTimer);
@@ -24298,7 +24308,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b407';
+  window.__MLS_AV='b408';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
