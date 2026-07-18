@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.10"'), 'si-1.7.10 release marker missing');
+assert(si.includes('var VERSION = "si-1.7.11"'), 'si-1.7.11 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);
@@ -138,5 +138,10 @@ for (const banned of ['resolvedAppointments', 'res.patients', 'appts', 'historyT
 assert(diagSrc[0].includes('retryReasons: dsReasonHistogram(hr.retry)'), 'history retry entries must reduce to a reason histogram (no ids/names)');
 assert(diagSrc[0].includes('navigator.userAgent'), 'the report must carry the user agent (Chrome version diagnosis)');
 assert(connect.includes("document.execCommand('copy')"), 'old-Chrome copy fallback (execCommand) must exist');
+
+/* si-1.7.11: first-goto week-strip lag gets ONE settle-retry */
+assert(si.includes('function gotoDateSettled()'), 'nav settle-retry helper missing');
+assert(si.includes('Athena is still switching days'), 'settle-retry must say what it is doing');
+assert((si.match(/mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }/g)||[]).length >= 2, 'the settle-retry must re-dispatch the same goto');
 
 console.log('PASS ext-update hint + duplicate detection: receipt-gate failures on an outdated MLS Assist name the installed vs published version; TWO answering copies of MLS Assist are called out with the chrome://extensions fix (one answer stays silent, foreign traffic ignored); sign-in and wrong-day failures never blame the extension; version compare is numeric and fail-safe');

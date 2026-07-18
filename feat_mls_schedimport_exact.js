@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.10";
+  var VERSION = "si-1.7.11";
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -2404,7 +2404,23 @@
       if (!pong || pong.reason === "bridge-deadline-exceeded") { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return fail("no-ext"); }
       extPong.version = String(pong && (pong.version || pong.extVersion) || "").trim();
       onStatus("Opening " + date + " in athenaOne...", "");
-      return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+      /* si-1.7.11 (live, reproduced 3x on 2026-07-18): the FIRST goto after an
+         app-tab reload verifies against athena's week strip while it still
+         reads "Today", so navigation honestly fails — and the SAME goto
+         succeeds a moment later once the day view has re-rendered. Give
+         navigation ONE settle-and-retry before failing the whole pull. */
+      function gotoDateSettled() {
+        return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+          var day0 = normDate(nav && nav.schedDate);
+          var bad = !nav || nav.ok === false || (day0 && day0 !== date);
+          if (!bad) return nav;
+          onStatus("Athena is still switching days — re-checking in a moment...", "");
+          return new Promise(function (resWait) { setTimeout(resWait, 2500); }).then(function () {
+            return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
+          });
+        });
+      }
+      return gotoDateSettled().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
           onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
