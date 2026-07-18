@@ -9547,25 +9547,53 @@ function studioStatus(m,c){ var s=document.getElementById('studioStatus'); if(s)
    widgets: per-patient detail + pain trends, the upcoming schedule, and
    practice-wide aggregates. All best-effort; never throws. */
 function _studioSplit(s){ return String(s||'').split(/\n|;|,/).map(function(x){return x.trim();}).filter(Boolean); }
+/* svd-1.0.0: the snapshot used to count only NOTES MADE ON THIS DEVICE — on a
+   pulled practice that is zero, so every "chart my visits" tool rendered the
+   same empty study no matter what the doctor asked. The snapshot now merges
+   the SERVER visit-record summary (real months, E/M mix, injections,
+   satisfaction), each patient's Athena-pulled visit list (p.visits), and the
+   FULL imported schedule — kept in a 60s memo so the sync snapshot callers
+   stay sync. */
+var __mlsStudioSummary={at:0,data:null,inflight:null};
+function _studioFetchSummary(){
+  try{
+    if(!(typeof backendMode==='function'&&backendMode()&&typeof bkToken==='function'&&bkToken())) return Promise.resolve(null);
+    if(__mlsStudioSummary.data&&Date.now()-__mlsStudioSummary.at<60000) return Promise.resolve(__mlsStudioSummary.data);
+    if(__mlsStudioSummary.inflight) return __mlsStudioSummary.inflight;
+    __mlsStudioSummary.inflight=fetch(bkBase()+'/api/records/summary',{headers:{'Authorization':'Bearer '+bkToken()}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){ __mlsStudioSummary={at:Date.now(),data:d,inflight:null}; return d; })
+      .catch(function(){ __mlsStudioSummary.inflight=null; return null; });
+    return __mlsStudioSummary.inflight;
+  }catch(e){ return Promise.resolve(null); }
+}
 function studioDataSnapshot(){
-  var pts=[], allPains=[], visitDates=[], dx={};
+  var pts=[], allPains=[], visitDates=[], dx={}, fullCount=0;
+  try{ _studioFetchSummary(); }catch(e){}
   try{
     var list=(typeof getPatients==='function'?getPatients():[])||[];
+    fullCount=list.length;
+    /* Diagnoses are counted over the WHOLE practice (cheap string work); only
+       the detailed per-patient payload below is capped for size. */
+    list.forEach(function(p){ _studioSplit(p&&p.problems).forEach(function(pr){ var k=pr.toLowerCase().slice(0,40); if(k) dx[k]=(dx[k]||0)+1; }); });
     pts=list.slice(0,800).map(function(p){
       var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
       var series=notes.map(function(n){ var d=String(n.date||n.note_date||n.created_at||'').slice(0,10); var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return {date:d, pain:(v==null||v===''||isNaN(Number(v)))?null:Number(v)}; }).filter(function(x){return x.date;}).sort(function(a,b){return a.date<b.date?-1:1;});
       var dates=series.map(function(s){return s.date;});
+      /* Merge the Athena-pulled visit list (dates + reasons) into this
+         patient's history — these are real visits even without a local note. */
+      try{ (Array.isArray(p.visits)?p.visits:[]).forEach(function(v){ var d=String((v&&v.date)||'').slice(0,10); if(d&&dates.indexOf(d)<0) dates.push(d); }); }catch(e){}
+      dates.sort();
       var pains=series.map(function(s){return s.pain;}).filter(function(x){return x!=null;});
       pains.forEach(function(x){allPains.push(x);}); dates.forEach(function(d){visitDates.push(d);});
       var age=null; try{ if(p.dob){ var dd=new Date(p.dob); if(!isNaN(dd.getTime())) age=Math.floor((Date.now()-dd.getTime())/31557600000); } }catch(e){}
       var probs=_studioSplit(p.problems);
-      probs.forEach(function(pr){ var k=pr.toLowerCase().slice(0,40); if(k) dx[k]=(dx[k]||0)+1; });
       return {
         id:p.id, name:String(p.name||''), dob:String(p.dob||''), age:age, sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
         source:String(p.source||''), fromAthena:(String(p.source||'').indexOf('athena')>=0),
         summary:String(p.summary||'').slice(0,1200),
         problems:probs.slice(0,12), meds:_studioSplit(p.meds).slice(0,20), allergies:_studioSplit(p.allergies).slice(0,12),
-        visitCount:notes.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
+        visitCount:dates.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
         visitDates:dates.slice(-40),
         painSeries:series.filter(function(s){return s.pain!=null;}).slice(-40),
         maxPain: pains.length?Math.max.apply(null,pains):null, lastPain: pains.length?pains[pains.length-1]:null,
@@ -9574,14 +9602,22 @@ function studioDataSnapshot(){
     });
   }catch(e){}
   var appts=[]; try{ appts=(_calAppts||[]).slice(0,400).map(function(a){ return { name:(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'')), date:String(a.appt_date||(a.start_at||'').slice(0,10)), time:_apptHHMMTz(a.start_at), status:String(a.status||'booked'), reason:String(a.reason||''), provider:(typeof _docName==='function'?_docName(a.doctor_user_id):'') }; }); }catch(e){}
+  /* Real practice volume by month from the FULL imported schedule (not just
+     the 400 detailed appointment rows above). */
+  var apptsByMonth={}; try{ (_calAppts||[]).forEach(function(a){ var m=String(a.appt_date||(a.start_at||'')).slice(0,7); if(m) apptsByMonth[m]=(apptsByMonth[m]||0)+1; }); }catch(e){}
   var byMonth={}; visitDates.forEach(function(d){ var m=d.slice(0,7); if(m) byMonth[m]=(byMonth[m]||0)+1; });
+  /* Overlay the server's visit-record truth: for any month the server knows,
+     take the larger of local-derived vs server count. */
+  var summary=__mlsStudioSummary.data||null, serverMonths=(summary&&Array.isArray(summary.months))?summary.months:[];
+  var serverTotal=0; serverMonths.forEach(function(m){ if(m&&m.month){ serverTotal+=(Number(m.visits)||0); byMonth[m.month]=Math.max(byMonth[m.month]||0, Number(m.visits)||0); } });
   var topDx=Object.keys(dx).map(function(k){return {problem:k,count:dx[k]};}).sort(function(a,b){return b.count-a.count;}).slice(0,12);
   return {
     generatedAt:new Date().toISOString(),
     practice:{ provider:((typeof getProviderName==='function'&&getProviderName())||(typeof getName==='function'&&getName())||''), name:(typeof getPracticeName==='function'?getPracticeName():'') },
-    patientCount:pts.length, totalVisits:visitDates.length,
+    patientCount:fullCount||pts.length, patientsIncluded:pts.length, totalVisits:Math.max(visitDates.length, serverTotal),
     avgPainAcrossPractice: allPains.length?Math.round(allPains.reduce(function(a,b){return a+b;},0)/allPains.length*10)/10:null,
-    visitsByMonth:byMonth, topProblems:topDx,
+    visitsByMonth:byMonth, apptsByMonth:apptsByMonth, topProblems:topDx,
+    serverSummary: summary?{ months:serverMonths, emDistribution:(summary.em_distribution||[]).slice(0,12), satisfaction:summary.satisfaction||null }:null,
     appointments:appts, upcomingCount:appts.length,
     patients:pts
   };
@@ -9797,6 +9833,10 @@ async function generateStudioWidget(){
     return;
   }
   var btn=document.getElementById('studioGenBtn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Building…'; }
+  studioStatus('Gathering your real practice data…');
+  /* svd-1.0.0: have the server visit summary ready BEFORE the widget renders,
+     so the injected MLS_DATA carries real months/EM mix on the first build. */
+  try{ await Promise.race([_studioFetchSummary(), new Promise(function(res){ setTimeout(res,4000); })]); }catch(e){}
   studioStatus('Building your widget… this takes a few seconds.');
   try{
     var r=await fetch(bkBase()+'/api/widget/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:prompt})});
@@ -24313,7 +24353,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b409';
+  window.__MLS_AV='b410';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
