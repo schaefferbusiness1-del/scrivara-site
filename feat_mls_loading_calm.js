@@ -166,10 +166,16 @@
     var measured = named.length && named[0].total > 0 ? clone(named[0]).percent : null;
     if (busy) {
       if (hideT) { clearTimeout(hideT); hideT = null; }
-      if (!showT && !bar().classList.contains('on')) showT = setTimeout(function () { showT = null; if (api.inflight > 0 || manualStack.length || activeList().length) { bar().classList.add('on'); renderPill(true); } }, 180);
+      /* Blink-guard (live-caught b414): background heartbeats fire short
+         fetches every couple of seconds; 180ms-show/220ms-hide let the pill
+         strobe in and out ("things keep going in and out of existence").
+         A fetch now has to run 320ms to show the pill, and a 900ms quiet
+         window must pass before it hides — chained short requests read as
+         one calm "Working…" instead of a blink. */
+      if (!showT && !bar().classList.contains('on')) showT = setTimeout(function () { showT = null; if (api.inflight > 0 || manualStack.length || activeList().length) { bar().classList.add('on'); renderPill(true); } }, 320);
     } else {
       if (showT) { clearTimeout(showT); showT = null; }
-      if (!hideT) hideT = setTimeout(function () { hideT = null; var b = document.getElementById(BAR_ID); if (b) b.classList.remove('on'); renderPill(false); }, 220);
+      if (!hideT) hideT = setTimeout(function () { hideT = null; var b = document.getElementById(BAR_ID); if (b) b.classList.remove('on'); renderPill(false); }, 900);
     }
     var b = bar(), sweep = b.querySelector('.lb-sweep'), exact = b.querySelector('.lb-measured');
     if (measured != null) { if (sweep) sweep.style.display = 'none'; if (exact) { exact.style.display = 'block'; exact.style.width = measured + '%'; } }

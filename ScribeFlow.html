@@ -772,6 +772,8 @@
   .navtab:hover{background:var(--soft);color:var(--ink)}
   .navtab.on{background:var(--brand);color:#fff;font-weight:650}
   .navtab.nav-feat-off{display:none !important}
+  /* Staff pulls moved to its own nav tab — hide the old inline doctor-screen link (CSS-hide, never removal) */
+  #mlsEz3 .ez3fl-staffLink{display:none !important}
   .navtab .nbadge{background:rgba(255,255,255,.22);border-radius:10px;font-size:11.5px;padding:1px 7px;font-weight:700}
   .navtab:not(.on) .nbadge{background:var(--soft);color:var(--brand-dk)}
   /* ===== MLS UI polish 2026-06-13 — additive refinements for a cleaner, calmer feel ===== */
@@ -1552,7 +1554,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="mainnav">
     <div class="navtab" id="nav_calendar" style="display:none" onclick="showView('calendar')">📅 Calendar</div>
     <div class="navtab on" id="nav_patients" onclick="showView('patients')">👥 Patients <span class="nbadge" id="navPtCount">0</span></div>
-    <div class="navtab" id="nav_visit" onclick="showView('visit')">🎙️ Visit</div>
+    <div class="navtab" id="nav_visit" onclick="showView('visit');try{var b=document.getElementById('ez3ModeDoc');if(b)b.click();}catch(e){}">🎙️ Visit</div>
+    <div class="navtab" id="nav_staffpull" onclick="openStaffPulls()" title="The staff workspace: pull schedules from Athena, prep the day, batch chart histories">📥 Staff pulls</div>
     <div class="navtab" id="nav_orders" onclick="showView('orders')">📋 Orders <span class="nbadge" id="navOrdCount">0</span></div>
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
@@ -7778,7 +7781,7 @@ async function loadCalendar(){
      replaces the rows and re-renders. */
   try{
     if(!(_calAppts&&_calAppts.length)){
-      var cachedCal=localStorage.getItem(uns('calApptsCache'));
+      var cachedCal=localStorage.getItem(uns('calApptsCacheV2'));
       if(cachedCal){ var cd=JSON.parse(cachedCal); if(cd&&Array.isArray(cd.appointments)&&cd.appointments.length){ _calAppts=cd.appointments; _calMe=cd.me||{}; if(Array.isArray(cd.providers)&&cd.providers.length&&!(_calProviders&&_calProviders.length)) _calProviders=cd.providers; } }
     }
   }catch(e){}
@@ -7798,8 +7801,19 @@ async function loadCalendar(){
   }catch(e){ if(!(_calAppts&&_calAppts.length)) _calAppts=[]; }
   try{ if(pr&&pr.ok){ var pd=await pr.json(); if(_calSeq===window.__mlsCalLoadSeq) _calProviders=pd.providers||[]; } }catch(e){ _calProviders=_calProviders||[]; }
   if(_calSeq!==window.__mlsCalLoadSeq) return;
-  /* bounded snapshot for the instant next-open paint; quota-safe */
-  try{ localStorage.setItem(uns('calApptsCache'), JSON.stringify({appointments:(_calAppts||[]).slice(0,800), me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)})); }catch(e){}
+  /* bounded snapshot for the instant next-open paint; quota-safe.
+     b415 (live-caught): slice(0,800) cached an ARBITRARY 800 of 3000+ rows, so
+     every open first painted a WRONG month that visibly reshuffled when the
+     full fetch landed — the "calendar glitches out on every load". Cache the
+     rows around TODAY instead: the visible window's first paint is complete,
+     the post-fetch render matches the sig-guard, and nothing repaints. */
+  try{
+    var _ccNow=new Date(); var _ccLo=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()-62), _ccHi=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()+62);
+    var _ccKey=function(d){ return d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); };
+    var _ccLoK=_ccKey(_ccLo), _ccHiK=_ccKey(_ccHi);
+    var _ccWin=(_calAppts||[]).filter(function(a){ var k=String((a&&(a.appt_date||(a.start_at||'')))||'').slice(0,10); return k>=_ccLoK&&k<=_ccHiK; }).slice(0,1500);
+    localStorage.setItem(uns('calApptsCacheV2'), JSON.stringify({appointments:_ccWin, me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)}));
+  }catch(e){}
   renderCalendar(); renderCalCheckin();
 }
 function _calFilterVal(){
@@ -8402,7 +8416,8 @@ function renderCalCheckin(){
   var me=(_calProviders||[]).find(function(p){ return _calMe && p.id===_calMe.id; });
   var html=chips;
   if(isClin){ var inOffice=!!(me&&me.checked_in); html+=' <button class="btn-ghost" onclick="calToggleCheckin(this)" style="font-size:13px;padding:7px 13px;'+(inOffice?'background:#eefaf3;color:#127a55;border-color:#bfe6cf':'')+'">'+(inOffice?"✅ I'm in the office":'Check in to the office')+'</button>'; }
-  wrap.innerHTML=html; wrap.style.display=(html?'inline-flex':'none');
+  if(wrap._mlsSig!==html){ wrap._mlsSig=html; wrap.innerHTML=html; }   // sig-guard: no rebuild when nothing changed
+  wrap.style.display=(html?'inline-flex':'none');
 }
 async function calToggleCheckin(btn){
   var me=(_calProviders||[]).find(function(p){ return _calMe && p.id===_calMe.id; });
@@ -8570,6 +8585,14 @@ else setTimeout(_armLiveCallPolling,0);
   }
   if(document.body) build(); else document.addEventListener('DOMContentLoaded', build);
 })();
+/* Staff pulls now lives in the nav (owner request) — it opens the Visit
+   surface in the staff day-prep mode. The old inline "Staff tools" link on
+   the doctor screen is hidden by CSS (never removed; the flow layer owns it). */
+function openStaffPulls(){
+  showView('visit');
+  setTimeout(function(){ try{ var m=document.getElementById('ez3ModeStaff'); if(m) m.click(); }catch(e){} },60);
+  try{ var t=document.getElementById('nav_staffpull'); if(t){ document.querySelectorAll('.navtab').forEach(function(x){x.classList.remove('on');}); t.classList.add('on'); } }catch(e){}
+}
 function showView(v){
   // TIER GUARD: Lite is note-generation ONLY — any other view bounces back to the Visit screen.
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
@@ -24353,7 +24376,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b415';
+  window.__MLS_AV='b416';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

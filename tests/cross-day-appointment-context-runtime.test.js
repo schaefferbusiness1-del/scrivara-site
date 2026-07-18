@@ -101,7 +101,7 @@ assert(/selected day changed/i.test(toasts[toasts.length - 1].message), 'wrong-d
 
 assert(source.includes('body.mls-xdc-active #mlsEz3Body.mls-ds-otherday>#ez3Wrap{display:block!important;}'), 'other-day exact context does not reveal the full workspace');
 assert(source.includes('body.mls-xdc-active #ez3Wrap .ez3-quick{display:none!important;}'), 'today quick strip can still appear under a non-today exact context');
-assert(connect.includes("A='feat_mls_cross_day_context.js'") && connect.includes("A+'?v=20260717xdc100'"), 'production bundle does not load the cross-day context owner');
+assert(connect.includes("A='feat_mls_cross_day_context.js'") && connect.includes("A+'?v=20260718xdc101'"), 'production bundle does not load the cross-day context owner');
 assert(!/pullScheduleViaAssist|__mlsSI\.pull|postMessage\(/.test(source), 'cross-day context must not pull or command Athena');
 
 console.log('PASS cross-day appointment context: exact patient/date/provider binding reveals every tool and stale/ambiguous selection fails closed');

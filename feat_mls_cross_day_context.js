@@ -97,8 +97,16 @@
         var pr = distinctRefs(p, true);
         return pr.length === 1 && pr[0] === wanted;
       });
-      if (exact.length !== 1 || !identityCompatible(a, exact[0])) return { ok: false, reason: "linked-chart-not-exact" };
-      return { ok: true, patient: exact[0], by: "stable-id" };
+      if (exact.length === 1 && identityCompatible(a, exact[0])) return { ok: true, patient: exact[0], by: "stable-id" };
+      if (exact.length >= 1) return { ok: false, reason: "linked-chart-not-exact" };
+      /* exact.length === 0 (live-caught b414): pulled schedule rows carry the
+         athena patient_external_id, but locally-created charts store only the
+         app id — NO chart can ever match by stable id, and every day-row
+         click failed closed ("could not be verified") even though a single
+         exact name+DOB chart exists. Fall through to the SAME fail-closed
+         demographic match below (a second stored ref would break the
+         pr.length===1 stable-id contract, so we deliberately do NOT stamp
+         the athena id onto the chart). */
     }
     var name = normName(a && a.name), dob = dobKey(a && a.dob);
     if (!name || !dob) return { ok: false, reason: "appointment-needs-link" };

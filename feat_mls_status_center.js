@@ -1102,6 +1102,8 @@
         '</div>';
     }
     if (!html) html = '<div class="sc-step"><span class="sc-ic">·</span><span class="sc-lb"><span class="l" style="opacity:.6">Steps will appear here when a task runs.</span></span></div>';
+    if (box.__scSig === html) return;   // sig-guard: identical steps = leave the DOM (and its spinners) alone
+    box.__scSig = html;
     box.innerHTML = html;
     var btns = box.querySelectorAll('[data-retry]');
     for (var b = 0; b < btns.length; b++) {
@@ -1124,6 +1126,11 @@
       var k = SOURCES[i][0], lbl = SOURCES[i][1], s = store.sources[k];
       html += '<div class="sc-src" title="' + esc(lbl + ': ' + s.text) + '"><span class="b ' + esc(s.state) + '"></span><span class="t">' + esc(lbl) + '</span></div>';
     }
+    /* sig-guard (live-caught b414): heartbeat updates re-rendered identical
+       HTML ~2x/sec, destroying/recreating every node — visible flicker and
+       the pulse animation restarting. Only touch the DOM on real change. */
+    if (box.__scSig === html) return;
+    box.__scSig = html;
     box.innerHTML = html;
   }
   function renderChanges() {
@@ -1135,7 +1142,7 @@
     blk.style.display = '';
     var html = '';
     for (var i = 0; i < store.changes.length; i++) html += '<div>• ' + esc(store.changes[i]) + '</div>';
-    c.innerHTML = html;
+    if (c.__scSig !== html) { c.__scSig = html; c.innerHTML = html; }
   }
   function renderNext() {
     if (!ui.dock) return;

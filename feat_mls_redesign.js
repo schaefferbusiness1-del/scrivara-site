@@ -125,6 +125,10 @@
 
 "/* ---- mobile: off-canvas rail ---- */",
 "#mlsRdRailBtn{ display:none; width:38px; height:38px; border-radius:9px; border:1px solid #E4E1D8; background:var(--card); color:#55605A; cursor:pointer; align-items:center; justify-content:center; flex:none; }",
+"#mlsRdBackBtn{ display:none; width:38px; height:38px; border-radius:9px; border:1px solid #E4E1D8; background:var(--card); color:#55605A; cursor:pointer; align-items:center; justify-content:center; flex:none; font-size:17px; line-height:1; }",
+"#mlsRdBackBtn:hover, #mlsRdRailLogo:hover, #mlsRdTitle.rd-homelink:hover{ background:#F0EEE7; }",
+"#mlsRdRailLogo{ cursor:pointer; border-radius:9px; }",
+"#mlsRdTitle.rd-homelink{ cursor:pointer; border-radius:8px; padding:2px 8px; margin-left:-8px; }",
 "#mlsRdScrim{ display:none; position:fixed; inset:0; z-index:64; background:rgba(26,33,28,.35); }",
 "@media (max-width:900px){",
 "  body.mls-redesign.mls-rd-shell{ padding-left:0; }",
@@ -348,7 +352,41 @@
       var burger=mk('button','','<span style="display:flex">'+BURGER_ICON+'</span>'); burger.id='mlsRdRailBtn'; burger.type='button'; burger.title='Menu';
       burger.addEventListener('click',function(e){ try{e.stopPropagation(); var open=document.documentElement.classList.toggle('mls-rail-open'); railSlide(open); }catch(_){} });
       top.appendChild(burger);
+      /* Back arrow (owner request): one tap returns to the previous view. A
+         tiny history stack is maintained by wrapping showView once; the
+         button hides itself when there is nowhere to go back to. */
+      if(!window.__mlsViewHist){
+        window.__mlsViewHist={stack:[],lock:false};
+        try{
+          var _origShow=window.showView;
+          if(typeof _origShow==='function' && !_origShow.__rdHist){
+            var _histWrap=function(v){
+              try{
+                var h=window.__mlsViewHist, cur=window.currentView;
+                if(!h.lock && cur && cur!==v && cur!=='__pinned'){ h.stack.push(cur); if(h.stack.length>30) h.stack.shift(); }
+              }catch(e){}
+              var out=_origShow.apply(this,arguments);
+              try{ var bb=$('mlsRdBackBtn'); if(bb) bb.style.display=window.__mlsViewHist.stack.length?'flex':'none'; }catch(e){}
+              return out;
+            };
+            _histWrap.__rdHist=true; window.showView=_histWrap;
+          }
+        }catch(e){}
+      }
+      var back=mk('button','','&#8592;'); back.id='mlsRdBackBtn'; back.type='button'; back.title='Back to where you just were';
+      back.addEventListener('click',function(e){
+        try{
+          e.stopPropagation();
+          var h=window.__mlsViewHist, prev=h&&h.stack.pop();
+          if(prev){ h.lock=true; try{ window.showView(prev); }finally{ h.lock=false; } }
+          if(h) back.style.display=h.stack.length?'flex':'none';
+        }catch(_){}
+      });
+      top.appendChild(back);
       var title=mk('div'); title.id='mlsRdTitle'; title.textContent='MLS Scribe'; top.appendChild(title);
+      /* Owner request: the wordmark/title at top-left takes you home (Visit). */
+      title.classList.add('rd-homelink'); title.title='Back to the main Visit screen';
+      title.addEventListener('click',function(){ try{ if(typeof window.showView==='function') window.showView('visit'); }catch(e){} });
       var tgSlot=mk('div','display:flex;align-items:center'); tgSlot.id='mlsRdToggleSlot'; top.appendChild(tgSlot);
       var seSlot=mk('div'); seSlot.id='mlsRdSearchSlot';
       seSlot.appendChild(mk('span','position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex',SEARCH_ICON));
@@ -361,6 +399,14 @@
       var logo=mk('div','', '<span style="width:32px;height:32px;border-radius:9px;background:#204034;display:flex;align-items:center;justify-content:center;flex:none">'+LOGO_SVG+'</span>'+
         '<span style="font-family:\'Newsreader\',Georgia,serif;font-weight:600;font-size:18px;letter-spacing:-.01em;color:var(--ink)">MLS Scribe</span>');
       logo.id='mlsRdRailLogo'; navWrap.appendChild(logo);
+      /* Owner request: clicking "MLS Scribe" in the rail returns to Visit. */
+      logo.title='Back to the main Visit screen';
+      logo.addEventListener('click',function(){
+        try{
+          if(typeof window.showView==='function') window.showView('visit');
+          document.documentElement.classList.remove('mls-rail-open'); railSlide(false);
+        }catch(e){}
+      });
       /* one-click collapse: rail becomes an on-demand overlay (burger reopens) */
       var col=mk('button','','&#10094;'); col.id='mlsRdCollapse'; col.type='button';
       col.title='Hide the sidebar - the menu button at top-left brings it back';

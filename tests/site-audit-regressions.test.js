@@ -24,13 +24,13 @@ assert(redesign.includes('#mlsRdKbd{ display:none !important; }'), 'mobile icon-
 assert(redesign.includes('#mlsFab, #mlsFabMenu{ display:none !important; }'), 'mobile quick actions must not float over working controls');
 assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38px;'), 'mobile quick actions need one compact top-bar owner');
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
-assert(siteBundle.includes("feat_mls_redesign.js?v=20260716rd313"), 'the repaired responsive/performance asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_redesign.js?v=20260718rd314"), 'the repaired responsive/performance asset needs a fresh deployment URL');
 
 assert(loading.includes("p.setAttribute('role', 'status')"), 'busy pill needs status semantics');
 assert(loading.includes("p.setAttribute('aria-live', 'polite')"), 'busy pill needs polite announcements');
 assert(loading.includes("p.setAttribute('aria-hidden', 'true')") && loading.includes("p.setAttribute('aria-hidden', 'false')"), 'busy pill must leave and re-enter the accessibility tree with its visual state');
 assert(loading.includes('opacity:0;visibility:hidden;'), 'idle busy pill must be visually and semantically hidden');
-assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260716lb200"), 'the shared progress asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260718lb201"), 'the shared progress asset needs a fresh deployment URL');
 
 assert.strictEqual((home.match(/id="mlsChatBtn"/g) || []).length, 1, 'homepage needs one sales-chat button');
 assert(home.includes('#mlsChatBtn{position:static;right:auto;bottom:auto;'), 'mobile sales chat must participate in layout instead of covering CTAs');

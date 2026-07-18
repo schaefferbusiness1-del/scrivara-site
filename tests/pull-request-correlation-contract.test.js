@@ -51,7 +51,7 @@ assert(lc.includes('window.__mlsCalLoadSeq=(window.__mlsCalLoadSeq||0)+1'),
   'loadCalendar does not take a sequence number');
 const staleChecks = lc.split('_calSeq!==window.__mlsCalLoadSeq').length - 1;
 assert(staleChecks >= 2, 'loadCalendar stale-response checks missing (found ' + staleChecks + ')');
-const cacheWriteAt = lc.indexOf("localStorage.setItem(uns('calApptsCache')");
+const cacheWriteAt = lc.indexOf("localStorage.setItem(uns('calApptsCacheV2')");
 assert(cacheWriteAt > 0, 'loadCalendar cache write not found');
 assert(lc.lastIndexOf('_calSeq!==window.__mlsCalLoadSeq') < cacheWriteAt,
   'a stale-response check must guard the cache write');
