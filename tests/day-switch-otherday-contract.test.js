@@ -16,9 +16,9 @@ const dsStart = connect.indexOf('__mlsDaySwitch ds-1');
 const dsEnd = connect.indexOf('function retryFailedHistories', dsStart) > dsStart
   ? connect.indexOf('mlsDsCleanup', dsStart) : -1;
 assert(dsStart >= 0, 'day-switch module boundary was not found');
-const ds = connect.slice(dsStart, dsEnd > dsStart ? dsEnd : dsStart + 30000);
+const ds = connect.slice(dsStart, dsEnd > dsStart ? dsEnd : dsStart + 42000);
 
-assert(connect.includes("version: 'ds-1.3.1'"), 'day-switch other-day ownership release is not installed');
+assert(connect.includes("version: 'ds-1.4.0'"), 'day-switch other-day ownership release is not installed');
 /* ds-1.3.1: the other-day list buckets by the pull's filed date (appt_date)
  * FIRST — same precedence as the canonical _calDateOf — so a backend
  * day_local recomputation can never move a receipt-bound row off its day. */

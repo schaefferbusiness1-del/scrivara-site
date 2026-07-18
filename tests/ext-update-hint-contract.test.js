@@ -106,4 +106,19 @@ assert(si.includes('[duplicateExtHint(), extUpdateHint()]'), 'receipt-gate failu
   assert.strictEqual(ctx.__hint(), '', 'non-pong traffic must never trigger the duplicate warning');
 }
 
+/* ---- ds-1.4.0: one-click PHI-free pull error report ---------------------- */
+assert(connect.includes("version: 'ds-1.4.0'"), 'ds-1.4.0 release marker missing');
+assert(connect.includes('id="mlsDsDiagBtn"'), 'the Copy error report button must exist in the day strip');
+assert(connect.includes("$('mlsDsDiagBtn').onclick = dsCopyDiag"), 'the report button must be wired');
+assert(connect.includes('dsSyncDiagBtn(!ok)'), 'a failed pull must reveal the report button');
+const diagSrc = connect.match(/function dsDiagReport\(\) \{[\s\S]*?\n  \}/);
+assert(diagSrc, 'dsDiagReport not found');
+/* whitelist-only: receipts as booleans/counts/reasons; never patient payloads */
+for (const banned of ['resolvedAppointments', 'res.patients', 'appts', 'historyTargets', 'proofs']) {
+  assert(!diagSrc[0].includes(banned), 'the error report must never serialize ' + banned);
+}
+assert(diagSrc[0].includes('retryReasons: dsReasonHistogram(hr.retry)'), 'history retry entries must reduce to a reason histogram (no ids/names)');
+assert(diagSrc[0].includes('navigator.userAgent'), 'the report must carry the user agent (Chrome version diagnosis)');
+assert(connect.includes("document.execCommand('copy')"), 'old-Chrome copy fallback (execCommand) must exist');
+
 console.log('PASS ext-update hint + duplicate detection: receipt-gate failures on an outdated MLS Assist name the installed vs published version; TWO answering copies of MLS Assist are called out with the chrome://extensions fix (one answer stays silent, foreign traffic ignored); sign-in and wrong-day failures never blame the extension; version compare is numeric and fail-safe');

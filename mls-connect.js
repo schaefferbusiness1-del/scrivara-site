@@ -40983,7 +40983,7 @@
  * ensure interval (1.2s, write-only-when-missing). */
 (function () {
   if (window.__mlsDaySwitch) return;
-  var api = { installed: true, version: 'ds-1.3.1' };
+  var api = { installed: true, version: 'ds-1.4.0' };
   window.__mlsDaySwitch = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -41008,6 +41008,8 @@
     '#mlsDsRetryHistoryBtn{display:none;border:1px solid #D8C997;background:#FFF9E8;color:#68551E;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
     '#mlsDsRetryHistoryBtn:hover{background:#FFF3CC;}',
     '#mlsDsRetryHistoryBtn[disabled]{opacity:.7;cursor:default;}',
+    '#mlsDsDiagBtn{display:none;border:1px solid #D9C1C1;background:#FDF3F3;color:#7A1F1F;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
+    '#mlsDsDiagBtn:hover{background:#F9E4E4;}',
     '#mlsDsStrip .ds-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:mlsDsSpin .8s linear infinite;flex:none;display:inline-block;}',
     '@keyframes mlsDsSpin{to{transform:rotate(360deg)}}',
     '@media (prefers-reduced-motion: reduce){#mlsDsStrip .ds-spin{animation-duration:2s;}}',
@@ -41099,6 +41101,94 @@
   }
   function setDay(k) { DS.day = k; syncStrip(); renderList(); }
   function shift(n) { var d = parseKey(DS.day); d.setDate(d.getDate() + n); setDay(keyOf(d)); }
+
+  /* ds-1.4.0: one-click PHI-FREE error report for a failed pull. Live
+     2026-07-18: a remote machine (owner's father's Mac) failed every pull
+     "not verified" and diagnosis was reduced to guessing over the phone.
+     The report whitelists ONLY gate receipts (booleans/counts/reasons),
+     the last status lines (gate texts, never patient names), and the
+     environment (build, extension version, user agent, timezone). It never
+     serializes patient arrays, appointment rows, or resolved mappings. */
+  function dsStatusLog(m) {
+    if (!m) return;
+    DS.statusLog = DS.statusLog || [];
+    DS.statusLog.push(String(m).slice(0, 160));
+    if (DS.statusLog.length > 8) DS.statusLog.shift();
+  }
+  function dsPick(obj, keys) {
+    if (!obj || typeof obj !== 'object') return null;
+    var out = {}, i, k;
+    for (i = 0; i < keys.length; i++) { k = keys[i]; if (obj[k] !== undefined) out[k] = obj[k]; }
+    return out;
+  }
+  function dsReasonHistogram(list) {
+    var h = {}, i;
+    if (!Array.isArray(list)) return h;
+    for (i = 0; i < list.length; i++) { var r = String(list[i] && list[i].reason || 'unknown').slice(0, 80); h[r] = (h[r] || 0) + 1; }
+    return h;
+  }
+  function dsDiagReport() {
+    var si = window.__mlsSI, res = null;
+    try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
+    if (!res && DS.lastResult) res = DS.lastResult;
+    var hr = res && res.historyReceipt || null;
+    var ib = res && res.identityBootstrapReceipt || null;
+    var report = {
+      kind: 'mls-pull-error-report',
+      build: (function () { try { return String(window.__MLS_AV || ''); } catch (e) { return ''; } }),
+      at: new Date().toISOString(),
+      day: DS.day,
+      env: {
+        ua: (function () { try { return String(navigator.userAgent).slice(0, 220); } catch (e) { return ''; } })(),
+        tz: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } })(),
+        extVersion: (function () { try { return String(window.__mlsExtReportedVersion || ''); } catch (e) { return ''; } })()
+      },
+      result: res ? {
+        ok: res.ok === true, complete: res.complete === true,
+        reason: String(res.reason || ''), target: String(res.target || ''),
+        error: String(res.error || '').slice(0, 300),
+        extUpdateHint: String(res.extUpdateHint || '').slice(0, 300),
+        scheduleReceipt: dsPick(res.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason', 'schedDate']),
+        providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'providerMode', 'targetDate']),
+        calendarReceipt: dsPick(res.calendarReceipt, ['complete', 'attempted', 'accounted', 'created', 'repaired', 'skipped', 'failed', 'wrongDay', 'invalidDate', 'mappingComplete', 'snapshotPublished', 'snapshotReason']),
+        identityBootstrap: ib ? { complete: ib.complete === true, attempted: ib.attempted, alreadyProven: ib.alreadyProven, requested: ib.requested, resolved: ib.resolved, failed: ib.failed, reasons: ib.reasons || {} } : null,
+        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry) } : null
+      } : null,
+      lastStatuses: (DS.statusLog || []).slice()
+    };
+    try { report.build = report.build(); } catch (e) { report.build = ''; }
+    return JSON.stringify(report, null, 1);
+  }
+  function dsCopyText(t) {
+    function legacy() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy');
+        ta.remove();
+        return !!ok;
+      } catch (e) { return false; }
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return legacy(); });
+      }
+    } catch (e) {}
+    return Promise.resolve(legacy());
+  }
+  function dsSyncDiagBtn(show) {
+    var b = $('mlsDsDiagBtn'); if (!b) return;
+    b.style.display = show ? '' : 'none';
+  }
+  function dsCopyDiag() {
+    var text = '';
+    try { text = dsDiagReport(); } catch (e) { text = '{"kind":"mls-pull-error-report","error":"report-build-failed"}'; }
+    dsCopyText(text).then(function (ok) {
+      try { if (typeof window.toast === 'function') window.toast(ok ? 'Error report copied — paste it in a message to support.' : 'Could not copy automatically — the report was printed to the browser console instead.', ok ? 'ok' : 'err'); } catch (e) {}
+      if (!ok) { try { console.log('[MLS pull error report]\n' + text); } catch (e2) {} }
+    });
+  }
 
   function pullOutcome(result, day) {
     var r = result && typeof result === 'object' ? result : null;
@@ -41246,11 +41336,13 @@
       };
       paintRelayBar('');
       window.__mlsRelayLink.pullDay(rday, {
-        onStatus: function (m) { try { if (rstat) rstat.textContent = String(m); } catch (e) {} try { paintRelayBar(m); } catch (e2) {} },
+        onStatus: function (m) { try { if (rstat) rstat.textContent = String(m); } catch (e) {} dsStatusLog(m); try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
           DS.pulling = false;
+          dsStatusLog(msg);
+          dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 Pull this day'; }
-          if (rstat) rstat.style.display = 'none';
+          if (rstat) { rstat.style.display = ok ? 'none' : 'block'; if (!ok && msg) rstat.textContent = String(msg); }
           try { var rb = document.getElementById('mlsDsPullBar'); if (rb) rb.style.display = 'none'; } catch (e3) {}
           try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
           renderList();
@@ -41273,8 +41365,10 @@
       if (closed) return; closed = true;
       DS.pulling = false;
       syncRetryControl(DS.lastResult);
+      dsStatusLog(msg);
+      dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
       if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
-      if (stat) { stat.style.display = keepStatus ? 'block' : 'none'; if (keepStatus) stat.textContent = msg; }
+      if (stat) { stat.style.display = (keepStatus || !ok) ? 'block' : 'none'; if (keepStatus || !ok) stat.textContent = msg; }
       try { var dsBar = document.getElementById('mlsDsPullBar'); if (dsBar) dsBar.style.display = 'none'; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
       renderList();
@@ -41306,7 +41400,7 @@
       };
       var hideDsProgress = function () { try { var bar = document.getElementById('mlsDsPullBar'); if (bar) bar.style.display = 'none'; } catch (e) {} };
       paintDsProgress('');
-      var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} paintDsProgress(m); } });
+      var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} dsStatusLog(m); paintDsProgress(m); } });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
@@ -41341,6 +41435,7 @@
         '<button type="button" class="ds-today" id="mlsDsTodayBtn">Back to Today</button>' +
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
+        '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
         '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: pull the schedule and each patient’s chart history cards only — much faster." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
       /* always the FIRST element of the Visit body — above the engine wrap,
@@ -41360,6 +41455,7 @@
       $('mlsDsTodayBtn').onclick = function () { setDay(todayKey()); };
       $('mlsDsPullBtn').onclick = startPull;
       $('mlsDsRetryHistoryBtn').onclick = retryFailedHistories;
+      $('mlsDsDiagBtn').onclick = dsCopyDiag;
       syncRetryControl(DS.lastResult);
       syncStrip(); renderList();
     } catch (e) {}
