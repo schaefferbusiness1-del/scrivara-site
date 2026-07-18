@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.1)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.2)
  * ---------------------------------------------------------------------------
  * The base Studio Copilot canonically persists and renders reply metadata
  * (actions, followups, artifact). This companion never intercepts /api/copilot,
@@ -41,7 +41,7 @@
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-2.0.1';
+  var VERSION = 'ca-2.0.2';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -176,18 +176,29 @@
     /* ca-2.0.1: loose AI args ("analysis top problems", "today's schedule")
        used to pass through raw and silently no-op in showView. Keyword-match
        to a real view instead. */
-    if (/analy|problem|stat|outcome/.test(a)) return 'analysis';
+    if (/analy|problem|diagnos|condition|stat|outcome/.test(a)) return 'analysis';
     if (/schedul|calendar|today/.test(a)) return 'calendar';
     if (/patient|panel|candidate/.test(a)) return 'patients';
     if (/histor|note/.test(a)) return 'history';
     if (/studio|widget|tool/.test(a)) return 'studio';
     if (/visit|record/.test(a)) return 'visit';
-    return a || 'visit';
+    return '';
   }
 
   /* ---------------- action execution ---------------- */
-  function doNavigate(view) {
-    safe(function () { if (isFn(window.showView)) window.showView(resolveView(view)); });
+  function doNavigate(view, label) {
+    var hint = String(view || '') + ' ' + String(label || '');
+    var topPatients = /\btop\s+patients?\b|patients?.{0,24}visit count|visit count.{0,24}patients?/i.test(hint);
+    var resolved = topPatients ? 'patients' : resolveView(view || label);
+    if (!resolved || !isFn(window.showView)) return false;
+    if (resolved === 'patients') {
+      var sort = $('ptSort');
+      if (sort) sort.value = topPatients ? 'visits' : 'name';
+    }
+    window.showView(resolved);
+    if (resolved === 'patients' && isFn(window.renderPatients)) window.renderPatients();
+    if (topPatients) toast('Patients are ranked by visit count.');
+    return true;
   }
   function targetLabel(target) {
     if (target && typeof target === 'object') return String(target.name || target.id || target.patientId || target.mrn || 'that patient');
@@ -250,7 +261,11 @@
   }
   function runAction(a) {
     if (!a) return false;
-    if (a.kind === 'navigate') { doNavigate(a.arg); return true; }
+    if (a.kind === 'navigate') {
+      if (doNavigate(a.arg, a.label)) return true;
+      toast('That suggestion isn’t wired to a screen yet — ask me where you want to go and I’ll take you there.');
+      return false;
+    }
     if (a.kind === 'openPatient') return doOpenPatient(a.arg);
     if (a.kind === 'startVisit') return doStartVisit(a.arg);
     if (a.kind === 'build') { doBuild(a.arg); return true; }
@@ -258,7 +273,7 @@
        keyword from kind/arg/label, else say so; never a silent dead click and
        never a navigate to a garbage view name. */
     var guess = strictView(a.kind) || strictView(a.arg) || strictView(a.label);
-    if (guess) { doNavigate(guess); return true; }
+    if (guess && doNavigate(guess, a.label)) return true;
     toast('That suggestion isn’t wired to a screen yet — ask me where you want to go and I’ll take you there.');
     return false;
   }
@@ -266,7 +281,7 @@
     var a = String(x || '').trim().toLowerCase();
     if (!a) return '';
     if (VIEW_ALIASES[a]) return VIEW_ALIASES[a];
-    if (/analy|problem|stat|outcome/.test(a)) return 'analysis';
+    if (/analy|problem|diagnos|condition|stat|outcome/.test(a)) return 'analysis';
     if (/schedul|calendar|today/.test(a)) return 'calendar';
     if (/patient|panel|candidate/.test(a)) return 'patients';
     if (/histor|note/.test(a)) return 'history';

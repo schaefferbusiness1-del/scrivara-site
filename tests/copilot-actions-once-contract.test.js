@@ -8,8 +8,8 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'ca-2.0.1'"));
-/* ca-2.0.1: unknown model-drift kinds resolve to a REAL view or say so —
+assert(source.includes("var VERSION = 'ca-2.0.2'"));
+/* ca-2.0.2: unknown model-drift kinds resolve to a REAL view or say so —
    never a silent dead click, never navigation to a garbage view name. */
 assert(source.includes('function strictView(x)'), 'unknown-kind keyword resolver was removed');
 assert(source.includes("toast('That suggestion isn’t wired to a screen yet"), 'dead suggestions can fail silently again');
@@ -63,6 +63,7 @@ assistantThread.appendChild(assistantBubble); panel.appendChild(assistantThread)
 const studioThread = makeNode('div', 'copilotThread');
 const canonicalStudioBlock = makeNode('div', '', 'base-copilot-actions');
 studioThread.appendChild(canonicalStudioBlock); body.appendChild(studioThread);
+const patientSort = makeNode('select', 'ptSort'); patientSort.value = 'name'; body.appendChild(patientSort);
 
 const messages = [{
   role: 'ai', requestId: 7, text: 'Canonical answer',
@@ -85,7 +86,7 @@ const patients = [
   { id: 'p4', mrn: 'M4', name: 'John Unique', dob: '1985-04-04' }
 ];
 const selected = [], views = [], toasts = [];
-let recordCalls = 0;
+let recordCalls = 0, renderPatientCalls = 0;
 const document = {
   readyState: 'complete', head, body, documentElement: html,
   createElement(tag) { return makeNode(tag); },
@@ -103,6 +104,7 @@ const context = {
   __mlsWhosNext: { activeList() { return [patients[3]]; } },
   __mlsPick: { select(id) { selected.push(id); return true; } },
   showView(view) { views.push(view); },
+  renderPatients() { renderPatientCalls++; },
   startCapture() { recordCalls++; },
   toast(message) { toasts.push(String(message)); }
 };
@@ -143,5 +145,18 @@ assert.strictEqual(api.runAction({ kind: 'startVisit', arg: { id: 'p2' } }), tru
 assert.deepStrictEqual(selected, ['p4', 'p2'], 'Start Visit did not canonically select the exact resolved patient');
 assert.strictEqual(views[views.length - 1], 'visit', 'Start Visit did not navigate after exact selection');
 assert.strictEqual(recordCalls, 0, 'Start Visit auto-started recording');
+
+assert.strictEqual(api.runAction({ kind: 'navigate', arg: 'patients', label: 'View Top Patients' }), true);
+assert.strictEqual(patientSort.value, 'visits', 'View Top Patients did not select visit-count ranking');
+assert.strictEqual(views[views.length - 1], 'patients');
+assert.strictEqual(renderPatientCalls, 1, 'visit-count ranking was not rendered immediately');
+
+assert.strictEqual(api.runAction({ kind: 'navigate', arg: 'top diagnoses', label: 'View Top Diagnoses' }), true);
+assert.strictEqual(views[views.length - 1], 'analysis', 'top diagnoses did not resolve to Analysis');
+
+const beforeUnknownViews = views.length;
+assert.strictEqual(api.runAction({ kind: 'navigate', arg: 'definitely nowhere', label: 'Mystery screen' }), false);
+assert.strictEqual(views.length, beforeUnknownViews, 'unknown navigation claimed success or dispatched a garbage view');
+assert(toasts.some(t => /isn.t wired to a screen/i.test(t)), 'unknown navigation failed silently');
 
 console.log('PASS Copilot actions: single-owner metadata plus fail-closed patient resolution and canonical no-auto-record Start Visit');

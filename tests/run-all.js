@@ -44,6 +44,7 @@ const tests = [
   'assistant-readiness-runtime.test.js',
   'assistant-production-runtime.test.js',
   'copilot-request-binding-contract.test.js',
+  'widget-builder-v2-runtime.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',
   'manual-history-exact-open-mrn-contract.test.js',

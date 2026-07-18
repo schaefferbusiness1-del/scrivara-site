@@ -11,7 +11,7 @@ const expected = [
   ['feat_mls_copilot_unify.js', '20260716unify110'],
   ['feat_copilot_slim.js', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260717asst142'],
-  ['feat_mls_copilot_actions.js', '20260718ca201'],
+  ['feat_mls_copilot_actions.js', '20260718ca202'],
   ['feat_mls_copilot_request_safety.js', '20260716crs110'],
   ['feat_mls_copilot_dock_fix.js', '20260716cdf200']
 ];
