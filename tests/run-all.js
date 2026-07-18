@@ -134,6 +134,7 @@ const tests = [
   'pull-request-correlation-contract.test.js',
   'pull-progress-merge-defer-runtime.test.js',
   'oldbrowser-compat-runtime.test.js',
+  'ext-update-hint-contract.test.js',
   'shared-progress-runtime.test.js',
   'opnote-clinical-consistency-runtime.test.js',
   'opnote-generation-jobs-runtime.test.js'

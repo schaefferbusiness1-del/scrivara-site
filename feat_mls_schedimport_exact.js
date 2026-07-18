@@ -43,8 +43,32 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.6";
+  var VERSION = "si-1.7.7";
   var EST_TZ = "America/New_York";
+  /* si-1.7.7: answering-extension version (from this pull's pong) and the
+     site-published current version — used ONLY to explain receipt-gate
+     failures on machines running an outdated MLS Assist. */
+  var extPong = { version: "" };
+  var publishedExt = { v: "", at: 0 };
+  function verLess(a, b) {
+    /* unparseable/missing on either side: never claim outdated */
+    if (!/^\d+(\.\d+)*$/.test(String(a || "")) || !/^\d+(\.\d+)*$/.test(String(b || ""))) return false;
+    var A = String(a).split(".").map(Number), B = String(b).split(".").map(Number);
+    for (var i = 0; i < Math.max(A.length, B.length); i++) {
+      var x = A[i] || 0, y = B[i] || 0;
+      if (x !== y) return x < y;
+    }
+    return false;
+  }
+  function fetchPublishedExtVersion() {
+    if (publishedExt.v && Date.now() - publishedExt.at < 6 * 3600 * 1000) return;
+    safe(function () {
+      fetch("extension-version.json?ts=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        var v = String(j && j.version || "").trim();
+        if (v) publishedExt = { v: v, at: Date.now() };
+      }).catch(function () {});
+    });
+  }
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
   var AUTHORITATIVE_SNAPSHOT_SUFFIX = "schedAuthoritativeDaysV1";
@@ -2295,9 +2319,26 @@
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var providerGate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: false });
     var providerTarget = providerGate.ok ? providerGate.provider : opts.provider;
+    /* si-1.7.7: a receipt gate that fails EVERY pull on ONE machine is almost
+       always an outdated MLS Assist there (old readers cannot produce the
+       request-bound receipts these gates demand), but the doctor only ever
+       saw "not verified" with no way out (live 2026-07-18, owner's father).
+       When the answering extension is older than the published version, the
+       failure carries an explicit update-this-computer hint. Fail-closed
+       behavior is unchanged — this only explains it. */
+    var RECEIPT_GATE_REASONS = { "no-read": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1 };
+    function extUpdateHint() {
+      var cur = String(extPong.version || ""), pub = String(publishedExt.v || "");
+      if (!cur || !pub || !verLess(cur, pub)) return "";
+      return "This computer runs MLS Assist v" + cur + " but the current version is v" + pub + " — update MLS Assist on THIS computer (Settings → Get the extension), then retry.";
+    }
     function fail(reason, extra) {
       var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, created: 0, repaired: 0, skipped: 0, failed: 0, target: date, providerRosterReceipt: providerGate.receipt || null, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
       extra = extra || {}; for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
+      if (RECEIPT_GATE_REASONS[out.reason]) {
+        var hint = extUpdateHint();
+        if (hint) { out.extUpdateHint = hint; onStatus(hint, "err"); }
+      }
       return out;
     }
     /* FIX 2026-07-01: stamp "a user pull is in flight" so the connection prober pauses --
@@ -2307,8 +2348,10 @@
     if (!providerGate.ok) { onStatus(providerGate.error || "The selected provider could not be verified.", "err"); return Promise.resolve(fail(providerGate.reason, { error: providerGate.error || "", retry: { providerRoster: true } })); }
 
     onStatus("Looking for MLS Assist...", "");
+    fetchPublishedExtVersion(); /* pre-warm so a later receipt-gate failure can name the outdated version */
     return bridge("mlsPong", "mlsPing", 3500).then(function (pong) {
       if (!pong || pong.reason === "bridge-deadline-exceeded") { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return fail("no-ext"); }
+      extPong.version = String(pong && (pong.version || pong.extVersion) || "").trim();
       onStatus("Opening " + date + " in athenaOne...", "");
       return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
