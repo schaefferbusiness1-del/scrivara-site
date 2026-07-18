@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.11";
+  var VERSION = "si-1.7.12";
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -2719,9 +2719,36 @@
       retry: { dates: [] }
     };
     monthPullRunning = true;
+    /* si-1.7.12 (live 2026-07-18): with athenaOne signed out, the month sweep
+       machine-gunned all 30 days in five seconds — thirty identical failures
+       and a bare "0/30 verified". A failure that repeats identically on
+       consecutive days is SYSTEMIC (session, extension, lease, roster), not
+       a per-day problem: after 3 consecutive days failing with the same
+       systemic reason, stop the sweep, mark the remaining days not-attempted
+       (they stay in Retry failed days), and say the one real cause. */
+    var SYSTEMIC_REASONS = { "signin": 1, "no-ext": 1, "pull-in-flight": 1, "no-read": 1, "nav-failed": 1, "wrong-day": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1 };
+    var SYSTEMIC_TEXT = {
+      "signin": "MLS is signed out — sign in to MLS first.",
+      "no-ext": "MLS Assist is not answering — enable the extension and reload this tab.",
+      "pull-in-flight": "another pull already holds the Athena engine — let it finish (or reload this tab if it crashed).",
+      "no-read": "Athena is not returning a readable schedule — check the Athena tab is signed in and on the Day schedule.",
+      "nav-failed": "Athena cannot be moved between days — check the Athena tab is signed in and responsive.",
+      "wrong-day": "Athena keeps showing a different day — check the Athena tab.",
+      "schedule-incomplete": "Athena's schedule grid never finishes loading — check the Athena tab (signed in, one tab, Day view).",
+      "schedule-request-unbound": "Athena's replies are not binding to these requests — reload the Athena tab and this MLS tab.",
+      "provider-roster-incomplete": "the provider roster cannot be verified — open the full Athena Day schedule once, then retry.",
+      "provider-roster-unbound": "the provider roster receipt is not binding to this run — reload the Athena tab, then retry.",
+      "unverified-day": "the date shown in Athena cannot be verified — check the Athena tab."
+    };
+    var breaker = { reason: "", streak: 0, tripped: false, hint: "" };
     var chain = Promise.resolve();
     dates.forEach(function (date, index) {
       chain = chain.then(function () {
+        if (breaker.tripped) {
+          result.days.push({ date: date, ok: false, complete: false, reason: "not-attempted-after-systemic-failure" });
+          result.totals.failures++; result.retry.dates.push(date);
+          return;
+        }
         onStatus("Month pull " + (index + 1) + "/" + dates.length + ": " + date, "");
         return pull({
           date: date,
@@ -2741,6 +2768,16 @@
           result.totals.historiesProcessed += Number(hr.processed || 0);
           if (day.ok === true && day.complete === true) result.totals.completeDays++;
           else { result.totals.failures++; result.retry.dates.push(date); }
+          if (day.ok === true) { breaker.reason = ""; breaker.streak = 0; }
+          else {
+            var dr = String(day.reason || "");
+            if (SYSTEMIC_REASONS[dr]) {
+              if (dr === breaker.reason) breaker.streak++;
+              else { breaker.reason = dr; breaker.streak = 1; }
+              if (day.extUpdateHint) breaker.hint = String(day.extUpdateHint);
+              if (breaker.streak >= 3) breaker.tripped = true;
+            } else { breaker.reason = ""; breaker.streak = 0; }
+          }
         }, function (err) {
           result.days.push({ date: date, ok: false, complete: false, reason: "exception", error: String(err && err.message || err || "") });
           result.totals.failures++; result.retry.dates.push(date);
@@ -2751,10 +2788,13 @@
       monthPullRunning = false;
       result.complete = result.totals.completeDays === dates.length && result.retry.dates.length === 0;
       result.ok = result.complete;
-      result.reason = result.complete ? "complete" : "month-partial";
+      result.reason = result.complete ? "complete" : (breaker.tripped ? "month-stopped-systemic" : "month-partial");
+      if (breaker.tripped) result.systemicReason = breaker.reason;
       onStatus(result.complete
         ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0.")
-        : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + "."), result.complete ? "ok" : "err");
+        : (breaker.tripped
+          ? ("Month pull STOPPED EARLY — every day was failing the same way: " + (SYSTEMIC_TEXT[breaker.reason] || breaker.reason.replace(/-/g, " ")) + (breaker.hint ? " " + breaker.hint : "") + " Fix that first, then use Retry failed days (" + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + " remain; nothing was skipped silently).")
+          : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + ".")), result.complete ? "ok" : "err");
       return result;
     }, function (err) {
       monthPullRunning = false;

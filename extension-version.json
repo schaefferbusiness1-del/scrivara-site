@@ -1,5 +1,5 @@
 {
-  "version": "2.9.41",
+  "version": "2.9.42",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.41 - Adds a privacy-safe layout diagnostic (structure only, never patient text) used to adapt the encounter-body reader to athenaOne layout changes on real evidence. No behavior change to pulls or writes; includes v2.9.40 speed."
+  "notes": "v2.9.42 - Clearer schedule-read failure messages: a zero-row day now says the grid may still be loading or athenaOne is signed out (instead of the confusing 'showed 0 rows but verified only 0'), and partial reads explain that the view changed mid-read. No behavior change to pulls or writes; includes v2.9.41 layout diagnostic."
 }

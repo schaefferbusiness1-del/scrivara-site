@@ -493,6 +493,20 @@ async function main() {
   assert.strictEqual(unattributed.complete, false);
   assert(JSON.stringify(unattributed.retry).includes('2026-04-01'), 'unattributed all-provider day is missing from the retry receipt');
 
+  // si-1.7.12: a failure repeating identically on 3 consecutive days is
+  // SYSTEMIC (live 2026-07-18: signed-out athena burned 30 days in 5s with a
+  // bare "0/30"). The sweep must stop early, name the one cause, and keep
+  // every unfinished day retryable - nothing silently skipped.
+  h.incompleteDays.add('2026-05-01'); h.incompleteDays.add('2026-05-02'); h.incompleteDays.add('2026-05-03');
+  const stopped = await api.pullMonth({ month: '2026-05', provider: h.providerAlpha, includeHistory: false });
+  assert.strictEqual(stopped.ok, false);
+  assert.strictEqual(stopped.reason, 'month-stopped-systemic', 'three identical consecutive failures must stop the sweep, got ' + stopped.reason);
+  assert.strictEqual(stopped.systemicReason, 'schedule-incomplete', 'the stop must carry the systemic reason');
+  const notAttempted = stopped.days.filter(d => d.reason === 'not-attempted-after-systemic-failure');
+  assert(notAttempted.length >= 25, 'remaining days must be marked not-attempted, got ' + notAttempted.length);
+  assert.strictEqual(stopped.retry.dates.length, 31, 'every unfinished day must stay in Retry failed days, got ' + stopped.retry.dates.length);
+  h.incompleteDays.clear();
+
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 

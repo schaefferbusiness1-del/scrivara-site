@@ -40,7 +40,7 @@
   'use strict';
   if (window.__mlsProgressStages && window.__mlsProgressStages.installed) return;
 
-  var VERSION = 'ps-1.0.1';
+  var VERSION = 'ps-1.1.0';
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -155,6 +155,20 @@
     if (/^extension error\b/i.test(String(fallback || ''))) return map['extension-error'];
     return map[String(reason || '')] || fallback || ('Blocked: ' + text(reason || 'unknown', 60));
   }
+  /* ps-1.1.0: translate the reader's technical zero-row template into plain
+     language (live 2026-07-18: "Athena showed 0 appointment rows, but MLS
+     could verify only 0" reads as nonsense to a doctor). */
+  function clarifySchedError(raw) {
+    var t = String(raw || '');
+    if (/Athena showed 0 appointment rows/i.test(t)) {
+      return 'Athena’s Day schedule showed no readable appointment rows — the grid may still be loading, or athenaOne is signed out. Open the Athena tab, make sure it is signed in and on the Day schedule, then retry.';
+    }
+    var m = t.match(/Athena showed (\d+) appointment rows?, but MLS could verify only (\d+)/i);
+    if (m) {
+      return 'Athena listed ' + m[1] + ' appointment' + (m[1] === '1' ? '' : 's') + ' but only ' + m[2] + ' could be verified before the view changed. Keep Athena on this day until the grid finishes loading, then retry.';
+    }
+    return t;
+  }
 
   /* ------------------------------------------------------------------ *
    * Connection state (ping/pong evidence).                              *
@@ -207,7 +221,11 @@
     if (!cur) return;
     var n = cur.meta.count, bad = cur.meta.fail;
     if (!n && !bad) { finish('history', 'complete', 'No charts were read.'); return; }
-    if (bad) finish('history', 'partial', 'Read ' + (n - bad) + ' of ' + n + ' charts — ' + bad + ' failed. Retry the failed patients when ready.', n - bad);
+    /* ps-1.1.0 clarity: when EVERY chart failed, the cause is almost never
+       per-patient — say where to look instead of a bare count (live
+       2026-07-18: "Read 0 of 1 — 1 failed" gave the doctor nothing). */
+    if (bad) finish('history', 'partial', 'Read ' + (n - bad) + ' of ' + n + ' charts — ' + bad + ' failed.' +
+      (bad >= n ? ' Every chart failed, which usually means the Athena side: check the Athena tab is SIGNED IN, is the only Athena tab open, and shows the schedule — then retry the failed patients.' : ' Retry the failed patients when ready.'), n - bad);
     else finish('history', 'complete', 'Read ' + n + ' chart' + (n === 1 ? '' : 's') + '.');
   }
   function historyTouch(chartDelta, operation, patient) {
@@ -258,7 +276,7 @@
     var rid = text(d && d.requestId || sr.requestId, 128);
     if (cur.meta.requestId && rid && cur.meta.requestId !== rid) return;
     if (sr.error || sr.ok === false || sr.blocked) {
-      finish('schedule', 'fail', reasonText(sr.reason, text(sr.error || 'The schedule could not be read.', 200)));
+      finish('schedule', 'fail', reasonText(sr.reason, clarifySchedError(text(sr.error || 'The schedule could not be read.', 300))));
       return;
     }
     var appts = Array.isArray(sr.appts) ? sr.appts.length : 0;

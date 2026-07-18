@@ -71,7 +71,7 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed && lb.version === 'lb-2.0.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.0.1', 'progress-stages module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.1.0', 'progress-stages module missing');
 /* ps-1.0.1: extension-less devices must not loop doomed auto "Connecting to
    Athena" jobs (Codex-flagged passive loop). Relay/phone devices never
    auto-spawn one; elsewhere the streak caps at 2 until a real pong re-arms. */
