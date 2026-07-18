@@ -21,7 +21,7 @@
 (function () {
   'use strict';
   if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.installed) return;
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -152,8 +152,17 @@
           ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
           function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000);
       } catch (e) {
-        status(onStatus, '⚠ Couldn’t read your open athenaOne chart (' + (e && e.message || e) + '). Open a patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
-        hideChipLater(); return;
+        var em = S(e && e.message || e);
+        /* v1.0.1 (live 2026-07-18): the #1 real-world outcome of this button is
+           the cross-patient SAFETY STOP — MLS is on patient A while athenaOne
+           shows patient B. The old technical message vanished in 9s, so the
+           button read as dead. Say exactly what to do, and keep it up longer. */
+        if (/frozen MLS patient|did not match/i.test(em)) {
+          status(onStatus, '⚠ athenaOne has a DIFFERENT patient open than the one selected here — MLS stopped on purpose so charts can never mix. To pull the patient whose chart is open in Athena: select (or add) that same patient here first, then click again. Or use the green MLS panel inside Athena (“Pull history”) — it always pulls the open chart. Nothing was saved.', true);
+          hideChipLater(22000); return;
+        }
+        status(onStatus, '⚠ Couldn’t read your open athenaOne chart (' + em + '). Open a patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
+        hideChipLater(15000); return;
       }
       if (!res || !res.ok) {
         status(onStatus, '⚠ ' + ((res && res.message) || 'No patient chart could be read from athenaOne') + '. Nothing was saved.', true);
