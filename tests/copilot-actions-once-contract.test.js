@@ -8,7 +8,11 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'ca-2.0.0'"));
+assert(source.includes("var VERSION = 'ca-2.0.1'"));
+/* ca-2.0.1: unknown model-drift kinds resolve to a REAL view or say so —
+   never a silent dead click, never navigation to a garbage view name. */
+assert(source.includes('function strictView(x)'), 'unknown-kind keyword resolver was removed');
+assert(source.includes("toast('That suggestion isn’t wired to a screen yet"), 'dead suggestions can fail silently again');
 assert(!source.includes('response.clone') && !source.includes('resp.clone'), 'action asset still clones the base Copilot response');
 assert(!source.includes('installFetchPeek') && !source.includes('__mlsCaWrapped'), 'action asset still intercepts base Copilot fetches');
 assert(!source.includes('window.fetch ='), 'action asset still replaces the shared fetch function');
