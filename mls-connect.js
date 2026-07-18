@@ -32081,7 +32081,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b395';
+  window.__MLS_AV = window.__MLS_AV || 'b396';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32372,7 +32372,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b395';
+  var MLS_APP_BUILD='2026-07-17-b396';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41209,12 +41209,40 @@
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
       if (rstat) { rstat.style.display = 'block'; rstat.textContent = 'Contacting your office computer...'; }
+      /* b396: the phone used to get text-only relay progress while the desktop
+         got the graphical bar. The office mirrors exact "X of N" notes, so the
+         SAME #mlsDsPullBar paints here (deliberate self-contained copy of the
+         proven local painter — the local path stays untouched). */
+      var paintRelayBar = function (m) {
+        try {
+          if (!rstat) return;
+          var msg = String(m || '');
+          var bar = document.getElementById('mlsDsPullBar');
+          if (!bar) {
+            bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
+            bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
+            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+            rstat.parentNode.insertBefore(bar, rstat.nextSibling);
+          }
+          var fill = bar.firstElementChild;
+          var mm = msg.match(/(\d+)\s+of\s+(\d+)/);
+          if (mm && Number(mm[2]) > 0) {
+            var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
+            var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
+            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2];
+          } else if (bar.style.display !== 'block') {
+            bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Working on your office computer…';
+          }
+        } catch (e) {}
+      };
+      paintRelayBar('');
       window.__mlsRelayLink.pullDay(rday, {
-        onStatus: function (m) { try { if (rstat) rstat.textContent = String(m); } catch (e) {} },
+        onStatus: function (m) { try { if (rstat) rstat.textContent = String(m); } catch (e) {} try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
           DS.pulling = false;
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 Pull this day'; }
           if (rstat) rstat.style.display = 'none';
+          try { var rb = document.getElementById('mlsDsPullBar'); if (rb) rb.style.display = 'none'; } catch (e3) {}
           try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
           renderList();
         }
