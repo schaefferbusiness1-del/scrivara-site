@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.5";
+  var VERSION = "si-1.7.6";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -2460,7 +2460,19 @@
                 batchToken: "", proofs: []
               } });
           return bootstrapP.then(function (identityBootstrap) {
-          return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true, includeHistory: includeHistory, requirePatientBinding: includeHistory }).then(async function (res) {
+          /* si-1.7.6: the import/save phase used to emit NO status between
+             "Finding patients..." and the first history read, so the visible
+             progress bar sat at "Starting..." for minutes while patients
+             saved (live 2026-07-18). Count each settled row through the
+             existing per-row onEach hook — the painter reads "X of N". */
+          var importSettled = 0;
+          var importTotal = rows.length;
+          var onEachImport = function (ev) {
+            if (ev !== "saved" && ev !== "skipped" && ev !== "repaired" && ev !== "error") return;
+            importSettled++;
+            if (importSettled <= importTotal) onStatus("Saving the schedule — appointment " + importSettled + " of " + importTotal + "...", "");
+          };
+          return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true, includeHistory: includeHistory, requirePatientBinding: includeHistory, onEach: onEachImport }).then(async function (res) {
             res = res || {};
             res.identityBootstrapReceipt = identityBootstrap && identityBootstrap.receipt || null;
             var selectedProvider = providerRequest(providerTarget);

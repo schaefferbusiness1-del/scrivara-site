@@ -132,6 +132,7 @@ const tests = [
   'conn-status-truth-contract.test.js',
   'athena-window-guard-contract.test.js',
   'pull-request-correlation-contract.test.js',
+  'pull-progress-merge-defer-runtime.test.js',
   'shared-progress-runtime.test.js',
   'opnote-clinical-consistency-runtime.test.js',
   'opnote-generation-jobs-runtime.test.js'

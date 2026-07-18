@@ -18,7 +18,12 @@ const dsEnd = connect.indexOf('function retryFailedHistories', dsStart) > dsStar
 assert(dsStart >= 0, 'day-switch module boundary was not found');
 const ds = connect.slice(dsStart, dsEnd > dsStart ? dsEnd : dsStart + 30000);
 
-assert(connect.includes("version: 'ds-1.3.0'"), 'day-switch other-day ownership release is not installed');
+assert(connect.includes("version: 'ds-1.3.1'"), 'day-switch other-day ownership release is not installed');
+/* ds-1.3.1: the other-day list buckets by the pull's filed date (appt_date)
+ * FIRST — same precedence as the canonical _calDateOf — so a backend
+ * day_local recomputation can never move a receipt-bound row off its day. */
+assert(ds.includes("String(a.appt_date || a.day_local || '').slice(0, 10)"),
+  'the day-strip list must bucket by the filed appt_date before day_local');
 assert(connect.includes('#mlsEz3Body.mls-ds-otherday>#ez3Wrap{display:none!important;}'),
   'a non-today selection does not hide the engine\'s today content');
 assert(ds.includes("classList.toggle('mls-ds-otherday', !isToday)"),

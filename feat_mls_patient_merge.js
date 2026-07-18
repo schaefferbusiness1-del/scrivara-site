@@ -34,6 +34,7 @@
 
   var ALIAS_KEY = 'mls_patient_alias_v1';
   var stopped = false;
+  var deferT = null;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function S(v) { return v == null ? '' : String(v); }
@@ -87,8 +88,24 @@
     return moved;
   }
 
+  /* pm-1.0.1: an explicit pull keeps __mlsPullBusyAt fresh (stamped at start,
+     lease-touched every 25s, zeroed on finish). Merging while it is fresh
+     rewrites the patient store MID-history-batch: the batch's patientById
+     proofs then miss (the merged loser id vanishes) and every merged patient
+     lands in history-partial — the live 2026-07-18 "history was not saved"
+     verdict on a pull whose saves all verified. Defer until the pull is idle. */
+  function pullBusy() {
+    return safe(function () {
+      var t = Number(window.__mlsPullBusyAt || 0);
+      return t > 0 && (Date.now() - t) < 90000;
+    }, false);
+  }
   function run(opts) {
     if (stopped) return { merged: 0 };
+    if (pullBusy()) {
+      if (!deferT) deferT = setTimeout(function () { deferT = null; safe(function () { run(opts); }); }, 20000);
+      return { merged: 0, reason: 'deferred-pull-busy' };
+    }
     var getP = window.getPatients, saveP = window.savePatients;
     if (typeof getP !== 'function' || typeof saveP !== 'function') return { merged: 0, reason: 'store-unavailable' };
     var pts = safe(function () { return getP() || []; }, []);
@@ -155,10 +172,11 @@
     safe(function () { window.addEventListener('mls:job-progress', jobHandler, false); });
   }
 
-  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.0', run: run, resolveAlias: resolveAlias };
+  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.1', run: run, resolveAlias: resolveAlias };
   window.__mlsPatientMerge_revert = function () {
     stopped = true;
     if (bootT) { safe(function () { clearTimeout(bootT); }); bootT = null; }
+    if (deferT) { safe(function () { clearTimeout(deferT); }); deferT = null; }
     if (jobHandler) safe(function () { window.removeEventListener('mls:job-progress', jobHandler, false); });
     safe(function () { delete window.__mlsPatientMerge; });
   };
