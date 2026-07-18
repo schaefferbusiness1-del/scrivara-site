@@ -32081,7 +32081,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b397';
+  window.__MLS_AV = window.__MLS_AV || 'b398';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32372,7 +32372,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b397';
+  var MLS_APP_BUILD='2026-07-17-b398';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -39404,7 +39404,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260716csp210';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260717asst142';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260716ca200';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Assistant action/follow-up renderer with fail-closed patient targeting */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260718ca201';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Assistant action/follow-up renderer with fail-closed patient targeting */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2115';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260714chk2922r1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
@@ -41209,7 +41209,7 @@
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
       if (rstat) { rstat.style.display = 'block'; rstat.textContent = 'Contacting your office computer...'; }
-      /* b397: the phone used to get text-only relay progress while the desktop
+      /* b398: the phone used to get text-only relay progress while the desktop
          got the graphical bar. The office mirrors exact "X of N" notes, so the
          SAME #mlsDsPullBar paints here (deliberate self-contained copy of the
          proven local painter — the local path stays untouched). */

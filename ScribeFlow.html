@@ -9966,15 +9966,44 @@ async function copilotAsk(){
   }
   finally{ _copilotBusy=false; var s=document.getElementById('copilotSendBtn'); if(s) s.disabled=false; _copilotRenderThread(); _copilotRenderChips(); _copilotSaveHist(); }
 }
+/* b398: the AI's navigate args arrive as loose words ("schedule", "analysis
+   top problems") but showView needs exact view keys — unaliased args were a
+   SILENT no-op, and the button was marked done BEFORE the kind check, so a
+   dead suggestion grayed out as if it had worked. Alias like the side
+   assistant does, resolve unknown kinds/args by keyword, mark done only on
+   success, and say so honestly when nothing matches. */
+function _copilotResolveView(raw){
+  var a=String(raw||'').trim().toLowerCase();
+  var MAP={home:'visit',visit:'visit',record:'visit',recording:'visit',
+    schedule:'calendar',calendar:'calendar',today:'calendar',
+    patients:'patients',patient:'patients',panel:'patients',
+    orders:'orders',order:'orders',
+    recs:'recs',recommendation:'recs',recommendations:'recs',
+    history:'history',notes:'history',
+    analysis:'analysis',analyze:'analysis',stats:'analysis',statistics:'analysis',problems:'analysis',outcomes:'analysis',
+    studio:'studio',ai:'studio',widgets:'studio',build:'studio'};
+  if(MAP[a]) return MAP[a];
+  if(/analy|problem|stat|outcome/.test(a)) return 'analysis';
+  if(/schedul|calendar|today/.test(a)) return 'calendar';
+  if(/patient|panel|candidate/.test(a)) return 'patients';
+  if(/histor|note/.test(a)) return 'history';
+  if(/studio|widget|tool/.test(a)) return 'studio';
+  if(/visit|record/.test(a)) return 'visit';
+  return '';
+}
 function _copilotDoAction(kind, arg, btn){
   try{
-    if(btn){ btn.classList.add('cact-done'); }
-    if(kind==='navigate'){ if(typeof showView==='function') showView(String(arg||'patients')); return; }
+    var done=function(){ if(btn){ btn.classList.add('cact-done'); } };
+    if(kind==='navigate'){
+      var v=_copilotResolveView(arg)||_copilotResolveView(kind)||'patients';
+      if(typeof showView==='function') showView(v);
+      done(); return;
+    }
     if(kind==='build'){
       var p=document.getElementById('studioPrompt'); if(p){ p.value=String(arg||''); }
       if(typeof generateStudioWidget==='function') generateStudioWidget();
       try{ document.getElementById('studioPrompt').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
-      return;
+      done(); return;
     }
     if(kind==='openPatient'||kind==='startVisit'){
       var id=arg; var list=(typeof getPatients==='function'?getPatients():[])||[];
@@ -9985,9 +10014,16 @@ function _copilotDoAction(kind, arg, btn){
         if(kind==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
         else if(typeof showView==='function'){ showView('patients'); }
         try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient'),'ok'); }catch(e){}
+        done();
       } else { if(typeof showView==='function') showView('patients'); try{ toast('Couldn’t find that patient.',''); }catch(e){} }
       return;
     }
+    /* Unknown kind (model drift): resolve it as a view by keyword — the label
+       and kind usually say where the user expects to land. Never a silent
+       dead click again. */
+    var fv=_copilotResolveView(kind)||_copilotResolveView(arg)||(btn?_copilotResolveView(btn.textContent):'');
+    if(fv && typeof showView==='function'){ showView(fv); done(); return; }
+    try{ toast('That suggestion isn’t wired to a screen yet — tell me what you want to see and I’ll take you there.',''); }catch(e){}
   }catch(e){}
 }
 
@@ -24014,7 +24050,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b397';
+  window.__MLS_AV='b398';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.0)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.1)
  * ---------------------------------------------------------------------------
  * The base Studio Copilot canonically persists and renders reply metadata
  * (actions, followups, artifact). This companion never intercepts /api/copilot,
@@ -41,7 +41,7 @@
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-2.0.0';
+  var VERSION = 'ca-2.0.1';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -172,7 +172,17 @@
   };
   function resolveView(arg) {
     var a = String(arg || '').trim().toLowerCase();
-    return VIEW_ALIASES[a] || (a || 'visit');
+    if (VIEW_ALIASES[a]) return VIEW_ALIASES[a];
+    /* ca-2.0.1: loose AI args ("analysis top problems", "today's schedule")
+       used to pass through raw and silently no-op in showView. Keyword-match
+       to a real view instead. */
+    if (/analy|problem|stat|outcome/.test(a)) return 'analysis';
+    if (/schedul|calendar|today/.test(a)) return 'calendar';
+    if (/patient|panel|candidate/.test(a)) return 'patients';
+    if (/histor|note/.test(a)) return 'history';
+    if (/studio|widget|tool/.test(a)) return 'studio';
+    if (/visit|record/.test(a)) return 'visit';
+    return a || 'visit';
   }
 
   /* ---------------- action execution ---------------- */
@@ -244,7 +254,25 @@
     if (a.kind === 'openPatient') return doOpenPatient(a.arg);
     if (a.kind === 'startVisit') return doStartVisit(a.arg);
     if (a.kind === 'build') { doBuild(a.arg); return true; }
+    /* ca-2.0.1: unknown kind (model drift) — land on the closest REAL view by
+       keyword from kind/arg/label, else say so; never a silent dead click and
+       never a navigate to a garbage view name. */
+    var guess = strictView(a.kind) || strictView(a.arg) || strictView(a.label);
+    if (guess) { doNavigate(guess); return true; }
+    toast('That suggestion isn’t wired to a screen yet — ask me where you want to go and I’ll take you there.');
     return false;
+  }
+  function strictView(x) {
+    var a = String(x || '').trim().toLowerCase();
+    if (!a) return '';
+    if (VIEW_ALIASES[a]) return VIEW_ALIASES[a];
+    if (/analy|problem|stat|outcome/.test(a)) return 'analysis';
+    if (/schedul|calendar|today/.test(a)) return 'calendar';
+    if (/patient|panel|candidate/.test(a)) return 'patients';
+    if (/histor|note/.test(a)) return 'history';
+    if (/studio|widget|tool/.test(a)) return 'studio';
+    if (/visit|record/.test(a)) return 'visit';
+    return '';
   }
 
   /* ---------------- Assistant-only rendering ---------------- */
