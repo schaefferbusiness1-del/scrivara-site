@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.9"'), 'si-1.7.9 release marker missing');
+assert(si.includes('var VERSION = "si-1.7.10"'), 'si-1.7.10 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);
@@ -59,7 +59,7 @@ assert(si.includes('[duplicateExtHint(), extUpdateHint()]'), 'receipt-gate failu
 
 {
   const vm = require('vm');
-  const probeSrc = si.match(/var pongProbe = \{ count: 0, versions: \{\} \};[\s\S]*?function duplicateExtHint\(\) \{[\s\S]*?\n    \}/);
+  const probeSrc = si.match(/var pongProbe = \{ pings: 0, pongs: 0, versions: \{\} \};[\s\S]*?function duplicateExtHint\(\) \{[\s\S]*?\n    \}/);
   assert(probeSrc, 'pong probe block not found');
   const listeners = [];
   const fired = [];
@@ -76,35 +76,53 @@ assert(si.includes('[duplicateExtHint(), extUpdateHint()]'), 'receipt-gate failu
   };
   vm.createContext(ctx);
   vm.runInContext(probeSrc[0] + '; this.__arm = armPongProbe; this.__hint = duplicateExtHint;', ctx);
+  function feed(msgs) {
+    const l = listeners[listeners.length - 1];
+    msgs.forEach((m) => l({ data: m }));
+  }
+  const PING = { source: 'mls-app', type: 'mlsPing' };
+  const PONG = (v) => ({ source: 'mls-ext', type: 'mlsPong', version: v });
 
-  /* one answer -> silence */
+  /* one healthy extension: each ping answered once -> silence */
   ctx.__arm();
-  listeners[0]({ data: { source: 'mls-ext', type: 'mlsPong', version: '2.9.41' } });
+  feed([PING, PONG('2.9.41')]);
   ctx.__flush();
-  assert.strictEqual(ctx.__hint(), '', 'a single pong must not warn');
-  assert.strictEqual(fired.length, 0, 'a single pong must not emit a status');
+  assert.strictEqual(ctx.__hint(), '', 'one answer per ping must not warn');
 
-  /* two answers with different versions -> named warning */
+  /* live 2026-07-18 false positive: a post-reload probe STORM (many pings,
+     one answer each) must stay silent — this fired "5 answers" on a healthy
+     machine when the probe only counted pongs */
   ctx.__arm();
-  const l2 = listeners[listeners.length - 1];
-  l2({ data: { source: 'mls-ext', type: 'mlsPong', version: '2.9.41' } });
-  l2({ data: { source: 'mls-ext', type: 'mlsPong', version: '1.65' } });
+  feed([PING, PONG('2.9.41'), PING, PONG('2.9.41'), PING, PONG('2.9.41'), PING, PONG('2.9.41'), PING, PONG('2.9.41')]);
+  ctx.__flush();
+  assert.strictEqual(ctx.__hint(), '', 'a probe storm with one answer per ping must never read as duplicates');
+
+  /* one boundary-straddling pong must not warn either */
+  ctx.__arm();
+  feed([PONG('2.9.41'), PING, PONG('2.9.41')]);
+  ctx.__flush();
+  assert.strictEqual(ctx.__hint(), '', 'a single stale boundary pong must not warn');
+
+  /* two installed copies: every ping answered twice -> named warning */
+  ctx.__arm();
+  feed([PING, PONG('2.9.41'), PONG('1.65'), PING, PONG('2.9.41'), PONG('1.65')]);
   ctx.__flush();
   const hint = ctx.__hint();
-  assert(/2 answers/.test(hint), 'the warning must state the answer count');
+  assert(/2 check-in\(s\) got 4 answers/.test(hint), 'the warning must state pings vs answers: ' + hint);
   assert(hint.includes('v2.9.41') && hint.includes('v1.65'), 'differing versions must both be named');
   assert(/chrome:\/\/extensions/.test(hint), 'the warning must point at chrome://extensions');
-  assert.strictEqual(fired.length, 1, 'the duplicate warning must surface as a status line');
-  assert.strictEqual(fired[0].kind, 'err', 'the duplicate warning must be an error-kind status');
+  assert(/TWO copies of MLS Assist/.test(hint), 'the warning must name the situation');
+  assert.strictEqual(fired.length, 0, 'the probe timer must NEVER overwrite a status line (hints ride fail() only)');
 
   /* foreign messages never count */
   ctx.__arm();
-  const l3 = listeners[listeners.length - 1];
-  l3({ data: { source: 'mls-app', type: 'mlsPong' } });
-  l3({ data: { source: 'mls-ext', type: 'mlsAppScheduleResult' } });
+  feed([{ source: 'mls-app', type: 'mlsPong' }, { source: 'mls-ext', type: 'mlsAppScheduleResult' }]);
   ctx.__flush();
-  assert.strictEqual(ctx.__hint(), '', 'non-pong traffic must never trigger the duplicate warning');
+  assert.strictEqual(ctx.__hint(), '', 'non-bridge traffic must never trigger the duplicate warning');
 }
+
+/* nav races between two copies also carry the dup hint */
+assert(si.includes('out.reason === "nav-failed" || out.reason === "wrong-day"'), 'nav-failed/wrong-day must carry the duplicate hint when detected');
 
 /* ---- ds-1.4.0: one-click PHI-free pull error report ---------------------- */
 assert(connect.includes("version: 'ds-1.4.0'"), 'ds-1.4.0 release marker missing');

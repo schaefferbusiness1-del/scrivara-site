@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.9";
+  var VERSION = "si-1.7.10";
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -2349,37 +2349,47 @@
       if (RECEIPT_GATE_REASONS[out.reason]) {
         var hint = [duplicateExtHint(), extUpdateHint()].filter(function (h) { return !!h; }).join(" ");
         if (hint) { out.extUpdateHint = hint; onStatus(hint, "err"); }
+      } else if (out.reason === "nav-failed" || out.reason === "wrong-day") {
+        /* two racing extension copies also fight over date navigation */
+        var dupOnly = duplicateExtHint();
+        if (dupOnly) { out.extUpdateHint = dupOnly; onStatus(dupOnly, "err"); }
       }
       return out;
     }
-    /* si-1.7.8: TWO installed copies of MLS Assist (e.g. an old unpacked
-       folder plus the store version — live suspicion 2026-07-18 on the
-       owner's father's Mac) both answer every bridge request and both drive
-       the same Athena tab, so navigation and receipts cross and every pull
-       dies "not verified" with no visible cause. One ping should get ONE
-       pong: count the answers to THIS pull's ping for 1.5s and, on 2+,
-       name the situation and the fix. Warning only — never blocks. */
-    var pongProbe = { count: 0, versions: {} };
+    /* si-1.7.8/si-1.7.10: TWO installed copies of MLS Assist (e.g. an old
+       unpacked folder plus the store version) both answer every bridge
+       request and both drive the same Athena tab, so navigation and receipts
+       cross and every pull dies "not verified" with no visible cause.
+       si-1.7.10 (live false-positive 2026-07-18 on the owner's machine, ONE
+       healthy extension): background modules ping continuously, so a bare
+       pong count in the window reads a post-reload probe storm as
+       duplicates. Count PINGS and PONGS in the same window: one extension
+       answers each ping once (pongs == pings), two answer twice
+       (pongs == 2×pings). Warn only on pongs >= 4 AND pongs >= 2×pings —
+       a single boundary-straddling pong can never fake that. Warning only,
+       never blocks, and it never overwrites a failure status (it rides the
+       fail() hints instead). */
+    var pongProbe = { pings: 0, pongs: 0, versions: {} };
     function armPongProbe() {
-      pongProbe = { count: 0, versions: {} };
-      var onPongMsg = function (e) {
+      pongProbe = { pings: 0, pongs: 0, versions: {} };
+      var onBridgeMsg = function (e) {
         var d = e && e.data;
-        if (!d || typeof d !== "object" || d.source !== "mls-ext" || d.type !== "mlsPong") return;
-        pongProbe.count++;
+        if (!d || typeof d !== "object") return;
+        if (d.source === "mls-app" && d.type === "mlsPing") { pongProbe.pings++; return; }
+        if (d.source !== "mls-ext" || d.type !== "mlsPong") return;
+        pongProbe.pongs++;
         var v = String(d.version || d.extVersion || "unknown").trim() || "unknown";
         pongProbe.versions[v] = (pongProbe.versions[v] || 0) + 1;
       };
-      window.addEventListener("message", onPongMsg, false);
+      window.addEventListener("message", onBridgeMsg, false);
       setTimeout(function () {
-        safe(function () { window.removeEventListener("message", onPongMsg, false); });
-        var dup = duplicateExtHint();
-        if (dup) onStatus(dup, "err");
+        safe(function () { window.removeEventListener("message", onBridgeMsg, false); });
       }, 1500);
     }
     function duplicateExtHint() {
-      if (pongProbe.count < 2) return "";
+      if (!(pongProbe.pongs >= 4 && pongProbe.pings >= 1 && pongProbe.pongs >= 2 * pongProbe.pings)) return "";
       var vs = Object.keys(pongProbe.versions);
-      return "One check-in got " + pongProbe.count + " answers" + (vs.length > 1 ? " (v" + vs.join(", v") + ")" : "") + " — TWO copies of MLS Assist look installed on this computer, and they read Athena at the same time so verification fails. Open chrome://extensions, keep exactly ONE MLS Assist (remove or toggle off the other), reload the Athena tab, then retry.";
+      return pongProbe.pings + " check-in(s) got " + pongProbe.pongs + " answers" + (vs.length > 1 ? " (v" + vs.join(", v") + ")" : "") + " — TWO copies of MLS Assist look installed on this computer, and they read Athena at the same time so verification fails. Open chrome://extensions, keep exactly ONE MLS Assist (remove or toggle off the other), reload the Athena tab, then retry.";
     }
     /* FIX 2026-07-01: stamp "a user pull is in flight" so the connection prober pauses --
        the extension bridge has no request ids, so probe replies and pull replies can cross. */
