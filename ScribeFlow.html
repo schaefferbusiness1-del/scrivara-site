@@ -20213,6 +20213,15 @@ function sfLoaderFrameSignature(){
   }).join('|');
 }
 
+/* rAF-or-timeout: Chrome PAUSES requestAnimationFrame in hidden/occluded
+   windows (doctor logs in, alt-tabs to Athena while loading), so any reveal
+   step waiting on a bare rAF can wedge the app on "Ready" forever. This fires
+   once via rAF when visible, or the timeout when the window can't paint. */
+function sfRafSoon(cb,ms){
+  var done=false; function fire(){ if(done) return; done=true; try{ cb(); }catch(e){} }
+  try{ requestAnimationFrame(function(){ fire(); }); }catch(e){}
+  setTimeout(fire, ms||300);
+}
 function sfWaitForStableFirstFrame(token,force,gated){
   const minAt=sfGateLoadingStarted+SF_GATE_MIN_MS;
   const releaseAt=sfGateLoadingStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
@@ -20323,7 +20332,7 @@ function sfHideGateLoading(gated,options){
     return new Promise(resolve=>setTimeout(resolve,SF_GATE_READY_HOLD_MS));
   }).then(()=>new Promise(resolve=>{
     if(token!==sfGateHideToken){ resolve(); return; }
-    requestAnimationFrame(()=>{
+    sfRafSoon(()=>{
       if(token!==sfGateHideToken){ resolve(); return; }
       if(gated){ try{ showAgreementsGate(true); }catch(e){} }
       document.documentElement.classList.add('mls-app-revealing');
@@ -24289,7 +24298,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b406';
+  window.__MLS_AV='b407';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -24419,7 +24428,11 @@ function _ptGroupSort(mode){
         if(window.__mlsAbortUiBundle===abort) window.__mlsAbortUiBundle=null;
         assets.settled=true; assets.stop();
         try{ if(critical&&window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcile==='function') window.__mlsUiUnification.reconcile(); }catch(e){}
-        var raf=window.requestAnimationFrame||function(cb){ setTimeout(cb,16); };
+        /* rAF is PAUSED in hidden/occluded windows — without the timeout
+           fallback this publish never resolves and the whole startup pipeline
+           (gate reveal, template panel, satellites) hangs until the window is
+           next painted. sfRafSoon keeps the two-frame settle when visible. */
+        var raf=typeof sfRafSoon==='function'?sfRafSoon:function(cb){ setTimeout(cb,50); };
         raf(function(){ raf(function(){
           window.__mlsUiBundleReady=!!(ok&&critical);
           window.__mlsUiBundleFailed=!window.__mlsUiBundleReady;
@@ -24467,14 +24480,37 @@ function _ptGroupSort(mode){
               }
               abort(assets.errors.length?'critical-asset-error':'critical-ui-missing'); return;
             }
-            if(now>=hardAt){ abort('critical-assets-timeout'); return; }
+            if(now>=hardAt){
+              if(document.hidden){ hardAt=now+4000; }
+              else { abort('critical-assets-timeout'); return; }
+            }
             finishTimer=setTimeout(finish,120);
           })();
         }
-        if(hardAt<=Date.now()){ abort('gate-budget-exhausted'); return; }
-        hardTimer=setTimeout(function(){ abort('bundle-deadline'); },hardAt-Date.now());
+        /* The deadlines exist to bound the VISIBLE gate. In a hidden/occluded
+           window nobody is watching the gate and timers are throttled — an
+           abort there kills a perfectly good in-flight bundle load. While
+           hidden, deadlines re-arm instead of aborting; they bite again the
+           moment the window is visible. */
+        if(hardAt<=Date.now()){
+          if(document.hidden){ hardAt=Date.now()+8000; }
+          else { abort('gate-budget-exhausted'); return; }
+        }
+        function armHardTimer(){
+          hardTimer=setTimeout(function(){
+            if(document.hidden){ hardAt=Math.max(hardAt,Date.now()+4000); armHardTimer(); return; }
+            abort('bundle-deadline');
+          },Math.max(1,hardAt-Date.now()));
+        }
+        armHardTimer();
         var loadBudget=Math.max(1,Math.min(10000,hardAt-Date.now()-1200));
-        loadTimer=setTimeout(function(){ abort('main-load-timeout'); },loadBudget);
+        function armLoadTimer(budget){
+          loadTimer=setTimeout(function(){
+            if(document.hidden){ hardAt=Math.max(hardAt,Date.now()+6000); armLoadTimer(4000); return; }
+            abort('main-load-timeout');
+          },budget);
+        }
+        armLoadTimer(loadBudget);
         s=document.createElement('script');
         s.id='mlsUiBundleScript';
         s.src='mls-connect.js?v='+window.__MLS_AV;
