@@ -3281,13 +3281,19 @@
   var PROC_RE = /(injection|epidural|\besi\b|facet|medial branch|\brfa\b|radiofrequenc|ablation|nerve block|\bblock\b|kyphoplast|stimulator|\bemg\b|discogram|\bmbb\b|trigger point|arthrocentesis|fusion|laminectom|discectom)/i;
   /* real counts straight off the imported schedule rows */
   function countsFor(provider, mKey) {
+    /* Row-shape truth (caught live b412): imported schedule rows carry
+       appt_date/start_at and provider_name — the old day_local/provider
+       filter skipped EVERY row and reported "0 appointments" for a month
+       with hundreds. Empty provider = count the whole practice. */
     var rows = [], appts = 0, procs = 0, uniq = {}, i, n = 0;
     try { rows = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { rows = []; }
     for (i = 0; i < rows.length; i++) {
       var r = rows[i];
-      if (!r || !r.provider || !r.day_local) continue;
-      if (String(r.day_local).slice(0, 7) !== mKey) continue;
-      if (nrm(r.provider) !== nrm(provider)) continue;
+      if (!r) continue;
+      var day = String(r.day_local || r.appt_date || r.start_at || '').slice(0, 7);
+      if (day !== mKey) continue;
+      var rowProv = r.provider || r.provider_name || '';
+      if (provider && rowProv && nrm(rowProv) !== nrm(provider)) continue;
       appts++;
       if (r.name) uniq[nrm(r.name)] = 1;
       if (PROC_RE.test(String(r.reason || ''))) procs++;
@@ -3320,7 +3326,8 @@
     var parts = [], i;
     for (i = 0; i < list.length; i++) {
       var c = countsFor(list[i], w.key);
-      parts.push(list[i] + ': ' + c.appts + ' appointment' + (c.appts === 1 ? '' : 's') +
+      var label = list[i] || 'your practice';   // empty provider = practice-wide counts, never a dangling ":"
+      parts.push(label + ': ' + c.appts + ' appointment' + (c.appts === 1 ? '' : 's') +
                  ', ' + c.patients + ' unique patient' + (c.patients === 1 ? '' : 's') +
                  (c.procs ? (', ' + c.procs + ' procedure-type visit' + (c.procs === 1 ? '' : 's')) : ''));
     }
@@ -32085,7 +32092,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b412';
+  window.__MLS_AV = window.__MLS_AV || 'b413';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32376,7 +32383,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-18-b412';
+  var MLS_APP_BUILD='2026-07-18-b413';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
