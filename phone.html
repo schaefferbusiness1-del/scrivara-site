@@ -4,6 +4,160 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>MLS Recorder</title>
+<script>
+/* __mlsOldBrowserCompat v1.0.0 (b403) — old-Chrome / old-Mac support layer.
+ * Loads FIRST, pure ES5. Three jobs:
+ *  1. Polyfills for runtime APIs the app (or a future feat) touches that old
+ *     Chrome lacks: Promise.allSettled(<76)/any(<85), String.replaceAll(<85),
+ *     String/Array.at(<92), Array.findLast(+Index)(<97), flat/flatMap(<69),
+ *     Object.hasOwn(<93)/fromEntries(<73), structuredClone(<98, JSON-limited
+ *     plain-data clone), crypto.randomUUID(<92, uniqueness-only fallback —
+ *     the app uses these as ids, never as secrets), queueMicrotask(<71).
+ *     Each defines ONLY when missing; modern Chrome is untouched.
+ *  2. CSS inset: fallback (Chrome <87): ~65 overlay/veil/modal rules across
+ *     the app use the inset shorthand; old Chrome silently DROPS the
+ *     declaration and every modal backdrop mispositions. When
+ *     CSS.supports('inset','0') is false, every style tag (present and
+ *     future) gets its inset shorthand rewritten to top/right/bottom/left.
+ *     Armed only on old browsers — zero cost on modern Chrome.
+ *  3. Honest floor: below ~Chrome 60 the app's own syntax (async/await +
+ *     object spread) cannot parse, so features would die silently — show a
+ *     plain "update Chrome" banner instead of dead buttons.
+ * Reversible by removing this block; no PHI, no network, no app-state writes. */
+(function () {
+  'use strict';
+  if (window.__mlsOldBrowserCompat) return;
+  var api = { version: '1.0.0', patched: [], tooOld: false };
+  window.__mlsOldBrowserCompat = api;
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function def(obj, name, fn) {
+    if (!obj || obj[name]) return;
+    try { Object.defineProperty(obj, name, { value: fn, writable: true, configurable: true }); }
+    catch (e) { try { obj[name] = fn; } catch (e2) { return; } }
+    api.patched.push(name);
+  }
+  if (typeof Promise === 'function') {
+    def(Promise, 'allSettled', function (list) {
+      var arr = Array.prototype.slice.call(list || []);
+      return Promise.all(arr.map(function (p) {
+        return Promise.resolve(p).then(
+          function (v) { return { status: 'fulfilled', value: v }; },
+          function (r) { return { status: 'rejected', reason: r }; }
+        );
+      }));
+    });
+    def(Promise, 'any', function (list) {
+      var arr = Array.prototype.slice.call(list || []);
+      return new Promise(function (resolve, reject) {
+        if (!arr.length) { reject(new Error('All promises were rejected')); return; }
+        var left = arr.length, first = null, got = false;
+        arr.forEach(function (p) {
+          Promise.resolve(p).then(resolve, function (r) {
+            if (!got) { got = true; first = r; }
+            if (--left === 0) reject(first);
+          });
+        });
+      });
+    });
+  }
+  def(String.prototype, 'replaceAll', function (find, rep) {
+    var s = String(this);
+    if (find && typeof find === 'object' && find.source != null) return s.replace(find, rep);
+    var esc = String(find).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return s.replace(new RegExp(esc, 'g'), rep);
+  });
+  function atFn(n) {
+    n = Number(n) || 0; n = n < 0 ? Math.ceil(n) : Math.floor(n);
+    var len = this.length; if (n < 0) n += len;
+    return (n < 0 || n >= len) ? undefined : this[n];
+  }
+  def(String.prototype, 'at', atFn);
+  def(Array.prototype, 'at', atFn);
+  def(Array.prototype, 'findLast', function (fn, thisArg) {
+    for (var i = this.length - 1; i >= 0; i--) { if (fn.call(thisArg, this[i], i, this)) return this[i]; }
+    return undefined;
+  });
+  def(Array.prototype, 'findLastIndex', function (fn, thisArg) {
+    for (var i = this.length - 1; i >= 0; i--) { if (fn.call(thisArg, this[i], i, this)) return i; }
+    return -1;
+  });
+  def(Array.prototype, 'flat', function (depth) {
+    depth = depth === undefined ? 1 : (Number(depth) || 0);
+    var out = [];
+    (function walk(a, d) {
+      for (var i = 0; i < a.length; i++) {
+        var v = a[i];
+        if (Array.isArray(v) && d > 0) walk(v, d - 1); else out.push(v);
+      }
+    })(this, depth);
+    return out;
+  });
+  def(Array.prototype, 'flatMap', function (fn, thisArg) {
+    var out = [];
+    for (var i = 0; i < this.length; i++) {
+      var v = fn.call(thisArg, this[i], i, this);
+      if (Array.isArray(v)) out.push.apply(out, v); else out.push(v);
+    }
+    return out;
+  });
+  def(Object, 'hasOwn', function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); });
+  def(Object, 'fromEntries', function (entries) {
+    var o = {}, arr = Array.from ? Array.from(entries) : Array.prototype.slice.call(entries);
+    for (var i = 0; i < arr.length; i++) { if (arr[i]) o[arr[i][0]] = arr[i][1]; }
+    return o;
+  });
+  def(window, 'structuredClone', function (v) { return v === undefined ? v : JSON.parse(JSON.stringify(v)); });
+  if (window.crypto) def(window.crypto, 'randomUUID', function () {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16);
+    });
+  });
+  def(window, 'queueMicrotask', function (fn) { Promise.resolve().then(fn); });
+
+  var insetOk = safe(function () { return !!(window.CSS && CSS.supports && CSS.supports('inset', '0')); }, false);
+  if (!insetOk) {
+    api.patched.push('css-inset');
+    var INSET_RE = /(^|[;{\s])inset\s*:\s*([^;}!]+)(!important)?/gi;
+    var expand = function (m, pre, val, imp) {
+      var p = String(val).trim().split(/\s+/);
+      var t = p[0], r = p.length > 1 ? p[1] : t, b = p.length > 2 ? p[2] : t, l = p.length > 3 ? p[3] : (p.length > 1 ? p[1] : t);
+      imp = imp || '';
+      return pre + 'top:' + t + imp + ';right:' + r + imp + ';bottom:' + b + imp + ';left:' + l + imp;
+    };
+    var patchAll = function () {
+      var els = document.querySelectorAll('style');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i], t = el.textContent || '';
+        if (t.indexOf('inset') < 0 || t === el.__mlsInsetTxt) continue;
+        var n = t.replace(INSET_RE, expand);
+        el.__mlsInsetTxt = n;
+        if (n !== t) el.textContent = n;
+      }
+    };
+    var pt = null;
+    var schedulePatch = function () { if (pt) return; pt = setTimeout(function () { pt = null; patchAll(); }, 150); };
+    safe(function () { new MutationObserver(schedulePatch).observe(document.documentElement, { childList: true, subtree: true }); });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', patchAll);
+    schedulePatch();
+  }
+
+  var parseOk = true;
+  try { new Function('async function _t(){ await 0; } var _o = { x: 1 }; var _s = { ..._o };'); } catch (e) { parseOk = false; }
+  var runtimeOk = !!(window.Promise && window.fetch);
+  if (!parseOk || !runtimeOk) {
+    api.tooOld = true;
+    var show = function () {
+      if (!document.body || document.getElementById('mlsOldChromeBar')) return;
+      var d = document.createElement('div');
+      d.id = 'mlsOldChromeBar';
+      d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7A1F1F;color:#fff;font:700 14px/1.45 system-ui,Arial,sans-serif;padding:12px 16px;text-align:center;';
+      d.textContent = 'This version of Chrome is too old to run MLS. Please update Chrome (menu ⋮ → Help → About Google Chrome), then reopen this page. On an older Mac, install the newest Chrome your macOS allows.';
+      document.body.appendChild(d);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  }
+})();
+/* end __mlsOldBrowserCompat */</script>
 <meta name="theme-color" content="#204034">
 <!-- Add-to-Home-Screen / PWA (iOS + Android) -->
 <meta name="apple-mobile-web-app-capable" content="yes">
