@@ -8289,11 +8289,36 @@ function calPullChartFor(id){
 function calChipOpen(id, key){ if(key) calOpenDay(key); setTimeout(function(){ var box=document.getElementById('calApptEdit_'+id); if(box && !box.innerHTML){ calApptInfo(id); } var el=document.getElementById('calApptEdit_'+id); if(el && el.scrollIntoView){ try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} } }, 60); }
 // Jump from an appointment to that patient's profile (best-effort link by id, else search by name).
 // Calendar → Visit: start documenting this appointment's patient in one tap.
+/* b418 (live-caught): pulled appointments carry the ATHENA patient id, which no
+   locally-created chart stores — findPatient(external) always missed, so every
+   "open/start" from a pulled row fell to an UNASSIGNED visit ("could not open
+   that exact appointment"). Resolve the local chart the same fail-closed way
+   the cross-day opener verifies identity: exact normalized name, DOB compared
+   whenever both sides have one, and EXACTLY ONE match — else null. */
+function _calDobKey(v){ var s=String(v==null?'':v).trim(); if(!s) return '';
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+m[2]+m[3];
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if(m) return m[3]+('0'+m[1]).slice(-2)+('0'+m[2]).slice(-2);
+  return ''; }
+function _calResolveLocalPatient(a){
+  try{
+    if(!a) return null;
+    if(a.patient_external_id && typeof findPatient==='function' && findPatient(a.patient_external_id)) return a.patient_external_id;
+    var nm=String(a.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(!nm) return null;
+    var db=_calDobKey(a.dob);
+    var hits=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(p){
+      if(String((p&&p.name)||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return false;
+      var pd=_calDobKey(p&&p.dob);
+      return !(db&&pd&&db!==pd);
+    });
+    return (hits.length===1&&hits[0]&&hits[0].id!=null)?hits[0].id:null;
+  }catch(e){ return null; }
+}
 function calStartVisit(id){
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   try{
-    if(a.patient_external_id && typeof selectPatient==='function' && (typeof findPatient!=='function' || findPatient(a.patient_external_id))){
-      selectPatient(a.patient_external_id);
+    var _localPid=_calResolveLocalPatient(a);
+    if(_localPid && typeof selectPatient==='function'){
+      selectPatient(_localPid);
       if(typeof activePatient==='function' && activePatient() && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); try{ toast('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){} return; }
     }
   }catch(e){}
@@ -24376,7 +24401,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b417';
+  window.__MLS_AV='b418';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
