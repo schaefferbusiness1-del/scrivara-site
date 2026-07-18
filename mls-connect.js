@@ -32081,7 +32081,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b396';
+  window.__MLS_AV = window.__MLS_AV || 'b397';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32372,7 +32372,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b396';
+  var MLS_APP_BUILD='2026-07-17-b397';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41209,7 +41209,7 @@
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
       if (rstat) { rstat.style.display = 'block'; rstat.textContent = 'Contacting your office computer...'; }
-      /* b396: the phone used to get text-only relay progress while the desktop
+      /* b397: the phone used to get text-only relay progress while the desktop
          got the graphical bar. The office mirrors exact "X of N" notes, so the
          SAME #mlsDsPullBar paints here (deliberate self-contained copy of the
          proven local painter — the local path stays untouched). */

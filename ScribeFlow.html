@@ -979,7 +979,7 @@ html:has(#authScreen:not([style*="none"])){ scrollbar-gutter: auto; }
 .auth-wrap{ background:var(--bg) !important; position:relative; }
 .auth-wrap::before{ content:''; position:absolute; inset:0; background:radial-gradient(700px 400px at 50% -10%, #EAF1EE, transparent 62%); pointer-events:none; }
 body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50% -10%, #1F2721, transparent 62%); }
-.auth-wrap::after{ content:'HIPAA-ready architecture · You sign every note'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
+.auth-wrap::after{ content:'Fully HIPAA compliant · You sign every note'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
 .auth-card{ position:relative; background:var(--card) !important; border:1px solid var(--line) !important; border-radius:20px !important;
   box-shadow:0 1px 2px rgba(20,33,28,.04), 0 30px 60px -30px rgba(20,33,28,.28) !important; padding:38px 36px !important; max-width:404px; }
 .auth-logo{ font-family:var(--serif) !important; font-weight:600 !important; font-size:20px !important; letter-spacing:-.01em; color:var(--ink); }
@@ -3379,7 +3379,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- b392: the "Rated on MLS" website-badge console existed but had NO
            entry point anywhere in the app (reachable only by typed URL). -->
       <div class="row tight" style="margin-top:12px">
-        <a class="btn-ghost" style="font-size:14px;padding:9px 15px;text-decoration:none" href="mls-widgets.html" target="_blank" rel="noopener">🔖 Website badges — embed "Rated on MLS" on your site</a>
+        <a class="btn-ghost" style="font-size:14px;padding:9px 15px;text-decoration:none" href="mls-widgets.html" target="_blank" rel="noopener">🔖 Website badges — embed "Rated on MLS" on your site <span style="font-size:11px;color:var(--muted)">(preview — activates with Best Doctors)</span></a>
       </div>
       <details style="margin-top:12px">
         <summary style="cursor:pointer;font-size:13px;color:var(--muted)">Advanced: Developer API key (FHIR API / server use)</summary>
@@ -24014,7 +24014,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b396';
+  window.__MLS_AV='b397';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
