@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.7";
+  var VERSION = "si-1.7.8";
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -2336,10 +2336,39 @@
       var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, created: 0, repaired: 0, skipped: 0, failed: 0, target: date, providerRosterReceipt: providerGate.receipt || null, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
       extra = extra || {}; for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
       if (RECEIPT_GATE_REASONS[out.reason]) {
-        var hint = extUpdateHint();
+        var hint = [duplicateExtHint(), extUpdateHint()].filter(function (h) { return !!h; }).join(" ");
         if (hint) { out.extUpdateHint = hint; onStatus(hint, "err"); }
       }
       return out;
+    }
+    /* si-1.7.8: TWO installed copies of MLS Assist (e.g. an old unpacked
+       folder plus the store version — live suspicion 2026-07-18 on the
+       owner's father's Mac) both answer every bridge request and both drive
+       the same Athena tab, so navigation and receipts cross and every pull
+       dies "not verified" with no visible cause. One ping should get ONE
+       pong: count the answers to THIS pull's ping for 1.5s and, on 2+,
+       name the situation and the fix. Warning only — never blocks. */
+    var pongProbe = { count: 0, versions: {} };
+    function armPongProbe() {
+      pongProbe = { count: 0, versions: {} };
+      var onPongMsg = function (e) {
+        var d = e && e.data;
+        if (!d || typeof d !== "object" || d.source !== "mls-ext" || d.type !== "mlsPong") return;
+        pongProbe.count++;
+        var v = String(d.version || d.extVersion || "unknown").trim() || "unknown";
+        pongProbe.versions[v] = (pongProbe.versions[v] || 0) + 1;
+      };
+      window.addEventListener("message", onPongMsg, false);
+      setTimeout(function () {
+        safe(function () { window.removeEventListener("message", onPongMsg, false); });
+        var dup = duplicateExtHint();
+        if (dup) onStatus(dup, "err");
+      }, 1500);
+    }
+    function duplicateExtHint() {
+      if (pongProbe.count < 2) return "";
+      var vs = Object.keys(pongProbe.versions);
+      return "One check-in got " + pongProbe.count + " answers" + (vs.length > 1 ? " (v" + vs.join(", v") + ")" : "") + " — TWO copies of MLS Assist look installed on this computer, and they read Athena at the same time so verification fails. Open chrome://extensions, keep exactly ONE MLS Assist (remove or toggle off the other), reload the Athena tab, then retry.";
     }
     /* FIX 2026-07-01: stamp "a user pull is in flight" so the connection prober pauses --
        the extension bridge has no request ids, so probe replies and pull replies can cross. */
@@ -2349,6 +2378,7 @@
 
     onStatus("Looking for MLS Assist...", "");
     fetchPublishedExtVersion(); /* pre-warm so a later receipt-gate failure can name the outdated version */
+    armPongProbe(); /* count answers to THIS ping — 2+ means two installed copies */
     return bridge("mlsPong", "mlsPing", 3500).then(function (pong) {
       if (!pong || pong.reason === "bridge-deadline-exceeded") { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return fail("no-ext"); }
       extPong.version = String(pong && (pong.version || pong.extVersion) || "").trim();
