@@ -18888,12 +18888,30 @@
      range instead of a month range, so the day view renders the identical
      progress log the month pull already shows. The month pull itself is
      unchanged. Read-only toward Athena. */
-  function startDayPull(retryOnly) {
+  function startDayPull(retryOnly, rosterRetried) {
     if (P && P.running) return;
     var exact = safe(function () { return window.__mlsSI; }, null), exactDay = todayLocal();
     if (!(exact && isFn(exact.pull) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', 'The verified exact day-pull engine is still loading.'); return; }
     var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false });
-    if (!exactGate || !exactGate.ok) { pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.'); return; }
+    if (!exactGate || !exactGate.ok) {
+      /* smp-1.1.0 parity (owner ask 2026-07-17): the DAY pull stages Athena
+         itself too - same auto-recovery the month pull got. Drive athenaOne to
+         the Day schedule (read-only date nav), re-read the roster, retry ONCE. */
+      if (!rosterRetried) {
+        pSet('ez3PullNow', 'Setting up Athena automatically…');
+        pSet('ez3PullNow2', 'MLS is opening the Athena Day schedule and verifying your provider - no clicks needed.');
+        var canonicalD = safe(function () { return window.__mlsProviderRoster; }, null);
+        gotoDate(todayLocal(), false, function (m0) { if (m0) pSet('ez3PullNow2', String(m0)); }).then(function () {
+          return readSchedule();
+        }).then(function (r0) {
+          if (r0 && r0.ok === true && canonicalD && isFn(canonicalD.ingestResp)) safe(function () { canonicalD.ingestResp(r0); });
+        }).then(null, function () {}).then(function () { startDayPull(retryOnly, true); });
+        return;
+      }
+      pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.');
+      pSet('ez3PullNow2', 'MLS tried to verify automatically but could not read the Athena Day schedule - check that athenaOne is signed in, then press the pull again.');
+      return;
+    }
     var exactRange = { ym: null, from: exactDay, to: exactDay, keys: [exactDay], label: 'Today' };
     P = freshPull(exactRange, exactGate.provider === 'all' ? 'all' : exactGate.provider.name); P.running = true; P.cancelled = false;
     pSet('ez3PullNow', 'Starting verified exact day pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
@@ -32063,7 +32081,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b394';
+  window.__MLS_AV = window.__MLS_AV || 'b395';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32354,7 +32372,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-17-b394';
+  var MLS_APP_BUILD='2026-07-17-b395';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
