@@ -356,14 +356,18 @@
          tiny history stack is maintained by wrapping showView once; the
          button hides itself when there is nowhere to go back to. */
       if(!window.__mlsViewHist){
-        window.__mlsViewHist={stack:[],lock:false};
+        window.__mlsViewHist={stack:[],lock:false,cur:'visit'};
         try{
           var _origShow=window.showView;
           if(typeof _origShow==='function' && !_origShow.__rdHist){
             var _histWrap=function(v){
               try{
-                var h=window.__mlsViewHist, cur=window.currentView;
+                /* self-tracked current view: top-level `currentView` is
+                   script-scoped (NOT window.currentView), so the stack keeps
+                   its own h.cur updated on every showView call. */
+                var h=window.__mlsViewHist, cur=h.cur;
                 if(!h.lock && cur && cur!==v && cur!=='__pinned'){ h.stack.push(cur); if(h.stack.length>30) h.stack.shift(); }
+                if(v && v!=='__pinned') h.cur=v;
               }catch(e){}
               var out=_origShow.apply(this,arguments);
               try{ var bb=$('mlsRdBackBtn'); if(bb) bb.style.display=window.__mlsViewHist.stack.length?'flex':'none'; }catch(e){}
