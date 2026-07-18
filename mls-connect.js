@@ -31148,6 +31148,10 @@
   function analyticsAnswer(q) {
     try {
       if (!q || typeof window.mlsAsk !== "function") return null;
+      /* Compound questions ("...and who is on my schedule Monday?") must reach
+         the real AI with the full context pack — a local intercept can only
+         answer the first clause and silently DROPS the rest. */
+      if (/\band\b|\balso\b|;/i.test(q) && q.trim().split(/\s+/).length > 9) return null;
       if (!/(how many|number of|count|most common|most frequent|busiest|who saw|revenue|how much)/i.test(q)) return null;
       if (!/(patient|visit|appointment|appt|procedure|reason|revenue|see|saw)/i.test(q)) return null;
       var a = window.mlsAsk(q);
@@ -32081,7 +32085,7 @@
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b411';
+  window.__MLS_AV = window.__MLS_AV || 'b412';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32372,7 +32376,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-18-b411';
+  var MLS_APP_BUILD='2026-07-18-b412';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -32944,7 +32948,7 @@
     if(/this week|week/.test(q)){ var day=now.getDay(); var start=new Date(y,m,now.getDate()-day); var s=start.toISOString().slice(0,10); var e=new Date(start.getTime()+6*864e5).toISOString().slice(0,10); return {label:'this week', in:function(dt){ return dt>=s&&dt<=e; }}; }
     if(/today/.test(q)){ var t=now.toISOString().slice(0,10); return {label:'today', in:function(dt){ return dt===t; }}; }
     if(/this year|year/.test(q)){ return {label:'this year', in:function(dt){ return dt.slice(0,4)===String(y); }}; }
-    return {label:'all pulled dates', in:function(){ return true; }};
+    return {label:'across all pulled dates', in:function(){ return true; }};
   }
   function filtered(q){
     var prov=resolveProvider(q), range=resolveRange(q);
@@ -32970,14 +32974,21 @@
       return {answer:pretty(bestP)+' saw the most patients '+when+' — '+bn+'.'};
     }
     if(/revenue|money|bring in|billing|\$/.test(ql)){
-      var est=rows.length*175;
-      return {answer:'Estimated revenue for '+who+' ('+when+'): '+money(est)+' — '+rows.length+' visits × ~$175 (estimate; connect billing for exact).'};
+      /* NEVER invent a flat $/visit number — the grounded Pay Report prices
+         real codes against the real fee schedule. Point there instead. */
+      return {answer:'I don’t estimate revenue from a flat per-visit guess. Open the Monthly Pay Report (Menu → Pay Reports) — it prices your actual visits from their real billing codes.'};
     }
     if(/how many|number of|count|how much/.test(ql) && /visit|appointment|appt|saw|see/.test(ql)){
       return {answer:who.charAt(0).toUpperCase()+who.slice(1)+' had '+rows.length+' visit'+(rows.length===1?'':'s')+' '+when+'.'};
     }
     if(/how many|number of|count/.test(ql) && /patient/.test(ql)){
       var up=uniquePatients(rows);
+      /* "how many patients do I have / in my practice" asks for the PRACTICE
+         LIST size, not how many were seen in a date range — answer both. */
+      if(/do i have|in my practice|total patient|my patients\b/.test(ql) && !/today|week|month|year/.test(ql)){
+        var listN=null; try{ if(typeof getPatients==='function') listN=(getPatients()||[]).length; }catch(e){}
+        if(listN!=null) return {answer:'Your practice list has '+listN+' patient'+(listN===1?'':'s')+'. '+up+' of them were seen '+when+' ('+rows.length+' visit'+(rows.length===1?'':'s')+').'};
+      }
       return {answer:who.charAt(0).toUpperCase()+who.slice(1)+' had '+up+' patient'+(up===1?'':'s')+' '+when+' ('+rows.length+' visit'+(rows.length===1?'':'s')+').'};
     }
     var upd=uniquePatients(rows); var trd=topReason(rows);

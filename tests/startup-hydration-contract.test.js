@@ -11,7 +11,7 @@ assert.strictEqual((session.match(/refreshMe\(_startupOpts\)/g) || []).length, 1
 assert(session.includes('Promise.all([') && session.includes('_identityReady.then(()=>checkAgreementsGate(_startupOpts))'), 'agreement readiness must follow canonical identity while data hydrates in the same startup batch');
 assert(session.includes('_startupOpts.cancelled=true') && session.includes('_startupController.abort()'), 'startup deadline must cancel late network results');
 assert(session.includes('_armDeadline(30200)') && session.includes('window.__mlsSessionReady=_sessionReady'), 'startup must expose a bounded readiness promise inside the 32-second loader deadline');
-// b411: deadlines re-arm instead of aborting while document.hidden (throttled
+// b412: deadlines re-arm instead of aborting while document.hidden (throttled
 // background tab must not kill a healthy startup nobody is watching).
 assert(session.includes('if(document.hidden){ _armDeadline(8000); return; }'), 'session deadline must defer while the window is hidden');
 assert(session.includes('const _gateTimeout=new Promise(resolve=>') && session.includes('_armGate(10000)') && session.includes('if(document.hidden){ _armGate(5000); return; }') && session.includes('Promise.race([_gateAttempt,_gateTimeout])'), 'identity/compliance no longer has its own 10-second phase budget');
@@ -192,11 +192,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b411', 'main UI script is not exact-versioned');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b412', 'main UI script is not exact-versioned');
   assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b411');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b412');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
