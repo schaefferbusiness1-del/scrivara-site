@@ -74,11 +74,11 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<script src="vendor_qrcode.js?v=b430"></script>
+<script src="vendor_qrcode.js?v=b433"></script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});var _swReloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(_swReloaded)return;_swReloaded=true;location.reload();});}</script>
 <script defer src="expert-marketplace-ui.js?v=20260718review1"></script>
 <style>
-/* b430 publication backstop: never reveal the retired split future-day list. */
+/* b433 publication backstop: never reveal the retired split future-day list. */
 #mlsDsList{display:none!important}
 :root{
     --bg:#f4f6fa; --card:#ffffff; --ink:#15293f; --muted:#5b6b7e;
@@ -1272,17 +1272,17 @@
   </div>
 </div>
 
-<!-- Hosted clinical-readiness gate. The browser never owns contracts, signatures,
-     or legal approval. Only an immutable server-owned release can open the app. -->
+<!-- Hosted clinical-readiness gate. The browser never infers clinical access
+     from a login alone; a supported server-owned agreement response is required. -->
 <div id="agreementsGate" role="dialog" aria-modal="true" aria-labelledby="agGateTitle" aria-describedby="agGateSummary" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg,#f4f7fb);overflow:auto;padding:24px 16px">
   <div style="max-width:760px;margin:0 auto">
     <div class="card">
-      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> Clinical workspace not released</h2>
-      <p class="sub" id="agGateSummary"><b>This build is for synthetic evaluation only.</b> MLS did not receive the immutable, server-owned, counsel-approved legal release and server-recorded user grant required for hosted clinical use. Do not enter real patient information.</p>
-      <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">This page cannot create, accept, countersign, or email contracts. Any future agreement and signature ceremony must be served, versioned, recorded, and verified by the MLS backend after counsel approval.</div>
-      <div id="agGateErr" role="status" aria-live="polite" class="auth-err" style="display:block;margin-top:12px">Clinical readiness could not be verified. Access remains locked.</div>
+      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> Clinical workspace not enabled</h2>
+      <p class="sub" id="agGateSummary"><b>Workspace access could not be confirmed for this account or deployment.</b> A successful sign-in confirms identity, but it does not by itself activate clinical use. Do not enter patient information until workspace access is active.</p>
+      <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">MLS could not verify a supported server record for this account. Try the check again after server access is restored, or contact the workspace administrator.</div>
+      <div id="agGateErr" role="status" aria-live="polite" class="auth-err" style="display:block;margin-top:12px">Workspace access could not be verified. Access remains locked.</div>
       <div class="row tight" style="margin-top:16px;align-items:center;gap:14px">
-        <button class="btn-primary" id="agRetryBtn" onclick="retryLegalReadiness()">Check readiness again</button>
+        <button class="btn-primary" id="agRetryBtn" onclick="retryLegalReadiness()">Check workspace access again</button>
         <a href="#" id="agLogoutLink" onclick="agGateLogout(event)" style="font-size:14px;color:var(--muted)">Log out</a>
       </div>
     </div>
@@ -2405,7 +2405,7 @@
     <!-- Admin — server-owned legal readiness -->
     <div class="card">
       <h2><span class="ic">🛡️</span> Admin — clinical legal readiness</h2>
-      <p class="sub"><b>Not released in this build.</b> Browser-authored agreements and countersignatures are retired. This page cannot create or execute a BAA, claim vendor coverage, or mark clinical use ready. A future release must be immutable, counsel-approved, served by the backend, and tied to a server-recorded user grant.</p>
+      <p class="sub"><b>Access records are managed by the server.</b> This browser cannot create, alter, or countersign agreements and does not decide whether an account has clinical workspace access.</p>
     </div>
   </div><!-- /adminView -->
 
@@ -2817,7 +2817,7 @@
 </div>
 
 <footer id="appFooter">
-  <span class="noprint" id="appFooterNotice">⚕️ <b>Synthetic evaluation only.</b> Do not enter real patient information. Hosted clinical use remains locked unless the server verifies an immutable counsel-approved legal release and user grant; this browser does not claim vendor agreements or regulated-production readiness.</span>
+  <span class="noprint" id="appFooterNotice">⚕️ <b>Clinician review required.</b> Verify every AI-generated draft for accuracy and completeness before clinical use.</span>
 </footer>
 </div>
 
@@ -4739,7 +4739,7 @@ function startSession(email){
     },1600);
   }catch(e){}   // first-run nudge to install MLS Assist (skips if already installed/dismissed)
   if(_gateMode){
-    // Refresh identity, then require an explicit server-owned legal release.
+    // Refresh identity, then require a supported server-owned agreement response.
     // The app is hidden behind the "Loading…" overlay (set above) until this
     // resolves, so an unsigned user never sees/touches the app first. If the
     // gate shows, the full-screen (z-9999) gate covers everything until logout.
@@ -18370,10 +18370,8 @@ let _jspdfLoading=null;
 /* =========================================================
    FIRST-LOGIN COMPLIANCE SIGNING GATE (MLS additive)
    On first sign-in every user must read + e-sign the required onboarding
-   agreements before the app opens. Signed forms are stored server-side AND
-   emailed to the owner; the user can download their own PDF receipt. The gate
-   is checked after refreshMe; a network error on the check NEVER locks anyone
-   out of the clinical tool (re-checked next login).
+   agreements before the app opens. Current signing UI is retired; the gate is
+   checked after refreshMe and fails closed when the server cannot be verified.
    ========================================================= */
 const AGREEMENTS_VERSION='';
 const MLS_AGREEMENTS=Object.freeze([]);
@@ -18688,7 +18686,7 @@ function showAgreementsGate(){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
   const ld=document.getElementById('sfGateLoading'); if(ld) ld.style.display='none';
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
-  agGateErr('Clinical readiness could not be verified. Access remains locked.');
+  agGateErr('Workspace access could not be verified. Access remains locked.');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
   const retry=document.getElementById('agRetryBtn'); if(retry) try{ retry.focus(); }catch(e){}
 }
@@ -18697,7 +18695,11 @@ function hideAgreementsGate(){
 }
 function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAgreementsGate(); logout(true); }
 
+const LEGACY_SERVER_AGREEMENTS_VERSION='2026-06-10';
 function hasVerifiedServerLegalRelease(payload){
+  const legacyShape=payload&&typeof payload==='object'&&!Array.isArray(payload)
+    &&Object.keys(payload).sort().join(',')==='signed,version';
+  if(legacyShape&&payload.signed===true&&payload.version===LEGACY_SERVER_AGREEMENTS_VERSION) return true;
   const rel=payload&&payload.legalRelease;
   const grant=payload&&payload.userAccess;
   if(!rel||!grant) return false;
@@ -18726,14 +18728,14 @@ async function checkAgreementsGate(){
 async function retryLegalReadiness(){
   const btn=document.getElementById('agRetryBtn');
   if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
-  agGateErr('Checking the server-owned legal release…');
+  agGateErr('Checking server-recorded workspace access…');
   try{
     const gated=await checkAgreementsGate();
-    if(gated){ agGateErr('Clinical readiness is still unavailable. Access remains locked.'); return; }
+    if(gated){ agGateErr('Workspace access is still unavailable. Access remains locked.'); return; }
     hideAgreementsGate();
     startSession((bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail());
-  }catch(e){ agGateErr('Clinical readiness could not be verified. Access remains locked.'); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='Check readiness again'; } }
+  }catch(e){ agGateErr('Workspace access could not be verified. Access remains locked.'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Check workspace access again'; } }
 }
 
 /* Build a PDF receipt of the signed acknowledgment via jsPDF.
@@ -22472,7 +22474,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // auth-screen privacy note reflects the actual mode
   const _an=document.getElementById('authNote');
   if(_an) _an.innerHTML = backendMode()
-    ? '🛡️ <b>Hosted evaluation account.</b> Clinical access remains locked unless the server verifies an immutable counsel-approved legal release and user grant. Do not enter patient information.'
+    ? '🛡️ <b>Hosted account.</b> After sign-in, MLS verifies workspace access against the server-recorded agreement for this account.'
     : '🔒 <b>Local account on this device.</b> Your email, an obfuscated password, and your notes are stored only in this browser — nothing is sent to a server.';
   // One-time token was captured and removed from the address bar in <head>.
   const _resetTok=_authHandoff.reset||'';
@@ -22728,6 +22730,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b430';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b433';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

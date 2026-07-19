@@ -24,8 +24,9 @@ for (const [name, source] of [['production', app], ['staging', staging]]) {
   assert(!/<input[^>]+id="(?:agSignName|csName)"/i.test(source), `${name} still renders a legal-name signing input`);
   assert(!/<canvas[^>]+id="(?:agSigPad|csSigPad)"/i.test(source), `${name} still renders a signature pad`);
   assert(!/onclick="(?:agSubmitSign|submitCountersign|signLegalReport|signAndReturnLegal)\(/i.test(source), `${name} still exposes a browser signing control`);
-  assert(source.includes('Clinical workspace not released'), `${name} lacks the hosted readiness block`);
-  assert(source.includes('Synthetic evaluation only'), `${name} does not identify the allowed data mode`);
+  assert(source.includes('Clinical workspace not enabled'), `${name} lacks the hosted workspace-access block`);
+  assert(source.includes('Workspace access could not be confirmed for this account or deployment.'), `${name} lacks truthful account/deployment access copy`);
+  assert(!source.includes('MLS did not receive the immutable'), `${name} still makes an unsupported claim about the owner's agreement records`);
   assert(source.includes('id="legalReturnBtn" disabled'), `${name} legal release control is executable`);
   assert.doesNotMatch(source, /Michael(?: L)? Schaeffer|HIPAA Security (?:&|&amp;) Privacy Officer|Treating Physician/, `${name} hardcodes a signer identity or generic signer fallback`);
 
@@ -43,10 +44,10 @@ for (const [name, source] of [['production', app], ['staging', staging]]) {
   assert(legalRelease.indexOf('return false;') < legalRelease.indexOf('/unlock'), `${name} legal report override release is reachable`);
 }
 
-// Strict future server contract: operational PHI flags and legacy signed booleans
-// are intentionally insufficient. The release needs immutable counsel evidence and
-// a server-recorded grant tied to that exact release.
-const predicateSource = between(app, 'function hasVerifiedServerLegalRelease(payload)', '/* Gate check');
+// Compatibility contract: the exact current server-recorded legacy agreement is
+// accepted during rollback, while bare/stale/mixed legacy shapes are rejected.
+// The newer immutable release plus matching server-recorded grant also remains valid.
+const predicateSource = between(app, "const LEGACY_SERVER_AGREEMENTS_VERSION='2026-06-10';", '/* Gate check');
 const predicateContext = { Number, Date };
 vm.createContext(predicateContext);
 vm.runInContext(predicateSource, predicateContext, { filename: 'legal-release-predicate.js' });
@@ -72,9 +73,21 @@ const valid = {
 };
 
 assert.strictEqual(verifies(valid), true, 'complete server-owned legal evidence was rejected');
+const validLegacy = { signed: true, version: '2026-06-10' };
+assert.strictEqual(verifies(validLegacy), true, 'exact current server-recorded legacy agreement was rejected');
 for (const bad of [
   null,
   { signed: true },
+  { signed: true, version: '2026-06-09' },
+  { signed: true, version: 20260610 },
+  { signed: 'true', version: '2026-06-10' },
+  { signed: false, version: '2026-06-10' },
+  { signed: true, version: '2026-06-10', legalRelease: null },
+  { signed: true, version: '2026-06-10', userAccess: null },
+  { signed: true, version: '2026-06-10', revoked: true },
+  { signed: true, version: '2026-06-10', readiness: { clinicalUse: false } },
+  { signed: true, version: '2026-06-10', capabilities: { phiEnabled: false } },
+  { signed: true, version: '2026-06-10', legal_release: { status: 'revoked' } },
   { capabilities: { phiEnabled: true }, readiness: { clinicalUse: 'ready' } },
   { ...valid, legalRelease: { ...valid.legalRelease, counselApproved: false } },
   { ...valid, legalRelease: { ...valid.legalRelease, immutable: false } },
@@ -86,7 +99,7 @@ for (const bad of [
   assert.strictEqual(verifies(bad), false, 'incomplete or unrelated readiness evidence was accepted');
 }
 
-const stagingPredicate = between(staging, 'function hasVerifiedServerLegalRelease(payload)', 'async function checkAgreementsGate()');
+const stagingPredicate = between(staging, "const LEGACY_SERVER_AGREEMENTS_VERSION='2026-06-10';", 'async function checkAgreementsGate()');
 assert.strictEqual(stagingPredicate.trim(), predicateSource.trim(), 'staging legal-release predicate drifted from production');
 
 // Exercise the network gate itself. Every hosted error/missing-evidence route is
@@ -125,8 +138,13 @@ async function runGate(options) {
   assert.strictEqual((await runGate({ status: 503, ok: false })).gated, true, 'server error failed open');
   assert.strictEqual((await runGate({ status: 401, ok: false })).gated, true, 'unauthorized response failed open');
   assert.strictEqual((await runGate({ status: 401, ok: false })).handled401, true, '401 did not retire the session');
-  assert.strictEqual((await runGate({ payload: { signed: true } })).gated, true, 'legacy signed boolean opened hosted clinical use');
+  assert.strictEqual((await runGate({ payload: { signed: true } })).gated, true, 'bare legacy signed boolean opened hosted clinical use');
+  assert.strictEqual((await runGate({ payload: { signed: true, version: '2026-06-09' } })).gated, true, 'stale legacy agreement opened hosted clinical use');
+  assert.strictEqual((await runGate({ payload: { signed: true, version: '2026-06-10', legalRelease: null } })).gated, true, 'mixed malformed response downgraded through legacy agreement fields');
+  assert.strictEqual((await runGate({ payload: { signed: true, version: '2026-06-10', revoked: true } })).gated, true, 'contradictory extra legacy field opened hosted clinical use');
+  assert.strictEqual((await runGate({ payload: { signed: true, version: '2026-06-10', readiness: { clinicalUse: false } } })).gated, true, 'readiness denial was bypassed by legacy agreement fields');
   assert.strictEqual((await runGate({ payload: valid, startupValid: false })).gated, true, 'late response opened a cancelled startup');
+  assert.strictEqual((await runGate({ payload: validLegacy })).gated, false, 'exact current legacy agreement did not open the hosted gate');
   assert.strictEqual((await runGate({ payload: valid })).gated, false, 'exact verified server release did not open the hosted gate');
 
   const startup = between(app, 'function startSession(email)', 'function logout(force)');

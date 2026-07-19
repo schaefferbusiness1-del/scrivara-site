@@ -343,8 +343,8 @@ function inspectPublicCopy(file, source, failures) {
 function inspectScribeFlow(source, failures) {
   for (const marker of [
     'const MLS_AGREEMENTS=Object.freeze([]);',
-    'Clinical workspace not released',
-    'Synthetic evaluation only',
+    'Clinical workspace not enabled',
+    'Workspace access could not be confirmed for this account or deployment.',
     'const MLS_LEGAL_WORKSPACE_RELEASED=false;',
     'function hasVerifiedServerLegalRelease(payload)',
   ]) {
