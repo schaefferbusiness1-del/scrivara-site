@@ -40,7 +40,7 @@
   var ADV_BODY_ID = 'mlsStudyAdvancedBody';
   var MAX_REPORT_PAGES = 60;
   var PRIVACY_WARNING = 'Direct identifiers removed where detectable; limited-data study draft requiring clinician and privacy review before use or sharing.';
-  var CDN_JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  var LOCAL_JSPDF = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
   var mountObserver = null, childObserver = null, mountDeadline = null;
   var mountedPro = null, generation = 0, lastQuery = '', lastResult = null, uiRunPromise = null;
   var objectUrls = [];
@@ -1754,7 +1754,7 @@
     var have = (root.jspdf && root.jspdf.jsPDF) || root.jsPDF;
     if (have) return Promise.resolve(have);
     /* Reuse the app's single lazy jsPDF owner when available.  Creating a
-       second CDN script while Legal/Reports is already loading the same library
+       second script while Legal/Reports is already loading the same local library
        used to waste bandwidth and could race two global initializers. */
     if (typeof root.loadJsPdf === 'function') {
       return promiseWithTimeout(Promise.resolve().then(function () { return root.loadJsPdf(); }).then(function (ns) {
@@ -1785,7 +1785,7 @@
         if (ok && j) resolve(j); else reject(studyError(ok ? 'pdf-loader-invalid' : 'pdf-loader-failed', message || 'Could not load the PDF renderer. Retry the study.'));
       }
       var deadline = setTimeout(function () { finish(false, 'The PDF renderer timed out. Retry the study when the connection is available.'); }, timeoutMs);
-      s.src = CDN_JSPDF; s.async = true; s.setAttribute('data-mls-study-request-pdf', '1');
+      s.src = LOCAL_JSPDF; s.async = true; s.setAttribute('data-mls-study-request-pdf', '1');
       s.onload = function () { finish(true); };
       s.onerror = function () { finish(false, 'Could not load the PDF renderer. Retry the study when the connection is available.'); };
       (root.document.head || root.document.documentElement).appendChild(s);

@@ -1,10 +1,12 @@
 /* MLS Assist — content script.
-   Sits dormant as a small badge on every page. Does NOTHING until the doctor
-   opens the panel (consent). Then: capture the visit (live dictation or page
+   Runs only on MLS, exact athenaOne, and loopback synthetic-test pages. It
+   does nothing until the doctor opens the panel or MLS sends a guarded request.
+   Then: capture the visit (live dictation or page
    selection) -> MLS generates a note -> the doctor reviews -> one click inserts
    it into the focused EMR field. Nothing is ever written automatically. */
 (function () {
-  /* MLS Assist v1.35 — scope guard: never run on github.com (perf+privacy; via <all_urls> the panel/observers used to inject into GitHub and could freeze its renderer). Belt-and-suspenders with manifest exclude_matches. athenaOne + mlsscribe.com are unaffected. */
+  /* MLS Assist v1.35 — runtime scope guard remains defense in depth if a
+     future manifest accidentally broadens the explicit MLS/Athena matches. */
   try { var __mlsHost = (location && location.hostname || '').toLowerCase(); if (__mlsHost === 'github.com' || __mlsHost.slice(-11) === '.github.com' || __mlsHost === 'githubusercontent.com' || __mlsHost.slice(-22) === '.githubusercontent.com' || __mlsHost === 'github.dev' || __mlsHost.slice(-11) === '.github.dev') { return; } } catch (e) {}
   if (window.__mlsAssistLoaded) return; window.__mlsAssistLoaded = true;
   /* v1.90: athena-tab REGISTRATION heartbeat. Fires ONLY on the raw product host
@@ -22,10 +24,8 @@
     }
   } catch (e) {}
   // SECURITY (v1.26) -- trusted-origin gate for the page->extension postMessage bridge.
-  // The content script runs on <all_urls> so the doctor can open the MLS Assist panel
-  // on ANY page (that any-page behavior is intentional and unchanged). BUT the bridge
-  // below can drive the extension to scrape the open EMR/Athena chart and return PHI,
-  // so it must only be drivable by the MLS web app itself. We therefore (1) validate
+  // This bridge can drive the extension to read the open EMR/Athena chart and
+  // return PHI, so only the trusted MLS web app may drive it. We therefore (1) validate
   // e.origin against an allowlist of MLS app origins, (2) validate the message shape
   // and type, and (3) reply ONLY to the trusted origin -- never '*'. The doctor's own
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
@@ -119,6 +119,13 @@
   } catch (e) {}
   /* ATHENA_ACTION_V2_CLICK_GATE_END */
   function mlsStr(v, max) { return (typeof v === 'string') ? v.slice(0, max || 100000) : ''; }
+  function mlsLoopbackOrigin(origin) {
+    try {
+      var u = new URL(String(origin || ''));
+      var h = String(u.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+      return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+    } catch (e) { return false; }
+  }
 
   // Bridge: the MLS web app (mlsscribe.com) can ping us (to show "Assist installed")
   // and ask us to capture the patient currently open in the doctor's EMR tab.
@@ -129,8 +136,15 @@
     if (!mlsTrustedOrigin(e.origin)) return;
     var origin = e.origin;
     var reply = function (payload) { try { window.postMessage(payload, origin); } catch (err) {} };
-    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true } }); return; }
-    if (d.type === 'mlsExtHealth') { try { chrome.runtime.sendMessage({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', resp: { ok: false, reason: 'bridge-error' } }); } return; }
+    /* Loopback is synthetic-only even when an operator explicitly adds it as
+       a trusted development origin. It may inspect extension health, but it
+       can never receive live Athena schedule/chart data or drive a write. */
+    if (mlsLoopbackOrigin(origin) && d.type !== 'mlsPing' && d.type !== 'mlsExtHealth') {
+      reply({ source: 'mls-ext', type: 'mlsBridgeBlocked', requestId: mlsStr(d.requestId || d.id, 100), resp: { ok: false, blocked: true, reason: 'loopback-synthetic-only' } });
+      return;
+    }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true } }); return; }
+    if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { chrome.runtime.sendMessage({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
@@ -689,6 +703,12 @@
           noteWriteProof: mlsStr(d.noteWriteProof || (d.payload && d.payload.noteWriteProof), 220),
           expectedPatient: safePatient(d.expectedPatient || d.patient || (d.payload && d.payload.patient)),
           expectedContext: safeContext(d.expectedContext || d.context || (d.payload && d.payload.context)),
+          /* Optional exact-open continuation binding. Normal review probes omit
+             this and retain the established all-tab unique-discovery behavior.
+             When the app just proved one appointment navigation, the probe must
+             stay on that same Athena tab instead of silently succeeding in a
+             different already-open tab. The background validates it again. */
+          expectedAthenaTabId: d.expectedAthenaTabId == null || d.expectedAthenaTabId === '' ? '' : Number(d.expectedAthenaTabId),
           probeContext: (function (v) { v = (v && typeof v === 'object') ? v : {}; return { patientName: mlsStr(v.patientName, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn, 80), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200), framePath: mlsStr(v.framePath, 80), encounterRootFingerprint: mlsStr(v.encounterRootFingerprint, 120), controlLabel: mlsStr(v.controlLabel, 200), controlFingerprint: mlsStr(v.controlFingerprint, 120), noteScopeFingerprint: mlsStr(v.noteScopeFingerprint, 120), actionContainerFingerprint: mlsStr(v.actionContainerFingerprint, 120), editorFingerprint: mlsStr(v.editorFingerprint, 120), contextHash: mlsStr(v.contextHash, 120), taughtDestinationFingerprint: mlsStr(v.taughtDestinationFingerprint, 120), taughtDestinationLabel: mlsStr(v.taughtDestinationLabel, 240) }; })(d.probeContext || (d.payload && d.payload.probeContext)),
           billing: safeBilling(d.billing || (d.payload && d.payload.billing)),
           order: safeOrderResult.value,
@@ -885,6 +905,17 @@
   }
   /*MLS_PAGINATE_END*/
 
+  /* athenaOne has one canonical extension surface: mls-popup.js, loaded next
+     by the manifest. Do not also build the legacy Dictate/Generate/Insert
+     panel on the same page. The trusted MLS bridge and Athena registration
+     above remain installed; only this obsolete UI and its listeners stop. */
+  try {
+    if (String(location.hostname || '').toLowerCase() === 'athenanet.athenahealth.com') {
+      window.__mlsLegacyAssistSuppressed = true;
+      return;
+    }
+  } catch (eSurface) {}
+
   // --- custom hover tooltips: appear only after the cursor rests ~2s on a button ---
   (function () {
     var DELAY = 2000, tipEl = null, timer = null, currentEl = null;
@@ -975,10 +1006,9 @@
   // v1.47 — auto-show the floating "🩺 MLS Assist" badge ONLY where it belongs: athenaOne
   // (the doctor's EMR) and any host the user explicitly allowlists. This stops the pill from
   // appearing on random non-EMR tabs (Render, Gmail, news, etc.) and from DUPLICATING the MLS
-  // web app's own assistant on mlsscribe.com. The panel is still injected on every page and the
-  // toolbar icon (mlsOpenPanel) opens it anywhere, so nothing is disabled — athenaOne write-back
-  // is fully preserved. Set chrome.storage.local 'mlsBadgeHosts' (or window.__mlsBadgeHosts) to
-  // an array of extra EMR hostnames to auto-show elsewhere.
+  // web app's own assistant on mlsscribe.com. The core content script now loads only on
+  // MLS and exact athenaOne hosts; the toolbar icon remains available wherever Chrome
+  // grants active-tab access. athenaOne review and explicit schedule pulls are preserved.
   function _mlsAutoBadge() {
     try {
       var h = (location.hostname || '').toLowerCase();

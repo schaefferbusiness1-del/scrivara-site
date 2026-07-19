@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://scrivara-backend.onrender.com; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
-<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://scrivara-backend.onrender.com; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Expert physician profile | MLS for Attorneys</title>
-<meta name="description" content="Board-certified, actively-practicing physician available for IME, expert narrative, causation and record-review reports — signed within 24 hours. View credentials, jurisdictions, deposition & trial availability and fees.">
+<meta name="description" content="Synthetic physician-profile workflow evaluation. Case intake, patient records, authorization verification, signing, payment, and report delivery are unavailable.">
 <meta name="theme-color" content="#204034">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
@@ -195,15 +196,15 @@ footer{background:var(--alt);border-color:var(--line);margin-top:0}
 <div class="wrap nav">
 <a class="brand" href="lawyers.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b><span class="tagpill">For Attorneys</span></a>
 <div class="right">
-<a class="signin" href="ScribeFlow.html">Attorney sign in</a>
-<a class="btn btn-primary btn-sm" href="lawyers.html#request">Request a report</a>
+<a class="signin" href="ScribeFlow.html">MLS Scribe app</a>
+<a class="btn btn-primary btn-sm" href="lawyers.html#request">View readiness limits</a>
 </div>
 </div>
 </header>
 
 <main>
 <div class="wrap">
-<a class="back" href="lawyers.html#directory">← Back to the expert directory</a>
+<a class="back" href="lawyers.html#directory">← Back to public profiles</a>
 <div id="content" style="display:none"></div>
 <div id="loadState" role="status" aria-live="polite" aria-busy="true" aria-label="Loading physician profile">
   <div class="profile-skeleton" aria-hidden="true">
@@ -220,17 +221,17 @@ footer{background:var(--alt);border-color:var(--line);margin-top:0}
 <div class="foot">
 <div>
 <a class="brand" href="index.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b></a>
-<p class="muted">Connecting attorneys with board-certified spine, pain and PM&amp;R physicians for fast, defensible medico-legal reports. By MLS Scribe LLC.</p>
+<p class="muted">Synthetic evaluation of a possible medical-legal workflow. No case intake, matchmaking, physician engagement, or report delivery is available. By MLS Scribe LLC.</p>
 </div>
 <div class="links">
-<a href="lawyers.html#directory">Find an expert</a>
+<a href="lawyers.html#directory">Public profiles</a>
 <a href="lawyers.html#how">How it works</a>
-<a href="lawyers.html#request">Request a report</a>
+<a href="lawyers.html#request">Readiness limits</a>
 <a href="ScribeFlow.html">Sign in</a>
 <a href="mailto:michael@mlsscribe.com">Contact</a>
 </div>
 </div>
-<p class="fineprint">© 2026 MLS Scribe LLC. MLS provides a platform that connects attorneys with independent physician experts; it does not itself render medical or legal opinions. Profile content is supplied by the physician. A signed patient authorization is required before any report is released. Fully HIPAA compliant: encrypted architecture with signed Business Associate Agreements.</p>
+<p class="fineprint">© 2026 MLS Scribe LLC. Synthetic workflow evaluation only. Profile content is supplied by the physician. Case intake, patient-record upload, authorization verification, signing, payment, and report delivery are unavailable.</p>
 </div>
 </footer>
 
@@ -253,8 +254,34 @@ function publicExperience(value, fallback){
 }
 function publicDocuments(list){
   return (Array.isArray(list)?list:[]).filter(function(d){
-    return d && d.url && !/\b(sample|placeholder)\b/i.test(String(d.label||'')+' '+String(d.filename||''));
+    return d && d.url;
   });
+}
+const HELD_PROFILE_MARKER=/\b(?:sample|placeholder|lorem|synthetic)\b|\bedit(?:ed|ing|able)?\b|\b(?:replace|update)\s+(?:this|me)\b/i;
+function profileValueText(value,seen){
+  if(value==null) return '';
+  if(typeof value==='string'||typeof value==='number'||typeof value==='boolean') return String(value);
+  if(typeof value!=='object') return '';
+  seen=seen||[];
+  if(seen.indexOf(value)!==-1) return '';
+  seen.push(value);
+  const parts=Array.isArray(value)?value.map(function(v){return profileValueText(v,seen);}):Object.keys(value).map(function(k){return profileValueText(value[k],seen);});
+  seen.pop();
+  return parts.join(' ');
+}
+function isReleasedProfile(e){
+  if(!e||typeof e!=='object') return false;
+  if(!String(e.id||e.user_id||e.expert_id||'').trim()) return false;
+  if(!String(e.name||e.display_name||e.doctor_name||e.full_name||'').trim()) return false;
+  return !HELD_PROFILE_MARKER.test(profileValueText(e));
+}
+function showHeldProfile(){
+  const ls=document.getElementById('loadState');
+  document.getElementById('content').style.display='none';
+  ls.className='load-error';
+  ls.setAttribute('aria-busy','false');
+  ls.innerHTML='<h2>No independently verified public expert profile is released here</h2>'
+    +'<p>This profile remains unavailable unless its public-release status can be confirmed. Return to <a href="lawyers.html#directory">public profiles</a> and do not send case or patient information.</p>';
 }
 
 const STATE_NAMES={AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
@@ -263,11 +290,11 @@ function render(e){
   const yourState=(qp('state')||'').toUpperCase();
   const states=Array.isArray(e.states)?e.states:[];
   const credentials=publicCredentials(e.credentials);
-  const years=publicExperience(e.years,'Practice details confirmed with each engagement');
-  const depoExperience=publicExperience(e.depo_experience,'Availability confirmed with each engagement');
-  const trialExperience=publicExperience(e.trial_experience,'Availability confirmed with each engagement');
+  const years=publicExperience(e.years,'');
+  const depoExperience=publicExperience(e.depo_experience,'');
+  const trialExperience=publicExperience(e.trial_experience,'');
   const availability=publicExperience(e.availability,'');
-  const feeInfo=publicExperience(e.fee_info,'Report fee provided with engagement terms.');
+  const feeInfo=publicExperience(e.fee_info,'');
   const documents=publicDocuments(e.documents);
   const match = yourState && states.indexOf(yourState)!==-1;
   const photo = e.has_photo
@@ -275,10 +302,9 @@ function render(e){
     : '<div class="photo-ph">'+esc(initials(e.name))+'</div>';
 
   const badges=[];
-  badges.push('<span class="badge green">🩺 Independent physician expert</span>');
-  if(/board[ -]?cert/i.test(credentials)) badges.push('<span class="badge">🎓 Board-certified</span>');
-  if(/24[ -]?hour/i.test(availability)) badges.push('<span class="badge">⏱️ 24-hour reports</span>');
-  if(match) badges.unshift('<span class="badge match">📍 Licensed in '+esc(STATE_NAMES[yourState]||yourState)+'</span>');
+  badges.push('<span class="badge green">🔎 Profile released for public viewing</span>');
+  if(credentials) badges.push('<span class="badge">📄 Physician-supplied credentials</span>');
+  if(match) badges.unshift('<span class="badge match">📍 Profile lists '+esc(STATE_NAMES[yourState]||yourState)+'</span>');
 
   const reqHref='lawyers.html#request';
 
@@ -289,15 +315,14 @@ function render(e){
     +((e.specialty||e.subspecialty)?'<div class="spec">'+esc([e.specialty,e.subspecialty].filter(Boolean).join(' · '))+'</div>':'')
     +(e.headline?'<div class="headline">'+esc(e.headline)+'</div>':'')
     +'<div class="badges">'+badges.join('')+'</div>'
-    +'<div class="cta"><a class="btn btn-primary" href="'+reqHref+'" onclick="stashExpert()">Request this expert</a>'
-    +'<a class="btn btn-ghost" href="mailto:michael@mlsscribe.com?subject='+encodeURIComponent('Expert request: '+e.name)+'">Email about this expert</a></div>'
+    +'<div class="cta"><a class="btn btn-primary" href="'+reqHref+'">View readiness limits</a></div>'
     +'</div></div>';
 
   // optional "your state" bar
   h+='<div class="statebar"><label for="stateSel">📍 Your state:</label>'
     +'<select id="stateSel"><option value="">Select…</option>'
     +Object.keys(STATE_NAMES).map(function(c){ return '<option value="'+c+'"'+(c===yourState?' selected':'')+'>'+esc(STATE_NAMES[c])+'</option>'; }).join('')
-    +'</select><span style="font-size:13px;color:var(--muted)">See whether this physician is licensed where your case sits.</span></div>';
+    +'</select><span style="font-size:13px;color:var(--muted)">Compare the profile’s listed jurisdictions. Verify current licensure independently.</span></div>';
 
   // main + aside
   h+='<div class="layout"><div class="mainCol">';
@@ -313,13 +338,13 @@ function render(e){
   if(availability) kvRows.push(['Availability', availability]);
   if(e.contact_pref) kvRows.push(['Contact', e.contact_pref]);
   if(kvRows.length){
-    h+='<div class="block"><h2>Credentials &amp; experience</h2><div class="kv">'
+    h+='<div class="block"><h2>Physician-supplied profile details</h2><p class="note">These statements are not independently verified by MLS. Check authoritative licensing and certification sources before relying on them.</p><div class="kv">'
       +kvRows.map(function(r){ return '<div class="row"><span class="lbl">'+esc(r[0])+'</span><span class="val">'+esc(r[1])+'</span></div>'; }).join('')
       +'</div></div>';
   }
 
   if(states.length){
-    h+='<div class="block"><h2>Licensed jurisdictions</h2><div class="statechips">'
+    h+='<div class="block"><h2>Jurisdictions listed by physician</h2><div class="statechips">'
       +states.map(function(c){ return '<span class="chip'+(c===yourState?' hl':'')+'">'+esc(c)+(STATE_NAMES[c]?(' · '+esc(STATE_NAMES[c])):'')+'</span>'; }).join('')
       +'</div></div>';
   }
@@ -327,28 +352,29 @@ function render(e){
   if(documents.length){
     h+='<div class="block"><h2>Documents</h2><ul class="docs">'
       +documents.map(function(d){ return '<a href="'+BACKEND_URL+esc(d.url)+'" target="_blank" rel="noopener">📄 '+esc(d.label||d.filename||'Document')+'</a>'; }).join('')
-      +'</ul><p class="note">Documents are provided by the physician (e.g. CV, de-identified sample report, certifications).</p></div>';
+      +'</ul><p class="note">Documents are physician supplied and are not independently validated by MLS. Open only what you intend to review.</p></div>';
   }
 
   h+='</div>'; // mainCol
 
   // aside (fees + CTA)
   h+='<div class="aside"><div class="block">';
-  h+='<h2>Engagement</h2>';
+  h+='<h2>Physician-supplied fee information</h2>';
   const depo=money(e.depo_rate_cents), trial=money(e.trial_rate_cents);
   if(depo||trial||feeInfo){
-    if(depo) h+='<div class="fee"><span>Deposition</span><span class="v">'+esc(depo)+'/hr</span></div>';
-    if(trial) h+='<div class="fee"><span>Trial / testimony</span><span class="v">'+esc(trial)+'/hr</span></div>';
+    if(depo) h+='<div class="fee"><span>Stated deposition rate</span><span class="v">'+esc(depo)+'/hr</span></div>';
+    if(trial) h+='<div class="fee"><span>Stated trial rate</span><span class="v">'+esc(trial)+'/hr</span></div>';
     if(feeInfo) h+='<p class="note">'+esc(feeInfo)+'</p>';
   } else {
-    h+='<p class="note">Fees on request — included with your engagement quote.</p>';
+    h+='<p class="note">No fee information is displayed.</p>';
   }
-  h+='<p class="aside-kicker">What happens next</p><ol class="next-steps">'
-    +'<li><b>1</b><span>Send the case details and signed patient authorization.</span></li>'
-    +'<li><b>2</b><span>MLS confirms scope, timing and the physician engagement.</span></li>'
-    +'<li><b>3</b><span>Stripe-confirmed payment unlocks the full signed report in the portal.</span></li>'
+  h+='<p class="note">This is not a quote, offer, or verified engagement term. Case intake and physician engagement are unavailable.</p>';
+  h+='<p class="aside-kicker">Evaluation limits</p><ol class="next-steps">'
+    +'<li><b>1</b><span>Review only the publicly released profile.</span></li>'
+    +'<li><b>2</b><span>Verify credentials, licensure, conflicts, and profile statements independently.</span></li>'
+    +'<li><b>3</b><span>Do not send case details, records, patient information, or authorizations.</span></li>'
     +'</ol>';
-  h+='<p class="note">A signed patient authorization (HIPAA §164.508) is required before any report is released.</p>';
+  h+='<p class="note">Matching, signing, payment, report delivery, and testimony requests are unavailable.</p>';
   h+='</div></div>';
 
   h+='</div>'; // layout
@@ -357,16 +383,9 @@ function render(e){
   document.getElementById('content').style.display='block';
   document.getElementById('loadState').setAttribute('aria-busy','false');
   document.getElementById('loadState').style.display='none';
-  document.title = e.name + ' — Expert physician | MLS for Attorneys';
-
-  // store name/spec so the request form can prefill
-  window.__expert={ id:e.id, name:e.name, specialty:e.specialty };
+  document.title = e.name + ' — Public physician profile | MLS';
   var sel=document.getElementById('stateSel');
   if(sel) sel.addEventListener('change', function(){ const v=this.value; const u=new URL(location.href); if(v) u.searchParams.set('state',v); else u.searchParams.delete('state'); location.href=u.toString(); });
-}
-
-function stashExpert(){
-  try{ if(window.__expert){ sessionStorage.setItem('mls_req_expert', JSON.stringify(window.__expert)); } }catch(e){}
 }
 
 async function load(){
@@ -374,14 +393,14 @@ async function load(){
   const ls=document.getElementById('loadState');
   if(!id){ ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>No physician selected</h2><p>Return to the <a href="lawyers.html#directory">expert directory</a> to choose a physician.</p>'; return; }
   try{
-    const r=await fetch(BACKEND_URL+'/api/public/experts/'+encodeURIComponent(id),{headers:{Accept:'application/json'}});
-    if(r.status===404){ ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>Profile not available</h2><p>This physician is not currently listed in the public directory. Browse <a href="lawyers.html#directory">other experts</a> or <a href="lawyers.html#request">send a request</a> and we’ll match your case.</p>'; return; }
+    const r=await fetch(BACKEND_URL+'/api/public/experts/'+encodeURIComponent(id),{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{Accept:'application/json'}});
+    if(r.status===404){ showHeldProfile(); return; }
     if(!r.ok) throw new Error('status '+r.status);
     const d=await r.json();
-    if(!d.expert) throw new Error('no data');
+    if(d.released!==true||!isReleasedProfile(d.expert)){ showHeldProfile(); return; }
     render(d.expert);
   }catch(e){
-    ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>Couldn’t load this profile</h2><p>Please try again shortly, or browse the <a href="lawyers.html#directory">expert directory</a>.</p>';
+    showHeldProfile();
   }
 }
 load();

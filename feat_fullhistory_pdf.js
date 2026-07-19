@@ -19,8 +19,8 @@
  *   • Page breaks, per-page footer + page numbers.
  *
  * REUSE, not reinvention:
- *   • PDF library: the app's own window.loadJsPdf() (jsPDF 2.5.1) — the
- *     exact §53/§54 approach; lazy-loads the same cdnjs build if absent.
+ *   • PDF library: the app's own window.loadJsPdf() (jsPDF 4.2.1) — the
+ *     exact §53/§54 approach; lazy-loads the pinned same-origin build if absent.
  *     NO new PDF library is introduced.
  *   • Op-note formatting: window.__mlsOpNotePro.normalize / .isNormalized.
  *   • Letterhead: window.MLS_OPNOTE_LETTERHEAD (shared with §53/§54).
@@ -101,7 +101,7 @@
       var ok = function () { (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf) : reject(new Error("jsPDF unavailable")); };
       if (ex) { ex.addEventListener("load", ok); ex.addEventListener("error", function () { reject(new Error("jsPDF load error")); }); return; }
       var s = document.createElement("script"); s.id = "jspdfScript";
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      s.src = "vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6";
       s.onload = ok; s.onerror = function () { reject(new Error("jsPDF load error")); };
       document.head.appendChild(s);
     });

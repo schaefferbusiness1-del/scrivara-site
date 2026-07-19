@@ -110,6 +110,10 @@ async function testNeverSettlingChartInjection() {
   const guard = injected.args && injected.args[3];
   assert(guard && guard.token === requestId && guard.deadline === callerDeadline, 'late chart opener did not carry the caller-clamped guard');
 
+  while (Date.now() < guard.deadline) {
+    await delay(Math.max(1, guard.deadline - Date.now()));
+  }
+  assert(Date.now() >= guard.deadline, 'late chart-opener proof ran before its recorded absolute deadline');
   const lateResult = injected.func.apply(null, injected.args);
   assert.strictEqual(lateResult, 'open-deadline-exceeded');
   assert.strictEqual(domTouches, 0, 'expired late chart opener touched the page');

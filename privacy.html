@@ -107,16 +107,16 @@
     <p class="lede">This policy explains what information MLS collects through the MLS web application and the
       <strong>MLS Assist</strong> browser extension, how we use and protect it, and the choices available to the
       clinicians and practices who use our service.</p>
-    <p class="meta">Last updated: July 17, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
+    <p class="meta">Last updated: July 18, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
   </section>
 
   <section class="doc">
 
     <div class="callout">
-      <strong>Who this is for.</strong> MLS is a business-to-business tool used by licensed clinicians and their
-      practices. It is not a consumer product, and patients do not sign up for MLS directly. Where MLS processes
-      patient health information, it does so on behalf of a clinician or practice (our customer), who is the entity
-      responsible for that information under applicable health-privacy law.
+      <strong>Current release boundary.</strong> MLS is a business-to-business product candidate for licensed
+      clinicians and their practices. The currently published build is limited to synthetic evaluation. It is not
+      authorized for real patient information, and hosted clinical processing remains disabled. Patients do not sign
+      up for MLS directly.
     </div>
 
     <div class="toc">
@@ -140,30 +140,29 @@
     </div>
 
     <h2 id="who">1. Who we are</h2>
-    <p>MLS is an ambient AI medical-scribe service operated by <strong>MLS Scribe LLC</strong> ("MLS," "we," "us,"
-      or "our"). MLS is built for spine, pain-management, and physical-medicine &amp; rehabilitation (PM&amp;R)
-      practices. The service consists of the MLS web application (at <strong>mlsscribe.com</strong>) and the
-      <strong>MLS Assist</strong> browser extension. Together they help a clinician capture a visit, draft a
-      structured clinical note, suggest coding for the clinician's review, and place the finished note into the
-      clinician's electronic medical record (EMR) only after the clinician explicitly approves it.</p>
+    <p>MLS is an ambient AI medical-scribe product candidate operated by <strong>MLS Scribe LLC</strong> ("MLS,"
+      "we," "us," or "our"). MLS is being built for spine, pain-management, and physical-medicine &amp;
+      rehabilitation (PM&amp;R) practices. Its web application (at <strong>mlsscribe.com</strong>) and
+      <strong>MLS Assist</strong> browser extension are currently available only for evaluation with synthetic data.
+      They are designed to help a clinician capture a visit, draft a structured clinical note, suggest coding for
+      review, and place an approved note into the clinician's electronic medical record (EMR).</p>
 
     <h2 id="what">2. Information we collect</h2>
-    <p>The information MLS processes depends on which parts of the service a clinician uses. It falls into the
-      following categories.</p>
+    <p>The current release may process synthetic information entered by an evaluator, limited account/session data,
+      and the technical data needed to run the evaluation. Do not enter real patient information. The categories
+      below describe both the current evaluation and the intended clinical workflow, which will remain unavailable
+      until the clinical release gate is satisfied.</p>
 
     <h3>Health and visit information</h3>
-    <p>To draft clinical documentation, MLS processes the content a clinician chooses to capture during or about a
-      patient visit. This may include <strong>visit audio and its transcript</strong>, dictation, text the clinician
-      highlights or enters, and the <strong>protected health information</strong> contained in that material &mdash;
-      for example symptoms, history, examination findings, assessments, plans, medications, diagnoses, and
-      suggested procedure or diagnosis codes. When the clinician uses MLS to read an existing chart, MLS may process
-      the patient and prior-visit information shown on that page so it can structure it into the clinician's MLS
-      record.</p>
+    <p>In the synthetic evaluation, MLS can process test audio, transcripts, dictation, highlighted text, and
+      fictional chart content supplied by the evaluator. The intended clinical workflow would process corresponding
+      visit and chart information on behalf of a practice, but that workflow is not released and the current build
+      does not authorize submission of protected health information (PHI).</p>
 
     <h3>Patient and clinician identifiers</h3>
-    <p>MLS may process identifying details that appear in captured material or that a practice enters into MLS, such
-      as patient names and identifiers, and clinician account details (name, email address, practice or specialty,
-      and role). Account holders are clinicians and practice staff, not patients.</p>
+    <p>MLS may process clinician evaluation-account details such as name, email address, practice or specialty, and
+      role. Synthetic patients must use fictional or de-identified labels. Real patient names, dates of birth, MRNs,
+      and other patient identifiers are not authorized in this release.</p>
 
     <h3>Authentication information</h3>
     <p>To connect securely to the MLS backend, the service uses your MLS login session. The MLS Assist extension
@@ -171,6 +170,10 @@
       sends it to the MLS backend as a bearer credential so the backend can confirm the request is yours. A practice
       may instead configure an MLS API key. These credentials authenticate you to MLS only; they are not shared with
       your EMR vendor or any other third party.</p>
+    <p>In the current evaluation build, the MLS bearer token may be stored in that browser's session storage and
+      local storage so the signed-in tab and clinician-started extension action can use the same session. Supported
+      logout clears the token. Do not use the evaluation on a shared or untrusted device. A production clinical
+      release requires a separately verified session design and is not represented as active here.</p>
 
     <h3>Website and session content</h3>
     <p>When you actively use the MLS Assist panel on a web page (for example, your EMR), the extension reads content
@@ -180,26 +183,27 @@
       open its panel; it does not silently read pages in the background outside the features you invoke.</p>
 
     <h3>Account, billing, and support information</h3>
-    <p>When a practice subscribes, we process account and billing information needed to manage the subscription
-      (such as contact details and payment status). Card payments are handled by our payment processor; MLS does not
-      store full card numbers. If you contact us for support or request a demo, we keep the information you provide
-      so we can respond.</p>
+    <p>Self-service subscriptions and checkout are not enabled in this release. If billing is activated later, the
+      payment processor—not MLS—will handle full card numbers. If you contact us for support or request an
+      evaluation, we may keep the contact and message information you provide so we can respond; do not include PHI
+      in support or sales messages.</p>
 
     <h3>Limited technical and security information</h3>
-    <p>We process basic technical information necessary to operate and secure the service, such as server logs,
-      error reports, and records needed for security, auditing, and backups.</p>
+    <p>We may process basic technical information necessary to operate and secure the evaluation, such as request
+      logs, error reports, and security events. The local synthetic demo also stores its settings and synthetic
+      records in that browser as described under Data retention and Security below.</p>
 
     <h2 id="how">3. How we use information</h2>
-    <p>We use the information described above only to provide and support the MLS service. Specifically, we use it
-      to:</p>
+    <p>Within the current synthetic-evaluation boundary, we use the information described above only to provide and
+      support MLS. The product is designed to:</p>
     <ul>
       <li>transcribe captured audio and generate draft clinical notes, suggested coding, and related documentation
         for the clinician to review, edit, and sign;</li>
       <li>place an approved note into the clinician's EMR and, when requested, read chart information into the
         clinician's MLS record;</li>
       <li>authenticate users, maintain sessions, and keep the service secure;</li>
-      <li>operate billing and provide customer support; and</li>
-      <li>maintain, troubleshoot, back up, and improve the reliability of the service.</li>
+      <li>support evaluation accounts and respond to support requests; and</li>
+      <li>maintain, troubleshoot, and improve reliability.</li>
     </ul>
     <p>MLS produces draft documentation and coding suggestions for a clinician's independent review. It does not
       practice medicine, and the clinician remains responsible for the content of the medical record.</p>
@@ -214,19 +218,19 @@
         or marketing profiles from it.</li>
       <li>We do <strong>not</strong> use or transfer the information to determine creditworthiness or for lending
         purposes.</li>
-      <li>We do <strong>not</strong> allow humans to read your health or visit content except in the limited ways
-        described in this policy (for example, to provide support you request, or where required for security or by
-        law).</li>
+      <li>Real health or visit content is not authorized in this release. Do not send PHI through support, sales, or
+        evaluation channels.</li>
     </ul>
 
     <h2 id="share">5. How information is shared</h2>
     <p>We share information only as needed to run the service and as described here:</p>
     <ul>
-      <li><strong>With your practice.</strong> Information you create or capture in MLS is available to your own
-        practice and authorized users within it, according to the roles your practice configures.</li>
+      <li><strong>With your evaluation account.</strong> Synthetic information may be available to authorized users
+        of the same evaluation environment, according to the roles configured there.</li>
       <li><strong>With service providers (subprocessors).</strong> We use a small set of vendors to provide core
-        functions such as AI generation, hosting, email, and payments. They may process information only to perform
-        services for us, under contract. See the next section.</li>
+        functions such as AI generation, hosting, and email. They may process information needed for the requested
+        function under their applicable terms. Production contract and BAA status must be separately verified before
+        any clinical release. See the next section.</li>
       <li><strong>For legal and safety reasons.</strong> We may disclose information if required by law, to respond
         to lawful requests, to enforce our agreements, or to protect the rights, safety, and security of users, the
         public, or MLS.</li>
@@ -237,64 +241,64 @@
       example, when you approve placing a note into your own EMR session.</p>
 
     <h2 id="subprocessors">6. Service providers / subprocessors</h2>
-    <p>MLS relies on the following categories of providers. We have appropriate data-protection terms, including
-      signed Business Associate Agreements where applicable, in place with providers that process health
-      information on our behalf.</p>
+    <p>MLS relies on the following categories of providers during development and synthetic evaluation. This public
+      policy does not attest that vendor BAAs, zero-retention terms, or regulated-production configurations are
+      currently executed or enabled. Real patient information is not authorized in this release.</p>
     <table class="sub">
       <tr><th>Provider</th><th>Role</th><th>What it processes</th></tr>
       <tr><td>OpenAI</td><td>AI model provider used to transcribe audio and generate draft notes and coding
         suggestions</td><td>The transcript / text the clinician submits for a given generation request</td></tr>
       <tr><td>Render</td><td>Cloud hosting for the MLS backend</td><td>Data stored and processed by the MLS
         application</td></tr>
-      <tr><td>Stripe</td><td>Payment processing for subscriptions</td><td>Billing and payment information (not
-        health content)</td></tr>
+      <tr><td>Stripe</td><td>Planned payment processing; checkout is disabled in this release</td><td>No evaluation
+        health content; payment processing is not active in the current public flow</td></tr>
       <tr><td>Resend</td><td>Transactional email delivery</td><td>Email address and message content for service
         emails</td></tr>
-      <tr><td>Twilio</td><td>Optional voice / phone dictation</td><td>Audio you choose to dictate by phone</td></tr>
+      <tr><td>Twilio</td><td>Planned optional phone workflow; not published in this release</td><td>No current public
+        phone-dictation flow</td></tr>
     </table>
-    <p>OpenAI processes the transcript or text submitted for a generation request in order to return the drafted
-      output. The OpenAI API key is held only on the MLS backend and is never exposed to the browser or the
-      extension. Business Associate Agreements are signed with our AI and hosting providers; see the compliance
-      note below.</p>
+    <p>When an evaluator explicitly requests AI generation, OpenAI processes the synthetic transcript or text sent
+      for that request. Hosted mode is designed to use a server-held key. The local synthetic demo also offers an
+      optional per-device mode: the evaluator's OpenAI API key is stored in that browser's local storage and is sent
+      directly from that browser to OpenAI. That mode must never be used with PHI. Vendor-contract and production-
+      configuration evidence must be verified separately before any clinical release.</p>
 
     <h2 id="hipaa">7. HIPAA &amp; Business Associate context</h2>
-    <p>When MLS processes protected health information on behalf of a clinician or practice (a HIPAA "covered
-      entity"), MLS acts as a <strong>Business Associate</strong>. In that role, MLS enters into a Business
-      Associate Agreement (BAA) with the practice that governs how MLS may use and safeguard that information.</p>
+    <p>Processing protected health information on behalf of a covered entity can create Business Associate
+      obligations. The current MLS release is limited to synthetic evaluation and is not an authorization to submit
+      PHI. This policy does not itself create or execute a Business Associate Agreement.</p>
     <div class="callout">
-      <strong>Compliance status.</strong> MLS operates with the full set of HIPAA safeguards in place — encryption
-      in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, and encrypted
-      backups — and <strong>Business Associate Agreements are signed with our AI and hosting providers</strong>, so
-      patient data is covered end to end. (There is no government "certification" for HIPAA; compliance means
-      maintaining the required safeguards and agreements, which is what we do.) One step remains on your side:
-      practices should enter protected health information into MLS only once their own BAA with MLS is in place —
-      we execute one with every practice as part of onboarding. This section will be kept current as our
-      subprocessors or agreements change.
+      <strong>Current readiness.</strong> MLS is being evaluated with synthetic data only. Some security controls are
+      implemented or under test, but this policy makes no claim of HIPAA compliance, vendor BAA execution,
+      zero-retention treatment, or end-to-end production coverage. Hosted clinical access must remain locked until
+      an immutable, counsel-approved server release and server-recorded user grant are verified.
     </div>
 
     <h2 id="retention">8. Data retention</h2>
-    <p>We retain information for as long as needed to provide the service to your practice and for legitimate
-      business, legal, and security purposes. Clinical records that your practice creates in MLS are retained while
-      your account is active and are subject to your practice's instructions. Encrypted backups are retained on a
-      rolling basis so the service can be restored. When information is no longer needed, or upon a valid deletion
-      request from the responsible practice, we delete or de-identify it in accordance with our obligations and
-      applicable law. We do not retain data for longer than necessary for the single purpose described above.</p>
+    <p>The local synthetic demo keeps its synthetic patients, notes, preferences, and optional per-device OpenAI key
+      in browser storage until the evaluator clears local data, signs out where the flow performs that cleanup, or
+      clears the browser's site data. This browser storage is not a hosted clinical record system and is not an
+      encrypted backup. Limited hosted evaluation-account, support, request-log, and security data may be retained as
+      needed to operate and secure the evaluation. Hosted clinical-record persistence and backup retention are not
+      released and are not represented by this policy as active.</p>
 
     <h2 id="security">9. Security</h2>
-    <p>We take reasonable and appropriate technical and organizational measures to protect the information MLS
-      processes, including:</p>
+    <p>Controls verified for the current synthetic-evaluation boundary include:</p>
     <ul>
       <li><strong>Encryption in transit</strong> using HTTPS/TLS for connections between the web app, the extension,
         and the MLS backend.</li>
-      <li><strong>Encryption at rest</strong> of stored application data using AES-256-GCM.</li>
-      <li><strong>Encrypted backups</strong> protected with AES-256 encryption.</li>
-      <li><strong>Authentication controls</strong> including hashed passwords, signed session tokens, and optional
-        two-factor authentication (2FA).</li>
-      <li><strong>Server-held secrets:</strong> third-party API keys (including the AI provider key) reside only on
-        the MLS backend and are never exposed to the browser or extension.</li>
-      <li><strong>Administrative safeguards</strong> such as access controls and the ability to generate auditable
-        records of administrative actions.</li>
+      <li><strong>Release gating:</strong> hosted PHI routes fail closed unless the server verifies the exact
+        clinical-release configuration and exact user grant.</li>
+      <li><strong>Authentication controls in the evaluated backend</strong> include hashed passwords and signed
+        session tokens; optional two-factor authentication is available for evaluation.</li>
+      <li><strong>Exact-origin controls</strong> restrict authenticated extension requests to the approved MLS
+        backend origin.</li>
+      <li><strong>Browser cleanup controls</strong> remove scoped local records during supported logout/clear-data
+        actions and scrub sensitive route tokens from the address bar where those routes are used.</li>
     </ul>
+    <p>The local synthetic demo's browser storage is readable/compressed application storage, not AES-encrypted
+      storage. Hosted mode is designed to keep the MLS AI-provider key on the backend; the optional local-demo key
+      mode is the disclosed exception above. These limitations are why real patient information remains prohibited.</p>
     <p>No method of transmission or storage is perfectly secure, and we cannot guarantee absolute security. We
       encourage practices to keep their own credentials confidential and to use available security features.</p>
 
@@ -368,7 +372,7 @@
     </div>
     <p class="fineprint">&copy; 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical
       device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation.
-      Fully HIPAA compliant: encrypted architecture with signed Business Associate Agreements.</p>
+      Synthetic evaluation only; do not submit real patient information.</p>
   </div>
 </footer>
 

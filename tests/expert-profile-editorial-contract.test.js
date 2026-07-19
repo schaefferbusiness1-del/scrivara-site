@@ -14,9 +14,13 @@ assert(html.includes("--sans:'Public Sans'"), 'expert profile must use Public Sa
 assert(html.includes('--paper:#FBFAF7') && html.includes('--deep:#204034'), 'expert profile is missing the portal palette');
 assert(html.includes('<b>MLS Scribe</b><span class="tagpill">For Attorneys</span>'), 'expert header must match the attorney portal lockup');
 
-assert.strictEqual((html.match(/>Request this expert</g) || []).length, 1, 'expert request needs one profile-level primary action');
-assert(html.includes('class="aside-kicker">What happens next'), 'engagement card must explain the next step instead of duplicating the request button');
-assert(html.includes('Stripe-confirmed payment unlocks the full signed report in the portal'), 'engagement flow must explain payment continuity');
+assert.strictEqual((html.match(/>Request this expert</g) || []).length, 0, 'held expert profile must not expose a case-request action');
+assert(!/Stripe-confirmed|startCheckout|checkout\.stripe\.com/i.test(html), 'held expert profile must not expose a payment or checkout flow');
+assert(html.includes("const reqHref='lawyers.html#request'"), 'profile action must route only to the public readiness limits');
+assert(html.includes('>View readiness limits</a>'), 'profile must give users a clear path to the release limits');
+assert(html.includes('class="aside-kicker">Evaluation limits'), 'profile card must explain evaluation limits');
+assert(html.includes('Case intake and physician engagement are unavailable.'), 'profile must state that it cannot accept a case or engagement');
+assert(html.includes('Matching, signing, payment, report delivery, and testimony requests are unavailable.'), 'profile must state every held commercial action');
 
 assert(html.includes('class="profile-skeleton"'), 'expert profile needs a layout-stable loading skeleton');
 assert(html.includes('role="status" aria-live="polite" aria-busy="true"'), 'loading state must be announced accessibly');
@@ -28,4 +32,4 @@ for (const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
   new Function(match[2]); // eslint-disable-line no-new-func
 }
 
-console.log('PASS expert profile: portal-aligned design, one primary request action, stable accessible loading states');
+console.log('PASS expert profile: portal-aligned design, fail-closed case/payment actions, stable accessible loading states');

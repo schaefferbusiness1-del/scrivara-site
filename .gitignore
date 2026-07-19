@@ -1,0 +1,18 @@
+# Local dependencies and browser/runtime scratch state.
+node_modules/
+.codex-tools/
+tmp/
+.bundle/
+.jekyll-cache/
+.sass-cache/
+_site/
+
+# Live acceptance evidence can contain screenshots and machine-local metadata.
+# Preserve it locally or in an access-controlled evidence archive; never add it
+# wholesale to the public source repository.
+tests/live-a11y-artifacts/
+tests/live-athena-smart-ui-artifacts/
+tests/live-phone-artifacts/
+tests/live-sensitive-workflow-artifacts/
+tests/live-smoke-artifacts/
+tests/live-visible-controls-artifacts/

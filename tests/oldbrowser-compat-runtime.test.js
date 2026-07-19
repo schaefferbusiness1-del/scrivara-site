@@ -5,8 +5,9 @@
  *
  * Proven here:
  *  1. The identical ES5 compat block is inlined in BOTH ScribeFlow.html and
- *     phone.html, BEFORE any other script, and contains no post-ES5 syntax
- *     of its own (no arrows / template literals / let / const / async).
+ *     phone.html before app dependencies and contains no post-ES5 syntax.
+ *     ScribeFlow's only earlier script is the ES5 one-time-token scrubber,
+ *     which must run before anything can observe the sensitive URL.
  *  2. Runtime: with the modern APIs deleted (simulating old Chrome), the
  *     block restores working Promise.allSettled / Promise.any /
  *     String.replaceAll / at / findLast / flat / hasOwn / fromEntries /
@@ -36,7 +37,17 @@ function extractBlock(src, file) {
   assert(start > 0 && end > start, file + ': compat block missing');
   const firstScript = src.indexOf('<script');
   const blockScript = src.lastIndexOf('<script', start);
-  assert.strictEqual(firstScript, blockScript, file + ': compat block must be the FIRST script');
+  if (file === 'phone.html') {
+    assert.strictEqual(firstScript, blockScript, file + ': compat block must be the first script');
+  } else {
+    const earlier = src.slice(firstScript, blockScript);
+    assert(earlier.includes('Capture one-time auth handoffs'), file + ': only the early token scrubber may precede compat');
+    assert(!/<script\b[^>]*\bsrc\s*=/.test(earlier), file + ': an external dependency runs before old-browser compat');
+    const earlyCode = earlier.replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '');
+    new Function(earlyCode);
+    const noEarlyStrings = earlyCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    assert(!/=>|`|\b(?:let|const|async|await)\b/.test(noEarlyStrings), file + ': early token scrubber must remain ES5');
+  }
   return src.slice(start, end + endMark.length);
 }
 const blockA = extractBlock(app, 'ScribeFlow.html');

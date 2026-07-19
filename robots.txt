@@ -1,14 +1,39 @@
 User-agent: *
 Allow: /
-Disallow: /index-staging.html
-Disallow: /ScribeFlow-staging.html
-Disallow: /ScribeFlow_test.html
-Disallow: /patient-portal-staging.html
-Disallow: /_dz_
-Disallow: /_compare.html
-Disallow: /_ps_preview.html
+
+# Discovery hygiene only. Access control is enforced by the Jekyll publication
+# allowlist and the service-worker backstop; robots.txt is never treated as a
+# security boundary.
+Disallow: /*-staging.html$
+Disallow: /*_test.html$
+Disallow: /*.staging.js$
+Disallow: /*.zip$
 Disallow: /AuthPilot.html
+Disallow: /easy-book.html
+Disallow: /legal-connect.html
+Disallow: /mls-best-doctors.html
+Disallow: /mls-best-doctors-admin.html
+Disallow: /mls-doctor-awards.html
+Disallow: /mls-marketing.html
+Disallow: /mls-marketing-console.html
+Disallow: /mls-widgets.html
+Disallow: /patient-review.html
+Disallow: /phone.html
+Disallow: /phone-manifest.json
+Disallow: /feat_mls_review_request.js
+Disallow: /feat_mls_force_full_phone.js
+Disallow: /feat_mls_best_doctors.js
+Disallow: /legal-connect-ui.js
+Disallow: /ScribeFlow_Website.html
+Disallow: /_compare.html
+Disallow: /_dz_
+Disallow: /_ps_preview.html
 Disallow: /offscreen.html
 Disallow: /popup.html
+Disallow: /tests/
+Disallow: /scripts/
+Disallow: /tmp/
+Disallow: /tools/
+Disallow: /_ws_tools/
 
 Sitemap: https://mlsscribe.com/sitemap.xml

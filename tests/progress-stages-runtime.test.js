@@ -236,8 +236,13 @@ for (const name of Object.keys(ps.flows)) {
   assert(Array.isArray(ps.flows[name].stages) && ps.flows[name].stages.length >= 1, 'flow ' + name + ' lacks named stages');
 }
 /* lb enforces the deadline: an abandoned job times out */
+const scheduleTimerStart = timeouts.length;
 post({ source: 'mls-app', type: 'mlsAppPullSchedule', requestId: 'req-sched-0004' });
-const deadline = timeouts.filter(t => !t.cleared && !t.fired && t.ms === 90000).pop();
+j = jobByKey('schedule:pull');
+assert.strictEqual(j.deadlineAt - j.startedAt, 90000, 'schedule job lost its exact 90-second deadline');
+const deadline = timeouts.slice(scheduleTimerStart)
+  .filter(t => !t.cleared && !t.fired && t.ms >= 89000 && t.ms <= 90000)
+  .pop();
 assert(deadline, 'schedule deadline not armed');
 deadline.fired = true; deadline.fn();
 j = jobByKey('schedule:pull');

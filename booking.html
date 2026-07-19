@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="token t code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Book an appointment · MLS</title>
 <!-- build: booking-v1 2026-06-09 -->
 <style>
@@ -39,6 +44,7 @@
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 <div class="wrap">
   <div class="brand"><span class="mark">+</span> <span id="practiceBrand">Your medical practice</span></div>
 
@@ -113,7 +119,7 @@
 
 <script>
 var BACKEND_URL = 'https://scrivara-backend.onrender.com';
-var token = new URLSearchParams(location.search).get('token') || '';
+var token = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.token) || '';
 
 function show(id){
   ['loading','inactive','formCard','done'].forEach(function(x){
@@ -123,7 +129,7 @@ function show(id){
 
 function init(){
   if(!token){ show('inactive'); return; }
-  fetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token))
+  mlsSensitiveFetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token))
     .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
     .then(function(j){
       if(!j || !j.ok){ show('inactive'); return; }
@@ -168,7 +174,7 @@ function loadSlots(){
   document.getElementById('slotMsg').textContent='';
   var doc=document.getElementById('doctor').value;
   var url=BACKEND_URL+'/api/schedule/public/'+encodeURIComponent(token)+'/slots?date='+date+(doc?('&doctor='+doc):'');
-  fetch(url).then(function(r){ return r.ok?r.json():{slots:[]}; }).then(function(j){
+  mlsSensitiveFetch(url).then(function(r){ return r.ok?r.json():{slots:[]}; }).then(function(j){
     var slots=j.slots||[];
     grid.innerHTML='';
     if(!slots.length){ document.getElementById('slotMsg').textContent=openDaysMsg(false); return; }
@@ -203,7 +209,7 @@ function submitBooking(ev){
     date: (bDate && selectedSlot) ? bDate : null,
     time: (bDate && selectedSlot) ? selectedSlot : null
   };
-  fetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token) + '/book', {
+  mlsSensitiveFetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token) + '/book', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -212,13 +218,14 @@ function submitBooking(ev){
     .then(function(res){
       if(res.ok && res.j && res.j.ok){ show('done'); }
       else {
-        errBox.textContent = (res.j && res.j.error) || 'Something went wrong. Please try again.';
+        try{ if(res.j&&res.j.error) console.warn('[booking] request declined:',res.j.error); }catch(e){}
+        errBox.textContent = 'We could not send your request. Check the details and try again, or call the office.';
         errBox.classList.remove('hide');
         btn.disabled = false; btn.textContent = 'Request appointment';
       }
     })
     .catch(function(){
-      errBox.textContent = 'Network error. Please try again.';
+      errBox.textContent = "We couldn't reach the office. Check your connection and try again.";
       errBox.classList.remove('hide');
       btn.disabled = false; btn.textContent = 'Request appointment';
     });

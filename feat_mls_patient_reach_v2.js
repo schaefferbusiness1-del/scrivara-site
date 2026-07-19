@@ -1,16 +1,16 @@
-/*! MLS Patient Reach v2.0.2 — one site-only owner for Reviews and Send to patient. */
+/*! MLS Patient Reach v2.0.4 — one site-only owner for Reviews and secure portal invitations. */
 (function (W, D) {
   'use strict';
 
   var prior = W.__mlsPatientReach;
-  if (prior && prior.version === '2.0.3') return;
+  if (prior && prior.version === '2.0.4') return;
 
-  var VERSION = '2.0.3';
+  var VERSION = '2.0.4';
   var REVIEW_URL = '/review-finder.html';
   var KINDS = { reviews: 1, send: 1 };
   var labels = {
     reviews: { icon: '\u2605', short: 'Reviews', title: 'Reviews & reputation', description: 'See and manage your patient-review workflow in one place.' },
-    send: { icon: '\ud83d\udce4', short: 'Send to patient', title: 'Send to patient', description: 'Share your booking link or open the secure portal-invite flow for the selected patient.' }
+    send: { icon: '\ud83d\udce4', short: 'Send to patient', title: 'Send to patient', description: 'Open the secure, exact-patient portal-invite flow for the selected patient.' }
   };
   var state = {
     open: false,
@@ -229,11 +229,9 @@
   }
 
   function bookingUrl() {
-    var base = (W.location && W.location.origin ? W.location.origin : '') + '/easy-book.html';
-    var params = [];
-    try { if (typeof W.getPracticeName === 'function' && W.getPracticeName()) params.push('practice=' + encodeURIComponent(W.getPracticeName())); } catch (_) {}
-    try { if (typeof W.getProviderName === 'function' && W.getProviderName()) params.push('doctor=' + encodeURIComponent(W.getProviderName())); } catch (_) {}
-    return base + (params.length ? '?' + params.join('&') : '');
+    /* Public self-booking is held until a reviewed server-issued booking URL
+       is available. Never manufacture a URL from client-side practice data. */
+    return '';
   }
 
   function sendPanel() {
@@ -250,8 +248,8 @@
     portal.appendChild(ui.patientName); portal.appendChild(ui.inviteButton); portal.appendChild(ui.sendStatus);
 
     var booking = make('section', { className: 'mls-pr-card' });
-    booking.appendChild(make('h3', null, 'Public booking link'));
-    booking.appendChild(make('p', null, 'Copy or share this practice link. It does not contain patient information.'));
+    booking.appendChild(make('h3', null, 'Appointment requests'));
+    booking.appendChild(make('p', null, 'Use the secure portal invite. After signing in, the patient can send an appointment request for the practice to confirm.'));
     var row = make('div', { className: 'mls-pr-book-row' });
     ui.bookingInput = make('input', { type: 'text', readonly: 'readonly', 'aria-label': 'Public booking link' });
     ui.copyButton = make('button', { type: 'button', className: 'mls-pr-action' }, 'Copy link');
@@ -303,8 +301,10 @@
     }
     var url = bookingUrl();
     ui.bookingInput.value = url;
-    ui.textLink.href = 'sms:?&body=' + encodeURIComponent('Book your appointment here: ' + url);
-    ui.emailLink.href = 'mailto:?subject=' + encodeURIComponent('Book your appointment') + '&body=' + encodeURIComponent('You can request an appointment here: ' + url);
+    ui.bookingInput.placeholder = 'Public booking link not released';
+    ui.copyButton.disabled = true;
+    ui.textLink.removeAttribute('href'); ui.textLink.setAttribute('aria-disabled', 'true');
+    ui.emailLink.removeAttribute('href'); ui.emailLink.setAttribute('aria-disabled', 'true');
   }
   function delegatePortalInvite() {
     var frozen = state.frozenPatient, current = activePatient();

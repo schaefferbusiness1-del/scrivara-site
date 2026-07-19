@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="t token code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Opt out of rating contribution</title>
 <!-- ==========================================================================
   best-doctors-optout.html — PATIENT opt-out (v1.0.0)
@@ -35,6 +39,7 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 <div class="wrap">
   <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg></div>
   <div class="card" id="card">
@@ -49,12 +54,12 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
   try { if (window.MLS_BACKEND_URL) BK = window.MLS_BACKEND_URL; } catch (e) {}
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function tokenOf() { try { return new URLSearchParams(location.search).get('t') || new URLSearchParams(location.search).get('token') || ''; } catch (e) { return ''; } }
+  var captured = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query) || {};
+  var token = captured.t || captured.token || '';
+  /* visitRatings.newToken() emits exactly 24 random bytes as lowercase hex. */
+  if (!/^[a-f0-9]{48}$/.test(token)) { $('body').innerHTML = '<div class="bad">This link is missing or invalid. Please use the exact link you were given.</div>'; return; }
 
-  var token = tokenOf();
-  if (!token) { $('body').innerHTML = '<div class="bad">This link is missing its code. Please use the exact link you were given.</div>'; return; }
-
-  fetch(BK + '/api/ratings/optout/' + encodeURIComponent(token), { headers: { 'Accept': 'application/json' } })
+  mlsSensitiveFetch(BK + '/api/ratings/optout/' + encodeURIComponent(token), { headers: { 'Accept': 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
     .then(function (j) {
       if (!j || !j.ok) { $('body').innerHTML = '<div class="bad">This link is no longer valid.</div>'; return; }
@@ -67,12 +72,12 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
         + '<p class="note" style="margin-top:12px">You can also just close this page to leave things as they are.</p>';
       $('go').onclick = function () {
         $('go').disabled = true; $('go').textContent = 'Working…';
-        fetch(BK + '/api/ratings/optout/' + encodeURIComponent(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        mlsSensitiveFetch(BK + '/api/ratings/optout/' + encodeURIComponent(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
           .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
           .then(function (res) {
             if (res && res.ok) { $('body').innerHTML = '<div class="done">Done. Your visit will not contribute to any rating. Thank you.</div>'; }
             else { $('body').innerHTML = '<div class="bad">Something went wrong. Please try again later.</div>'; }
-          }, function () { $('body').innerHTML = '<div class="bad">Network error. Please try again later.</div>'; });
+          }, function () { $('body').innerHTML = '<div class="bad">We could not reach MLS. Check your connection and try again later.</div>'; });
       };
     }, function () { $('body').innerHTML = '<div class="bad">Could not load this page.</div>'; });
 })();

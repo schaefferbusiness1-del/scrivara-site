@@ -439,7 +439,7 @@
   } catch (e) { try { boot(); } catch (e2) {} }
 })();
 
-/*! single-owner UI + account access -> window.__mlsUiUnification (v1.0.0)
+/*! single-owner UI + account access -> window.__mlsUiUnification (v1.1.4)
  * Keeps the easy visit recorder authoritative until the user deliberately
  * opens Advanced, removes duplicate entry points, and puts account/security
  * access in the always-visible top bar. The extension is not involved.
@@ -449,7 +449,7 @@
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
 
-  var VERSION = '1.1.3';
+  var VERSION = '1.1.4';
   var STYLE_ID = 'mlsUiUnificationStyle';
   var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
   var retryTimer = null;
@@ -556,6 +556,10 @@
     document.querySelectorAll('#mlsRdNav .mlsRdFootBtn,#mlsTbMenu .mlsTbItem').forEach(function (el) {
       if (/(settings|sign out|log out)$/i.test(text(el))) markHidden(el, 'account-menu');
     });
+    /* b428 and older shells also made the rail identity chip open Settings.
+       Hide any hot-reloaded copy so Account remains the only owner. Newer
+       shells no longer create the chip at all. */
+    markHidden(byId('mlsRdUserChip'), 'account-menu');
   }
 
   function dedupeHowTo() {
@@ -578,7 +582,7 @@
       wrap.id = ACCOUNT_WRAP_ID;
       wrap.className = 'mls-account-wrap';
       wrap.innerHTML =
-        '<button type="button" id="mlsAccountMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="mlsAccountPopover">' +
+        '<button type="button" id="mlsAccountMenuBtn" aria-label="Account" aria-haspopup="menu" aria-expanded="false" aria-controls="mlsAccountPopover">' +
           '<span class="mls-account-avatar" aria-hidden="true"></span><span class="mls-account-label">Account</span>' +
         '</button>' +
         '<div id="mlsAccountPopover" class="mls-account-pop" role="menu" hidden>' +

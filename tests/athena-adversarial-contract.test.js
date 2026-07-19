@@ -137,7 +137,7 @@ finding('patient identity comes from one explicit chart header and returns obser
   assert(new RegExp(`mrn\\s*:\\s*(?:digits\\s*\\()?\\s*${observed}\\.mrn`).test(driver), 'probe context must return the observed chart-header MRN');
 });
 
-finding('Save and Sign controls are owned by one exact encounter-note container', function () {
+finding('Save and dormant Sign defenses are scoped to one exact encounter-note container', function () {
   const scope = between(driver, '/* ATHENA_ACTION_V2_NOTE_SCOPE_START */', '/* ATHENA_ACTION_V2_NOTE_SCOPE_END */');
   assert(/querySelectorAll|deepQueryAll/.test(scope), 'the driver must enumerate encounter-note containers, including open shadow roots');
   assert(/encounter[-_ ]?(?:note|documentation)|note[-_ ]?(?:container|editor|workspace)|documentation[-_ ]?(?:container|workspace)/i.test(scope), 'note scope must use an explicit encounter documentation selector contract');
@@ -160,7 +160,7 @@ finding('Save and Sign controls are owned by one exact encounter-note container'
   assert(/(?:note(?:Scope|Container)|actionContainer)Fingerprint/.test(contextMatch), 'execute must re-check the same note-container fingerprint');
 });
 
-finding('Save and Sign success requires new evidence scoped to that note container', function () {
+finding('Save success and dormant Sign verification require new scoped evidence', function () {
   const status = between(driver, '/* ATHENA_ACTION_V2_SCOPED_STATUS_START */', '/* ATHENA_ACTION_V2_SCOPED_STATUS_END */');
   assert(/(?:Weak)?Set\s*\(|MutationObserver|baseline/.test(status), 'status verification must snapshot pre-click evidence by node/identity');
   assert(/new|added|after|mutation/i.test(status), 'status verification must distinguish evidence created after the click');
@@ -191,7 +191,7 @@ finding('Save and Sign success requires new evidence scoped to that note contain
   }
 });
 
-finding('billing preflight and partial mutation are explicit end to end', function () {
+finding('dormant billing defense still has explicit preflight and partial-mutation accounting', function () {
   const billing = between(driver, '/* STAGE_BILLING_START */', '/* STAGE_BILLING_END */');
   const preflight = between(billing, '/* ATHENA_ACTION_V2_BILLING_PREFLIGHT_START */', '/* ATHENA_ACTION_V2_BILLING_PREFLIGHT_END */');
   const commit = between(billing, '/* ATHENA_ACTION_V2_BILLING_COMMIT_START */', '/* ATHENA_ACTION_V2_BILLING_COMMIT_END */');
@@ -213,39 +213,29 @@ finding('billing preflight and partial mutation are explicit end to end', functi
   assert(!/partialMutation[^]{0,500}Nothing was changed/i.test(showActionConfirm), 'partial mutation must never be described as Nothing was changed');
 });
 
-finding('Sign is locked to a verified write_note proof from the same receipt and encounter', function () {
-  /* The proof is opaque and background-minted only after verified write_note;
-     a page-side boolean is not enough to authorize electronic finalization. */
-  for (const [label, source] of [
-    ['content bridge', actionBridge],
-    ['background handler', handler],
-    ['app action controller', explicitActions],
-    ['top receipt', receiptAction + receiptUi]
-  ]) assert(/noteWriteProof/.test(source), `${label} must carry the opaque noteWriteProof`);
-
+finding('Sign remains manual even after a verified write_note proof', function () {
+  /* The note proof remains useful as a durable write receipt, but it must
+     never unlock electronic finalization in the MLS UI. */
   assert(/noteWriteProofs\s*=\s*Object\.create\(null\)|new\s+Map\s*\(/.test(handler), 'background must own a note-write proof registry');
   assert(/action\s*===\s*['"]write_note['"](?=[^]{0,1800}(?:written|writeVerified))(?=[^]{0,1800}verified)(?=[^]{0,1800}noteWriteProof)/.test(handler), 'proof may be minted only after write_note reports written and verified');
   assert(/probeContextMatches\(\s*(?:executed|result|writeResult)\.context\s*,\s*rec\.locked\s*\)|(?:executed|result|writeResult)\.context\.contextHash\s*===\s*rec\.locked\.contextHash/.test(handler), 'proof minting must re-check the driver result against the token-locked encounter');
   for (const binding of ['senderTabId', 'athenaTabId', 'previewHash', 'patientHash', 'lockedContextHash']) {
     assert(new RegExp(`\\b${binding}\\b`).test(handler), `note-write proof must bind ${binding}`);
   }
-  assert(/sign-prerequisite-mismatch|verified-note-write-required/.test(handler), 'background must fail closed when Sign lacks the matching note-write proof');
-  assert(/note-write-proof-(?:expired|used)|verified-note-write-(?:expired|used)/.test(handler), 'note-write proof must fail closed when expired or already consumed');
-  assert(/(?:proofRec|writeProof|proofRecord)\.used\s*=\s*true|noteWriteProofs\[[^\]]+\]\.used\s*=\s*true/.test(handler), 'Sign must consume the matching note-write proof once');
   assert(/expiresAt/.test(handler), 'the background-minted note-write proof must expire');
-  const signGateAt = handler.search(/sign-prerequisite-mismatch|verified-note-write-required/);
-  const executeAt = handler.indexOf('/* ATHENA_ACTION_V2_EXECUTE_INJECTION */');
-  assert(signGateAt >= 0 && executeAt > signGateAt, 'Sign prerequisite must be checked before Athena execution');
-
   assert(/writeReceiptDrafts/.test(receiptAction) && /openUnifiedConfirmation\(/.test(writeReceiptDrafts), 'the top receipt write button must reach canonical write_note through the unified manifest review');
-  assert(/noteWriteProof\s*[:=]\s*(?:null|['"]['"])/.test(receiptUi), 'a new receipt must begin without a note-write proof');
-  assert(/id=[\\'"]athenaReceiptSign[\\'"][^]{0,300}\bdisabled\b/.test(receiptUi), 'Sign & Save must render disabled on a new receipt');
-  assert(/(?:written|writeVerified)[^]{0,250}verified[^]{0,350}noteWriteProof|noteWriteProof[^]{0,350}(?:written|writeVerified)[^]{0,250}verified/.test(receiptAction + explicitActions), 'receipt may enable Sign only from a written+verified write_note response carrying proof');
-  assert(/previewHash/.test(receiptAction) && /patient/.test(receiptAction), 'receipt proof state must remain tied to the same patient and previewHash');
-  assert(/encounterId|contextHash/.test(receiptAction), 'receipt proof state must remain tied to the verified encounter');
-  assert(/sign_encounter[^]{0,500}noteWriteProofExpiresAt[^]{0,350}Date\.now\(\)/.test(receiptAction), 'Sign must re-check proof expiry at click time in case the UI timer was throttled or the computer slept');
-  assert(/proof expired|signing proof expired/i.test(receiptAction), 'click-time proof expiry must visibly explain why Sign was disabled');
-  assert(/sign_encounter[^]{0,500}noteWriteProof|noteWriteProof[^]{0,500}sign_encounter/.test(receiptAction + startAthenaAction + showActionConfirm), 'Sign request must pass the matching proof back through the supervised action');
+  assert(!/athenaReceiptSign/.test(receiptUi), 'top receipt must not render a Sign action, disabled or otherwise');
+  assert(/Complete in Athena:[^]{0,260}Sign &amp; Save/.test(receiptUi), 'top receipt must visibly route Sign & Save to Athena');
+  assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(explicitActions), 'app allowlist must exclude Sign');
+  const manualRefusal = startAthenaAction.indexOf('manual-only-final-action');
+  const probeBridge = startAthenaAction.indexOf("mode: 'probe'");
+  assert(manualRefusal >= 0 && probeBridge > manualRefusal, 'Sign must be refused before any bridge probe');
+  for (const source of [actionBridge, driver]) {
+    assert(/write-safety-final-action-blocked/.test(source), 'a content/driver hop lost the final-action refusal');
+    assert(/sign_encounter/.test(source), 'Sign is missing from a content/driver refusal policy');
+  }
+  assert(/MLS_WRITE_SAFETY_GATE_START/.test(handler) && /gateActionRequest/.test(handler), 'background no longer invokes the write-safety policy before execution');
+  assert(/write-safety-guard-missing/.test(handler) && /sign_encounter/.test(handler), 'background no longer fails closed when its safety policy is unavailable');
 });
 
 finding('legacy mutation routes and generic final-action blockers stay fail closed', function () {
@@ -368,5 +358,5 @@ if (failures.length) {
   failures.forEach((f, i) => console.error(`  ${i + 1}. ${f.name}: ${f.message}`));
   process.exitCode = 1;
 } else {
-  console.log('PASS Athena adversarial contract: exact write lane, observed identity, scoped controls/evidence, explicit partials, proof-gated Sign');
+  console.log('PASS Athena adversarial contract: exact note lane, observed identity, scoped evidence, explicit partials, and permanently manual Sign');
 }

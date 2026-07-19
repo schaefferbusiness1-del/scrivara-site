@@ -29,8 +29,8 @@
 
   var NS = 'mls_studygroups_v1';
   var TAG = 'data-mls-sg';                 // every injected node carries this for clean revert
-  var CDN_XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  var CDN_JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  var LOCAL_XLSX = 'vendor/xlsx.full-0.20.3.min.js?v=cc015130aa8521e7';
+  var LOCAL_JSPDF = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
 
   /* ---------- tiny utils ---------- */
   function uid(p) { return (p || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -46,10 +46,10 @@
   }
   function loadScript(src) {
     return new Promise(function (res, rej) {
-      var existing = document.querySelector('script[data-mls-sg-cdn="' + src + '"]');
+      var existing = document.querySelector('script[data-mls-sg-library="' + src + '"]');
       if (existing && existing.__loaded) return res();
       var s = document.createElement('script');
-      s.src = src; s.async = true; s.setAttribute(TAG, '1'); s.setAttribute('data-mls-sg-cdn', src);
+      s.src = src; s.async = true; s.setAttribute(TAG, '1'); s.setAttribute('data-mls-sg-library', src);
       s.onload = function () { s.__loaded = true; res(); };
       s.onerror = function () { rej(new Error('Failed to load ' + src)); };
       document.head.appendChild(s);
@@ -283,7 +283,7 @@
 
     var jobs = [];
     // XLSX via SheetJS
-    jobs.push(loadScript(CDN_XLSX).then(function () {
+    jobs.push(loadScript(LOCAL_XLSX).then(function () {
       var XLSX = window.XLSX; if (!XLSX) throw new Error('XLSX missing');
       var wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows(group, a)), 'Summary');
@@ -297,7 +297,7 @@
     }));
 
     // PDF via jsPDF — paginate up to ~100 pages
-    jobs.push(loadScript(CDN_JSPDF).then(function () {
+    jobs.push(loadScript(LOCAL_JSPDF).then(function () {
       var jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!jsPDF) throw new Error('jsPDF missing');
       var doc = new jsPDF({ unit: 'pt', format: 'letter' });
       var W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 48, maxPages = opts.maxPages || 100, pages = 1;
@@ -370,12 +370,22 @@
   }
 
   function render(mount) {
+    var roots = Array.prototype.slice.call(document.querySelectorAll('[id="mls-sg-root"]'));
+    var existing = null;
+    roots.forEach(function (node) {
+      var complete = !!(node.querySelector('#mls-sg-group') && node.querySelector('#mls-sg-create') && node.querySelector('#mls-sg-run'));
+      if (!existing && complete) existing = node;
+      else if (node.parentNode) node.parentNode.removeChild(node);
+    });
+    if (existing) {
+      if (mount && !mount.contains(existing)) mount.insertBefore(existing, mount.firstChild);
+      return existing;
+    }
     var wrap = el('div', { 'class': 'mls-sg-wrap' });
     wrap.id = 'mls-sg-root';
-    var hook = API.athenaHook();
     wrap.innerHTML =
       '<div class="mls-sg-card">' +
-        '<h3>👥 Study Groups <span class="mls-sg-pill">v1 · staging</span></h3>' +
+        '<h3>👥 Study Groups <span class="mls-sg-pill">Local workspace</span></h3>' +
         '<div class="mls-sg-muted">Build a named cohort, store every visit in full detail per patient, then run a study that outputs a graph, an Excel file, and a PDF.</div>' +
         '<div class="mls-sg-row" style="margin-top:10px">' +
           '<select id="mls-sg-group"></select>' +
@@ -395,9 +405,7 @@
         '<div class="mls-sg-muted" style="margin-top:8px">Or import a list — CSV (<code>name,dob,mrn</code>) or JSON (<code>{"patients":[{"name","dob","mrn","history":[{"date","note"}]}]}</code>):</div>' +
         '<textarea id="mls-sg-import" placeholder="Paste CSV or JSON here"></textarea>' +
         '<div class="mls-sg-row"><button class="mls-sg-btn alt" id="mls-sg-importbtn">📥 Import list</button>' +
-          '<button class="mls-sg-btn alt" id="mls-sg-athena">📥 Pull visits from Athena</button>' +
-          '<span id="mls-sg-athena-status" class="mls-sg-muted"></span></div>' +
-        (hook ? '' : '<div class="mls-sg-warn" style="margin-top:8px">⚠ <b>Athena auto-extraction is stubbed in this build</b> — the app\'s pull function isn\'t reachable from this module\'s scope. The manual + CSV/JSON import paths above are fully working. Wiring the live pull is a one-line hook once the function name/scope is confirmed.</div>') +
+          '<span class="mls-sg-muted">Imports here are reviewed local files. For tested Athena schedule/day/month pulls, use <b>Menu → Staff Prep &amp; Athena month pull</b>.</span></div>' +
         '<div class="mls-sg-ptlist" id="mls-sg-ptlist" style="margin-top:10px"></div>' +
       '</div>' +
       '<div class="mls-sg-card">' +
@@ -411,6 +419,7 @@
     mount.insertBefore(wrap, mount.firstChild);
     wire(wrap);
     refreshGroups(wrap);
+    return wrap;
   }
 
   function refreshGroups(wrap) {
@@ -458,15 +467,6 @@
         refreshGroups(wrap);
       } catch (e) { alert('Import failed: ' + e.message); }
     };
-    wrap.querySelector('#mls-sg-athena').onclick = function () {
-      var id = gid(); if (!id) return alert('Create a group first.');
-      var st = wrap.querySelector('#mls-sg-athena-status'); st.textContent = 'Pulling…';
-      API.extractFromAthena(id, function (i, n, pt) { st.textContent = 'Pulling ' + i + '/' + n + ' (' + (pt && pt.name) + ')…'; })
-        .then(function (r) {
-          st.textContent = r.stubbed ? 'Athena pull stubbed — use manual/import (see note).' : ('Pulled ' + r.visits + ' visit(s) across ' + r.patients + ' patient(s).');
-          refreshGroups(wrap);
-        }).catch(function (e) { st.textContent = 'Error: ' + e.message; });
-    };
     wrap.querySelector('#mls-sg-run').onclick = function () {
       var id = gid(); if (!id) return alert('Create/select a group first.');
       var rs = wrap.querySelector('#mls-sg-runstatus'); rs.textContent = 'Running study…';
@@ -483,24 +483,35 @@
   function mountUI() {
     injectStyle();
     var mount = findStudioMount();
-    if (!mount) {
-      // floating launcher fallback
+    var root = document.getElementById('mls-sg-root');
+    if (mount) {
+      root = render(mount);
+      Array.prototype.slice.call(document.querySelectorAll('[id="mls-sg-launch"]')).forEach(function (node) { if (node.parentNode) node.parentNode.removeChild(node); });
+      var modal = document.getElementById('mls-sg-modal');
+      if (modal && !modal.contains(root) && modal.parentNode) modal.parentNode.removeChild(modal);
+      try { window.dispatchEvent(new CustomEvent('mls:study-groups-mounted', { detail: { root: root } })); } catch (e) {}
+      return 'studio';
+    }
+    if (root) return 'existing';
+    if (!document.getElementById('mls-sg-launch')) {
+      // floating launcher fallback (single owner until the Studio shell exists)
       var btn = el('button', { 'class': 'mls-sg-btn', id: 'mls-sg-launch', style: 'position:fixed;right:18px;bottom:18px;z-index:99999;box-shadow:0 4px 14px rgba(0,0,0,.2)' }, '👥 Study Groups');
       btn.onclick = function () {
+        if (document.getElementById('mls-sg-modal')) return;
         var host = el('div', { id: 'mls-sg-modal', style: 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100000;overflow:auto;padding:24px' });
         var panel = el('div', { style: 'background:#FCFBF8;max-width:960px;margin:0 auto;border-radius:14px;padding:16px;position:relative' });
         var x = el('button', { 'class': 'mls-sg-btn gray', style: 'position:absolute;right:12px;top:12px' }, '✕ Close'); x.onclick = function () { host.remove(); };
         panel.appendChild(x); host.appendChild(panel); document.body.appendChild(host); render(panel);
       };
       document.body.appendChild(btn);
-      return 'launcher';
     }
-    render(mount);
-    return 'studio';
+    return 'launcher';
   }
 
   /* ================= REVERT ================= */
   function revert(purgeData) {
+    try { mountTimers.forEach(function (timer) { clearTimeout(timer); }); mountTimers = []; } catch (e) {}
+    try { window.removeEventListener('mls:ui-ready', boot); window.removeEventListener('mls:route-change', boot); } catch (e) {}
     try { document.querySelectorAll('[' + TAG + ']').forEach(function (n) { n.remove(); }); } catch (e) {}
     var st = document.getElementById(STYLE_ID); if (st) st.remove();
     var modal = document.getElementById('mls-sg-modal'); if (modal) modal.remove();
@@ -518,6 +529,11 @@
     try { var where = mountUI(); console.log('[mls-sg] mounted via ' + where + '; handle: window.__mlsStudyGroups'); }
     catch (e) { console.warn('[mls-sg] mount deferred', e); }
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else setTimeout(boot, 600); // let the app's own tab modules settle first
+  var mountTimers = [];
+  function startMountLifecycle() {
+    [0, 250, 1000, 3000, 8000].forEach(function (delay) { mountTimers.push(setTimeout(boot, delay)); });
+    try { window.addEventListener('mls:ui-ready', boot); window.addEventListener('mls:route-change', boot); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startMountLifecycle, { once: true });
+  else startMountLifecycle();
 })();

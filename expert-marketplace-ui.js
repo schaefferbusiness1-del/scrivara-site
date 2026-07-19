@@ -1,11 +1,11 @@
 /* ===========================================================================
-   MLS — Expert Marketplace editor (doctor-facing)
+   MLS — Expert Marketplace review draft (doctor-facing)
    ---------------------------------------------------------------------------
    Additive progressive enhancement loaded inside the MLS app (ScribeFlow.html).
-   Gives a physician a full "List yourself on the attorney marketplace" editor:
-   rich profile fields, headshot + document uploads, AI-polished advertising
-   copy, licensed-state selection, and an opt-in toggle (OFF by default). Wires
-   to the backend /api/expert/* routes. Only opted-in profiles appear publicly.
+   Gives a physician a profile-draft editor and an opt-in request for independent
+   publication review. Opting in never publishes a profile by itself. Public
+   release is a separate backend-held approval, and this synthetic evaluation
+   does not accept real-person photos, documents, case information, or PHI.
 
    Self-contained: own IIFE, own scoped styles, try/catch everywhere, no
    monkey-patching of existing app functions. It injects a launcher next to the
@@ -13,8 +13,8 @@
    window.openExpertMarketplaceEditor(). Returns silently on any error so it can
    never break the host app.
 
-   Photo policy: we use the physician's REAL uploaded photo (resized only). We
-   never generate a synthetic/AI likeness — this is a legal-credibility context.
+   All requests in this surface explicitly bypass browser caches, cookies, and
+   referrer disclosure. The bearer token remains the only authentication input.
    ======================================================================== */
 (function () {
   if (window.__mlsExpertMktInit) return;
@@ -39,6 +39,15 @@
     var h = { 'Authorization': 'Bearer ' + token() };
     if (json) h['Content-Type'] = 'application/json';
     return h;
+  }
+  function expertFetch(path, opts) {
+    var safe = opts || {};
+    var request = {};
+    Object.keys(safe).forEach(function (key) { request[key] = safe[key]; });
+    request.cache = 'no-store';
+    request.credentials = 'omit';
+    request.referrerPolicy = 'no-referrer';
+    return fetch(base() + path, request);
   }
 
   var US_STATES = [
@@ -80,6 +89,11 @@
       '.mx-bd{padding:18px 22px;max-height:calc(100vh - 190px);overflow:auto}',
       '.mx-ft{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--line,#e7edf4);background:var(--soft,#FCFBF8)}',
       '.mx-ft .mx-spacer{flex:1}',
+      '.mx-boundary{background:#f6fbf8;border:1px solid #cfe5d8;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;color:var(--ink2,#204034)}',
+      '.mx-boundary b{display:block;margin-bottom:2px}',
+      '.mx-pub-status{border-radius:10px;padding:10px 12px;margin:-6px 0 18px;font-size:13px;line-height:1.45;background:var(--soft,#f3f6fa);border:1px solid var(--line,#e7edf4);color:var(--ink2,#204034)}',
+      '.mx-pub-status.pending{background:#fff8e8;border-color:#efd9a0;color:#76551a}',
+      '.mx-pub-status.released{background:#edf8f1;border-color:#c7e4d1;color:#1f6a43}',
       '.mx-optin{display:flex;gap:12px;align-items:flex-start;background:var(--soft2,#FCFBF8);border:1px solid var(--line,#e7edf4);border-radius:12px;padding:14px;margin-bottom:18px}',
       '.mx-optin input{margin-top:3px;width:18px;height:18px;flex:0 0 auto}',
       '.mx-optin b{font-size:14.5px}.mx-optin p{margin:3px 0 0;font-size:12.5px;color:var(--muted,#79837C)}',
@@ -96,16 +110,7 @@
       '.mx-states{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:4px 10px;max-height:168px;overflow:auto;border:1.5px solid var(--line,#e7edf4);border-radius:10px;padding:10px 12px}',
       '.mx-states label{display:flex;gap:7px;align-items:center;font-size:13px;font-weight:500;color:var(--ink,#0e2238);cursor:pointer;margin:0}',
       '.mx-states input{width:15px;height:15px;margin:0}',
-      '.mx-photo{display:flex;gap:14px;align-items:center;flex-wrap:wrap}',
-      '.mx-photo .pv{width:84px;height:84px;border-radius:14px;object-fit:cover;border:1px solid var(--line,#e7edf4);background:var(--soft,#f3f6fa)}',
-      '.mx-photo .ph{width:84px;height:84px;border-radius:14px;border:1px dashed var(--line,#cdd9e8);background:var(--soft,#f3f6fa);display:flex;align-items:center;justify-content:center;color:var(--muted,#C9DCD2);font-size:26px}',
       '.mx-note{font-size:12px;color:var(--muted,#79837C);margin-top:6px;line-height:1.4}',
-      '.mx-docs{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}',
-      '.mx-docs li{display:flex;gap:10px;align-items:center;background:var(--soft,#f6f8fb);border:1px solid var(--line,#e7edf4);border-radius:9px;padding:8px 11px;font-size:13px}',
-      '.mx-docs li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.mx-docs li .rm{cursor:pointer;color:#c0392b;border:none;background:transparent;font-weight:700;font-size:16px}',
-      '.mx-ai{background:linear-gradient(135deg,#f3eeff,#eef6ff);border:1px solid #e0d8f6;border-radius:12px;padding:13px 15px;margin-bottom:14px}',
-      '.mx-ai b{font-size:13.5px}.mx-ai p{margin:3px 0 9px;font-size:12.5px;color:var(--muted,#79837C)}',
       '.mx-msg{font-size:13px;margin-right:auto}',
       '.mx-msg.ok{color:#1f7a4d}.mx-msg.err{color:#c0392b}',
       '.mx-live{font-size:12.5px;color:var(--muted,#79837C)}',
@@ -124,10 +129,10 @@
       var cta = document.createElement('div');
       cta.id = 'mlsExpertAdCta';
       cta.innerHTML =
-        '<div class="mx-ico">📣</div>' +
-        '<div class="mx-txt"><b>Advertise yourself to attorneys</b>' +
-        '<span>Build a full marketplace profile — photo, AI-polished bio, credentials, documents and licensed states — and choose to list publicly.</span></div>' +
-        '<button class="mx-btn" type="button" id="mlsExpertAdOpen">Build my advertisement →</button>';
+        '<div class="mx-ico">📝</div>' +
+        '<div class="mx-txt"><b>Prepare an expert profile draft</b>' +
+        '<span>Synthetic evaluation only. Draft your profile and choose whether to request independent publication review; saving never publishes it.</span></div>' +
+        '<button class="mx-btn" type="button" id="mlsExpertAdOpen">Open profile draft →</button>';
       if (body.parentNode) body.parentNode.insertBefore(cta, body.nextSibling);
       else body.appendChild(cta);
       var btn = document.getElementById('mlsExpertAdOpen');
@@ -135,43 +140,8 @@
     } catch (e) { /* best effort */ }
   }
 
-  /* ---------- file helpers ---------- */
-  function readAsDataURL(file) {
-    return new Promise(function (resolve, reject) {
-      var fr = new FileReader();
-      fr.onload = function () { resolve(fr.result); };
-      fr.onerror = function () { reject(fr.error); };
-      fr.readAsDataURL(file);
-    });
-  }
-  // Resize a photo client-side (real photo, just smaller). Returns JPEG data URL.
-  function resizePhoto(file, maxDim) {
-    return new Promise(function (resolve, reject) {
-      var fr = new FileReader();
-      fr.onload = function () {
-        var img = new Image();
-        img.onload = function () {
-          try {
-            var w = img.width, h = img.height;
-            var scale = Math.min(1, maxDim / Math.max(w, h));
-            var cw = Math.round(w * scale), ch = Math.round(h * scale);
-            var cv = document.createElement('canvas');
-            cv.width = cw; cv.height = ch;
-            var ctx = cv.getContext('2d');
-            ctx.drawImage(img, 0, 0, cw, ch);
-            resolve(cv.toDataURL('image/jpeg', 0.85));
-          } catch (e) { reject(e); }
-        };
-        img.onerror = function () { reject(new Error('image load failed')); };
-        img.src = fr.result;
-      };
-      fr.onerror = function () { reject(fr.error); };
-      fr.readAsDataURL(file);
-    });
-  }
-
   /* ---------- modal ---------- */
-  var STATE = { profile: null, docs: [], photoUrl: '', dirtyPhoto: false };
+  var STATE = { profile: null };
 
   function field(id, label, val, opts) {
     opts = opts || {};
@@ -195,17 +165,19 @@
 
   function dollars(cents) { var n = Number(cents); return (n && !isNaN(n)) ? (n / 100) : ''; }
 
-  function renderDocs() {
-    var ul = document.getElementById('mxDocList');
-    if (!ul) return;
-    if (!STATE.docs.length) { ul.innerHTML = '<li style="color:var(--muted,#79837C);border-style:dashed">No documents yet — add your CV, a de-identified sample report, or board certificates.</li>'; return; }
-    ul.innerHTML = STATE.docs.map(function (d) {
-      return '<li data-id="' + d.id + '"><span>📄</span><span class="nm">' + esc(d.label || d.filename || 'Document') + '</span>' +
-        '<button class="rm" type="button" title="Remove" data-id="' + d.id + '">✕</button></li>';
-    }).join('');
-    Array.prototype.forEach.call(ul.querySelectorAll('.rm'), function (b) {
-      b.addEventListener('click', function () { removeDoc(b.getAttribute('data-id')); });
-    });
+  function isReleased(p) {
+    return !!p && p.public_ready === true && p.publication_status === 'released';
+  }
+
+  function publicationSummary(p) {
+    if (isReleased(p)) return { kind: 'released', text: 'Released after independent review. Editing this profile will return it to pending review.' };
+    if (p && p.listed) return { kind: 'pending', text: 'Review requested. This draft is not public while independent review is pending.' };
+    return { kind: '', text: 'No public review requested. This profile remains a private draft.' };
+  }
+
+  function publicationStatusHtml(p) {
+    var status = publicationSummary(p);
+    return '<div id="mxPubStatus" class="mx-pub-status' + (status.kind ? ' ' + status.kind : '') + '" role="status" aria-live="polite">' + esc(status.text) + '</div>';
   }
 
   function buildModal(p) {
@@ -214,74 +186,63 @@
     ov.id = 'mlsExpertOverlay';
     var statesSel = p.states || [];
     ov.innerHTML =
-      '<div id="mlsExpertModal" role="dialog" aria-modal="true" aria-label="Attorney marketplace profile">' +
-      '<div class="mx-hd"><span style="font-size:22px">⚖️</span><h2>List yourself on the attorney marketplace</h2>' +
+      '<div id="mlsExpertModal" role="dialog" aria-modal="true" aria-label="Expert profile review draft">' +
+      '<div class="mx-hd"><span style="font-size:22px">📝</span><h2>Prepare an expert profile for review</h2>' +
       '<button class="mx-x" id="mxClose" aria-label="Close">×</button></div>' +
       '<div class="mx-bd">' +
 
+        '<div class="mx-boundary" role="note"><b>Synthetic evaluation only</b>Use invented profile details. Do not enter patient information, real-person identity media, credentials documents, case files, or other sensitive material. Saving creates a draft; it does not publish a profile.</div>' +
+
         '<label class="mx-optin"><input type="checkbox" id="mxListed"' + (p.listed ? ' checked' : '') + '>' +
-        '<span><b>List me publicly on the attorney marketplace</b>' +
-        '<p>Off by default. When on, your profile appears in the public /lawyers directory and gets its own advertising page. Turn it off any time to go private.</p></span></label>' +
+        '<span><b>Request independent review for public release</b>' +
+        '<p>Off by default. Selecting this records an opt-in request only. MLS must separately review and release the profile before anyone can see it publicly. Clear it to withdraw the request.</p></span></label>' +
+        publicationStatusHtml(p) +
 
         '<div class="mx-sec"><h3>Photo</h3>' +
-        '<div class="mx-photo">' +
-        '<img id="mxPhotoPv" class="pv" alt="Headshot preview" style="display:' + (p.has_photo ? 'block' : 'none') + '" src="">' +
-        '<div id="mxPhotoPh" class="ph" style="display:' + (p.has_photo ? 'none' : 'flex') + '">🩺</div>' +
-        '<div><input type="file" id="mxPhotoFile" accept="image/png,image/jpeg,image/webp" style="display:none">' +
-        '<button class="mx-btn ghost sm" type="button" id="mxPhotoBtn">Upload headshot</button> ' +
-        '<button class="mx-btn ghost sm" type="button" id="mxPhotoRm" style="display:' + (p.has_photo ? 'inline-block' : 'none') + '">Remove</button>' +
-        '<div class="mx-note">We use your <b>real</b> photo (resized only). We never create a fake or AI-generated likeness — authenticity matters for credibility.</div>' +
-        '</div></div></div>' +
+        '<div class="mx-note">Headshot uploads are unavailable in this synthetic evaluation build. Do not add a real-person image.</div></div>' +
 
         '<div class="mx-sec"><h3>Who you are</h3>' +
         '<div class="mx-row">' +
         field('mxName', 'Full name', p.full_name, { ph: 'Jane A. Smith, MD' }) +
-        field('mxCred', 'Credentials & board certifications', p.credentials, { ph: 'MD; Board-certified PM&R, Pain Medicine' }) +
+        field('mxCred', 'Credentials summary', p.credentials, { ph: 'Synthetic credentials for evaluation' }) +
         '</div><div class="mx-row">' +
         field('mxSpec', 'Specialty', p.specialty, { ph: 'Pain Management' }) +
         field('mxSub', 'Subspecialty', p.subspecialty, { ph: 'Interventional spine' }) +
         '</div>' +
-        field('mxYears', 'Years in / actively practicing', p.years, { ph: 'e.g. 14 years; actively practicing' }) +
+        field('mxYears', 'Practice experience summary', p.years, { ph: 'Synthetic experience summary for evaluation' }) +
         '</div>' +
 
-        '<div class="mx-sec"><h3>Licensed states / jurisdictions <span style="font-weight:600;color:var(--muted,#79837C);text-transform:none;letter-spacing:0">— attorneys see physicians in their state first</span></h3>' +
+        '<div class="mx-sec"><h3>Jurisdictions for the synthetic draft</h3>' +
         statesGrid(statesSel) +
         '</div>' +
 
-        '<div class="mx-sec"><h3>Testimony experience & availability</h3>' +
-        field('mxDepoExp', 'Deposition experience', p.depo_experience, { textarea: true, rows: 2, ph: 'e.g. 30+ depositions for plaintiff and defense' }) +
-        field('mxTrialExp', 'Trial / testimony experience', p.trial_experience, { textarea: true, rows: 2, ph: 'e.g. testified at trial 8 times' }) +
-        field('mxAvail', 'Availability', p.availability, { ph: 'e.g. Reports in 24h; depo/trial by arrangement' }) +
+        '<div class="mx-sec"><h3>Experience & scheduling notes</h3>' +
+        field('mxDepoExp', 'Deposition experience', p.depo_experience, { textarea: true, rows: 2, ph: 'Synthetic experience summary (optional)' }) +
+        field('mxTrialExp', 'Trial / testimony experience', p.trial_experience, { textarea: true, rows: 2, ph: 'Synthetic experience summary (optional)' }) +
+        field('mxAvail', 'Scheduling notes', p.availability, { ph: 'Synthetic scheduling notes (optional)' }) +
         '</div>' +
 
-        '<div class="mx-sec"><h3>Fees</h3>' +
+        '<div class="mx-sec"><h3>Synthetic fee draft</h3>' +
         '<div class="mx-row">' +
-        field('mxDepo', 'Deposition rate (USD/hr)', dollars(p.depo_rate_cents), { type: 'number', ph: '500' }) +
-        field('mxTrial', 'Trial rate (USD/hr)', dollars(p.trial_rate_cents), { type: 'number', ph: '750' }) +
+        field('mxDepo', 'Deposition rate draft (USD/hr)', dollars(p.depo_rate_cents), { type: 'number', ph: 'Synthetic amount' }) +
+        field('mxTrial', 'Trial rate draft (USD/hr)', dollars(p.trial_rate_cents), { type: 'number', ph: 'Synthetic amount' }) +
         '</div>' +
-        field('mxFee', 'Fee notes', p.fee_info, { textarea: true, rows: 2, ph: 'Report fee $X; or "fees on request". Leave blank for "fees on request."' }) +
+        field('mxFee', 'Fee notes draft', p.fee_info, { textarea: true, rows: 2, ph: 'Synthetic fee notes for evaluation (optional)' }) +
         '</div>' +
 
-        '<div class="mx-sec"><h3>Your advertisement</h3>' +
-        '<div class="mx-ai"><b>✨ Let AI polish your profile</b>' +
-        '<p>Generates a professional headline and advertising copy from the facts you entered above. Nothing is fabricated — review and edit before saving.</p>' +
-        '<button class="mx-btn sm" type="button" id="mxGen">Generate professional copy</button> ' +
-        '<span id="mxGenMsg" class="mx-note" style="display:none"></span></div>' +
-        field('mxHeadline', 'Headline', p.headline, { ph: 'Board-certified pain physician · IME & causation · 24-hour reports' }) +
-        field('mxAdCopy', 'Advertising copy', p.ad_copy, { textarea: true, rows: 6, ph: 'A few short paragraphs attorneys will read on your page.' }) +
-        field('mxBio', 'Short bio (directory card)', p.bio, { textarea: true, rows: 3, ph: 'One or two sentences shown on your directory card.' }) +
+        '<div class="mx-sec"><h3>Profile draft</h3>' +
+        field('mxHeadline', 'Headline', p.headline, { ph: 'Synthetic specialty profile for review' }) +
+        field('mxAdCopy', 'Profile summary', p.ad_copy, { textarea: true, rows: 6, ph: 'Synthetic draft text for independent review.' }) +
+        field('mxBio', 'Short directory summary', p.bio, { textarea: true, rows: 3, ph: 'Synthetic draft summary for review.' }) +
         '</div>' +
 
         '<div class="mx-sec"><h3>Documents</h3>' +
-        '<input type="file" id="mxDocFile" accept=".pdf,.doc,.docx,.txt,image/*" style="display:none">' +
-        '<button class="mx-btn ghost sm" type="button" id="mxDocBtn">+ Add document (CV, sample report, certificate)</button>' +
-        '<ul class="mx-docs" id="mxDocList"></ul>' +
-        '<div class="mx-note">Published documents are downloadable from your public ad page. Only upload de-identified material — no PHI.</div>' +
+        '<div class="mx-note">Document uploads and public downloads are unavailable in this synthetic evaluation build. Do not add CVs, certificates, clinical files, or other real-world documents.</div>' +
         '</div>' +
 
         '<div class="mx-sec"><h3>Links & contact</h3>' +
-        field('mxCv', 'CV link (optional)', p.cv_url, { ph: 'https://…' }) +
-        field('mxContact', 'Contact / booking preference', p.contact_pref, { ph: 'Request via portal; or email; or phone for scheduling' }) +
+        field('mxCv', 'Reference link (synthetic evaluation only)', p.cv_url, { ph: 'Leave blank unless using an invented test URL' }) +
+        field('mxContact', 'Contact preference draft', p.contact_pref, { ph: 'Synthetic contact preference for review' }) +
         '</div>' +
 
       '</div>' +
@@ -289,7 +250,7 @@
         '<span id="mxMsg" class="mx-msg"></span>' +
         '<span id="mxLive" class="mx-live"></span>' +
         '<button class="mx-btn ghost" type="button" id="mxCancel">Close</button>' +
-        '<button class="mx-btn" type="button" id="mxSave">Save profile</button>' +
+        '<button class="mx-btn" type="button" id="mxSave">Save draft and review choice</button>' +
       '</div>' +
       '</div>';
     document.body.appendChild(ov);
@@ -299,47 +260,25 @@
     document.getElementById('mxCancel').addEventListener('click', closeEditor);
     ov.addEventListener('click', function (e) { if (e.target === ov) closeEditor(); });
     document.getElementById('mxSave').addEventListener('click', saveProfile);
-    document.getElementById('mxGen').addEventListener('click', generateCopy);
-    document.getElementById('mxPhotoBtn').addEventListener('click', function () { document.getElementById('mxPhotoFile').click(); });
-    document.getElementById('mxPhotoFile').addEventListener('change', onPhotoPick);
-    document.getElementById('mxPhotoRm').addEventListener('click', removePhoto);
-    document.getElementById('mxDocBtn').addEventListener('click', function () { document.getElementById('mxDocFile').click(); });
-    document.getElementById('mxDocFile').addEventListener('change', onDocPick);
     updateLiveLink();
-    renderDocs();
-    if (p.has_photo) loadPhotoPreview();
-  }
-
-  // The clinician preview endpoint requires a Bearer token, which an <img src>
-  // cannot send — so fetch it with auth and show it as an object URL.
-  async function loadPhotoPreview() {
-    try {
-      var pv = document.getElementById('mxPhotoPv');
-      if (!pv) return;
-      var r = await fetch(base() + '/api/expert/me/photo', { headers: authHeaders(false) });
-      if (!r.ok) return;
-      var blob = await r.blob();
-      if (pv.__url) { try { URL.revokeObjectURL(pv.__url); } catch (e) {} }
-      pv.__url = URL.createObjectURL(blob);
-      pv.src = pv.__url;
-      pv.style.display = 'block';
-      var ph = document.getElementById('mxPhotoPh'); if (ph) ph.style.display = 'none';
-    } catch (e) { /* preview is best-effort */ }
   }
 
   function updateLiveLink() {
     var el = document.getElementById('mxLive');
     if (!el || !STATE.profile) return;
-    var listed = document.getElementById('mxListed');
-    if (listed && listed.checked && STATE.profile.public_url) {
-      // public_url is /lawyers/expert.html?id=NN -> link on the live site origin
-      var href = (location.origin && location.origin.indexOf('http') === 0)
-        ? (location.origin + STATE.profile.public_url)
-        : STATE.profile.public_url;
-      el.innerHTML = '🔗 <a href="' + esc(href) + '" target="_blank" rel="noopener">View my public page</a>';
-    } else {
-      el.textContent = '';
-    }
+    var raw = isReleased(STATE.profile) && typeof STATE.profile.public_url === 'string' ? STATE.profile.public_url.trim() : '';
+    if (!raw || raw.charAt(0) !== '/' || raw.indexOf('//') === 0 || raw.indexOf('\\') !== -1) { el.textContent = ''; return; }
+    var href = (location.origin && location.origin.indexOf('http') === 0) ? (location.origin + raw) : raw;
+    el.innerHTML = '🔗 <a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">View released public profile</a>';
+  }
+
+  function updatePublicationStatus() {
+    var el = document.getElementById('mxPubStatus');
+    if (!el || !STATE.profile) return;
+    var status = publicationSummary(STATE.profile);
+    el.textContent = status.text;
+    el.className = 'mx-pub-status' + (status.kind ? ' ' + status.kind : '');
+    updateLiveLink();
   }
 
   function msg(text, kind) {
@@ -372,96 +311,23 @@
     if (btn) { btn.disabled = true; }
     try {
       var body = collect();
-      var r = await fetch(base() + '/api/expert/me', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(body) });
+      var r = await expertFetch('/api/expert/me', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(body) });
       var d = await r.json().catch(function () { return {}; });
       if (!r.ok) throw new Error(d.error || 'Save failed');
-      STATE.profile.public_url = d.public_url || STATE.profile.public_url;
-      STATE.profile.listed = d.listed;
-      msg(d.listed ? '✓ Saved — you are listed on the marketplace.' : '✓ Saved (not listed publicly).', 'ok');
-      updateLiveLink();
+      STATE.profile.listed = d.listed === true;
+      STATE.profile.public_ready = d.public_ready === true;
+      STATE.profile.publication_status = typeof d.publication_status === 'string' ? d.publication_status : (STATE.profile.listed ? 'pending_review' : 'not_requested');
+      STATE.profile.public_url = isReleased(d) && typeof d.public_url === 'string' ? d.public_url : '';
+      var requestBox = document.getElementById('mxListed');
+      if (requestBox) requestBox.checked = STATE.profile.listed;
+      var requested = STATE.profile.listed && !isReleased(STATE.profile);
+      msg(requested ? '✓ Draft saved. Independent review requested; this profile is not public.' :
+        (isReleased(STATE.profile) ? '✓ Released profile unchanged.' : '✓ Draft saved. No public review requested.'), 'ok');
+      updatePublicationStatus();
       try { if (typeof window.loadExpertProfile === 'function') window.loadExpertProfile(); } catch (e) {}
     } catch (e) {
       msg(e.message || 'Could not save.', 'err');
     } finally { if (btn) btn.disabled = false; }
-  }
-
-  async function generateCopy() {
-    var btn = document.getElementById('mxGen');
-    var gm = document.getElementById('mxGenMsg');
-    if (btn) btn.disabled = true;
-    if (gm) { gm.style.display = 'inline'; gm.textContent = 'Generating professional copy…'; }
-    try {
-      var body = collect();
-      var r = await fetch(base() + '/api/expert/me/generate-bio', { method: 'POST', headers: authHeaders(true), body: JSON.stringify(body) });
-      var d = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(d.error || 'Generation failed');
-      if (d.headline) document.getElementById('mxHeadline').value = d.headline;
-      if (d.ad_copy) document.getElementById('mxAdCopy').value = d.ad_copy;
-      if (d.summary && !document.getElementById('mxBio').value.trim()) document.getElementById('mxBio').value = d.summary;
-      if (gm) gm.textContent = '✓ Draft created — review and edit, then Save.';
-    } catch (e) {
-      if (gm) gm.textContent = (e.message || 'Could not generate.') + ' You can write your bio manually.';
-    } finally { if (btn) btn.disabled = false; }
-  }
-
-  async function onPhotoPick(ev) {
-    var file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    msg('Uploading photo…');
-    try {
-      var dataUrl = await resizePhoto(file, 800);
-      var r = await fetch(base() + '/api/expert/me/photo', {
-        method: 'POST', headers: authHeaders(true),
-        body: JSON.stringify({ data: dataUrl, mimetype: 'image/jpeg', filename: (file.name || 'headshot').replace(/\.[^.]+$/, '') + '.jpg' })
-      });
-      var d = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(d.error || 'Upload failed');
-      var pv = document.getElementById('mxPhotoPv'), ph = document.getElementById('mxPhotoPh'), rm = document.getElementById('mxPhotoRm');
-      pv.style.display = 'block'; ph.style.display = 'none'; rm.style.display = 'inline-block';
-      loadPhotoPreview();
-      STATE.profile.has_photo = true;
-      msg('✓ Photo uploaded.', 'ok');
-    } catch (e) { msg(e.message || 'Photo upload failed.', 'err'); }
-    finally { ev.target.value = ''; }
-  }
-
-  async function removePhoto() {
-    msg('Removing photo…');
-    try {
-      await fetch(base() + '/api/expert/me/photo', { method: 'DELETE', headers: authHeaders(false) });
-      var pv = document.getElementById('mxPhotoPv'), ph = document.getElementById('mxPhotoPh'), rm = document.getElementById('mxPhotoRm');
-      pv.style.display = 'none'; pv.src = ''; ph.style.display = 'flex'; rm.style.display = 'none';
-      STATE.profile.has_photo = false;
-      msg('Photo removed.', 'ok');
-    } catch (e) { msg('Could not remove photo.', 'err'); }
-  }
-
-  async function onDocPick(ev) {
-    var file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    msg('Uploading document…');
-    try {
-      if (file.size > 12 * 1024 * 1024) throw new Error('File too large (12MB max).');
-      var dataUrl = await readAsDataURL(file);
-      var r = await fetch(base() + '/api/expert/me/documents', {
-        method: 'POST', headers: authHeaders(true),
-        body: JSON.stringify({ data: dataUrl, mimetype: file.type || 'application/octet-stream', filename: file.name || 'document', label: file.name || 'Document' })
-      });
-      var d = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(d.error || 'Upload failed');
-      STATE.docs.push({ id: d.id, label: d.label || file.name, filename: file.name, mimetype: file.type, size: d.size });
-      renderDocs();
-      msg('✓ Document added.', 'ok');
-    } catch (e) { msg(e.message || 'Document upload failed.', 'err'); }
-    finally { ev.target.value = ''; }
-  }
-
-  async function removeDoc(id) {
-    try {
-      await fetch(base() + '/api/expert/me/documents/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders(false) });
-      STATE.docs = STATE.docs.filter(function (d) { return String(d.id) !== String(id); });
-      renderDocs();
-    } catch (e) { msg('Could not remove document.', 'err'); }
   }
 
   function closeEditor() {
@@ -478,22 +344,18 @@
     shell.innerHTML = '<div id="mlsExpertModal"><div class="mx-bd" style="padding:40px;text-align:center;color:var(--muted,#79837C)">Loading your profile…</div></div>';
     document.body.appendChild(shell);
     try {
-      var r = await fetch(base() + '/api/expert/me', { headers: authHeaders(false) });
+      var r = await expertFetch('/api/expert/me', { headers: authHeaders(false) });
       if (!r.ok) {
-        shell.querySelector('.mx-bd').innerHTML = 'This editor is available to clinician accounts. (' + r.status + ')';
+        shell.querySelector('.mx-bd').textContent = 'This profile draft is available to signed-in clinician accounts.';
         setTimeout(closeEditor, 1800);
         return;
       }
       var p = await r.json();
       STATE.profile = p;
-      STATE.docs = Array.isArray(p.documents) ? p.documents.slice() : [];
       closeEditor();
       buildModal(p);
-      // keep the live link in sync when toggling listed
-      var lc = document.getElementById('mxListed');
-      if (lc) lc.addEventListener('change', updateLiveLink);
     } catch (e) {
-      if (shell.querySelector('.mx-bd')) shell.querySelector('.mx-bd').textContent = 'Could not load your profile.';
+      if (shell.querySelector('.mx-bd')) shell.querySelector('.mx-bd').textContent = 'Your profile draft could not be loaded. Nothing was changed.';
       setTimeout(closeEditor, 1800);
     }
   }

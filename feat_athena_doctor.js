@@ -7,14 +7,13 @@
  *      existing detection/probe functions — it does NOT reinvent detection):
  *        a) MLS Assist extension loaded & responding   -> __mlsAthenaStatusDot.pingExtension()
  *                                                          (mlsPing -> mlsPong handshake)
- *        b) Signed-in athenaOne tab open               -> mlsAppPullSchedule -> mlsAppScheduleResult
- *                                                          (reads ONLY resp.ok / error — never text/url => no PHI)
- *        c) Extension has host permission for the page -> same schedule reply, permission-error shape
- *        d) Background service worker healthy           -> did the schedule request get ANY reply
- *        e) A patient chart actually open (for a pull)  -> real pull result, else honest guidance
- *        f) Did the read return REAL data               -> real pull result + §48/§58 realness test
+ *        b) Exact Athena product tab detected           -> mlsExtHealth operational metadata
+ *        c) Detected Athena tab is not discarded        -> tab/discarded counts only
+ *        d) Background service worker healthy           -> health request received a reply
+ *        e) Last user-started chart read receipt         -> supplied explicit result only
+ *        f) Last user-started data receipt               -> supplied explicit result only
  *      Runs in order, stops at the first real failure, prints the ONE plain-English fix,
- *      and auto re-checks/re-probes a couple of times where safe (re-ping / re-probe) before
+ *      and auto re-checks/re-probes a couple of times where safe before
  *      declaring failure. SAFE auto-fix only: it NEVER reloads his extension and NEVER writes
  *      to Athena — those it instructs the user to do.
  *   2. Clearer success: after any Athena action an explicit honest result line
@@ -25,7 +24,9 @@
  *      immediately sees WHY + the fix instead of a vague error.
  *
  *  Self-contained, additive, idempotent, fully reversible: window.__mlsAthenaDoctor.revert().
- *  No PHI is read, stored, or logged; success/failure reflect real state only.
+ *  Diagnostics never request or receive PHI. A ready result means only worker
+ *  health plus a usable Athena tab; it never verifies sign-in, patient, encounter,
+ *  or chart readability.
  */
 (function () {
   'use strict';
@@ -67,37 +68,31 @@
     return Promise.resolve(false);
   }
 
-  // Athena-open + worker-health + host-permission, all from ONE schedule reply.
-  // Reuses the EXACT existing message the status dot's probe uses
-  // (mlsAppPullSchedule -> mlsAppScheduleResult) but reads ONLY non-PHI metadata
-  // (ok + any error/reason/code string). It NEVER reads/stores/logs resp.text/url/title.
-  function scheduleProbe(timeoutMs) {
+  // Worker + exact Athena product-tab presence from one PHI-free health reply.
+  function healthProbe(timeoutMs) {
     timeoutMs = timeoutMs || 4500;
     return new Promise(function (resolve) {
-      var done = false;
+      var done = false, timer = null;
       var id = 'mlsdx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      function finish(value) {
+        if (done) return;
+        done = true;
+        if (timer != null) { try { clearTimeout(timer); } catch (e) {} }
+        try { W.removeEventListener('message', onMsg, true); } catch (e) {}
+        resolve(value);
+      }
       function onMsg(ev) {
         var d = ev && ev.data;
-        if (!d || d.source !== 'mls-ext') return;
-        if (!d.type || !/Schedule(Result)?$/i.test(d.type)) return;
-        if (done) return;
-        done = true;
-        try { W.removeEventListener('message', onMsg, true); } catch (e) {}
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsExtHealthResult') return;
+        if (d.requestId && d.requestId !== id) return;
         var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
-        var errStr = '';
-        ['error', 'reason', 'code', 'message', 'status'].forEach(function (k) {
-          if (typeof r[k] === 'string' && r[k]) errStr = errStr || r[k];
-        });
-        resolve({ responded: true, ok: r.ok === true, error: errStr });
+        var a = r.athena && typeof r.athena === 'object' ? r.athena : {};
+        var tabs = Math.max(0, Number(a.tabs || 0)), discarded = Math.max(0, Number(a.discarded || 0));
+        finish({ responded: true, ok: r.ok === true, tabs: tabs, discarded: discarded, usable: r.ok === true && tabs > discarded, error: String(r.reason || r.error || '').slice(0, 120) });
       }
       try { W.addEventListener('message', onMsg, true); } catch (e) {}
-      try { W.postMessage({ source: 'mls-app', type: 'mlsAppPullSchedule', id: id }, '*'); } catch (e) {}
-      setTimeout(function () {
-        if (done) return;
-        done = true;
-        try { W.removeEventListener('message', onMsg, true); } catch (e) {}
-        resolve({ responded: false, ok: false, error: '' });
-      }, timeoutMs);
+      timer = setTimeout(function () { finish({ responded: false, ok: false, tabs: 0, discarded: 0, usable: false, error: '' }); }, timeoutMs);
+      try { W.postMessage({ source: 'mls-app', type: 'mlsExtHealth', requestId: id }, '*'); } catch (e) {}
     });
   }
 
@@ -106,11 +101,11 @@
   function blankSteps() {
     return [
       { id: 'ext',   label: 'MLS Assist extension is responding',        status: 'check', detail: '', fix: '' },
-      { id: 'tab',   label: 'A signed-in athenaOne tab is open',         status: 'check', detail: '', fix: '' },
-      { id: 'perm',  label: 'Extension can read the athenaOne page',     status: 'check', detail: '', fix: '' },
+      { id: 'tab',   label: 'An exact Athena product tab is detected',   status: 'check', detail: '', fix: '' },
+      { id: 'perm',  label: 'A detected Athena tab is loaded',           status: 'check', detail: '', fix: '' },
       { id: 'worker',label: 'Background service worker is healthy',       status: 'check', detail: '', fix: '' },
-      { id: 'chart', label: 'The pull can open & read a patient chart',  status: 'check', detail: '', fix: '' },
-      { id: 'data',  label: 'The last read returned real data',         status: 'check', detail: '', fix: '' }
+      { id: 'chart', label: 'Last user-started chart read has a receipt', status: 'check', detail: '', fix: '' },
+      { id: 'data',  label: 'Last user-started pull has a data receipt',  status: 'check', detail: '', fix: '' }
     ];
   }
 
@@ -139,7 +134,7 @@
       }
       emit();
 
-      // If the extension isn't responding, the page-read steps can't be evaluated.
+      // If the extension isn't responding, operational tab health is unavailable.
       if (!extOk) {
         ['tab', 'perm', 'worker'].forEach(function (k) {
           byId[k].status = 'warn';
@@ -148,19 +143,19 @@
         return finishE_F(steps, byId, lastResult, emit);
       }
 
-      // ---- schedule probe drives b / c / d (auto-retry: re-probe up to 3x) --
-      var sp = { responded: false, ok: false, error: '' };
+      // ---- PHI-free health probe drives b / c / d --------------------------
+      var sp = { responded: false, ok: false, tabs: 0, discarded: 0, usable: false, error: '' };
       for (var j = 0; j < 3; j++) {
         if (j) await sleep(400); // give a sleeping MV3 worker a moment to wake
-        sp = await scheduleProbe(4500);
+        sp = await healthProbe(4500);
         if (sp.responded) break; // any reply means the worker is alive — stop retrying
       }
 
       if (!sp.responded) {
         // d) worker dead/stuck: the extension answered the ping but never processed
-        // the page-read request across retries.
+        // the PHI-free health request across retries.
         byId.worker.status = 'fail';
-        byId.worker.detail = 'The extension pings, but the background worker did not answer a page read after 3 tries.';
+        byId.worker.detail = 'The extension pings, but the background worker did not answer health after 3 tries.';
         byId.worker.fix = 'Reload MLS Assist at chrome://extensions (the background service worker looks asleep/stuck), then re-check.';
         byId.tab.status = 'warn';  byId.tab.detail = 'Could not check — see the background worker step.';
         byId.perm.status = 'warn'; byId.perm.detail = 'Could not check — see the background worker step.';
@@ -170,26 +165,31 @@
 
       // worker is alive (it replied)
       byId.worker.status = 'pass';
-      byId.worker.detail = 'The background worker answered the page-read request.';
+      byId.worker.detail = 'The background worker answered with operational metadata only.';
 
-      if (sp.ok && (!window.__mlsConnTruth || window.__mlsConnTruth.isConnected())) {
-        // tab open AND readable AND permitted
-        byId.tab.status = 'pass';  byId.tab.detail = 'A signed-in athenaOne tab was found and is readable.';
-        byId.perm.status = 'pass'; byId.perm.detail = 'The extension successfully read the athenaOne page.';
-      } else if (isPermErr(sp.error)) {
-        // c) host permission failure: tab found but unreadable due to permission
-        byId.tab.status = 'warn';
-        byId.tab.detail = 'A tab was reached but could not be read (permission).';
-        byId.perm.status = 'fail';
-        byId.perm.detail = 'The extension lacks permission to read the athenaOne page.';
-        byId.perm.fix = 'Reload MLS Assist to the latest version at chrome://extensions (it needs host permission for athenaOne), then re-check.';
-      } else {
-        // b) no signed-in athenaOne tab readable
+      if (!sp.ok) {
+        byId.worker.status = 'fail';
+        byId.worker.detail = 'The health request returned an extension-worker failure.';
+        byId.worker.fix = 'Reload MLS Assist at chrome://extensions, then re-check.';
+        byId.tab.status = 'warn'; byId.tab.detail = 'Could not inspect tab metadata until worker health recovers.';
+        byId.perm.status = 'warn'; byId.perm.detail = 'Could not inspect discarded-tab metadata.';
+      } else if (sp.tabs <= 0) {
         byId.tab.status = 'fail';
-        byId.tab.detail = 'No signed-in, readable athenaOne tab was found.';
-        byId.tab.fix = 'Open a signed-in athenaOne tab in this browser, then re-check.';
+        byId.tab.detail = 'No exact Athena product tab was detected.';
+        byId.tab.fix = 'Open athenaOne in this browser, then re-check. Sign-in and chart access are verified only when you start a clinical action.';
         byId.perm.status = 'warn';
-        byId.perm.detail = 'Could not check — no athenaOne tab to read yet.';
+        byId.perm.detail = 'No detected Athena tab was available to classify as loaded or discarded.';
+      } else {
+        byId.tab.status = 'pass';
+        byId.tab.detail = sp.tabs + ' exact Athena product tab' + (sp.tabs === 1 ? '' : 's') + ' detected; no page or patient data was read.';
+        if (sp.usable) {
+          byId.perm.status = 'pass';
+          byId.perm.detail = (sp.tabs - sp.discarded) + ' detected Athena tab' + ((sp.tabs - sp.discarded) === 1 ? ' is' : 's are') + ' loaded. Patient and encounter are not verified yet.';
+        } else {
+          byId.perm.status = 'fail';
+          byId.perm.detail = 'Every detected Athena tab is discarded by Memory Saver.';
+          byId.perm.fix = 'Activate an Athena tab before a clinical action, then re-check.';
+        }
       }
       emit();
 
@@ -197,9 +197,8 @@
     })();
   }
 
-  // e) chart open + f) real data — evaluated from a genuine pull result when we
-  // have one; otherwise honest guidance (never a fabricated PASS, and never reads
-  // a chart proactively because that would touch PHI).
+  // e/f use only a receipt supplied by a prior explicit clinician-started read.
+  // Diagnostics themselves never open or inspect a chart.
   function finishE_F(steps, byId, lastResult, emit) {
     if (lastResult && typeof lastResult === 'object') {
       if (lastResult.ok === false && (lastResult.count == null || lastResult.count === 0)) {
@@ -207,14 +206,14 @@
         byId.chart.status = 'fail';
         byId.chart.detail = lastResult.stage
           ? ('The read failed at: ' + lastResult.stage + '.')
-          : 'The extension could not read a patient chart.';
+          : 'The prior user-started chart read did not return a success receipt.';
         byId.chart.fix = "Just run the pull again — it opens the patient's chart automatically. If it keeps failing, reload the athenaOne tab, then retry.";
         byId.data.status = 'fail';
         byId.data.detail = 'No real visit data was returned by the last read.';
         byId.data.fix = 'Run the pull again — it auto-opens each patient’s chart and reports the count. If athenaOne looks stuck, reload its tab first.';
       } else if (lastResult.ok) {
         byId.chart.status = 'pass';
-        byId.chart.detail = 'A patient chart was read successfully.';
+        byId.chart.detail = 'The prior user-started chart read returned a success receipt.';
         if (lastResult.anyReal === false) {
           byId.data.status = 'warn';
           byId.data.detail = 'The read completed but no visits had real clinical content.';
@@ -237,8 +236,8 @@
 
   function markGuidance(byId) {
     // No genuine read to judge — give honest guidance, not a fake pass/fail.
-    byId.chart.status = 'pass';
-    byId.chart.detail = "The pull opens the patient's chart automatically — no need to open one first.";
+    byId.chart.status = 'warn';
+    byId.chart.detail = 'Not checked passively. Start a clinical pull to verify the exact patient and chart.';
     byId.data.status = 'warn';
     byId.data.detail = 'Run a pull to confirm real data is returned.';
   }
@@ -332,7 +331,7 @@
       headHtml = '<span>🔧</span><span>Checking MLS Assist…</span>';
     } else if (result.ready && !result.firstFail) {
       headHtml = '<span>✅</span><span>MLS Assist is ready</span>';
-      fixHtml = '<div class="mlsdoc-ok">Everything in the chain is connected. You\'re good to pull from athenaOne.</div>';
+      fixHtml = '<div class="mlsdoc-ok">MLS Assist is ready and a loaded Athena product tab is detected. The exact patient and encounter will be verified only when you start a clinical action.</div>';
     } else if (result.firstFail) {
       headHtml = '<span>⚠️</span><span>Found the problem</span>';
       fixHtml = '<div class="mlsdoc-fix">Do this: ' + esc(result.firstFail.fix) + '</div>';
@@ -352,7 +351,7 @@
     panel.innerHTML =
       '<div class="mlsdoc-card">' +
       '<div class="mlsdoc-h">' + headHtml + '</div>' +
-      '<div class="mlsdoc-sub">Step-by-step check of the MLS Assist → athenaOne chain. Every line reflects real, live status.</div>' +
+      '<div class="mlsdoc-sub">PHI-free readiness check of MLS Assist and Athena tab metadata. It does not read a schedule or chart.</div>' +
       fixHtml +
       '<ul class="mlsdoc-list">' + rows + '</ul>' +
       '<div class="mlsdoc-actions">' +
@@ -658,7 +657,7 @@
     asset: ASSET,
     // probes (reused)
     pingExtension: pingExtension,
-    scheduleProbe: scheduleProbe,
+    healthProbe: healthProbe,
     // chain
     runChain: runChain,
     summarize: summarize,

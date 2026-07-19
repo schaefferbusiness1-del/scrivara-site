@@ -2,7 +2,7 @@
 
 /* Runtime regression for the visit-transcript flicker root cause.
  *
- * The active first-guard Easy engine (v3.7.1, window.__mlsEasyV32) rebuilds
+ * The active first-guard Easy engine (v3.7.2, window.__mlsEasyV32) rebuilds
  * #ez3Wrap with `innerHTML = h` on nearly every click. The canonical easy
  * lane `.ez3fl-record` (including #ez3flTranscript) is mounted INSIDE that
  * subtree, so every rewrite used to destroy it; a satellite observer
@@ -28,10 +28,10 @@ const path = require('path');
 
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'mls-connect.js'), 'utf8');
 
-/* ---- locate the ACTIVE engine (first-guard __mlsEasyV32 v3.7.1) ---- */
-const verAt = source.indexOf("var VER = '3.7.1'");
-assert(verAt >= 0, 'active easy engine v3.7.1 marker is missing');
-const engineEnd = source.indexOf('MLS Easy v3.2 reverted', verAt);
+/* ---- locate the ACTIVE engine (first-guard __mlsEasyV32 v3.7.2) ---- */
+const verAt = source.indexOf("var VER = '3.7.2'");
+assert(verAt >= 0, 'active easy engine v3.7.2 marker is missing');
+const engineEnd = source.indexOf('/* =========================================================================\n * MLS Scribe — PULL PIPELINE TRUTH PACK', verAt);
 assert(engineEnd > verAt, 'active engine end boundary not found');
 const engine = source.slice(verAt, engineEnd);
 

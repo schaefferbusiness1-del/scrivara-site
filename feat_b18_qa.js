@@ -118,7 +118,8 @@ var __mlsB18Q=window.__mlsB18QA;
       var p; try{ p=orig.apply(this,arguments); }catch(e){ p=null; }
       return Promise.resolve(p).then(function(r){
         try{
-          if(hadData && (!window._calAppts || !window._calAppts.length)){
+          var authoritativeEmpty=!!(r&&r.applied===true&&r.authoritative===true&&r.count===0);
+          if(hadData && (!window._calAppts || !window._calAppts.length) && !authoritativeEmpty){
             window._calAppts=snap; M.keptGood++;
             try{ if(typeof window.renderCalendar==='function') window.renderCalendar(); }catch(e){}
             try{ if(typeof window.toast==='function') window.toast('Calendar refresh failed — showing the last good data. It will retry automatically.',''); }catch(e){}
@@ -128,6 +129,7 @@ var __mlsB18Q=window.__mlsB18QA;
         return r;
       });
     };
+    ['__prf','__dkf','__mlsDobWrap','__mlsWrapped'].forEach(function(marker){ if(orig[marker]) wrapped[marker]=orig[marker]; });
     wrapped.__mlsWrapped=1;
     origLoad=orig; wrappedLoad=wrapped;
     window.loadCalendar=wrapped;

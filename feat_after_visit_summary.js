@@ -1,10 +1,10 @@
-/* feat_after_visit_summary.js -> window.__mlsAfterVisitSummary (v1.0.0)
+/* feat_after_visit_summary.js -> window.__mlsAfterVisitSummary (v1.1.0)
  *
  * AFTER-VISIT PATIENT SUMMARY (additive, self-contained, fully reversible).
  *
  * Gives the patient a clear, plain-language summary of their visit AFTER the
- * visit. The doctor generates it, REVIEWS / edits it, then explicitly clicks
- * "Send to patient". Nothing is ever auto-sent.
+ * visit. The doctor generates it, REVIEWS / edits it, then copies a draft into
+ * the practice's approved email system or downloads a PDF. MLS does not send it.
  *
  * SOURCE OF TRUTH (no fabrication): the summary is derived ONLY from the real
  * visit note + the patient's structured chart already in MLS (chief complaint,
@@ -17,19 +17,18 @@
  *   - generation : window.aiCallRaw(sys,user,getKey(),{freeform:true}) -- the
  *                  existing OpenAI proxy / note-gen path. It auto-selects the
  *                  strong note model (getNoteModel(), e.g. gpt-4o).
- *   - email send : POST bkBase()+'/api/copilot/email' {to,subject,body} with the
- *                  app's Bearer auth (bkToken()) -- the SAME backend Resend
- *                  transactional path the app's copilot email uses.
+ *   - email draft: local clipboard copy only; arbitrary-recipient network email
+ *                  is held until a purpose-specific, exact-patient release path.
  *   - PDF        : jsPDF (reusing window.jspdf/loadJsPdf if present, else loaded
- *                  from CDN) + window.pdfSafe() + MLS_OPNOTE_LETTERHEAD -- the
+ *                  from the pinned same-origin 4.2.1 asset) + window.pdfSafe() + MLS_OPNOTE_LETTERHEAD -- the
  *                  same jsPDF engine the op-note PDF uses.
  *
  * SAFETY:
  *   - Read-only w.r.t. athenaOne and the chart: never Save/Sign/attest/write.
- *   - NEVER auto-sends. Send requires an explicit click + a confirm dialog, and
- *     is disabled until a valid patient email + a non-empty summary are present.
- *   - PHI stays in the doctor's browser + the chosen patient email only; nothing
- *     is logged. Honest success/failure messaging.
+ *   - NEVER sends. The active patient is frozen when the modal opens; generation,
+ *     copy, and PDF actions fail closed if the clinician switches charts.
+ *   - PHI stays in the doctor's browser unless the clinician deliberately moves
+ *     a reviewed draft into an approved system. Nothing is logged.
  *   - SMS/text delivery is a future option (intentionally NOT built here).
  *   - window.__mlsAfterVisitSummary.revert() removes all UI/observers/styles.
  *   - ASCII-only; every external call wrapped in try/catch; idempotent.
@@ -38,7 +37,7 @@
   'use strict';
   try { if (window.__mlsAfterVisitSummary && window.__mlsAfterVisitSummary.installed) return; } catch (e) {}
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var ASSET = 'feat_after_visit_summary.js';
   var STYLE_ID = 'mlsavsStyle';
   var BTN_ID = 'mlsavsBtn';
@@ -66,7 +65,6 @@
       return d.toLocaleDateString();
     } catch (e) { return S(v).slice(0, 10); }
   }
-  function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S(s).trim()); }
 
   // ---------------- patient + note gathering ----------------
   function activePatient() {
@@ -77,6 +75,21 @@
       for (var i = 0; i < ps.length; i++) if (ps[i] && ps[i].id === id) return ps[i];
       return null;
     }, null);
+  }
+
+  function patientBinding(pt) {
+    if (!pt) return '';
+    var fields = ['id', 'athenaId', 'athena_id', 'patient_external_id', 'external_id', 'mrn'];
+    var ids = fields.map(function (key) { return key + ':' + S(pt[key]).trim(); }).filter(function (row) { return !/:$/.test(row); });
+    return ids.length ? ids.join('|') : ('fallback:' + S(pt.name).trim().toLowerCase() + '|' + S(pt.dob).trim());
+  }
+
+  function ensureBoundPatient(action) {
+    if (!els.pt || !els.patientBinding || patientBinding(activePatient()) !== els.patientBinding) {
+      setStatus('The active patient changed. Close this summary and reopen it from the correct chart before ' + action + '.', 'err');
+      return false;
+    }
+    return true;
   }
 
   // newest note that belongs to this patient and actually has text
@@ -228,14 +241,14 @@
       if (document.getElementById(BTN_ID)) return;
       var btn = ce('button'); btn.id = BTN_ID; btn.type = 'button';
       btn.textContent = 'After-visit summary';
-      btn.title = 'Generate a plain-language visit summary for the patient (you review before sending)';
+      btn.title = 'Generate a plain-language visit summary to review, copy, or download';
       var sw = host.querySelector('.mlsctx-switch');
       if (sw) host.insertBefore(btn, sw); else host.appendChild(btn);
       btn.addEventListener('click', function (e) { try { e.preventDefault(); } catch (x) {} openModal(); });
     } catch (e) {}
   }
 
-  // ---------------- the review / send modal ----------------
+  // ---------------- the review / local-export modal ----------------
   var els = {};
   function openModal() {
     var pt = activePatient();
@@ -255,18 +268,18 @@
           '<p class="mlsavs-sub">Patient: <b>' + esc(pt.name || 'Unknown') + '</b>' +
             (pt.dob ? ' &middot; DOB ' + esc(pt.dob) : '') +
             (note ? ' &middot; from the visit note dated ' + esc(dateStr(note.updated || note.created)) : '') + '</p>' +
-          '<textarea class="mlsavs-ta" id="mlsavsText" placeholder="Click Generate to create a patient-friendly summary from this visit\'s note. You can edit it before sending."></textarea>' +
+          '<textarea class="mlsavs-ta" id="mlsavsText" placeholder="Click Generate to create a patient-friendly summary from this visit\'s note. Review and edit it before copying or downloading."></textarea>' +
           '<div class="mlsavs-row">' +
             '<button type="button" class="mlsavs-btn gen" id="mlsavsGen">Generate summary</button>' +
             '<button type="button" class="mlsavs-btn" id="mlsavsCopy">Copy</button>' +
             '<button type="button" class="mlsavs-btn" id="mlsavsPdf">Download PDF</button>' +
           '</div>' +
           '<div class="mlsavs-row">' +
-            '<input type="email" class="mlsavs-email" id="mlsavsEmail" placeholder="Patient email (required to send)" value="' + esc(prefillEmail) + '">' +
-            '<button type="button" class="mlsavs-btn primary" id="mlsavsSend" disabled>Send to patient</button>' +
+            '<input type="email" class="mlsavs-email" id="mlsavsEmail" aria-label="Patient email on the selected chart (reference only)" title="Reference only; MLS does not send email" placeholder="No email on the selected chart" value="' + esc(prefillEmail) + '" readonly aria-readonly="true">' +
+            '<button type="button" class="mlsavs-btn primary" id="mlsavsCopyEmail" disabled>Copy email draft</button>' +
           '</div>' +
           '<div class="mlsavs-status" id="mlsavsStatus"></div>' +
-          '<div class="mlsavs-note">The summary is built only from this visit\'s note &mdash; it is never auto-sent. Review and edit it, then click <b>Send to patient</b>. Text/SMS goes live the moment Twilio is configured in the backend (Settings > Integrations).</div>' +
+          '<div class="mlsavs-note">The summary is built only from this visit\'s note. <b>Nothing is sent from MLS.</b> Review it, then copy the draft into your approved email system or download the PDF.</div>' +
         '</div>' +
       '</div>';
 
@@ -278,26 +291,25 @@
       gen: q('#mlsavsGen', overlay),
       copy: q('#mlsavsCopy', overlay),
       pdf: q('#mlsavsPdf', overlay),
-      send: q('#mlsavsSend', overlay),
+      copyEmail: q('#mlsavsCopyEmail', overlay),
       status: q('#mlsavsStatus', overlay),
       close: q('#mlsavsClose', overlay)
     };
-    els.pt = pt; els.note = note;
+    els.pt = pt; els.note = note; els.patientBinding = patientBinding(pt);
 
     els.close.addEventListener('click', closeModal);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
     els.gen.addEventListener('click', onGenerate);
     els.copy.addEventListener('click', onCopy);
     els.pdf.addEventListener('click', onPdf);
-    els.send.addEventListener('click', onSend);
-    els.text.addEventListener('input', refreshSendState);
-    els.email.addEventListener('input', refreshSendState);
+    els.copyEmail.addEventListener('click', onCopyEmailDraft);
+    els.text.addEventListener('input', refreshDraftState);
 
     if (!note) {
       setStatus('No visit note with text was found for this patient yet. Generate or open a visit note first, then come back.', 'err');
       els.gen.disabled = true;
     }
-    refreshSendState();
+    refreshDraftState();
   }
 
   function closeModal() {
@@ -311,29 +323,27 @@
     els.status.innerHTML = (kind === 'run' ? '<span class="mlsavs-spin"></span>' : '') + esc(msg);
   }
 
-  function refreshSendState() {
-    if (!els.send) return;
+  function refreshDraftState() {
+    if (!els.copyEmail) return;
     var hasText = S(els.text && els.text.value).trim().length > 0;
-    var okEmail = isEmail(els.email && els.email.value);
-    els.send.disabled = !(hasText && okEmail);
-    if (els.send.disabled && hasText && !okEmail) {
-      // only nudge about email if there is content ready to send
-      if (!els.status.textContent || els.status.className.indexOf('err') === -1) setStatus('Add a valid patient email to enable sending.', 'run');
-    }
+    els.copyEmail.disabled = !hasText;
   }
 
   function onGenerate() {
     if (!els.pt) return;
+    if (!ensureBoundPatient('generating')) return;
     if (!els.note) { setStatus('No visit note to summarize.', 'err'); return; }
+    var binding = els.patientBinding;
     els.gen.disabled = true;
     setStatus('Writing a patient-friendly summary from this visit\'s note...', 'run');
     generateSummary(els.pt, els.note).then(function (txt) {
       if (!els.text) return;
+      if (els.patientBinding !== binding || !ensureBoundPatient('using this generated draft')) return;
       els.text.value = txt;
-      setStatus('Draft ready. Review and edit, then send or download.', 'ok');
+      setStatus('Draft ready. Review and edit, then copy or download.', 'ok');
       els.gen.textContent = 'Regenerate';
       els.gen.disabled = false;
-      refreshSendState();
+      refreshDraftState();
     }).catch(function (err) {
       setStatus('Could not generate the summary: ' + (err && err.message ? err.message : err), 'err');
       els.gen.disabled = false;
@@ -341,6 +351,7 @@
   }
 
   function onCopy() {
+    if (!ensureBoundPatient('copying')) return;
     var txt = S(els.text && els.text.value);
     if (!txt.trim()) { setStatus('Nothing to copy yet.', 'err'); return; }
     var done = function () { setStatus('Copied to clipboard.', 'ok'); };
@@ -359,7 +370,7 @@
 
   // Obtain a jsPDF constructor robustly: prefer one already loaded, then the app's
   // on-demand loader (only if it is actually callable -- some app builds leave
-  // window.loadJsPdf as a non-callable value), else load jsPDF from CDN (same engine).
+  // window.loadJsPdf as a non-callable value), else load the pinned local engine.
   function jsPdfCtor() { return (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default) || null; }
   function ensureJsPDF() {
     var cur = jsPdfCtor();
@@ -372,7 +383,7 @@
       if (JS) return JS;
       return new Promise(function (resolve, reject) {
         var s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.src = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
         s.onload = function () { resolve(jsPdfCtor()); };
         s.onerror = function () { reject(new Error('Could not load the PDF engine.')); };
         (document.head || document.documentElement).appendChild(s);
@@ -382,6 +393,7 @@
 
   // ---------------- PDF (reuses the op-note jsPDF engine) ----------------
   function onPdf() {
+    if (!ensureBoundPatient('downloading')) return;
     var txt = S(els.text && els.text.value).trim();
     if (!txt) { setStatus('Generate a summary before downloading.', 'err'); return; }
     setStatus('Building PDF...', 'run');
@@ -420,56 +432,24 @@
     });
   }
 
-  // ---------------- send (reuses backend Resend path; doctor-confirmed only) ----------------
-  function onSend() {
+  // ---------------- local email draft (copy only; no network sender) ----------------
+  function onCopyEmailDraft() {
+    if (!ensureBoundPatient('copying the email draft')) return;
     var txt = S(els.text && els.text.value).trim();
     var to = S(els.email && els.email.value).trim();
     if (!txt) { setStatus('Generate a summary first.', 'err'); return; }
-    if (!isEmail(to)) { setStatus('Enter a valid patient email first.', 'err'); return; }
-
-    // explicit doctor confirmation -- this contains the patient's health info
-    var ok = false;
-    try { ok = window.confirm('Send this after-visit summary to ' + to + '?\n\nThis email contains the patient\'s health information. It will be sent now.'); } catch (e) { ok = false; }
-    if (!ok) { setStatus('Send cancelled.', 'run'); return; }
-
-    els.send.disabled = true;
-    setStatus('Sending to ' + to + '...', 'run');
 
     var pt = els.pt || {};
     var subject = 'Your visit summary' + (S((window.MLS_OPNOTE_LETTERHEAD || {}).clinicName) ? ' from ' + S(window.MLS_OPNOTE_LETTERHEAD.clinicName) : '');
     var greeting = 'Hi ' + (firstName(pt.name) || 'there') + ',\n\nHere is a summary of your recent visit:\n\n';
     var footer = '\n\nIf you have any questions, please contact the clinic. This message may contain personal health information intended only for you.';
     var body = greeting + txt + footer;
-
-    sendViaBackend(to, subject, body).then(function () {
-      setStatus('✓ Summary sent to ' + to, 'ok');
-    }).catch(function (err) {
-      els.send.disabled = false;
-      setStatus('Send failed: ' + (err && err.message ? err.message : err) + '. You can Copy or Download PDF instead.', 'err');
-    });
-  }
-
-  // POST to the existing transactional email endpoint (Resend-backed), using the
-  // SAME backend base + bearer auth the app's own copilot email uses:
-  //   fetch(bkBase() + '/api/copilot/email', { headers:{ Authorization:'Bearer '+bkToken() }})
-  function sendViaBackend(to, subject, body) {
-    var base = '';
-    try { if (typeof window.bkBase === 'function') base = window.bkBase() || ''; } catch (e) { base = ''; }
-    var headers = { 'Content-Type': 'application/json' };
-    try { if (typeof window.bkToken === 'function') { var tk = window.bkToken(); if (tk) headers.Authorization = 'Bearer ' + tk; } } catch (e) {}
-    return fetch(base + '/api/copilot/email', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ to: to, subject: subject, body: body })
-    }).then(function (res) {
-      return res.text().then(function (t) {
-        var data = {}; try { data = t ? JSON.parse(t) : {}; } catch (e) {}
-        if (!res.ok || data.ok === false || data.error) {
-          throw new Error((data && (data.error || data.message)) || ('server returned ' + res.status));
-        }
-        return data;
-      });
-    });
+    var draft = (to ? 'To: ' + to + '\n' : '') + 'Subject: ' + subject + '\n\n' + body;
+    var done = function () { setStatus('Email draft copied. Review it in your approved email system before sending.', 'ok'); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(draft).then(done, function () { legacyCopy(draft, done); });
+      else legacyCopy(draft, done);
+    } catch (e) { legacyCopy(draft, done); }
   }
 
   // ---------------- keep the button mounted as the app re-renders ----------------

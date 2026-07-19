@@ -1,9 +1,9 @@
 /* patient-scale-perf-contract.test.js — b375
  *
  * Pins the patient-scale performance pass:
- *  1. Base getPatients() memoizes on RAW string identity (multi-MB LZ decode +
- *     JSON.parse runs once per stored change, not per call) and savePatients()
- *     invalidates the memo before writing.
+ *  1. Base getPatients() memoizes the account-scoped legacy raw value; repeated
+ *     reads do not decode/parse again. The retired worker-journal protocol must
+ *     not reappear.
  *  2. patientNotes() is an indexed lookup (Map keyed per store version), not a
  *     full-store filter per call — with a working fallback filter.
  *  3. ptSearch/histSearch keystrokes are debounced through __mlsDebRender.
@@ -24,11 +24,14 @@ const ROOT = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(ROOT, 'ScribeFlow.html'), 'utf8');
 const connect = fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'utf8');
 
-/* ---------- 1. base getPatients memo ---------- */
+/* ---------- 1. base logical-store memo ---------- */
 assert(app.includes('var __mlsPtsMemo=null;'), 'getPatients raw-identity memo was removed');
-assert(app.includes('if(__mlsPtsMemo&&__mlsPtsMemo.raw===raw)return __mlsPtsMemo.arr.slice();'),
-  'getPatients no longer serves memoized parses on identical raw strings');
-assert(app.includes("__mlsPtsMemo=null; /* never serve a pre-write parse after a write */"),
+assert(app.includes('if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsMemo.arr.slice();'),
+  'getPatients no longer memoizes the exact legacy raw identity');
+assert(app.includes('var arr=JSON.parse(_mlsPtsDecode(raw))||[];'),
+  'getPatients no longer reads the rollback-compatible legacy store');
+assert(!app.includes('__mlsPtsReadState'), 'retired worker-journal state machine returned');
+assert(app.includes("if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null; /* never serve a pre-write parse after a write */"),
   'savePatients no longer invalidates the read memo before writing');
 
 /* ---------- 2. patientNotes index ---------- */
@@ -85,6 +88,7 @@ assert(connect.includes("version: 'sc-1.2.0', enabled: true, early: true"), 'emb
 assert(connect.includes('api.ver = function () { return VER.n; };'), 'store-cache no longer exposes ver()');
 assert(connect.includes('cache.val && cache.key === k && cache.ver === VER.n'), 'VER fast path (skip getItem) was lost');
 assert(connect.includes("w.__mlsScVer = 1;"), 'Storage.prototype VER hook was lost');
+assert(!connect.includes('__mlsPatientStoreHasPending'), 'retired worker-journal cache branch returned');
 
 /* runtime: extract the embedded cache IIFE and prove the fast path skips getItem */
 {

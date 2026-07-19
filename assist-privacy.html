@@ -17,32 +17,32 @@
 <h1>MLS Assist — Privacy Policy</h1>
 <p class="muted">Last updated: June 13, 2026 · Provided by MLS Scribe LLC</p>
 
-<p>MLS Assist is a Chrome extension that works alongside the MLS clinical app (mlsscribe.com) to help licensed clinicians document patient visits. This policy explains what the extension accesses, why, and how the information is handled.</p>
+<p>MLS Assist is a Chrome extension used to evaluate MLS alongside athenaOne and the MLS app. It supports clinician-started live schedule reads, supervised reads from the one chart the clinician selects, and reviewed draft placement. The current hosted release is not authorized for real patient information.</p>
 
 <h2>Single purpose</h2>
-<p>MLS Assist captures a patient visit (with the clinician's consent), drafts a clinical note, performs supervised on-screen steps that the clinician approves, and can run a scheduled backup of the clinician's patient roster from their web-based EMR into the clinician's MLS account.</p>
+<p>MLS Assist responds only to a clinician-started action, except for an optional scheduled snapshot of the one exact Athena chart already open. It does not walk a patient roster in the background, sign a note, submit a claim, or attest for a clinician.</p>
 
 <h2>What the extension accesses</h2>
 <ul>
-  <li><b>Visit content you choose to capture</b> — microphone audio and/or on-screen text from the active tab, only when you start a capture. This is used to produce the clinical note.</li>
-  <li><b>EMR page content</b> — when you run the supervised autopilot or the scheduled roster backup, the extension reads content from the EMR tab you are working in to take the steps you approve or to copy your patient list into MLS.</li>
+  <li><b>Schedule or visit content you explicitly request</b> — the visible athenaOne day/month schedule or the one patient chart you select, only when you start the corresponding read.</li>
+  <li><b>One optional scheduled chart snapshot</b> — only the exact patient chart already open in signed-in athenaOne. If no stable verified chart is open, nothing is read or sent.</li>
   <li><b>Local settings</b> — your preferences (via the browser <code>storage</code> API) are kept on your device.</li>
 </ul>
 
 <h2>How the information is used</h2>
-<p>Captured visit content and roster data are sent over an encrypted (HTTPS) connection to the MLS backend operated by MLS Scribe LLC, solely to generate notes and sync data into your own MLS account. Note-drafting uses a third-party AI provider under a Business Associate Agreement. Data is encrypted at rest. MLS Assist does <b>not</b> sell or share your data, does <b>not</b> use it for advertising, and does <b>not</b> use it for any purpose unrelated to the single purpose above or to determine creditworthiness or for lending.</p>
+<p>During synthetic evaluation, requested content may be sent over HTTPS to the configured MLS backend solely for the MLS action the clinician started. This policy does not assert that a vendor BAA, zero-retention term, regulated hosting configuration, or production legal release is in effect. Do not use MLS Assist with real patient information until MLS publishes and the server verifies that readiness.</p>
 
 <h2>Permissions, and why each is needed</h2>
 <ul>
   <li><code>activeTab</code> / <code>scripting</code> — to read the visit and take approved steps on the EMR page you're actively using.</li>
   <li><code>tabs</code> — to identify the EMR tab to act on and return you to MLS.</li>
   <li><code>storage</code> — to remember your local settings.</li>
-  <li><code>alarms</code> — to run the optional scheduled nightly roster backup.</li>
-  <li><code>host access</code> — the extension supports many different web EMRs, so it can be enabled on the EMR site you use. It only reads or acts on a page when you explicitly start a capture, autopilot run, or backup.</li>
+  <li><code>alarms</code> — to run the optional one-open-chart snapshot at the time you choose.</li>
+  <li><code>host access</code> — limited to the supported MLS and athenaOne origins declared in the extension manifest.</li>
 </ul>
 
 <h2>Protected health information (HIPAA)</h2>
-<p>When used with real patient information, MLS Scribe LLC acts as a Business Associate of the clinician's practice under a signed Business Associate Agreement, and maintains administrative, physical, and technical safeguards consistent with the HIPAA Security Rule.</p>
+<p>The current release is for synthetic evaluation and does not represent that it is approved for real PHI or that any BAA is executed. Production clinical use must remain disabled until the backend verifies an immutable, counsel-approved legal release and server-recorded user grant.</p>
 
 <h2>Data retention &amp; deletion</h2>
 <p>Visit and roster data live in your MLS account; you can delete records from within MLS, and may request account deletion by contacting us. Local settings are removed when you uninstall the extension.</p>

@@ -16,6 +16,10 @@ assert(directory.includes("where:'Left navigation -> Send to patient (or Patient
 assert(directory.includes("where:'AI Studio -> natural-language study builder at the top'") && directory.includes("route:'study'"), 'natural-language study location is stale or missing');
 assert(directory.includes('limited-data draft') && directory.includes('clinician and privacy review are still required'), 'Help/Search overstates study privacy or readiness');
 assert(directory.includes("name:'Ask MLS Copilot'") && directory.includes("route:'copilot'"), 'MLS Copilot location is stale or missing');
+assert(directory.includes("name:'Manage note and op-note templates'") && directory.includes("where:'Menu -> Templates'"), 'Templates still teaches a retired top-bar location');
+assert(directory.includes("name:'Ask MLS Copilot'") && directory.includes("where:'Menu -> Ask'"), 'Ask still teaches a retired top-bar location');
+assert(directory.includes("name:'Build a custom widget'") && directory.includes("where:'Menu -> Custom widget (also at the top of AI Studio)'"), 'Custom widget still teaches a retired top-bar location');
+assert(!directory.includes("where:'Top bar -> Templates'") && !directory.includes("where:'Top bar -> Ask'") && !directory.includes("where:'Top bar -> Custom widget"), 'canonical directory still contains retired top-bar locations');
 assert(directory.includes("route.indexOf('reach:') === 0") && directory.includes("mode:'dialog',source:'feature-directory'"), 'Help/Find context actions must open compact Reach dialogs');
 assert(directory.includes("if(typeof window.showView==='function') window.showView('studio')") && directory.includes("document.getElementById('mlsStudyPrompt')"), 'Help/Find cannot navigate to and focus the natural-language study builder');
 assert(directory.includes('window.__mlsFeatureDirectory = DIR') && directory.includes('window.mlsFeatureHelpAnswer = helpAnswer') && directory.includes('window.mlsOpenFeature = openFeature'), 'directory is not published to both answer and navigation owners');

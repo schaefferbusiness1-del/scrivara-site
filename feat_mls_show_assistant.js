@@ -251,7 +251,7 @@
     cancelAllActive('revert', false);
     stopped = true;
     try { window.removeEventListener('message', onMessage, false); } catch (e) {}
-    try { window.removeEventListener('pagehide', onPageExit, false); window.removeEventListener('unload', onPageExit, false); } catch (eExit) {}
+    try { window.removeEventListener('pagehide', onPageExit, false); } catch (eExit) {}
     active = Object.create(null);
     try {
       var router = window.__mlsWbRouter;
@@ -265,7 +265,6 @@
 
   window.addEventListener('message', onMessage, false);
   window.addEventListener('pagehide', onPageExit, false);
-  window.addEventListener('unload', onPageExit, false);
   wrapChat();
   window.__mlsShowAsst = {
     installed: true, version: VERSION,

@@ -8,7 +8,7 @@ const app = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf8
 
 const session = app.slice(app.indexOf('function startSession(email)'), app.indexOf('function logout(force)'));
 assert.strictEqual((session.match(/refreshMe\(_startupOpts\)/g) || []).length, 1, 'startup must issue exactly one identity/hydration pass');
-assert(session.includes('Promise.all([') && session.includes('_identityReady.then(()=>checkAgreementsGate(_startupOpts))'), 'agreement readiness must follow canonical identity while data hydrates in the same startup batch');
+assert(session.includes('Promise.all([') && session.includes('!bkToken()?Promise.resolve(true):_identityReady.then(()=>checkAgreementsGate(_startupOpts))'), 'legal readiness must fail closed without auth and otherwise follow canonical identity while data hydrates');
 assert(session.includes('_startupOpts.cancelled=true') && session.includes('_startupController.abort()'), 'startup deadline must cancel late network results');
 assert(session.includes('_armDeadline(30200)') && session.includes('window.__mlsSessionReady=_sessionReady'), 'startup must expose a bounded readiness promise inside the 32-second loader deadline');
 // b419: deadlines re-arm instead of aborting while document.hidden (throttled
@@ -192,11 +192,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b419', 'main UI script is not exact-versioned');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b430', 'main UI script is not exact-versioned');
   assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b419');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b430');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
@@ -283,7 +283,7 @@ for (const fn of ['loadPrefsFromServer(opts)', 'loadPatientsFromServer(opts)', '
 assert((app.match(/if\(opts\.signal\) init\.signal=opts\.signal/g) || []).length >= 5, 'not every startup request is abortable');
 const gate = app.slice(app.indexOf('async function checkAgreementsGate(opts)'), app.indexOf('async function agBuildReceiptPdf'));
 assert(!gate.includes('showAgreementsGate()'), 'agreement lookup must return a decision instead of bypassing loader timing');
-assert(gate.includes('if(!sfStartupValid(opts)) return false'), 'late agreement responses can still change the handoff');
+assert(gate.includes('if(!sfStartupValid(opts)) return true'), 'late legal-readiness responses can still fail open after startup cancellation');
 
 verifyLoaderRuntime().then(function () {
   console.log('PASS startup hydration: phased session, streaming external UI load, bounded optional grace, fail-closed critical assets, and loader-owned deadline');

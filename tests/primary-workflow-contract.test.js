@@ -31,7 +31,8 @@ assert(doctor.includes('Generate one note'), 'primary visit surface needs note g
 assert(doctor.includes('Every recording segment is combined'), 'primary surface must explain segment merging');
 assert(doctor.indexOf('id="ez3Transcript"') < doctor.lastIndexOf('advRowHtml()'), 'primary transcript must appear before the optional workspace control');
 assert(connect.includes('Advanced visit workspace'), 'optional workspace must use the requested label');
-assert(connect.includes('send-portal-invite.html') && connect.includes('Patient portal'), 'patient portal must be reachable from the primary patient area');
+assert(!connect.includes('send-portal-invite.html'), 'primary workflow still opens the retired synthetic portal sender');
+assert(connect.includes('id="ez3Portal"') && connect.includes("var button = $('mlsPortalInviteBtn')"), 'primary patient area must delegate to the one exact-active-patient portal owner');
 
 // Starting a patient/recording must not force the optional workspace open.
 const startPatient = between(connect, 'function lockAndStart(a, opts)', 'function lockAndStartPatient(p)');

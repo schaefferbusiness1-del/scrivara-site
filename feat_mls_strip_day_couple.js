@@ -1,217 +1,241 @@
-/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-1.0.0)
+/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-2.0.1)
  *
- * Two gaps this closes, both additive:
+ * The Visit page has one native Easy workspace and one native quick strip for
+ * every selected date.  This satellite only keeps that workspace and the
+ * app's active-patient header aligned; it never creates a second strip/list.
  *
- * 1) COUPLING. The top header's active patient and the day strip / visit
- *    workspace selection could drift apart (header says Aaron S., workspace
- *    says Stephen B.). Now they are coupled both ways:
- *      - top -> strip: when the active patient changes (Switch patient,
- *        search, agenda) and that patient has exactly one appointment on the
- *        day shown, the workspace re-selects it through the Easy view's own
- *        public API (remote.startVisitFor) — same path a chip click takes.
- *      - strip -> top: if the workspace shows a patient whose exact chart
- *        exists but the header still shows someone else, the header is
- *        aligned via window.selectPatient. Exact single-match only; when the
- *        match is ambiguous or missing, nothing moves (fail-closed).
- *
- * 2) OTHER DAYS. The horizontal patient-chip selector only existed for
- *    today. Non-today days (Sat, Sun, tomorrow, ...) now get the same strip,
- *    built from that day's already-loaded appointments; a chip routes through
- *    __mlsCrossDayContext.openAppointment — the shipped exact, fail-closed
- *    opener — so all bindings stay correct. No Athena pull, no write-back.
+ * Safety contract:
+ *  - __mlsDaySwitch.currentDay()/rowsFor(day) are the date/row authority.
+ *  - Today uses Easy.remote.startVisitFor(), the same path as a native chip.
+ *  - Another day uses __mlsCrossDayContext.openAppointment(), which owns the
+ *    exact appointment/date binding before any Visit action can continue.
+ *  - zero or multiple matching rows/charts fail closed.  There is no passive
+ *    pull, Athena navigation, extension message, or write-back in this file.
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsStripDayCouple", VERSION = "sdc-1.0.0";
-  try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
+  var NS = "__mlsStripDayCouple", VERSION = "sdc-2.0.1";
+  /* sdc-1.0.0 built a second non-today patient strip and kept it alive with
+     a whole-body observer plus interval.  Backend asset refreshes happen in
+     the existing document, so a truthy-only guard preserved that old owner.
+     Retire it before installing this presentation-free coupling owner. */
+  var prior = null;
+  try { prior = window[NS] || null; } catch (e0) {}
+  if (prior && prior.installed && prior.version === VERSION) return;
+  if (prior) {
+    try { if (typeof prior.revert === "function") prior.revert(); } catch (e1) {}
+    try { delete window[NS]; } catch (e2) { try { window[NS] = null; } catch (e3) {} }
+  }
+  try {
+    ["mlsSdcQuick", "mlsSdcStyle"].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (node && node.parentNode) node.parentNode.removeChild(node);
+    });
+  } catch (e4) {}
 
-  var STRIP_ID = "mlsSdcQuick", STYLE_ID = "mlsSdcStyle";
-  var suppressUntil = 0, aligning = false, disposed = false, observer = null, raf = 0, iv = 0;
+  var disposed = false, aligning = false;
 
-  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
   function text(v) { return String(v == null ? "" : v).trim(); }
-  function esc(v) { return text(v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function normName(v) { return text(v).toLowerCase().replace(/\s+/g, " "); }
-  function shortName(v) {
-    var parts = text(v).split(/\s+/);
-    return parts.length > 1 ? (parts[0] + " " + parts[parts.length - 1].charAt(0) + ".") : (parts[0] || "—");
+  function dobKey(v) {
+    var s = text(v), m;
+    if ((m = s.match(/^(\d{4})[-\/]?(\d{1,2})[-\/]?(\d{1,2})/))) return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
+    if ((m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/))) return m[3] + ("0" + m[1]).slice(-2) + ("0" + m[2]).slice(-2);
+    return "";
   }
+  function dateOf(a) { return text(a && (a.appt_date || a.day_local || a.date || "")).slice(0, 10); }
+  function rowId(a) { return text(a && a.id); }
   function todayKey() {
+    var accountDay = safe(function () { return typeof window._acctTodayKey === "function" ? window._acctTodayKey() : ""; }, "");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text(accountDay))) return text(accountDay);
     var d = new Date();
     return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
   }
-  function dateOf(a) { return text(a && (a.day_local || a.appt_date || a.date || "")).slice(0, 10); }
-  function timeOf(a) { return text(a && (a.time_display || a.start_local || a.time || a.start_at || "")); }
-  function t12(a) {
-    var raw = timeOf(a), m = raw.match(/(\d{1,2}):(\d{2})/);
-    if (!m) return raw;
-    if (/am|pm/i.test(raw)) return raw.replace(/\s+/g, " ");
-    var h = +m[1], min = m[2], ap = h >= 12 ? "PM" : "AM";
-    h = h % 12 || 12;
-    return h + ":" + min + " " + ap;
-  }
-  function xdc() { return safe(function () { return window.__mlsCrossDayContext && window.__mlsCrossDayContext.installed ? window.__mlsCrossDayContext : null; }, null); }
-  function activePt() { return safe(function () { return typeof window.activePatient === "function" ? window.activePatient() : null; }, null); }
-  function appointments() { return safe(function () { return Array.isArray(window._calAppts) ? window._calAppts : []; }, []); }
-  function patients() { return safe(function () { return typeof window.getPatients === "function" ? (window.getPatients() || []) : []; }, []); }
 
-  /* ---- workspace's currently shown patient (the big name on the card) ---- */
-  function workspaceName() {
-    var el = safe(function () { return document.querySelector("#ez3Wrap .ez3-pt"); }, null);
-    if (!el || !el.offsetParent) return "";
-    return normName(el.textContent);
+  function daySwitch() {
+    return safe(function () {
+      var ds = window.__mlsDaySwitch;
+      return ds && ds.installed !== false ? ds : null;
+    }, null);
+  }
+  function currentDay() {
+    var ds = daySwitch();
+    var day = safe(function () { return ds && typeof ds.currentDay === "function" ? ds.currentDay() : ""; }, "");
+    day = text(day).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
+  }
+  function selectedRows() {
+    var ds = daySwitch(), day = currentDay(), rows;
+    if (!ds || !day || typeof ds.rowsFor !== "function") return [];
+    rows = safe(function () { return ds.rowsFor(day); }, []);
+    if (!Array.isArray(rows)) return [];
+    return rows.filter(function (row) {
+      return !!row && !!rowId(row) && dateOf(row) === day;
+    });
+  }
+
+  function refsOf(obj, storedPatient) {
+    var keys = storedPatient
+      ? ["id", "patient_external_id", "athena_patient_id", "_mlsTargetPatientId", "patientId", "patient_id"]
+      : ["patient_external_id", "athena_patient_id", "_mlsTargetPatientId", "patientId", "patient_id"];
+    var out = [], seen = {}, i, value;
+    obj = obj || {};
+    for (i = 0; i < keys.length; i++) {
+      value = text(obj[keys[i]]).toLowerCase();
+      if (value && !seen[value]) { seen[value] = true; out.push(value); }
+    }
+    return out;
+  }
+  function hasSharedRef(a, p) {
+    var ar = refsOf(a, false), pr = refsOf(p, true), seen = {}, i;
+    for (i = 0; i < pr.length; i++) seen[pr[i]] = true;
+    for (i = 0; i < ar.length; i++) if (seen[ar[i]]) return true;
+    return false;
+  }
+  function identityCompatible(a, p) {
+    var an = normName(a && a.name), pn = normName(p && p.name);
+    var ad = dobKey(a && a.dob), pd = dobKey(p && p.dob);
+    if (an && pn && an !== pn) return false;
+    if (ad && pd && ad !== pd) return false;
+    return true;
+  }
+  function rowMatchesPatient(a, p) {
+    if (!a || !p || !identityCompatible(a, p)) return false;
+    if (hasSharedRef(a, p)) return true;
+    /* Schedule rows can carry Athena's patient id while the stored chart has
+       only MLS's local id.  The sole safe fallback is complete name + DOB. */
+    var an = normName(a.name), pn = normName(p.name), ad = dobKey(a.dob), pd = dobKey(p.dob);
+    return !!an && !!ad && an === pn && ad === pd;
+  }
+  function patients() {
+    return safe(function () { return typeof window.getPatients === "function" ? (window.getPatients() || []) : []; }, []);
+  }
+  function activePatient() {
+    return safe(function () { return typeof window.activePatient === "function" ? window.activePatient() : null; }, null);
+  }
+  function resolvePatientForRow(row) {
+    var matches = patients().filter(function (p) { return rowMatchesPatient(row, p); });
+    return matches.length === 1 ? matches[0] : null;
+  }
+  function easyRemote() {
+    return safe(function () {
+      var easy = window.__mlsEasyV32, remote = easy && easy.remote;
+      return remote || null;
+    }, null);
+  }
+  function crossDay() {
+    return safe(function () {
+      var xdc = window.__mlsCrossDayContext;
+      return xdc && xdc.installed !== false ? xdc : null;
+    }, null);
   }
   function workspaceVisible() {
-    var w = byId("ez3Wrap");
-    return !!(w && w.offsetParent);
+    var wrap = byId("ez3Wrap");
+    return !!(wrap && wrap.offsetParent);
+  }
+  function activeWorkspaceRow() {
+    var day = currentDay(), remote = easyRemote();
+    var snap = safe(function () { return remote && typeof remote.snapshot === "function" ? remote.snapshot() : null; }, null);
+    if (!snap || text(snap.day).slice(0, 10) !== day || !snap.active || !rowId(snap.active)) return null;
+    var matches = selectedRows().filter(function (row) { return rowId(row) === rowId(snap.active); });
+    return matches.length === 1 ? matches[0] : null;
   }
 
-  /* ---- direction: top header -> strip/workspace ---------------------- */
-  function todayAppointmentsFor(p) {
-    if (!p) return [];
-    var tk = todayKey(), pid = text(p.id).toLowerCase(), nm = normName(p.name);
-    return appointments().filter(function (a) {
-      if (!a || dateOf(a) !== tk) return false;
-      var aid = text(a.patient_external_id || a._mlsTargetPatientId || a.patientId || a.patient_id).toLowerCase();
-      if (aid && pid) return aid === pid;
-      return !!nm && normName(a.name) === nm;
-    });
-  }
-  function onActivePatientChanged() {
-    if (disposed || aligning) return;
-    if (Date.now() < suppressUntil) return;                      // change originated in the workspace itself
-    var p = activePt();
-    if (!p) return;
-    if (!workspaceVisible()) return;
-    var shown = workspaceName();
-    if (!shown || shown === normName(p.name)) return;            // already coupled
-    if (safe(function () { return xdc() && xdc().current(); }, null)) return; // cross-day binding owns the workspace
-    var matches = todayAppointmentsFor(p);
-    if (matches.length !== 1) return;                            // ambiguous or off-schedule: leave workspace alone
-    var easy = safe(function () { return window.__mlsEasyV32; }, null);
-    var remote = easy && easy.remote;
-    if (!remote || typeof remote.startVisitFor !== "function") return;
+  function releaseAlignment() { setTimeout(function () { aligning = false; }, 350); }
+
+  /* Header -> native workspace.  Only an explicit active-patient change can
+     enter this path; date browsing and background refreshes never select. */
+  function coupleHeaderToWorkspace() {
+    if (disposed || aligning || !workspaceVisible()) return false;
+    var day = currentDay(), p = activePatient(), remote = easyRemote(), xdc = crossDay();
+    if (!day || !p || !remote || typeof remote.startVisitFor !== "function") return false;
+
+    var shown = activeWorkspaceRow();
+    if (shown && rowMatchesPatient(shown, p)) return true;
+    var bound = safe(function () { return xdc && typeof xdc.current === "function" ? xdc.current() : null; }, null);
+    if (bound && text(bound.date) === day && text(bound.patientId) === text(p.id)) return true;
+
+    var matches = selectedRows().filter(function (row) { return rowMatchesPatient(row, p); });
+    if (matches.length !== 1) return false; /* missing/duplicate appointment: never guess */
+
     aligning = true;
-    try { remote.startVisitFor(text(matches[0].id), { record: false }); } catch (e) {}
-    setTimeout(function () { aligning = false; }, 400);
+    try {
+      if (day === todayKey()) return remote.startVisitFor(rowId(matches[0]), { record: false }) === true;
+      if (!xdc || typeof xdc.openAppointment !== "function") return false;
+      return xdc.openAppointment(matches[0]) === true;
+    } catch (e) { return false; }
+    finally { releaseAlignment(); }
   }
 
-  /* ---- direction: strip/workspace -> top header ---------------------- */
+  /* Native workspace -> header.  Snapshot id + selected-day row + one exact
+     chart are all required before selectPatient is allowed to run. */
   function alignHeaderToWorkspace() {
-    if (disposed || aligning) return;
-    if (!workspaceVisible()) return;
-    if (safe(function () { return xdc() && xdc().current(); }, null)) return;
-    var shown = workspaceName();
-    if (!shown) return;
-    var p = activePt();
-    if (p && normName(p.name) === shown) return;
-    var exact = patients().filter(function (q) { return normName(q && q.name) === shown; });
-    if (exact.length !== 1 || !text(exact[0].id)) return;        // exact single chart only — never guess
-    if (typeof window.selectPatient !== "function") return;
-    aligning = true; suppressUntil = Date.now() + 900;
-    try { window.selectPatient(exact[0].id); } catch (e) {}
-    setTimeout(function () { aligning = false; }, 400);
+    if (disposed || aligning || !workspaceVisible()) return false;
+    var row = activeWorkspaceRow();
+    if (!row) return false;
+    var p = resolvePatientForRow(row), active = activePatient();
+    if (!p) return false;
+    if (active && text(active.id) === text(p.id) && rowMatchesPatient(row, active)) return true;
+    if (typeof window.selectPatient !== "function") return false;
+    aligning = true;
+    try { window.selectPatient(p.id); return true; } catch (e) { return false; }
+    finally { releaseAlignment(); }
+  }
+
+  function scheduleHeaderAlignment() {
+    if (disposed) return;
+    setTimeout(function () { if (!disposed) alignHeaderToWorkspace(); }, 0);
+    setTimeout(function () { if (!disposed) alignHeaderToWorkspace(); }, 300);
   }
   function onWorkspaceClick(ev) {
-    var t = ev && ev.target;
-    if (!t || !t.closest) return;
-    if (t.closest("#ez3Quick") || t.closest("#ez3Wrap")) {
-      suppressUntil = Date.now() + 900;                          // workspace-origin change: don't bounce it back
-      setTimeout(alignHeaderToWorkspace, 250);
-      setTimeout(alignHeaderToWorkspace, 900);
-    }
+    var t = ev && ev.target, nativeControl = safe(function () {
+      return t && t.closest ? t.closest("#ez3Quick [data-q], #ez3Wrap [data-hd], #ez3Wrap [data-act]") : null;
+    }, null);
+    if (nativeControl) scheduleHeaderAlignment();
   }
-
-  /* ---- same chip strip on non-today days ------------------------------ */
-  function renderDayStrip() {
-    if (disposed) return;
-    var list = byId("mlsDsList"), api = xdc();
-    var strip = byId(STRIP_ID);
-    var listShown = !!(list && list.offsetParent);
-    if (!listShown || !api) { if (strip) strip.remove(); return; }
-    var day = safe(function () { return api._test.selectedDay(); }, "");
-    if (!day || day === todayKey()) { if (strip) strip.remove(); return; }
-    var groups = safe(function () { return api._test.appointmentsForDay(day); }, []);
-    if (!groups || !groups.length) { if (strip) strip.remove(); return; }
-    var h = "";
-    groups.forEach(function (g, i) {
-      var a = g.candidates[0];
-      h += '<button type="button" class="ez3-qchip" data-sdc-i="' + i + '">' +
-        '<span class="qt">' + esc(t12(a)) + "</span>" + esc(shortName(a.name)) + "</button>";
-    });
-    if (!strip) {
-      strip = document.createElement("div");
-      strip.id = STRIP_ID; strip.className = "ez3-quick";
-      list.parentNode.insertBefore(strip, list);
-    }
-    if (strip._sdcHtml !== h) { strip.innerHTML = h; strip._sdcHtml = h; }
-    strip._sdcGroups = groups;
+  function onAppointmentContext(ev) {
+    if (ev && ev.detail && ev.detail.active === true) scheduleHeaderAlignment();
   }
-  function onStripClick(ev) {
-    var t = ev && ev.target, chip = t && t.closest ? t.closest("#" + STRIP_ID + " [data-sdc-i]") : null;
-    if (!chip) return;
-    ev.preventDefault(); ev.stopPropagation();
-    var strip = byId(STRIP_ID), api = xdc();
-    var groups = (strip && strip._sdcGroups) || [];
-    var g = groups[+chip.getAttribute("data-sdc-i")];
-    if (!g || !api) return;
-    if (g.candidates.length === 1) { api.openAppointment(g.candidates[0]); return; }
-    // ambiguous rows: hand off to the matching row's exact-chooser button
-    var list = byId("mlsDsList");
-    var rows = list ? list.querySelectorAll(".ds-row .mls-xdc-open") : [];
-    var idx = +chip.getAttribute("data-sdc-i");
-    if (rows && rows[idx]) safe(function () { rows[idx].click(); });
-  }
-  function scheduleRender() {
-    if (disposed || raf) return;
-    raf = 1;
-    var req = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
-    req(function () { raf = 0; renderDayStrip(); });
-  }
-
-  function installStyle() {
-    if (byId(STYLE_ID)) return;
-    var s = document.createElement("style"); s.id = STYLE_ID;
-    s.textContent = "#" + STRIP_ID + "{margin:6px 0 10px;}" +
-      "body.mls-xdc-active #" + STRIP_ID + "{display:none!important;}";
-    (document.head || document.documentElement).appendChild(s);
+  function removeLegacyUi() {
+    var oldStrip = byId("mlsSdcQuick"), oldStyle = byId("mlsSdcStyle");
+    safe(function () { if (oldStrip && oldStrip.parentNode) oldStrip.parentNode.removeChild(oldStrip); });
+    safe(function () { if (oldStyle && oldStyle.parentNode) oldStyle.parentNode.removeChild(oldStyle); });
   }
 
   function boot() {
     if (disposed) return;
-    installStyle();
-    safe(function () { window.addEventListener("mls:active-patient-changed", onActivePatientChanged); });
+    removeLegacyUi();
+    safe(function () { window.addEventListener("mls:active-patient-changed", coupleHeaderToWorkspace); });
+    safe(function () { window.addEventListener("mls:appointment-context-changed", onAppointmentContext); });
     safe(function () { document.addEventListener("click", onWorkspaceClick, true); });
-    safe(function () { document.addEventListener("click", onStripClick, true); });
-    safe(function () {
-      observer = new MutationObserver(function (records) {
-        for (var i = 0; i < records.length; i++) {
-          if (records[i].addedNodes && records[i].addedNodes.length) { scheduleRender(); break; }
-        }
-      });
-      observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
-    });
-    iv = setInterval(function () { safe(alignHeaderToWorkspace); safe(renderDayStrip); }, 1500);
-    scheduleRender();
   }
 
   var api = {
-    installed: true, version: VERSION,
-    refresh: scheduleRender,
-    _test: { todayAppointmentsFor: todayAppointmentsFor, shortName: shortName, t12: t12, workspaceName: workspaceName },
+    installed: true,
+    version: VERSION,
+    refresh: scheduleHeaderAlignment,
+    _test: {
+      currentDay: currentDay,
+      selectedRows: selectedRows,
+      rowMatchesPatient: rowMatchesPatient,
+      resolvePatientForRow: resolvePatientForRow,
+      activeWorkspaceRow: activeWorkspaceRow,
+      coupleHeaderToWorkspace: coupleHeaderToWorkspace,
+      alignHeaderToWorkspace: alignHeaderToWorkspace
+    },
     revert: function () {
       disposed = true;
-      safe(function () { if (observer) observer.disconnect(); }); observer = null;
-      safe(function () { clearInterval(iv); });
-      safe(function () { window.removeEventListener("mls:active-patient-changed", onActivePatientChanged); });
+      safe(function () { window.removeEventListener("mls:active-patient-changed", coupleHeaderToWorkspace); });
+      safe(function () { window.removeEventListener("mls:appointment-context-changed", onAppointmentContext); });
       safe(function () { document.removeEventListener("click", onWorkspaceClick, true); });
-      safe(function () { document.removeEventListener("click", onStripClick, true); });
-      var el = byId(STRIP_ID); if (el) el.remove();
-      var st = byId(STYLE_ID); if (st) st.remove();
+      removeLegacyUi();
       try { delete window[NS]; } catch (e) { window[NS] = null; }
     }
   };
+
   window[NS] = api;
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true }); else boot();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+  else boot();
 })();

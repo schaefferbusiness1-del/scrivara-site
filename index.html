@@ -2,21 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
-<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MLS Scribe — The ambient AI scribe & clinical platform for spine, pain &amp; PM&amp;R</title>
-<meta name="description" content="MLS is an ambient AI medical scribe with a real REST API and deep athenahealth integration. Talk through the visit; walk out with a finished, coded note you review and sign. Suggested E/M, ICD-10 & CPT, patient intake, outcomes, a legal/IME portal, and a reputation & marketing suite. Fully HIPAA compliant. From $30/provider/month.">
+<meta name="description" content="MLS is an ambient AI medical-scribe evaluation with clinician-started athenaOne schedule reads and reviewed draft workflows. Synthetic data only; production clinical readiness is not yet released.">
   <link rel="canonical" href="https://mlsscribe.com/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="MLS Scribe">
   <meta property="og:url" content="https://mlsscribe.com/">
   <meta property="og:title" content="MLS Scribe — talk through the visit, walk out with a finished, coded note">
-  <meta property="og:description" content="Ambient AI scribe + real REST API + deep athenahealth integration, built for spine, pain & PM&R. Pick the patient, capture the visit, review the AI note, sign. Suggested E/M, ICD-10 & CPT. Fully HIPAA compliant. From $30/provider/month.">
+  <meta property="og:description" content="Ambient AI scribe evaluation for spine, pain & PM&R. Synthetic data only; production clinical readiness is not yet released.">
   <meta property="og:image" content="https://mlsscribe.com/apple-touch-icon.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MLS Scribe — the ambient AI scribe & clinical platform for spine, pain & PM&R">
-  <meta name="twitter:description" content="Talk through the visit. Walk out with a finished, coded note you review and sign. Real REST API, deep athenahealth integration, fully HIPAA compliant.">
+  <meta name="twitter:description" content="Ambient AI medical-scribe evaluation with clinician-reviewed drafts. Synthetic data only; production clinical readiness is not yet released.">
   <meta name="twitter:image" content="https://mlsscribe.com/apple-touch-icon.png">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#204034">
@@ -476,7 +476,7 @@ body.mdl-lock{overflow:hidden}
 <a href="#features">Features</a>
 <a href="#api">API &amp; EHR</a>
 <a href="#pricing">Pricing</a>
-<a href="#kickstarter">Kickstarter</a>
+<a href="#pricing">Pricing status</a>
 <a href="lawyers.html">For attorneys</a>
 </nav>
 <div class="cta">
@@ -490,7 +490,7 @@ body.mdl-lock{overflow:hidden}
 <a href="#features">Features</a>
 <a href="#api">API &amp; EHR</a>
 <a href="#pricing">Pricing</a>
-<a href="#kickstarter">Kickstarter</a>
+<a href="#pricing">Pricing status</a>
 <a href="lawyers.html">For attorneys</a>
 <a href="#demo">Book a demo</a>
 <a href="ScribeFlow.html" style="color:var(--green)">Sign in →</a>
@@ -504,15 +504,15 @@ body.mdl-lock{overflow:hidden}
 <div class="wrap">
 <span class="eyebrow" style="margin-bottom:22px">Ambient AI scribe · spine · pain · PM&amp;R</span>
 <h1>Talk through the visit.<br>Walk out with a <em>finished, coded note.</em></h1>
-<p class="lead">MLS listens to the visit and drafts a clean, structured note with suggested coding — pulling chart data from athenahealth and writing back to your EHR. You review and sign in seconds. You're always the final word.</p>
+<p class="lead">MLS is a synthetic-evaluation clinical documentation workspace. It drafts structured notes and suggested coding for clinician review; Athena schedule reads and reviewed handoff workflows are still completing production validation.</p>
 <div class="ctas">
 <a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
 <a class="btn btn-ghost btn-lg" href="ScribeFlow.html">Sign in to MLS</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
 <button id="mlsChatBtn" type="button" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
 </div>
-<div class="trust"><span><b>3 hours</b> saved a day — Chester County Spine Care</span><span>Fully HIPAA compliant</span><span>Real REST API</span><span>athenahealth <b>live</b></span><span>You sign every note</span></div>
-<p class="kslink"><a href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a></p>
+<div class="trust"><span><b>Synthetic evaluation only</b></span><span>REST API under test</span><span>Clinician-started Athena schedule reads</span><span>Known-good extension rollback preserved</span><span>You review every draft</span></div>
+<p class="kslink">Checkout and founder rewards are held until production scope and commercial terms are released.</p>
 </div>
 </section>
 
@@ -554,7 +554,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 </div>
 </div>
 <div class="ft">
-<span class="ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4 4 10-10" stroke="#2E6A4B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Pulled from athenahealth · ready to sign</span>
+<span class="ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4 4 10-10" stroke="#2E6A4B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Synthetic example · clinician review required</span>
 <span class="sign">Review &amp; sign</span>
 </div>
 </div>
@@ -572,7 +572,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="step"><div class="n">01</div><h3>Capture</h3><p>Pick the patient — or let MLS pull today's athenahealth schedule — press start, and talk naturally.</p></div>
 <div class="step"><div class="n">02</div><h3>Draft</h3><p>It writes a clean, structured note — your format and length — from what was actually said.</p></div>
 <div class="step"><div class="n">03</div><h3>Code</h3><p>Suggested E/M level, ICD-10 and CPT with an estimated reimbursement, for you to confirm.</p></div>
-<div class="step"><div class="n">04</div><h3>Sign</h3><p>Review, edit anything, sign, and write it back to your EHR — before the patient reaches the desk.</p></div>
+<div class="step"><div class="n">04</div><h3>Review</h3><p>Review and edit the draft. Nothing is saved or signed automatically; production EHR handoff remains release-gated.</p></div>
 </div>
 </div>
 </section>
@@ -583,21 +583,21 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="sec-head">
 <span class="eyebrow">Everything inside</span>
 <h2 class="d">One platform. The whole practice.</h2>
-<p class="sub">Start with the scribe and grow into a full clinical, revenue and reputation layer — nothing left behind. Click any card to see how it works.</p>
+<p class="sub">Explore the documentation candidate and the adjacent workflows being evaluated. Each card states whether the feature is available, synthetic-only, or held behind a release gate.</p>
 </div>
 <div class="grid12">
 <div class="cell" data-detail="ambient"><h3>Ambient notes</h3><p>SOAP, APSO, narrative or H&amp;P — your style and length, grounded only in what was said.</p></div>
 <div class="cell" data-detail="coding"><h3>Coding &amp; reimbursement</h3><p>Suggested E/M, ICD-10 &amp; CPT, a one-click superbill and an estimate for every visit.</p></div>
-<div class="cell" data-detail="athena"><h3>athenahealth <span class="badge-live"><span class="ld"></span> Live</span></h3><p>Pull today's schedule and chart data, then write the finished note back into the encounter.</p></div>
+<div class="cell" data-detail="athena"><h3>athenahealth <span class="badge-soon">Validation</span></h3><p>Clinician-started exact-origin schedule reads and reviewed handoff controls are under production validation.</p></div>
 <div class="cell" data-detail="intake"><h3>Patient intake</h3><p>iPad or web intake captures history, ODI and satisfaction — and fills the chart before you walk in.</p></div>
 <div class="cell" data-detail="outcomes"><h3>Outcomes tracking</h3><p>Pain and ODI tracked per patient and across the practice, with one-click export.</p></div>
-<div class="cell" data-detail="legal"><h3>Legal / IME portal</h3><p>AI-drafted narrative, IME and UR reports you review, sign and sell — a real revenue line.</p></div>
-<div class="cell" data-detail="reputation"><h3>Reputation suite <span class="badge-prem">Premium</span></h3><p>Find and manage reviews across Google and top sites, surface quotes and request more.</p></div>
-<div class="cell" data-detail="sendpatient"><h3>Send to patient <span class="badge-prem">Premium</span></h3><p>A one-tap booking link and secure patient portal — records, summaries and practice chat.</p></div>
-<div class="cell" data-detail="api"><h3>Developer REST API</h3><p>Clean JSON endpoints and FHIR keys to generate notes, sync records and build on MLS.</p></div>
-<div class="cell" data-detail="stat-emr"><h3>Any other EMR <span class="badge-30">30-day</span></h3><p>Epic, Cerner, eClinicalWorks, NextGen — tell us your system and we integrate it in 30 days.</p></div>
-<div class="cell" data-detail="bestdoctors"><h3>Best Doctors <span class="badge-soon">Soon</span></h3><p>An earned, de-identified rating directory that turns real visit quality into a public profile.</p></div>
-<div class="cell" data-detail="security"><h3>HIPAA-compliant security</h3><p>Encryption, 2FA, inactivity log-off, audit logging and encrypted backups. You sign every note.</p></div>
+<div class="cell" data-detail="legal"><h3>Legal / IME portal <span class="badge-soon">Held</span></h3><p>Legal intake, signing, payment and report release are unavailable pending legal and security review.</p></div>
+<div class="cell" data-detail="reputation"><h3>Reputation tools <span class="badge-soon">Held</span></h3><p>Patient review requests and marketing automation are unavailable pending privacy and link-safety review.</p></div>
+<div class="cell" data-detail="sendpatient"><h3>Patient portal <span class="badge-soon">Validation</span></h3><p>Secure invite and appointment-request controls are being tested; no public self-booking link is released.</p></div>
+<div class="cell" data-detail="api"><h3>Developer REST API</h3><p>Synthetic-only endpoints and SMART configuration are under validation; PHI access remains gated.</p></div>
+<div class="cell" data-detail="stat-emr"><h3>Other EMRs <span class="badge-soon">Evaluated case by case</span></h3><p>No delivery timeline or compatibility guarantee is published for untested systems.</p></div>
+<div class="cell" data-detail="bestdoctors"><h3>Best Doctors <span class="badge-soon">Held</span></h3><p>The directory is not published while consent, substantiation and privacy controls are reviewed.</p></div>
+<div class="cell" data-detail="security"><h3>Security controls under evaluation</h3><p>Encryption, 2FA, inactivity log-off, audit logging and backups require independent production verification. Synthetic data only.</p></div>
 </div>
 </div>
 </section>
@@ -608,13 +608,13 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="api-grid">
 <div>
 <span class="eyebrow">API &amp; integrations</span>
-<h2 class="d" style="margin-top:12px;font-size:34px">A real API. Real EHR integration.</h2>
-<p style="font-size:15.5px;color:var(--ink2);line-height:1.65;margin-top:14px">MLS isn't a closed box. It's built on a documented REST API and connects deeply to the EHRs practices actually use — so notes flow in and out of your systems instead of living on an island.</p>
+<h2 class="d" style="margin-top:12px;font-size:34px">API and EHR integration under validation.</h2>
+<p style="font-size:15.5px;color:var(--ink2);line-height:1.65;margin-top:14px">The current build exposes synthetic-evaluation API surfaces and a clinician-started Athena extension workflow. PHI, production writeback and additional EHR integrations remain closed until their release gates pass.</p>
 <ul class="api-list">
-<li><span class="tk">🔗</span><div><b>athenahealth — live &amp; proven <span class="badge-live"><span class="ld"></span> Live</span></b><span>Pull today's schedule and chart data directly from athenaOne, and write finished notes back into the encounter — read-only for structured data, and always stopping for your review before anything is signed.</span></div></li>
-<li><span class="tk">🔌</span><div><b>HL7 FHIR R4 &amp; SMART on FHIR</b><span>Standards-based write-back and record sync, so MLS fits into modern EHR workflows without a rip-and-replace.</span></div></li>
-<li><span class="tk">🧩</span><div><b>Developer-friendly REST API</b><span>Generate notes, save and retrieve records, and pull schedules over clean JSON endpoints. Provision your keys from Settings → Integrations.</span></div></li>
-<li><span class="tk">🗓️</span><div><b>Any other EMR — guaranteed in 30 days</b><span>Epic, Cerner, eClinicalWorks, NextGen or whatever you run: tell us your system and our team builds a smart integration within 30 days. That's our guarantee.</span></div></li>
+<li><span class="tk">🔗</span><div><b>athenahealth candidate workflow</b><span>Clinician-started exact-origin schedule reads and a review-first handoff are tested in isolated Chrome. The known-good extension remains the rollback baseline; production clinical release is pending.</span></div></li>
+<li><span class="tk">🔌</span><div><b>HL7 FHIR R4 &amp; SMART on FHIR preparation</b><span>SMART endpoints and audience handling are implemented for an official preview environment, but official sandbox access and production writeback are not yet validated.</span></div></li>
+<li><span class="tk">🧩</span><div><b>Synthetic developer API</b><span>Evaluation endpoints can exercise note and schedule contracts with synthetic data. PHI access remains closed behind server readiness gates.</span></div></li>
+<li><span class="tk">🗓️</span><div><b>Other EHRs</b><span>Compatibility is evaluated system by system. MLS does not publish a delivery deadline or guarantee for an EHR it has not tested.</span></div></li>
 </ul>
 <a class="btn btn-primary" href="#demo">Talk to us about integration <span class="arrow">→</span></a>
 </div>
@@ -622,11 +622,11 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="cbar"><i></i><i></i><i></i><span class="u">POST /api/generate</span></div>
 <pre><span class="cm"># Generate a structured, coded note from a visit transcript</span>
 <span class="kw">curl</span> https://api.mlsscribe.com<span class="st">/api/generate</span> \
-  -H <span class="st">"Authorization: Bearer sk_live_•••••"</span> \
+  -H <span class="st">"Authorization: Bearer synthetic_test_token"</span> \
   -H <span class="st">"Content-Type: application/json"</span> \
   -d <span class="st">'{
-    "transcript": "Low back pain radiating to
-       the left leg for three weeks...",
+    "transcript": "Synthetic fixture only: follow-up
+       documentation example...",
     "model": "mls-clinical"
   }'</span>
 
@@ -643,35 +643,35 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 </div>
 </section>
 
-<!-- EMR INTEGRATION + 30-DAY GUARANTEE -->
+<!-- EMR INTEGRATION READINESS -->
 <section id="emr">
 <div class="wrap">
 <div class="sec-head">
 <span class="eyebrow">EMR integration</span>
-<h2 class="d">Works with your EMR — or we integrate it in 30 days</h2>
-<p class="sub">athenahealth is live and proven today. Whatever else your practice runs on, we'll connect it — guaranteed within 30 days.</p>
+<h2 class="d">What is implemented, and what still has to pass.</h2>
+<p class="sub">Athena workflows are the current integration focus. No production-clinical or other-EHR compatibility claim is made before live release evidence exists.</p>
 </div>
 <div class="emr-grid">
 <div class="emr-card" data-detail="athena">
-<div class="k"><span class="badge-live"><span class="ld"></span> Live &amp; proven</span></div>
-<h3>Already works perfectly with athenahealth</h3>
-<p>We've verified the deep integration end to end: MLS pulls your athenaOne schedule and chart data, then writes the finished note back into the encounter — always stopping before Save/Sign so you review first.</p>
+<div class="k"><span class="badge-soon">Production validation</span></div>
+<h3>Athena candidate with a preserved rollback baseline</h3>
+<p>Exact-origin schedule parsing, reload behavior and review-first controls pass isolated synthetic fixtures. Production use still requires final packaged-extension stamping and signed-in validation without real PHI.</p>
 <ul class="emr-list">
-<li>Live schedule &amp; chart pull from athenaOne</li>
-<li>Finished notes written back into the encounter</li>
-<li>Read-only for structured data; you sign every note</li>
-<li>Powered by the <a href="get-extension.html" onclick="event.stopPropagation()">MLS Assist browser extension</a> — one-click install</li>
+<li>Clinician-started day and month schedule reads</li>
+<li>Exact-origin parsing and wrong-page refusal</li>
+<li>Review required before any final Athena action</li>
+<li>The Chrome Web Store build remains the known-good rollback baseline</li>
 </ul>
 <span class="more">See how it works →</span>
 </div>
 <div class="emr-card">
-<div class="k"><span class="big">30</span><div><div style="font-weight:800;font-size:15px">day guarantee</div><div style="font-size:12.5px;color:var(--muted)">from the day you tell us your EMR</div></div></div>
-<h3>Smart integration with <em>any</em> other EMR</h3>
-<p>Epic, Cerner, eClinicalWorks, NextGen — or whatever you use. Tell us your system and our team builds a smart integration within 30 days. That's our guarantee.</p>
+<div class="k"><span class="big">—</span><div><div style="font-weight:800;font-size:15px">No untested guarantee</div><div style="font-size:12.5px;color:var(--muted)">scope follows technical discovery and written agreement</div></div></div>
+<h3>Other EHRs are evaluated case by case</h3>
+<p>MLS will document the exact environment, supported workflow, test evidence and limitations before offering another integration. No 30-day or universal-compatibility promise is made.</p>
 <div class="gtimeline">
-<div class="gt"><div class="d"></div><b>Day 0</b>Tell us your EMR</div>
-<div class="gt"><div class="d"></div><b>Days 1–29</b>We build &amp; test</div>
-<div class="gt"><div class="d"></div><b>Day 30</b>Integrated — guaranteed</div>
+<div class="gt"><div class="d"></div><b>Discover</b>Confirm APIs, permissions and workflow</div>
+<div class="gt"><div class="d"></div><b>Validate</b>Test synthetic fixtures and failure modes</div>
+<div class="gt"><div class="d"></div><b>Agree</b>Publish supported scope only after review</div>
 </div>
 </div>
 </div>
@@ -679,24 +679,20 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 </div>
 </section>
 
-<!-- PROOF BAND (verified — Chester County Spine Care) -->
+<!-- EVIDENCE STATUS -->
 <section id="testimonials" class="band">
 <div class="wrap">
 <div class="cols2">
 <div>
-<div class="stat">3 hrs</div>
-<div class="statsub">of charting saved a day — <b>verified by Chester County Spine Care</b>, an early practice running MLS across its spine, pain and PM&amp;R visits.</div>
+<div class="stat">Evidence pending</div>
+<div class="statsub">MLS has not published an independently verified time-savings, reimbursement or revenue claim for this synthetic-evaluation release.</div>
 </div>
 <blockquote>
-<p>"MLS gave our evenings back. Notes that used to pile up for after-hours charting are finished during the visit — signed before the patient reaches the front desk."</p>
-<div class="who">Chester County Spine Care · spine, pain &amp; PM&amp;R</div>
+<p>Pilot claims will be published only with the practice's approval, a defined measurement period and reproducible evidence.</p>
+<div class="who">No testimonial is presented as verified in this release.</div>
 </blockquote>
 </div>
-<div class="quoterow">
-<div class="quote"><span class="v-tag">✓ Verified</span><p>"The suggested E/M, ICD-10 and CPT codes are grounded in exactly what we documented — nothing inflated. We're capturing the reimbursement our visits genuinely support, and the one-click superbill keeps our billing clean."</p><div class="who2">Chester County Spine Care · Standard-plan practice</div></div>
-<div class="quote"><span class="v-tag">✓ Verified</span><p>"The IME and narrative report portal turned records requests into a real revenue line — we set the price and get paid before the work goes out. Alongside the reputation tools, it's helped new patients find us, too."</p><div class="who2">Chester County Spine Care · spine, pain &amp; PM&amp;R</div></div>
-</div>
-<div class="rowlink"><a href="lawyers.html">Are you an attorney? Find an expert physician →</a></div>
+<div class="rowlink"><a href="lawyers.html">Attorney workflow evaluation →</a></div>
 </div>
 </section>
 
@@ -704,19 +700,19 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <section id="reputation">
 <div class="wrap">
 <div class="sec-head">
-<span class="eyebrow">Reputation &amp; growth</span>
-<h2 class="d">Turn great care into your best marketing</h2>
-<p class="sub">The reputation suite and the MLS Best Doctors directory are what set MLS apart from a plain scribe — the quality you already deliver, made visible to the patients looking for you.</p>
+<span class="eyebrow">Reputation concepts</span>
+<h2 class="d">Held pending privacy, consent and substantiation review</h2>
+<p class="sub">Review requests, marketing automation and the MLS Best Doctors directory are not released in this synthetic-evaluation build.</p>
 </div>
 <div class="feat-split">
 <div class="feat-copy">
-<h2>MLS Best Doctors <span class="badge-soon" style="vertical-align:middle">Coming soon</span></h2>
-<p class="lead">A public directory where a doctor's rating is <b>earned, not bought</b>. Ratings come from de-identified, per-visit quality — never purchasable — while practices can subscribe for optional promoted placement that's always clearly labeled. Patients find providers they can trust; you get a profile that reflects the care you actually give.</p>
+<h2>MLS Best Doctors <span class="badge-soon" style="vertical-align:middle">Not published</span></h2>
+<p class="lead">The proposed directory cannot launch until the rating method, consent, de-identification, source evidence, corrections and opt-out process have been independently reviewed.</p>
 <ul>
-<li>Earned star ratings computed from real visit quality — never for sale</li>
-<li>Doctor opt-in and consent required; privacy-first and PHI-free</li>
-<li>Sponsored placement is position-only and always labeled</li>
-<li>In development — opening to subscribed, opted-in practices</li>
+<li>No live ratings or real-visit claims in this release</li>
+<li>No patient review request is generated from a visit</li>
+<li>The opt-out/rights endpoint remains available</li>
+<li>Any future launch requires reviewed consent and evidence</li>
 </ul>
 </div>
 <div class="panel" aria-hidden="true">
@@ -736,26 +732,15 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="sec-head">
 <span class="eyebrow">Pricing</span>
 <h2 class="d">Simple, honest, per provider.</h2>
-<p class="sub">Flat per-provider pricing with generous fair use. Annual plans get two months free. Still a fraction of the price of any comparable athenahealth-integrated scribe.</p>
+<p class="sub">Planning prices are shown for product evaluation. Checkout and subscriptions are disabled until the production, legal and refund terms are released.</p>
 </div>
 <div id="kickstarter" class="founder-offer">
 <div class="founder-offer-head">
 <div>
-<span class="eyebrow">Kickstarter founder rewards</span>
-<h3>Lock in about 47% to 80% off.</h3>
-<p>Choose one year, three years, or a five-year founding-practice package. Every comparison below uses the regular website prices shown on this page.</p>
+<span class="eyebrow">Purchasing held</span>
+<h3>No subscription or founder package is being sold from this release.</h3>
+<p>Commercial terms, refunds and production scope must be reviewed before checkout or external reward links are enabled.</p>
 </div>
-<a class="btn btn-primary" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">View founder rewards <span class="arrow">&nearr;</span></a>
-</div>
-<div class="founder-grid">
-<div class="founder-tier"><strong>55% off</strong><b>$135 · Lite</b><span>1 provider · 1 year · website value $300</span></div>
-<div class="founder-tier"><strong>About 48% off</strong><b>$230 · Standard</b><span>1 provider · 1 year · website value $440</span></div>
-<div class="founder-tier"><strong>About 47% off</strong><b>$315 · Premium</b><span>1 provider · 1 year · website value $600</span></div>
-<div class="founder-tier"><strong>55% off</strong><b>$810 · Premium</b><span>1 provider · 3 years · website value $1,800</span></div>
-<div class="founder-tier"><strong>65% off</strong><b>$1,575 · Group</b><span>Up to 3 providers · 3 years · website value $4,500</span></div>
-<div class="founder-tier"><strong>80% off</strong><b>$4,000 · Founding practice</b><span>Up to 8 providers · 5 years · website value $20,000</span></div>
-</div>
-<p class="founder-foot">You can also support the campaign from $10. The preview link automatically redirects to the live campaign after launch.</p>
 </div>
 <div class="price-grid">
 <div class="price">
@@ -764,12 +749,12 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="note">Just the scribe · or $300/yr</div>
 <ul>
 <li>Unlimited visits &amp; AI notes</li>
-<li>Ambient capture &amp; phone-mic dictation</li>
-<li>Copy / export into any EMR</li>
-<li>Fully HIPAA-compliant, encrypted architecture</li>
+<li>Browser-based synthetic capture evaluation</li>
+<li>Copy / export draft for clinician review</li>
+<li>Security controls under evaluation with synthetic data</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Get Lite — $30/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('lite_annual', this);return false;">or $300/yr billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Discuss Lite evaluation</button>
+<span class="demolink">Checkout unavailable</span>
 </div>
 <div class="price">
 <div class="tier">Standard</div>
@@ -779,14 +764,14 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>Everything in Lite</li>
 <li>Suggested E/M, ICD-10 &amp; CPT + reimbursement</li>
 <li>One-click superbill</li>
-<li>athenahealth pull &amp; EHR write-back</li>
-<li>Patient intake (ODI, satisfaction, card OCR)</li>
+<li>Athena candidate workflow under validation</li>
+<li>Synthetic patient-intake evaluation</li>
 <li>Outcomes · referral, UR, IME &amp; procedure notes</li>
-<li><b>Legal / IME attorney portal</b> — sell reports; 5% platform fee on what you earn</li>
-<li>2FA, audit logs &amp; encrypted backups</li>
+<li><b>Legal / IME attorney portal</b> — held; no intake, payment, signature or release</li>
+<li>2FA, audit and storage controls under verification</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Get Standard — $44/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('standard_annual', this);return false;">or $440/yr billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Discuss Standard evaluation</button>
+<span class="demolink">Checkout unavailable</span>
 </div>
 <div class="price feat">
 <span class="tag">Most popular</span>
@@ -796,7 +781,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <ul>
 <li>Everything in Standard</li>
 <li class="star">Faster generation &amp; model choice</li>
-<li class="star">Reputation &amp; marketing suite</li>
+<li class="star">Reputation &amp; marketing concepts — held</li>
 <li class="star">Unlimited custom widgets + library</li>
 <li class="star">Ask-your-data Study Engine</li>
 <li class="star">Branded, white-label exports</li>
@@ -804,8 +789,8 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li class="star">Practice-wide outcomes registry</li>
 <li>Team analytics &amp; priority support</li>
 </ul>
-<button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Get Premium — $60/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('premium_annual', this);return false;">or $600/yr billed annually</a>
+<button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Discuss Premium evaluation</button>
+<span class="demolink">Checkout unavailable</span>
 </div>
 <div class="price">
 <div class="tier">Enterprise</div>
@@ -818,11 +803,11 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>Practice-wide rollout, training &amp; team setup</li>
 <li>Dedicated support with a named contact</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Get Enterprise — $50/mo</button>
-<a class="demolink" href="#" onclick="startCheckout('enterprise_annual', this);return false;">or $500/yr per provider, billed annually</a>
+<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Discuss group evaluation</button>
+<span class="demolink">Checkout unavailable</span>
 </div>
 </div>
-<p style="text-align:center;color:var(--muted);font-size:14px;margin:28px auto 0;max-width:640px">Most providers recover the cost in a single more-accurately-coded visit a month — and get their evenings back on top.</p>
+<p style="text-align:center;color:var(--muted);font-size:14px;margin:28px auto 0;max-width:640px">These are planning prices, not an offer for production clinical service. No savings or reimbursement outcome is guaranteed.</p>
 </div>
 </section>
 
@@ -835,9 +820,9 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <p class="sub">No inflated claims. Here's exactly how MLS protects data and where it stands.</p>
 </div>
 <div class="trust3">
-<div class="t"><h4>🔒 Fully HIPAA compliant</h4><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging and encrypted backups — the full set of HIPAA safeguards, in place today.</p></div>
+<div class="t"><h4>🔒 Security evaluation in progress</h4><p>Encryption, two-factor authentication, inactivity log-off, audit logging, and backup controls are being tested. This is not a HIPAA-compliance or production-readiness claim.</p></div>
 <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits and signs. The provider is always the final medical and coding authority. Nothing is submitted to your EHR without your confirmation.</p></div>
-<div class="t"><h4>🤝 BAAs in place</h4><p>Business Associate Agreements are signed with our AI and hosting providers, so patient data is covered end to end — from ambient capture to encrypted storage.</p></div>
+<div class="t"><h4>🤝 Legal/vendor readiness not released</h4><p>MLS does not claim that vendor BAAs, zero-retention terms, or a regulated-production configuration are active. Use synthetic data only until verified evidence is published and enforced by the server.</p></div>
 </div>
 <p class="honest">MLS is a documentation and coding-support tool, not a medical device. Suggested codes are for the provider to review and confirm — final coding is the provider's responsibility, and MLS never inflates documentation to raise a bill.</p>
 </div>
@@ -877,13 +862,13 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <h2 class="d">Questions doctors ask us</h2>
 </div>
 <div class="faq">
-<details><summary>Do I have to switch EMRs?</summary><p>No. MLS works alongside your current EMR — copy the finished note in, or, where supported, write it back automatically over HL7 FHIR R4 and SMART on FHIR. Nothing to rip and replace.</p></details>
-<details><summary>How does the athenahealth integration work?</summary><p>athenahealth is live and proven today. MLS connects to athenaOne to pull your day's schedule and read chart data — problems, medications, allergies, history — so the note starts with real context, and to write the finished note back into the encounter. It stays read-only for structured data and always stops before anything is saved or signed, so the doctor reviews first.</p></details>
-<details><summary>Is there a developer API?</summary><p>Yes. MLS is built on a developer-friendly REST API — generate notes, save and retrieve records, and pull schedules over clean JSON endpoints — plus FHIR keys you provision from Settings → Integrations. Talk to us if you want to build on it.</p></details>
-<details><summary>What if I don't use athenahealth?</summary><p>You're covered. athenahealth works today, and for any other EMR — Epic, Cerner, eClinicalWorks, NextGen, or whatever you run — we guarantee a smart integration within 30 days of you telling us your system. Standards-based HL7 FHIR R4 and SMART on FHIR are supported too, and you can always copy the finished note into any system.</p></details>
+<details><summary>Do I have to switch EMRs?</summary><p>No switch is required for synthetic evaluation because a reviewed draft can be copied manually. Automatic EHR writeback is not represented as production-ready in this release.</p></details>
+<details><summary>How does the athenahealth integration work?</summary><p>The candidate browser extension supports clinician-started schedule reads on exact Athena origins and a review-first handoff. Isolated synthetic and exact-origin fixtures pass, while final packaged and signed-in production validation remains required.</p></details>
+<details><summary>Is there a developer API?</summary><p>Synthetic-evaluation REST contracts and SMART configuration exist, but PHI and production integration access remain closed behind server and official-preview readiness gates.</p></details>
+<details><summary>What if I don't use athenahealth?</summary><p>MLS can still be evaluated with synthetic drafts and manual copy. Other EHR integrations are assessed case by case; no universal compatibility or delivery timeline is promised.</p></details>
 <details><summary>Is the AI making the diagnosis or the coding decision?</summary><p>No. MLS drafts the note and <em>suggests</em> codes from what you documented. You review, edit, and sign — the clinician is always the final medical and coding authority, and MLS never inflates documentation to raise a bill.</p></details>
-<details><summary>Is it HIPAA compliant?</summary><p>Yes — MLS is fully HIPAA compliant: encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, encrypted backups, and signed Business Associate Agreements with our AI and hosting providers.</p></details>
-<details><summary>What is MLS Best Doctors?</summary><p>It's a public directory (coming soon) where a doctor's rating is earned from de-identified, per-visit quality — never purchasable. Practices can subscribe for optional promoted placement, which is always clearly labeled and affects position only, never the star rating. It requires doctor opt-in and consent, and is in development ahead of a privacy-reviewed launch to subscribed practices.</p></details>
+<details><summary>Is it ready for real patient information?</summary><p>No. This release is for synthetic evaluation only. MLS does not currently claim HIPAA compliance, executed vendor BAAs, zero-retention treatment, or production clinical readiness.</p></details>
+<details><summary>What is MLS Best Doctors?</summary><p>It is an unreleased directory concept. No live rating or real-visit claim is published while consent, substantiation, de-identification, corrections and opt-out controls are reviewed.</p></details>
 <details><summary>What specialties is it built for?</summary><p>MLS is tuned for spine, pain management and PM&amp;R — the coding, intake, outcomes (ODI) and report templates reflect those workflows. It works for general visits too, but that's where it's sharpest.</p></details>
 <details><summary>How fast can I start?</summary><p>Open it in your browser and generate your first note in minutes. You can bulk-import your existing patients so it's useful on day one.</p></details>
 </div>
@@ -916,7 +901,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <a href="#features">Features</a>
 <a href="#api">API &amp; EHR</a>
 <a href="#pricing">Pricing</a>
-<a href="#kickstarter">Kickstarter</a>
+<a href="#pricing">Pricing status</a>
 <a href="#security">Security</a>
 <a href="lawyers.html">For attorneys</a>
 <a href="review-finder.html">Reviews</a>
@@ -928,7 +913,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <a href="mailto:michael@mlsscribe.com">Contact</a>
 </div>
 </div>
-<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation. Fully HIPAA compliant: encrypted architecture with signed Business Associate Agreements. athenahealth integration is live today; integration with other EMRs is provided under our 30-day integration guarantee.</p>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a synthetic-evaluation documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes require provider review. Do not enter real patient information; production legal, vendor, security, and clinical readiness have not been released.</p>
 </div>
 </footer>
 
@@ -945,6 +930,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <form id="mlsChatForm" onsubmit="mlsChatSend(event);return false;" action="javascript:void(0)">
 <input id="mlsChatInput" autocomplete="off" placeholder="Type your question…">
 <button id="mlsChatSendBtn" type="submit">Send</button>
+<small style="flex-basis:100%;color:var(--muted)">Messages are sent to the MLS sales assistant. Do not include patient, case or contact details.</small>
 </form>
 </div>
 
@@ -962,16 +948,9 @@ if(!m) return;
 m.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); }); });
 document.addEventListener('click',function(e){ if(m.classList.contains('open') && !e.target.closest('header.site')){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); } });
 })();
-async function startCheckout(plan, el){
-const original = el ? el.textContent : '';
-if(el){ el.style.pointerEvents='none'; el.textContent='Loading…'; }
-try{
-const r=await fetch(BACKEND_URL+'/api/billing/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})});
-const d=await r.json();
-if(r.ok && d.url){ window.location.href=d.url; return; }
-alert((d && d.error) ? d.error : 'Sorry — checkout is not available right now. Please book a demo and we’ll get you set up.');
-}catch(e){ alert('Sorry — checkout could not start. Please check your connection or book a demo.'); }
-finally{ if(el){ el.style.pointerEvents=''; el.textContent=original; } }
+function startCheckout(plan, el){
+alert('Checkout is not released. These are planning prices for synthetic evaluation only; no subscription was created.');
+return false;
 }
 async function submitDemo(e){
 e.preventDefault();
@@ -982,7 +961,7 @@ status.style.display='block'; status.style.color='var(--muted)'; status.textCont
 if(btn){btn.disabled=true;}
 const payload={ name:f.name.value, email:f.email.value, practice:f.practice.value||'', focus:f.msg.value||'', _subject:'New MLS demo request', _template:'table' };
 try{
-const r=await fetch(DEMO_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
+const r=await fetch(DEMO_ENDPOINT,{method:'POST',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
 const data=await r.json();
 if(r.ok&&(data.success===true||data.success==='true')){ f.reset(); status.style.color='#2E6A4B'; status.textContent='✓ Thanks! Your demo request was sent. We\'ll be in touch shortly.'; }
 else { throw new Error(data.message||'Submission failed'); }
@@ -1026,14 +1005,8 @@ el('mlsChatPanel').style.display=open?'flex':'none';
 el('mlsChatBtn').style.display=open?'none':'flex';
 if(open){ if(!greeted){greeted=true;add('bot','Hi! I’m the MLS assistant. Ask me anything about how it works, pricing, the API, or how it fits your spine / PM&R / pain practice. 👋');} setTimeout(function(){el('mlsChatInput').focus();},50); }
 };
-let leadSent=false;
-function captureLead(email){
-if(leadSent) return; leadSent=true;
-var convo=hist.slice(-12).map(function(m){return (m.role==='user'?'Visitor: ':'MLS: ')+m.content;}).join('\n');
-try{ fetch(DEMO_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({name:'Website chat lead',email:email,_subject:'New MLS demo request (via chat)',message:'A visitor requested a demo through the website chat assistant.\n\nConversation so far:\n'+convo})}).catch(function(){}); }catch(e){}
-}
 function sendChat(attempt){
-return fetch(API+'/api/sales-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist.slice(-12)})})
+return fetch(API+'/api/sales-chat',{method:'POST',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist.slice(-12)})})
 .then(function(r){ if(!r.ok && r.status>=500) throw new Error('server'); return r.json(); })
 .catch(function(err){ if(attempt<2){ return new Promise(function(res){setTimeout(res,1300);}).then(function(){return sendChat(attempt+1);}); } throw err; });
 }
@@ -1042,13 +1015,11 @@ if(e&&e.preventDefault)e.preventDefault();
 const inp=el('mlsChatInput'); const text=(inp.value||'').trim();
 if(!text) return false;
 inp.value=''; add('user',text); hist.push({role:'user',content:text});
-var em=text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-if(em) captureLead(em[0]);
 const sendBtn=el('mlsChatSendBtn'); sendBtn.disabled=true;
 const typing=add('bot','…');
 sendChat(0)
 .then(function(d){ const reply=(d&&(d.reply||d.error))||'Sorry, please try again or email michael@mlsscribe.com.'; typing.textContent=reply; if(d&&d.reply) hist.push({role:'assistant',content:d.reply}); })
-.catch(function(){ typing.textContent='Sorry, I hit a connection hiccup. '+(leadSent?'I\'ve already passed your request to the team and they\'ll confirm shortly — ':'')+'you can also reach us at michael@mlsscribe.com.'; })
+.catch(function(){ typing.textContent='Sorry, I hit a connection hiccup. You can also reach us at michael@mlsscribe.com. Nothing was submitted as a lead.'; })
 .finally(function(){ sendBtn.disabled=false; el('mlsChatInput').focus(); });
 return false;
 };
@@ -1077,19 +1048,19 @@ var LIVE='<span class="badge-live"><span class="ld"></span> Live</span>';
 var D={
 ambient:{g:'🎙️',t:'Ambient note generation',intro:'MLS listens to the visit and writes a structured note in your style — you never type from a blank page.',steps:[['Listen','Capture the conversation with the ambient mic or a paired phone-mic. Nothing leaves the page until you generate.'],['Structure','The AI organizes what was said into SOAP, APSO, narrative or H&P — your chosen format and length.'],['Ground','Every line reflects only what was actually documented — no invented findings.'],['Review & sign','You edit anything and sign. You are always the final word.']]},
 coding:{g:'💳',t:'Coding & reimbursement',intro:'Turn the finished note into defensible codes and an estimate of what the visit should reimburse.',steps:[['Read the note','The AI reads your documented findings and procedures.'],['Suggest codes','E/M level, ICD-10 and CPT suggested from what the documentation supports — never inflated.'],['Estimate','See an estimated reimbursement and generate a one-click superbill.'],['You confirm','Final coding is always yours to review and adjust before it is billed.']]},
-athena:{g:'🔗',t:'athenahealth integration',badge:LIVE,intro:'Already works with athenahealth today — MLS pulls your schedule and chart data and writes the finished note back into athenaOne.',steps:[['Pull schedule','MLS reads today’s athenaOne schedule so your patients are lined up and ready.'],['Pull chart','Problems, medications, allergies and history come straight from the chart — read-only.'],['Draft with context','The note starts grounded in real chart data instead of a blank page.'],['Write back','The finished note writes back into the encounter — and always stops before Save/Sign so you review first.']]},
+athena:{g:'🔗',t:'athenahealth candidate workflow',badge:'<span class="badge-soon">Validation</span>',intro:'Clinician-started exact-origin schedule reads and review-first handoff controls are under final production validation.',steps:[['Pull schedule','Day and month schedule reads run only after a clinician starts them.'],['Refuse wrong pages','Non-schedule or ambiguous Athena pages fail closed.'],['Draft with context','Synthetic fixtures verify that imported context stays attached to the selected patient.'],['Review gate','No save or sign is automatic; final packaged and signed-in validation is still required.']]},
 intake:{g:'📋',t:'Patient intake',intro:'A tablet or web intake fills the chart before you walk into the room.',steps:[['Patient completes','History, ODI and satisfaction on an iPad or the patient’s own phone.'],['Auto-fill','Answers flow into the chart and the note draft automatically.'],['Track over time','ODI and pain scores are captured so outcomes build on their own.']]},
 outcomes:{g:'📈',t:'Outcomes tracking',intro:'Every intake becomes measurable proof of the care you deliver.',steps:[['Capture','Pain and ODI recorded at each visit.'],['Track','Per patient and across the whole practice.'],['Export','One-click export and referral one-pagers for the physicians who send you patients.']]},
-legal:{g:'⚖️',t:'Legal / IME report portal',intro:'Turn records requests into a paid, AI-drafted report line.',steps:[['Request','An attorney requests a narrative, IME or utilization-review report.'],['Draft','MLS drafts it from the record for your review.'],['Sign & sell','You set the price, review and sign; get paid before the work is released. MLS takes a small platform fee, not an upcharge.']]},
-reputation:{g:'⭐',t:'Reputation & marketing suite',badge:'<span class="badge-prem">Premium</span>',intro:'Find, manage and grow your reputation where patients are actually looking.',steps:[['Find','See your ratings across Google and the top review sites in one place.'],['Surface','Pull your best real quotes into your marketing.'],['Request','Invite real patients to leave a review after a visit — respectfully and within the rules.']]},
-sendpatient:{g:'📤',t:'Send to patient',badge:'<span class="badge-prem">Premium</span>',intro:'Share a one-tap booking link and email any patient a secure login to their private portal.',steps:[['Invite','Email the patient a secure sign-in to their private portal.'],['Share','After-visit summaries, records and a booking link — all in one place.'],['Stay connected','Patients can message the practice through secure chat.']]},
-api:{g:'🧩',t:'Developer REST API',intro:'Build on MLS with clean JSON endpoints and FHIR keys.',steps:[['Provision keys','Generate API and FHIR keys from Settings → Integrations.'],['Call the API','POST a visit transcript to /api/generate and get back a structured, coded note.'],['Sync records','Save and retrieve records and schedules programmatically from your own systems.']],cta:[{label:'See the API',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
-bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Coming soon</span>',intro:'A public directory where the rating is earned from real visit quality — never bought.',steps:[['Earn','Ratings are computed from de-identified, per-visit quality.'],['Opt in','Doctor opt-in and consent are required; the directory is privacy-first and PHI-free.'],['Get found','Patients find providers they can trust. Optional sponsored placement is always labeled and affects position only, never the star rating.']]},
-security:{g:'🔒',t:'HIPAA-compliant security',intro:'Fully HIPAA compliant — encryption, 2FA, inactivity log-off, audit logging and encrypted backups, with the provider signing every note.',steps:[['Protect','Encryption in transit and at rest, with encrypted backups.'],['Control','Two-factor authentication and automatic inactivity log-off.'],['Prove','Audit logging tracks what happened and when.'],['You sign','Nothing is submitted to your EHR without your confirmation.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
+legal:{g:'⚖️',t:'Legal / IME portal',badge:'<span class="badge-soon">Held</span>',intro:'Case intake, patient records, authorization, signing, payment and report delivery are unavailable.',steps:[['No intake','The public evaluation does not accept case or patient information.'],['No release','No report can be signed, purchased or delivered.'],['Review required','Counsel and security review are required before any future release.']]},
+reputation:{g:'⭐',t:'Reputation tools',badge:'<span class="badge-soon">Held</span>',intro:'Review requests and marketing automation are unavailable pending privacy and link-safety review.',steps:[['No visit trigger','A clinical visit does not generate a patient review request.'],['No automation','No marketing or review content is published automatically.'],['Future review','Any future release requires consent, safe links and substantiated claims.']]},
+sendpatient:{g:'📤',t:'Patient portal',badge:'<span class="badge-soon">Validation</span>',intro:'Secure invites and in-portal appointment requests are under validation; public self-booking is not released.',steps:[['Invite','The reviewed flow uses a one-time secure link only.'],['Request','Signed-in patients can request an appointment for the practice to confirm.'],['Fail closed','If secure delivery is unavailable, no account or fallback password is created.']]},
+api:{g:'🧩',t:'Synthetic developer API',intro:'Evaluation contracts exist, while PHI and production integration access remain closed.',steps:[['Synthetic only','Use test fixtures, not real patient information.'],['Server gate','PHI routes stay closed until server readiness checks pass.'],['Official preview','SMART production claims wait for official sandbox evidence.']],cta:[{label:'See readiness status',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
+bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Held</span>',intro:'The directory is not published while rating evidence, consent and privacy controls are reviewed.',steps:[['No ratings','No real-visit score is published in this release.'],['Rights preserved','The opt-out and correction path remains available.'],['Evidence first','Any future launch requires reviewed methodology and substantiation.']]},
+security:{g:'🔒',t:'Security evaluation',intro:'Synthetic evaluation only — security controls require production verification before real patient information is allowed.',steps:[['Protect','Encryption and backup controls are under test.'],['Control','Two-factor authentication and inactivity log-off are under test.'],['Verify','Audit evidence and vendor/legal readiness must be independently confirmed.'],['You review','Clinical drafts require clinician review; final actions stay in the EHR.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'Flat per-provider pricing with generous fair use — annual plans get two months free.',steps:[['Lite — $30/mo','Just the scribe: unlimited AI notes and capture.'],['Standard — $44/mo','Coding & reimbursement, intake, outcomes and the attorney portal.'],['Premium — $60/mo','Reputation suite, ask-your-data Study Engine and white-label exports.'],['Enterprise — $50/mo (3+ providers)','Everything in Premium plus white-glove onboarding and dedicated support for the whole group.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
-'stat-hours':{g:'⏱️',t:'3 hours saved a day',intro:'Chester County Spine Care reports three hours a day of charting time given back, per provider.',steps:[['Before','Notes piled up for after-hours “pajama time” at home.'],['With MLS','The note is drafted during the visit and signed on the spot.'],['Result','3 hours a day returned — a real, verified result from Chester County Spine Care.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
+'stat-hours':{g:'⏱️',t:'Outcome evidence pending',intro:'No independently verified time-savings result is published for this release.',steps:[['Define','Specify the baseline, cohort and measurement period.'],['Measure','Collect repeatable workflow evidence with practice approval.'],['Publish','Share only claims supported by the measured data.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
 'stat-codes':{g:'🧾',t:'E/M · ICD-10 · CPT on every note',intro:'Every note lands with suggested codes for you to confirm.',steps:[['E/M','The visit level your documentation actually supports.'],['ICD-10','Diagnoses pulled from what the note describes.'],['CPT','Procedures, plus a one-click superbill.']],cta:[{label:'See coding',href:'#features',primary:true},{label:'Book a demo',href:'#demo'}]},
-'stat-emr':{g:'🔌',t:'Notes flow in and out of your EMR',intro:'athenahealth today, standards-based FHIR, and any other EMR within 30 days.',steps:[['athenahealth','Live schedule + chart pull and note write-back today.'],['FHIR / SMART on FHIR','Standards-based record sync and write-back.'],['Any other EMR','A smart integration guaranteed within 30 days of you telling us your system.']],cta:[{label:'See integrations',href:'#emr',primary:true},{label:'Book a demo',href:'#demo'}]}
+'stat-emr':{g:'🔌',t:'Integration readiness',intro:'Athena is the current candidate; other EHRs have no published compatibility or delivery guarantee.',steps:[['Athena','Exact-origin schedule and review-first fixtures are passing in isolated Chrome.'],['FHIR / SMART','Official preview validation remains pending.'],['Other EHRs','Scope is documented only after technical discovery and testing.']],cta:[{label:'See readiness status',href:'#emr',primary:true},{label:'Book a demo',href:'#demo'}]}
 };
 var ov=document.getElementById('detailModal');
 if(!ov) return;

@@ -14,12 +14,11 @@
  * read, stored, or logged (only non-PHI control fields: resp.ok, url host, title,
  * provider names, and a sign-in boolean). ASCII-only. Idempotent. try/catch throughout.
  *
- * FIX 1 -- HONEST, REAL-TIME CONNECTION STATUS
- *   Green "athenaOne connected" only when a genuinely open, signed-in athenanet tab is
- *   readable -- NOT on a sign-in / prompt=login wall, NOT lingering after the tab closes.
- *   Hardens window.__mlsConnTruth with URL/title sign-in detection (original sniffed body
- *   text only), requires an athenahealth host, re-checks on focus/pageshow/visibilitychange,
- *   and polls on a short interval. Fully reversible.
+ * FIX 1 -- PHI-FREE, REAL-TIME READINESS STATUS
+ *   Green means MLS Assist responds and operational health reports an exact,
+ *   non-discarded Athena product tab. It never reads a schedule/chart to poll,
+ *   and never claims sign-in, patient, encounter, or chart-read verification.
+ *   Re-checks on focus/pageshow/visibilitychange and on a bounded interval.
  *
  * FIX 2 -- "OPEN ATHENAONE" BUTTON: clear, always-visible button that opens athenaOne in a
  *   NEW tab on the user's click (never auto-opens).
@@ -108,41 +107,16 @@
    * ===================================================================== */
   var connOrig = null, connState = null, connSubs = [], connPoll = null,
       connFocusHandlers = [], connInstalled = false, connVis = null, connInFlight = null;
-  /* FIX 2026-07-01: 4s was hammering the extension with a REAL schedule read every 4 seconds,
-     and (bridge has no request ids) those probe replies could cross with a user's pull. */
-  var PING_TIMEOUT_MS = 2500, SCHED_TIMEOUT_MS = 4000, POLL_MS = 30000;
+  /* Health polling is operational metadata only; it never reads Athena DOM. */
+  var PING_TIMEOUT_MS = 2500, HEALTH_TIMEOUT_MS = 4000, POLL_MS = 30000;
 
   var COLOR = {
-    "connected":    { color: "green", label: "athenaOne connected" },
+    "connected":    { color: "green", label: "MLS Assist ready · Athena tab detected" },
     "no-extension": { color: "red",   label: "MLS Assist not detected" },
-    "no-tab":       { color: "red",   label: "No signed-in athenaOne tab" },
-    "error":        { color: "red",   label: "athenaOne disconnected" },
-    "checking":     { color: "grey",  label: "Checking..." }
+    "no-tab":       { color: "red",   label: "No usable Athena tab detected" },
+    "error":        { color: "red",   label: "MLS Assist health unavailable" },
+    "checking":     { color: "grey",  label: "Checking readiness..." }
   };
-
-  function looksSignin(resp) {
-    try {
-      if (!resp || typeof resp !== "object") return false;
-      var url = typeof resp.url === "string" ? resp.url : "";
-      var title = typeof resp.title === "string" ? resp.title : "";
-      var text = typeof resp.text === "string" ? resp.text : "";
-      if (url && /(prompt=login|[?&]login|\/login\b|\/logon\b|sign[-_]?in|signin|\/oauth|\/authorize|\/authn|fedsignin|samlsso|\/idp\/)/i.test(url)) return true;
-      if (title && /(sign\s*in|log\s*in|logon|sign-on)/i.test(title) && !/athenacollector|athenanet/i.test(title)) return true;
-      if (text && text.length < 4000) {
-        var head = text.slice(0, 1500);
-        if (/get more from athenaone|find trusted solutions/i.test(head)) return true;
-        if (/\bsign\s*in\b/i.test(head) && /\b(password|username|log\s*in)\b/i.test(head)) return true;
-      }
-      return false;
-    } catch (e) { return false; }
-  }
-  function hostIsAthena(resp) {
-    try {
-      var url = resp && typeof resp.url === "string" ? resp.url : "";
-      if (!url) return null;
-      return /athenahealth|athenanet/i.test(url);
-    } catch (e) { return null; }
-  }
 
   var connReqSeq = 0;
   function connRequest(type, replyType, timeoutMs) {
@@ -162,8 +136,9 @@
         clearTimeout(t);
         if (replyType === "mlsPong") { resolve({ ok: true }); }
         else {
-          var r = d.resp || {};
-          resolve({ ok: r.ok === true, signin: looksSignin(r), athena: hostIsAthena(r), reason: String(r.reason || r.error || "").slice(0, 120) });
+          var r = d.resp || {}, a = r.athena || {};
+          var tabs = Math.max(0, Number(a.tabs || 0)), discarded = Math.max(0, Number(a.discarded || 0));
+          resolve({ ok: r.ok === true, tabs: tabs, discarded: discarded, usable: r.ok === true && tabs > discarded, reason: String(r.reason || r.error || "").slice(0, 120) });
         }
       };
       var t = setTimeout(function () {
@@ -191,34 +166,24 @@
 
   function connCheck() {
     if (connInFlight) return connInFlight;
-    /* FIX 2026-07-01: never fire a probe while a user pull is in flight -- the extension
-       bridge matches replies by TYPE only, so a probe's mlsAppScheduleResult could be taken
-       for the pull's (and vice versa). __mlsPullBusyAt is stamped by __mlsSI.pull(). */
-    if (Date.now() - (window.__mlsPullBusyAt || 0) < 45000) { return Promise.resolve(connState); }
+    /* Health replies have their own correlated message type and cannot consume
+       or be consumed by an explicit clinician-started schedule pull. */
     connInFlight = connRequest("mlsPing", "mlsPong", PING_TIMEOUT_MS).then(function (ping) {
       if (!ping.ok) { connInFlight = null; return connSetState("no-extension", "MLS Assist not detected -- load the extension and reload."); }
-      return connRequest("mlsAppPullSchedule", "mlsAppScheduleResult", SCHED_TIMEOUT_MS).then(function (s) {
+      return connRequest("mlsExtHealth", "mlsExtHealthResult", HEALTH_TIMEOUT_MS).then(function (s) {
         connInFlight = null;
-        var athenaOk = (s.athena === null) ? true : !!s.athena;
-        if (s.ok && !s.signin && athenaOk) {
-          return connSetState("connected", "athenaOne connected -- a signed-in tab is readable.");
+        if (s.usable) {
+          return connSetState("connected", "MLS Assist ready -- Athena tab detected; patient and encounter not yet verified.");
         }
-        /* 2026-07-17: an 'extension-error' control reply = chrome.runtime threw
-           in the content bridge (worker crashed / extension invalidated). That
-           is NOT "Athena signed out" — a real signed-in session got blamed for
-           it live. Name the actual one-click fix. */
-        if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(s.reason || "")) {
-          return connSetState("error", "MLS Assist hit an internal error and needs a reload -- open chrome://extensions, find MLS Assist, press Reload. athenaOne itself may still be signed in.");
+        /* A failed health reply names the extension worker as the problem. A
+           passive check never infers anything about Athena sign-in state. */
+        if (!s.ok || /extension-error|bridge-error|context invalidated|worker-unreachable|no-response/i.test(s.reason || "")) {
+          return connSetState("error", "MLS Assist was detected, but its worker health check failed -- reload MLS Assist at chrome://extensions. Athena was not read.");
         }
-        if (s.signin) {
-          return connSetState("no-tab", "Your athenaOne tab is on the sign-in page -- sign in and open your Day schedule, then it will connect.");
-        }
-        if (s.ok && !athenaOk) {
-          return connSetState("no-tab", "No signed-in athenaOne tab is readable -- open athenaOne and sign in.");
-        }
-        return connSetState("no-tab", "No signed-in athenaOne tab is readable -- open one and sign in.");
+        if (s.tabs > 0 && s.discarded >= s.tabs) return connSetState("no-tab", "Athena tab detected but discarded by Memory Saver -- activate it before a clinical action.");
+        return connSetState("no-tab", "MLS Assist ready -- no usable Athena product tab detected.");
       });
-    }).catch(function () { connInFlight = null; return connSetState("error", "Connection check failed -- treating as disconnected."); });
+    }).catch(function () { connInFlight = null; return connSetState("error", "Readiness check failed -- Athena was not read."); });
     return connInFlight;
   }
 
@@ -568,8 +533,8 @@
     var c = CT();
     var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
     if (!d) { addAi("I can't read the connection right now."); return; }
-    if (d.status === "connected") addAi("Connected. " + (d.detail || "A signed-in athenaOne tab is readable.") + " You can ask me to pull a schedule.");
-    else addAi("Not connected. " + (d.detail || d.label) + " Tap \"Open athenaOne in new tab\" above to sign in, then I'll see it automatically.");
+    if (d.status === "connected") addAi("MLS Assist is ready. " + (d.detail || "An Athena tab was detected; no patient or encounter has been verified yet.") + " You can start an explicit schedule pull when needed.");
+    else addAi("Not ready. " + (d.detail || d.label) + " Tap \"Open athenaOne in new tab\" above before a clinical action.");
     safe(function () { if (c && isFn(c.check)) c.check(); });
   }
   function runPull(intent) {
@@ -586,7 +551,7 @@
     var connected = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
     if (!connected) {
       var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
-      addAi("I can't pull yet -- " + ((d && (d.detail || d.label)) || "athenaOne isn't connected.") + " Tap \"Open athenaOne in new tab\" above, sign in and open your Day schedule, then ask again.");
+      addAi("I can't pull yet -- " + ((d && (d.detail || d.label)) || "no usable Athena product tab was detected.") + " Tap \"Open athenaOne in new tab\" above, sign in and open your Day schedule, then ask again.");
       safe(function () { if (c && isFn(c.check)) c.check(); });
       return;
     }
@@ -994,7 +959,7 @@
     var connected = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
     if (!connected) {
       var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
-      setPullStatus((d && (d.detail || d.label)) || "athenaOne isn't connected yet -- sign in and open your Day schedule, then pull.", false);
+      setPullStatus((d && (d.detail || d.label)) || "No usable Athena product tab was detected -- open Athena, sign in, and show the Day schedule before pulling.", false);
       safe(function () { if (c && isFn(c.check)) c.check(); });
       return;
     }

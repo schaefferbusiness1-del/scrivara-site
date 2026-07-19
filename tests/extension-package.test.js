@@ -4,7 +4,6 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const vm = require('vm');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 
@@ -170,7 +169,7 @@ const manifest = readJson('manifest.json');
 const published = readJson('extension-version.json');
 
 /* The digest-bearing version_name must always equal the freshly recomputed
-   deterministic core digest (SHA-256 over the 16 non-manifest release files
+   deterministic core digest (SHA-256 over the 19 non-manifest release files
    in release order, name+NUL+bytes+NUL each). The live mlsPong buildId
    exposes this exact string, so a stale or hand-edited stamp is a release
    blocker, not a cosmetic drift. */
@@ -189,18 +188,30 @@ const published = readJson('extension-version.json');
 const checker = read('feat_mls_checker.js');
 const checkerMatch = checker.match(/SERVER_EXT_VERSION\s*=\s*['"]([^'"]+)['"]/);
 assert(checkerMatch, 'feat_mls_checker.js must declare SERVER_EXT_VERSION');
-assert.strictEqual(manifest.version, published.version, 'manifest and extension-version versions differ');
-assert.strictEqual(manifest.version, checkerMatch[1], 'manifest and checker versions differ');
+function compareVersions(a, b) {
+  const left = String(a || '').split('.').map(Number), right = String(b || '').split('.').map(Number);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const delta = (left[i] || 0) - (right[i] || 0); if (delta) return delta < 0 ? -1 : 1;
+  }
+  return 0;
+}
+assert(compareVersions(manifest.version, published.version) >= 0, 'isolated candidate must not be older than the published stable channel');
+assert.strictEqual(checkerMatch[1], published.version, 'website checker must describe the published stable channel, not an isolated candidate');
 assert(/^\d+(?:\.\d+){0,3}$/.test(manifest.version), 'manifest version is not Chrome-compatible');
 assert(/r\.data\s*&&\s*r\.data\.version/.test(checker), 'checker must read the installed version carried by mlsPong');
 assert(/compareVersions\(installed,\s*SERVER_EXT_VERSION\)/.test(checker), 'checker must compare installed and published extension versions');
 assert(!/cannot read the installed extension version/i.test(checker), 'checker must not claim the installed version is inherently unreadable');
 
 const downloadPage = read('get-extension.html');
-const pageFilesMatch = downloadPage.match(/var\s+FILES\s*=\s*(\[[^;]+\])/s);
-assert(pageFilesMatch, 'get-extension.html must expose its extension FILES allowlist');
-const pageFiles = vm.runInNewContext(pageFilesMatch[1], Object.create(null), { timeout: 100 });
-assertSameList(Array.from(pageFiles), EXPECTED_FILES, 'get-extension.html');
+assert(!/\bJSZip\b|cdnjs\.cloudflare\.com\/ajax\/libs\/jszip/i.test(downloadPage),
+  'get-extension.html must not build a candidate from loose public source or a CDN ZIP library');
+assert(!/var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(downloadPage),
+  'get-extension.html must not fetch candidate manifests or expose a loose-source package allowlist');
+assert(/id=["']dl["'][^>]*\bdisabled\b/i.test(downloadPage) && /candidate package withheld/i.test(downloadPage),
+  'manual candidate download must remain visibly disabled until the stamped release gate');
+assert(/extension-version\.json/.test(downloadPage), 'download page may display only the published-channel feed version');
+assert(/chromewebstore\.google\.com\/detail\/mls-assist\/mpeidpagiccfdehcgfanlkibpafhogfg/.test(downloadPage),
+  'download page must retain the known published Chrome Web Store channel');
 
 const builder = read('scripts/build_extension_zip.py');
 const builderListMatch = builder.match(/PACKAGE_FILES\s*=\s*\((.*?)\)\s*\n/s);

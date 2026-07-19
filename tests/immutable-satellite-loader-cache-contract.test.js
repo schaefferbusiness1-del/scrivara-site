@@ -1,0 +1,50 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '..');
+const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
+
+/* Every entry below changed after its previous immutable URL shipped. A
+ * versioned service-worker request is cache-first, so reusing the old token
+ * would deterministically replay stale code for an existing clinician. */
+const assets = [
+  ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
+  ['feat_athena_tooltip_dedupe.js', '20260719ui117', '20260719ui116'],
+  ['feat_b18_qa.js', '20260719b18v7', '20260716b18v6'],
+  ['feat_mls_asst_fix.js', '20260719asst143', '20260717asst142'],
+  ['feat_mls_b121_pack.js', '20260719p2c2', '20260710p2c1'],
+  ['feat_mls_checker.js', '20260719chk2922r2', '20260714chk2922r1'],
+  ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
+  ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
+  ['feat_mls_redesign.js', '20260719rd322', '20260718rd320'],
+  ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
+  ['feat_mls_study_calm.js', '20260719sg2e', '20260713sg2d'],
+  ['feat_mls_wb_console.js', '20260719wbc130', '20260630wbc1c1-B177'],
+  ['feat_mls_widget_deck.js', '20260719wd110', '20260713wd2'],
+  ['feat_mls_widgetinsert.js', '20260719wi3', '20260624wi2c1'],
+  ['feat_mls_topbar_unify.js', '20260719tb110', '20260719tb109'],
+  ['feat_mls_command_palette.js', '20260719cmd103', '20260719cmd102']
+];
+
+assert.strictEqual(new Set(assets.map(entry => entry[1])).size, assets.length,
+  'changed immutable satellites must not share a release token');
+
+for (const [asset, token, retired] of assets) {
+  assert(connect.includes(asset), `${asset} production loader is missing`);
+  assert.strictEqual(connect.split(token).length - 1, 1,
+    `${asset} must have exactly one production loader using ${token}`);
+  assert(!connect.includes(retired), `${asset} still exposes retired cache token ${retired}`);
+}
+
+assert(staging.includes('feat_mls_checker.js?v=20260719chk2922r2'),
+  'staging checker loader must use the same corrected immutable URL');
+assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
+  'staging checker loader still exposes the retired immutable URL');
+assert(staging.includes('feat_mls_command_palette.js?v=20260719cmd103'),
+  'staging must load the same canonical Ctrl/Cmd+K owner as production');
+
+console.log('PASS immutable satellite loaders: ' + assets.length + ' changed assets use fresh, unique cache URLs and retired URLs are unreachable');

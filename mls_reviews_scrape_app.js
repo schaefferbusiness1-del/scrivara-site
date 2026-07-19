@@ -31,7 +31,7 @@
  *   headline number is computed from CONFIRMED listings only.
  * ----------------------------------------------------------------------------
  * Earlier history (retained):
- *   v1.2.1  Marketing CTA probes mls-marketing.html; honest pending fallback.
+ *   v1.2.1  Historical marketing CTA (now release-held).
  *   v1.2.0  Auto-discovery primary (extension two-hop); manual paste demoted;
  *           hides review-finder's stale API-key grid; MLS Marketing CTA.
  *   v1.1.0  MLS Marketing activation CTA.
@@ -62,7 +62,6 @@
   if (window.__mlsRepScrape) return;
 
   var VER = '1.4.1';
-  var MKT_URL = 'mls-marketing.html';
   var BK = 'https://scrivara-backend.onrender.com';
   /* v1.4.1: new key. Payloads cached by v1.4.0 can carry a `verified:true` that
    * a confirm-then-undo left behind (the flag was mutated in place before
@@ -98,6 +97,16 @@
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function token() { try { return sessionStorage.getItem('sf_bk_token') || lsGet('sf_bk_token') || ''; } catch (e) { return ''; } }
+  var REVIEW_HOSTS = ['google.com', 'maps.app.goo.gl', 'g.page', 'healthgrades.com', 'vitals.com', 'webmd.com', 'ratemds.com', 'zocdoc.com', 'yelp.com', 'facebook.com'];
+  function safeReviewUrl(value) {
+    try {
+      var u = new URL(String(value || ''));
+      if (u.protocol !== 'https:' || u.username || u.password || String(value).length > 2048) return '';
+      var host = u.hostname.toLowerCase(), i;
+      for (i = 0; i < REVIEW_HOSTS.length; i++) if (host === REVIEW_HOSTS[i] || host.slice(-(REVIEW_HOSTS[i].length + 1)) === '.' + REVIEW_HOSTS[i]) return u.href;
+    } catch (e) {}
+    return '';
+  }
 
   /* ------------- scope classifier (ES5 port of reviewsFind.js) ----------- */
   function norm(s) {
@@ -155,8 +164,8 @@
     var raw = lsGet('mlsRFLinks') || '';
     var lines = raw.split(/\r?\n/), out = [], i, u;
     for (i = 0; i < lines.length; i++) {
-      u = lines[i].replace(/^\s+|\s+$/g, '');
-      if (/^https?:\/\//i.test(u)) out.push(u);
+      u = safeReviewUrl(lines[i].replace(/^\s+|\s+$/g, ''));
+      if (u) out.push(u);
       if (out.length >= 6) break;
     }
     return out;
@@ -398,7 +407,7 @@
     var killer = setTimeout(function () { if (!done) { done = true; cb({ status: 'error', message: 'The web search took too long -- try Rescan.' }); } }, AUTO_TIMEOUT);
     function finish(o) { if (done) return; done = true; clearTimeout(killer); cb(o); }
     try {
-      fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) })
+      fetch(url, { method: 'POST', cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', headers: headers, body: JSON.stringify(body) })
         .then(function (r) {
           var st = r.status;
           return r.json().then(function (j) { return { st: st, j: j }; }, function () { return { st: st, j: null }; });
@@ -435,7 +444,7 @@
   function apiFind(who, cb) {
     var u = BK + '/api/reviews/find?doctor=' + enc(who.doctor) + '&practice=' + enc(who.practice) + '&city=' + enc(who.city);
     try {
-      fetch(u).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      fetch(u, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
         .then(function (j) { cb(j && j.ok ? j : null); }, function () { cb(null); });
     } catch (e) { cb(null); }
   }
@@ -661,7 +670,7 @@
         }
         listHtml += '<div class="rsc-list"><b>' + esc(L.name || hostText(L.url)) + '</b> ' + scopeBadge(L.scope) + ' ' + confBadge(L) +
           ' <span class="rsc-note">' + esc(L.source) + (L.rating != null ? (' \u00B7 ' + L.rating + '\u2605 \u00B7 ' + (L.reviewCount || 0) + ' reviews') : ' \u00B7 no rating shown') + '</span>' +
-          (L.url ? ('<div><a href="' + esc(L.url) + '" target="_blank" rel="noopener">Open profile \u2197 ' + esc(hostText(L.url)) + '</a></div>') : '') + act + '</div>';
+          (safeReviewUrl(L.url) ? ('<div><a href="' + esc(safeReviewUrl(L.url)) + '" target="_blank" rel="noopener noreferrer">Open profile \u2197 ' + esc(hostText(L.url)) + '</a></div>') : '') + act + '</div>';
       }
       if (listHtml) { h.push('<div style="margin-top:8px;font-weight:700;font-size:13px">Profiles found <span class="rsc-note" style="font-weight:400">\u2014 confirm yours so they count toward the headline</span></div>'); h.push(listHtml); }
       if (hiddenN) { h.push('<div class="rsc-note">' + hiddenN + ' listing(s) hidden as \u201Cnot me\u201D \u2014 <a href="#" id="rscResetDeny">show them again</a></div>'); }
@@ -675,7 +684,7 @@
           h.push('<div class="rsc-rev">' + (r.rating != null ? ('<b>' + r.rating + '\u2605</b> ') : '') + scopeBadge(r.scope) + ' ' + confBadge(r) +
                  ' <span class="rsc-note">' + esc(r.source) + (r.author ? ' \u00B7 ' + esc(r.author) : '') + (r.relativeTime ? ' \u00B7 ' + esc(r.relativeTime) : '') + '</span>' +
                  '<div>' + esc(String(r.text || '').slice(0, 440)) + '</div>' +
-                 (r.sourceUrl ? ('<a href="' + esc(r.sourceUrl) + '" target="_blank" rel="noopener">source \u2197 ' + esc(hostText(r.sourceUrl)) + '</a>') : '') + '</div>');
+                 (safeReviewUrl(r.sourceUrl) ? ('<a href="' + esc(safeReviewUrl(r.sourceUrl)) + '" target="_blank" rel="noopener noreferrer">source \u2197 ' + esc(hostText(r.sourceUrl)) + '</a>') : '') + '</div>');
         }
         h.push('<div class="rsc-note" style="margin-top:6px">Only use a review as a public testimonial if it is marked <b>\u2714 confirmed</b> and the source platform + patient allow it.</div>');
       }
@@ -727,7 +736,7 @@
       if (row && !row.childNodes.length) {
         var t = buildTargets(who), i, html = '', opts = '';
         for (i = 0; i < t.length; i++) {
-          html += '<a class="rsc-chip" target="_blank" rel="noopener" href="' + esc(t[i].url) + '">\u2197 ' + esc(t[i].key) + (t[i].direct ? ' (your link)' : ' (search)') + '</a>';
+          html += '<a class="rsc-chip" target="_blank" rel="noopener noreferrer" href="' + esc(safeReviewUrl(t[i].url)) + '">\u2197 ' + esc(t[i].key) + (t[i].direct ? ' (your link)' : ' (search)') + '</a>';
           opts += '<option value="' + esc(t[i].key) + '">' + esc(t[i].key) + '</option>';
         }
         row.innerHTML = html;
@@ -875,13 +884,9 @@
   function upgradeMarketing() {
     var card = $('repUpsell');
     if (!card) return false;
-    if (card.getAttribute('data-mkt-upgraded')) return true;
-    card.setAttribute('data-mkt-upgraded', '1');
-    var row = card.querySelector('.row');
-    if (!row) { row = document.createElement('div'); row.className = 'row'; card.appendChild(row); }
-    row.id = 'mktRow';
-    renderMkt(row);
-    return true;
+    card.style.display = 'none';
+    card.setAttribute('aria-hidden', 'true');
+    return false;
   }
   function renderMkt(row) {
     var st = mktStatus();
@@ -899,19 +904,8 @@
     if (go) go.onclick = function () { mktOpen(row); };
   }
   function mktOpen(row) {
-    function fallback() {
-      try { localStorage.setItem('mlsMkt', JSON.stringify({ status: 'pending', via: 'email', at: new Date().toISOString() })); } catch (e) {}
-      try { if (row) renderMkt(row); } catch (e) {}
-      var sub = 'MLS Marketing - please activate my practice';
-      var body = 'Hi Michael,\n\nPlease activate the MLS Marketing add-on for my practice. (Sent from the review finder - the marketing console page is not live yet.)\n\nThanks!';
-      location.href = 'mailto:michael@mlsscribe.com?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(body);
-    }
-    try {
-      fetch(MKT_URL, { method: 'HEAD', cache: 'no-store' }).then(function (r) {
-        if (r && r.ok) { try { window.open(MKT_URL, '_blank'); } catch (e) { location.href = MKT_URL; } }
-        else { fallback(); }
-      }, function () { fallback(); });
-    } catch (e) { fallback(); }
+    if (row) row.innerHTML = '<span class="note">Marketing automation is not released yet.</span>';
+    return false;
   }
 
   /* Neutralize review-finder's stale "add API key on the server / paste links"

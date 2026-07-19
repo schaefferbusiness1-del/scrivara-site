@@ -863,8 +863,10 @@
             function (e) { try { normalizeRows(true); } catch (e2) {} throw e; }
           );
         };
+        ['__prf', '__dkf', '__mlsDobWrap', '__mlsWrapped'].forEach(function (marker) { if (ol[marker]) wl[marker] = ol[marker]; });
         wl.__dkf = 1;
         wrapped.loadCal = ol;
+        wrapped.loadCalWrapper = wl;
         window.loadCalendar = wl;
       }
     } catch (e) {}
@@ -1111,7 +1113,7 @@
       var t = el ? (el.value || el.textContent || '') : '';
       if (t && /\w/.test(t)) return String(t).trim();
     } catch (e) {}
-    return 'Matthew Schaeffer, MD';
+    return '';
   }
   function rosterProbe(provider, ym) {
     var arr = rows(), kp = nrm(provider), kk = provKey(provider);
@@ -1504,7 +1506,7 @@
     /* restore wraps only when we are still the OUTERMOST layer (standard
        wrapper-stack rule; see header for the dateguard revert-order notes) */
     try { if (wrapped.detect && window._detectSchedDate && window._detectSchedDate.__dkf) window._detectSchedDate = wrapped.detect; } catch (e) {}
-    try { if (wrapped.loadCal && window.loadCalendar && window.loadCalendar.__dkf) window.loadCalendar = wrapped.loadCal; } catch (e) {}
+    try { if (wrapped.loadCal && wrapped.loadCalWrapper && window.loadCalendar === wrapped.loadCalWrapper) window.loadCalendar = wrapped.loadCal; } catch (e) {}
     try { var b = document.getElementById('provSel'); if (b && b.__dkfBridge) b.remove(); } catch (e) {}
     var restored = 0;
     try {
@@ -3459,8 +3461,9 @@
       var t = el ? (el.value || el.textContent || '') : '';
       if (t && /\w/.test(t)) return String(t).trim();
     } catch (e) {}
-    /* same last-resort fallback as the live __mlsProvMonthPull (b120 line 250) */
-    return 'Matthew Schaeffer, MD';
+    /* Never guess a clinician identity. The caller must use a roster-backed
+       selection or stop before any provider-scoped chart work. */
+    return '';
   }
   function refreshCalendar() {
     try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
@@ -3647,6 +3650,11 @@
            own spelling of the signed-in doctor is not refused */
         api.state.phase = 'charts';
         var self = selfProvider();
+        if (prov === 'all' && !self) {
+          api.state.phase = 'done';
+          note(head + '<br>⚠️ Schedule rows were imported, but chart histories were not opened because MLS could not verify the signed-in clinician. Choose one exact provider above, or set your provider identity in Practice, then run the chart pull again.');
+          return out;
+        }
         var chartProv = (prov === 'all') ? self : prov;
         if (!sameProv(chartProv, self)) {
           var pong2 = await bridge('mlsPing', null, 'mlsPong', 3500);
@@ -4467,7 +4475,7 @@
    * Both are top-level function declarations in ScribeFlow.html, so the
    * window property IS the binding that bare `loadCalendar()` calls resolve
    * through - reassigning window.<fn> rebinds them everywhere. */
-  var _origLoad = null, _origSave = null;
+  var _origLoad = null, _wrappedLoad = null, _origSave = null;
   function wrapLoad() {
     var f = window.loadCalendar;
     if (typeof f !== 'function' || f.__mlsDobWrap) return;
@@ -4479,7 +4487,9 @@
       applySoon();
       return r;
     };
+    ['__prf', '__dkf', '__mlsDobWrap', '__mlsWrapped'].forEach(function (marker) { if (f[marker]) w[marker] = f[marker]; });
     w.__mlsDobWrap = 1;
+    _wrappedLoad = w;
     window.loadCalendar = w;
   }
   function wrapSave() {
@@ -4509,7 +4519,7 @@
   applySoon();
 
   function revert() {
-    try { if (_origLoad && window.loadCalendar && window.loadCalendar.__mlsDobWrap) window.loadCalendar = _origLoad; } catch (e) {}
+    try { if (_origLoad && _wrappedLoad && window.loadCalendar === _wrappedLoad) window.loadCalendar = _origLoad; } catch (e) {}
     try { if (_origSave && window.savePatients && window.savePatients.__mlsDobWrap) window.savePatients = _origSave; } catch (e) {}
     try { document.removeEventListener('DOMContentLoaded', onReady); } catch (e) {}
     try { window.removeEventListener('storage', onStorage, false); } catch (e) {}

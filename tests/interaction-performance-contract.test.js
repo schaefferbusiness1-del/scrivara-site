@@ -89,13 +89,11 @@ assert(tooltipOwner.includes('function schedulePass()') && tooltipOwner.includes
 assert(!/setInterval\s*\(/.test(tooltipOwner), 'tooltip reconciliation added a permanent poll');
 assert(tooltipOwner.includes('_bootTimers.forEach(function (timer) { clearTimeout(timer); })'), 'tooltip cleanup leaks bounded boot timers');
 
-assert(theme.includes('if (!wrapped && retryCount++ < 8) retryT = setTimeout(retryBoot, 500)'), 'theme showView reconciliation is no longer bounded');
 assert(!/setInterval\s*\(/.test(theme), 'theme polish added a permanent reconciliation poll');
-assert(theme.includes('if (retryT) { clearTimeout(retryT); retryT = null; }'), 'theme retry timer is not cleaned up');
-assert(theme.includes('viewRaf = window.requestAnimationFrame(function ()') && theme.includes('if (viewRaf != null && window.cancelAnimationFrame)'), 'theme transitions are not frame-owned and cancellable');
+assert(!/mlsThmViewIn|mls-thm-viewin|__thmWrapped|opacity:\s*\.35/.test(theme), 'theme polish can still dim or animate an entire route during navigation');
 const showViewStart = app.indexOf('function showView(v)');
 const showViewSource = app.slice(showViewStart, app.indexOf('function showPatients()', showViewStart));
-assert(!showViewSource.includes("_ve.style.animation='none'") && !showViewSource.includes("_ve.style.animation='mlsViewIn .22s ease'"), 'base navigation still competes with the theme transition owner');
+assert(!/mlsViewIn|opacity:\s*\.35|style\.animation/.test(showViewSource), 'base navigation can still dim or animate an entire route');
 
 assert(!/new\s+MutationObserver\s*\(/.test(dictate), 'dictate placement must not observe the whole DOM');
 assert(!/setInterval\s*\(/.test(dictate), 'dictate placement must not poll layout');
@@ -188,7 +186,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-18-b419' }, 'tiny version probe does not match b419');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-19-b430' }, 'tiny version probe does not match b430');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -232,14 +230,23 @@ focusHandler();
 versionTimeouts.filter(task => task.delay === 1200).pop().fn();
 assert.strictEqual(versionFetches.length, 1, 'focus created a duplicate in-flight version request');
 
+const exactVersionHelperStart = sw.indexOf('function isExactVersionedAsset');
+const exactVersionHelperEnd = sw.indexOf('function isSafeCacheUrl', exactVersionHelperStart);
+const exactVersionHelper = sw.slice(exactVersionHelperStart, exactVersionHelperEnd);
+assert(exactVersionHelperStart > -1 && exactVersionHelperEnd > exactVersionHelperStart, 'service worker lost its exact-version asset classifier');
+assert(exactVersionHelper.includes('/\\.(?:m?js|css|woff2?)$/i.test(url.pathname)'), 'service worker exact-version classifier does not cover the reviewed JS/MJS/CSS/font set');
+assert(exactVersionHelper.includes("keys.length !== 1 || keys[0] !== 'v'"), 'versioned cache entry can carry extra query keys');
+assert(exactVersionHelper.includes("/^[A-Za-z0-9._-]{1,96}$/.test(url.searchParams.get('v') || '')"), 'versioned cache key lacks a bounded safe value rule');
+
 const versionedBranchStart = sw.indexOf('const isVersionedAsset');
-const versionedBranchEnd = sw.indexOf('const fetchReq', versionedBranchStart);
+const versionedBranchEnd = sw.indexOf('/* Token-capable documents', versionedBranchStart);
 const versionedBranch = sw.slice(versionedBranchStart, versionedBranchEnd);
-assert(versionedBranch.includes("url.searchParams.has('v')") && versionedBranch.includes('/\\.(?:js|css|woff2?)$/i.test(url.pathname)'), 'service worker does not limit immutable caching to exact-version assets');
-assert(versionedBranch.includes('caches.match(req).then((cached) => cached || fetch(req)'), 'versioned assets are not cache-first');
+assert(versionedBranch.includes('isExactVersionedAsset(url)'), 'immutable cache branch bypasses the exact-version classifier');
+assert(versionedBranch.includes('caches.match(req).then((cached) => {'), 'versioned assets are not cache-first');
 assert(versionedBranch.includes('c.put(req, copy)'), 'service worker does not cache the exact query-versioned request');
+assert(versionedBranch.includes('caches.open(CACHE)'), 'safe hits are not promoted into the current immutable cache');
 assert(versionedBranch.includes('return;'), 'versioned cache-first branch can fall through into network-first');
-assert(sw.includes("const fetchReq = isNav ? new Request(req.url, { cache: 'reload', credentials: 'same-origin' }) : req"), 'HTML navigation no longer remains network-first/reload');
+assert(sw.includes("new Request(req, { cache: (isNetworkOnlyNavigation(url) || !!url.search) ? 'no-store' : 'reload' })"), 'HTML navigation lost its network-first reload/no-store policy');
 const swFetchStart = sw.indexOf("self.addEventListener('fetch'");
 const swFetch = sw.slice(swFetchStart);
 assert.strictEqual((swFetch.match(/e\.waitUntil\(/g) || []).length, 2, 'service-worker cache writes can be terminated after respondWith resolves');

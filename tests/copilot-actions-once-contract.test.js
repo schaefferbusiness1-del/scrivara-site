@@ -8,9 +8,10 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const afterVisitSource = fs.readFileSync(path.join(root, 'feat_after_visit_summary.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'ca-2.0.2'"));
-/* ca-2.0.2: unknown model-drift kinds resolve to a REAL view or say so —
+assert(source.includes("var VERSION = 'ca-2.0.3'"));
+/* ca-2.0.3: unknown model-drift kinds resolve to a REAL view or say so —
    never a silent dead click, never navigation to a garbage view name. */
 assert(source.includes('function strictView(x)'), 'unknown-kind keyword resolver was removed');
 assert(source.includes("toast('That suggestion isn’t wired to a screen yet"), 'dead suggestions can fail silently again');
@@ -18,7 +19,17 @@ assert(!source.includes('response.clone') && !source.includes('resp.clone'), 'ac
 assert(!source.includes('installFetchPeek') && !source.includes('__mlsCaWrapped'), 'action asset still intercepts base Copilot fetches');
 assert(!source.includes('window.fetch ='), 'action asset still replaces the shared fetch function');
 assert(!source.includes("fetch(base + '/api/copilot',"), 'action asset still issues or parses a second base Copilot request');
-assert(source.includes("fetch(base + '/api/copilot/email'"), 'explicit user-clicked email route was accidentally removed');
+assert(!/\/api\/copilot\/email/.test(source) && !/\bSend email\b/.test(source), 'Copilot artifact UI can still send to an arbitrary recipient');
+assert(source.includes('function copyEmailDraft') && source.includes("sendBtn.textContent = 'Copy email draft'"), 'held email artifact lost its local draft-copy path');
+assert(!/\bteam\s*:\s*['"]team['"]/.test(source), 'Copilot navigation still exposes the held Team workspace');
+assert(!/\/api\/copilot\/email/.test(appSource), 'base Studio/Copilot runtime can still send to an arbitrary recipient');
+assert(!/\bcopilotSendEmail\b/.test(appSource), 'legacy send-email handler remains callable');
+assert(!appSource.includes('MLS.email') && !appSource.includes("email:function(to,subject,body){return rpc(\"email\""), 'custom-widget bridge still advertises arbitrary-recipient email');
+assert(appSource.includes('function copilotCopyEmailDraft') && appSource.includes('Nothing is sent from MLS'), 'base Copilot lost its draft-only review/copy boundary');
+assert(appSource.includes("return reply(false,{draftOnly:true},'Email sending is unavailable in MLS."), 'custom Studio widgets can still request a network email side effect');
+assert(!/\/api\/copilot\/email/.test(afterVisitSource) && !/\bSend to patient\b/.test(afterVisitSource), 'after-visit summary can still send through the generic arbitrary-recipient endpoint');
+assert(afterVisitSource.includes("var VERSION = '1.1.0'") && afterVisitSource.includes('id="mlsavsCopyEmail"') && afterVisitSource.includes('Nothing is sent from MLS.'), 'after-visit summary lost its exact-patient local draft-copy boundary');
+assert(afterVisitSource.includes("patientBinding(activePatient()) !== els.patientBinding"), 'after-visit summary actions do not stale-block after a chart switch');
 
 const normalizeStart = appSource.indexOf('function _copilotTopPatientsByVisits');
 const normalizeEnd = appSource.indexOf('function _copilotRenderThread', normalizeStart);

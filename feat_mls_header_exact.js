@@ -7,10 +7,9 @@
  *
  *  hx-3.0.0: the v2 dark two-row header layout is GONE (superseded by the
  *  rail shell). This module now keeps ONLY its non-layout responsibilities:
- *   1. ACCOUNT GATING (unchanged, security-relevant): the personal accounts
- *      leeschaeffer@gmail.com / leeschaeffer41@gmail.com never get admin
- *      (isAdmin forced off + Admin hidden everywhere). Real-admin business
- *      accounts keep Admin, reachable via the Menu dropdown.
+ *   1. ACCOUNT GATING: Admin visibility follows the authenticated server
+ *      `isAdmin` claim. The shared frontend contains no personal-email policy;
+ *      authorization remains server-enforced.
  *   2. MENU RELOCATION: Orders lives in the Menu dropdown (not the rail);
  *      Admin joins the Menu only for real admins.
  *   3. LABEL CLEANUP: de-emojify nav labels (the calm rail uses clean text;
@@ -21,9 +20,6 @@
 ;(function () {
   "use strict";
   var VERSION = "hx-3.0.0";
-  var OWNER = "leeschaeffer41";
-  /* Personal accounts that must NEVER have admin (admin = business account only). */
-  var PERSONAL_EMAILS = ["leeschaeffer@gmail.com", "leeschaeffer41@gmail.com"];
   try { if (window.__mlsHx && window.__mlsHx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -48,30 +44,14 @@
     try { return window.bkUser || null; } catch (e) {}
     return null;
   }
-  function curEmail() {
-    var u = getBk();
-    if (u && u.email) { try { return String(u.email).toLowerCase(); } catch (e) {} }
-    return "";
-  }
-  function isPersonal() { return PERSONAL_EMAILS.indexOf(curEmail()) >= 0; }
-  /* real admin = an account the server marked isAdmin AND not a personal account */
+  /* The authenticated server claim controls UI visibility. Email strings in a
+     browser bundle are neither authorization nor a maintainable account policy. */
+  function isPersonal() { return false; } /* compatibility only; retired policy */
   function effectiveAdmin() {
     var u = getBk(); if (!u) return false;
-    if (isPersonal()) return false;
     return !!u.isAdmin;
   }
-  /* Defense in depth: if a personal account somehow carries isAdmin, force it off
-   * in the app's own model and re-run the app's gating so every admin-only bit hides.
-   * (The business account is untouched.) Runs once per state; idempotent. */
-  function gateAccount() {
-    try {
-      var u = getBk();
-      if (u && isPersonal() && u.isAdmin) {
-        u.isAdmin = false;
-        try { if (typeof applyAccessUI === "function") applyAccessUI(); } catch (e) {}
-      }
-    } catch (e) {}
-  }
+  function gateAccount() { return effectiveAdmin(); }
 
   /* hx-3.0.0: only two small rules remain — hide Orders/Admin from the rail
    * (they live in the Menu) and keep relocated Menu rows readable on the
@@ -158,7 +138,7 @@
       if (effectiveAdmin()) {
         placeInMenu(a, menu);
       } else {
-        /* personal / non-admin: never in the menu, never visible */
+        /* non-admin: never in the menu, never visible */
         if (a.parentElement === menu) { /* move back out of the menu */
           clearMenuRow(a); a.classList.remove("hx-menurow"); a.removeAttribute("data-hx-relocated");
           var navw = $("mlsRdNav"); if (navw) navw.appendChild(a);

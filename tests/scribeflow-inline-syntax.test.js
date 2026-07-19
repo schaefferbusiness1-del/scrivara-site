@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf8');
 const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
 const errors = [];
@@ -14,7 +15,11 @@ while ((match = re.exec(html))) {
   const code = match[2].replace(/^\s*<!--/, '').replace(/-->\s*$/, '');
   if (!code.trim()) continue;
   count++;
-  try { Function(code); } catch (err) { errors.push('inline script ' + count + ': ' + err.message); }
+  try {
+    new vm.Script('(function(){\n' + code + '\n})', { filename: 'ScribeFlow-inline-' + count + '.js' });
+  } catch (err) {
+    errors.push('inline script ' + count + ': ' + String(err.stack || err.message));
+  }
 }
 assert(count > 0, 'no inline scripts were checked');
 assert.deepStrictEqual(errors, [], errors.join('\n'));

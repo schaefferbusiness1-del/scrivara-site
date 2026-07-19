@@ -629,6 +629,7 @@
       '#mlsFpQf .qf-card{width:600px;max-width:93vw;background:var(--card,#fff);color:var(--ink,#15243a);border:1px solid var(--line,#E4E1D8);border-radius:16px;box-shadow:0 24px 70px rgba(15,25,40,.5);overflow:hidden}' +
       '#mlsFpQfInput{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line,#E4E1D8);padding:15px 17px;font-size:16px;background:transparent;color:inherit;outline:none}' +
       '#mlsFpQfList{max-height:52vh;overflow:auto;padding:6px}' +
+      '#mlsFpQfStatus{display:none;margin:0 12px 10px;padding:9px 11px;border:1px solid #E4C7C7;border-radius:9px;background:#FFF5F5;color:#7A2525;font-size:12.5px;font-weight:650}' +
       '#mlsFpQfList .qf-h{font-size:10.5px;font-weight:800;letter-spacing:.7px;opacity:.55;padding:8px 12px 3px;text-transform:uppercase}' +
       '#mlsFpQfList .qf-it{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;cursor:pointer;font-size:14px}' +
       '#mlsFpQfList .qf-it.sel,#mlsFpQfList .qf-it:hover{background:rgba(33,104,201,.12)}' +
@@ -640,11 +641,11 @@
       var ov = document.createElement('div');
       ov.id = 'mlsFpQf';
       ov.innerHTML = '<div class="qf-card"><input id="mlsFpQfInput" placeholder="Find anything — screens, menu items, templates, patients, actions…" autocomplete="off">' +
-        '<div id="mlsFpQfList"></div></div>';
+        '<div id="mlsFpQfList"></div><div id="mlsFpQfStatus" role="status" aria-live="polite"></div></div>';
       document.body.appendChild(ov); remember(ov);
       ov.addEventListener('click', function (e) { if (e.target === ov) qfClose(); });
       var inp = $('mlsFpQfInput');
-      inp.addEventListener('input', function () { qfRender(inp.value); });
+      inp.addEventListener('input', function () { qfClearError(); qfRender(inp.value); });
       inp.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') qfClose();
         else if (e.key === 'ArrowDown') { e.preventDefault(); qfSel = Math.min(qfSel + 1, qfItems.length - 1); qfPaint(); }
@@ -653,8 +654,83 @@
       });
     }
     function qfClose() { var o = qfEl(); if (o) o.style.display = 'none'; }
+    function qfClearError() {
+      var status = $('mlsFpQfStatus');
+      if (!status) return;
+      status.textContent = ''; status.style.display = 'none';
+    }
+    function qfFail(message) {
+      var status = $('mlsFpQfStatus');
+      if (status) { status.textContent = String(message || 'That result could not be opened safely.'); status.style.display = 'block'; }
+      var input = $('mlsFpQfInput'); if (input) { try { input.focus(); } catch (e) {} }
+      return false;
+    }
+    /* __MLS_QF_CANONICAL_START__ */
+    function qfSessionContext() {
+      var account = '';
+      try { account = String(window.__mlsSessionAccount || (typeof window.getSessionEmail === 'function' ? window.getSessionEmail() : '') || '').trim().toLowerCase(); } catch (e) {}
+      var epoch = null;
+      try { if (typeof window.__mlsSessionEpoch === 'number' && isFinite(window.__mlsSessionEpoch)) epoch = Number(window.__mlsSessionEpoch); } catch (e2) {}
+      return { account: account, epoch: epoch };
+    }
+    function qfSameSession(expected, live) {
+      expected = expected || {}; live = live || {};
+      if (String(expected.account || '') !== String(live.account || '')) return false;
+      if (expected.epoch != null || live.epoch != null) return Number(expected.epoch) === Number(live.epoch);
+      return true;
+    }
+    function qfPatientRoute(indexedPatient, expectedSession) {
+      var id = String(indexedPatient && indexedPatient.id || '').trim();
+      if (!id) return qfFail('This patient result has no stable chart ID. Nothing was changed; search for the exact chart from Patients.');
+      if (!qfSameSession(expectedSession, qfSessionContext())) {
+        return qfFail('The signed-in account changed. Nothing was selected; search again in the current account.');
+      }
+      var current = [];
+      try {
+        current = ((typeof window.getPatients === 'function' ? window.getPatients() : []) || []).filter(function (p) {
+          return p && String(p.id || '').trim() === id;
+        });
+      } catch (e0) { current = []; }
+      if (current.length !== 1) return qfFail('That chart is no longer uniquely available. Nothing was selected; search again.');
+      if (typeof window.showView !== 'function' ||
+          (typeof window.openPatient !== 'function' && typeof window.selectPatient !== 'function') ||
+          typeof window.getActivePtId !== 'function' || typeof window.activePatient !== 'function') {
+        return qfFail('The patient workspace is still loading. Nothing was selected; try again in a moment.');
+      }
+      var patient = current[0], opened = false;
+      try {
+        if (typeof window.openPatient === 'function') { window.openPatient(id); opened = true; }
+        else if (typeof window.selectPatient === 'function') { window.selectPatient(id); opened = true; }
+      } catch (e1) { opened = false; }
+      var active = null, activeId = '';
+      try { activeId = String(window.getActivePtId() || '').trim(); active = window.activePatient(); } catch (e2) {}
+      if (!opened || activeId !== id || !active || String(active.id || '').trim() !== id) {
+        return qfFail('MLS could not verify the selected chart. The Visit screen was not opened; choose the exact chart from Patients.');
+      }
+      try { window.showView('visit'); } catch (e3) {
+        return qfFail('The Visit workspace could not open. The Find window stayed open so you can try again.');
+      }
+      try {
+        var nameInput = $('heroPtName'), dobInput = $('heroPtDob');
+        if (nameInput) nameInput.value = patient.name || '';
+        if (dobInput) dobInput.value = patient.dob || '';
+        if (typeof window._heroSyncName === 'function') window._heroSyncName();
+        if (typeof window.renderPatientBar === 'function') window.renderPatientBar();
+      } catch (e4) {}
+      try {
+        activeId = String(window.getActivePtId() || '').trim(); active = window.activePatient();
+        if (activeId !== id || !active || String(active.id || '').trim() !== id ||
+            (window.__mlsCurrentView && window.__mlsCurrentView !== 'visit')) {
+          return qfFail('MLS could not verify the patient in the Visit workspace. Find stayed open; choose the exact chart from Patients.');
+        }
+      } catch (e5) { return qfFail('MLS could not verify the patient in the Visit workspace. Find stayed open; try again.'); }
+      safeToast('Active patient: ' + (patient.name || 'selected chart'), 'ok');
+      return true;
+    }
+    /* __MLS_QF_CANONICAL_END__ */
     function buildIndex() {
       var out = [];
+      var patientSession = qfSessionContext();
       /* screens + menu items straight from the DOM (always current) */
       var seen = {};
       Array.prototype.forEach.call(document.querySelectorAll('[onclick*="showView("]'), function (el) {
@@ -707,14 +783,7 @@
           if (!p || !p.name) return;
           out.push({
             g: 'Patients', label: '🧑 ' + String(p.name), sub: p.dob ? ('DOB ' + p.dob) : '',
-            go: function () {
-              try {
-                if (typeof showView === 'function') showView('visit');
-                var inp = $('heroPtName');
-                if (inp) { inp.value = p.name; try { if (typeof _heroSyncName === 'function') _heroSyncName(); } catch (e) {} inp.dispatchEvent(new Event('input', { bubbles: true })); }
-                safeToast('Active patient: ' + p.name, 'ok');
-              } catch (e) {}
-            }
+            go: function () { return qfPatientRoute(p, patientSession); }
           });
         });
       } catch (e) {}
@@ -757,18 +826,31 @@
         el.addEventListener('click', function () { qfGo(+el.getAttribute('data-i')); });
       });
     }
-    function qfGo(i) { var it = qfItems[i]; qfClose(); if (it) { try { it.go(); } catch (e) {} } }
+    function qfGo(i) {
+      var it = qfItems[i]; if (!it) return qfFail('Choose a result first.');
+      try { if (it.go() === false) return false; }
+      catch (e) { return qfFail('That result could not be opened safely. Nothing was changed.'); }
+      qfClose(); return true;
+    }
     if (typeof window.mlsQuickFind === 'function' && !window.mlsQuickFind.__fpWrap) {
       FP._orig.quickFind = window.mlsQuickFind;
       var qfOpen = function () {
         qfEnsure();
         qfIndex = buildIndex(); /* fresh every open - fixes stale-after-one-use */
         var o = qfEl(); o.style.display = 'flex';
-        var inp = $('mlsFpQfInput'); inp.value = ''; qfRender(''); setTimeout(function () { inp.focus(); }, 30);
+        var inp = $('mlsFpQfInput'); inp.value = ''; qfClearError(); qfRender(''); setTimeout(function () { inp.focus(); }, 30);
       };
       qfOpen.__fpWrap = true;
       window.mlsQuickFind = qfOpen;
     }
+    listen(window, 'mls:session-boundary', function () {
+      var o = qfEl();
+      qfIndex = []; qfItems = [];
+      if (!o || o.style.display === 'none') return;
+      var inp = $('mlsFpQfInput'); if (inp) inp.value = '';
+      qfIndex = buildIndex(); qfRender('');
+      qfFail('The signed-in account changed. Search again in the current account.');
+    });
     FP.fixes.quickFindPro = true;
   } catch (e) { FP.fixes.quickFindPro = 'error: ' + e.message; }
 

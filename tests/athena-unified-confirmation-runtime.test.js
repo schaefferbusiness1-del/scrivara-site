@@ -175,7 +175,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert.strictEqual(go.getAttribute('data-mls-preview-hash'), manifest.previewHash);
   assert(/Confirm write reviewed note/i.test(go.getAttribute('aria-label')));
   const card = byId.mlsAthenaUnifiedConfirm.children[0];
-  assert(/MANUAL/.test(card.innerHTML) && /BLOCKED/.test(card.innerHTML), 'manual and blocked rows are not visible');
+  assert(/MANUAL|COMPLETE IN ATHENA/.test(card.innerHTML), 'manual final-action rows are not visible');
+  assert(/complete (?:billing|the exact order|final actions).+Athena/i.test(card.innerHTML), 'review does not visibly route final actions to Athena');
   assert(/Exact reviewed note\./.test(card.innerHTML), 'full note payload is not visible');
 
   go.listeners.click[0]({ target: go });
@@ -187,7 +188,9 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert.strictEqual(sent[1].taughtDestination.contextHash, taughtBinding.contextHash, 'confirmed execute changed the taught patient/writeflow binding');
   assert(!sent.some(message => message.action === 'sign_encounter'), 'Sign auto-chained from a newly written note');
   assert(/VERIFIED/.test(byId.mlsAthenaUnifiedReceipt.innerHTML), 'per-row verified receipt was not rendered');
-  assert(byId.mlsAthenaUnifiedReviewSign, 'verified note should offer a separate Sign review, not auto-run it');
+  assert(!byId.mlsAthenaUnifiedReviewSign, 'verified note must not offer an executable Sign review');
+  const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
+  assert(signRow && signRow.capability === 'manual' && signRow.action === '', 'Sign did not remain an immutable manual row after note verification');
 
   console.log('PASS unified Athena runtime: exact taught destination bound through probe + one confirmed execute, one page, per-row receipt, no Sign auto-chain');
 })().catch(error => {

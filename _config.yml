@@ -1,0 +1,129 @@
+# Production GitHub Pages publication boundary.
+#
+# GitHub Pages publishes this repository from the branch root with Jekyll 3.10.
+# The repository also contains extension source, test fixtures, staging snapshots,
+# prototypes, extension candidate source, and historical release archives.
+# HTML and ZIP files therefore fail closed: Jekyll excludes every one by
+# default, and `include` re-opens only the reviewed public pages.
+#
+# Keep the allowlist and tests/public-publication-boundary.test.js synchronized.
+# Candidate extension bytes remain excluded until a separately stamped release.
+
+# GitHub Pages otherwise injects jekyll-theme-primer and publishes its
+# generated assets/css/style.css. This application provides complete HTML/CSS
+# and keeps the production tree on the explicit reviewed-file allowlist below.
+theme: null
+
+exclude:
+  - ".git/"
+  - ".github/"
+  - ".codex-tools/"
+  - ".bundle/"
+  - ".jekyll-cache/"
+  - ".sass-cache/"
+  - "_site/"
+  - "node_modules/"
+  - "vendor/*"
+  - "vendor/**/*"
+  - "tests/"
+  - "scripts/"
+  - "api/"
+  - "tmp/"
+  - "tools/"
+  - "_ws_tools/"
+  - "*.md"
+  - "**/*.md"
+  - "package.json"
+  - "package-lock.json"
+  - "Gemfile"
+  - "Gemfile.lock"
+  - "pages-publication-inventory.json"
+  - "*.[Hh][Tt][Mm][Ll]"
+  - "**/*.[Hh][Tt][Mm][Ll]"
+  - "*.[Zz][Ii][Pp]"
+  - "**/*.[Zz][Ii][Pp]"
+  - "*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
+  - "**/*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
+  - "*_[Ss][Tt][Aa][Gg][Ii][Nn][Gg]_*.[Jj][Ss]"
+  - "**/*_[Ss][Tt][Aa][Gg][Ii][Nn][Gg]_*.[Jj][Ss]"
+  - "*_[Aa][Pp][Pp][Ee][Nn][Dd]_*.[Jj][Ss]"
+  - "bg_worker_block.[Jj][Ss]"
+  - "feat_mls_staging_pack1.js"
+  - "feat_mls_staging_exact_actions.js"
+  - "feat_mls_exact_encounter_verify.js"
+  - "feat_mls_review_request.js"
+  - "feat_mls_best_doctors.js"
+  - "legal-connect-ui.js"
+  - "legal-chart-fill-ui.js"
+  - "legal-tracker.js"
+  - "feat_mls_expert_top.js"
+  - "feat_mls_legal_exact.js"
+  - "feat_mls_legal_pay_setup.js"
+  - "feat_mls_legal_paywidget.js"
+  - "feat_mls_legalpack.js"
+  - "feat_mls_navfeat_keep.js"
+  - "feat_mls_staff_hub.js"
+  - "feat_mls_team_exact.js"
+  - "manifest.json"
+  - "background.js"
+  - "inject_dom.js"
+  - "destination_teach_navigation_guard.js"
+  - "content.js"
+  - "content.css"
+  - "popup.html"
+  - "popup.js"
+  - "mls-popup.js"
+  - "mls-popup.css"
+  - "offscreen.html"
+  - "offscreen.js"
+  - "feat_codes_driver.js"
+  - "ext_reviews_reader.js"
+  - "write_safety_guard.js"
+  - "review_screen.js"
+  - "teach_destination_memory.js"
+  - "expert-marketplace-ui.js"
+
+include:
+  # Public production navigation targets.
+  - "404.html"
+  - "appointment.html"
+  - "assist.html"
+  - "assist-privacy.html"
+  - "best-doctors-optout.html"
+  - "booking.html"
+  - "expert.html"
+  - "gbp-setup.html"
+  - "get-extension.html"
+  - "index.html"
+  - "intake.html"
+  - "lawyers.html"
+  - "patient-portal.html"
+  - "phone.html"
+  - "privacy.html"
+  - "review-finder.html"
+  - "ScribeFlow.html"
+  - "terms.html"
+
+  # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these
+  # are the install manifest and the production ScribeFlow UI module it loads.
+  - "phone-manifest.json"
+  - "feat_mls_force_full_phone.js"
+
+  # Exact same-origin clinical runtime libraries. Jekyll 3.10 filters a nested
+  # directory before it sees its children, then filters each child by basename.
+  # `vendor` opens traversal while the two excludes above deny every child;
+  # these unique basenames re-open only the six reviewed, provenance-pinned
+  # files. The generated-tree audit verifies their output paths and exact bytes.
+  - "vendor"
+  - "chart.umd-4.5.1.js"
+  - "xlsx.full-0.20.3.min.js"
+  - "pdf-6.1.200.min.mjs"
+  - "pdf.worker-6.1.200.min.mjs"
+  - "mammoth.browser-1.12.0.min.js"
+  - "jspdf.umd-4.2.1.min.js"
+
+  # Required for the existing branch-based custom-domain deployment.
+  - "CNAME"
+
+encoding: utf-8
+strict_front_matter: true

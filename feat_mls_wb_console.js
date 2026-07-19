@@ -1,7 +1,7 @@
-/* feat_mls_wb_console.js  ->  window.__mlsWbConsole  (wbc-1.2.0)
+/* feat_mls_wb_console.js  ->  window.__mlsWbConsole  (wbc-1.3.0)
  * --------------------------------------------------------------------------
- * MLS ASSISTANT - WRITEBACK DESTINATION CONSOLE + CHAT-DRIVEN WRITE + OPT-IN
- * SIGN-&-SAVE (Phase 2). All additive, built ON TOP of the existing gated write
+ * MLS ASSISTANT - WRITEBACK DESTINATION CONSOLE + CHAT-DRIVEN UNSIGNED WRITE.
+ * All additive, built ON TOP of the existing gated write
  * primitives - this module introduces NO new uncontrolled way to touch athenaOne.
  *
  *  1) DESTINATION CONTROL: a "Writeback destination" settings panel where the
@@ -21,17 +21,12 @@
  *     uniform .mlsac-sub). We hide the redundant .mlswb-cap so the description
  *     shows once. Reversible (revert removes the style).
  *
- *  4) OPT-IN SIGN & SAVE (USER-INITIATED ONLY): a clearly-labelled "Sign & Save
- *     in Athena" action (button + chat command). It NEVER fires on its own - only
- *     when the doctor clicks it / confirms in chat. It (a) confirms the OPEN chart
- *     matches the active MLS patient by NAME + DOB (app-side read-only probe AND
- *     the extension's own gate), (b) writes the verified note, then (c) asks MLS
- *     Assist to click athenaOne's Sign & Save. HONEST STATUS: it reports "signed"
- *     ONLY if the extension confirms it signed. If the installed MLS Assist has no
- *     Sign & Save handler yet, it writes the verified UNSIGNED draft and says so -
- *     it never fakes a signature and never signs a chart it could not confirm.
+ *  4) FINAL-ACTION POLICY: electronic signature, attestation, billing, orders,
+ *     prescribing, and claim submission are completed directly in Athena. Chat
+ *     explains that boundary and may open the immutable review, but never invokes
+ *     an extension final-action handler.
  *
- * SAFETY: never signs autonomously; never signs/writes without a confident
+ * SAFETY: never signs; never writes without a confident
  * name+DOB match; never deletes; stores only routing labels (no PHI). Additive,
  * idempotent, reversible (window.__mlsWbConsole.revert()). ASCII-only. Chains
  * safely with the Phase-1 self-fix parseCommand wrapper.
@@ -40,7 +35,7 @@
   'use strict';
   try { if (window.__mlsWbConsole && window.__mlsWbConsole.installed) return; } catch (e) { return; }
 
-  var VERSION = 'wbc-1.2.0';
+  var VERSION = 'wbc-1.3.0';
   var ASSET = 'feat_mls_wb_console.js';
   var STYLE_ID = 'mlsWbcStyle';
   var DEDUPE_ID = 'mlsWbcDedupeStyle';
@@ -298,62 +293,17 @@
     }, function (e) { return { ok: false, reason: 'Could not verify the patient (' + (e && e.message || e) + ').' }; });
   }
 
-  /* the verified write, then ask the extension to click athenaOne Sign & Save */
+  /* Electronic signature is deliberately not available through MLS. */
   function signSaveFlow() {
-    /* ONE write surface: the unified Athena review owns note writes and Sign.
-       When it is installed, a chat-driven write request opens that same
-       immutable review instead of running an independent write+sign lane —
-       Sign there unlocks only after this exact note's write is verified. */
-    var wfU = window.__mlsWriteFlow, unifiedBtn = document.getElementById('pushAllEmrBtn');
-    if (wfU && wfU.installed && unifiedBtn) {
-      try { unifiedBtn.click(); } catch (eU) {}
-      return Promise.resolve('Opened the one unified Athena review instead of auto-writing. Run the read-only check there; one Confirm & write click performs exactly one action, and Sign unlocks only after the verified write.');
-    }
-    if (signRunning) return Promise.resolve('Already running.');
-    signRunning = true;
-    var release = function () { signRunning = false; };
-    var note = currentNoteText();
-    openTL('Write + Sign & Save to Athena', 'Writes the note, then signs & saves it in athenaOne (you chose Sign & Save). Confirms patient name + DOB first.');
-    if (!trim(note)) { step('No note text to write - generate or open the note first. Nothing was written or signed.', 'fail'); release(); return Promise.resolve('No note text - nothing was written or signed.'); }
-    step('Confirming the open chart matches the active MLS patient (name + DOB)...', 'run');
-    return confirmPatient().then(function (c) {
-      if (!c.ok) {
-        step((c.mismatch ? 'STOP - ' : 'STOP - ') + c.reason + ' Nothing was written or signed.', 'fail');
-        release(); return 'Stopped - ' + c.reason + ' Nothing was written or signed.';
-      }
-      step('Patient confirmed: ' + c.chartId.name + (trim(c.chartId.dob) ? ', DOB ' + normDob(c.chartId.dob) : '') + '. Writing the verified note...', 'run');
-      return bridge('mlsAppPasteNote', { note: String(note) }, 'mlsAppPasteResult', 60000).then(function (resp) {
-        resp = resp || {};
-        if (resp.blocked) { step('STOP - the extension patient gate blocked the write. Nothing was written or signed.', 'fail'); release(); return 'Blocked by the patient gate - nothing was written or signed.'; }
-        if (resp.error === 'noext' || resp.error === 'timeout') { step('MLS Assist did not respond - nothing was written or signed.', 'fail'); release(); return 'MLS Assist did not respond - nothing was written or signed.'; }
-        if (!(resp.ok && resp.confirmed)) { step('Could not confirm the note landed - nothing was signed. Check the chart before signing.', 'fail'); release(); return 'Could not confirm the write - nothing was signed.'; }
-        step('Note written and verified. Asking athenaOne to Sign & Save (you chose this)...', 'run');
-        return bridge('mlsAppSignSave', {}, 'mlsAppSignSaveResult', 30000).then(function (r2) {
-          r2 = r2 || {};
-          if (r2.ok && r2.signed) {
-            step('Signed & saved in athenaOne - confirmed.', 'done');
-            release(); return 'Done - the note was written, signed and saved in athenaOne (confirmed).';
-          }
-          var why = (r2.error === 'sign-unsupported' || r2.unhandled || /unknown|no handler|no response/i.test(String(r2.error || '')))
-            ? 'your MLS Assist extension does not have the Sign & Save handler yet'
-            : ('the sign step did not confirm (' + (r2.error || r2.warn || 'unknown') + ')');
-          step('Wrote the verified UNSIGNED draft, but ' + why + ' - so I did NOT sign. Your draft is in the chart; review and Sign in athenaOne, or update MLS Assist to enable auto Sign & Save.', 'warn');
-          release(); return 'Wrote the verified unsigned draft. I did NOT sign because ' + why + '. Nothing was signed.';
-        });
-      });
-    }, function (e) { step('Could not verify the patient - nothing was written or signed.', 'fail'); release(); return 'Could not verify the patient - nothing was written or signed.'; });
-  }
-
-  function confirmSignDialog() {
-    var mlsPt = safe(function () { return isFn(win('activePatient')) ? (win('activePatient')() || {}) : {}; }, {}) || {};
-    var who = trim(mlsPt.name) || 'the active patient';
-    return safe(function () {
-      return window.confirm('Sign & Save in athenaOne for ' + who + '?\n\nThis will write the note AND sign & save it in the OPEN athenaOne chart (only because you clicked Sign & Save). MLS first confirms the open chart matches ' + who + ' by name + DOB, and will stop if it cannot. Continue?');
-    }, false);
+    var unifiedBtn = document.getElementById('pushAllEmrBtn');
+    if (unifiedBtn) { try { unifiedBtn.click(); } catch (eU) {} }
+    var message = 'Complete Sign & Save directly in Athena after reviewing the unsigned note. MLS never applies an electronic signature or finalizes an encounter.';
+    try { if (typeof window.toast === 'function') window.toast(message, ''); } catch (eT) {}
+    return Promise.resolve(message);
   }
 
   /* ================================================================
-   *  PART 4 - launcher + sign buttons (next to the write actions)
+   *  PART 4 - writeback destination launcher
    * ================================================================ */
   function makeLaunch() {
     var b = document.createElement('button');
@@ -363,24 +313,6 @@
     b.addEventListener('click', function (ev) { ev.preventDefault(); open(); });
     return b;
   }
-  function makeSignBtn() {
-    var wrap = document.createElement('span'); wrap.setAttribute('data-mlswbc', '1'); wrap.style.display = 'inline-block';
-    var b = document.createElement('button');
-    b.type = 'button'; b.className = 'mlswbc-sign'; b.setAttribute('data-mlswbc-sign', '1');
-    b.textContent = 'Sign & Save in Athena';
-    b.title = 'Writes the note AND signs & saves it in athenaOne (only when you click this).';
-    b.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      if (signRunning) return;
-      if (!confirmSignDialog()) { step('Cancelled - nothing was written or signed.', 'note'); return; }
-      signSaveFlow();
-    });
-    wrap.appendChild(b);
-    var cap = document.createElement('span'); cap.className = 'mlswbc-signcap';
-    cap.textContent = 'Choosing Sign & Save writes the note and signs & saves it in athenaOne for you (after a name + DOB match). Use "Write note to Athena chart" for an unsigned draft you sign yourself.';
-    wrap.appendChild(cap);
-    return wrap;
-  }
   function injectLaunchers() {
     safe(function () {
       var hosts = [$('emrCard'), $('procNoteCard')];
@@ -388,15 +320,14 @@
         var h = hosts[i];
         if (!h) continue;
         if (!h.querySelector('.mlswbc-launch')) h.appendChild(makeLaunch());
-        if (!h.querySelector('[data-mlswbc-sign]')) h.appendChild(makeSignBtn());
       }
     });
   }
 
   /* ================================================================
-   *  PART 5 - chat-driven, confirm-gated writeback + sign
+   *  PART 5 - chat-driven, confirm-gated unsigned writeback
    * ================================================================ */
-  var pending = null; /* { kind:'opnote'|'note'|'sign', where:string } */
+  var pending = null; /* { kind:'opnote'|'note', where:string } */
 
   function hasConfigDest(low) {
     return /(under|into|in|to|onto|on)\s+(the\s+)?(pe\b|physical exam|procedure doc|procedure documentation|assessment|plan|a\s*\/?\s*p\b|hpi\b|ros\b|diagnos|orders?\b|cpt\b|billing)/.test(low)
@@ -421,7 +352,7 @@
     lines.push((kind === 'opnote' ? 'Op-note' : 'Clinical note') + ' writeback (UNSIGNED draft) - here is exactly what will happen:');
     lines.push('1) Destination: ' + where + '.');
     lines.push('2) I first confirm the OPEN athenaOne chart matches the active MLS patient by NAME + DOB. On any mismatch or uncertainty I REFUSE and nothing is written.');
-    lines.push('3) I write the ' + noun + ' as an UNSIGNED draft. For this path I do NOT sign - you review and sign. (Say "sign and save" instead if you want me to sign & save.)');
+    lines.push('3) I write the ' + noun + ' as an UNSIGNED draft. You review it and complete Sign & Save directly in Athena; MLS never signs.');
     if (!noteText) lines.push('Heads up: I do not see generated ' + noun + ' text yet. Generate or open it first, or the write will stop with "no text to write".');
     lines.push('I report success ONLY if athenaOne reads the text back as confirmed.');
     lines.push('');
@@ -430,27 +361,12 @@
   }
 
   function proposeSign() {
-    var noteText = currentNoteText();
-    pending = { kind: 'sign', where: wbLabel('note') };
-    var lines = [];
-    lines.push('Sign & Save in athenaOne - here is exactly what will happen (you asked for this):');
-    lines.push('1) I confirm the OPEN athenaOne chart matches the active MLS patient by NAME + DOB. On any mismatch or uncertainty I REFUSE - nothing is written or signed.');
-    lines.push('2) I write the verified note into the chart.');
-    lines.push('3) I then ask MLS Assist to click athenaOne\'s Sign & Save for you.');
-    lines.push('Honest note: if your installed MLS Assist does not have the Sign & Save handler yet, I will write the verified UNSIGNED draft and tell you it was NOT signed - I never fake a signature.');
-    if (!noteText) lines.push('Heads up: I do not see generated note text yet. Generate or open it first.');
-    lines.push('');
-    lines.push('Reply "confirm" to write + Sign & Save, or "cancel" to stop.');
-    return { matched: true, reply: lines.join('\n') };
+    return { matched: true, reply: 'Complete Sign & Save directly in Athena after reviewing the unsigned note. MLS never applies an electronic signature, attests, or finalizes an encounter. Use “write note to Athena” if you want to confirm an unsigned draft write first.' };
   }
 
   function doConfirm() {
     var p = pending; pending = null;
     if (!p) return null;
-    if (p.kind === 'sign') {
-      signSaveFlow();
-      return 'Starting write + Sign & Save. Watch the status panel that just opened: I confirm name + DOB, write the verified note, then sign & save - and I only report "signed" if athenaOne confirms it. If the extension cannot sign yet, I will say so and leave a verified unsigned draft.';
-    }
     var modName = p.kind === 'opnote' ? '__mlsOpWb' : '__mlsAthenaWriteback';
     var mod = win(modName);
     if (!mod) return "The writeback module isn't loaded anymore - nothing was written. Reload the page and try again.";

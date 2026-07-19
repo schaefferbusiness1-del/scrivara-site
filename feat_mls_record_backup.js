@@ -84,6 +84,23 @@
   function prune(keep) {
     allSess().then(function (list) { for (var i = keep; i < list.length; i++) dropSess(list[i].sess); });
   }
+  function purge() {
+    stopBackup();
+    safe(function () { if (_db) _db.close(); });
+    _db = null;
+    return new Promise(function (resolve) {
+      if (!window.indexedDB || typeof indexedDB.deleteDatabase !== "function") { resolve(false); return; }
+      var settled = false;
+      function done(ok) { if (settled) return; settled = true; resolve(ok); }
+      try {
+        var request = indexedDB.deleteDatabase(DB_NAME);
+        request.onsuccess = function () { done(true); };
+        request.onerror = function () { done(false); };
+        request.onblocked = function () { done(false); };
+        setTimeout(function () { done(false); }, 1500);
+      } catch (e) { done(false); }
+    });
+  }
 
   /* ---------------- backup recorder ---------------- */
   var rec = null, stream = null, sessId = null;
@@ -356,6 +373,7 @@
     restarts: function () { return restarts; },
     _startBackup: startBackup,
     _stopBackup: stopBackup,
+    purge: purge,
     revert: revert
   };
 })();

@@ -703,10 +703,25 @@
   // ============================================================
   //  Process one schedule-read result (READ-ONLY)
   // ============================================================
-  var _lastTextKey = '';
+  var _ingestSeenObjects = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _ingestByRequest = Object.create(null), _ingestRequestOrder = [];
+  var _ingestStats = { processed: 0, deduped: 0 };
+  function ingestRequestId(r) {
+    return clean(r && (r.requestId || r.id || (r.receipt && r.receipt.requestId) || (r.providerRosterReceipt && r.providerRosterReceipt.requestId)) || '');
+  }
   function ingestResp(resp) {
-    return safe(function () {
-      var r = resp || {};
+    var r = resp || {}, requestId = ingestRequestId(r), cached;
+    if (_ingestSeenObjects && r && typeof r === 'object' && _ingestSeenObjects.has(r)) {
+      _ingestStats.deduped++;
+      return _ingestSeenObjects.get(r);
+    }
+    if (requestId && Object.prototype.hasOwnProperty.call(_ingestByRequest, requestId)) {
+      _ingestStats.deduped++;
+      cached = _ingestByRequest[requestId];
+      if (_ingestSeenObjects && r && typeof r === 'object') _ingestSeenObjects.set(r, cached);
+      return cached;
+    }
+    var result = safe(function () {
       /* Snapshot legacy calendar/provider selections before the exact Athena
          roster merge. A fresh response may arrive before any picker/list call;
          mergeIntoCalendar() would otherwise discard a weak uncredentialed old
@@ -846,6 +861,14 @@
       notifyRosterUpdated(afterList, receipt);
       return diag;
     }, null);
+    _ingestStats.processed++;
+    if (_ingestSeenObjects && r && typeof r === 'object') _ingestSeenObjects.set(r, result);
+    if (requestId) {
+      _ingestByRequest[requestId] = result;
+      _ingestRequestOrder.push(requestId);
+      if (_ingestRequestOrder.length > 64) delete _ingestByRequest[_ingestRequestOrder.shift()];
+    }
+    return result;
   }
 
   // ---------- read-only message listener ----------
@@ -854,11 +877,7 @@
       var d = e && e.data;
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
       var r = d.resp || {};
-      // de-dupe identical back-to-back deliveries
-      var key = S(r.text).length + '|' + (Array.isArray(r.providers) ? r.providers.length : 0) + '|' + (Array.isArray(r.providerRoster) ? r.providerRoster.length : 0) + '|' + (Array.isArray(r.appts) ? r.appts.length : 0) + '|' + S(r.providerRosterReceipt && r.providerRosterReceipt.reason);
-      if (key === _lastTextKey) { ingestResp(r); return; }
-      _lastTextKey = key;
-      ingestResp(r);   // r is never mutated or forwarded
+      ingestResp(r);   // request/object de-dupe lives at the ingestion choke point
     });
   }
 
@@ -914,6 +933,7 @@
     beginOperation: beginOperation,
     getReceipt: receiptSnapshot,
     getDiag: function () { return lastDiag; },
+    getIngestStats: function () { return { processed: _ingestStats.processed, deduped: _ingestStats.deduped }; },
     notify: function () { notifyRosterUpdated(listEntries(), lastReceipt); },
     _makeEntry: makeEntry,
     _canonicalName: canonicalProviderName,

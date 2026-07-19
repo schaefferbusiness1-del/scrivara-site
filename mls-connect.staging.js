@@ -341,8 +341,20 @@
     var k=(e.key||'').toLowerCase();
     if((e.metaKey||e.ctrlKey) && k==='k'){ e.preventDefault(); e.stopPropagation(); toggle(); }
   }
-  document.addEventListener('keydown', onKey, true);
-  window.__mlsCmdK={ open:open, close:close, toggle:toggle };
+  /* Compatibility API only. Canonical Find owns the only Ctrl/Cmd+K capture
+     listener (feat_mls_command_palette.js). Keeping this old listener alive
+     made both overlays open in one same-document event because
+     stopPropagation() does not stop sibling listeners on document. */
+  function canonicalOpen(){
+    close();
+    try{ if(typeof window.mlsQuickFind==='function'){ window.mlsQuickFind(); return true; } }catch(e){}
+    return false;
+  }
+  function canonicalClose(){
+    close();
+    try{ if(typeof window.mlsQuickFindClose==='function') window.mlsQuickFindClose(); }catch(e){}
+  }
+  window.__mlsCmdK={ open:canonicalOpen, close:canonicalClose, toggle:canonicalOpen, compatibilityOnly:true, owner:'canonical-find' };
 })();
 
 
@@ -573,7 +585,14 @@
   if (window.__mlsSync) return;
   function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
-  function email(){ return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null); }
+  function email(){ return safe(function(){
+    var e='';
+    if(typeof window.getSessionEmail==='function')e=trim(window.getSessionEmail());
+    if(!e&&typeof session!=='undefined'&&session)e=trim(session.email);
+    if(!e&&window.bkUser)e=trim(window.bkUser.email);
+    e=e.toLowerCase();
+    return /^[\w.+-]+@[\w.-]+\.\w+$/.test(e)?e:null;
+  }, null); }
   function key(){ var e=email(); return e?('sf_u::'+e+'::mlsSyncLog'):null; }
   function getLog(){ var k=key(); if(!k) return []; return safe(function(){ var v=JSON.parse(localStorage.getItem(k)||'[]'); return Array.isArray(v)?v:[]; }, []); }
   function setLog(l){ var k=key(); if(!k) return; safe(function(){ localStorage.setItem(k, JSON.stringify(l.slice(-50))); }); }
@@ -656,7 +675,9 @@
   function patientLog(patientId){ return getLog().filter(function(e){return trim(e&&e.patientId)===trim(patientId);}); }
   function sendCounts(patientId){
     var out={verified:0,pending:0,failed:0,uncertain:0,total:0};
-    patientLog(patientId).forEach(function(e){var s=sendStatus(e);out[s]++;out.total++;});
+    /* Only mutation attempts belong in the send badge. Read-only review
+       openings, clipboard actions, and Athena pulls are not failed sends. */
+    patientLog(patientId).forEach(function(e){if(!e||e.dir!=='push')return;var s=sendStatus(e);out[s]++;out.total++;});
     return out;
   }
   function patientStatus(){
@@ -682,7 +703,7 @@
   function state(){
     var log=getLog(), ps=patientStatus(), c=ps.sends;
     var errors=c.failed+c.uncertain;
-    var sends=log.filter(function(e){return e.dir!=='pull';});
+    var sends=log.filter(function(e){return e&&e.dir==='push';});
     var last=log.length?log[log.length-1]:null;
     return { errors:errors, count:sends.length, last:last, total:log.length, patient:ps, verified:c.verified, pending:c.pending, failed:c.failed, uncertain:c.uncertain };
   }
@@ -794,10 +815,10 @@
 
   /* observe app Athena actions (passive — does not alter handlers) */
   var ACTIONS=[
-    {re:/pushEntireVisitToAthena/, label:'Visit → Athena', target:'visit', dir:'push'},
-    {re:/pushSuperbillToAthena/, label:'Superbill → Athena', target:'superbill', dir:'push'},
-    {re:/pushHistoryNoteToAthena/, label:'Note → Athena', target:'note', dir:'push'},
-    {re:/copyForEMR/, label:'Copied for EMR/Athena', target:'copy', dir:'push'},
+    {re:/pushEntireVisitToAthena/, label:'Athena review opened', target:'visit', dir:'review'},
+    {re:/pushSuperbillToAthena/, label:'Superbill review opened', target:'superbill', dir:'review'},
+    {re:/pushHistoryNoteToAthena/, label:'Saved-note review opened', target:'note', dir:'review'},
+    {re:/copyForEMR/, label:'Copied note text', target:'copy', dir:'local'},
     {re:/pushToAthena|pushSuperbill/, label:'Push → Athena', target:'push', dir:'push'},
     {re:/pullPatientChartViaAssist|pullPatientFromAthena/, label:'Pulled chart', target:'chart', dir:'pull'}
   ];
@@ -806,7 +827,7 @@
       var el=e.target; var hops=0;
       while(el && hops<5){
         var oc=el.getAttribute&&el.getAttribute('onclick');
-        if(oc){ for(var i=0;i<ACTIONS.length;i++){ if(ACTIONS[i].re.test(oc)){ mark({label:ACTIONS[i].label, target:ACTIONS[i].target, dir:ACTIONS[i].dir, status:'uncertain', receiptVerified:false, detail:'UI action observed; no durable receipt was available.'}); return; } } }
+        if(oc){ for(var i=0;i<ACTIONS.length;i++){ if(ACTIONS[i].re.test(oc)){ if(ACTIONS[i].dir==='review'||ACTIONS[i].dir==='local')return; mark({label:ACTIONS[i].label, target:ACTIONS[i].target, dir:ACTIONS[i].dir, status:'uncertain', receiptVerified:false, detail:'UI action observed; no durable receipt was available.'}); return; } } }
         el=el.parentElement; hops++;
       }
     });
@@ -4286,7 +4307,7 @@
 })();
 
 ;/* === Outcome Study feature loader (loads mls-outcome-study.js) === */
-(function(){try{if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.staging.js?v=20260618b';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.staging.js?v=20260718stglib1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;/* === RVU feature loader (loads mls-rvu.staging.js) === */
 (function(){try{if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.staging.js?v=20260617a';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -4303,14 +4324,14 @@
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
-(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.staging.js?v=20260714id1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.staging.js?v=20260718stglib1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260717opnp160';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260717onf270';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260717oni280';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260718tl110';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */
-(function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.staging.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.staging.js?v=20260718stglib1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: feat_athena_autopull (one-click open-chart auto-pull; fixes false name-match safety stop; additive, reversible) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_autopull.js"]'))return;var s=document.createElement('script');s.src='feat_athena_autopull.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_athena_autopull.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: feat_athena_status_dot (always-on top-right Athena connection indicator; additive, reversible) ---- */
@@ -4429,7 +4450,7 @@
 
 ;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_mls_topbar_unify.js',V='1.0.10',api=window.__mlsTopbar,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260719tb110';s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{
   var A='feat_athena_signin_prompt.js';
@@ -4447,7 +4468,8 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260623k';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{var A='feat_mls_redesign.js',V='3.2.2',api=window.__mlsRedesign,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260719rd322';s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: version-aware same-document upgrade, additive and reversible. */
+;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260719cmd103';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* STAGING parity: version-aware Ctrl+K converges on canonical Find (cpal-1.0.3). */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_exact.js?v=20260624vx6';s.setAttribute('data-mls-asset','feat_mls_visit_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Visit design-exact rebuild (STAGING ONLY) — additive, reversible (delete this line + feat_mls_visit_exact.js) */
 
@@ -4489,6 +4511,98 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst215';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (STAGING) - one honest assistant panel, additive reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js (STAGING si-1.6.1) - exact provider/day/month identity + fresh verified histories */
 
+/* STAGING Staff Prep parity. Menu owns discovery; this receiver opens one
+   explicit, read-only day/month pull surface backed by the exact importer.
+   Opening the dialog never starts a pull and never writes to Athena. */
+;(function(){
+  'use strict';
+  try{if(window.__mlsStagingStaffPrep&&window.__mlsStagingStaffPrep.installed)return;}catch(e){return;}
+  var VERSION='ssp-1.0.0',OV='mlsStagingStaffPrep',STYLE='mlsStagingStaffPrepStyle',busy=false;
+  function byId(id){try{return document.getElementById(id);}catch(e){return null;}}
+  function safe(fn,d){try{return fn();}catch(e){return d;}}
+  function pad(n){return('0'+String(n)).slice(-2);}
+  function dayKey(d){d=d||new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  function monthKey(d){d=d||new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}
+  function setStatus(message,kind){var el=byId('mlsSspStatus');if(!el)return;el.textContent=String(message||'');el.setAttribute('data-kind',kind||'');}
+  function setBusy(on){busy=!!on;['mlsSspPullDay','mlsSspPullMonth'].forEach(function(id){var button=byId(id);if(button)button.disabled=busy;});}
+  function providerRows(){
+    var roster=safe(function(){return window.__mlsProviderRoster;},null);
+    var rows=roster&&typeof roster.list==='function'?safe(function(){return roster.list();},[]):[];
+    return Array.isArray(rows)?rows:[];
+  }
+  function populateProviders(){
+    var select=byId('mlsSspProvider');if(!select)return;
+    var prior=select.value||'all';select.innerHTML='';
+    var all=document.createElement('option');all.value='all';all.textContent='All providers';select.appendChild(all);
+    providerRows().forEach(function(row){
+      if(!row||!row.stableKey||!row.name)return;
+      var option=document.createElement('option');option.value='pv:'+encodeURIComponent(String(row.stableKey));option.textContent=String(row.name);select.appendChild(option);
+    });
+    var exists=false;for(var i=0;i<select.options.length;i++)if(select.options[i].value===prior){exists=true;break;}select.value=exists?prior:'all';
+    var receipt=safe(function(){return window.__mlsProviderRoster&&window.__mlsProviderRoster.getReceipt&&window.__mlsProviderRoster.getReceipt();},null);
+    setStatus(receipt&&receipt.complete===true
+      ?'Verified Athena provider roster ready. Choose a day or month; nothing runs until you press Pull.'
+      :'Choose All providers for a day pull. A verified Athena provider roster is required for clinician-specific or month-wide pulls.','');
+  }
+  function selectedProvider(){
+    var select=byId('mlsSspProvider'),value=select?String(select.value||'all'):'all';
+    if(value==='all')return 'all';
+    var roster=safe(function(){return window.__mlsProviderRoster;},null);
+    var row=roster&&typeof roster.resolve==='function'?safe(function(){return roster.resolve(value);},null):null;
+    if(!row||!row.stableKey||!row.name)throw new Error('That clinician is not uniquely verified in the current Athena roster. Pull one day for All providers, then choose the clinician again.');
+    var receipt=typeof roster.getReceipt==='function'?safe(function(){return roster.getReceipt();},null):null;
+    return{id:String(row.id||''),stableKey:String(row.stableKey),raw:String(row.raw||row.name),name:String(row.name),rosterVerified:!!(receipt&&receipt.complete===true)};
+  }
+  function summarize(result,label){
+    result=result||{};
+    if(result.ok!==true||result.complete!==true){setStatus(String(result.error||result.message||result.reason||('The '+label+' pull did not complete. Nothing was written to Athena.')),'err');return;}
+    setStatus(String(result.message||('The '+label+' schedule/history pull completed. Review the imported patients before using their history.')),'ok');
+  }
+  function run(kind){
+    if(busy)return;
+    var si=safe(function(){return window.__mlsSI;},null),method=kind==='month'?'pullMonth':'pull';
+    if(!si||typeof si[method]!=='function'){setStatus('The exact Athena schedule reader is still loading. Close Staff prep, wait a moment, and try again.','err');return;}
+    var provider;try{provider=selectedProvider();}catch(error){setStatus(error.message,'err');return;}
+    var input=byId(kind==='month'?'mlsSspMonth':'mlsSspDay'),value=input&&input.value;
+    if(!value){setStatus('Choose a '+kind+' first.','err');return;}
+    setBusy(true);setStatus('Reading the selected '+kind+' from Athena and verifying available patient histories…','busy');
+    var opts={provider:provider,includeHistory:true,onStatus:function(message,state){setStatus(message,state||'busy');}};opts[kind==='month'?'month':'date']=value;
+    Promise.resolve().then(function(){return si[method](opts);}).then(function(result){summarize(result,kind);},function(error){setStatus(String(error&&error.message||('The '+kind+' pull failed. Nothing was written to Athena.')),'err');}).then(function(){setBusy(false);});
+  }
+  function close(){var ov=byId(OV);if(ov)ov.style.display='none';}
+  function ensure(){
+    var ov=byId(OV);if(ov)return ov;
+    var style=document.createElement('style');style.id=STYLE;
+    style.textContent='#'+OV+'{position:fixed;inset:0;z-index:2147482500;background:rgba(26,33,28,.46);display:none;align-items:flex-start;justify-content:center;padding:9vh 16px 20px}#'+OV+' .ssp-card{width:min(680px,100%);background:var(--card,#fff);color:var(--ink,#1A211C);border:1px solid var(--line,#E7E5DD);border-radius:16px;box-shadow:0 24px 70px rgba(20,33,28,.28);padding:20px}#'+OV+' .ssp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}#'+OV+' h2{margin:0 0 4px;font:700 20px/1.25 inherit}#'+OV+' p{margin:0;color:var(--muted,#68736B);font-size:13px;line-height:1.5}#'+OV+' .ssp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}#'+OV+' label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700}#'+OV+' input,#'+OV+' select{height:40px;border:1px solid var(--line,#D6D2C6);border-radius:9px;background:var(--field-bg,#FCFBF8);color:inherit;padding:0 10px;font:500 13px inherit}#'+OV+' .ssp-actions{display:flex;gap:9px;flex-wrap:wrap}#'+OV+' button{min-height:40px;border:1px solid var(--line,#D6D2C6);border-radius:9px;background:var(--card,#fff);color:inherit;padding:0 14px;font:700 13px inherit;cursor:pointer}#'+OV+' button.ssp-primary{background:var(--brand-dk,#204034);border-color:var(--brand-dk,#204034);color:#fff}#'+OV+' button:disabled{opacity:.55;cursor:wait}#mlsSspStatus{margin-top:14px;padding:11px 12px;border-radius:9px;background:var(--soft,#F4F2EC);font-size:12.5px;line-height:1.45}#mlsSspStatus[data-kind="err"]{color:#9A2929;background:#FFF1F1}#mlsSspStatus[data-kind="ok"]{color:#1F6B45;background:#ECF8F1}@media(max-width:620px){#'+OV+'{padding:12px;align-items:center}#'+OV+' .ssp-grid{grid-template-columns:1fr}}';
+    (document.head||document.documentElement).appendChild(style);
+    ov=document.createElement('div');ov.id=OV;ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');ov.setAttribute('aria-labelledby','mlsSspTitle');
+    ov.innerHTML='<section class="ssp-card"><div class="ssp-head"><div><h2 id="mlsSspTitle">Staff prep</h2><p>Pull an exact Athena day or month, including available verified history. This is read-only and never opens, changes, signs, or sends an Athena encounter.</p></div><button type="button" id="mlsSspClose" aria-label="Close Staff prep">Close</button></div><div class="ssp-grid"><label>Provider<select id="mlsSspProvider"></select></label><label>Day<input id="mlsSspDay" type="date"></label><label>Month<input id="mlsSspMonth" type="month"></label></div><div class="ssp-actions"><button type="button" class="ssp-primary" id="mlsSspPullDay">Pull this day</button><button type="button" class="ssp-primary" id="mlsSspPullMonth">Pull this month</button><button type="button" id="mlsSspPrepNotes">Prep op notes for day</button></div><div id="mlsSspStatus" role="status" aria-live="polite"></div></section>';
+    document.body.appendChild(ov);
+    byId('mlsSspClose').addEventListener('click',close);
+    byId('mlsSspPullDay').addEventListener('click',function(){run('day');});
+    byId('mlsSspPullMonth').addEventListener('click',function(){run('month');});
+    byId('mlsSspPrepNotes').addEventListener('click',function(){var day=byId('mlsSspDay');if(day&&day.value&&typeof window.openOpPrep==='function'){close();window.openOpPrep(day.value);}else setStatus('Choose a day first; the op-note prep tool is still loading if this continues.','err');});
+    ov.addEventListener('mousedown',function(event){if(event.target===ov)close();});return ov;
+  }
+  function open(){
+    var ov=ensure();if(!ov)return false;
+    var day=byId('mlsSspDay'),month=byId('mlsSspMonth');if(day&&!day.value)day.value=dayKey();if(month&&!month.value)month.value=monthKey();
+    populateProviders();ov.style.display='flex';setTimeout(function(){var first=byId('mlsSspProvider');if(first)first.focus();},0);return true;
+  }
+  function onRequest(event){
+    var detail=event&&event.detail;if(!detail||detail.source!=='mls-topbar-menu'||!detail.requestId)return;
+    if(!open())return;
+    safe(function(){window.dispatchEvent(new CustomEvent('mls:menu-staff-prep-opened',{detail:{source:'mls-staging-staff-prep',requestId:detail.requestId}}));});
+  }
+  function onKey(event){if(event&&(event.key==='Escape'||event.key==='Esc')){var ov=byId(OV);if(ov&&ov.style.display!=='none'){event.preventDefault();event.stopImmediatePropagation();close();}}}
+  function revert(){
+    safe(function(){window.removeEventListener('mls:menu-staff-prep-request',onRequest);});safe(function(){document.removeEventListener('keydown',onKey,true);});
+    [OV,STYLE].forEach(function(id){var node=byId(id);if(node&&node.parentNode)node.parentNode.removeChild(node);});try{window.__mlsStagingStaffPrep.installed=false;}catch(e){}
+  }
+  window.addEventListener('mls:menu-staff-prep-request',onRequest);document.addEventListener('keydown',onKey,true);
+  window.__mlsStagingStaffPrep={installed:true,version:VERSION,revert:revert};
+})();
+
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_opnote_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_opnote_writeback.js?v=20260624wb1';s.setAttribute('data-mls-asset','feat_athena_opnote_writeback.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe op-note writeback (PE>Procedure Documentation>template, erase+insert; never signs), additive reversible */
@@ -4519,7 +4633,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item19: MLS Assistant fixes + canonical provider roster gate -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2115';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* STAGING parity: MLS Copilot Voice v2 */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260625su1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260714chk2922r1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260719chk2922r2';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 ;(function(){try{var A='feat_mls_voice_ai.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625a';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS — voice AI command layer: speech/NL -> chained intents -> existing app fns (additive, reversible: window.__mlsVoiceAI.revert()) */
@@ -4592,7 +4706,17 @@
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630as1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
 ;(function(){try{var A="feat_mls_legal_pay_setup.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630lps1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: legal Stripe pay setup (window.__mlsLegalPaySetup) */
 ;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sg1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
-;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714sa2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
+;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sa3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
 ;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
 
 ;(function(){try{var A="feat_mls_staging_pack1.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701sp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item80 (STAGING): pack1 -- Templates suite (upload files/folder w/ AI cleanup, starter pack, delete-all w/ backup+restore, std-line to bottom, always-add-line toggle, upload btn in op-prep), Simple-mode dictation tunnel (Who-Talk-Generate-Review-Finish, drives real controls, never signs), MLS Agent side chat dock (whitelisted actions only: views/pull/list-day/prep-op-notes/generate-all/find-patient/starters/tunnel/blanks; no writeback/sign/delete). Revert: window.__mlsPack1.revert() */
+/* REJECTED_EEV_ROLLBACK_START */
+;(function(){try{
+  var A='feat_mls_exact_encounter_verify.js',old=window.__mlsExactEncounterVerify||null,stale,i,node;
+  if(old&&typeof old.revert==='function'){try{old.revert();}catch(e0){}}
+  try{delete window.__mlsExactEncounterVerify;}catch(e1){window.__mlsExactEncounterVerify=null;}
+  stale=document.querySelectorAll('script[data-mls-asset="'+A+'"]');
+  for(i=0;i<stale.length;i++){node=stale[i];if(node&&node.parentNode)node.parentNode.removeChild(node);}
+}catch(e){}})();
+/* REJECTED_EEV_ROLLBACK_END */
+;(function(){try{var A='feat_mls_staging_exact_actions.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260719sea100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sea-1.0.0 STAGING: raw Visit engine actions require one exact scheduled appointment binding */

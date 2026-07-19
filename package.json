@@ -9,6 +9,16 @@
     "test:performance": "node tests/performance-lifecycle-contract.test.js",
     "test:extension-read": "node tests/extension-read-path.test.js",
     "test:extension-package": "node tests/extension-package.test.js",
+    "test:live-extension": "node tests/live-extension-candidate.js",
+    "test:live-phone": "node tests/live-phone-secure-lifecycle.js",
+    "test:live-sensitive-public": "node tests/live-sensitive-public-workflows.js",
+    "test:live-a11y-responsive": "node tests/live-synthetic-a11y-responsive.js",
+    "test:live-synthetic": "node tests/live-synthetic-smoke.js",
+    "test:live-visible-controls": "node tests/live-visible-controls-audit.js",
+    "test:live-local-libraries": "node tests/live-local-adjunct-library-boundary.js",
+    "test:release-preflight": "node tests/public-release-preflight.test.js",
+    "audit:pages-build": "node scripts/audit-pages-build.js --site-dir=_site",
+    "preflight:public": "node scripts/public-release-preflight.js",
     "build:extension": "node scripts/build-extension-zip.js",
     "test": "node tests/run-all.js"
   }

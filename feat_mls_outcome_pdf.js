@@ -31,7 +31,7 @@
  *   - No PHI/secrets baked into this source. (Patient names appear only at
  *     runtime, in the clinician's own downloaded file — same as the existing
  *     Excel/CSV export — and the report carries a HIPAA-handling footer.)
- *   - jsPDF: reuses the app's own loader / the exact cdnjs 2.5.1 UMD build the
+ *   - jsPDF: reuses the app's own loader / the exact pinned local 4.2.1 UMD build the
  *     other PDF modules use; graceful honest message if it can't load.
  *
  * Self-contained IIFE, own scope, try/catch throughout, silent no-op if the
@@ -47,7 +47,7 @@
 
   /* ---------------------------------------------------------------- *
    * jsPDF loader — reuse the app's own (the same approach the other
-   * PDF modules use): window.jspdf.jsPDF, else lazy-load cdnjs 2.5.1.
+   * PDF modules use): window.jspdf.jsPDF, else lazy-load the same-origin asset.
    * ---------------------------------------------------------------- */
   function ensureJsPdf() {
     return new Promise(function (resolve, reject) {
@@ -72,7 +72,7 @@
         if (ex) { ex.addEventListener('load', done); ex.addEventListener('error', function () { reject(new Error('jsPDF load error')); }); return; }
         var s = document.createElement('script');
         s.id = 'jspdfScript';
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.src = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
         s.onload = done;
         s.onerror = function () { reject(new Error('jsPDF load error')); };
         (document.head || document.documentElement).appendChild(s);

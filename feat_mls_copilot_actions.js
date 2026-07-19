@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.2)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.3)
  * ---------------------------------------------------------------------------
  * The base Studio Copilot canonically persists and renders reply metadata
  * (actions, followups, artifact). This companion never intercepts /api/copilot,
@@ -22,16 +22,14 @@
  *   - action kind=build     -> showView('studio') and PREFILLS (never auto-
  *     sends) the Studio Copilot's own input box with the arg text, so the user
  *     reviews and sends it themselves.
- *   - artifact (e.g. a drafted email) -> shown as a preview card with editable
- *     To/Subject; "Send email" POSTs to the EXISTING /api/copilot/email route
- *     ONLY when the user clicks Send. Nothing is ever auto-sent.
+ *   - artifact (e.g. a drafted email) -> shown as an editable preview card;
+ *     Copy email draft writes the reviewed draft to the clipboard. This held
+ *     build never sends email or accepts an arbitrary network recipient.
  *
  * HARD SAFETY: this module cannot write to athenaOne, sign, save, or submit
  * anything. It has no path to any Athena/order/sign function. The only network
- * call it can trigger itself is the existing, explicit, user-clicked "Send
- * email" (POST /api/copilot/email), which already exists and is audited server-
- * side. Everything else is local navigation/selection or delegates to the
- * assistant's own text pipeline (as if the user had typed it).
+ * path in this module. Everything is local navigation/selection, local copy,
+ * or delegates to the assistant's own text pipeline (as if the user typed it).
  *
  * Idempotent, additive, reversible: window.__mlsCopilotActions.revert()
  * ASCII-only. try/catch throughout. No PHI logged.
@@ -41,7 +39,7 @@
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-2.0.2';
+  var VERSION = 'ca-2.0.3';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -166,7 +164,6 @@
     orders: 'orders', order: 'orders',
     recs: 'recs', recommendation: 'recs', recommendations: 'recs',
     history: 'history', notes: 'history',
-    team: 'team',
     analysis: 'analysis', stats: 'analysis', statistics: 'analysis',
     studio: 'studio', ai: 'studio', widgets: 'studio'
   };
@@ -320,27 +317,18 @@
       artifact: payload && payload.artifact && typeof payload.artifact === 'object' ? payload.artifact : null };
   }
 
-  function sendEmail(btn, block, art) {
+  function copyEmailDraft(btn, block) {
     var toEl = block.querySelector('.mlsca-to');
     var subjEl = block.querySelector('.mlsca-subj');
     var bodyEl = block.querySelector('.mlsca-body');
     var to = toEl ? String(toEl.value || '').trim() : '';
     var subject = subjEl ? String(subjEl.value || '').trim() : '';
     var body = bodyEl ? String(bodyEl.value || '') : '';
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { toast('Enter a valid recipient email first.'); return; }
-    btn.disabled = true; btn.textContent = 'Sending…';
-    var base = safe(function () { return window.bkBase(); }, '');
-    var tok = safe(function () { return window.bkToken(); }, '');
-    fetch(base + '/api/copilot/email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-      body: JSON.stringify({ to: to, subject: subject, body: body })
-    }).then(function (r) { return r.json().then(null, function () { return {}; }); })
-      .then(function (d) {
-        if (d && d.ok) { btn.textContent = 'Sent'; toast('Email sent to ' + to + '.'); }
-        else { btn.disabled = false; btn.textContent = 'Send email'; toast((d && d.error) || 'Could not send -- try again.'); }
-      })
-      .then(null, function () { btn.disabled = false; btn.textContent = 'Send email'; toast('Network error -- could not send.'); });
+    var draft = (to ? 'To: ' + to + '\n' : '') + (subject ? 'Subject: ' + subject + '\n' : '') + '\n' + body;
+    btn.disabled = true;
+    Promise.resolve(safe(function () { return navigator.clipboard.writeText(draft); }, Promise.reject(new Error('clipboard unavailable'))))
+      .then(function () { btn.textContent = 'Copied'; toast('Email draft copied. Review it in your approved email system before sending.'); })
+      .then(null, function () { btn.disabled = false; btn.textContent = 'Copy email draft'; toast('Could not copy the email draft.'); });
   }
 
   function renderBlock(payload, t, messageKey, bubble) {
@@ -391,11 +379,11 @@
       art.appendChild(ta);
       if (isEmail) {
         var sendBtn = document.createElement('button'); sendBtn.type = 'button'; sendBtn.className = 'mlsca-send';
-        sendBtn.textContent = 'Send email';
-        sendBtn.onclick = function () { sendEmail(sendBtn, art, artifact); };
+        sendBtn.textContent = 'Copy email draft';
+        sendBtn.onclick = function () { copyEmailDraft(sendBtn, art); };
         art.appendChild(sendBtn);
         var note = document.createElement('div'); note.className = 'mlsca-note';
-        note.textContent = 'Nothing is sent until you click Send email. Edit the draft first if you want.';
+        note.textContent = 'Draft only. Nothing is sent from MLS; review and send it from your approved email system.';
         art.appendChild(note);
       } else {
         var note2 = document.createElement('div'); note2.className = 'mlsca-note';

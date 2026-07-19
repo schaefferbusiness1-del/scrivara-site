@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex,nofollow">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="token intake code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Pre-Visit Intake — MLS</title>
 <!-- Standalone PUBLIC patient intake page. Reached via a per-doctor link:
      /intake.html?token=<token>. Validates the token, lets the patient fill the
@@ -51,6 +55,7 @@
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 <div class="wrap">
   <div class="top">
     <div class="logo">＋</div>
@@ -141,12 +146,12 @@
   var BACKEND_URL='https://scrivara-backend.onrender.com';
   function $(id){return document.getElementById(id);}
   function show(id){['loading','invalid','formWrap','done'].forEach(function(x){$(x).classList.toggle('hide', x!==id);});}
-  var params=new URLSearchParams(location.search);
-  var token=params.get('token')||params.get('intake')||'';
+  var captured=(window.__mlsSensitiveUrl&&window.__mlsSensitiveUrl.query)||{};
+  var token=captured.token||captured.intake||'';
   if(!token){ show('invalid'); return; }
 
   // Validate the link token (no PHI returned — just whether it's live).
-  fetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
+  mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
     .then(function(r){return r.json().catch(function(){return {ok:false};});})
     .then(function(d){ if(d&&d.ok){ show('formWrap'); } else { show('invalid'); } })
     .catch(function(){ show('invalid'); });
@@ -203,12 +208,16 @@
       meds:val('meds'), allergies:val('allergies'), photo:facePhoto
     };
     var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
-    fetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
+    mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({data:data})
     }).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
         if(res.ok && res.j && res.j.ok){ show('done'); }
-        else { btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent=(res.j&&res.j.error)||'Something went wrong. Please try again.'; }
+        else {
+          try{ if(res.j&&res.j.error) console.warn('[intake] submission declined:',res.j.error); }catch(e){}
+          btn.disabled=false; btn.textContent='Submit to my care team';
+          $('formErr').textContent='We could not send your intake. Check your entries and try again, or contact the clinic.';
+        }
       })
       .catch(function(){ btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent='Connection issue — please check your signal and try again.'; });
   });

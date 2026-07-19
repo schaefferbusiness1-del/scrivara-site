@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex" />
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet" />
 <meta name="referrer" content="no-referrer" />
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+<meta http-equiv="Pragma" content="no-cache" />
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="" data-fragment-keys="" data-scrub-query="all" data-scrub-fragment="all" referrerpolicy="no-referrer"></script>
 <title>Send Patient Portal Login — MLS</title>
 <style>
   :root{--blue:#1f7ae0;--blue-d:#15528f;--ink:#0d2338;--muted:#5b6b7c;--line:#e4ebf3;--bg:#f4f8fd;--good:#127a55;--soft:#eef4fc}
@@ -73,6 +76,7 @@
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 <div class="wrap">
   <div class="card">
     <div class="brand"><span class="dot"></span>MLS — Patient Portal</div>
@@ -114,10 +118,9 @@
     </form>
 
     <div id="msg" class="msg"></div>
-    <div id="diag" class="diag"></div>
     <div id="credBox" class="cred" style="display:none"></div>
     <div class="note">🔒 Access is limited to this one patient's own records, protected by password + date of birth, with sessions that expire automatically. You can disable access anytime from MLS.</div>
-    <div class="note" style="background:#eaf7f0;border-color:#bce6cf;color:#0f6b49">✉️ When the office's email is set up, MLS emails the patient a secure one-time link (expires in ~72 hours). Until then, MLS creates the login and shows it once here for you to hand over — either way works.</div>
+    <div class="note" style="background:#eaf7f0;border-color:#bce6cf;color:#0f6b49">✉️ MLS sends a secure one-time link that expires in about 72 hours. If secure email delivery is unavailable, nothing is provisioned and the invite stays unsent.</div>
     <p class="foot">Open the patient portal: <a href="/patient-portal.html" target="_blank" rel="noopener">Patient portal login</a></p>
   </div>
 </div>
@@ -168,21 +171,16 @@
     return y+'-'+String(+m[1]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');
   }
 
-  // Prefill ONCE from URL params (in-app deep link), then SCRUB the URL so no
-  // patient details (PHI) linger in the address bar, browser history, or logs.
-  var deepId='';
-  try{
-    var p=new URLSearchParams(location.search);
-    if(p.get('email')) $('email').value=p.get('email');
-    if(p.get('name')) $('name').value=p.get('name');
-    if(p.get('dob')) $('dob').value=dobInputValue(p.get('dob'));
-    if(p.get('id')||p.get('pid')){ $('pid').value=p.get('id')||p.get('pid'); deepId=$('pid').value; }
-    if([...p.keys()].length){ history.replaceState(null,'',location.pathname); }
-  }catch(e){}
+  /* Never accept patient identity or contact details from a URL. Query strings
+     can reach hosting logs and browser history before JavaScript can scrub
+     them. In-app callers must open this clean page; the signed-in user selects
+     a chart through the authenticated picker below. */
+  /* The head bootstrap already removed every query/fragment value before this
+     clinician-only picker rendered. No URL-provided patient data is accepted. */
 
   function showMsg(text, ok){ var m=$('msg'); m.textContent=text; m.className='msg '+(ok?'ok':'err'); }
-  function hideMsg(){ $('msg').className='msg'; $('msg').textContent=''; diag(''); }
-  function diag(t){ try{ $('diag').textContent=t?('detail: '+t):''; }catch(e){} }
+  function hideMsg(){ $('msg').className='msg'; $('msg').textContent=''; }
+  function diag(t){ try{ if(t) console.warn('[portal invite]',t); }catch(e){} }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function fmtDob(iso){
     // display as MM/DD/YYYY for the confirmation step (matches US charts)
@@ -240,14 +238,14 @@
   }
   function bearer(){ return { 'Authorization':'Bearer '+token }; }
   function searchCharts(q){
-    return fetch(API+'/api/patients/search?q='+encodeURIComponent(q)+'&limit=20',{headers:bearer()})
+    return mlsSensitiveFetch(API+'/api/patients/search?q='+encodeURIComponent(q)+'&limit=20',{headers:bearer()})
       .then(function(r){ if(!r.ok) throw {status:r.status}; return r.json(); })
       .then(function(j){ return (j.patients||j.results||[]).map(rowToHit); })
       .catch(function(e){
         if(e && (e.status===401||e.status===403)) throw e;
         // fallback: fetch the full list once, filter locally
         if(ALL){ return filterAll(q); }
-        return fetch(API+'/api/patients',{headers:bearer()})
+        return mlsSensitiveFetch(API+'/api/patients',{headers:bearer()})
           .then(function(r){ if(!r.ok) throw {status:r.status}; return r.json(); })
           .then(function(j){ ALL=(j.patients||[]).map(rowToHit); return filterAll(q); });
       });
@@ -263,7 +261,7 @@
   }
   function renderHits(hits){
     var box=$('pkres');
-    if(!hits.length){ box.innerHTML=''; $('pknote').textContent='No matching chart. Check the spelling — only patients saved in MLS (synced to the cloud) can get portal access.'; return; }
+    if(!hits.length){ box.innerHTML=''; $('pknote').textContent='No matching chart. Check the spelling, or save the patient in MLS before sending an invite.'; return; }
     $('pknote').textContent='';
     box.innerHTML=hits.map(function(h,i){
       return '<div class="pkhit" data-i="'+i+'"><div><div class="nm">'+esc(h.name||'(no name on chart)')+'</div>'
@@ -303,15 +301,6 @@
   $('pkq').addEventListener('input', function(){ clearTimeout(deb); deb=setTimeout(doSearch, 450); });
   $('pkq').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doSearch(); } });
   // deep link ?id=<chart id> → load that chart automatically
-  if(token && deepId){
-    searchCharts(deepId).then(function(hits){
-      var hit=null;
-      for(var i=0;i<hits.length;i++){ if(hits[i].external_id===deepId){ hit=hits[i]; break; } }
-      if(!hit && hits.length===1) hit=hits[0];
-      if(hit) pick(hit);
-    }).catch(function(){});
-  }
-
   // ⚡ Auto-send: zero typing, NOT zero confirmation — the same wrong-patient
   // confirm modal still gates the actual send. Doctor-initiated, one patient
   // at a time; MLS never emails anyone without this click + confirmation.
@@ -354,12 +343,12 @@
     openConfirm({ email:email, name:name, dob:dob, external_id:pid });
   });
 
-  // ---------- send: prefer the email-link route; fall back to direct provisioning ----------
+  // ---------- send: secure one-time email-link route only ----------
   function doSend(d){
     var btn=$('send'); btn.disabled=true; $('autoSend').disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Sending…';
     function done(){ btn.disabled=false; $('autoSend').disabled=false; btn.textContent=old; }
     // 1) Preferred: backend emails a secure one-time link (portal-invite module).
-    fetch(API+'/api/patient/admin/send-portal-invite', {
+    mlsSensitiveFetch(API+'/api/patient/admin/send-portal-invite', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
       body:JSON.stringify({ email:d.email, name:d.name, dob:d.dob, external_id:d.external_id })
@@ -367,56 +356,18 @@
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
       if(res.ok){
-        if(res.j && res.j.sent===false){ showMsg('Portal access + a secure one-time link were created, but the EMAIL could not be sent (mail service not configured on the server). Ask your MLS admin to add RESEND_API_KEY / MAIL_FROM on the backend, then resend.', false); diag('send-portal-invite → ok, sent:false (mail env missing)'); }
+        if(res.j && res.j.sent===false){ showMsg('The invite was prepared, but the email was not delivered. Do not assume the patient received it. Try again shortly; if it continues, contact your MLS administrator.', false); diag('send-portal-invite → ok, sent:false'); }
         else { showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time sign-in link (expires in about 72 hours). When they open it they confirm their date of birth, set a password, and land in their own records.', true); $('f').reset(); $('chartchip').style.display='none'; $('autoSend').style.display='none'; picked=null; }
         return null; }
-      if(res.status===404 && res.j && res.j.error){
-        // route is live, but the CHART wasn't matched (missing or name/DOB mismatch)
-        showMsg('MLS couldn’t match that chart: '+res.j.error+'. Use “Pick from your charts” above so the chart ID, name and DOB come straight from the chart — and make sure the patient is saved in MLS (synced to the cloud), not only on this device.', false);
-        diag('send-portal-invite → 404 '+JSON.stringify(res.j)); return null;
-      }
-      if(res.status===404){ return provisionFallback(d); } // email route not mounted at all
-      if(res.status===400){ showMsg('The server rejected the request as incomplete (error 400). If all four fields are filled, this is the known owner-lookup bug — ask your MLS admin to apply the portal-invite backend patch (owner chain must include u.uid).', false); diag('send-portal-invite → 400 '+JSON.stringify(res.j)); return null; }
+      if(res.status===404){ showMsg('MLS could not match this patient to a saved chart, or invitations are temporarily unavailable. Pick the patient from your charts and try again. Nothing was sent.', false); diag('send-portal-invite → 404 '+JSON.stringify(res.j||{})); return null; }
+      if(res.status===400){ showMsg('Please pick the patient from your charts and try again. If this continues, contact your MLS administrator. Nothing was sent.', false); diag('send-portal-invite → 400 '+JSON.stringify(res.j||{})); return null; }
       if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again (as the practice/admin account) and retry.', false); diag('send-portal-invite → '+res.status); return null; }
-      if(res.status===409){ showMsg((res.j&&res.j.error)||'A portal account already exists for this patient or email. If they lost access, disable the old account in MLS first, then resend.', false); diag('send-portal-invite → 409'); return null; }
-      if(res.status===502){ showMsg('The invite was created but the email could not be sent (mail service problem). Try again in a minute, or ask your MLS admin to check the mail configuration (RESEND_API_KEY / MAIL_FROM).', false); diag('send-portal-invite → 502'); return null; }
-      showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); diag('send-portal-invite → '+res.status); return null;
+      if(res.status===409){ showMsg('Portal access already exists for this patient or email. If they cannot sign in, disable the old access in MLS, then send a new invite.', false); diag('send-portal-invite → 409 '+JSON.stringify(res.j||{})); return null; }
+      if(res.status===502){ showMsg('The email was not delivered. Do not assume the patient received an invite. Try again shortly; if it continues, contact your MLS administrator.', false); diag('send-portal-invite → 502 '+JSON.stringify(res.j||{})); return null; }
+      showMsg('We could not send the invite. Check the patient details and try again. If it continues, contact your MLS administrator.', false); diag('send-portal-invite → '+res.status+' '+JSON.stringify(res.j||{})); return null;
     })
-    .catch(function(){ showMsg('Network error — please try again.', false); })
+    .catch(function(){ showMsg("We couldn't reach MLS. Check your connection and try again.", false); })
     .then(done, done);
-  }
-
-  // 2) Fallback: provision username+password against the LIVE /api/patient/admin/invite
-  //    route, then show the credentials ONCE for the doctor to give the patient.
-  function provisionFallback(d){
-    var username=d.email.toLowerCase();
-    var password=genPassword();
-    return fetch(API+'/api/patient/admin/invite', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
-      body:JSON.stringify({ external_id:d.external_id, username:username, password:password, dob:d.dob })
-    })
-    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
-    .then(function(res){
-      if(res.ok){
-        showMsg('✓ Portal access created for '+d.name+'. Give them the login below — it is shown only once.', true);
-        var msgText='Your patient portal is ready.\n\nWebsite: https://mlsscribe.com/patient-portal.html\nUsername: '+username+'\nTemporary password: '+password+'\n\nSign in with your date of birth. Please keep this private.';
-        $('credBox').style.display='block';
-        $('credBox').innerHTML=
-          '<div style="font-weight:800;color:var(--blue-d);margin-bottom:6px">🔑 One-time login for '+esc(d.name)+'</div>'
-          +'<div class="kv"><span>Portal</span><b>mlsscribe.com/patient-portal.html</b><button class="copybtn" data-copy="https://mlsscribe.com/patient-portal.html">Copy</button></div>'
-          +'<div class="kv"><span>Username</span><b>'+esc(username)+'</b><button class="copybtn" data-copy="'+esc(username)+'">Copy</button></div>'
-          +'<div class="kv"><span>Password</span><b>'+esc(password)+'</b><button class="copybtn" data-copy="'+esc(password)+'">Copy</button></div>'
-          +'<div class="kv"><span>+ their date of birth at sign-in</span><b></b><button class="copybtn" data-copy="'+esc(msgText)+'">📋 Copy full invite message</button></div>'
-          +'<div style="font-size:12px;color:var(--muted);margin-top:8px">Hand these to the patient through a channel you trust (in person, their phone number on file, or your secure messaging). This page does not store them.</div>';
-        $('f').reset(); $('chartchip').style.display='none'; $('autoSend').style.display='none'; picked=null;
-      }
-      else if(res.status===404){ showMsg('No chart with ID "'+d.external_id+'" was found in your practice. Use “Pick from your charts” above so the ID comes straight from the chart — and make sure the patient is saved in MLS (synced to the cloud), not only on this device.', false); diag('admin/invite → 404'); }
-      else if(res.status===400){ showMsg('The server rejected the request (error 400). If all fields are filled, this is the known owner-lookup bug — ask your MLS admin to apply the portal-invite backend patch (owner chain must include u.uid).', false); diag('admin/invite → 400 '+JSON.stringify(res.j)); }
-      else if(res.status===409){ showMsg((res.j&&res.j.error)||'An account already exists for this patient (or the username is taken). If they lost access, disable the old account in MLS first.', false); diag('admin/invite → 409'); }
-      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to create portal access. Sign in to MLS again and retry.', false); diag('admin/invite → '+res.status); }
-      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not create access (error '+res.status+'). Please try again.'), false); diag('admin/invite → '+res.status); }
-    });
   }
 
   document.addEventListener('click', function(e){

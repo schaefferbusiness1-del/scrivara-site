@@ -22,6 +22,7 @@ const document = {
 const context = {
   console, Date, Math, JSON, Object, String, Number, Array, RegExp, Promise,
   document,
+  addEventListener() {}, removeEventListener() {},
   setInterval() { return 1; }, clearInterval() {},
   setTimeout() { return 1; }, clearTimeout() {}
 };
@@ -30,6 +31,13 @@ vm.runInNewContext(moduleSource, context, { filename: 'day-switch.js' });
 
 const classify = context.__mlsDaySwitch && context.__mlsDaySwitch.classifyPullResult;
 assert.strictEqual(typeof classify, 'function', 'day pull result classifier is not exposed');
+const safeReasonCounts = context.__mlsDaySwitch && context.__mlsDaySwitch._safeReasonCounts;
+assert.strictEqual(typeof safeReasonCounts, 'function', 'copyable report reason allowlist is not exposed for verification');
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(safeReasonCounts({ 'appointment-create-http': 1, janedoe: 1, 'MRN-123': 1 }))),
+  { 'appointment-create-http': 1, unverified: 2 },
+  'copyable report allowed single-token PHI-shaped diagnostic keys'
+);
 
 let result = classify({ ok: false, complete: false, reason: 'no-ext' }, '2026-07-15');
 assert.strictEqual(result.ok, false, 'missing extension was labeled successful');
@@ -51,6 +59,33 @@ assert.strictEqual(result.ok, false, 'incomplete history was labeled as a comple
 assert(/2 patient/.test(result.message), 'history retry count is missing');
 
 result = classify({
+  ok: false, complete: false, reason: 'calendar-partial',
+  calendarReceipt: { failureClass: 'mapping-unverified', attempted: 18, accounted: 18, failed: 0, mappingComplete: false }
+}, '2026-07-20');
+assert.strictEqual(result.ok, false, 'unproven one-to-one mapping was labeled successful');
+assert(/one-to-one Athena-to-calendar mapping/i.test(result.message), 'mapping-only refusal was mislabeled as an appointment save failure');
+
+result = classify({
+  ok: false, complete: false, reason: 'calendar-partial',
+  calendarReceipt: {
+    failureClass: 'save-failed', attempted: 18, accounted: 17, failed: 1, mappingComplete: false,
+    failureReasons: { 'appointment-create-http': 1 }
+  }
+}, '2026-07-20');
+assert.strictEqual(result.ok, false, 'backend calendar write failure was labeled successful');
+assert(/1 calendar save\/update request failed/i.test(result.message), 'actual backend write failure did not name the failed write count');
+
+result = classify({
+  ok: false, complete: false, reason: 'calendar-partial',
+  calendarReceipt: {
+    failureClass: 'save-failed', attempted: 18, accounted: 15, failed: 3,
+    failureReasons: { 'appointment-update-http': 1, 'patient-not-resolved': 2 }
+  }
+}, '2026-07-20');
+assert(/1 calendar save\/update request failed/i.test(result.message), 'mixed refusal types overstated the number of failed writes');
+assert(!/3 calendar save\/update requests failed/i.test(result.message), 'total row refusals were mislabeled as failed writes');
+
+result = classify({
   ok: true, complete: true, reason: 'complete',
   scheduleReceipt: { parsedCount: 17 },
   historyReceipt: { requested: 17, processed: 17, complete: true }
@@ -69,5 +104,7 @@ assert(/verified.*no appointments/i.test(result.message), 'empty-day message doe
 assert(source.includes('r && r.ok === true && r.complete === true'), 'phone relay still accepts any fulfilled pull promise');
 assert(!source.includes("setTimeout(function () { fin(true); }, 90000)"), 'phone relay still fabricates success after a timer');
 assert(!moduleSource.includes("setTimeout(function () { done(true"), 'day strip still fabricates success after a timer');
+assert(moduleSource.includes("'failureClass'"), 'copyable PHI-free pull report omits the calendar failure class');
+assert(moduleSource.includes('dsSafeReasonCounts'), 'copyable pull report does not sanitize calendar reason histograms');
 
 console.log('PASS schedule pull UI: success requires complete receipts; partial schedule/history and missing extension stay failed');

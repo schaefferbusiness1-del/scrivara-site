@@ -1,8 +1,8 @@
-/* MLS Assist — write-safety guard (wsg-1.0.0).
+/* MLS Assist — write-safety guard (wsg-1.1.0).
  *
  * ONE module, THREE homes:
  *   1. Service worker (background.js `importScripts`) — action-policy gate,
- *      Adam-only test policy, account/practice verification helpers.
+ *      production test-content policy, account/practice verification helpers.
  *   2. Content script on athenanet (document_start, all frames) — a capture-
  *      phase interceptor that CONSUMES every synthetic (isTrusted === false)
  *      activation aimed at a final/irrevocable control. Extension code paths
@@ -23,7 +23,7 @@
 (function (root) {
   'use strict';
   if (root.MLSWriteSafety && root.MLSWriteSafety.version) return; // idempotent
-  var VERSION = 'wsg-1.0.0';
+  var VERSION = 'wsg-1.1.0';
 
   /* ------------------------------------------------------------------ *
    * Shared normalizers (mirror the V2 driver's conventions).           *
@@ -171,9 +171,8 @@
   var BLOCK_MESSAGE = 'This action is preview-only by write-safety policy. Review it on the review screen, then perform the final step yourself in athenaOne. Nothing was changed.';
 
   /* ------------------------------------------------------------------ *
-   * 3. ADAM-ONLY TEST/STAGING POLICY                                    *
+   * 3. PRODUCTION TEST/STAGING POLICY                                   *
    * ------------------------------------------------------------------ */
-  var TEST_RECIPIENT = { athenaId: '7833832', nameKey: 'adam j schaeffer', label: 'Adam J Schaeffer (athenaId 7833832)' };
   var TEST_MARKER_RE = /\[(?:MLS[ _-])?TEST\]|\bSELF-?TEST\b|\bTEST(?:ING)?\s+(?:ONLY|NOTE|CONTENT|WRITE|ENTRY)\b|\bSTAGING\s+(?:ONLY|NOTE|CONTENT)\b|\bDO\s+NOT\s+(?:FILE|SIGN|BILL|TREAT)\b/i;
   /* Real clinical directives that must never ride inside TEST content. */
   var CLINICAL_DIRECTIVE_RES = [
@@ -195,28 +194,15 @@
     for (var i = 0; i < CLINICAL_DIRECTIVE_RES.length; i++) if (CLINICAL_DIRECTIVE_RES[i].test(s)) return true;
     return false;
   }
-  function isTestRecipient(patient) {
-    patient = patient || {};
-    return digits(patient.mrn || patient.athenaId) === TEST_RECIPIENT.athenaId;
-  }
-  /* Both directions are enforced:
-     - test/staging content may ONLY target Adam, and must be marker-clean of
-       real medication / order / instruction language;
-     - ANY write aimed at Adam must carry the TEST marker (every write to the
-       test patient is by definition a test write and must say so). */
+  /* Production builds never carry a named patient/MRN allowlist. Test and
+     staging content belongs in a separately configured Athena Preview tenant
+     with synthetic patients; until that boundary is explicit, fail closed. */
   function checkTestWritePolicy(opts) {
     opts = opts || {};
     var noteText = String(opts.noteText == null ? '' : opts.noteText);
-    var isAdam = isTestRecipient(opts.patient);
     var flaggedTest = opts.isTest === true || looksLikeTestContent(noteText);
-    if (flaggedTest && !isAdam) {
-      return { ok: false, blocked: true, reason: 'test-content-wrong-patient', error: 'Test/staging content may only be written to ' + TEST_RECIPIENT.label + '. Nothing was changed.' };
-    }
-    if (flaggedTest && containsClinicalDirectives(noteText)) {
-      return { ok: false, blocked: true, reason: 'test-content-clinical-directives', error: 'Test content must not contain real medication, order, or medical-instruction language. Nothing was changed.' };
-    }
-    if (isAdam && !looksLikeTestContent(noteText)) {
-      return { ok: false, blocked: true, reason: 'test-recipient-requires-marker', error: 'Writes to the test patient must be clearly marked TEST (e.g. start the note with [MLS TEST]). Nothing was changed.' };
+    if (flaggedTest) {
+      return { ok: false, blocked: true, reason: 'test-content-production-disabled', error: 'Test or staging content cannot be written through the production extension. Use a configured Athena Preview sandbox with synthetic patients. Nothing was changed.' };
     }
     return null;
   }
@@ -506,7 +492,6 @@
     FORBIDDEN_SELECTORS: FORBIDDEN_SELECTORS.slice(),
     BLOCKED_EXECUTE_ACTIONS: BLOCKED_EXECUTE_ACTIONS,
     PREVIEW_ONLY_CATEGORIES: PREVIEW_ONLY_CATEGORIES,
-    TEST_RECIPIENT: TEST_RECIPIENT,
     // matchers
     isControlish: isControlish,
     isForbiddenControl: isForbiddenControl,
@@ -517,7 +502,6 @@
     checkTestWritePolicy: checkTestWritePolicy,
     looksLikeTestContent: looksLikeTestContent,
     containsClinicalDirectives: containsClinicalDirectives,
-    isTestRecipient: isTestRecipient,
     // review categorization
     categorizeProposal: categorizeProposal,
     evaluateProposal: evaluateProposal,

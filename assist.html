@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; script-src 'none'; connect-src 'none'; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
 <title>Install MLS Assist — browser companion</title>
 <style>
   :root { --ink:#13283d; --muted:#5b7186; --blue:#2563eb; --line:#dbe6f2; --bg:#f6f9fc; }
@@ -29,48 +32,48 @@
 <div class="wrap">
   <a class="toplink" href="/">← MLS home</a>
   <h1>🩺 MLS Assist</h1>
-  <p class="sub">A small browser companion that turns your dictation into a finished note and drops it into any web EMR — and can pull a whole chart into MLS in one click.</p>
+  <p class="sub">The clinician-started Athena companion for schedule pulls and review-first note placement. This release is for synthetic evaluation only; do not use real patient information.</p>
 
   <div class="card" style="text-align:center">
     <span class="pill">Step 1 · Download</span>
     <h2 style="margin-top:12px">Get the extension</h2>
-    <p class="muted" style="margin:2px 0 18px">Use the current published version and choose the Chrome Web Store or manual install.</p>
-    <a class="dl" href="get-extension.html">Get the latest MLS Assist</a>
-    <p class="muted" style="margin-top:14px">The install page reads the latest version directly from the MLS Assist release feed.</p>
+    <p class="muted" style="margin:2px 0 18px">Use only the published Chrome Web Store channel. The newer isolated candidate and manual ZIP are withheld until their full release gate passes.</p>
+    <a class="dl" href="get-extension.html">Open the published channel</a>
+    <p class="muted" style="margin-top:14px">Do not remove a working extension to install loose or unstamped candidate files.</p>
   </div>
 
   <div class="card">
-    <span class="pill">Step 2 · Load it into Chrome</span>
-    <h2 style="margin-top:12px">One-time, takes about a minute</h2>
+    <span class="pill">Step 2 · Sign in</span>
+    <h2 style="margin-top:12px">Use your existing MLS session</h2>
     <ol>
-      <li>Open a new tab and go to <code>chrome://extensions</code></li>
-      <li>Turn on <b>Developer mode</b> (toggle, top-right corner)</li>
-      <li>Click <b>Load unpacked</b> (top-left) and select the unzipped <code>mls-assist-extension</code> folder</li>
-      <li>MLS Assist now appears in your extensions. Pin it if you like.</li>
+      <li>Install the published channel from the page above.</li>
+      <li>Open MLS in a tab and sign in to your MLS account.</li>
+      <li>Open Athena in its normal signed-in tab, then refresh the page once.</li>
+      <li>Pin MLS Assist from Chrome's Extensions menu if you want quick access.</li>
     </ol>
-    <p class="muted" style="margin-top:12px">Works in Chrome and Edge. It stays loaded after this — you only do Step 2 once.</p>
+    <p class="muted" style="margin-top:12px">MLS Assist uses the signed-in MLS session. There is no extension API key to generate or paste.</p>
   </div>
 
   <div class="card">
-    <span class="pill">Step 3 · Add your key</span>
-    <h2 style="margin-top:12px">Connect it to your MLS account</h2>
+    <span class="pill">Step 3 · Start the pull</span>
+    <h2 style="margin-top:12px">Nothing reads silently</h2>
     <ol>
-      <li>In MLS, go to <b>Settings → Integrations</b> and click <b>Generate</b> to create an API key (copy it).</li>
-      <li>Click the <b>MLS Assist</b> icon in your Chrome toolbar.</li>
-      <li>Paste the key, click <b>Save</b>. Done.</li>
+      <li>In MLS, open <b>Today</b>, <b>Calendar</b>, or <b>Menu → Staff prep &amp; Athena month pull</b>.</li>
+      <li>Choose the date or range you intend to read.</li>
+      <li>Start the schedule pull yourself and verify the provider, date, and patients before using the result.</li>
     </ol>
   </div>
 
   <div class="card">
     <span class="pill">How to use it</span>
-    <h2 style="margin-top:12px">On any EMR page</h2>
+    <h2 style="margin-top:12px">In the evaluated Athena workflow</h2>
     <ol>
-      <li>Click the floating <b>🩺 badge</b> (bottom-right of the page).</li>
-      <li><b>Dictate</b> the visit (or select text from the chart), then <b>Generate note</b>.</li>
-      <li>Review the draft, click <b>Insert into chart</b> — it finds the note field for you.</li>
-      <li>Or click <b>📋 Capture whole chart → MLS</b> to pull the patient and their prior visits into MLS.</li>
+      <li>Use only synthetic patients during evaluation.</li>
+      <li>Open the extension panel or the matching MLS action yourself.</li>
+      <li>Review every imported schedule row and every drafted note before any placement action.</li>
+      <li>Confirm the active chart and destination again before copying or inserting content.</li>
     </ol>
-    <p class="safe" style="margin-top:14px">🔒 Your safety rail: MLS Assist <b>never</b> clicks Save, Sign, or Submit in the chart on its own. You review every note and approve every commit. The Autopilot pauses and asks you before anything is finalized.</p>
+    <p class="safe" style="margin-top:14px">Safety boundary: the evaluated workflow is review-first and must stop before final Save, Sign, Submit, billing, or order actions. The clinician remains responsible for every final chart action. This page does not claim production clinical readiness.</p>
   </div>
 
   <p class="muted" style="text-align:center">Questions? Email <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a></p>

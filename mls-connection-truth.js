@@ -1,31 +1,25 @@
 /* =====================================================================
  * mls-connection-truth.js  (v1.0.0)
  * ---------------------------------------------------------------------
- * ONE source of truth for "is athenaOne genuinely connected?"
+ * ONE source of truth for PHI-free MLS Assist / Athena readiness.
  *
  * WHY THIS EXISTS
  *   Multiple Athena status surfaces have, in the past, asserted
- *   "connected / a signed-in athenaOne tab was found and is readable"
- *   without a live check, or treated a bare ping->pong as "connected"
- *   while the real operation channel was dead (see audit Group 2).
- *   This module is the single, honest probe that ALL Athena status UI
- *   must read from. It NEVER hard-codes or optimistically assumes
- *   "connected" — the only way to reach the CONNECTED state is for two
- *   real signals to both come back positive inside a timeout:
- *       (1) the MLS Assist extension answers mlsPing -> mlsPong, AND
- *       (2) a signed-in athenaOne tab is READABLE (mlsAppPullSchedule
- *           -> mlsAppScheduleResult with resp.ok === true).
- *   Anything else is reported DISCONNECTED, with an honest reason.
+ *   Older builds treated an automatic schedule read as a harmless connection
+ *   check. That still fetched clinical data, could contend with a clinician's
+ *   real pull, and made "connected" sound like patient/encounter verification.
+ *   This module now uses only two operational signals:
+ *       (1) mlsPing -> mlsPong (the content bridge is installed), AND
+ *       (2) mlsExtHealth -> mlsExtHealthResult (the worker responds and an
+ *           exact, non-discarded athenaOne product tab exists).
+ *   The legacy status string `connected` is retained for callers, but means
+ *   READY ONLY. It never means signed in, chart-readable, or patient verified.
  *
  * PHI SAFETY
- *   The readability probe reuses the same passive mlsAppPullSchedule
- *   message the §56 status dot used. It reads ONLY the boolean resp.ok
- *   (and, at most, a short non-PHI control reason/error/code string,
- *   truncated and never logged). It NEVER reads, stores, or logs
- *   resp.text / resp.url / resp.title — so no patient data is touched.
- *   The probe is passive (the extension's schedule handler does not
- *   activate/focus/navigate the tab), so polling cannot disturb a
- *   doctor's athenaOne tab during a visit.
+ *   Health replies contain operational metadata only: worker status plus
+ *   exact Athena tab and discarded-tab counts. This file never requests or
+ *   receives schedule/chart text, patient identity, encounter data, URLs, or
+ *   page titles. It never activates, focuses, or navigates Athena.
  *
  * SHAPE
  *   Additive, own-scope IIFE. Idempotent boot. Fully reversible via
@@ -40,10 +34,12 @@
  *                            starts as {status:'checking'} and is NEVER
  *                            optimistically 'connected'.
  *   .check()              -> Promise<state> : run a fresh real probe now.
- *   .isConnected()        -> boolean : true ONLY if last state is connected.
- *   .assertReadable()     -> Promise<state> : resolves on a fresh probe;
- *                            REJECTS (honestly) if not connected, so callers
- *                            that need a real chart can gate on it.
+ *   .isConnected()        -> compatibility boolean: extension ready + usable
+ *                            Athena tab detected; no clinical verification.
+ *   .assertReady()        -> Promise<state> : resolves after fresh readiness.
+ *   .assertReadable()     -> always rejects; a passive probe cannot prove a
+ *                            chart readable. Explicit actions verify their own
+ *                            exact patient/encounter context.
  *   .describe(state?)     -> {status, color, label, detail} for UI binding
  *                            (color: 'green'|'red'|'grey').
  *   .subscribe(fn)        -> unsubscribe fn; fn(state) on every change.
@@ -53,7 +49,7 @@
  * STATE object
  *   { status:'checking'|'connected'|'no-extension'|'no-tab'|'error',
  *     ext:boolean,        // extension answered pong
- *     tab:boolean,        // a signed-in athenaOne tab is readable
+ *     tab:boolean,        // an exact, non-discarded Athena tab was detected
  *     reason:string,      // short, non-PHI, human reason
  *     at:number }         // Date.now() of this reading
  * ===================================================================== */
@@ -70,8 +66,8 @@
 
   // ---- tunables (conservative, honest-by-default) ----
   var PING_TIMEOUT_MS = 2500;   // how long to wait for mlsPong
-  var SCHED_TIMEOUT_MS = 4000;  // how long to wait for mlsAppScheduleResult
-  var POLL_MS = 7000;           // re-probe cadence while tab is visible
+  var HEALTH_TIMEOUT_MS = 4000; // how long to wait for operational health
+  var POLL_MS = 30000;          // re-probe cadence while tab is visible
   var MAX_REASON_LEN = 80;      // truncate any control reason string
 
   var win = window;
@@ -88,7 +84,7 @@
     status: 'checking',
     ext: false,
     tab: false,
-    reason: 'Checking athenaOne connection…',
+    reason: 'Checking MLS Assist readiness…',
     at: Date.now()
   });
 
@@ -99,7 +95,12 @@
       ext: !!s.ext,
       tab: !!s.tab,
       reason: String(s.reason || ''),
-      at: typeof s.at === 'number' ? s.at : Date.now()
+      at: typeof s.at === 'number' ? s.at : Date.now(),
+      tabs: Math.max(0, Number(s.tabs || 0)),
+      discarded: Math.max(0, Number(s.discarded || 0)),
+      scope: 'readiness',
+      patientVerified: false,
+      encounterVerified: false
     };
   }
 
@@ -134,27 +135,8 @@
     } catch (e) { return ''; }
   }
 
-  // Detect the PUBLIC athenaOne sign-in / landing page from a schedule read.
-  // We match ONLY well-known PUBLIC marketing/login strings and keep just a
-  // boolean -- no PHI is stored or transmitted. A signed-in schedule (which
-  // WOULD contain PHI) is large and won't match these public markers, so it
-  // is left untouched. This closes the "green connected while on the sign-in
-  // page" lie: ok===true only means a tab was readable, not that it is signed in.
-  function isSigninPage(resp) {
-    try {
-      var t = resp && typeof resp.text === 'string' ? resp.text : '';
-      if (!t) return false;
-      if (t.length > 4000) return false; // a real day schedule is large; the sign-in page is tiny
-      var head = t.slice(0, 1200);
-      if (/get more from athenaone|find trusted solutions/i.test(head)) return true;
-      if (/athenahealth[\s\S]{0,40}sign\s*in/i.test(head)) return true;
-      if (/\bsign\s*in\b/i.test(head) && /\b(password|username|log\s*in)\b/i.test(head)) return true;
-      return false;
-    } catch (e) { return false; }
-  }
-
   // Post a request and resolve when a matching reply arrives or on timeout.
-  // We DELIBERATELY never read resp.text/url/title.
+  // We DELIBERATELY accept only operational fields from mlsExtHealth.
   function request(type, replyType, timeoutMs) {
     return new Promise(function (resolve) {
       var id = 'ct' + (++seq) + '_' + Date.now();
@@ -177,14 +159,15 @@
         clearTimeout(timer);
         delete pending[id];
         // Read ONLY non-PHI control fields.
-        var ok, signin = false;
+        var ok, tabs = 0, discarded = 0;
         if (replyType === 'mlsPong') {
           ok = true; // a pong at all means the extension is present
         } else {
           ok = !!(data.resp && data.resp.ok === true);
-          signin = isSigninPage(data.resp); // ok+sign-in page = NOT genuinely connected
+          tabs = Math.max(0, Number(data.resp && data.resp.athena && data.resp.athena.tabs || 0));
+          discarded = Math.max(0, Number(data.resp && data.resp.athena && data.resp.athena.discarded || 0));
         }
-        resolve({ ok: ok, signin: signin, timedOut: false, reason: safeReason(data && data.resp) });
+        resolve({ ok: ok, tabs: tabs, discarded: discarded, usable: ok && tabs > discarded, timedOut: false, reason: safeReason(data && data.resp) });
       };
 
       try {
@@ -216,8 +199,8 @@
     win.addEventListener('message', messageHandler, false);
   }
 
-  // The honest probe. Resolves to a state object. NEVER returns
-  // 'connected' unless BOTH real signals came back positive.
+  // The honest readiness probe. The compatibility status `connected` means
+  // only worker-ready + an exact non-discarded Athena tab detected.
   function check() {
     if (inFlight) return inFlight;
     installMessageHandler();
@@ -233,37 +216,34 @@
             at: Date.now()
           });
         }
-        // 2) Readable signed-in athenaOne tab (passive, PHI-safe).
-        return request('mlsAppPullSchedule', 'mlsAppScheduleResult', SCHED_TIMEOUT_MS)
-          .then(function (schedRes) {
-            if (schedRes.ok && !schedRes.signin) {
+        // 2) Operational worker/tab health only (no page or clinical read).
+        return request('mlsExtHealth', 'mlsExtHealthResult', HEALTH_TIMEOUT_MS)
+          .then(function (healthRes) {
+            if (healthRes.usable) {
               return setState({
                 status: 'connected',
                 ext: true, tab: true,
-                reason: 'athenaOne connected — a signed-in tab is readable.',
+                tabs: healthRes.tabs, discarded: healthRes.discarded,
+                reason: 'MLS Assist ready — Athena tab detected; patient and encounter not yet verified.',
                 at: Date.now()
               });
             }
-            /* v1.2.0: an 'extension-error' control reply means chrome.runtime
-               threw in the content bridge — the extension runtime is dead, NOT
-               Athena. Telling the user to "sign in to athenaOne" here is wrong
-               and has misled a real signed-in session. Name the real fix. */
-            if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(schedRes.reason || '')) {
+            if (!healthRes.ok || /extension-error|bridge-error|context invalidated|worker-unreachable|no-response/i.test(healthRes.reason || '')) {
               return setState({
                 status: 'error',
-                ext: false, tab: false,
-                reason: 'MLS Assist hit an internal error and needs a reload — open chrome://extensions, find MLS Assist, press Reload. athenaOne itself may still be signed in.',
+                ext: true, tab: false,
+                tabs: healthRes.tabs, discarded: healthRes.discarded,
+                reason: 'MLS Assist was detected, but its worker health check failed — reload MLS Assist at chrome://extensions. Athena was not read.',
                 at: Date.now()
               });
             }
             return setState({
               status: 'no-tab',
               ext: true, tab: false,
-              reason: schedRes.signin
-                ? 'Your athenaOne tab is on the sign-in page — sign in and open your Day schedule, then reload.'
-                : (schedRes.reason
-                    ? ('No readable athenaOne tab (' + schedRes.reason + ') — open a signed-in athenaOne tab.')
-                    : 'No signed-in athenaOne tab is readable — open one and reload.'),
+              tabs: healthRes.tabs, discarded: healthRes.discarded,
+              reason: healthRes.tabs > 0 && healthRes.discarded >= healthRes.tabs
+                ? 'Athena tab detected but discarded by Memory Saver — activate it before a clinical action.'
+                : 'MLS Assist ready — no usable Athena product tab detected.',
               at: Date.now()
             });
           });
@@ -271,7 +251,7 @@
         return setState({
           status: 'error',
           ext: false, tab: false,
-          reason: 'Connection check failed — treating as disconnected.',
+          reason: 'Readiness check failed — Athena was not read.',
           at: Date.now()
         });
       }).then(function (s) {
@@ -287,27 +267,32 @@
     return state && state.status === 'connected';
   }
 
-  // For callers that need a genuinely connected chart: resolve on a
-  // fresh probe, but REJECT honestly if not connected — so no caller
-  // can proceed on an optimistic assumption.
-  function assertReadable() {
+  function assertReady() {
     return check().then(function (s) {
       if (s.status === 'connected') return s;
-      var err = new Error(s.reason || 'athenaOne not connected');
+      var err = new Error(s.reason || 'MLS Assist is not ready');
       err.state = s;
       throw err;
     });
+  }
+
+  // Passive operational metadata can never prove chart readability.
+  function assertReadable() {
+    var err = new Error('Passive readiness cannot verify a chart. Start an explicit clinical action to verify the exact patient and encounter.');
+    err.code = 'passive-readability-not-verified';
+    err.state = state;
+    return Promise.reject(err);
   }
 
   function describe(s) {
     s = s || state;
     var status = s ? s.status : 'checking';
     var map = {
-      'connected':     { color: 'green', label: 'athenaOne connected' },
+      'connected':     { color: 'green', label: 'MLS Assist ready · Athena tab detected' },
       'no-extension':  { color: 'red',   label: 'MLS Assist not detected' },
-      'no-tab':        { color: 'red',   label: 'No signed-in athenaOne tab' },
-      'error':         { color: 'red',   label: 'athenaOne disconnected' },
-      'checking':      { color: 'grey',  label: 'Checking…' }
+      'no-tab':        { color: 'red',   label: 'No usable Athena tab detected' },
+      'error':         { color: 'red',   label: 'MLS Assist health unavailable' },
+      'checking':      { color: 'grey',  label: 'Checking readiness…' }
     };
     var m = map[status] || map['checking'];
     return { status: status, color: m.color, label: m.label, detail: (s && s.reason) || '' };
@@ -369,6 +354,7 @@
     state: state,
     check: check,
     isConnected: isConnected,
+    assertReady: assertReady,
     assertReadable: assertReadable,
     describe: describe,
     subscribe: subscribe,

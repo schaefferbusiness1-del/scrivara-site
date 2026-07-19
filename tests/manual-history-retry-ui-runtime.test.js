@@ -72,6 +72,7 @@ let retrySource = null;
 const context = {
   console, Date, Math, JSON, Object, String, Number, Array, RegExp, Promise, Error,
   document,
+  addEventListener() {}, removeEventListener() {},
   setInterval() { return 1; }, clearInterval() {},
   setTimeout() { return 1; }, clearTimeout() {},
   toast(message, kind) { toasts.push({ message: String(message), kind: String(kind || '') }); },

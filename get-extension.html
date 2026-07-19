@@ -1,134 +1,65 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Download MLS Assist</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>MLS Assist published channel</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="fonts/fonts.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-:root{--brand:#204034;--brand-dk:#28503f;--ink:#1A211C;--muted:#55605A;}
+:root{--brand:#204034;--brand-dk:#28503f;--ink:#1a211c;--muted:#55605a;--line:#e7e5dd;--paper:#fbfaf7}
 *{box-sizing:border-box}
-body{margin:0;font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#FBFAF7;color:#1A211C;line-height:1.5}
+body{margin:0;font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);line-height:1.55}
 .wrap{max-width:620px;margin:0 auto;padding:34px 20px 60px}
-.card{background:#fff;border:1px solid #E7E5DD;border-radius:16px;padding:26px 26px 30px;box-shadow:0 1px 2px rgba(20,33,28,.04)}
-h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em;font-size:23px;margin:0 0 4px;color:#1A211C}
-.ver{display:inline-block;background:#2E6A4B;color:#fff;border-radius:999px;font-size:12px;font-weight:700;padding:2px 10px;margin-left:6px;vertical-align:middle}
-p.sub{color:#55605A;margin:2px 0 20px;font-size:14.5px}
-button{background:#204034;color:#fff;border:0;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;cursor:pointer;width:100%}
-button:disabled{opacity:.6;cursor:default}
-button:hover:not(:disabled){background:#28503f}
-#status{margin:14px 0 0;font-size:13.5px;color:#55605A;min-height:20px;text-align:center}
-ol{margin:22px 0 0;padding-left:20px;font-size:13.5px;color:#55605A;line-height:1.7}
-code{background:#F4F2EC;border-radius:5px;padding:1px 6px;font-size:12.5px}
-.ok{color:#2E6A4B;font-weight:700}
-.err{color:#B23B3B;font-weight:700}
-.note{margin-top:18px;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#B07636}
-/* Chrome Web Store primary install button */
-a.store{display:block;text-decoration:none;text-align:center;background:#204034;color:#fff;border-radius:11px;font-size:16px;font-weight:700;padding:15px 22px;width:100%;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
-a.store:hover{background:#28503f}
-a.store .store-sub{display:block;font-weight:600;font-size:12px;opacity:.9;margin-top:3px}
-.store-tag{display:inline-block;background:#2E6A4B;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:2px 9px;margin:0 0 10px;letter-spacing:.3px}
-.divider{display:flex;align-items:center;text-align:center;color:#79837C;font-size:11.5px;font-weight:700;margin:22px 0 14px;text-transform:uppercase;letter-spacing:.5px}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:#E7E5DD}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:0 1px 2px rgba(20,33,28,.04)}
+h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em;font-size:25px;margin:0 0 6px}
+.ver,.tag{display:inline-block;background:#2e6a4b;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:3px 9px;vertical-align:middle}
+.ver{margin-left:6px}.tag{margin:3px 0 11px;letter-spacing:.2px}
+.sub{color:var(--muted);margin:0 0 20px;font-size:14.5px}
+.store,button{display:block;width:100%;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;text-align:center}
+.store{background:var(--brand);color:#fff;text-decoration:none;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
+.store:hover{background:var(--brand-dk)}
+.store:focus-visible{outline:3px solid #8fd8be;outline-offset:3px}
+.store-sub{display:block;font-weight:600;font-size:12px;opacity:.9;margin-top:3px}
+.divider{display:flex;align-items:center;color:#79837c;font-size:11.5px;font-weight:700;margin:24px 0 14px;text-transform:uppercase;letter-spacing:.5px}
+.divider:before,.divider:after{content:"";flex:1;height:1px;background:var(--line)}
 .divider span{padding:0 12px}
-button.secondary{background:#fff;color:#1A211C;border:1.5px solid #D9D6CD}
-button.secondary:hover:not(:disabled){background:#F4F2EC}
+button{background:#f4f2ec;color:#55605a;border:1.5px solid #d9d6cd;cursor:not-allowed}
+#status{margin:14px 0 0;font-size:13.5px;color:var(--muted);text-align:left}
+.note{margin-top:18px;background:#fcf8ef;border:1px solid #efe4ce;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5527}
 </style>
 </head>
 <body>
-<div class="wrap">
-<div class="card">
-<img src="icon-512.png" alt="MLS" width="56" height="56" style="border-radius:13px;display:block;margin:2px 0 12px">
-<h1>MLS Assist <span class="ver" id="verBadge">latest version</span></h1>
-<p class="sub">The browser companion that reads your Athena schedule, drops finished notes into your EMR, and runs Autopilot. The easiest way to install is one click from the Chrome Web Store.</p>
-<span class="store-tag">★ Recommended · one-click install</span>
-<a class="store" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener">✚ Add to Chrome — Chrome Web Store<span class="store-sub">Installs &amp; auto-updates automatically</span></a>
-<div class="divider"><span>Or install manually / older method</span></div>
-<button id="dl" class="secondary" onclick="buildZip()">⬇ Download MLS Assist (.zip)</button>
-<div id="status"></div>
-<ol>
-<li>Click the button above — it saves a versioned <code id="zipName">MLS_Assist_v…zip</code> to your Downloads. Create a new folder and <b>unzip it there</b> (Windows: right-click and Extract All; Mac: double-click the zip and keep the resulting folder).</li>
-<li>Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right toggle).</li>
-<li><b>Already have an older MLS Assist?</b> Click <b>Remove</b> on it first (so the new one replaces it cleanly).</li>
-<li>Click <b>Load unpacked</b> and pick the unzipped folder that contains <code>manifest.json</code>.</li>
-<li>Make sure you're <b>signed in to MLS in a tab</b> — no key to paste. Then open your Athena schedule and use <b>📅 Pull schedule</b> in MLS.</li>
-</ol>
-<div class="note">If the schedule pull still says "older version" after this, double-check you clicked <b>Remove</b> on the old copy in step 3 — Chrome can otherwise keep running the old one.</div>
-</div>
-</div>
+<main class="wrap">
+  <section class="card" aria-labelledby="pageTitle">
+    <img src="icon-512.png" alt="" width="56" height="56" style="border-radius:13px;display:block;margin:2px 0 12px">
+    <h1 id="pageTitle">MLS Assist <span class="ver" id="verBadge">published version</span></h1>
+    <p class="sub">The published Chrome Web Store channel is the only extension build currently offered here. It can read an Athena schedule only after the clinician starts the pull and keeps review and final actions under clinician control.</p>
+    <span class="tag">Published channel</span>
+    <a class="store" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer">Open MLS Assist in the Chrome Web Store<span class="store-sub">Chrome manages installation and published updates</span></a>
+    <div class="divider"><span>Manual installation</span></div>
+    <button id="dl" type="button" disabled aria-describedby="status">Manual candidate package withheld</button>
+    <div id="status" role="status">A newer candidate is being tested in an isolated browser. Loose source files and an unstamped ZIP are not distributed. Manual download will return only after the exact package and SHA-256 digest pass the release gate.</div>
+    <div class="note">Do not remove a working extension to try an unpublished candidate. If an update is eventually released, this page will show the exact version and package digest.</div>
+  </section>
+</main>
 <script>
-// Keep the version badge + title in sync with extension-version.json (single source of truth, never goes stale).
-var MLS_EXTENSION_VERSION='';
 (function(){
-try{
-fetch('/extension-version.json?t='+Date.now(),{cache:'no-store'})
-.then(function(r){return r.ok?r.json():null;})
-.then(function(j){
-if(!j||!j.version) return;
-MLS_EXTENSION_VERSION=String(j.version).trim();
-var v='v'+MLS_EXTENSION_VERSION;
-var badge=document.getElementById('verBadge');
-if(badge) badge.textContent=v;
-var zipName=document.getElementById('zipName');
-if(zipName) zipName.textContent='MLS_Assist_v'+MLS_EXTENSION_VERSION+'.zip';
-document.title='Download MLS Assist '+v;
-})
-.catch(function(){/* leave static fallback in place */});
-}catch(e){/* leave static fallback in place */}
+  'use strict';
+  fetch('/extension-version.json?t='+Date.now(),{cache:'no-store',credentials:'same-origin',referrerPolicy:'no-referrer'})
+    .then(function(response){ return response.ok ? response.json() : null; })
+    .then(function(release){
+      var version=release&&/^\d+(?:\.\d+){0,3}$/.test(String(release.version||''))?String(release.version):'';
+      if(!version) return;
+      document.getElementById('verBadge').textContent='v'+version;
+      document.title='MLS Assist published channel v'+version;
+    })
+    .catch(function(){ /* Static published-channel copy remains accurate. */ });
 })();
-</script>
-<script>
-var FILES=['manifest.json','background.js','destination_teach_navigation_guard.js','content.js','content.css','popup.html','popup.js','mls-popup.js','mls-popup.css','offscreen.html','offscreen.js','feat_codes_driver.js','ext_reviews_reader.js','write_safety_guard.js','review_screen.js','teach_destination_memory.js','icon-16.png','icon-32.png','icon-48.png','icon-128.png'];
-function setS(msg,cls){var el=document.getElementById('status');el.innerHTML=msg;el.className=cls||'';}
-async function getExtensionVersion(){
-if(/^\d+(?:\.\d+){0,3}$/.test(MLS_EXTENSION_VERSION)) return MLS_EXTENSION_VERSION;
-var response=await fetch('/manifest.json?t='+Date.now(),{cache:'no-store'});
-if(!response.ok) throw new Error('fetch manifest.json → '+response.status);
-var manifest=await response.json();
-var version=String(manifest&&manifest.version||'').trim();
-if(!/^\d+(?:\.\d+){0,3}$/.test(version)) throw new Error('invalid extension version');
-MLS_EXTENSION_VERSION=version;
-return version;
-}
-async function buildZip(){
-var btn=document.getElementById('dl');btn.disabled=true;
-try{
-var version=await getExtensionVersion();
-var releaseName='MLS_Assist_v'+version+'.zip';
-setS('Checking the verified v'+version+' package…');
-try{
-var packaged=await fetch('/'+encodeURIComponent(releaseName)+'?t='+Date.now(),{method:'HEAD',cache:'no-store'});
-if(packaged.ok){
-var direct=document.createElement('a');direct.href='/'+encodeURIComponent(releaseName);direct.download=releaseName;document.body.appendChild(direct);direct.click();direct.remove();
-setS('✅ Downloaded '+releaseName+' — now follow steps 1–5 below.','ok');
-return;
-}
-}catch(staticError){/* A release ZIP may not have been published yet; build the same allowlisted package locally. */}
-if(typeof JSZip==='undefined') throw new Error('could not load the zip library and the verified package is not published yet');
-var zip=new JSZip();
-for(var i=0;i<FILES.length;i++){
-var f=FILES[i];setS('Packaging '+f+' ('+(i+1)+'/'+FILES.length+')…');
-var r=await fetch('/'+f+'?t='+Date.now(),{cache:'no-store'});
-if(!r.ok) throw new Error('fetch '+f+' → '+r.status);
-var buf=await r.arrayBuffer();
-zip.file(f,buf,{date:new Date('1980-01-01T00:00:00Z')});
-}
-setS('Building zip…');
-var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:9}});
-var url=URL.createObjectURL(blob);
-var a=document.createElement('a');a.href=url;a.download=releaseName;document.body.appendChild(a);a.click();
-setTimeout(function(){URL.revokeObjectURL(url);a.remove();},2000);
-setS('✅ Downloaded '+releaseName+' — now follow steps 1–5 below.','ok');
-}catch(e){
-setS('Something went wrong: '+(e&&e.message?e.message:e)+'. Refresh and try again.','err');
-}finally{
-btn.disabled=false;
-}
-}
 </script>
 </body>
 </html>

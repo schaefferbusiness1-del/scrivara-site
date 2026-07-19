@@ -23,8 +23,8 @@
   'use strict';
   try { if (window.__mlsWidgetDeck && window.__mlsWidgetDeck.installed) return; } catch (e) { return; }
 
-  /* wd-1.0.1: poll hygiene -- widget list memoized by raw stored string. */
-  var VERSION = 'wd-1.0.1';
+  /* wd-1.1.0: semantic identity, review indicator and single visible owner. */
+  var VERSION = 'wd-1.1.0';
   var DECK_ID = 'mlsWdDeck', STYLE_ID = 'mlsWdStyle', CHIPS_ID = 'mlsWdBuilderChips';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -51,6 +51,7 @@
       '#' + DECK_ID + ' .wd-acts{display:flex;gap:6px;margin-top:auto;padding-top:4px}',
       '#' + DECK_ID + ' .wd-acts button{border:0;background:#EAF1EE;color:#2E6A4B;border-radius:8px;padding:4px 10px;font:700 11.5px/1.2 system-ui;cursor:pointer}',
       '#' + DECK_ID + ' .wd-acts button:hover{background:#DEEAE3}',
+      'body.mls-widget-deck-owner #customWidgetsHost{display:none!important}',
       '#' + DECK_ID + ' .wd-starter{border:1px dashed #EAF1EE;border-radius:12px;background:#FCFBF8;padding:11px 13px}',
       '#' + DECK_ID + ' .wd-starter b{font:800 12.5px/1.4 system-ui;color:#204034}',
       '#' + DECK_ID + ' .wd-starter p{margin:3px 0 8px;font:500 11.5px/1.45 system-ui;color:#2E6A4B}',
@@ -72,7 +73,9 @@
       var raw = null;
       try { if (isFn(window.uns)) raw = localStorage.getItem(window.uns('customWidgets')); } catch (e) {}
       if (raw !== null && raw === _wMemoRaw) return _wMemoVal;
-      _wMemoVal = window.getCustomWidgets() || [];
+      _wMemoVal = isFn(window.getRenderableCustomWidgets)
+        ? (window.getRenderableCustomWidgets() || [])
+        : (window.getCustomWidgets() || []);
       _wMemoRaw = raw;
       return _wMemoVal;
     }, []);
@@ -85,6 +88,13 @@
     var out = [];
     for (var i = 0; i < lib.length; i++) if (STARTER_TITLES.indexOf(lib[i].title) >= 0) out.push({ i: i, tpl: lib[i] });
     return out.slice(0, 3);
+  }
+
+  function reviewState() {
+    return safe(function () {
+      if (!isFn(window.getCustomWidgets) || !isFn(window.cwAnalyzeWidgetSpecs)) return { hiddenCount: 0, titleConflictCount: 0 };
+      return window.cwAnalyzeWidgetSpecs(window.getCustomWidgets() || []);
+    }, { hiddenCount: 0, titleConflictCount: 0 });
   }
 
   /* ---------------- deck render (write-if-changed) ---------------- */
@@ -107,10 +117,13 @@
     return deck;
   }
   function skeleton(list) {
+    var review = reviewState();
     var h = '<div class="wd-head"><span class="wd-title">🧩 Smart widgets</span>' +
       '<span class="wd-note">fill from each generated note · analysis only — never writes to Athena</span>' +
       '<button type="button" class="wd-btn" id="mlsWdNew">＋ New widget</button>' +
-      '<button type="button" class="wd-btn" id="mlsWdStudio" title="Manage widgets in AI Studio">Manage</button></div>';
+      '<button type="button" class="wd-btn" id="mlsWdStudio" title="Manage widgets in AI Studio">Manage</button>' +
+      (review.hiddenCount ? '<button type="button" class="wd-btn" id="mlsWdReview">Review ' + review.hiddenCount + ' saved duplicate' + (review.hiddenCount === 1 ? '' : 's') + '</button>' : '') +
+      '</div>';
     if (!list.length) {
       var st = starters();
       h += '<div class="wd-grid">';
@@ -151,6 +164,12 @@
       }
       var n = $('nav_studio'); if (n) n.click();
     };
+    var rb = $('mlsWdReview'); if (rb) rb.onclick = function () {
+      if (typeof window.openWidgetBuilder === 'function') {
+        window.openWidgetBuilder();
+        setTimeout(function () { try { var n = $('cwWidgetReviewNotice') || $('cwList'); if (n) n.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 100);
+      }
+    };
     Array.prototype.slice.call(deck.querySelectorAll('[data-lib]')).forEach(function (b) {
       b.onclick = function () {
         var i = parseInt(b.getAttribute('data-lib'), 10);
@@ -183,7 +202,13 @@
     safe(function () { if ($('customWidgetsHost') && !$('customWidgetsHost').children.length && widgets().length && isFn(window.renderCustomWidgets)) window.renderCustomWidgets(); });
     var list = widgets();
     var deck = ensureDeck(); if (!deck) return;
-    var key = list.map(function (w) { return w.id; }).join(',');
+    /* Same-id edits must rebuild the card heading/description/actions. The old
+       id-only key left stale doctor-visible content until a reload. */
+    var review = reviewState();
+    var key = 'review:' + review.hiddenCount + ':' + review.titleConflictCount + '|' + list.map(function (w) {
+      var semantic = safe(function () { return isFn(window.cwSemanticFingerprint) ? window.cwSemanticFingerprint(w) : ''; }, '');
+      return JSON.stringify([w.id, semantic, w.emoji || '', w.description || '', w.auto !== false, w.originKey || '']);
+    }).join('|');
     if (key !== lastKey) {
       lastKey = key;
       deck.innerHTML = skeleton(list);
@@ -238,6 +263,7 @@
   var iv = null;
   function boot() {
     css();
+    safe(function () { if (document.body) document.body.classList.add('mls-widget-deck-owner'); });
     ensureChips();
     wrapRenderOutput();
     sync();
@@ -247,6 +273,7 @@
     if (iv) { clearInterval(iv); iv = null; }
     try { if (window.cwRenderOutput && window.cwRenderOutput.__wdWrapped && window.cwRenderOutput.__wdOrig) window.cwRenderOutput = window.cwRenderOutput.__wdOrig; } catch (e) {}
     [DECK_ID, STYLE_ID, CHIPS_ID].forEach(function (id) { var n = $(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    safe(function () { if (document.body) document.body.classList.remove('mls-widget-deck-owner'); });
     try { window.__mlsWidgetDeck.installed = false; } catch (e) {}
     return 'widget deck reverted';
   }

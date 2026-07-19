@@ -17,7 +17,7 @@ async function mlsSchedDomInline(doc){
     var STOP=/^(am|pm|new|est|established|office|visit|tele|telehealth|video|phone|follow|followup|fu|consult|consultation|annual|physical|wellness|exam|sick|nurse|lab|labs|injection|inj|procedure|recheck|np|min|mins|minute|minutes|arrived|checkedin|checked|scheduled|confirmed|cancelled|canceled|noshow|no|show|room|status|reason|provider|patient|time|type|resource|rendering|department|dept|appt|appts|total|appointments)$/i;
     function cl(s){return String(s==null?'':s).replace(/\s+/g,' ').trim();}
     function ht(s){return RT.test(String(s));}
-    function ft(s){var m=String(s).match(RTG);return m?cl(m[0]):'';}
+    function ft(s){var raw=String(s),m=/\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)||/\b(\d{1,2}):(\d{2})(?:\s*([ap])\.?\s*m\.?)?(?=$|[^A-Za-z])/i.exec(raw);if(!m)return '';var h=+m[1],mn=+m[2];if(mn>59||(m[3]?(h<1||h>12):h>23))return '';return String(h)+':'+m[2]+(m[3]?(' '+m[3].toUpperCase()+'M'):'');}
     function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
     function pui(s){var t=cl(s).toLowerCase().replace(/[\s:|\-–—]+$/g,'').trim();return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
@@ -65,10 +65,10 @@ async function mlsSchedDomInline(doc){
       var rows=[].slice.call(grid.querySelectorAll('tbody tr, [role="row"]'));
       if(!rows.length)rows=[].slice.call(grid.querySelectorAll('tr'));
       if(!hc.length&&rows.length)hc=[].slice.call(rows[0].querySelectorAll('th, td, [role="columnheader"], [role="cell"], [role="gridcell"]'));
-      var pi=-1,ni=-1;
-      hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t))ni=idx;});
+      var pi=-1,ni=-1,ti=-1;
+      hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t)&&!/(provider|rendering|resource|clinician|doctor)/.test(t))ni=idx;if(ti<0&&/^(?:(?:appointment|start)\s+)?time\s*:?$/.test(t))ti=idx;});
       if(pi<0)continue;
-      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r);if(!ht(rt))return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt);if(nm)out.appts.push({time:ft(rt),name:cl(nm),provider:prov||''});});
+      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm)return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||''});});
       if(out.appts.length)out.diag.via='table-column';
     }
     if(!out.appts.length){

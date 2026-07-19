@@ -168,6 +168,13 @@
     if (!w) return;
     var txt = widgetText(w);
     if (!txt) return;                       // nothing generated -> do not surface
+    /* The Visit-page widget deck is the canonical visible owner. When it is
+       installed, refresh that owner and never pop open Clinical tools merely
+       to expose the hidden mirror card. */
+    if (safe(function () { return window.__mlsWidgetDeck && window.__mlsWidgetDeck.installed; }, false)) {
+      safe(function () { if (isFn(window.__mlsWidgetDeck.sync)) window.__mlsWidgetDeck.sync(); });
+      return;
+    }
     var sig = w.id + ':' + txt.length + ':' + txt.slice(0, 24);
     if (_lastSig[w.id] === sig) {           // already surfaced THIS content
       // still make sure its card is open + badge refreshed (cheap, idempotent)

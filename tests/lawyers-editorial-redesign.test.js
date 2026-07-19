@@ -7,7 +7,7 @@ const html = fs.readFileSync(path.join(root, 'lawyers.html'), 'utf8');
 const home = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 // The public attorney experience uses the same calm editorial design system as
-// the main MLS homepage without replacing the working directory/request logic.
+// the main MLS homepage while case intake and commercial actions remain held.
 assert(html.includes('href="fonts/fonts.css"'), 'attorney page must load the shared MLS fonts');
 assert(html.includes('<meta name="theme-color" content="#204034">'), 'attorney page theme must use MLS deep green');
 assert(html.includes("--serif:'Newsreader'"), 'attorney page must use the editorial Newsreader heading face');
@@ -19,17 +19,32 @@ assert(html.includes('<b>MLS Scribe</b><span class="tagpill">For Attorneys</span
 assert(html.includes('.nav .links a{color:var(--ink2);font-size:14.5px;font-weight:500;white-space:nowrap}'), 'attorney navigation labels must stay on one line');
 assert(html.includes('.brand .tagpill{display:none}.nav .right .btn{display:none}.nav .signin{padding:8px 0;font-size:14px}'), 'mobile attorney header must keep sign-in visible without horizontal overflow');
 
-// Directory, geolocation, request transport, and secure portal entry remain wired.
+// Directory, geolocation, held-state explanation, and secure portal entry remain wired.
 ['dirSearch', 'dirSpec', 'dirState', 'dirGrid', 'dirStateMsg'].forEach(id => {
   assert(html.includes(`id="${id}"`), `expert directory control ${id} is missing`);
 });
 assert(html.includes("BACKEND_URL+'/api/public/experts'"), 'live expert directory endpoint is missing');
 assert(html.includes('onsubmit="return submitRequest(event)"'), 'attorney request JavaScript handler is missing');
-assert(html.includes('action="https://formsubmit.co/michael@mlsscribe.com" method="POST"'), 'request form needs a working no-JavaScript fallback');
-assert(html.includes('const REQUEST_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com"'), 'AJAX request transport is missing');
+assert(html.includes('action="#" method="get"'), 'held form must have only a same-page inert fallback');
+assert(!/formsubmit\.co|\bREQUEST_ENDPOINT\b/i.test(html), 'held attorney page must not expose FormSubmit or another public case-intake endpoint');
+assert(html.includes('<h2 style="margin-top:12px">Case intake is unavailable</h2>'), 'held form needs an explicit case-intake warning');
+assert(html.includes('This public page cannot accept case details, patient information, authorizations, or report requests.'), 'held form must explain which sensitive submissions are prohibited');
+for (const id of ['r-name', 'r-email', 'r-side', 'r-type', 'r-msg']) {
+  const control = html.match(new RegExp(`<(?:input|select|textarea)\\b[^>]*\\bid="${id}"[^>]*>`, 'i'));
+  assert(control && /\bdisabled\b/i.test(control[0]), `held case-intake control ${id} must be disabled`);
+}
+assert(/<button\b[^>]*\btype="submit"[^>]*\bdisabled\b[^>]*>Case intake unavailable<\/button>/i.test(html), 'held case-intake submit button must be disabled');
+
+const submitStart = html.indexOf('async function submitRequest(e)');
+const submitEnd = html.indexOf('/* ---------- init:', submitStart);
+assert(submitStart >= 0 && submitEnd > submitStart, 'held form handler is missing');
+const submitSource = html.slice(submitStart, submitEnd);
+assert(submitSource.includes('e.preventDefault()') && submitSource.includes('return false'), 'held form handler must always prevent submission');
+assert(submitSource.includes('Case intake is unavailable. Do not enter or send patient information.'), 'held form handler must reinforce the privacy warning');
+assert(!/\bfetch\s*\(|XMLHttpRequest|sendBeacon|window\.open\s*\(/.test(submitSource), 'held form handler must not transmit or navigate with case data');
 assert(html.includes('Already have an attorney portal login? <a href="ScribeFlow.html">Sign in here</a>'), 'attorney portal sign-in path is missing');
-assert(html.includes('href="MLS_Sample_Report.pdf"'), 'sample report link is missing');
-assert(fs.existsSync(path.join(root, 'MLS_Sample_Report.pdf')), 'sample report file is missing');
+assert(!/href=["'][^"']*MLS_Sample_Report\.pdf/i.test(html), 'held attorney page must not offer a report download');
+assert(html.includes('No report can be purchased or unlocked.'), 'held attorney page must explicitly refuse report purchase and unlock');
 
 assert(html.includes('class="dir-state is-loading" role="status" aria-live="polite" aria-busy="true"'), 'directory loading state must announce progress without shifting layout');
 assert((html.match(/class="dir-skeleton-card"/g) || []).length === 3, 'directory loading state must reserve a full desktop results row');
@@ -38,4 +53,4 @@ assert(html.includes("msg.setAttribute('aria-busy','false')"), 'directory must s
 
 assert(home.includes('.sales-video{padding:76px 0 48px}'), 'homepage sales video should sit lower beneath the hero');
 
-console.log('PASS attorney redesign: editorial MLS theme, live directory, request fallback, portal and sample-report paths');
+console.log('PASS attorney redesign: editorial MLS theme, live released-directory read, fail-closed case intake, portal path, and no report download');

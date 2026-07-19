@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <title>Synthetic sensitive-session boundary</title>
+  <style>
+    body { margin: 2rem; max-width: 56rem; font: 16px/1.5 system-ui, sans-serif; color: #102038; background: #f5f8fc; }
+    button { padding: .75rem 1rem; border: 0; border-radius: .6rem; color: white; background: #145fc3; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    pre { margin-top: 1rem; padding: 1rem; overflow: auto; border-radius: .6rem; background: white; box-shadow: 0 1px 5px #17385d22; }
+  </style>
+</head>
+<body>
+  <h1>Synthetic sensitive-session boundary</h1>
+  <p>This local-only fixture uses invented values. It never reads or writes Athena or real patient data.</p>
+  <button id="runBoundary" data-testid="run-boundary" type="button">Run synthetic logout purge</button>
+  <pre id="report" data-testid="boundary-report" hidden aria-live="polite"></pre>
+  <script src="../../clinical-state-purge.js?v=20260718csp1"></script>
+  <script>
+  (function () {
+    'use strict';
+    var TEST_EMAIL = 'synthetic-user@invalid.test';
+    var OTHER_EMAIL = 'other-synthetic-user@invalid.test';
+    var CURRENT_KEY = 'sf_u::' + TEST_EMAIL + '::futureClinicalCacheNeverNamedInPurge';
+    var OTHER_KEY = 'sf_u::' + OTHER_EMAIL + '::layoutPreference';
+    var SAFE_KEY = 'syntheticUiTheme';
+    var AUDIO_DATABASES = ['mls_rec_backup', 'mls_recguard'];
+
+    function openAndClose(name) {
+      return new Promise(function (resolve, reject) {
+        var request = indexedDB.open(name, 1);
+        request.onerror = function () { reject(request.error || new Error('open failed: ' + name)); };
+        request.onsuccess = function () { request.result.close(); resolve(); };
+      });
+    }
+
+    function dbNames() {
+      if (!indexedDB.databases) return Promise.resolve([]);
+      return indexedDB.databases().then(function (items) {
+        return items.map(function (item) { return item.name; }).filter(Boolean).sort();
+      });
+    }
+
+    document.getElementById('runBoundary').addEventListener('click', async function () {
+      var button = this;
+      var report = document.getElementById('report');
+      button.disabled = true;
+      report.hidden = false;
+      report.textContent = 'Running synthetic boundary…';
+      try {
+        localStorage.setItem(CURRENT_KEY, 'invented-clinical-cache');
+        localStorage.setItem('mlsSchedProviders', 'invented-provider-cache');
+        localStorage.setItem('providerName', 'Invented Provider');
+        localStorage.setItem(OTHER_KEY, 'preserve-other-account');
+        localStorage.setItem(SAFE_KEY, 'preserve-ui-preference');
+        sessionStorage.setItem('syntheticAppointmentDraft', 'invented-draft');
+        await Promise.all(AUDIO_DATABASES.map(openAndClose));
+
+        var purgeResult = window.__mlsClinicalStatePurge.purge(TEST_EMAIL);
+        var dbResult = await purgeResult.databases;
+        await new Promise(function (resolve) { setTimeout(resolve, 30); });
+        var databasesAfter = await dbNames();
+        var result = {
+          pass: localStorage.getItem(CURRENT_KEY) === null &&
+            localStorage.getItem('mlsSchedProviders') === null &&
+            localStorage.getItem('providerName') === null &&
+            localStorage.getItem(OTHER_KEY) === 'preserve-other-account' &&
+            localStorage.getItem(SAFE_KEY) === 'preserve-ui-preference' &&
+            sessionStorage.getItem('syntheticAppointmentDraft') === null &&
+            AUDIO_DATABASES.every(function (name) { return databasesAfter.indexOf(name) === -1; }),
+          removedCurrentAccount: localStorage.getItem(CURRENT_KEY) === null,
+          removedDerivedProviderCache: localStorage.getItem('mlsSchedProviders') === null,
+          removedExactProviderIdentity: localStorage.getItem('providerName') === null,
+          preservedOtherAccount: localStorage.getItem(OTHER_KEY) === 'preserve-other-account',
+          preservedUiPreference: localStorage.getItem(SAFE_KEY) === 'preserve-ui-preference',
+          clearedTabSession: sessionStorage.getItem('syntheticAppointmentDraft') === null,
+          audioDatabaseDeleteResults: dbResult,
+          audioDatabasesAfter: databasesAfter.filter(function (name) { return AUDIO_DATABASES.indexOf(name) !== -1; }),
+          removedLocalKeys: purgeResult.removedLocal.slice().sort()
+        };
+        report.textContent = JSON.stringify(result, null, 2);
+        report.dataset.pass = result.pass ? 'true' : 'false';
+        localStorage.removeItem(OTHER_KEY);
+        localStorage.removeItem(SAFE_KEY);
+      } catch (error) {
+        report.textContent = JSON.stringify({ pass: false, error: String(error && (error.stack || error.message) || error) }, null, 2);
+        report.dataset.pass = 'false';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
