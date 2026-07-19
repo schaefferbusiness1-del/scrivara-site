@@ -11,6 +11,10 @@
   'use strict';
   var NS = '__mlsCopilotSlim', VERSION = 'csp-2.1.0';
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+    window[NS] = Object.freeze({ installed: false, skipped: 'public-synthetic-preview', version: VERSION });
+    return;
+  }
 
   var originalFetch = window.fetch;
   if (typeof originalFetch !== 'function') {

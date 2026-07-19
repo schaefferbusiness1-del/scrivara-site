@@ -33,7 +33,9 @@ const PUBLIC_HTML = [
 
 const PUBLIC_ASSETS = [
   'feat_mls_force_full_phone.js',
-  'phone-manifest.json'
+  'phone-manifest.json',
+  'public-preview-policy.js',
+  'public-preview-runtime.js'
 ];
 
 const PUBLIC_VENDOR_ASSETS = [
@@ -531,10 +533,10 @@ async function verifyServiceWorkerRuntime() {
     'old fp110 cache entry shadowed the exact-ID/account-bound fp111 Find implementation');
   assert(fetchCalls.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260719fp111`),
     'new Find immutable URL did not reach the network when only fp110 was cached');
-  const newStatusCenter = await runFetch(`${origin}/feat_mls_status_center.js?v=20260719sc110`);
-  assert.strictEqual(await newStatusCenter.text(), `network:${origin}/feat_mls_status_center.js?v=20260719sc110`,
+  const newStatusCenter = await runFetch(`${origin}/feat_mls_status_center.js?v=20260719sc111`);
+  assert.strictEqual(await newStatusCenter.text(), `network:${origin}/feat_mls_status_center.js?v=20260719sc111`,
     'old cached Status Center shadowed the account/epoch-isolated implementation');
-  assert(fetchCalls.includes(`${origin}/feat_mls_status_center.js?v=20260719sc110`),
+  assert(fetchCalls.includes(`${origin}/feat_mls_status_center.js?v=20260719sc111`),
     'new Status Center immutable URL did not reach the network when the old version was cached');
   await runFetch(`${origin}/feat_runtime.js?v=reviewed-2&token=synthetic-secret`);
 
@@ -555,7 +557,7 @@ async function verifyServiceWorkerRuntime() {
   assert(!cachedKeys.some((key) => /MLS_Assist_v[^/]+\.zip/i.test(key)), 'extension downloads must not be cached by the service worker');
   assert(cachedKeys.includes(`${origin}/feat_runtime.js?v=reviewed-2`), 'exact versioned static assets must remain cacheable');
   assert(cachedKeys.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260719fp111`), 'new exact-ID Find implementation was not cached under its own immutable URL');
-  assert(cachedKeys.includes(`${origin}/feat_mls_status_center.js?v=20260719sc110`), 'account-isolated Status Center was not cached under its own immutable URL');
+  assert(cachedKeys.includes(`${origin}/feat_mls_status_center.js?v=20260719sc111`), 'preview-safe account-isolated Status Center was not cached under its own immutable URL');
   for (const vendorRequest of PUBLIC_VENDOR_REQUESTS) {
     assert(cachedKeys.includes(`${origin}/${vendorRequest}`), `approved versioned vendor runtime was not cached: ${vendorRequest}`);
   }
@@ -564,7 +566,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v18'], 'activation must remove every superseded MLS cache');
+  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v19'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [

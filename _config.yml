@@ -109,6 +109,11 @@ include:
   - "phone-manifest.json"
   - "feat_mls_force_full_phone.js"
 
+  # Fail-closed, memory-only public synthetic preview boundary and its
+  # canonical-workspace fixture runtime. Both are inert outside ?preview=1.
+  - "public-preview-policy.js"
+  - "public-preview-runtime.js"
+
   # Exact same-origin clinical runtime libraries. Jekyll 3.10 filters a nested
   # directory before it sees its children, then filters each child by basename.
   # `vendor` opens traversal while the two excludes above deny every child;

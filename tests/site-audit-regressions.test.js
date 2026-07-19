@@ -35,9 +35,10 @@ assert(loading.includes("p.setAttribute('role', 'status')"), 'busy pill needs st
 assert(loading.includes("p.setAttribute('aria-live', 'polite')"), 'busy pill needs polite announcements');
 assert(loading.includes("p.setAttribute('aria-hidden', 'true')") && loading.includes("p.setAttribute('aria-hidden', 'false')"), 'busy pill must leave and re-enter the accessibility tree with its visual state');
 assert(loading.includes('opacity:0;visibility:hidden;'), 'idle busy pill must be visually and semantically hidden');
-assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260718lb201"), 'the shared progress asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260719lb202"), 'the shared progress asset needs a fresh deployment URL');
 
-assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260718sg1c4'), 'reconciled Study Groups mount needs a fresh deployment URL');
+assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260719sg1c5'), 'reconciled Study Groups mount needs a fresh deployment URL');
+assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'"), 'read-only public preview still boots the hidden Study Groups/AI Studio surface');
 assert(studyGroups.includes("document.querySelectorAll('[id=\"mls-sg-root\"]')") && studyGroups.includes("[0, 250, 1000, 3000, 8000]"), 'Study Groups no longer deduplicates and reconciles its late mount');
 assert(!studyGroups.includes('id="mls-sg-athena"') && !studyCalm.includes('pull visits from Athena'), 'unverified Study Groups Athena-visit control remains visible');
 assert(!studyAnalysis.includes('mls-sg-athena') && siteBundle.includes('feat_mls_task7_analysis_sg.js') && siteBundle.includes('A+"?v=20260718t7ac2"'), 'retired Study Groups Athena-visit enhancement remains loaded or callable');

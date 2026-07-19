@@ -6223,6 +6223,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { control.click(); } catch (e) { flowToast(label + ' could not open. Try again.', 'err'); }
   }
   function syncTopLane(rec) {
+    if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+      if (!rec || !rec.parentNode) return;
+      var previewRecord = rec.querySelector('.ez3fl-recbtn');
+      if (previewRecord) {
+        var previewLabel = previewRecord.querySelector('.ez3fl-rblabel');
+        setLaneText(previewLabel || previewRecord, 'Recording off in preview');
+        setLaneDisabled(previewRecord, true);
+        setLaneAttr(previewRecord, 'aria-disabled', 'true');
+        setLaneAttr(previewRecord, 'data-mls-preview-blocked', '1');
+        setLaneAttr(previewRecord, 'title', 'Recording is off in the read-only sample workspace.');
+      }
+      var previewHint = rec.querySelector('.ez3fl-rechint');
+      setLaneText(previewHint, 'Sample workspace only - recording, cloud sync, Athena, sending, and signing are off.');
+      return;
+    }
     syncPrimaryVoiceTools(rec);
     if (!rec || !rec.parentNode) return;
     var live = recordingNow();
@@ -6556,14 +6571,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        This slow, visibility-gated safety pass only catches a legacy owner that
        mutates .value without firing an event; it no longer forces layout and
        rescans the transcript twice every second. */
-    _laneIv = setInterval(function () {
-      try {
-        if (document.hidden) return;
-        var visit = $('visitView');
-        if (!visit || visit.style.display === 'none') return;
-        syncTopLane(_primaryLane || document.querySelector('.ez3fl-record'));
-      } catch (e) {}
-    }, 2500);
+    if (!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true)) {
+      _laneIv = setInterval(function () {
+        try {
+          if (document.hidden) return;
+          var visit = $('visitView');
+          if (!visit || visit.style.display === 'none') return;
+          syncTopLane(_primaryLane || document.querySelector('.ez3fl-record'));
+        } catch (e) {}
+      }, 2500);
+    }
     /* b233: the duplicate seen-count is now removed at the SOURCE (homeStatus in
        every engine copy). The b232 trim interval fought the engine's 700ms status
        rewrite and made the line flip between two texts - deleted, nothing to trim. */
@@ -11358,6 +11375,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ========================================================================= */
 (function () {
   'use strict';
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+    window.__mlsImportChainFix = Object.freeze({ installed: false, skipped: 'public-synthetic-preview' });
+    return;
+  }
   if (window.__mlsImportChainFix) return;
   var api = { version: '3.7.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
@@ -15865,6 +15886,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ========================================================================= */
 (function () {
   'use strict';
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+    window.__mlsImportChainFix = Object.freeze({ installed: false, skipped: 'public-synthetic-preview' });
+    return;
+  }
   if (window.__mlsImportChainFix) return;
   var api = { version: '3.5.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
@@ -19240,6 +19265,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var pollIv = null;
   function startPoll() {
     if (pollIv) return;
+    /* The sealed public sample is deterministic and read-only. Its runtime
+       owns truthful labels, so do not repaint clocks/status/record actions. */
+    if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) return;
     pollIv = setInterval(function () {
       if (!host || host.offsetParent === null) return; /* Visit tab not visible */
       if (S.mode === 'doctor' && (S.screen === 'home' || S.screen === 'choose') && portalInviteReady() !== !!S._portalReady) { render(); return; }
@@ -29887,8 +29915,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return p;
   };
   wrappedFetch.__r44 = 1;
-  if (!oFetch.__r44) window.fetch = wrappedFetch;
-  cleanup.push(function () { if (window.fetch === wrappedFetch) window.fetch = oFetch; });
+  try { if (!oFetch.__r44) window.fetch = wrappedFetch; } catch (e) {}
+  cleanup.push(function () { try { if (window.fetch === wrappedFetch) window.fetch = oFetch; } catch (e) {} });
 
   /* ================= Q10 — Settings control panel ================= */
   function buildControls() {
@@ -32268,7 +32296,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsBootLoader={installed:true,version:'single-owner-1.0.0',owner:'ScribeFlow'};
 })();
 
-;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716t3106";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
+;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719t3107";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
 
 /* ============================================================================
  * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
@@ -32302,7 +32330,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b430';
+  window.__MLS_AV = window.__MLS_AV || 'b431';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32612,7 +32640,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-19-b430';
+  var MLS_APP_BUILD='2026-07-19-b431';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -39639,9 +39667,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260716unify110';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Copilot one-conversation store, request-specific pending state, event-driven context */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260716csp210';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260719csp211';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260719asst143';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260719p2c2';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260719p2c3';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260718ca203';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2115';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
@@ -39711,7 +39739,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dk1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630as1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
 /* Stripe/legal payout onboarding is intentionally held. */
-;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sg1c4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* idempotent Study Groups engine; one reconciled Studio mount, reviewed local imports */
+;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719sg1c5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* idempotent Study Groups engine; one reconciled Studio mount, reviewed local imports */
 ;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sa3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
 ;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
 
@@ -40459,11 +40487,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{var A="feat_mls_pull_dateguard.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701dg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item81: pull DATE GUARD -- root-cause fix for the misdated-pull bug (stray "July 4, 2026" holiday text poisoned _detectSchedDate; three pulls filed on Sat Jul 4; data repaired Jul 1, backup in localStorage mlsRepairBackup_20260701). Fallback date now requires a weekday-adjacent day-header date, else within 3 days of today, else defers to the current clinic day, with an honest status line. Revert: window.__mlsDateGuard.revert() */
 
-;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260702pp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping: "Pulling as" doctor chip by the Athena pull button; stamps provider onto imported appointments (import-window only) now that the backend persists+returns provider (d9e9a0c, live-verified); restores the imported-day jump button (late re-wrap after item81). Revert: window.__mlsProv.revert() */
+;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719pp1c3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping in hosted mode and exits before chips/timers/wrappers in the sealed public preview. Revert: window.__mlsProv.revert() */
 
 
-;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719b18v7";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
-;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719sc110";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Status Center 1.1.0 -- account/epoch-isolated tasks, honest readiness evidence, one current patient/day/data-source status surface, and bounded retries. */
+;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719b18v8";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
+;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719sc111";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Status Center 1.1.0 -- account/epoch-isolated tasks, honest readiness evidence, one current patient/day/data-source status surface, bounded retries, and sealed-preview early exit. */
 
 ;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718pr5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report v2.0.0 -- Editorial Calm UI (summary cards, provider chips, month stepper, collapsible per-provider tables, print), auto-build, credential-only PA/NP rate default, unmatched-estimate disclosure, incomplete-total flagging. Same honest data model: grounded estimates + manual overrides. Read-only. Revert: remove this loader. */
 ;(function(){try{var A="feat_mls_task7_analysis_sg.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718t7ac2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task7: Analysis dashboard + local Study Groups validation/wrong-group fix/remove+rename/inline status/empty-guards/2-col layout. Revert: window.__mlsT7.revert() */
@@ -40889,7 +40917,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260719sg2e';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
 ;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sr232";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260718pr204';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260718lb201';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* shared request-owned progress: real counts/stages, deadlines, stale rejection, retry/cancel, refresh recovery; begin/end remain compatible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260719lb202';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* shared request-owned progress: real counts/stages, deadlines, stale rejection, retry/cancel, refresh recovery; begin/end remain compatible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260718tl110';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */
 ;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260719cmd103';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; version-aware compatibility owner (cpal-1.0.3; revert()). */
@@ -41268,7 +41296,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var st = document.createElement('style'); st.id = 'mlsDsCss';
   st.textContent = [
     '#mlsDsStrip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:9px 12px;margin:0 0 10px;box-shadow:0 1px 2px rgba(20,33,28,.04);}',
-    '#mlsDsStrip .ds-nav{width:32px;height:32px;border-radius:8px;border:1px solid #E4E1D8;background:#FCFBF8;color:#55605A;font-size:15px;cursor:pointer;line-height:1;}',
+    '#mlsDsStrip .ds-nav{width:44px;height:44px;border-radius:8px;border:1px solid #E4E1D8;background:#FCFBF8;color:#55605A;font-size:18px;cursor:pointer;line-height:1;}',
     '#mlsDsStrip .ds-nav:hover{background:#F0EEE7;color:#1A211C;}',
     '#mlsDsStrip .ds-day{font:600 13.5px "Public Sans",system-ui,sans-serif;color:#1A211C;min-width:150px;text-align:center;}',
     '#mlsDsStrip .ds-day b{font-weight:700;}',
@@ -41338,7 +41366,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function syncStrip() {
     var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
     var isToday = (DS.day === todayKey());
-    if (lb) lb.innerHTML = (isToday ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
+    var desiredDayLabel = (isToday ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
+    if (lb && lb.innerHTML !== desiredDayLabel) lb.innerHTML = desiredDayLabel;
     /* Keep one stable strip topology on every date. The Today shortcut used
        to appear only after leaving Today, which made future/past workspaces
        look like a different page. It now remains in the same position and is
@@ -41802,10 +41831,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return;
       }
       var strip = document.createElement('div'); strip.id = 'mlsDsStrip';
+      /* The static accessibility attributes are also present in innerHTML's
+         descendants. Keep this guard so lightweight recovery-test DOMs can
+         still prove the day strip renders before a real browser upgrades the
+         container semantics. */
+      if (strip.setAttribute) { strip.setAttribute('role', 'group'); strip.setAttribute('aria-label', 'Visit date controls'); }
       strip.innerHTML =
-        '<button type="button" class="ds-nav" id="mlsDsPrev" title="Previous day">&#8249;</button>' +
-        '<span class="ds-day" id="mlsDsDayLbl"></span>' +
-        '<button type="button" class="ds-nav" id="mlsDsNext" title="Next day">&#8250;</button>' +
+        '<button type="button" class="ds-nav" id="mlsDsPrev" title="Previous day" aria-label="Previous day">&#8249;</button>' +
+        '<span class="ds-day" id="mlsDsDayLbl" aria-live="polite" aria-atomic="true"></span>' +
+        '<button type="button" class="ds-nav" id="mlsDsNext" title="Next day" aria-label="Next day">&#8250;</button>' +
         '<button type="button" class="ds-today" id="mlsDsTodayBtn" aria-label="Go to Today">Today</button>' +
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +

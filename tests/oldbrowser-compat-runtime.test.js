@@ -6,8 +6,11 @@
  * Proven here:
  *  1. The identical ES5 compat block is inlined in BOTH ScribeFlow.html and
  *     phone.html before app dependencies and contains no post-ES5 syntax.
- *     ScribeFlow's only earlier script is the ES5 one-time-token scrubber,
- *     which must run before anything can observe the sensitive URL.
+ *     ScribeFlow's only earlier code is the ES5 one-time-token scrubber, the
+ *     exact reviewed preview-policy dependency, and its ES5 fail-closed
+ *     fallback. The policy must run before compatibility code so a requested
+ *     preview cannot touch native storage/network first; it is inert on every
+ *     ordinary route.
  *  2. Runtime: with the modern APIs deleted (simulating old Chrome), the
  *     block restores working Promise.allSettled / Promise.any /
  *     String.replaceAll / at / findLast / flat / hasOwn / fromEntries /
@@ -41,12 +44,18 @@ function extractBlock(src, file) {
     assert.strictEqual(firstScript, blockScript, file + ': compat block must be the first script');
   } else {
     const earlier = src.slice(firstScript, blockScript);
-    assert(earlier.includes('Capture one-time auth handoffs'), file + ': only the early token scrubber may precede compat');
-    assert(!/<script\b[^>]*\bsrc\s*=/.test(earlier), file + ': an external dependency runs before old-browser compat');
-    const earlyCode = earlier.replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '');
-    new Function(earlyCode);
-    const noEarlyStrings = earlyCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/'(?:[^'\\]|\\.)*'/g, "''");
-    assert(!/=>|`|\b(?:let|const|async|await)\b/.test(noEarlyStrings), file + ': early token scrubber must remain ES5');
+    assert(earlier.includes('Capture one-time auth handoffs'), file + ': token scrubber must precede compat');
+    assert(earlier.includes('If the reviewed preview policy is missing'), file + ': preview fail-closed fallback must precede compat');
+    const external = Array.from(earlier.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi), match => match[1]);
+    assert.deepStrictEqual(external, ['public-preview-policy.js?v=b431'], file + ': only the exact preview policy may load before compat');
+    const policy = fs.readFileSync(path.join(root, 'public-preview-policy.js'), 'utf8');
+    const earlyInline = Array.from(earlier.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi), match => match[1]);
+    assert.strictEqual(earlyInline.length, 2, file + ': unexpected inline code runs before compat');
+    for (const [label, earlyCode] of [['preview policy', policy], ['token scrubber', earlyInline[0]], ['preview fallback', earlyInline[1]]]) {
+      new Function(earlyCode);
+      const noEarlyStrings = earlyCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/'(?:[^'\\]|\\.)*'/g, "''");
+      assert(!/=>|`|\b(?:let|const|async|await)\b/.test(noEarlyStrings), file + ': early ' + label + ' must remain ES5 syntax');
+    }
   }
   return src.slice(start, end + endMark.length);
 }

@@ -104,6 +104,10 @@
   'use strict';
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || !W.document) return;
+  /* The sealed public sample workspace owns immutable browser primitives and
+   * exposes no live Athena/backend status.  Exit before installing wrappers,
+   * timers, observers, storage, or UI so delayed loading stays side-effect free. */
+  if (W.__MLS_PUBLIC_PREVIEW && W.__MLS_PUBLIC_PREVIEW.enabled === true) return;
   if (W.__mlsStatusCenter && W.__mlsStatusCenter.installed) return;
 
   var VERSION = '1.1.0';

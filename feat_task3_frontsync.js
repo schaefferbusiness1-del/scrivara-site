@@ -150,7 +150,8 @@
   wrapped.push(['MLSStatus.set', function () { if (S.set === statusSet) S.set = originalStatusSet; }]);
 
   /* --- fetch instrumentation: stages 1/2/3 driven by the REAL requests --- */
-  if (!window.fetch.__t3Wrapped) {
+  var publicPreview = !!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true);
+  if (!publicPreview && !window.fetch.__t3Wrapped) {
     var _fetch = window.fetch;
     var wf = function (input, init) {
       var url = ''; try { url = (typeof input === 'string') ? input : (input && input.url) || ''; } catch (e) {}

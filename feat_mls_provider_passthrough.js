@@ -28,6 +28,11 @@
 ;(function () {
   'use strict';
   try { if (window.__mlsProv && window.__mlsProv.installed) return; } catch (e) { return; }
+  var publicPreview = !!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true);
+  if (publicPreview) {
+    window.__mlsProv = Object.freeze({ installed: false, skipped: 'public-synthetic-preview' });
+    return;
+  }
   var PR = { installed: true, v: '1.0.1', state: {}, _ivs: [], _nodes: [], _orig: {} };
   window.__mlsProv = PR;
 
@@ -132,7 +137,7 @@
   var _fetchWrapInstalled = false;
   function installWraps() {
     /* fetch stamp - only while an import is active */
-    if (!_fetchWrapInstalled && !window.fetch.__provWrap) {
+    if (!publicPreview && !_fetchWrapInstalled && !window.fetch.__provWrap) {
       _fetchWrapInstalled = true;
       PR._orig.fetch = window.fetch;
       var pf = function (input, init) {

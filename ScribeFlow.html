@@ -67,6 +67,30 @@
   window.__mlsAuthHandoff = captured;
 })();
 </script>
+<!-- The public sample-workspace boundary must run before compatibility code,
+     clinical-state cleanup, service-worker setup, auth, or feature bundles.
+     In ordinary hosted/local use it is an exact no-op. -->
+<script src="public-preview-policy.js?v=b431"></script>
+<script>
+/* If the reviewed preview policy is missing, unsupported, or fails its
+   memory-isolation self-test, replace the document before any account,
+   backend, extension, media, or clinical runtime can start. */
+(function(){
+  var requested=false;
+  try{
+    var u=new URL(location.href);
+    requested=/\/ScribeFlow\.html$/.test(u.pathname)&&u.search==='?preview=1';
+  }catch(e){}
+  if(!requested)return;
+  var p=window.__MLS_PUBLIC_PREVIEW;
+  if(p&&p.enabled===true&&p.mode==='synthetic-read-only'&&p.storageMode==='memory'&&p.memoryStorageReady===true)return;
+  try{
+    document.open();
+    document.write('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Sample workspace unavailable</title><style>body{margin:0;background:#f7f5ef;color:#183a2f;font:16px/1.55 system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}.c{max-width:560px;margin:24px;padding:32px;border:1px solid #d8ded8;border-radius:18px;background:#fff;box-shadow:0 12px 36px rgba(24,58,47,.1)}h1{font-size:26px;margin:0 0 10px}a{color:#1f684d;font-weight:700}</style></head><body><main class="c" role="alert"><h1>Sample workspace unavailable</h1><p>The safety boundary could not start, so MLS did not open an account, contact Athena, or load the clinical workspace.</p><p><a href="/">Return to MLS</a></p></main></body></html>');
+    document.close();
+  }catch(e2){try{window.stop();}catch(e3){}}
+})();
+</script>
 <script>
 /* __mlsOldBrowserCompat v1.0.0 (b406) — old-Chrome / old-Mac support layer.
  * Loads FIRST, pure ES5. Three jobs:
@@ -236,8 +260,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <script src="vendor_qrcode.js?v=b430"></script>
-<link rel="preconnect" href="https://scrivara-backend.onrender.com" crossorigin>
-<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});var _swReloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(_swReloaded)return;_swReloaded=true;location.reload();});}</script>
+<script>(function(){var p=window.__MLS_PUBLIC_PREVIEW;if(p&&p.enabled===true)return;try{var l=document.createElement('link');l.rel='preconnect';l.href='https://scrivara-backend.onrender.com';l.crossOrigin='anonymous';document.head.appendChild(l);}catch(e){}if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});var reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(reloaded)return;reloaded=true;location.reload();});}})();</script>
 <style>/* fonts.css inlined (b392): removes the only render-blocking request; url()s rebased to fonts/ — the standalone fonts/fonts.css stays for all other pages. */
 /* vietnamese */
 @font-face {
@@ -1277,6 +1300,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </section>
 
     <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
+
+    <a href="ScribeFlow.html?preview=1" id="authPreviewLink" class="btn-ghost" style="display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;margin-top:11px;text-decoration:none">Explore a sample day &mdash; no account</a>
+    <p style="font-size:12.5px;line-height:1.4;text-align:center;color:var(--muted);margin:7px 0 0">Uses invented patients. Athena, cloud sync, sending, and signing are off.</p>
 
     <!-- Forgot-password link + inline email-reset panel -->
     <div id="forgotLinkWrap" style="text-align:center;margin-top:12px">
@@ -4190,6 +4216,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
    backendMode() returns false. The hosted site (https origin) is unaffected. */
 const _SF_DEMO = (function(){
   try{
+    if(window.__MLS_PUBLIC_PREVIEW&&window.__MLS_PUBLIC_PREVIEW.enabled===true) return true;
     if(location.protocol === 'file:') return true;
     if(new URLSearchParams(location.search).get('demo') === '1') return true;
   }catch(e){}
@@ -25427,6 +25454,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
+<script src="public-preview-runtime.js?v=b431"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25641,7 +25669,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b430';
+  window.__MLS_AV='b431';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

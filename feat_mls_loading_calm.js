@@ -25,6 +25,7 @@
   var jobs = {}, keyIndex = {}, timers = {}, retryFns = {}, cancelFns = {};
   var manualStack = [], showT = null, hideT = null, extHideT = null, extBusy = false;
   var extLabel = '', wrapIv = 0, tickIv = 0, originalFetch = null;
+  var publicPreview = !!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true);
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function now() { return Date.now(); }
@@ -264,6 +265,7 @@
 
   function isTracked(input) { var u = safe(function () { return typeof input === 'string' ? input : (input && input.url) || ''; }, ''); return /\/api\//.test(u) || /onrender\.com/.test(u); }
   function ensureWrap() {
+    if (publicPreview) return;
     var f = window.fetch; if (typeof f !== 'function' || f.__mlsLb) return;
     if (!originalFetch) originalFetch = f;
     var wrapped = function (input) {

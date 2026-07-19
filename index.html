@@ -168,6 +168,7 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 .hero h1 em{font-style:italic;color:var(--green)}
 .hero .lead{font-size:19px;line-height:1.6;color:var(--ink2);max-width:620px;margin:26px auto 0}
 .hero .ctas{display:flex;gap:14px;justify-content:center;margin-top:34px;flex-wrap:wrap}
+.hero .preview-helper{margin:12px auto 0;font-size:13.5px;color:var(--muted)}
 .hero .trust{display:flex;gap:10px;justify-content:center;margin-top:32px;font-size:13.5px;color:var(--ink2);flex-wrap:wrap}
 .hero .trust span{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:var(--sh-card)}
 .hero .trust b{color:var(--green);font-weight:800}
@@ -506,11 +507,13 @@ body.mdl-lock{overflow:hidden}
 <h1>Talk through the visit.<br>Walk out with a <em>finished, coded note.</em></h1>
 <p class="lead">MLS is a synthetic-evaluation clinical documentation workspace. It drafts structured notes and suggested coding for clinician review; Athena schedule reads and reviewed handoff workflows are still completing production validation.</p>
 <div class="ctas">
-<a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
+<a class="btn btn-primary btn-lg" href="ScribeFlow.html?preview=1">Explore a sample day</a>
+<a class="btn btn-ghost btn-lg" href="#demo">Book a 20-minute demo</a>
 <a class="btn btn-ghost btn-lg" href="ScribeFlow.html">Sign in to MLS</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
 <button id="mlsChatBtn" type="button" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
 </div>
+<p class="preview-helper">No account · invented patients · nothing connects or sends</p>
 <div class="trust"><span><b>Synthetic evaluation only</b></span><span>REST API under test</span><span>Clinician-started Athena schedule reads</span><span>Known-good extension rollback preserved</span><span>You review every draft</span></div>
 <p class="kslink">Checkout and founder rewards are held until production scope and commercial terms are released.</p>
 </div>
@@ -833,9 +836,12 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="wrap">
 <div class="demo-wrap">
 <div>
-<span class="eyebrow" style="color:var(--mint)">See it on a real visit</span>
-<h2>Watch the charting disappear</h2>
-<p>Book 20 minutes and we'll run MLS on a sample spine, PM&amp;R or pain visit — note, coding, athenahealth pull and a finished sign-off, start to finish. No commitment, no credit card.</p>
+<span class="eyebrow" style="color:var(--mint)">Walk through a sample visit</span>
+<h2>See the Today workspace for yourself</h2>
+<p>Open the same Today workspace with invented patients. Athena, cloud storage, sending, and signing stay off in the preview, so nothing connects or leaves it.</p>
+<p><a class="btn btn-primary" href="ScribeFlow.html?preview=1">Explore a sample day</a></p>
+<p style="font-size:13.5px;margin-top:10px">No account · invented patients · nothing connects or sends</p>
+<p>Want someone to guide you through it? Book 20 minutes for a synthetic spine, PM&amp;R or pain walkthrough. No commitment, no credit card.</p>
 <p style="font-size:14.5px;margin-top:16px">Prefer email? <a href="mailto:michael@mlsscribe.com" style="color:#fff;text-decoration:underline">michael@mlsscribe.com</a></p>
 </div>
 <form class="demo-form" onsubmit="return submitDemo(event)">
@@ -879,9 +885,10 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <section class="finalcta">
 <div class="wrap">
 <h2>Get your evenings back.</h2>
-<p>See MLS on a real spine, pain or PM&amp;R visit — note, coding and sign-off, start to finish — in 20 minutes.</p>
+<p>Explore a sample spine, pain or PM&amp;R day with invented patients, or book a guided walkthrough when you're ready.</p>
 <div class="cta">
-<a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
+<a class="btn btn-primary btn-lg" href="ScribeFlow.html?preview=1">Explore a sample day</a>
+<a class="btn btn-ghost btn-lg" href="#demo">Book a 20-minute demo</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
 </div>
 </div>

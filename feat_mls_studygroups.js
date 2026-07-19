@@ -23,6 +23,16 @@
  */
 (function () {
   'use strict';
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+    try {
+      window.__mlsStudyGroups = Object.freeze({
+        __live: false,
+        installed: false,
+        skipped: 'public-synthetic-preview'
+      });
+    } catch (e0) {}
+    return;
+  }
   if (window.__mlsStudyGroups && window.__mlsStudyGroups.__live) {
     try { window.__mlsStudyGroups.revert(); } catch (e) {}
   }

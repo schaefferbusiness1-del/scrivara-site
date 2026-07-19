@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 const expected = [
   ['feat_mls_copilot_unify.js', '20260716unify110'],
-  ['feat_copilot_slim.js', '20260716csp210'],
+  ['feat_copilot_slim.js', '20260719csp211'],
   ['feat_mls_asst_fix.js', '20260719asst143'],
   ['feat_mls_copilot_actions.js', '20260718ca203'],
   ['feat_mls_copilot_request_safety.js', '20260718crs111'],

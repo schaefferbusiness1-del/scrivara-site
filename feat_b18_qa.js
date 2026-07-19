@@ -288,6 +288,7 @@ var __mlsB18Q=window.__mlsB18QA;
  * The gate NEVER signs, never clicks anything in Athena, and cancels cleanly. */
 (function(){
   "use strict";
+  if(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled===true) return;
   if(window.__mlsWbSafetyGate && window.__mlsWbSafetyGate.installed) return;
   var GATED=/^mlsApp(PasteNote|PasteRequest|PushVisit|PrepProcTemplate|PrepProcTemplateRequest|SignAndSave)$/;
   var originalPost=window.postMessage;

@@ -187,6 +187,7 @@
   try { if (window.__mlsAddVisitCycleGuard) return; } catch (e0) { return; }
 
   var TAG = '[MLS addvisit-cycle-guard]';
+  var publicPreview = !!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true);
   var FAST_MS = 100, FAST_TICKS = 1800, SLOW_MS = 5000;
   var RETRY_AFTER_MS = 12000;
   var BANNER_ID = 'mlsAvcgBanner';
@@ -242,9 +243,9 @@
     } catch (e) {
       _wk = null;
       api.state.workerOk = false;
-      try {
-        console.warn(TAG, 'Worker timers unavailable (' + ((e && e.message) || e) + ') - falling back to main-thread timers, which Chrome throttles to ~0 while this tab is hidden. Guard installation may be delayed until the tab is next visible; capture-phase visibility/focus hooks remain active.');
-      } catch (e2) {}
+      if (!publicPreview) {
+        try { console.warn(TAG, 'Worker timers unavailable (' + ((e && e.message) || e) + ') - falling back to main-thread timers, which Chrome throttles to ~0 while this tab is hidden. Guard installation may be delayed until the tab is next visible; capture-phase visibility/focus hooks remain active.'); } catch (e2) {}
+      }
       fbLoop();
     }
   }
@@ -3141,6 +3142,7 @@
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) return;
   try { if (window.__mlsPullAnyDay) return; } catch (e) { return; }
 
   var api = {
@@ -3841,6 +3843,7 @@
  * ========================================================================= */
 (function () {
   'use strict';
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) return;
   if (window.__mlsProgressAlwaysOn) return;
   var API = { version: '1.0.0', shows: 0, ticks: 0, deferred: 0, revert: revert };
   window.__mlsProgressAlwaysOn = API;

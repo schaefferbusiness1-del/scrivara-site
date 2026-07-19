@@ -10,9 +10,22 @@ npm.cmd run test:live-synthetic -- --runs=10
 
 The harness uses `?demo=1`, a fresh temporary Chrome profile, and the visibly named `Synthetic Reliability Patient`. It blocks external DNS, fails on any unapproved external HTTP(S) request (the app's static Google Fonts stylesheet GET is recorded and allowlisted), deletes the temporary browser profile afterward, and saves screenshots plus `report.json` under `tests/live-smoke-artifacts/`.
 
-## Exact b430 / v18 current acceptance evidence (2026-07-19)
+## Exact b431 / v19 current publication candidate (2026-07-19)
 
-The frozen clinician candidate is build `2026-07-19-b430` with service-worker cache `mls-v18`. `ScribeFlow.html` SHA-256 is `909138f8c7571110b3334ba3c84e6cdee00530cf968ef3ee8e5292387f4c917d`; the staging shell is `3bd831f1cd27811ce41e5a660719afde292e0983bc138af28da3f5c179c5c35a`; `mls-connect.js` is `d7c6a7e23edf1ad252c37404f3890ab90677f85ea1ae8ef0bbaf08de9ddffdb7`; `app-version.json` is `478a3f0332618773adfeaff7ec189a374cceac911130dafe4229430a7ffeac1a`; and `sw.js` is `ec5304aa1f1bf40ab90b09205a5c3801b74f4d6caf0ff314826ed4a9b820d98c`.
+The frozen web publication candidate is build `2026-07-19-b431` with service-worker cache `mls-v19`. `ScribeFlow.html` SHA-256 is `13fb4d8b733aebd1d1e63de4104c7f005a63ab83d0f053248d1b6bed6f8c93e0`; the staging shell is `cbc752f0dbbfee3590521dd258aa38aa0f17e224e4075e4c1528e8340e07da01`; `mls-connect.js` is `fe70d43499f46a3ad5021af6198973f5d31d46b359f24fb84f15e2902d7d12dc`; `public-preview-policy.js` is `cadda87fad5ee93a99ca59c7d1cbce57c5eb25d51bb70d2e375d69ef20643704`; `public-preview-runtime.js` is `ea08649c7d90ea80268ebf0ab2eed8eb8e18ceb1a8f29f75f410c89f66b32baa`; `feat_mls_studygroups.js` is `22bd4a646ebc5068e09c9eb469608862de3c827e0a413eda91a3bbc8fc605656`; `app-version.json` is `bf50e6a0bf45b26efa4d8e04c13477f2a0ec6c41ccb564a039fb7e35c58e7cf5`; and `sw.js` is `1f96e29b89a486d5c80938c3c479d26c8c834433fdaaeb6c03dea23264150388`.
+
+| Gate | Exact result | Durable evidence |
+|---|---|---|
+| Web regression registry | 240/240 passed; 0 failed; `git diff --check` passed | `npm.cmd test` |
+| Public self-guided preview | Exact `?preview=1` activation; fail-closed memory-only storage and network policy; eight invented patients, three invented notes, and eleven invented appointments; canonical Today shell reused on future and empty dates; Patients and History are browse-only; Staff Prep is Menu-only and loads seven invented month appointments; recording, chart pull, note prep, portal, send, sign, save, global finder, Quick Find, AI Studio, Analysis, and Orders escapes are absent or blocked | `public-preview-policy.test.js`; `public-preview-runtime.test.js`; `public-preview-integration-contract.test.js`; `homepage-self-guided-preview.test.js`; signed-in user Chrome acceptance on the isolated local preview tab |
+| GitHub Pages render boundary | Fresh Jekyll 3.10 render passed; 310/310 exact reviewed files; exact-byte audit passed; no staging, tests, extension files, archives, or non-regular assets entered the output | `bundle exec jekyll build`; `npm.cmd run audit:pages-build`; `pages-publication-inventory.json` |
+| Extension boundary | 2.9.44 was rejected after the authenticated history/encounter cutoff. Installed extension source was restored byte-exact to 2.9.43 and no extension or Athena path is changed by b431. | authenticated rejection evidence below; source comparison to `origin/main` |
+
+This b431 gate authorizes publication of the synthetic, read-only web preview only. It does not authorize clinical/PHI use, production signup, outreach, an Athena contract, or another extension attempt.
+
+## Prior b430 / v18 acceptance evidence (2026-07-19)
+
+The prior clinician candidate was build `2026-07-19-b430` with service-worker cache `mls-v18`. `ScribeFlow.html` SHA-256 was `909138f8c7571110b3334ba3c84e6cdee00530cf968ef3ee8e5292387f4c917d`; the staging shell was `3bd831f1cd27811ce41e5a660719afde292e0983bc138af28da3f5c179c5c35a`; `mls-connect.js` was `d7c6a7e23edf1ad252c37404f3890ab90677f85ea1ae8ef0bbaf08de9ddffdb7`; `app-version.json` was `478a3f0332618773adfeaff7ec189a374cceac911130dafe4229430a7ffeac1a`; and `sw.js` was `ec5304aa1f1bf40ab90b09205a5c3801b74f4d6caf0ff314826ed4a9b820d98c`.
 
 | Gate | Exact result | Durable evidence |
 |---|---|---|
@@ -34,7 +47,7 @@ The frozen clinician candidate is build `2026-07-19-b430` with service-worker ca
 | Public release preflight | Intentionally blocked with exactly 48 findings: 43 are stale b419 website bytes/copy, 4 are deployed-backend contract gaps already implemented locally, and 1 (`backend_signup_manifest_unavailable`) also requires a genuine reviewed production manifest and evidence pin. No local code gap justifies weakening that final fail-closed gate. No production-ready or PHI-ready claim is allowed. | `npm.cmd run preflight:public -- --expected-backend-revision=79510caa4c6c` (48 findings; nonzero as required) |
 | Schedule-import renderer starvation | On a synthetic 3.39 MB/820-record patient store, 18 changed patients fell from 18 full-store writes / 30.8 seconds to 5 bounded writes / 8.8 seconds (about 3.5x less blocking). Flushes occur every 4 changes or 5 seconds, at the schedule-to-history boundary, and at receipt/error/pagehide; per-patient server mirroring remains immediate and account-switch fencing passed. The rejected worker/journal migration was removed after three reproduced data-loss races; crash, cross-tab, quota, and b428 rollback tests now pass on the synchronous store. | `patient-store-batch-runtime.test.js`; `patient-store-sync-rollback-runtime.test.js`; `provider-roster-ingest-dedupe-runtime.test.js`; full 236-suite registry |
 
-The b430 web candidate and 2.9.43 extension rollback are not yet a coordinated public release. The installed extension files are hash-exact 2.9.43, but the user's Chrome still needs one explicit Reload to activate them. Production signup also remains fail-closed until genuine reviewed agreement evidence is configured on the backend. Do not send outreach, accept Athena terms, request a contract, or claim doctor/PHI readiness from the green synthetic rows alone.
+The b431 web publication candidate and 2.9.43 extension rollback are not yet a coordinated clinical release. The installed extension files are hash-exact 2.9.43, but the user's Chrome still needs one explicit Reload to activate them. Production signup also remains fail-closed until genuine reviewed agreement evidence is configured on the backend. Do not send outreach, accept Athena terms, request a contract, or claim doctor/PHI readiness from the green synthetic rows alone.
 
 ### Public-release preflight classification and safe cutover order
 
@@ -47,9 +60,9 @@ The 48 live findings reproduced on 2026-07-19 classify as follows:
 
 Minimum safe cutover order:
 
-1. Freeze and review the exact b430 publication inventory and Terms/Privacy hashes; obtain genuine approval evidence for those immutable bytes. Do not derive or manufacture the evidence reference from a browser signature, test fixture, or demo document.
+1. Freeze and review the exact b431 publication inventory and Terms/Privacy hashes; obtain genuine approval evidence for those immutable bytes. Do not derive or manufacture the evidence reference from a browser signature, test fixture, or demo document.
 2. Commit and deploy the backend changes first with `PHI_ENABLED=false` and signup-manifest variables still unset. Verify exact new revision, health `clinicalUse=false`, every clinical capability false, readiness JSON `401` when unauthenticated, signup-manifest JSON `503`, and direct clinical APIs `503 PHI_GATE_CLOSED`.
-3. Publish the exact audited web output. Verify all five public artifact hashes, build `2026-07-19-b430`, service-worker/cache update on fresh and warm clients, and rollback availability. Signup remains deliberately unavailable during this interval.
+3. Publish the exact audited web output. Verify all eight current public artifact hashes, build `2026-07-19-b431`, service-worker/cache update on fresh and warm clients, and rollback availability. Signup remains deliberately unavailable during this interval.
 4. Configure the three production signup-manifest values from the approved immutable bundle and restart the same backend release. Verify the public manifest is HTTP 200, current, canonical-digest-valid, and bound to the now-public Terms/Privacy hashes; verify a stale/tampered assent still creates no account or cookie.
 5. Run the unauthenticated GET-only public preflight with the new backend revision. Release only on zero findings. Keep clinical/PHI use, checkout, outreach, and unsupported readiness claims closed; this synthetic-publication gate does not authorize any of them.
 

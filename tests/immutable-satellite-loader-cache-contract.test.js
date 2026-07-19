@@ -14,12 +14,15 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
 const assets = [
   ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
   ['feat_athena_tooltip_dedupe.js', '20260719ui117', '20260719ui116'],
-  ['feat_b18_qa.js', '20260719b18v7', '20260716b18v6'],
+  ['feat_b18_qa.js', '20260719b18v8', '20260719b18v7'],
+  ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260719asst143', '20260717asst142'],
-  ['feat_mls_b121_pack.js', '20260719p2c2', '20260710p2c1'],
+  ['feat_mls_b121_pack.js', '20260719p2c3', '20260719p2c2'],
   ['feat_mls_checker.js', '20260719chk2922r2', '20260714chk2922r1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
   ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
+  ['feat_mls_loading_calm.js', '20260719lb202', '20260718lb201'],
+  ['feat_mls_provider_passthrough.js', '20260719pp1c3', '20260702pp1c1'],
   ['feat_mls_redesign.js', '20260719rd322', '20260718rd320'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260719sg2e', '20260713sg2d'],
@@ -27,7 +30,8 @@ const assets = [
   ['feat_mls_widget_deck.js', '20260719wd110', '20260713wd2'],
   ['feat_mls_widgetinsert.js', '20260719wi3', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260719tb110', '20260719tb109'],
-  ['feat_mls_command_palette.js', '20260719cmd103', '20260719cmd102']
+  ['feat_mls_command_palette.js', '20260719cmd103', '20260719cmd102'],
+  ['feat_task3_frontsync.js', '20260719t3107', '20260716t3106']
 ];
 
 assert.strictEqual(new Set(assets.map(entry => entry[1])).size, assets.length,

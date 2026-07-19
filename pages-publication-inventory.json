@@ -290,6 +290,8 @@
     "phone-manifest.json",
     "phone.html",
     "privacy.html",
+    "public-preview-policy.js",
+    "public-preview-runtime.js",
     "review-finder.html",
     "robots.txt",
     "ScribeFlow.html",

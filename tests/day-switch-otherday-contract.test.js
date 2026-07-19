@@ -86,12 +86,22 @@ assert(ensureSource.includes("var staleLegacyList = $('mlsDsList'); if (staleLeg
 const syncStripSource = functionSource(ds, 'syncStrip', 'setDay');
 assert(ds.includes('id="mlsDsTodayBtn" aria-label="Go to Today">Today</button>'),
   'the fixed Today shortcut is missing from the date strip');
+assert(ds.includes('id="mlsDsPrev" title="Previous day" aria-label="Previous day"') &&
+  ds.includes('id="mlsDsNext" title="Next day" aria-label="Next day"'),
+  'day arrows need descriptive accessible names');
+assert(ds.includes("strip.setAttribute('role', 'group'); strip.setAttribute('aria-label', 'Visit date controls')") &&
+  ds.includes('id="mlsDsDayLbl" aria-live="polite" aria-atomic="true"'),
+  'date controls need a named group and live selected-day announcement');
+assert(ds.includes('#mlsDsStrip .ds-nav{width:44px;height:44px;'),
+  'day arrows are smaller than the 44px touch target');
 assert(!ds.includes('>Back to Today</button>'),
   'the conditional-looking Back to Today copy survived');
 assert(syncStripSource.includes("tb.style.display = '';"),
   'Today shortcut visibility is not stable across dates');
 assert(syncStripSource.includes('tb.disabled = !!isToday;'),
   'Today shortcut does not use native selected-day disabled state');
+assert(syncStripSource.includes('lb && lb.innerHTML !== desiredDayLabel'),
+  'day label is rebuilt on every recovery poll even when its value is unchanged');
 assert(!/tb\.style\.display\s*=\s*isToday\s*\?/.test(syncStripSource),
   'Today shortcut is still hidden conditionally');
 {
