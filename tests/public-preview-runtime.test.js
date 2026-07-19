@@ -334,7 +334,7 @@ for (const required of [
   'Reset sample', 'Exit preview', 'Invented patients only · Not connected to Athena · Nothing sends or signs',
   'Sample schedule loaded - ', 'Sample visit - recording off', 'Recording off in preview',
   "['ez3Now', 'ez3Next', 'ez3Nxt']", 'No invented appointments in this sample range.',
-  "document.getElementById('ez3Rec')", 'hidePreviewNode(visitRecord)', 'visitRecord.disabled = true',
+  "['ez3Rec', 'ez3Rec2', 'ez3Stop', 'ez3Gen']", 'hidePreviewNode(visitRecord)', 'visitRecord.disabled = true',
   'Sample workspace only - recording, cloud sync, Athena, sending, and signing are off.',
   'Phone recording off', 'Athena off in preview', 'easternOffsetForDay',
   "#mlsEz3Body button", 'send to patient|phone mic', 'Use Choose patient to browse the invented schedule.',

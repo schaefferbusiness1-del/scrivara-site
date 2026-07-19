@@ -16,8 +16,8 @@ const bundle = read('mls-connect.js');
 const studyGroups = read('feat_mls_studygroups.js');
 const inventory = JSON.parse(read('pages-publication-inventory.json')).paths;
 
-const policyTag = '<script src="public-preview-policy.js?v=b431"></script>';
-const runtimeTag = '<script src="public-preview-runtime.js?v=b431"></script>';
+const policyTag = '<script src="public-preview-policy.js?v=b434"></script>';
+const runtimeTag = '<script src="public-preview-runtime.js?v=b434"></script>';
 const policyAt = app.indexOf(policyTag);
 const purgeAt = app.indexOf('<script src="clinical-state-purge.js');
 const appMainAt = app.indexOf('const _SF_DEMO = (function(){');
@@ -96,10 +96,14 @@ assert(/function syncTopLane\(rec\) \{[\s\S]{0,400}__MLS_PUBLIC_PREVIEW[\s\S]{0,
   'the primary record-lane owner can repaint live recording copy over the preview boundary');
 for (const asset of [
   'feat_task3_frontsync.js', 'feat_copilot_slim.js', 'feat_b18_qa.js',
-  'feat_mls_loading_calm.js', 'feat_mls_provider_passthrough.js', 'feat_mls_b121_pack.js'
+  'feat_mls_provider_passthrough.js', 'feat_mls_b121_pack.js'
 ]) {
   assert(read(asset).includes('__MLS_PUBLIC_PREVIEW'), `${asset} lacks a preview guard around protected browser primitives`);
 }
+const loadingCalm = read('feat_mls_loading_calm.js');
+assert(loadingCalm.includes("visualOwner: 'mlsProgressStages'") &&
+  !loadingCalm.includes('window.fetch = wrapped') && !loadingCalm.includes("window.addEventListener('message'"),
+  'headless loading store regained a browser-primitive wrapper or duplicate visual owner');
 
 {
   const previewWindow = {
@@ -135,7 +139,7 @@ for (const asset of [
 for (const asset of ['public-preview-policy.js', 'public-preview-runtime.js']) {
   assert(config.includes(`- "${asset}"`), `${asset} is not explicitly reviewed in the Pages allowlist`);
   assert(inventory.includes(asset), `${asset} is missing from the exact Pages inventory`);
-  assert(sw.includes(`/${asset}?v=b431`), `${asset} is missing from the immutable app shell`);
+  assert(sw.includes(`/${asset}?v=b434`), `${asset} is missing from the immutable app shell`);
 }
 
 assert(app.includes('const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"'),

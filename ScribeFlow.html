@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b431"></script>
+<script src="public-preview-policy.js?v=b434"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -1225,7 +1225,7 @@ html:has(#authScreen:not([style*="none"])){ scrollbar-gutter: auto; }
 .auth-wrap{ background:var(--bg) !important; position:relative; }
 .auth-wrap::before{ content:''; position:absolute; inset:0; background:radial-gradient(700px 400px at 50% -10%, #EAF1EE, transparent 62%); pointer-events:none; }
 body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50% -10%, #1F2721, transparent 62%); }
-.auth-wrap::after{ content:'Synthetic evaluation only · Do not enter patient information'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
+.auth-wrap::after{ content:'Secure account sign-in'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
 .auth-card{ position:relative; background:var(--card) !important; border:1px solid var(--line) !important; border-radius:20px !important;
   box-shadow:0 1px 2px rgba(20,33,28,.04), 0 30px 60px -30px rgba(20,33,28,.28) !important; padding:38px 36px !important; max-width:404px; }
 .auth-logo{ font-family:var(--serif) !important; font-weight:600 !important; font-size:20px !important; letter-spacing:-.01em; color:var(--ink); }
@@ -1317,7 +1317,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="auth-err" id="forgotMsg" style="margin-top:10px"></div>
     </div>
 
-    <p class="local-note" id="authNote">🔒 <b>Secure account.</b> Your password is protected and your saved notes are encrypted on the server. Sign in from any device.</p>
+    <p class="local-note" id="authNote">🛡️ <b>Secure account sign-in.</b> Your credentials verify your MLS account. Clinical workspace access is checked separately for this deployment and account. Do not enter patient information unless the workspace is enabled and your organization has approved its use.</p>
   </div>
 
   <!-- Set-a-new-password card, shown after a scrubbed one-time reset handoff -->
@@ -1595,17 +1595,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   </div>
 </div>
 
-<!-- Hosted clinical-readiness gate. The browser never owns contracts, signatures,
-     or legal approval. Only an immutable server-owned release can open the app. -->
+<!-- Hosted clinical-readiness gate. Account authentication and clinical workspace
+     availability are separate checks; every unverified readiness path stays closed. -->
 <div id="agreementsGate" role="dialog" aria-modal="true" aria-labelledby="agGateTitle" aria-describedby="agGateSummary" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg,#f4f7fb);overflow:auto;padding:24px 16px">
   <div style="max-width:760px;margin:0 auto">
     <div class="card">
-      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> Clinical workspace not released</h2>
-      <p class="sub" id="agGateSummary"><b>This build is for synthetic evaluation only.</b> MLS did not receive the immutable, server-owned, counsel-approved legal release and server-recorded user grant required for hosted clinical use. Do not enter real patient information.</p>
-      <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">This page cannot create, accept, countersign, or email contracts. Any future agreement and signature ceremony must be served, versioned, recorded, and verified by the MLS backend after counsel approval.</div>
-      <div id="agGateErr" role="status" aria-live="polite" class="auth-err" style="display:block;margin-top:12px">Clinical readiness could not be verified. Access remains locked.</div>
+      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> Clinical workspace not enabled</h2>
+      <p class="sub" id="agGateSummary"><b>The clinical workspace is not enabled for this deployment or account.</b> This may reflect PHI deployment readiness, release configuration, or an account grant. A valid sign-in does not by itself enable clinical use. Do not enter real patient information.</p>
+      <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">Account sign-in and clinical workspace availability are separate checks. This browser cannot change deployment readiness, release configuration, or account grants. Contact your MLS administrator if you expected access.</div>
+      <div id="agGateErr" role="status" aria-live="polite" class="auth-err" style="display:block;margin-top:12px">Clinical workspace access could not be verified for this deployment and account. Access remains locked.</div>
       <div class="row tight" style="margin-top:16px;align-items:center;gap:14px">
-        <button class="btn-primary" id="agRetryBtn" onclick="retryLegalReadiness()">Check readiness again</button>
+        <button class="btn-primary" id="agRetryBtn" onclick="retryLegalReadiness()">Check workspace access again</button>
         <a href="#" id="agLogoutLink" onclick="agGateLogout(event)" style="font-size:14px;color:var(--muted)">Log out</a>
       </div>
     </div>
@@ -2732,7 +2732,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- Admin — server-owned legal readiness -->
     <div class="card">
       <h2><span class="ic">🛡️</span> Admin — clinical legal readiness</h2>
-      <p class="sub"><b>Not released in this build.</b> Browser-authored agreements and countersignatures are retired. This page cannot create or execute a BAA, claim vendor coverage, or mark clinical use ready. A future release must be immutable, counsel-approved, served by the backend, and tied to a server-recorded user grant.</p>
+      <p class="sub"><b>Access records are managed by the server.</b> This browser cannot create, alter, or countersign agreements and does not decide whether an account has clinical workspace access.</p>
     </div>
   </div><!-- /adminView -->
 
@@ -3144,7 +3144,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <footer id="appFooter">
-  <span class="noprint" id="appFooterNotice">⚕️ <b>Synthetic evaluation only.</b> Do not enter real patient information. Hosted clinical use remains locked unless the server verifies an immutable counsel-approved legal release and user grant; this browser does not claim vendor agreements or regulated-production readiness.</span>
+  <span class="noprint" id="appFooterNotice">⚕️ <b>Clinician review required.</b> Verify every AI-generated draft for accuracy and completeness before clinical use.</span>
 </footer>
 </div>
 
@@ -4282,6 +4282,31 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
+/* Email-only convenience memory for hosted sign-in. This key is deliberately
+   independent of the authenticated session seed, which logout/expiry clears.
+   It is written only after the server accepts a login password; passwords and
+   pending 2FA credentials never enter this storage path. */
+const LAST_HOSTED_LOGIN_EMAIL_KEY='sf_last_hosted_login_email';
+function normalizeHostedLoginEmail(value){
+  const email=String(value||'').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';
+}
+function rememberHostedLoginEmail(email){
+  if(!backendMode()) return '';
+  const normalized=normalizeHostedLoginEmail(email); if(!normalized) return '';
+  try{ localStorage.setItem(LAST_HOSTED_LOGIN_EMAIL_KEY,normalized); }catch(e){}
+  return normalized;
+}
+function getLastHostedLoginEmail(){
+  if(!backendMode()) return '';
+  try{ return normalizeHostedLoginEmail(localStorage.getItem(LAST_HOSTED_LOGIN_EMAIL_KEY)); }catch(e){ return ''; }
+}
+function prefillHostedLoginEmail(){
+  const email=getLastHostedLoginEmail();
+  const field=document.getElementById('authEmail');
+  if(field&&email) field.value=email;
+  return email;
+}
 let bkUser=null; // {email,name,specialty,isAdmin,access,access_expires,hasAccess}
 /* Special marker thrown when the backend says the account lacks access (402). */
 function isNoAccessErr(e){ return !!(e && (e.noAccess || /no_access/i.test((e&&e.message)||''))); }
@@ -4593,7 +4618,7 @@ function switchAuth(mode){
   const assent=document.getElementById('authSignupAssent'); if(assent) assent.style.display=mode==='signup'?'block':'none';
   _signupManifestRequest++;
   _signupAgreementManifest=null; _signupManifestFingerprint=''; clearSignupAssent(); renderSignupAgreementManifest(null);
-  if(mode==='signup') loadSignupAgreementManifest(); else { signupAssentError(''); authBtn.disabled=false; }
+  if(mode==='signup') loadSignupAgreementManifest(); else { signupAssentError(''); authBtn.disabled=false; prefillHostedLoginEmail(); }
   hideAuthErr();
 }
 function showAuthErr(m){ const e=document.getElementById('authErr'); e.textContent=m; e.classList.add('show'); }
@@ -4735,7 +4760,9 @@ async function doAuth(){
       }
       try{ data=await res.json(); }catch(e){ data={}; }
       if(!res.ok){
-        showAuthErr((data&&(data.error||data.message))||('Sign-in failed ('+res.status+').'));
+        showAuthErr(authMode==='login'
+          ? "We couldn't sign you in with that email and password. Confirm that you're using the email registered to your MLS account, or use Forgot password to reset it. For security, this message doesn't confirm whether an account exists."
+          : ((data&&(data.error||data.message))||('Account creation failed ('+res.status+').')));
         return;
       }
       if(authMode==='signup'&&!hasServerRecordedSignupAcceptance(data&&data.signupAcceptance,_signupAgreementManifest,data&&data.user)){
@@ -4743,6 +4770,9 @@ async function doAuth(){
         signupAssentError('No authoritative signup receipt was verified. Signup remains locked; check with MLS support before retrying.');
         return;
       }
+      // A successful hosted login response means the password was validated.
+      // Remember only its normalized email, including when 2FA is still due.
+      if(authMode==='login') rememberHostedLoginEmail(email);
       // 2FA: server may withhold the token until a second factor is verified.
       if(data && data.twofa_required){
         showTwofaScreen(data.pending, email);
@@ -13400,29 +13430,117 @@ function loadRecordIntoEditor(n){
    ========================================================= */
 let recog=null, capturing=false, finalText='', captureSessionEpoch=0;
 /* One microphone owner across visit recording, field Dictate, and Copilot Voice.
-   Each feature registers a synchronous stop callback. Claiming the microphone
-   stops the previous owner first, so SpeechRecognition instances never fight. */
+   Each feature registers a stop callback that resolves only after the browser's
+   old SpeechRecognition emits `end`. The next owner starts from that readiness
+   lease, so two recognizers never race for the microphone. */
 function mlsSpeechHub(){
   if(window.__mlsSpeechHub && typeof window.__mlsSpeechHub.claim==='function') return window.__mlsSpeechHub;
-  let owner='', entries={};
+  let owner='', pendingOwner='', entries={}, transferEpoch=0, transferBarrier=null;
+  function infoFor(id){ return id&&entries[id]?{id:id,label:entries[id].label}:null; }
+  function immediateLease(previous){
+    return {
+      ok:true, previous:previous||null, pending:false,
+      whenReady:function(fn){ if(typeof fn==='function') fn(); return true; }
+    };
+  }
   window.__mlsSpeechHub={
-    version:'1.0.0',
+    version:'1.1.0',
     register:function(id,label,stop){
       id=String(id||''); if(!id) return function(){};
       entries[id]={label:String(label||id),stop:typeof stop==='function'?stop:null};
-      return function(){ if(owner===id) owner=''; delete entries[id]; };
+      return function(){
+        if(owner===id) owner='';
+        if(pendingOwner===id){ pendingOwner=''; transferEpoch++; }
+        delete entries[id];
+      };
+    },
+    /* SpeechRecognition.stop() releases the browser microphone asynchronously.
+       Owners return this promise from their registered stop callback so the next
+       recognizer cannot start until the prior one really ended. The timeout is a
+       bounded fail-safe for browsers that omit `end`; it aborts before release. */
+    waitForEnd:function(instance,stopNow,maxWaitMs){
+      return new Promise(function(resolve){
+        let settled=false, timer=0;
+        const finish=function(){
+          if(settled) return;
+          settled=true;
+          if(timer) clearTimeout(timer);
+          resolve(true);
+        };
+        if(!instance){ try{ if(typeof stopNow==='function') stopNow(); }catch(e){} finish(); return; }
+        const priorEnd=instance.onend;
+        instance.onend=function(ev){
+          try{ if(typeof priorEnd==='function') priorEnd.call(instance,ev); }
+          finally{ finish(); }
+        };
+        const wait=Math.max(100,Math.min(Number(maxWaitMs)||800,2000));
+        timer=setTimeout(function(){
+          try{ if(instance&&typeof instance.abort==='function') instance.abort(); }catch(e){}
+          finish();
+        },wait);
+        try{ if(typeof stopNow==='function') stopNow(); else finish(); }
+        catch(e){ finish(); }
+      });
     },
     claim:function(id){
       id=String(id||''); if(!id) return {ok:false,previous:null};
-      if(owner===id) return {ok:true,previous:null};
-      const prev=owner, info=prev&&entries[prev]?{id:prev,label:entries[prev].label}:null;
+      if(owner===id&&!pendingOwner) return immediateLease(null);
+      const prev=owner;
+      const queued=pendingOwner;
+      const info=infoFor(queued||prev);
+      const inheritedBarrier=(!prev&&transferBarrier)?transferBarrier:null;
+      /* A newer click can supersede an owner that is prepared but still waiting
+         for the prior recognizer to end. Cancel that unstarted session now; its
+         readiness callback is invalidated below and must never create a ghost. */
+      if(queued&&entries[queued]&&entries[queued].stop){
+        try{ entries[queued].stop({by:id,pending:true}); }catch(e){}
+      }
+      const token=++transferEpoch;
+      pendingOwner=id;
       owner='';
-      if(prev&&entries[prev]&&entries[prev].stop){ try{ entries[prev].stop({by:id}); }catch(e){} }
-      owner=id;
-      return {ok:true,previous:info};
+      let ready=false, callbacks=[];
+      const activate=function(){
+        if(token!==transferEpoch||pendingOwner!==id) return false;
+        pendingOwner=''; owner=id; ready=true;
+        const run=callbacks.slice(); callbacks=[];
+        run.forEach(function(fn){ try{ fn(); }catch(e){} });
+        return true;
+      };
+      let stopped=inheritedBarrier;
+      if(prev&&entries[prev]&&entries[prev].stop){
+        try{ stopped=entries[prev].stop({by:id}); }catch(e){ stopped=null; }
+      }
+      const thenable=stopped&&typeof stopped.then==='function';
+      if(thenable){
+        const barrier=Promise.resolve(stopped);
+        transferBarrier=barrier;
+        barrier.then(function(){
+          if(transferBarrier===barrier) transferBarrier=null;
+          activate();
+        },function(){
+          if(transferBarrier===barrier) transferBarrier=null;
+          activate();
+        });
+      }else{
+        transferBarrier=null;
+        activate();
+      }
+      return {
+        ok:true, previous:info, pending:!ready,
+        whenReady:function(fn){
+          if(typeof fn!=='function') return false;
+          if(ready&&owner===id){ fn(); return true; }
+          if(token!==transferEpoch||pendingOwner!==id) return false;
+          callbacks.push(fn); return true;
+        }
+      };
     },
-    release:function(id){ if(owner===String(id||'')) owner=''; },
-    current:function(){ return owner&&entries[owner]?{id:owner,label:entries[owner].label}:null; }
+    release:function(id){
+      id=String(id||'');
+      if(owner===id) owner='';
+      if(pendingOwner===id){ pendingOwner=''; transferEpoch++; }
+    },
+    current:function(){ return infoFor(pendingOwner||owner); }
   };
   return window.__mlsSpeechHub;
 }
@@ -13431,7 +13549,11 @@ function initRecog(){
   if(!SR) return false;
   const instance=new SR(); recog=instance; instance.continuous=true; instance.interimResults=true; instance.lang='en-US';
   instance.onresult=e=>{
-    if(instance!==recog||!capturing||instance._mlsCaptureEpoch!==captureSessionEpoch||!currentVisitAthenaBinding||instance._mlsBindingId!==currentVisitAthenaBinding.id||Number(instance._mlsBindingEpoch)!==Number(currentVisitAthenaEpoch))return;
+    if(instance!==recog)return;
+    /* start() may synchronously deliver a result before it returns. Hold that
+       event until microphone success commits the immutable visit binding. */
+    if(instance._mlsStartPending){ (instance._mlsPendingResults||(instance._mlsPendingResults=[])).push(e); return; }
+    if(!capturing||instance._mlsCaptureEpoch!==captureSessionEpoch||!currentVisitAthenaBinding||instance._mlsBindingId!==currentVisitAthenaBinding.id||Number(instance._mlsBindingEpoch)!==Number(currentVisitAthenaEpoch))return;
     if(!_athenaCurrentMatchesBound(currentVisitAthenaBinding)){ currentVisitAthenaCompromised=true; try{stopCapture();}catch(_){} return; }
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
@@ -13450,7 +13572,11 @@ function initRecog(){
       stopCapture();
     } else if(e.error==='no-speech'){ /* keep going */ }
   };
-  instance.onend=()=>{ if(instance===recog&&capturing&&instance._mlsCaptureEpoch===captureSessionEpoch&&currentVisitAthenaBinding&&instance._mlsBindingId===currentVisitAthenaBinding.id&&Number(instance._mlsBindingEpoch)===Number(currentVisitAthenaEpoch)){ try{instance.start()}catch(e){} } };
+  instance.onend=()=>{
+    if(instance!==recog)return;
+    if(instance._mlsStartPending){ instance._mlsEndedWhileStarting=true; return; }
+    if(capturing&&instance._mlsCaptureEpoch===captureSessionEpoch&&currentVisitAthenaBinding&&instance._mlsBindingId===currentVisitAthenaBinding.id&&Number(instance._mlsBindingEpoch)===Number(currentVisitAthenaEpoch)){ try{instance.start()}catch(e){} }
+  };
   return true;
 }
 function showMicWarn(msg){
@@ -14448,33 +14574,81 @@ function startCapture(){
   }
   const captureBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recording');
   const hub=mlsSpeechHub();
-  hub.register('visit','Visit recording',function(){
-    if(!capturing) return;
-    /* Use the installed public wrapper when present so the backup recorder and
-       its watchdog are stopped alongside SpeechRecognition. */
-    if(typeof window.stopCapture==='function') window.stopCapture();
-    else stopCapture();
+  hub.register('visit','Visit recording',function(handoff){
+    const previous=recog;
+    const stopNow=function(){
+      if(!capturing) return;
+      /* Use the installed public wrapper when present so the backup recorder and
+         its watchdog are stopped alongside SpeechRecognition. */
+      if(typeof window.stopCapture==='function') window.stopCapture();
+      else stopCapture();
+    };
+    if(handoff&&handoff.pending){ stopNow(); return; }
+    if(previous&&typeof hub.waitForEnd==='function') return hub.waitForEnd(previous,stopNow);
+    stopNow();
   });
   const lease=hub.claim('visit');
   if(lease.previous){ try{ toast('Stopped '+lease.previous.label+' so the visit recorder can use the microphone. Your existing transcript is safe.',''); }catch(e){} }
   finalText=document.getElementById('transcript').value?document.getElementById('transcript').value+' ':'';
-  try{ recog.start(); }
-  catch(e){
-    hub.release('visit');
-    showMicWarn('The microphone is still busy or could not start. Wait a moment, then press Start recording again. Your transcript is safe.');
-    return false;
-  }
-  if(!currentVisitAthenaBinding) _athenaSetVisitBinding(captureBindingCandidate);
-  captureSessionEpoch++;
-  recog._mlsCaptureEpoch=captureSessionEpoch;
-  recog._mlsBindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
-  recog._mlsBindingEpoch=currentVisitAthenaEpoch;
+  const instance=recog, requestVisitEpoch=currentVisitAthenaEpoch, requestBinding=currentVisitAthenaBinding;
+  instance._mlsStartPending=true;
+  instance._mlsPendingResults=[];
+  instance._mlsEndedWhileStarting=false;
   capturing=true;
   const b=document.getElementById('captureBtn');
   b.classList.remove('btn-primary'); b.classList.add('recording');
   b.innerHTML='<span class="live-dot"></span> Recording… Stop Visit';
   try{ var _w0=(document.getElementById('transcript').value||'').trim().split(/\s+/).filter(Boolean).length; _updateLiveCapture(_w0); }catch(e){}
-  return true;
+  let beginFailed=false;
+  const begin=function(){
+    if(!capturing||recog!==instance) return;
+    /* A patient/New Visit transition while this owner waited invalidates the
+       prepared recognizer before it ever touches the microphone. */
+    if(Number(currentVisitAthenaEpoch)!==Number(requestVisitEpoch)||currentVisitAthenaBinding!==requestBinding){
+      beginFailed=true;
+      stopCapture();
+      showMicWarn('The visit changed before recording started. Open the correct patient and press Start recording again.');
+      return;
+    }
+    try{
+      recog.start();
+      /* Permission/capture errors may also arrive synchronously from start().
+         Their handler stops and invalidates this instance; never bind afterward. */
+      if(recog!==instance||!capturing||!instance._mlsStartPending){ beginFailed=true; return; }
+      if(!currentVisitAthenaBinding&&!_athenaSetVisitBinding(captureBindingCandidate)){
+        beginFailed=true;
+        stopCapture();
+        showMicWarn('The visit could not be safely bound to this recording. Open the correct patient and try again.');
+        return;
+      }
+      captureSessionEpoch++;
+      recog._mlsCaptureEpoch=captureSessionEpoch;
+      recog._mlsBindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
+      recog._mlsBindingEpoch=currentVisitAthenaEpoch;
+      instance._mlsStartPending=false;
+      const queued=(instance._mlsPendingResults||[]).slice();
+      instance._mlsPendingResults=[];
+      queued.forEach(function(ev){ if(instance===recog&&typeof instance.onresult==='function') instance.onresult(ev); });
+      if(instance._mlsEndedWhileStarting){
+        instance._mlsEndedWhileStarting=false;
+        setTimeout(function(){
+          if(instance===recog&&capturing&&instance._mlsCaptureEpoch===captureSessionEpoch){ try{instance.start();}catch(e){} }
+        },120);
+      }
+    }
+    catch(e){
+      if(recog===instance){
+        beginFailed=true;
+        instance._mlsStartPending=false;
+        instance._mlsPendingResults=[];
+        stopCapture();
+        showMicWarn('The microphone is still busy or could not start. Wait a moment, then press Start recording again. Your transcript is safe.');
+      }
+    }
+  };
+  if(lease&&typeof lease.whenReady==='function') lease.whenReady(begin);
+  else begin();
+  return !beginFailed;
 }
 function stopCapture(){
   capturing=false;
@@ -21367,8 +21541,8 @@ function sfCancelGateLoading(){
   if(app) app.removeAttribute('aria-busy');
 }
 
-/* Wait for cloud data, UI ownership, and a quiet layout signature. The legal
-   gate handoff uses the same minimum, so unsigned users no longer bypass the
+/* Wait for cloud data, UI ownership, and a quiet layout signature. The clinical
+   gate handoff uses the same minimum, so not-ready accounts no longer bypass the
    branded screen and see a half-built gate. */
 function sfHideGateLoading(gated,options){
   options=options||{};
@@ -21413,7 +21587,7 @@ function showAgreementsGate(fromLoading){
     document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
   }
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
-  agGateErr('Clinical readiness could not be verified. Access remains locked.');
+  agGateErr('Clinical workspace access could not be verified for this deployment and account. Access remains locked.');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
   const retry=document.getElementById('agRetryBtn'); if(retry) try{ retry.focus(); }catch(e){}
 }
@@ -21422,10 +21596,16 @@ function hideAgreementsGate(){
 }
 function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAgreementsGate(); logout(true); }
 
-/* A hosted app may open only when the server returns a complete, immutable legal
-   release and a grant recorded for this exact release. Operational PHI flags,
-   legacy `signed` booleans, client constants, and role names are not evidence. */
+/* Transitional compatibility for the exact current server-recorded agreement
+   response used before the immutable-release endpoint shipped. A bare `signed`
+   boolean, stale version, extra/contradictory field, operational PHI flag, client
+   constant, or role name is still insufficient. The newer immutable release and
+   exact server-recorded grant remain valid. */
+const LEGACY_SERVER_AGREEMENTS_VERSION='2026-06-10';
 function hasVerifiedServerLegalRelease(payload){
+  const legacyShape=payload&&typeof payload==='object'&&!Array.isArray(payload)
+    &&Object.keys(payload).sort().join(',')==='signed,version';
+  if(legacyShape&&payload.signed===true&&payload.version===LEGACY_SERVER_AGREEMENTS_VERSION) return true;
   const rel=payload&&payload.legalRelease;
   const grant=payload&&payload.userAccess;
   if(!rel||!grant) return false;
@@ -21460,15 +21640,15 @@ async function checkAgreementsGate(opts){
 async function retryLegalReadiness(){
   const btn=document.getElementById('agRetryBtn');
   if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
-  agGateErr('Checking the server-owned legal release…');
+  agGateErr('Checking deployment and account clinical readiness…');
   try{
     const gated=await checkAgreementsGate({});
-    if(gated){ agGateErr('Clinical readiness is still unavailable. Access remains locked.'); return; }
+    if(gated){ agGateErr('The clinical workspace is still not enabled for this deployment or account. Access remains locked.'); return; }
     hideAgreementsGate();
     const email=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
     await startSession(email);
-  }catch(e){ agGateErr('Clinical readiness could not be verified. Access remains locked.'); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='Check readiness again'; } }
+  }catch(e){ agGateErr('Clinical workspace access could not be verified for this deployment and account. Access remains locked.'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Check workspace access again'; } }
 }
 
 /* Build a PDF receipt of the signed acknowledgment via jsPDF.
@@ -25393,7 +25573,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // auth-screen privacy note reflects the actual mode
   const _an=document.getElementById('authNote');
   if(_an) _an.innerHTML = backendMode()
-    ? '🛡️ <b>Hosted evaluation account.</b> Clinical access remains locked unless the server verifies an immutable counsel-approved legal release and user grant. Do not enter patient information.'
+    ? '🛡️ <b>Secure account sign-in.</b> Your credentials verify your MLS account. Clinical workspace access is checked separately for this deployment and account. Do not enter patient information unless the workspace is enabled and your organization has approved its use.'
     : '🔒 <b>Local account on this device.</b> Your email, an obfuscated password, and your notes are stored only in this browser — nothing is sent to a server.';
   // One-time token was captured and removed from the address bar in <head>.
   const _resetTok=_authHandoff.reset||'';
@@ -25454,7 +25634,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b431"></script>
+<script src="public-preview-runtime.js?v=b434"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25669,7 +25849,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b431';
+  window.__MLS_AV='b434';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

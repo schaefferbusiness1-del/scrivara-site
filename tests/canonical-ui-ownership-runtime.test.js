@@ -55,9 +55,9 @@ const policy = between(
 );
 const active = between(
   connect,
-  "var VER = '3.7.2'",
+  "var VER = '3.7.3'",
   '/* =========================================================================\n * MLS Scribe — PULL PIPELINE TRUTH PACK',
-  'active Easy 3.7.2 engine'
+  'active Easy 3.7.3 engine'
 );
 const daySwitch = between(
   connect,
@@ -69,7 +69,7 @@ const daySwitch = between(
 // Production source has one callable owner. Historical guarded copies may
 // remain in the concatenated archive, but the active API and topbar publish no
 // direct Staff or rollback entry point.
-assert(active.includes("var VER = '3.7.2'"), 'canonical Easy release marker is missing');
+assert(active.includes("var VER = '3.7.3'"), 'canonical Easy release marker is missing');
 assert(!/\bopenStaff\s*:/.test(active), 'active Easy API still publishes a direct Staff opener');
 assert(!/id=["']ez3Mode(?:Doc|Staff)["']/.test(active), 'active Easy still creates a hidden doctor/staff mode control');
 assert(!/window\.__mlsEasyV(?:32|31|3)_revert\s*=(?!=)/.test(active), 'active Easy still publishes an in-bundle rollback');
@@ -142,7 +142,7 @@ assert(!/onclick=["'][^"']*(?:openStaff|ez3ModeStaff)/i.test(app),
   const body = { setAttribute(name, value) { attrs[`body:${name}`] = value; } };
   const host = { setAttribute(name, value) { attrs[`host:${name}`] = value; } };
   const context = {
-    S: { mode: 'doctor', screen: 'home' }, host, VER: '3.7.2', easyModeSequence: 0,
+    S: { mode: 'doctor', screen: 'home' }, host, VER: '3.7.3', easyModeSequence: 0,
     $(id) { return id === 'mlsEz3Body' ? body : null; },
     safe(fn) { try { return fn(); } catch (_) { return undefined; } },
     isFn(value) { return typeof value === 'function'; },
@@ -209,6 +209,100 @@ assert(!/onclick=["'][^"']*(?:openStaff|ez3ModeStaff)/i.test(app),
   context.modeChanged({ detail: { mode: 'doctor', phase: 'before' } });
   context.modeChanged({ detail: { mode: 'doctor', phase: 'after' } });
   assert.deepStrictEqual(calls, ['remove', 'ensure'], 'DaySwitch still relies on delayed polling for mode correctness');
+}
+
+// Opening the canonical advanced workspace from the keyboard destroys and
+// recreates its toggle during render. Focus must land in the revealed workflow
+// (without scrolling), while mouse and quiet programmatic opens retain their
+// existing behavior.
+{
+  let handler = null;
+  let scrolls = 0;
+  let renders = 0;
+  const timers = [];
+  const elements = {};
+  const document = {
+    activeElement: null,
+    body: { classList: { toggle() {} } }
+  };
+  const context = {
+    S: { advOpen: false }, document,
+    window: {
+      __mlsAdvQuietOpen: false,
+      getComputedStyle(el) { return el.style || { display: 'block', visibility: 'visible' }; }
+    },
+    $(id) { return elements[id] || null; },
+    safe(fn, fallback) { try { return fn(); } catch (_) { return fallback; } },
+    on(id, fn) { if (id === 'ez3Adv') handler = fn; },
+    render() { renders++; },
+    setTimeout(fn, delay) { timers.push({ fn, delay }); }
+  };
+  function focusable(name, visible = true, disabled = false) {
+    return {
+      name, disabled,
+      style: { display: 'block', visibility: 'visible' },
+      getBoundingClientRect() { return visible ? { width: 120, height: 32 } : { width: 0, height: 0 }; },
+      focus(options) { this.focusOptions = options; document.activeElement = this; }
+    };
+  }
+  const card = focusable('note-card');
+  card.querySelectorAll = () => [];
+  card.scrollIntoView = () => { scrolls++; };
+  elements.noteCard = card;
+
+  vm.createContext(context);
+  vm.runInContext([
+    functionBlock(active, 'focusAdvancedKeyboardTarget'),
+    functionBlock(active, 'wireAdv'),
+    'wireAdv();'
+  ].join('\n'), context);
+  assert.strictEqual(typeof handler, 'function', 'advanced-workspace handler was not registered');
+
+  const push = focusable('review-and-sign');
+  elements.pushAllEmrBtn = push;
+  const prior = focusable('destroyed-toggle');
+  document.activeElement = prior;
+  handler(null, { isTrusted: true, detail: 0 });
+  assert.strictEqual(context.S.advOpen, true, 'keyboard activation did not reveal the advanced workspace');
+  assert.strictEqual(document.activeElement, push, 'keyboard activation did not transfer focus into the revealed workflow');
+  assert.strictEqual(push.focusOptions && push.focusOptions.preventScroll, true, 'keyboard focus transfer may scroll the viewport');
+  assert.strictEqual(scrolls, 0, 'keyboard activation retained mouse-only smooth scrolling');
+
+  context.S.advOpen = false;
+  document.activeElement = prior;
+  scrolls = 0;
+  handler(null, { isTrusted: true, detail: 1 });
+  assert.strictEqual(document.activeElement, prior, 'mouse activation unexpectedly stole keyboard focus');
+  assert.strictEqual(scrolls, 1, 'mouse activation lost its existing advanced-workspace scroll');
+
+  context.S.advOpen = false;
+  context.window.__mlsAdvQuietOpen = true;
+  document.activeElement = prior;
+  scrolls = 0;
+  handler(null, { isTrusted: false, detail: 0 });
+  assert.strictEqual(document.activeElement, prior, 'programmatic reveal unexpectedly stole focus');
+  assert.strictEqual(scrolls, 0, 'quiet programmatic reveal unexpectedly scrolled');
+
+  context.S.advOpen = false;
+  context.window.__mlsAdvQuietOpen = false;
+  delete elements.pushAllEmrBtn;
+  document.activeElement = prior;
+  timers.length = 0;
+  handler(null, { isTrusted: true, detail: 0 });
+  assert.strictEqual(timers.length, 1, 'temporarily unavailable review action did not schedule a bounded focus retry');
+  const delayedPush = focusable('delayed-review-and-sign');
+  elements.pushAllEmrBtn = delayedPush;
+  timers.shift().fn();
+  assert.strictEqual(document.activeElement, delayedPush, 'bounded retry did not focus the review action once rendered');
+
+  context.S.advOpen = false;
+  delete elements.pushAllEmrBtn;
+  const fallback = focusable('advanced-fallback');
+  card.querySelectorAll = () => [fallback];
+  document.activeElement = prior;
+  handler(null, { isTrusted: true, detail: 0 });
+  assert.strictEqual(document.activeElement, fallback, 'keyboard reveal has no safe focus fallback when Review is unavailable');
+  assert(renders >= 5, 'advanced-workspace behavior was not exercised through the real render boundary');
 }
 
 console.log('PASS canonical UI ownership: rollback routes retired, Staff is Menu-only, and doctor/staff transitions are synchronous');

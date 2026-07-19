@@ -861,40 +861,27 @@ var __mlsB18Q=window.__mlsB18QA;
   });
 })();
 
-/* __mlsCalmBoot — stable app loading screen.
- * On load the app visibly cycles through layouts while ~180 enhancement modules
- * apply (flash / jumping / "many configurations"). This paints a clean branded
- * veil over the FIRST paint and releases it as soon as the DOM settles
- * (mutation-rate heuristic), max 3.2s, min 450ms, 220ms fade. Login screens
- * release early so sign-in is never delayed. Purely cosmetic. */
+/* __mlsCalmBoot — nonvisual first-frame readiness signal.
+ * #sfGateLoading is the single startup presentation owner. This compatibility
+ * module keeps the original mutation-settle signal and bounded release timing
+ * for callers that still read __mlsCalmBootDone; it never mounts another veil. */
 (function(){
   "use strict";
-  if(window.__mlsCalmBoot) return; window.__mlsCalmBoot={v:'b18',shownMs:0};
+  if(window.__mlsCalmBoot) return;
+  var api={v:'b18.2',ready:!!window.__mlsCalmBootDone,settledMs:0,visualOwner:'sfGateLoading'};
+  window.__mlsCalmBoot=api;
   try{
     if(window.__mlsCalmBootDone) return;
-    var veil=document.createElement('div'); veil.id='mlsBootVeil';
-    veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#1E2B24);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
-    veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2E6A4B;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span></div>'+
-      '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:24%;height:100%;border-radius:99px;background:#C9DCD2;transition:width .5s ease"></div></div>'+
-      '<div style="font:500 12px system-ui;color:#C9DCD2">Preparing your workspace…</div>';
-    (document.body||document.documentElement).appendChild(veil);
     var t0=Date.now(), muts=0, released=false;
     var offMut=__mlsB18Q.onMutations(function(ms){ muts+=ms.length; });
-    var bar=veil.querySelector('#mlsBootBar'), pct=24;
-    var barTimer=null, settleTimer=null, failTimer=null, removeTimer=null, fadeTimer=null, fadeRemoveTimer=null, offError=null;
-    function stepBar(){
-      barTimer=null; if(released) return;
-      pct=Math.min(92,pct+9); if(bar) bar.style.width=pct+'%';
-      barTimer=__mlsB18Q.later(stepBar,300);
-    }
+    var settleTimer=null, failTimer=null, offError=null;
     function release(){
       if(released) return; released=true;
-      window.__mlsCalmBootDone=1; window.__mlsCalmBoot.shownMs=Date.now()-t0;
-      settleTimer=__mlsB18Q.cancel(settleTimer); barTimer=__mlsB18Q.cancel(barTimer);
-      failTimer=__mlsB18Q.cancel(failTimer); removeTimer=__mlsB18Q.cancel(removeTimer);
-      if(offMut){ offMut(); offMut=null; } if(offError){ offError(); offError=null; }
-      if(bar) bar.style.width='100%';
-      fadeTimer=__mlsB18Q.later(function(){ veil.style.opacity='0'; fadeRemoveTimer=__mlsB18Q.later(function(){ try{ veil.remove(); }catch(e){} },260); },80);
+      api.ready=true; api.settledMs=Date.now()-t0; window.__mlsCalmBootDone=1;
+      settleTimer=__mlsB18Q.cancel(settleTimer);
+      failTimer=__mlsB18Q.cancel(failTimer);
+      if(offMut){ offMut(); offMut=null; }
+      if(offError){ offError(); offError=null; }
     }
     var lastCount=0;
     function checkSettled(){
@@ -908,21 +895,19 @@ var __mlsB18Q=window.__mlsB18QA;
       if(dt>=450 && delta<90) return release();
       settleTimer=__mlsB18Q.later(checkSettled,220);
     }
-    stepBar();
     settleTimer=__mlsB18Q.later(checkSettled,220);
     offError=__mlsB18Q.listen(window,'error',function(){ if(Date.now()-t0>1200) release(); },true);
-    /* absolute failsafe: the veil can never outlive 4s no matter what breaks */
+    /* The readiness signal remains bounded even if optional modules never settle. */
     failTimer=__mlsB18Q.later(release,4000);
-    removeTimer=__mlsB18Q.later(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); }catch(e){} },5200);
     __mlsB18Q.cleanup(function(){
       released=true;
-      settleTimer=__mlsB18Q.cancel(settleTimer); barTimer=__mlsB18Q.cancel(barTimer);
-      failTimer=__mlsB18Q.cancel(failTimer); removeTimer=__mlsB18Q.cancel(removeTimer);
-      fadeTimer=__mlsB18Q.cancel(fadeTimer); fadeRemoveTimer=__mlsB18Q.cancel(fadeRemoveTimer);
-      if(offMut){ offMut(); offMut=null; } if(offError){ offError(); offError=null; }
-      try{ veil.remove(); }catch(e){} window.__mlsCalmBoot=null;
+      settleTimer=__mlsB18Q.cancel(settleTimer);
+      failTimer=__mlsB18Q.cancel(failTimer);
+      if(offMut){ offMut(); offMut=null; }
+      if(offError){ offError(); offError=null; }
+      window.__mlsCalmBoot=null;
     });
-  }catch(e){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); }catch(e2){} }
+  }catch(e){ api.ready=true; window.__mlsCalmBootDone=1; }
 })();
 
 /* __mlsSearchAssistHint — "Find anything" now hands hard questions to the MLS

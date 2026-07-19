@@ -838,15 +838,15 @@
       putPreviewText(heroRecord, 'Recording off in preview');
       markBlocked(heroRecord, 'Recording is off in the read-only sample workspace.');
     }
-    var visitRecord = document.getElementById('ez3Rec');
-    if (visitRecord) {
-      /* The patient-detail renderer owns this label and may repaint it. Hide
-         the duplicate recorder instead of fighting that renderer; the single
-         disabled hero control above remains the truthful recording status. */
+    ['ez3Rec', 'ez3Rec2', 'ez3Stop', 'ez3Gen'].forEach(function (id) {
+      var visitRecord = document.getElementById(id);
+      if (!visitRecord) return;
+      /* Canonical Easy owns these controls synchronously. The single disabled
+         hero status is the truthful preview recording surface. */
       hidePreviewNode(visitRecord);
-      markBlocked(visitRecord, 'Recording is off in the read-only sample workspace.');
+      markBlocked(visitRecord, 'Recording and note generation are off in the read-only sample workspace.');
       try { visitRecord.disabled = true; } catch (e0) {}
-    }
+    });
 
     var laneButtons = [];
     try { laneButtons = document.querySelectorAll('.ez3fl-recbtn'); } catch (e) {}
@@ -861,11 +861,11 @@
     Array.prototype.forEach.call(hints, function (hint) {
       putPreviewText(hint, 'Sample workspace only - recording, cloud sync, Athena, sending, and signing are off.');
     });
-    var transcript = document.getElementById('ez3flTranscript');
+    var transcript = document.getElementById('ez3Transcript') || document.getElementById('ez3flTranscript');
     if (transcript) transcript.setAttribute('placeholder', 'Transcript editing is off in this read-only sample.');
-    var txHead = document.querySelector('.ez3fl-txhead span');
+    var txHead = document.querySelector('.ez3-transcript-head span,.ez3fl-txhead span');
     if (txHead) putPreviewText(txHead, 'Read-only sample transcript');
-    var txMeta = document.querySelector('.ez3fl-txmeta span:last-child');
+    var txMeta = document.querySelector('.ez3-transcript-meta span:last-child,.ez3fl-txmeta span:last-child');
     if (txMeta) putPreviewText(txMeta, 'Nothing is recorded or stored.');
 
     var quickTools = [];
@@ -877,9 +877,21 @@
       } else if (/paste a transcript/i.test(control.textContent || '')) {
         putPreviewText(control, 'Transcript paste off');
         markBlocked(control, 'Transcript paste is off in the read-only sample workspace.');
-      } else if (control.id === 'ez3flAssistant') {
+      } else if (control.id === 'ez3QAssistant' || control.id === 'ez3flAssistant') {
         putPreviewText(control, 'Assistant off in preview');
         markBlocked(control, 'The online assistant is off in the read-only sample workspace.');
+      } else if (control.id === 'ez3QVoice') {
+        putPreviewText(control, 'Voice off in preview');
+        markBlocked(control, 'Voice tools are off in the read-only sample workspace.');
+      } else if (control.id === 'ez3QDictate') {
+        putPreviewText(control, 'Dictation off in preview');
+        markBlocked(control, 'Dictation is off in the read-only sample workspace.');
+      } else if (control.id === 'ez3QAvs') {
+        putPreviewText(control, 'Summary off in preview');
+        markBlocked(control, 'After-visit summary generation is off in the read-only sample workspace.');
+      } else if (control.id === 'ez3QOrders') {
+        putPreviewText(control, 'Orders off in preview');
+        markBlocked(control, 'Orders are off in the read-only sample workspace.');
       }
     });
 

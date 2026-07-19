@@ -42,7 +42,7 @@ function monthDays(ym) {
 
 // Route wiring is deliberately checked only in the active Easy v3.7 workspace.
 // Later bundled copies are guarded fallbacks and must not justify a production pass.
-const activeStart = connectSource.indexOf('if (window.__mlsEasyV32) return;', 15000);
+const activeStart = connectSource.indexOf("var VER = '3.7.3'", 15000);
 const activeEnd = connectSource.indexOf('/* =========================================================================\n * MLS Scribe — PULL PIPELINE TRUTH PACK', activeStart);
 assert(activeStart >= 0 && activeEnd > activeStart, 'active Staff workspace could not be isolated');
 const activeStaff = connectSource.slice(activeStart, activeEnd);

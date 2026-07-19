@@ -143,7 +143,99 @@ assert(desktopStart.indexOf('recog.start()') < desktopStart.indexOf('_athenaSetV
 assert(desktopStart.indexOf('return false;') < desktopStart.indexOf('_athenaSetVisitBinding(captureBindingCandidate)'), 'failed desktop capture could leave a stale patient binding');
 assert(desktopStart.includes('recog._mlsCaptureEpoch=captureSessionEpoch') && desktopStart.includes('recog._mlsBindingId=currentVisitAthenaBinding') && desktopStart.includes('recog._mlsBindingEpoch=currentVisitAthenaEpoch'), 'desktop recording results were not scoped to one visit binding and epoch');
 const desktopRecognition = between(app, 'function initRecog()', 'function showMicWarn(msg)');
-assert(desktopRecognition.includes('instance!==recog||!capturing') && desktopRecognition.includes('instance._mlsCaptureEpoch!==captureSessionEpoch') && desktopRecognition.includes('instance._mlsBindingId!==currentVisitAthenaBinding.id') && desktopRecognition.includes('instance._mlsBindingEpoch') && desktopRecognition.includes('currentVisitAthenaEpoch'), 'late desktop recognition events could land in a new visit');
+assert(desktopRecognition.includes('if(instance!==recog)return;') && desktopRecognition.includes('if(instance._mlsStartPending)') && desktopRecognition.includes('instance._mlsPendingResults') && desktopRecognition.includes('!capturing||instance._mlsCaptureEpoch!==captureSessionEpoch') && desktopRecognition.includes('instance._mlsBindingId!==currentVisitAthenaBinding.id') && desktopRecognition.includes('instance._mlsBindingEpoch') && desktopRecognition.includes('currentVisitAthenaEpoch'), 'late or synchronous desktop recognition events could land before binding or in a new visit');
+
+function desktopCaptureHarness(options = {}) {
+  const events = [], warnings = [], timers = [];
+  const transcript = { value: '' };
+  const captureBtn = {
+    innerHTML: '',
+    classList: {
+      values: new Set(['btn-primary']),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      contains(value) { return this.values.has(value); }
+    }
+  };
+  const candidate = { id: 'visit-candidate', patient: { patientId: 'patient-a', name: 'Patient A' } };
+  const recognizers = [];
+  class FakeRecognition {
+    constructor() { this.startCalls = 0; this.stopCalls = 0; recognizers.push(this); }
+    start() {
+      this.startCalls += 1;
+      events.push('start');
+      if (options.syncResult && typeof this.onresult === 'function') {
+        const row = [{ transcript: options.syncResult }]; row.isFinal = true;
+        this.onresult({ resultIndex: 0, results: [row] });
+      }
+      if (options.syncError && typeof this.onerror === 'function') this.onerror({ error: options.syncError });
+      if (options.startThrows) throw new Error('synthetic start failure');
+      events.push('start-return');
+    }
+    stop() { this.stopCalls += 1; events.push('stop'); if (typeof this.onend === 'function') this.onend(); }
+    abort() { events.push('abort'); if (typeof this.onend === 'function') this.onend(); }
+  }
+  const context = {
+    console, Promise, Date, Math, Number, String, Array, Object,
+    SpeechRecognition: FakeRecognition,
+    currentVisitAthenaBinding: null,
+    currentVisitAthenaEpoch: 0,
+    currentVisitAthenaCompromised: false,
+    document: { getElementById(id) { return id === 'transcript' ? transcript : id === 'captureBtn' ? captureBtn : null; } },
+    setTimeout(fn) { timers.push(fn); return timers.length; },
+    clearTimeout() {},
+    _mlsExactScheduledClinicalAction() { return true; },
+    _athenaPrepareRecording() { events.push('prepare'); return true; },
+    _athenaBindingForCurrentVisit() { return candidate; },
+    _athenaCurrentMatchesBound() { return true; },
+    _markVisitDirty() {}, _updateLiveCapture() {}, _hideLiveCapture() {},
+    toast() {},
+    showMicWarn(message) { warnings.push(message); }
+  };
+  context.window = context;
+  context._athenaSetVisitBinding = function (binding) {
+    events.push('bind');
+    if (options.bindFails) return false;
+    context.currentVisitAthenaBinding = binding;
+    context.currentVisitAthenaEpoch += 1;
+    return true;
+  };
+  const speechStart = app.indexOf("let recog=null, capturing=false, finalText='', captureSessionEpoch=0;");
+  const speechEnd = app.indexOf('\nfunction showMicWarn(msg)', speechStart);
+  const captureStart = app.indexOf('function startCapture()');
+  const captureEnd = app.indexOf('\nfunction clearTranscript()', captureStart);
+  assert(speechStart >= 0 && speechEnd > speechStart && captureStart >= 0 && captureEnd > captureStart,
+    'desktop capture transaction source could not be isolated');
+  const runtime = app.slice(speechStart, speechEnd) + '\n' + app.slice(captureStart, captureEnd) +
+    '\nwindow.startCapture=startCapture;window.stopCapture=stopCapture;' +
+    '\nwindow.__desktopCaptureState=function(){return {capturing:capturing,hasRecog:!!recog,epoch:captureSessionEpoch};};';
+  vm.runInNewContext(runtime, context, { filename: 'desktop-capture-transaction.js' });
+  return { context, events, warnings, transcript, captureBtn, recognizers, timers };
+}
+
+/* A synchronous result from start() is buffered until the successful return
+ * commits the immutable binding, then replayed exactly once into that visit. */
+const syncCapture = desktopCaptureHarness({ syncResult: 'synchronous phrase' });
+assert.strictEqual(syncCapture.context.startCapture(), true, 'successful synchronous desktop capture was refused');
+assert(syncCapture.events.indexOf('prepare') < syncCapture.events.indexOf('start'), 'recording touched the microphone before visit preparation');
+assert(syncCapture.events.indexOf('start-return') < syncCapture.events.indexOf('bind'), 'desktop visit bound before microphone start succeeded');
+assert.strictEqual(syncCapture.transcript.value, 'synchronous phrase', 'synchronous recognition result was not replayed after binding');
+assert.strictEqual(syncCapture.context.__desktopCaptureState().capturing, true, 'successful desktop capture did not remain active');
+
+/* If start throws after a synchronous result, no visit binding or transcript
+ * mutation may survive, and the prepared recognizer must be invalidated. */
+const failedCapture = desktopCaptureHarness({ syncResult: 'must be discarded', startThrows: true });
+assert.strictEqual(failedCapture.context.startCapture(), false, 'synchronous microphone failure reported a successful capture');
+assert.strictEqual(failedCapture.context.currentVisitAthenaBinding, null, 'failed microphone start left a visit binding');
+assert.strictEqual(failedCapture.transcript.value, '', 'failed microphone start replayed buffered speech');
+assert.strictEqual(JSON.stringify(failedCapture.context.__desktopCaptureState()), JSON.stringify({ capturing: false, hasRecog: false, epoch: 1 }), 'failed microphone start left a live recognizer or capture state');
+assert.strictEqual(failedCapture.warnings.length, 1, 'failed microphone start was not explained once');
+
+const deniedCapture = desktopCaptureHarness({ syncResult: 'must also be discarded', syncError: 'not-allowed' });
+assert.strictEqual(deniedCapture.context.startCapture(), false, 'synchronous permission denial reported a successful capture');
+assert.strictEqual(deniedCapture.context.currentVisitAthenaBinding, null, 'permission denial bound a visit after its handler stopped capture');
+assert.strictEqual(deniedCapture.transcript.value, '', 'permission denial replayed a result buffered before failure');
+assert.strictEqual(deniedCapture.warnings.length, 1, 'permission denial was not explained exactly once');
 const desktopStop = between(app, 'function stopCapture()', 'function clearTranscript()');
 assert(desktopStop.indexOf('recog=null') < desktopStop.indexOf('oldRecog.stop()'), 'desktop stop must invalidate the old recognition instance before a late result can fire');
 const phoneStart = between(app, 'async function startPhoneMic(clickEvent)', 'async function pollPhoneMic()');

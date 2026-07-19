@@ -8,6 +8,17 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const b18 = fs.readFileSync(path.join(root, 'feat_b18_qa.js'), 'utf8');
+
+const calmBootStart = b18.indexOf('/* __mlsCalmBoot');
+const calmBootEnd = b18.indexOf('/* __mlsSearchAssistHint', calmBootStart);
+assert(calmBootStart >= 0 && calmBootEnd > calmBootStart, 'b18 readiness compatibility module is missing');
+const calmBoot = b18.slice(calmBootStart, calmBootEnd);
+assert(calmBoot.includes("visualOwner:'sfGateLoading'"), 'b18 does not defer startup presentation to the canonical gate');
+assert(!calmBoot.includes('mlsBootVeil') && !calmBoot.includes('mlsBootBar'), 'b18 can still mount a competing startup visual');
+assert(!calmBoot.includes('createElement') && !calmBoot.includes('appendChild'), 'b18 readiness logic still creates startup DOM');
+assert(calmBoot.includes('__mlsB18Q.onMutations') && calmBoot.includes('window.__mlsCalmBootDone=1'), 'retiring the b18 visual also removed its nonvisual settle signal');
+assert(calmBoot.includes('__mlsB18Q.later(release,4000)'), 'b18 readiness signal lost its bounded failsafe');
 
 const start = app.indexOf('var sfGateLoadingStarted=0');
 const end = app.indexOf('function sfHideGateLoading', start);
@@ -36,7 +47,7 @@ assert(app.includes("[1100,'Loading your schedule…']") && app.includes("[2500,
 assert(showSource.includes('if(sfGateLoadingVisible&&el.style.display!==\'none\') return el'), 'duplicate startup calls can reset visible progress again');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b431'"), 'ScribeFlow loader was not cache-busted to b431');
+assert(app.includes("window.__MLS_AV='b434'"), 'ScribeFlow loader was not cache-busted to b434');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -111,7 +122,7 @@ assert(bootDriver.includes("owner:'ScribeFlow'"), 'compatibility layer does not 
 assert(!bootDriver.includes('setInterval('), 'a second progress interval can fight the secure loader again');
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b431'"), 'shared asset version was not bumped to b431');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-19-b431'"), 'app build was not bumped to b431');
+assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b434'"), 'shared asset version was not bumped to b434');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-19-b434'"), 'app build was not bumped to b434');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

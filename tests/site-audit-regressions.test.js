@@ -9,6 +9,7 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 
 const redesign = read('feat_mls_redesign.js');
 const loading = read('feat_mls_loading_calm.js');
+const progress = read('feat_mls_progress_stages.js');
 const home = read('index.html');
 const app = read('ScribeFlow.html');
 const directory = read('lawyers.html');
@@ -21,6 +22,7 @@ const studyAnalysis = read('feat_mls_task7_analysis_sg.js');
 
 new Function(redesign); // eslint-disable-line no-new-func
 new Function(loading); // eslint-disable-line no-new-func
+new Function(progress); // eslint-disable-line no-new-func
 new Function(studyGroups); // eslint-disable-line no-new-func
 new Function(studyAnalysis); // eslint-disable-line no-new-func
 
@@ -31,11 +33,16 @@ assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
 assert(siteBundle.includes("feat_mls_redesign.js?v=20260719rd322"), 'the repaired responsive/performance asset needs a fresh deployment URL');
 
-assert(loading.includes("p.setAttribute('role', 'status')"), 'busy pill needs status semantics');
-assert(loading.includes("p.setAttribute('aria-live', 'polite')"), 'busy pill needs polite announcements');
-assert(loading.includes("p.setAttribute('aria-hidden', 'true')") && loading.includes("p.setAttribute('aria-hidden', 'false')"), 'busy pill must leave and re-enter the accessibility tree with its visual state');
-assert(loading.includes('opacity:0;visibility:hidden;'), 'idle busy pill must be visually and semantically hidden');
-assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260719lb202"), 'the shared progress asset needs a fresh deployment URL');
+assert(loading.includes("visualOwner: 'mlsProgressStages'") && !loading.includes('window.fetch = wrapped'),
+  'shared loading store must stay headless and must not turn background requests into UI');
+assert(progress.includes("p.setAttribute('role', 'log')"), 'single progress details owner needs log semantics');
+assert(progress.includes("p.setAttribute('aria-live', 'polite')"), 'single progress details owner needs polite announcements');
+assert(progress.includes("c.setAttribute('aria-label', 'Show progress details')"), 'single progress chip needs an accessible label');
+assert(progress.includes("'#' + CHIP_ID + '{") && progress.includes('display:none') && progress.includes("'#' + CHIP_ID + '.on{display:inline-flex}'"),
+  'idle progress chip must remain absent until an explicit job exists');
+const loadingLoader = siteBundle.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
+assert(loadingLoader.includes("s.src=A+'?v=20260719lb204'") && loadingLoader.includes("s.setAttribute('data-mls-version',V)"),
+  'the shared progress asset needs its exact version-aware fresh deployment URL');
 
 assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260719sg1c5'), 'reconciled Study Groups mount needs a fresh deployment URL');
 assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'"), 'read-only public preview still boots the hidden Study Groups/AI Studio surface');

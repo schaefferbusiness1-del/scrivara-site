@@ -6,9 +6,9 @@ const path = require('path');
 const vm = require('vm');
 
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'mls-connect.js'), 'utf8');
-const start = source.indexOf("var VER = '3.7.2'");
+const start = source.indexOf("var VER = '3.7.3'");
 const end = source.indexOf('/* =========================================================================\n * MLS Scribe — PULL PIPELINE TRUTH PACK', start);
-assert(start >= 0 && end > start, 'active Easy 3.7.2 owner was not found');
+assert(start >= 0 && end > start, 'active Easy 3.7.3 owner was not found');
 const active = source.slice(start, end);
 
 function functionBlock(input, name) {

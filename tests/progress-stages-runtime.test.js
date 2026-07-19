@@ -1,5 +1,5 @@
 'use strict';
-/* ps-1.0.0 named-stage progress wiring: loads the REAL lb-2.0.0 owner plus the
+/* ps-1.2.0 named-stage progress wiring: loads the REAL lb-2.1.0 owner plus the
  * real observer module in one sandbox, feeds synthetic app<->extension bridge
  * messages, and asserts every flow produces honest named stages, counts, and
  * context — no fake percentages, no undead spinners (deadlines + quiet-window
@@ -64,23 +64,42 @@ context.window = context;
 context.addEventListener = function (type, fn) { if (type === 'message') messageListeners.push(fn); };
 context.removeEventListener = function () {};
 context.dispatchEvent = function () {};
+let lbUpgradeReverts = 0;
+let psUpgradeReverts = 0;
+context.__mlsLoadingCalm = {
+  installed: true,
+  version: 'lb-2.0.0',
+  revert() { lbUpgradeReverts += 1; this.installed = false; }
+};
+context.__mlsProgressStages = {
+  installed: true,
+  version: 'ps-1.1.0',
+  revert() { psUpgradeReverts += 1; this.installed = false; }
+};
+const legacyPsNodes = {};
+['mlsLbBar', 'mlsBusyPill', 'mlsLbCss', 'mlsPsChip', 'mlsPsPanel', 'mlsPsCss'].forEach(id => {
+  const node = element('div'); node.id = id; node.legacyOwner = true; nodes[id] = node;
+  if (/^mlsPs/.test(id)) legacyPsNodes[id] = node;
+});
 vm.createContext(context);
 vm.runInContext(lbSource, context, { filename: 'feat_mls_loading_calm.js' });
 vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
-assert(lb && lb.installed && lb.version === 'lb-2.0.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.1.0', 'progress-stages module missing');
-/* ps-1.0.1: extension-less devices must not loop doomed auto "Connecting to
-   Athena" jobs (Codex-flagged passive loop). Relay/phone devices never
-   auto-spawn one; elsewhere the streak caps at 2 until a real pong re-arms. */
-const psSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'feat_mls_progress_stages.js'), 'utf8');
-assert(psSrc.includes('rl.shouldRelay === \'function\' && rl.shouldRelay()) return;'), 'relay devices can loop doomed connect jobs again');
-assert(psSrc.includes("dr.effectiveRole() === 'phone') return;"), 'phone devices can loop doomed connect jobs again');
-assert(psSrc.includes('if (conn.autoConnects >= 2) return;'), 'doomed connect-job streak cap was lost');
-assert(psSrc.includes('conn.everConnected = true; conn.autoConnects = 0;'), 'pong no longer re-arms the connect-job cap');
+assert(lb && lb.installed && lb.version === 'lb-2.1.0', 'shared lb owner missing');
+assert(ps && ps.installed && ps.version === 'ps-1.2.0', 'progress-stages module missing');
+assert.strictEqual(lb.visualOwner, 'mlsProgressStages', 'the headless store does not identify its presentation owner');
+assert.strictEqual(ps.surfaceId, 'mlsPsChip', 'named stages do not identify the single automatic surface');
 assert(messageListeners.length >= 1, 'observer did not attach a message listener');
+assert.strictEqual(lbUpgradeReverts, 1, 'lb did not retire the stale same-tab owner exactly once');
+assert.strictEqual(psUpgradeReverts, 1, 'ps did not retire the stale same-tab owner exactly once');
+assert(!nodes.mlsLbBar && !nodes.mlsBusyPill && !nodes.mlsLbCss, 'stale floating loading UI survived the lb upgrade');
+assert(nodes.mlsLbRetiredCss && /#mlsLbBar,#mlsBusyPill\{display:none!important\}/.test(nodes.mlsLbRetiredCss.textContent), 'lb did not suppress a late node from the opaque b431 bridge listener');
+['mlsPsChip', 'mlsPsCss'].forEach(id => {
+  assert(nodes[id] && nodes[id] !== legacyPsNodes[id] && !nodes[id].legacyOwner, id + ' was not replaced by ps-1.2.0');
+});
+assert(!nodes.mlsPsPanel, 'the stale progress panel survived before the new owner was opened');
 
 function post(data) { messageListeners.forEach(fn => fn({ data })); }
 function jobByKey(key) {
@@ -98,11 +117,21 @@ function firePending(predicate) {
   return t;
 }
 
-/* ---------------- 1. connect / reconnect --------------------------------- */
+/* ---------------- 1. passive health is quiet; explicit connect is staged -- */
 post({ source: 'mls-app', type: 'mlsPing' });
 let j = jobByKey('athena:connect');
-assert(j && j.status === 'running', 'ping did not open a connect job');
+assert.strictEqual(j, null, 'a passive health ping manufactured a connection job');
+assert(!nodes.mlsPsChip.classList.contains('on'), 'a passive health ping opened floating progress');
+assert.strictEqual(ps.expect('connect', {}), true, 'explicit connection progress was rejected');
+j = jobByKey('athena:connect');
+assert(j && j.status === 'running', 'explicit connection job did not start');
+ps.panel.open();
+assert(nodes.mlsPsPanel && nodes.mlsPsPanel !== legacyPsNodes.mlsPsPanel && !nodes.mlsPsPanel.legacyOwner, 'mlsPsPanel was not recreated by ps-1.2.0 for a real job');
+ps.panel.close();
 assert.strictEqual(j.stages[0], 'Contacting the MLS Assist extension', 'connect stages missing');
+post({ source: 'mls-app', type: 'mlsPing' });
+j = jobByKey('athena:connect');
+assert.strictEqual(j.stage, 'Confirming your signed-in Athena tab', 'ping did not advance the explicit connection job');
 post({ source: 'mls-ext', type: 'mlsPong', version: '2.9.26' });
 j = jobByKey('athena:connect');
 assert.strictEqual(j.status, 'completed', 'pong did not complete the connect job');
@@ -250,9 +279,14 @@ assert.strictEqual(j.status, 'timed_out', 'abandoned schedule pull did not time 
 
 /* ---------------- 8. loader line + registration wiring ------------------- */
 const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
-assert(connect.includes("data-mls-asset','feat_mls_progress_stages.js'"), 'ps loader line missing from mls-connect.js');
-const lbAt = connect.indexOf("data-mls-asset','feat_mls_loading_calm.js'");
-const psAt = connect.indexOf("data-mls-asset','feat_mls_progress_stages.js'");
+const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
+const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.2.0'")) || '';
+assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260719ps120'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
+assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
+const lbAt = connect.indexOf(lbLoader);
+const psAt = connect.indexOf(psLoader);
 assert(lbAt >= 0 && psAt > lbAt, 'ps loader must come after the lb loader');
 
 console.log('PASS progress stages: connect/reconnect, schedule counts + stale rejection + partial honesty, history N-of-M without fake percents, staging probe->confirm->write->verify, review counts, teach, deadlines everywhere, loader wiring');

@@ -1,5 +1,5 @@
 /* =============================================================================
- * __mlsDictateAnywhere  da-1.1.0   (2026-07-16, owner directive)
+ * __mlsDictateAnywhere  da-1.1.1   (2026-07-19, race-safe mic handoff)
  * -----------------------------------------------------------------------------
  * "There is always a chance to dictate into any text box."
  * Focus any textarea / text-ish input / contenteditable in MLS Scribe and a
@@ -21,11 +21,29 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  if (window.__mlsDictateAnywhere) return;
+  var VERSION = 'da-1.1.1';
+  var previous = null;
+  try { previous = window.__mlsDictateAnywhere; } catch (e0) {}
+  if (previous && previous.installed && previous.version === VERSION) return;
+  if (previous) {
+    try { if (typeof previous.revert === 'function') previous.revert(); } catch (e1) {}
+    try { previous.installed = false; if (window.__mlsDictateAnywhere === previous) delete window.__mlsDictateAnywhere; } catch (e2) {}
+    try {
+      ['mlsDaChip', 'mlsDaDock', 'mlsDaCss'].forEach(function (id) {
+        var node = document.getElementById(id); if (node && node.remove) node.remove();
+      });
+    } catch (e3) {}
+  }
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var api = { installed: true, version: 'da-1.1.0', supported: !!SR, starts: 0 };
+  var api = { installed: true, version: VERSION, supported: !!SR, starts: 0 };
   window.__mlsDictateAnywhere = api;
-  if (!SR) { api.revert = function () {}; return; }
+  if (!SR) {
+    api.revert = function () {
+      api.installed = false;
+      try { if (window.__mlsDictateAnywhere === api) delete window.__mlsDictateAnywhere; } catch (e4) {}
+    };
+    return;
+  }
 
   var CHIP_ID = 'mlsDaChip';
   var DOCK_ID = 'mlsDaDock';
@@ -50,7 +68,12 @@
   function registerSpeech() {
     var h = speechHub();
     if (!h || unregisterSpeech) return h;
-    unregisterSpeech = h.register('dictate', 'Dictate', function () {
+    unregisterSpeech = h.register('dictate', 'Dictate', function (handoff) {
+      var previous = rec;
+      if (handoff && handoff.pending) { if (listening) stop(); return; }
+      if (previous && typeof h.waitForEnd === 'function') {
+        return h.waitForEnd(previous, function () { if (listening) stop(); });
+      }
       if (listening) stop();
     });
     return h;
@@ -272,10 +295,26 @@
         cleanup(instance);
       };
       instance.onend = function () { cleanup(instance); };
-      instance.start();
-      api.starts++;
+      /* Set every session/owner guard before start(). Chrome normally reports
+         asynchronously, but an immediate final result or end must never be
+         dropped or leave a false "listening" state. */
       listening = true;
       setLabel();
+      var begin = function () {
+        if (instance !== rec || !listening || sessionEpoch !== recognitionEpoch) return;
+        try {
+          instance.start();
+          api.starts++;
+        } catch (eStart) {
+          if (instance === rec && sessionEpoch === recognitionEpoch) {
+            cleanup(instance);
+            try { if (typeof window.toast === 'function') window.toast('Dictate could not start the microphone. Wait a moment, then try again.', 'err'); } catch (eToast) {}
+          }
+        }
+      };
+      if (lease && typeof lease.whenReady === 'function') {
+        if (!lease.whenReady(begin)) cleanup(instance);
+      } else begin();
     } catch (e) {
       cleanup();
       try { if (typeof window.toast === 'function') window.toast('Dictate could not start the microphone. Wait a moment, then try again.', 'err'); } catch (e2) {}
@@ -382,6 +421,9 @@
   };
   api.stop = stop;
   api.isListening = function () { return listening; };
+  /* Exact-node ownership receipt for canonical renderers that preserve an
+     active textarea across a same-phase repaint. No transcript/PHI is exposed. */
+  api.isTarget = function (target) { return !!(listening && recognitionTarget === target); };
   /* da-1.1.0: direct programmatic entry point for first-party callers (the
      easy-workflow Dictate chip). Toggles dictation FOR a specific field:
      - already listening -> stop (regardless of target), exactly like the chip;

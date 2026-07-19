@@ -11,7 +11,7 @@ const canonicalStart = source.indexOf('(function () {', canonicalMarker);
 const canonicalEnd = source.indexOf('\n})();', canonicalStart);
 assert(canonicalMarker >= 0 && canonicalStart >= 0 && canonicalEnd > canonicalStart, 'canonical Easy owner could not be bounded');
 const canonical = source.slice(canonicalStart, canonicalEnd);
-assert(canonical.includes("var VER = '3.7.2'"), 'unexpected canonical Easy version');
+assert(canonical.includes("var VER = '3.7.3'"), 'unexpected canonical Easy version');
 assert(canonical.includes('installScheduledVisitBinding(a) && exactScheduledBindingMatches(a)'), 'canonical owner lacks exact scheduled binding read-back');
 assert(canonical.includes('if (!exactBindingReady) { render(); return; }'), 'canonical owner can action after binding failure');
 assert(canonical.includes("window.addEventListener('mls:session-boundary', resetEasySession)"), 'canonical owner lacks synchronous account reset');
@@ -66,4 +66,4 @@ for (const position of lockStarts.slice(1)) {
   assert(enclosingRetired, `later lockAndStart at offset ${position} is not inside a fail-closed retired owner`);
 }
 
-console.log('PASS canonical Easy action ownership: the 3.7.2 owner is first and exact-gated; every later record/generate lineage returns before runtime/DOM access');
+console.log('PASS canonical Easy action ownership: the 3.7.3 owner is first and exact-gated; every later record/generate lineage returns before runtime/DOM access');

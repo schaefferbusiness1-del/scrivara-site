@@ -29,7 +29,7 @@ function makeNode(tag, nodes) {
   };
 }
 
-function makeHarness() {
+function makeHarness(options = {}) {
   const nodes = {};
   const documentHandlers = {};
   const recognizers = [];
@@ -43,7 +43,11 @@ function makeHarness() {
 
   class FakeRecognition {
     constructor() { this.startCalls = 0; this.stopCalls = 0; recognizers.push(this); }
-    start() { this.startCalls += 1; }
+    start() {
+      this.startCalls += 1;
+      if (options.immediateResult && typeof this.onresult === 'function') this.onresult(finalResult(options.immediateResult));
+      if (options.immediateEnd && typeof this.onend === 'function') this.onend();
+    }
     stop() { this.stopCalls += 1; if (typeof this.onend === 'function') this.onend(); }
   }
 
@@ -90,6 +94,12 @@ function makeHarness() {
     && Number(epoch) === Number(context.currentVisitAthenaEpoch)
   );
 
+  if (options.useAppSpeechHub) {
+    const hubStart = app.indexOf('function mlsSpeechHub(){');
+    const hubEnd = app.indexOf('\nconst SR=', hubStart);
+    assert(hubStart >= 0 && hubEnd > hubStart, 'shared speech hub source could not be isolated');
+    vm.runInNewContext(app.slice(hubStart, hubEnd) + '\nwindow.mlsSpeechHub=mlsSpeechHub;', context, { filename: 'mls-speech-hub.js' });
+  }
   vm.runInNewContext(source, context, { filename: 'feat_mls_dictate_anywhere.js' });
   return { context, transcript, nodes, documentHandlers, recognizers, toasts };
 }
@@ -101,7 +111,7 @@ function finalResult(text) {
 }
 
 const h = makeHarness();
-assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.1.0');
+assert(h.context.__mlsDictateAnywhere && h.context.__mlsDictateAnywhere.version === 'da-1.1.1');
 for (const id of ['transcript', 'noteBox', 'patientLabel', 'ez3Transcript', 'ez3Note', 'mlsProtoScratch', 'ez3flTranscript', 'ez3flNote']) {
   assert(source.includes("id === '" + id + "'"), `clinical dictation alias ${id} is not visit-scoped`);
 }
@@ -188,4 +198,58 @@ const newVisitSource = app.slice(app.indexOf('function newVisit(opts)'), app.ind
 const switchSource = app.slice(app.indexOf('function _athenaHandleActivePatientChange(previousId,nextId)'), app.indexOf('function _athenaMarkBoundEdit(fieldId)'));
 assert(newVisitSource.includes("_vh.claim('visit-reset')") && switchSource.includes("speech.claim('patient-switch')"), 'New Visit and patient switching do not synchronously stop the current speech owner');
 
-console.log('PASS dictate-anywhere binding: queued speech cannot cross patient switches or same-patient New Visit');
+(async function testMicHandoffRaces() {
+  /* A final result and end are both allowed to arrive from start() immediately.
+     The word must land once, and the UI must end stopped rather than being set
+     back to a ghost listening state after onend cleanup. */
+  const immediate = makeHarness({ immediateResult: 'immediate clinical phrase', immediateEnd: true });
+  immediate.documentHandlers.focusin({ target: immediate.transcript });
+  immediate.nodes.mlsDaChip.listeners.click({ preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(immediate.transcript.value, 'immediate clinical phrase', 'an immediate final dictation result was dropped during start');
+  assert.strictEqual(immediate.context.__mlsDictateAnywhere.isListening(), false, 'immediate end left Dictate in a ghost listening state');
+  assert.strictEqual(immediate.context.__mlsDictateAnywhere.starts, 1, 'the immediate recognition session was not counted exactly once');
+
+  /* The real coordinator must hold the new Dictate recognizer until a prior
+     microphone owner actually finishes its asynchronous stop. */
+  const delayed = makeHarness({ useAppSpeechHub: true });
+  const hub = delayed.context.mlsSpeechHub();
+  let finishPrior = null;
+  hub.register('prior-voice', 'Prior Voice', function () {
+    return new Promise(resolve => { finishPrior = resolve; });
+  });
+  hub.claim('prior-voice');
+  delayed.documentHandlers.focusin({ target: delayed.transcript });
+  delayed.nodes.mlsDaChip.listeners.click({ preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(delayed.recognizers.length, 1, 'Dictate did not prepare its next recognition session');
+  assert.strictEqual(delayed.recognizers[0].startCalls, 0, 'Dictate started before the prior microphone owner ended');
+  assert.strictEqual(typeof finishPrior, 'function', 'the prior owner was not asked to stop');
+  finishPrior();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.strictEqual(delayed.recognizers[0].startCalls, 1, 'Dictate did not start exactly once after the prior owner ended');
+
+  /* If another owner wins while Dictate is still waiting, the prepared
+     recognizer is canceled and must not wake up when the old barrier settles. */
+  const superseded = makeHarness({ useAppSpeechHub: true });
+  const supersededHub = superseded.context.mlsSpeechHub();
+  let finishSupersededPrior = null;
+  supersededHub.register('slow-prior', 'Slow Prior', function () {
+    return new Promise(resolve => { finishSupersededPrior = resolve; });
+  });
+  supersededHub.claim('slow-prior');
+  superseded.documentHandlers.focusin({ target: superseded.transcript });
+  superseded.nodes.mlsDaChip.listeners.click({ preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(superseded.recognizers[0].startCalls, 0, 'superseded Dictate started before the slow prior owner ended');
+  supersededHub.register('new-winner', 'New Winner', function () {});
+  supersededHub.claim('new-winner');
+  assert.strictEqual(superseded.context.__mlsDictateAnywhere.isListening(), false, 'a superseded pending Dictate session stayed visibly active');
+  finishSupersededPrior();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.strictEqual(superseded.recognizers[0].startCalls, 0, 'a superseded pending Dictate session started after its old barrier settled');
+
+  console.log('PASS dictate-anywhere binding: queued speech stays visit-owned; immediate events and delayed microphone handoffs are race-safe');
+})().catch(err => {
+  console.error(err);
+  process.exitCode = 1;
+});

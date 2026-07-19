@@ -1,4 +1,4 @@
-/* feat_mls_voice_ai.js  ->  window.__mlsVoiceAI  (v1.1.0)
+/* feat_mls_voice_ai.js  ->  window.__mlsVoiceAI  (v1.1.2)
  * ==========================================================================
  * VOICE-DRIVEN COMMAND LAYER for the MLSscribe app (mlsscribe.com / ScribeFlow).
  *
@@ -40,12 +40,19 @@
  */
 (function () {
   'use strict';
-
-  try {
-    if (window.__mlsVoiceAI && window.__mlsVoiceAI.installed) return;
-  } catch (e) { return; }
-
-  var VERSION = '1.1.1';
+  var VERSION = '1.1.2';
+  var previous = null;
+  try { previous = window.__mlsVoiceAI; } catch (e0) {}
+  if (previous && previous.installed && previous.version === VERSION) return;
+  if (previous) {
+    try { if (typeof previous.revert === 'function') previous.revert(); } catch (e1) {}
+    try { previous.installed = false; if (window.__mlsVoiceAI === previous) delete window.__mlsVoiceAI; } catch (e2) {}
+    try {
+      ['mlsVoiceAiToast', 'mlsVoiceAiStyle'].forEach(function (id) {
+        var node = document.getElementById(id); if (node && node.remove) node.remove();
+      });
+    } catch (e3) {}
+  }
   var ASSET = 'feat_mls_voice_ai.js';
   var WAKE = 'mls assistant';
   var STYLE_ID = 'mlsVoiceAiStyle';
@@ -84,7 +91,12 @@
   function claimVoiceSpeech() {
     var h = voiceSpeechHub();
     if (!h) return { ok: true, previous: null };
-    if (!unregisterVoiceSpeech && isFn(h.register)) unregisterVoiceSpeech = h.register('voice-ai', 'MLS Assistant', function () { stop(); });
+    if (!unregisterVoiceSpeech && isFn(h.register)) unregisterVoiceSpeech = h.register('voice-ai', 'MLS Assistant', function (handoff) {
+      var previous = rec;
+      if (handoff && handoff.pending) return stop();
+      if (previous && isFn(h.waitForEnd)) return h.waitForEnd(previous, stop);
+      return stop();
+    });
     return h.claim('voice-ai');
   }
   function releaseVoiceSpeech() { safe(function () { var h = voiceSpeechHub(); if (h) h.release('voice-ai'); }); }
@@ -401,12 +413,32 @@
         }
       } catch (e) {}
     };
-    instance.onend = function () { if (instance === rec && listening && sessionEpoch === voiceSessionEpoch) { safe(function () { instance.start(); }); } };
+    instance.onend = function () {
+      if (instance === rec && listening && sessionEpoch === voiceSessionEpoch) {
+        setTimeout(function () {
+          if (instance === rec && listening && sessionEpoch === voiceSessionEpoch) safe(function () { instance.start(); });
+        }, 200);
+      }
+    };
     instance.onerror = function () {};
-    try { instance.start(); } catch (e1) { rec = null; releaseVoiceSpeech(); return false; }
+    /* Publish the active session before start() so immediate result/end events
+       cannot be dropped or leave a ghost microphone owner. */
     listening = true;
     showToast('Listening', [{ text: 'Say “MLS Assistant, …”. e.g. “generate note and then save to Athena”.', cls: '' }]);
-    return true;
+    var beginFailed = false;
+    var begin = function () {
+      if (instance !== rec || !listening || sessionEpoch !== voiceSessionEpoch) return;
+      try { instance.start(); }
+      catch (e1) {
+        beginFailed = true;
+        if (instance === rec) rec = null;
+        listening = false; voiceSessionEpoch++; releaseVoiceSpeech();
+      }
+    };
+    if (lease && isFn(lease.whenReady)) {
+      if (!lease.whenReady(begin)) { beginFailed = true; stop(); }
+    } else begin();
+    return !beginFailed && listening && rec === instance;
   }
   function stop() {
     var old = rec;

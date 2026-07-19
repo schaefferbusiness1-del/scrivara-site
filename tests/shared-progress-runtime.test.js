@@ -70,7 +70,7 @@ vm.runInContext(source, context, { filename: 'feat_mls_loading_calm.js' });
 
 const api = context.__mlsLoadingCalm;
 assert(api && api.installed, 'shared progress owner did not install');
-assert.strictEqual(api.version, 'lb-2.0.0');
+assert.strictEqual(api.version, 'lb-2.1.0');
 
 const stages = ['Preparing', 'Validating', 'Processing', 'Finalizing'];
 const first = api.start({ key: 'opnote:patient-1', kind: 'opnote', stages, total: 5, timeoutMs: 5000, patient: 'Synthetic Patient' });

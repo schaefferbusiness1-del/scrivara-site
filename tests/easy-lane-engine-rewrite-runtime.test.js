@@ -1,192 +1,107 @@
 'use strict';
 
-/* Runtime regression for the visit-transcript flicker root cause.
- *
- * The active first-guard Easy engine (v3.7.2, window.__mlsEasyV32) rebuilds
- * #ez3Wrap with `innerHTML = h` on nearly every click. The canonical easy
- * lane `.ez3fl-record` (including #ez3flTranscript) is mounted INSIDE that
- * subtree, so every rewrite used to destroy it; a satellite observer
- * recreated it ~150ms later — a visible flicker that could also detach an
- * active Dictate target and drop speech results.
- *
- * This test extracts the engine's real setWrapHtml owner from the shipped
- * bundle and forces engine innerHTML rewrites against a DOM simulation,
- * proving:
- *   - the textarea node identity is unchanged across a rewrite;
- *   - its value, focus, and selection survive;
- *   - the lane never disappears after the rewrite completes (the detach and
- *     reinsert happen inside one synchronous call — no observable gap);
- *   - an active Dictate target remains connected;
- *   - only one transcript lane exists;
- *   - the Staff screen and row2-less screens deliberately PARK the node and
- *     the next doctor-screen render remounts the SAME node.
- */
-
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
-const source = fs.readFileSync(path.resolve(__dirname, '..', 'mls-connect.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
+const setStart = source.indexOf('  function setWrapHtml(h) {');
+const setEnd = source.indexOf('\n  function render() {', setStart);
+assert(setStart >= 0 && setEnd > setStart, 'canonical setWrapHtml owner missing');
+const setWrap = source.slice(setStart, setEnd);
 
-/* ---- locate the ACTIVE engine (first-guard __mlsEasyV32 v3.7.2) ---- */
-const verAt = source.indexOf("var VER = '3.7.2'");
-assert(verAt >= 0, 'active easy engine v3.7.2 marker is missing');
-const engineEnd = source.indexOf('/* =========================================================================\n * MLS Scribe — PULL PIPELINE TRUTH PACK', verAt);
-assert(engineEnd > verAt, 'active engine end boundary not found');
-const engine = source.slice(verAt, engineEnd);
+assert(setWrap.includes("w.querySelectorAll('.ez3fl-record').forEach(function (n) { n.remove(); })"),
+  'a stale hot-loaded satellite lane is not scrubbed before render');
+assert(setWrap.includes('w.innerHTML = h;'), 'canonical Easy render is not one atomic replacement');
+assert(!/_flowLaneKeep|insertBefore\(lane/.test(setWrap),
+  'retired satellite lane parking/reinsertion remains active');
 
-/* every active-engine screen render must route through the lane-preserving
-   owner; a bare `wrap().innerHTML = h` would reintroduce the flicker */
-assert.strictEqual((engine.match(/setWrapHtml\(h, true\);/g) || []).length, 3,
-  'home/choose/doctor renders do not all use the lane-preserving rewrite');
-assert.strictEqual((engine.match(/setWrapHtml\(h, false\);/g) || []).length, 1,
-  'the staff render does not deliberately park the lane');
-assert(!engine.includes('wrap().innerHTML = h;'),
-  'an active-engine render still bypasses the lane-preserving rewrite');
-
-/* ---- extract the real setWrapHtml + its keep slot from the bundle ---- */
-const keepAt = source.indexOf('var _flowLaneKeep = null;');
-assert(keepAt >= 0 && keepAt < source.indexOf('function setWrapHtml'), 'lane keep slot missing');
-const fnStart = source.indexOf('function setWrapHtml(h, laneAllowed) {', keepAt);
-assert(fnStart > keepAt, 'setWrapHtml owner missing from the active engine');
-/* slice to the function's closing brace at two-space indentation */
-const fnEnd = source.indexOf('\n  }\n', fnStart);
-assert(fnEnd > fnStart, 'setWrapHtml end not found');
-const ownerSource = source.slice(keepAt, fnEnd + 4);
-
-/* ---- DOM simulation ---- */
-function makeDom() {
-  const doc = { activeElement: null };
-  function node(cls, tag) {
+function makeRenderHarness() {
+  const state = { activeElement: null, stopCalls: 0, listening: true, target: null };
+  const wrapNode = {
+    _transcript: null,
+    querySelector(selector) { return selector === '#ez3Transcript' ? this._transcript : null; },
+    querySelectorAll() { return []; },
+    set innerHTML(html) {
+      this._html = html;
+      if (String(html).includes('id="ez3Transcript"')) {
+        const fresh = makeTranscript('fresh');
+        fresh.parentNode = makeParent();
+        this._transcript = fresh;
+      } else this._transcript = null;
+    },
+    get innerHTML() { return this._html || ''; }
+  };
+  function makeParent() {
     return {
-      className: cls || '', tagName: (tag || 'div').toUpperCase(), parentNode: null,
-      children: [],
-      get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === wrapRoot; },
-      contains(el) {
-        if (el === this) return true;
-        return this.children.some(c => c === el || (c.contains && c.contains(el)));
-      },
-      querySelector(sel) {
-        const cls2 = sel.startsWith('.') ? sel.slice(1) : null;
-        const walk = (n) => {
-          for (const c of n.children) {
-            if (cls2 && String(c.className).split(/\s+/).includes(cls2)) return c;
-            const hit = walk(c);
-            if (hit) return hit;
-          }
-          return null;
-        };
-        return walk(this);
-      },
-      appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.children.push(c); return c; },
-      insertBefore(c, ref) {
-        if (c.parentNode) c.parentNode.removeChild(c);
-        const i = this.children.indexOf(ref);
-        assert(i >= 0, 'insertBefore reference is not a child');
-        c.parentNode = this; this.children.splice(i, 0, c); return c;
-      },
-      removeChild(c) {
-        const i = this.children.indexOf(c);
-        assert(i >= 0, 'removeChild target is not a child');
-        this.children.splice(i, 1); c.parentNode = null; return c;
+      removeChild(node) { if (wrapNode._transcript === node) wrapNode._transcript = null; node.parentNode = null; },
+      replaceChild(next, prior) {
+        assert.strictEqual(wrapNode._transcript, prior, 'renderer tried to replace a non-current transcript');
+        wrapNode._transcript = next; next.parentNode = this; prior.parentNode = null;
       }
     };
   }
-  const wrapRoot = node('', 'root'); /* stands in for the connected document */
-  const wrap = node('ez3-wrap');
-  wrapRoot.appendChild(wrap);
-  let html = '';
-  Object.defineProperty(wrap, 'innerHTML', {
-    set(h) {
-      html = h;
-      this.children.splice(0).forEach(c => { c.parentNode = null; });
-      /* the engine screen html is opaque to this test; only .ez3-row2
-         placement matters for the lane contract */
-      if (h.indexOf('ez3-row2') !== -1) {
-        this.appendChild(node('ez3-row2'));
-        this.appendChild(node('ez3-status'));
-      } else {
-        this.appendChild(node('ez3-other'));
+  function makeTranscript(label) {
+    return {
+      id: 'ez3Transcript', label, className: 'ez3-transcript', placeholder: 'Visit transcript',
+      disabled: false, readOnly: false, value: 'kept words', selectionStart: 4, selectionEnd: 9,
+      parentNode: null, focusCalls: 0, selected: null,
+      closest() { return null; },
+      focus() { this.focusCalls += 1; state.activeElement = this; },
+      setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; this.selected = [start, end]; }
+    };
+  }
+  const original = makeTranscript('original');
+  original.parentNode = makeParent();
+  wrapNode._transcript = original;
+  state.activeElement = original;
+  state.target = original;
+  const context = {
+    console,
+    document: {
+      get activeElement() { return state.activeElement; },
+      contains(node) { return wrapNode._transcript === node; }
+    },
+    window: {
+      __mlsDictateAnywhere: {
+        isTarget(node) { return state.listening && state.target === node; },
+        stop() { state.stopCalls += 1; state.listening = false; }
       }
     },
-    get() { return html; }
-  });
-  return { doc, node, wrap, wrapRoot };
+    wrap() { return wrapNode; }
+  };
+  vm.runInNewContext(setWrap + '\nwindow.__setWrapHtmlForTest=setWrapHtml;', context, { filename: 'easy-set-wrap.js' });
+  return { context, state, wrapNode, original };
 }
 
-function buildOwner(dom) {
-  /* instantiate the shipped owner with the engine's free variables bound */
-  // eslint-disable-next-line no-new-func
-  const factory = new Function('wrap', 'document', ownerSource + '\n  return setWrapHtml;');
-  return factory(() => dom.wrap, dom.doc);
-}
+/* Advanced/Phone/AVS/Orders repaint the same doctor phase. The exact textarea
+ * object, focus/caret, and Dictate ownership must survive that repaint. */
+const samePhase = makeRenderHarness();
+samePhase.context.window.__setWrapHtmlForTest('<div><textarea id="ez3Transcript" class="ez3-transcript"></textarea></div>');
+assert.strictEqual(samePhase.wrapNode._transcript, samePhase.original, 'same-phase Easy repaint replaced the active Dictate target node');
+assert.strictEqual(samePhase.context.document.contains(samePhase.original), true, 'preserved transcript is no longer connected after repaint');
+assert.strictEqual(samePhase.original.focusCalls, 1, 'focused transcript did not regain focus after repaint');
+assert.deepStrictEqual(samePhase.original.selected, [4, 9], 'transcript caret/selection was not preserved across repaint');
+assert.strictEqual(samePhase.context.window.__mlsDictateAnywhere.isTarget(samePhase.original), true, 'Dictate lost exact-node ownership across same-phase repaint');
+assert.strictEqual(samePhase.state.stopCalls, 0, 'same-phase repaint unnecessarily stopped Dictate');
 
-const dom = makeDom();
-const setWrapHtml = buildOwner(dom);
+/* A real phase change intentionally removes the editor. It must stop only the
+ * dictation session that owns this exact node rather than leave a detached mic. */
+const phaseChange = makeRenderHarness();
+phaseChange.context.window.__setWrapHtmlForTest('<div id="generatedNote">Generated note</div>');
+assert.strictEqual(phaseChange.wrapNode._transcript, null, 'phase change unexpectedly kept a removed transcript');
+assert.strictEqual(phaseChange.state.stopCalls, 1, 'phase change left Dictate attached to a detached transcript');
 
-/* mount the lane the way the flow module does: inside wrap before .ez3-row2 */
-dom.wrap.innerHTML = '<div class="home"><div class="ez3-row2"></div></div>';
-const lane = dom.node('ez3fl-record');
-const textarea = dom.node('ez3fl-tx', 'textarea');
-textarea.value = 'Patient states the knee pain started two weeks ago.';
-textarea.selectionStart = 8;
-textarea.selectionEnd = 14;
-textarea.selectionDirection = 'forward';
-let focusCalls = 0;
-textarea.focus = function () { focusCalls++; dom.doc.activeElement = textarea; };
-textarea.setSelectionRange = function (s, e, d) { this.selectionStart = s; this.selectionEnd = e; this.selectionDirection = d; };
-lane.appendChild(textarea);
-dom.wrap.insertBefore(lane, dom.wrap.querySelector('.ez3-row2'));
-dom.doc.activeElement = textarea;
+assert(source.includes('txTop.oninput = function ()'), 'preserved transcript input owner is not replaced deterministically after repaint');
 
-/* a live Dictate session bound to the textarea checks connectivity the same
-   way the shipped module does: document.contains(target) */
-const dictateTargetConnected = () => textarea.isConnected;
+const flowStart = source.indexOf(' * __mlsEz3Flow');
+const flowIife = source.indexOf('(function () {', flowStart);
+const retiredReturn = source.indexOf('  return;', flowIife);
+const oldVersion = source.indexOf("var VERSION = 'fl-1.7.0'", flowIife);
+assert(flowStart >= 0 && flowIife > flowStart && retiredReturn > flowIife && oldVersion > retiredReturn,
+  'the late Easy flow owner is not retired before its observer/timer implementation');
+assert(source.slice(flowIife, retiredReturn).includes("version: 'retired-b432'"),
+  'retired Easy flow diagnostic receipt missing');
 
-/* ---- 1. force repeated engine innerHTML rewrites (home screen) ---- */
-for (let pass = 0; pass < 5; pass++) {
-  setWrapHtml('<div class="home rerender-' + pass + '"><div class="ez3-row2"></div></div>', true);
-  const lanes = dom.wrap.children.filter(c => c.className === 'ez3fl-record');
-  assert.strictEqual(lanes.length, 1, 'exactly one transcript lane must exist after a rewrite');
-  assert.strictEqual(lanes[0], lane, 'the transcript lane node identity changed across an engine rewrite');
-  assert(lane.isConnected, 'the transcript lane disappeared after an engine rewrite');
-  assert.strictEqual(dom.wrap.children.indexOf(lane), dom.wrap.children.indexOf(dom.wrap.querySelector('.ez3-row2')) - 1,
-    'the lane lost its visual position before .ez3-row2');
-  assert.strictEqual(textarea.value, 'Patient states the knee pain started two weeks ago.', 'transcript value was lost');
-  assert.strictEqual(dom.doc.activeElement, textarea, 'textarea focus was lost across the rewrite');
-  assert.strictEqual(textarea.selectionStart, 8, 'selection start was lost');
-  assert.strictEqual(textarea.selectionEnd, 14, 'selection end was lost');
-  assert(dictateTargetConnected(), 'an active Dictate target was disconnected by the rewrite');
-}
-assert(focusCalls >= 5, 'focus was not restored synchronously in the same turn');
-
-/* ---- 2. row2-less screen (Choose patient) parks the node ---- */
-setWrapHtml('<div class="choose-list"></div>', true);
-assert(!lane.isConnected, 'the lane must not float on a screen with no action row');
-assert.strictEqual(dom.wrap.children.filter(c => c.className === 'ez3fl-record').length, 0);
-
-/* returning to a doctor screen remounts the SAME node with its value */
-dom.doc.activeElement = null;
-setWrapHtml('<div class="home"><div class="ez3-row2"></div></div>', true);
-assert(lane.isConnected, 'the parked lane did not remount on the next doctor screen');
-assert.strictEqual(dom.wrap.querySelector('.ez3fl-record'), lane, 'a different lane node was mounted after parking');
-assert.strictEqual(textarea.value, 'Patient states the knee pain started two weeks ago.', 'parked transcript value was lost');
-
-/* ---- 3. a real Staff transition removes the lane deliberately ---- */
-setWrapHtml('<div class="staff"><div class="ez3-row2"></div></div>', false);
-assert(!lane.isConnected, 'the staff screen must not show the doctor recording lane');
-/* and the doctor return still restores the same node */
-setWrapHtml('<div class="home"><div class="ez3-row2"></div></div>', true);
-assert.strictEqual(dom.wrap.querySelector('.ez3fl-record'), lane, 'the doctor return lost the exact lane node after Staff');
-
-/* ---- 4. a lane created fresh by the flow module wins over a stale parked node ---- */
-setWrapHtml('<div class="choose-list"></div>', true); /* parks `lane` */
-const freshLane = dom.node('ez3fl-record');
-dom.wrap.innerHTML = '<div class="home"><div class="ez3-row2"></div></div>';
-dom.wrap.insertBefore(freshLane, dom.wrap.querySelector('.ez3-row2'));
-setWrapHtml('<div class="home"><div class="ez3-row2"></div></div>', true);
-const finalLanes = dom.wrap.children.filter(c => c.className === 'ez3fl-record');
-assert.strictEqual(finalLanes.length, 1, 'a stale parked lane resurrected next to a live lane');
-assert.strictEqual(finalLanes[0], freshLane, 'the live lane must win over the stale parked node');
-
-console.log('PASS easy lane engine rewrite: node identity, value/focus/selection, single-lane, dictate connectivity, and staff/choose parking survive real innerHTML rewrites');
+console.log('PASS Easy render ownership: one atomic canonical room with transcript node/focus/Dictate continuity');

@@ -1,9 +1,9 @@
 /* =============================================================================
- * MLS named-stage progress wiring + panel (ps-1.0.0)
+ * MLS named-stage progress wiring + single presentation owner (ps-1.2.0)
  *
  * Builds ON the shared request-owned progress owner (__mlsLoadingCalm,
- * lb-2.0.0 by Codex) — this module creates NO parallel framework. It does two
- * things:
+ * lb-2.1.0 by Codex) — this module creates no parallel store. It owns the one
+ * visual progress component for explicit user jobs:
  *
  *  1. OBSERVER: a read-only listener on the existing app<->extension
  *     postMessage bridge that turns real protocol evidence into named lb jobs
@@ -21,8 +21,8 @@
  *     progress: stages advance only on observed messages, counts come from
  *     receipts/payloads, and lb refuses percentages without a real total.
  *
- *  2. PANEL: an expandable progress panel (chip above the lb pill) rendering
- *     lb's own job store — per-job stage checklist, "N of M" counts, patient/
+ *  2. PRESENTATION: one expandable progress component rendering lb's own job
+ *     store — per-job stage checklist, "N of M" counts, patient/
  *     provider/date, elapsed time, a stale-heartbeat line when an active job
  *     has had no update for 15s (no frozen spinners pretending to work), and
  *     honest terminal chips (completed / partial / failed / canceled /
@@ -32,17 +32,33 @@
  *   window.__mlsProgressStages.expect('history', { total: 7 })   // "N of 7"
  *   window.__mlsProgressStages.note('schedule', 'Matching patients', {...})
  *
- * Fail-open: if lb-2.0.0 is absent nothing installs a UI and every call
- * no-ops. Idle pages own no timers (tick only while the panel shows an
- * active job; the history quiet-timer only exists mid-pull).
+ * Passive presence pings, generic API requests, and extension status chatter
+ * never create a job or surface. Fail-open: if lb-2.1.0 is absent nothing
+ * installs a UI and every call no-ops. Idle pages own no timers (tick only
+ * while the panel shows an active job; the history quiet-timer only exists
+ * mid-pull).
  * ========================================================================== */
 (function () {
   'use strict';
-  if (window.__mlsProgressStages && window.__mlsProgressStages.installed) return;
-
-  var VERSION = 'ps-1.1.0';
+  var VERSION = 'ps-1.2.0';
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
+
+  /* The backend reload portal evaluates this file in the current document.
+     An exact owner is idempotent; any older owner must release listeners,
+     timers, and DOM before this version installs. */
+  var previous = null;
+  try { previous = window.__mlsProgressStages; } catch (e0) {}
+  if (previous && previous.installed && previous.version === VERSION) return;
+  if (previous) {
+    try { if (typeof previous.revert === 'function') previous.revert(); } catch (e1) {}
+    try { previous.installed = false; if (window.__mlsProgressStages === previous) delete window.__mlsProgressStages; } catch (e2) {}
+  }
+  try {
+    [CHIP_ID, PANEL_ID, CSS_ID].forEach(function (id) {
+      var node = document.getElementById(id); if (node && node.remove) node.remove();
+    });
+  } catch (e3) {}
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function now() { return Date.now(); }
@@ -181,30 +197,15 @@
   /* ------------------------------------------------------------------ *
    * Connection state (ping/pong evidence).                              *
    * ------------------------------------------------------------------ */
-  var conn = { lastPing: 0, lastPong: 0, everConnected: false, pingTimer: null, autoConnects: 0 };
+  var conn = { lastPing: 0, lastPong: 0, everConnected: false, pingTimer: null };
   function onPing() {
-    /* Local/demo sessions intentionally have no live Athena dependency. A
-       passive presence ping must not manufacture a connection job or floater. */
+    /* Presence pings are background health traffic. They may advance an
+       explicit connection job, but must never manufacture a job or floater. */
     if (isDemoLocal()) return;
     conn.lastPing = now();
-    var silent = !conn.lastPong || (now() - conn.lastPong > 90000);
-    if (silent && !activeFlow('connect') && !activeFlow('reconnect')) {
-      /* ps-1.0.1 (Codex-flagged): on a device that has NEVER had the extension
-         answer, every background ping used to spawn a doomed 20s "Connecting
-         to Athena" job that timed out and was immediately recreated — an
-         endless passive loop on phones / extension-less machines. Rules:
-         relay/phone devices never auto-spawn a local connect job (their pulls
-         run on the office computer by design), and elsewhere we stop after 2
-         consecutive doomed auto-jobs; any real pong re-arms everything. */
-      if (!conn.everConnected) {
-        try { var rl = window.__mlsRelayLink; if (rl && typeof rl.shouldRelay === 'function' && rl.shouldRelay()) return; } catch (e) {}
-        try { var dr = window.__mlsDeviceRole; if (dr && typeof dr.effectiveRole === 'function' && dr.effectiveRole() === 'phone') return; } catch (e) {}
-        if (conn.autoConnects >= 2) return;
-        conn.autoConnects++;
-      }
-      if (conn.everConnected) ensure('reconnect', {});
-      else ensure('connect', {});
-    }
+    var cur = activeFlow('connect') || activeFlow('reconnect');
+    if (!cur) return;
+    if (activeFlow('connect')) cur.handle.stage('Confirming your signed-in Athena tab', {});
     if (conn.pingTimer) clearTimeout(conn.pingTimer);
     conn.pingTimer = setTimeout(function () {
       conn.pingTimer = null;
@@ -215,7 +216,7 @@
     }, 6000);
   }
   function onPong(d) {
-    conn.lastPong = now(); conn.everConnected = true; conn.autoConnects = 0;
+    conn.lastPong = now(); conn.everConnected = true;
     if (conn.pingTimer) { clearTimeout(conn.pingTimer); conn.pingTimer = null; }
     var v = text(d && d.version, 20);
     finish('connect', 'complete', 'Connected' + (v ? ' — MLS Assist v' + v : '') + '.');
@@ -501,8 +502,9 @@
       var lbl = c.querySelector('.ps-n');
       if (lbl) lbl.textContent = activeN ? (activeN + ' running') : (attentionN ? (attentionN + ' needs attention') : 'Progress');
     } else { c.classList.remove('on','idle','attention'); if (panelOpen) panelOpen = false; }
-    var p = panel();
-    if (!panelOpen) { p.classList.remove('on'); syncTick(activeN); return; }
+    var p = document.getElementById(PANEL_ID);
+    if (!panelOpen) { if (p) p.classList.remove('on'); syncTick(activeN); return; }
+    p = panel();
     p.classList.add('on');
     p.innerHTML = '';
     var hd = document.createElement('div'); hd.className = 'ps-hd';
@@ -598,6 +600,8 @@
   var api = {
     version: VERSION,
     installed: true,
+    surfaceId: CHIP_ID,
+    detailsId: PANEL_ID,
     flows: FLOWS,
     /* flow owners MAY enrich observer jobs (e.g. a known patient total) */
     expect: function (flowName, opts) {

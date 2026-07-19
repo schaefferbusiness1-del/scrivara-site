@@ -287,8 +287,8 @@ function runWriteflowSafety() {
 runWriteflowSafety();
 
 /* -------------------------------------------------------------------------
- * 6. Progress is quiet at rest, visible while active or after a failure, and
- *    a demo/local page does not turn a passive extension ping into work.
+ * 6. Progress is quiet at rest and for background health traffic, but visible
+ *    for explicit work or a failure.
  * ---------------------------------------------------------------------- */
 assert(/#mlsPsChip\.idle\{\s*display:none\s*!important/.test(redesign),
   'Editorial Calm does not visually remove the idle Progress chip');
@@ -409,11 +409,13 @@ function makeProgressHarness(options) {
 const hosted = makeProgressHarness({ local: false });
 assert(hosted.chip() && !hosted.chip().classList.contains('on'), 'empty progress store paints an idle chip');
 hosted.post({ source: 'mls-app', type: 'mlsPing' });
-assert(hosted.chip().classList.contains('on') && !hosted.chip().classList.contains('idle'),
-  'active Athena connection progress is unavailable');
+assert(!hosted.chip().classList.contains('on'),
+  'passive Athena health traffic opened a floating progress surface');
+assert(!hosted.jobs().some(job => job.key === 'athena:connect' || job.key === 'athena:reconnect'),
+  'passive Athena health traffic manufactured a user job');
 hosted.post({ source: 'mls-ext', type: 'mlsPong', version: '2.9.42' });
-assert(!hosted.chip().classList.contains('on') || hosted.chip().classList.contains('idle'),
-  'completed connection progress is neither removed nor classified for the idle-hide rule');
+assert(!hosted.chip().classList.contains('on'),
+  'background Athena health completion opened a floating progress surface');
 
 hosted.post({ source: 'mls-app', type: 'mlsAppPullSchedule', requestId: 'req-b420-schedule' });
 hosted.post({

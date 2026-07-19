@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.5)
+ * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.6)
  * ---------------------------------------------------------------------------
  * REPLACES the b39 "MLS Copilot Voice" button (window.__mlsCopilotVoiceB39,
  * bundle-inline) with a version that ACTUALLY WORKS as continuous hands-free
@@ -86,7 +86,19 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  try { if (window.__mlsCopilotVoiceV2 && window.__mlsCopilotVoiceV2.installed) return; } catch (e) { return; }
+  var VERSION = 'cv2-1.1.6';
+  var previous = null;
+  try { previous = window.__mlsCopilotVoiceV2; } catch (e0) {}
+  if (previous && previous.installed && previous.version === VERSION) return;
+  if (previous) {
+    try { if (typeof previous.revert === 'function') previous.revert(); } catch (e1) {}
+    try { previous.installed = false; if (window.__mlsCopilotVoiceV2 === previous) delete window.__mlsCopilotVoiceV2; } catch (e2) {}
+    try {
+      ['mlsCopVoiceBtn', 'mlsVoiceV2Style'].forEach(function (id) {
+        var node = document.getElementById(id); if (node && node.remove) node.remove();
+      });
+    } catch (e3) {}
+  }
 
   /* cv2-1.1.0 (2026-07-12, final integration sweep) -- CHAINED VOICE COMMANDS + SAFE PATIENT OPEN:
    *   - NEW "open <patient>" intent: id-based REAL selection (window.selectPatient first --
@@ -107,7 +119,6 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
-  var VERSION = 'cv2-1.1.5';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -277,11 +288,17 @@
   function registerSpeech() {
     var h = speechHub();
     if (!h || unregisterSpeech) return h;
-    unregisterSpeech = h.register('copilot', 'MLS Copilot Voice', function () {
+    unregisterSpeech = h.register('copilot', 'MLS Copilot Voice', function (handoff) {
       enabled = false;
-      var canceled = stopRec();
-      if (canceled) toast('Copilot Voice stopped, so the queued assistant command was canceled before anything ran.');
-      paintBtn($(BTN_ID));
+      var previous = rec;
+      var stopNow = function () {
+        var canceled = stopRec(true);
+        if (canceled) toast('Copilot Voice stopped, so the queued assistant command was canceled before anything ran.');
+        paintBtn($(BTN_ID));
+      };
+      if (handoff && handoff.pending) { stopNow(); return; }
+      if (previous && typeof h.waitForEnd === 'function') return h.waitForEnd(previous, stopNow);
+      stopNow();
     });
     return h;
   }
@@ -383,21 +400,34 @@
         }, 250);
       }
     };
-    try { instance.start(); }
-    catch (e1) {
-      if (instance === rec) rec = null;
-      recSessionEpoch++; releaseSpeech();
-      toast('Copilot Voice could not start the microphone. Wait a moment, then tap it again.');
-      return false;
-    }
-    return true;
+    var beginFailed = false;
+    var begin = function () {
+      if (!enabled || instance !== rec || sessionEpoch !== recSessionEpoch) return;
+      try { instance.start(); }
+      catch (e1) {
+        beginFailed = true;
+        if (instance === rec) rec = null;
+        enabled = false; recSessionEpoch++; releaseSpeech();
+        var startCanceled = clearPendingAssistant();
+        toast('Copilot Voice could not start the microphone. Wait a moment, then tap it again.' + (startCanceled ? ' The queued assistant command was canceled.' : ''));
+        paintBtn($(BTN_ID));
+      }
+    };
+    if (lease && typeof lease.whenReady === 'function') {
+      if (!lease.whenReady(begin)) {
+        beginFailed = true;
+        enabled = false;
+        stopRec();
+      }
+    } else begin();
+    return !beginFailed && enabled && rec === instance;
   }
-  function stopRec() {
+  function stopRec(preserveEndHandler) {
     var old = rec;
     recSessionEpoch++;
     rec = null;
     var canceled = clearPendingAssistant();
-    safe(function () { if (old) { old.onend = null; old.onresult = null; old.onerror = null; old.stop(); } });
+    safe(function () { if (old) { if (!preserveEndHandler) old.onend = null; old.onresult = null; old.onerror = null; old.stop(); } });
     releaseSpeech();
     return canceled;
   }
@@ -873,6 +903,7 @@
   }
   function revert() {
     if (bootIv) { clearInterval(bootIv); bootIv = null; }
+    safe(function () { document.removeEventListener('DOMContentLoaded', boot); });
     setEnabled(false);
     safe(function () { if (unregisterSpeech) unregisterSpeech(); });
     unregisterSpeech = null;

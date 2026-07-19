@@ -624,7 +624,7 @@ async function inspectCanonicalUiRuntime(cdp) {
   for (const [name, descriptor] of Object.entries(result.descriptors)) {
     assert.deepStrictEqual(descriptor, { type: 'undefined', exists: true, configurable: false, hasSetter: true }, `delayed owner republished ${name}: ${JSON.stringify(descriptor)}`);
   }
-  assert.strictEqual(result.owner.version, '3.7.2', `wrong canonical Easy owner survived boot: ${JSON.stringify(result.owner)}`);
+  assert.strictEqual(result.owner.version, '3.7.3', `wrong canonical Easy owner survived boot: ${JSON.stringify(result.owner)}`);
   assert.strictEqual(result.owner.sameAliases, true, 'historical Easy aliases do not resolve to the one canonical owner');
   assert.strictEqual(result.owner.openStaffType, 'undefined', 'canonical Easy API exposes a direct Staff route');
   assert.strictEqual(result.topbar.openStaffPrepType, 'undefined', 'topbar API exposes a direct Staff route');

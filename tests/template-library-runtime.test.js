@@ -254,7 +254,10 @@ function staticContracts() {
   for (const loader of [liveLoader, stagingLoader]) {
     assert(loader.includes('feat_mls_template_library.js?v=20260718tl110'));
   }
-    assert(liveLoader.indexOf('feat_mls_loading_calm.js?v=20260719lb202') < liveLoader.indexOf('feat_mls_template_library.js?v=20260718tl110'), 'shared progress must install before template lifecycle wiring');
+  const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260718tl110');
+  assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
+    'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');
   assert(/function _tplMultiDrop[\s\S]{0,350}tplMultiFile\(\{target:\{files:fs/.test(html), 'drag/drop must use the same wrapped batch importer');
 }

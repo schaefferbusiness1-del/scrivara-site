@@ -1,46 +1,160 @@
 'use strict';
 
-/* ONE visit transcript contract (fl-1.7.0, owner directive 2026-07-16):
- * The ez3fl top lane and the engine's per-patient workspace each render a
- * transcript box. The TOP lane is the keeper — while it is mounted on the
- * doctor screen, the ENGINE's transcript card (.ez3-transcript-card) yields
- * via the ez3fl-top-owns class on #mlsEz3Body.
- *
- * History: fl-1.6.1 yielded in the other direction (hid .ez3fl-record while a
- * patient was open) — that also removed the quick-tools row and the primary
- * record CTA, and contradicted the owner's "keep the one at the top". The
- * yield stays a CSS hide, never node removal (fl-1.5.0: removal flashed the
- * transcript on every engine reconciliation).
- */
-
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
 
-// the module and both transcript surfaces still exist
-assert.match(src, /__mlsEz3Flow\s+fl-1\.0\.0/, 'ez3fl module header present');
-assert.match(src, /VERSION = 'fl-1\.7\.0'/);
-assert.match(src, /id="ez3flTranscript"/, 'top-lane transcript');
-assert.match(src, /id="ez3Transcript"/, 'engine workspace transcript');
+function retirementCode(headerNeedle, returnNeedle) {
+  const header = source.indexOf(headerNeedle);
+  const start = source.indexOf('(function () {', header);
+  const receipt = source.indexOf("version: 'retired-b432'", start);
+  const ret = source.indexOf(returnNeedle, receipt);
+  assert(header >= 0 && start > header && receipt > start && ret > receipt, `${headerNeedle} retirement prefix missing`);
+  return source.slice(start, ret + returnNeedle.length) + '\n})();';
+}
 
-// CSS: while the top lane owns the screen, the ENGINE transcript card hides
-const cssRule = src.match(/#mlsEz3Body\.ez3fl-top-owns[^']+/);
-assert.ok(cssRule, 'top-owns CSS rule present');
-assert.match(cssRule[0], /\.ez3-transcript-card/);
-assert.match(cssRule[0], /display:none!important/);
+function executeRetirement(headerNeedle, returnNeedle, suppliedContext) {
+  const code = retirementCode(headerNeedle, returnNeedle);
+  const context = suppliedContext || { window: {}, Object };
+  vm.createContext(context);
+  vm.runInContext(code, context);
+  return context;
+}
 
-// the top lane itself must NOT be css-hidden by any yield class
-assert.ok(!/ez3fl-ws-active/.test(src), 'fl-1.6.1 top-lane yield fully retired');
+const retiredFlowContext = executeRetirement(' * __mlsEz3Flow', '  return;');
+const retiredFlow = retiredFlowContext.window;
+assert(retiredFlow.__mlsEz3Flow && retiredFlow.__mlsEz3Flow.retired === true,
+  'duplicate visit flow did not retire at runtime');
+assert.strictEqual(retiredFlow.__mlsEz3Flow.installed, false, 'retired visit flow still claims installation');
 
-// toggle: keyed on the lane being mounted, on the body host, never on staff screen
-assert.match(src, /classList\.toggle\('ez3fl-top-owns', !staff && laneMounted\)/,
-  'class toggle keyed on the mounted top lane');
+const monthContext = executeRetirement(' * MLS Scribe - ONE MONTH PULL', '  return;');
+assert(monthContext.window.__mlsMonthPullOne && monthContext.window.__mlsMonthPullOne.retired === true,
+  'duplicate Staff Prep month-pull UI did not retire at runtime');
+assert.strictEqual(monthContext.window.__mlsMonthPullOne.owner, 'ez3PullStart');
 
-// the yield must NOT be implemented by removing nodes (fl-1.5.0 regression)
-const flStart = src.indexOf("VERSION = 'fl-1.7.0'");
-const flBlock = src.slice(flStart, src.indexOf('__mlsEz3Flow.revert', flStart) + 400);
-assert.ok(!/ez3fl-top-owns[^\n]*\.remove\(\)/.test(flBlock), 'yield is CSS-only, no node removal');
+function removable(id, registry) {
+  const node = {
+    id,
+    removed: false,
+    remove() { this.removed = true; if (registry) registry.delete(id); }
+  };
+  if (registry) registry.set(id, node);
+  return node;
+}
 
-console.log('visit-single-transcript-contract: ok');
+function fakeDocument(ids) {
+  const registry = new Map();
+  (ids || []).forEach(id => removable(id, registry));
+  const appended = [];
+  const head = {
+    appendChild(node) { appended.push(node); if (node.id) registry.set(node.id, node); return node; }
+  };
+  return {
+    registry,
+    appended,
+    head,
+    documentElement: head,
+    body: { classList: { remove() {} } },
+    getElementById(id) { return registry.get(id) || null; },
+    createElement(tagName) { return { tagName, id: '', textContent: '', remove() { if (this.id) registry.delete(this.id); } }; },
+    querySelectorAll() { return []; }
+  };
+}
+
+// Hot-loading b432 over b431 must actively tear down the old visit-flow owner.
+let flowReverts = 0;
+const staleFlowNodes = [removable('old-flow-a'), removable('old-flow-b')];
+const flowDocument = fakeDocument();
+flowDocument.querySelectorAll = () => staleFlowNodes;
+const hotFlowContext = {
+  Object,
+  document: flowDocument,
+  window: { __mlsEz3Flow: { installed: true, version: 'fl-1.7.0', revert() { flowReverts++; } } }
+};
+executeRetirement(' * __mlsEz3Flow', '  return;', hotFlowContext);
+assert.strictEqual(flowReverts, 1, 'hot upgrade did not revert the previously loaded visit-flow owner');
+assert(staleFlowNodes.every(node => node.removed), 'hot upgrade left stale duplicate visit controls mounted');
+assert.strictEqual(hotFlowContext.window.__mlsEz3Flow.retired, true, 'hot upgrade did not replace visit owner with retirement receipt');
+vm.runInContext(retirementCode(' * __mlsEz3Flow', '  return;'), hotFlowContext);
+assert.strictEqual(flowReverts, 1, 'idempotent retirement reverted an already retired visit owner');
+
+// Month-pull b431 exposed teardown through a global fallback, not api.revert().
+let monthReverts = 0;
+const monthDocument = fakeDocument(['mlsMpoBtn', 'mlsMpoNote', 'mlsMpoCss', 'mlsPmpBtn', 'mlsPmpPanel', 'mlsPmpCss']);
+const hotMonthContext = {
+  Object,
+  document: monthDocument,
+  window: {
+    __mlsMonthPullOne: { installed: true, version: '1.0.0' },
+    __mlsMonthPullOne_revert() { monthReverts++; }
+  }
+};
+executeRetirement(' * MLS Scribe - ONE MONTH PULL', '  return;', hotMonthContext);
+assert.strictEqual(monthReverts, 1, 'hot upgrade did not call the legacy month-pull teardown hook');
+assert.strictEqual(hotMonthContext.window.__mlsMonthPullOne.retired, true, 'hot upgrade did not replace month owner with retirement receipt');
+assert.strictEqual(hotMonthContext.window.__mlsMonthPullOne_revert, undefined, 'stale month-pull teardown hook survived retirement');
+['mlsMpoBtn', 'mlsMpoNote', 'mlsMpoCss', 'mlsPmpBtn', 'mlsPmpPanel', 'mlsPmpCss'].forEach(id => {
+  assert(!monthDocument.registry.has(id), `legacy Staff Prep node ${id} survived retirement`);
+});
+assert.match(monthDocument.registry.get('mlsStaffPrepOwnerCss').textContent,
+  /#mlsPmpBtn,#mlsPmpPanel,#mlsMpoBtn,#mlsMpoNote\{display:none!important\}/,
+  'static suppression for a legacy remounter is missing');
+vm.runInContext(retirementCode(' * MLS Scribe - ONE MONTH PULL', '  return;'), hotMonthContext);
+assert.strictEqual(monthReverts, 1, 'idempotent retirement called the legacy month teardown twice');
+
+// Keep the provider/month compatibility engine, but it may not own any UI/timer.
+const providerHeader = source.indexOf(' * MLS Scribe - CROSS-PROVIDER MONTH PULL');
+const providerStart = source.indexOf('(function () {', providerHeader);
+const providerNext = source.indexOf(' * MLS Scribe - COPILOT TRUTH GATE', providerStart);
+const providerEnd = source.lastIndexOf('})();', providerNext) + '})();'.length;
+assert(providerHeader >= 0 && providerStart > providerHeader && providerNext > providerStart && providerEnd > providerStart,
+  'provider/month compatibility engine missing');
+const providerCode = source.slice(providerStart, providerEnd);
+assert(!providerCode.includes('setInterval(mountBtn'), 'retired provider/month floating button still has a remount timer');
+assert(!providerCode.includes('function mountBtn'), 'retired provider/month floating button still has a mount owner');
+let providerReverts = 0;
+let providerIntervals = 0;
+const providerDocument = fakeDocument(['mlsPmpBtn', 'mlsPmpPanel', 'mlsPmpCss']);
+const basePost = function () {};
+const providerContext = {
+  Object,
+  document: providerDocument,
+  window: {
+    postMessage: basePost,
+    addEventListener() {},
+    removeEventListener() {},
+    __mlsProvMonthPull: { version: '1.1.1' },
+    __mlsProvMonthPull_revert() { providerReverts++; delete this.__mlsProvMonthPull; }
+  },
+  URL: { createObjectURL() { return null; } },
+  Blob: function Blob() {},
+  setInterval() { providerIntervals++; return 1; },
+  clearInterval() {},
+  setTimeout() {},
+  console: { log() {} }
+};
+vm.createContext(providerContext);
+vm.runInContext(providerCode, providerContext);
+assert.strictEqual(providerReverts, 1, 'provider/month hot upgrade did not stop the legacy UI owner');
+assert.strictEqual(providerIntervals, 0, 'provider/month compatibility engine started a UI timer');
+assert.strictEqual(providerContext.window.__mlsProvMonthPull.uiRetired, true, 'provider/month engine does not report retired UI ownership');
+assert.strictEqual(providerContext.window.__mlsProvMonthPull.uiOwner, 'ez3PullStart');
+['run', 'rosterFor', 'providersFor'].forEach(method => {
+  assert.strictEqual(typeof providerContext.window.__mlsProvMonthPull[method], 'function', `provider compatibility method ${method} was removed`);
+});
+const providerApi = providerContext.window.__mlsProvMonthPull;
+vm.runInContext(providerCode, providerContext);
+assert.strictEqual(providerReverts, 1, 'idempotent provider load reverted the retired owner twice');
+assert.strictEqual(providerContext.window.__mlsProvMonthPull, providerApi, 'idempotent provider load replaced the live compatibility engine');
+
+const canonicalMonthStart = source.indexOf('  function startMonthPull(retryOnly, rosterRetried) {');
+const canonicalMonth = source.slice(canonicalMonthStart, source.indexOf('  function renderStaff()', canonicalMonthStart));
+assert(canonicalMonthStart >= 0, 'active canonical Staff Prep month engine missing');
+assert(canonicalMonth.includes('includeHistory: true'), 'canonical Staff Prep month pull lost full-history loading');
+assert(source.includes('id="ez3PullStart"'), 'canonical Staff Prep month-pull control missing');
+assert(source.includes("window.addEventListener('mls:menu-staff-prep-request'"), 'Menu-only Staff Prep entry point missing');
+
+console.log('PASS single UI owners: canonical visit transcript and exact Staff Prep month/history pull only');
