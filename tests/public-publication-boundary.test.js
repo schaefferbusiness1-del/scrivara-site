@@ -154,6 +154,7 @@ const includeSet = new Set(includes);
 const excludeSet = new Set(excludes);
 
 assert(!fs.existsSync(path.join(root, '.nojekyll')), '.nojekyll bypasses the Jekyll publication boundary and must stay deleted');
+assert.match(config, /^theme:\s*null\s*$/m, 'GitHub Pages default theme assets must stay disabled outside the reviewed publication inventory');
 assert.strictEqual(includes.length, includeSet.size, '_config.yml include entries must be unique');
 assert.strictEqual(excludes.length, excludeSet.size, '_config.yml exclude entries must be unique');
 for (const artifactDir of [

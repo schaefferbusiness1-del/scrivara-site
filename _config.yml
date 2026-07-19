@@ -9,6 +9,11 @@
 # Keep the allowlist and tests/public-publication-boundary.test.js synchronized.
 # Candidate extension bytes remain excluded until a separately stamped release.
 
+# GitHub Pages otherwise injects jekyll-theme-primer and publishes its
+# generated assets/css/style.css. This application provides complete HTML/CSS
+# and keeps the production tree on the explicit reviewed-file allowlist below.
+theme: null
+
 exclude:
   - ".git/"
   - ".github/"
