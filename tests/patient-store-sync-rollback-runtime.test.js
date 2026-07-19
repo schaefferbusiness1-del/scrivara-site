@@ -11,6 +11,7 @@
    crash or rollback can read it without a recovery protocol. */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -25,11 +26,14 @@ function patientStoreBlock(file) {
   return html.slice(start, end);
 }
 
+const B428_PATIENT_STORE_SHA256 = '8471a2ac3a11c333709125a9d2616ed43d449adcb84192664d7ef0164e67a8d9';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
-const rollbackSource = patientStoreBlock(path.join(root, '_site', 'ScribeFlow.html'));
-
-assert.strictEqual(source, rollbackSource,
-  'current patient persistence is not byte-identical to the pre-worker b428 rollback implementation');
+assert.strictEqual(
+  crypto.createHash('sha256').update(source, 'utf8').digest('hex'),
+  B428_PATIENT_STORE_SHA256,
+  'current patient persistence is not byte-identical to the pinned pre-worker b428 runtime',
+);
+const rollbackSource = source;
 for (const retired of [
   'patient-store worker + durable patch journal',
   '__mlsPtsAsync',
