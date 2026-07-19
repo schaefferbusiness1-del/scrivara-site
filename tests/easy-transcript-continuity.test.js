@@ -11,7 +11,7 @@ assert(start >= 0 && end > start, 'easy visit flow module boundary was not found
 const flow = source.slice(start, end);
 
 /* fl-1.6.0: the flow module keeps ONE canonical lane and the ACTIVE engine's
-   render owner (v3.7.1 setWrapHtml) preserves that exact node synchronously
+   render owner (v3.7.2 setWrapHtml) preserves that exact node synchronously
    through every #ez3Wrap innerHTML rewrite. The old false-confidence version
    of this test only exercised the flow reconciler; the engine-rewrite path is
    now covered by easy-lane-engine-rewrite-runtime.test.js. */

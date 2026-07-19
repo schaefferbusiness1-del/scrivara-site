@@ -1,0 +1,6 @@
+Source package: mammoth@1.6.0
+Source tarball: https://registry.npmjs.org/mammoth/-/mammoth-1.6.0.tgz
+Source path: package/test/test-data/single-paragraph.docx
+npm integrity: sha512-jOwbj6BwJzxCf6jr2l1zmSemniIkLnchvELXnDJCANlJawhzyIKObIq48B8kWEPLgUUh57k7FtEO3DHFQMnjMg==
+Local SHA-256: 7d89bf44b4d6940234efb6973d24706c881aa875bb794bfbe54efd92f9c6cf3e
+Purpose: synthetic-only live browser proof that the pinned local Mammoth build can parse DOCX.

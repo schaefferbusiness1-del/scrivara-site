@@ -1,13 +1,13 @@
 {
   "name": "MLS Recorder",
   "short_name": "MLS Rec",
-  "description": "Record a patient visit from your phone — it streams to the MLS app on your computer.",
+  "description": "Capture short visit audio clips on your phone and upload them to the MLS visit open on your computer.",
   "start_url": "/phone.html",
   "scope": "/phone.html",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#1456a8",
-  "theme_color": "#1456a8",
+  "background_color": "#204034",
+  "theme_color": "#204034",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }

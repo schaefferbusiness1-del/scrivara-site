@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "policy": "Browser builds are copied verbatim from exact official distributions. Runtime code may load only these same-origin files; official registry/CDN URLs are provenance-only and there is no remote fallback.",
+  "packages": [
+    {
+      "package": "chart.js",
+      "version": "4.5.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/chart.js/-/chart.js-4.5.1.tgz",
+      "npmIntegrity": "sha512-GIjfiT9dbmHRiYi6Nl2yFCq7kkwdkp1W/lp2J99rX0yo9tgJGn3lKQATztIjb5tVtevcBtIdICNWqlq5+E8/Pw==",
+      "sourcePath": "package/dist/chart.umd.js",
+      "asset": "chart.umd-4.5.1.js",
+      "sha256": "ecc3cd1eeb8c34d2178e3f59fd63ec5a3d84358c11730af0b9958dc886d7652a"
+    },
+    {
+      "package": "xlsx",
+      "version": "0.20.3",
+      "license": "Apache-2.0",
+      "distribution": "official-sheetjs-cdn",
+      "source": "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+      "sourcePath": "package/dist/xlsx.full.min.js",
+      "asset": "xlsx.full-0.20.3.min.js",
+      "sha256": "cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41"
+    },
+    {
+      "package": "pdfjs-dist",
+      "version": "6.1.200",
+      "license": "Apache-2.0",
+      "source": "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.1.200.tgz",
+      "npmIntegrity": "sha512-o8MolyzirkkLrcdsae/HEOiIcXWI7DS5zGpvqW8xTC2YUsW30rltFw2bDGvw/fskUdEMrQm2br68jzDS5BH2vw==",
+      "assets": [
+        {
+          "sourcePath": "package/build/pdf.min.mjs",
+          "asset": "pdf-6.1.200.min.mjs",
+          "sha256": "4ba2f15599b03fde8755ad91349920c21dadd3e8fd6b6460a7663d46d4cf21b5"
+        },
+        {
+          "sourcePath": "package/build/pdf.worker.min.mjs",
+          "asset": "pdf.worker-6.1.200.min.mjs",
+          "sha256": "2ab9e09667296dab1a618868b3ce6e6c23d5b8f48120ae7c5b34e7e335ed01fa"
+        }
+      ]
+    },
+    {
+      "package": "mammoth",
+      "version": "1.12.0",
+      "license": "BSD-2-Clause",
+      "source": "https://registry.npmjs.org/mammoth/-/mammoth-1.12.0.tgz",
+      "npmIntegrity": "sha512-cwnK1RIcRdDMi2HRx2EXGYlxqIEh0Oo3bLhorgnsVJi2UkbX1+jKxuBNR9PC5+JaX7EkmJxFPmo6mjLpqShI2w==",
+      "sourcePath": "package/mammoth.browser.min.js",
+      "asset": "mammoth.browser-1.12.0.min.js",
+      "sha256": "5d4c0e7c9165d70b78f789c5274a2c7846d9e1c06ec19b69afa6ef45f789a3b9"
+    },
+    {
+      "package": "jspdf",
+      "version": "4.2.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/jspdf/-/jspdf-4.2.1.tgz",
+      "npmIntegrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",
+      "sourcePath": "package/dist/jspdf.umd.min.js",
+      "asset": "jspdf.umd-4.2.1.min.js",
+      "sha256": "e6551fcdc32f09d6853b2c5126d18d01d9447e0da618a41a11ebeee0f6c20d54"
+    }
+  ]
+}

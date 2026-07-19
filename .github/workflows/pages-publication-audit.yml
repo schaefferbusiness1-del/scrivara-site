@@ -1,0 +1,46 @@
+name: Pages publication audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: read
+
+jobs:
+  audit:
+    name: Build and audit without deploying
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Run complete source regression
+        run: npm test
+
+      - name: Configure GitHub Pages metadata
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+        with:
+          enablement: false
+
+      - name: Build with the GitHub Pages Jekyll action
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Audit exact generated publication tree
+        run: node scripts/audit-pages-build.js --site-dir=_site
+
+      # Deliberately no upload-pages-artifact or deploy-pages step. Pull-request
+      # validation must never publish a candidate to the production origin.

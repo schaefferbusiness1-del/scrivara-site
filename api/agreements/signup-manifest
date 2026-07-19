@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "purpose": "account-signup",
+  "releaseChannel": "synthetic-evaluation",
+  "clinicalUseAuthorized": false,
+  "status": "approved-for-synthetic-test",
+  "current": true,
+  "serverOwned": true,
+  "immutable": true,
+  "counselApproved": false,
+  "counselApprovalRef": "synthetic-no-counsel-approval-2026.07.18",
+  "syntheticTestFixture": true,
+  "manifestId": "mls-synthetic-signup-2026-07-18",
+  "version": "2026.07.18",
+  "manifestSha256": "ceb5e59aafb81ed811b1a4b907551690d335d8d98186810957206e3ebd3ec8ca",
+  "approvedAt": "2026-07-18T00:00:00.000Z",
+  "validUntil": "2027-07-18T00:00:00.000Z",
+  "documents": [
+    {
+      "kind": "terms",
+      "documentId": "mls-synthetic-terms-2026-07-18",
+      "version": "2026.07.18",
+      "sha256": "e50468017d2e7068344028d333b1ea36f4f3ed7dfa7158fe46480c0feaf92405",
+      "effectiveAt": "2026-07-18T00:00:00.000Z",
+      "url": "/terms.html",
+      "required": true,
+      "status": "approved"
+    },
+    {
+      "kind": "privacy",
+      "documentId": "mls-synthetic-privacy-2026-07-18",
+      "version": "2026.07.18",
+      "sha256": "51207c54d786f4958d99ed2768eefd267df31fb4f222bd673274c7bb2184a820",
+      "effectiveAt": "2026-07-18T00:00:00.000Z",
+      "url": "/privacy.html",
+      "required": true,
+      "status": "approved"
+    }
+  ],
+  "practiceAuthority": {
+    "status": "approved",
+    "required": true,
+    "attestationId": "mls-synthetic-practice-authority-2026-07-18",
+    "version": "2026.07.18",
+    "sha256": "2c08c302f1b2d8e7c7e3cc0fc98cd7335231859820390d1aba5bd2b874767356",
+    "effectiveAt": "2026-07-18T00:00:00.000Z",
+    "text": "I attest that I am authorized to create and administer this MLS synthetic-evaluation account for my practice.",
+    "individualAccountOnly": true,
+    "sharedCredentialsAuthorized": false
+  }
+}

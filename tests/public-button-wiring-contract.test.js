@@ -6,15 +6,16 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const pages = [
-  'index.html', 'booking.html', 'easy-book.html', 'patient-portal.html',
-  'lawyers.html', 'expert.html', 'legal-connect.html', 'appointment.html',
-  'intake.html', 'send-portal-invite.html', 'phone.html'
+  'index.html', 'booking.html', 'patient-portal.html', 'lawyers.html',
+  'expert.html', 'appointment.html', 'intake.html', 'send-portal-invite.html',
+  'assist.html', 'review-finder.html', 'gbp-setup.html', 'get-extension.html',
+  'best-doctors-optout.html'
 ];
 
 const lawyerCopy = fs.readFileSync(path.join(root, 'lawyers.html'), 'utf8');
 const expertCopy = fs.readFileSync(path.join(root, 'expert.html'), 'utf8');
-assert(!/payment (?:through the portal )?is being finalized|online payment is being finalized/i.test(lawyerCopy + expertCopy), 'public attorney pages must not claim that live portal checkout is unfinished');
-assert(lawyerCopy.includes('Stripe-confirmed payment unlocks the full signed report') && expertCopy.includes('Stripe-confirmed payment unlocks the full signed report'), 'public attorney pages must explain the live checkout and unlock flow consistently');
+assert(/case intake is unavailable/i.test(lawyerCopy) && /signing, payment, and report delivery are unavailable/i.test(expertCopy), 'public attorney pages must keep legal intake, payment, signing, and delivery fail closed');
+assert(!/Stripe-confirmed payment unlocks|api\/legal\/checkout|startLegalCheckout/i.test(lawyerCopy + expertCopy), 'public attorney pages must not advertise or invoke unreleased legal checkout');
 
 let handlers = 0;
 const missing = [];
@@ -44,6 +45,6 @@ for (const page of pages) {
 
 assert.deepStrictEqual(missing, [], `Public buttons call missing handlers:\n${missing.join('\n')}`);
 assert.deepStrictEqual(deadLinks, [], `Public pages contain dead # links:\n${deadLinks.join('\n')}`);
-assert(handlers >= 20, 'expected to audit the public interactive controls');
+assert(handlers >= 20, 'expected to audit the current public interactive controls');
 
 console.log(`PASS public button wiring: ${handlers} inline controls across ${pages.length} non-extension pages`);

@@ -1,5 +1,5 @@
 {
-  "version": "2.9.42",
+  "version": "2.9.41",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.42 - Clearer schedule-read failure messages: a zero-row day now says the grid may still be loading or athenaOne is signed out (instead of the confusing 'showed 0 rows but verified only 0'), and partial reads explain that the view changed mid-read. No behavior change to pulls or writes; includes v2.9.41 layout diagnostic."
+  "notes": "Published stable channel. Newer candidate bytes remain isolated and are not offered until their exact package and SHA-256 digest pass the complete release gate."
 }

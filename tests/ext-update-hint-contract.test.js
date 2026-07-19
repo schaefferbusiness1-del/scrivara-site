@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.12"'), 'si-1.7.12 release marker missing');
+assert(si.includes('var VERSION = "si-1.7.13"'), 'si-1.7.13 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);
@@ -124,8 +124,9 @@ assert(si.includes('[duplicateExtHint(), extUpdateHint()]'), 'receipt-gate failu
 /* nav races between two copies also carry the dup hint */
 assert(si.includes('out.reason === "nav-failed" || out.reason === "wrong-day"'), 'nav-failed/wrong-day must carry the duplicate hint when detected');
 
-/* ---- ds-1.4.0: one-click PHI-free pull error report ---------------------- */
-assert(connect.includes("version: 'ds-1.4.0'"), 'ds-1.4.0 release marker missing');
+/* ---- ds-2.0.2: one-click PHI-free pull error report survives the move to
+ * one selected-day Easy shell; date unification must not remove diagnostics. */
+assert(connect.includes("version: 'ds-2.0.2'"), 'ds-2.0.2 release marker missing');
 assert(connect.includes('id="mlsDsDiagBtn"'), 'the Copy error report button must exist in the day strip');
 assert(connect.includes("$('mlsDsDiagBtn').onclick = dsCopyDiag"), 'the report button must be wired');
 assert(connect.includes('dsSyncDiagBtn(!ok)'), 'a failed pull must reveal the report button');

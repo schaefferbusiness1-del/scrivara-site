@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 <title>Google Business Profile — guided setup · MLS Scribe</title>
 <!-- ==========================================================================
   gbp-setup.html — MLS guided Google Business Profile creation (v1.0.0)
@@ -185,7 +187,7 @@ a{color:var(--blue)}
     var q = encodeURIComponent(((S.f.doctor || '') + ' ' + (S.f.practice || '') + ' ' + (S.f.city || '')).replace(/^\s+|\s+$/g, ''));
     return '<div class="card"><h2>2 · Does your listing already exist?</h2>' + found +
       '<div class="note" style="margin-top:8px">Search Google Maps for yourself. If a card for <b>you</b> (not just your practice) appears, you’ll <b>claim</b> it; if nothing appears, you’ll <b>create</b> one. Practices often already have a listing — your personal doctor listing is usually the missing one.</div>' +
-      '<div class="row" style="margin:10px 0"><a class="btn link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/' + q + '">↗ Search Google Maps for me</a></div>' +
+      '<div class="row" style="margin:10px 0"><a class="btn link" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/' + q + '">↗ Search Google Maps for me</a></div>' +
       '<label class="check"><input type="radio" name="mode" value="claim"' + (S.mode === 'claim' ? ' checked' : '') + '> <span><b>It exists</b> — I’ll claim it (on the listing, click “Own this business?” / “Claim this business”)</span></label>' +
       '<label class="check"><input type="radio" name="mode" value="create"' + (S.mode === 'create' ? ' checked' : '') + '> <span><b>Nothing there</b> — I’ll create a new profile</span></label>' +
       '</div>';
@@ -195,8 +197,8 @@ a{color:var(--blue)}
     return '<div class="card"><h2>3 · Your Google account</h2>' +
       '<div class="safe">🔒 <b>You</b> do this part — it’s your identity. MLS never asks for, sees, or stores your Google password. Do this on your own screen.</div>' +
       '<div class="note">A Business Profile hangs off a normal Google account. Use an account the <b>practice controls</b> (not a personal Gmail you might lose access to).</div>' +
-      checkRow('acct1', 'I have a Google account for the practice (or my professional email is already a Google account). If not: <a target="_blank" rel="noopener" href="https://accounts.google.com/signup">create one here ↗</a> — use your practice email, your real name, and a strong password you save in your password manager.') +
-      checkRow('acct2', 'I can sign in to it right now (test at <a target="_blank" rel="noopener" href="https://accounts.google.com">accounts.google.com ↗</a>).') +
+      checkRow('acct1', 'I have a Google account for the practice (or my professional email is already a Google account). If not: <a target="_blank" rel="noopener noreferrer" href="https://accounts.google.com/signup">create one here ↗</a> — use your practice email, your real name, and a strong password you save in your password manager.') +
+      checkRow('acct2', 'I can sign in to it right now (test at <a target="_blank" rel="noopener noreferrer" href="https://accounts.google.com">accounts.google.com ↗</a>).') +
       checkRow('acct3', 'Recovery phone + recovery email are set (Google asks during signup — don’t skip; it’s how you get back in).') +
       '</div>';
   }
@@ -210,7 +212,7 @@ a{color:var(--blue)}
       : 'Open <b>business.google.com/create</b>, sign in with the account from step 3, and paste each field as Google asks for it.';
     return '<div class="card"><h2>4 · Fill the listing — copy each field</h2>' +
       '<div class="note">' + head + '</div>' +
-      '<div class="row" style="margin:10px 0"><a class="btn primary" target="_blank" rel="noopener" href="' + url + '">↗ Open Google and start</a></div>' +
+      '<div class="row" style="margin:10px 0"><a class="btn primary" target="_blank" rel="noopener noreferrer" href="' + url + '">↗ Open Google and start</a></div>' +
       '<label>Business name (exactly this — no taglines, Google rejects keyword-stuffed names)</label>' +
       copybox('cbName', S.f.doctor ? (S.f.doctor + (S.f.practice ? ' — ' + S.f.practice : '')) : S.f.practice) +
       '<label>Category</label>' + copybox('cbCat', S.f.category || 'Pain management physician') +
@@ -275,7 +277,7 @@ a{color:var(--blue)}
       var note = $('aiNote');
       if (!tok) { note.textContent = 'Sign in to MLS first (open the MLS app, then reload this page) — the AI writer uses your MLS account.'; return; }
       note.textContent = 'Writing…';
-      fetch(BK + '/api/widget/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      fetch(BK + '/api/widget/ai', { method: 'POST', cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
         body: JSON.stringify({ prompt: aiPrompt(), system: 'You are an expert healthcare marketing copywriter. Truthful, compliant, warm, specific. Follow the scope rules exactly.' }) })
         .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
         .then(function (j) {

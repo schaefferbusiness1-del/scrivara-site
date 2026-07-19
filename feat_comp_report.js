@@ -490,7 +490,7 @@
   function withXLSX(cb) {
     if (window.XLSX) return cb(window.XLSX);
     var sc = document.createElement("script");
-    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    sc.src = "vendor/xlsx.full-0.20.3.min.js?v=cc015130aa8521e7";
     sc.onload = function () { cb(window.XLSX); };
     sc.onerror = function () { setStatus("Could not load the Excel library.", "err", exportXlsx); };
     document.head.appendChild(sc);

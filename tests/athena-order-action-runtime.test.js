@@ -43,9 +43,10 @@ const place = between(driver, '/* ATHENA_ACTION_V2_PLACE_ORDER_START */', '/* AT
 const helpersSource = between(driver, '/* ATHENA_ACTION_V2_ORDER_HELPERS_START */', '/* ATHENA_ACTION_V2_ORDER_HELPERS_END */');
 const handlerSource = '/* ATHENA_ACTION_V2_HANDLER_START */' + between(background, '/* ATHENA_ACTION_V2_HANDLER_START */', '/* ATHENA_ACTION_V2_HANDLER_END */');
 
-for (const src of [flow, content, background]) assert(src.includes('place_order'), 'place_order is not bound end-to-end');
+for (const src of [flow, content, background]) assert(src.includes('place_order'), 'place_order review/refusal policy is missing from one hop');
 const clickGate = between(content, '/* ATHENA_ACTION_V2_CLICK_GATE_START */', '/* ATHENA_ACTION_V2_CLICK_GATE_END */');
-assert(/isTrusted\s*!==\s*true/.test(clickGate) && /place_order/.test(clickGate), 'single-order execute is not gated by a real trusted click');
+assert(/isTrusted\s*!==\s*true/.test(clickGate), 'note-lane mutation gate lost its trusted-click requirement');
+assert(/\^\(write_note\|save_draft\)\$/.test(clickGate), 'trusted-click gate must arm only write_note and save_draft');
 const capabilityObject = /capabilities:\s*\{([^}]*)\}/.exec(content);
 assert(capabilityObject && /supervisedOrderPlacementV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise the supervised-order capability');
 assert(capabilityObject && /destinationTeachingV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise exact destination teaching');
@@ -54,7 +55,7 @@ assert(/gestureRowHash/.test(content) && /gestureClientOrderId/.test(content), '
 assert(/rawFields\[key\]\.length\s*>\s*2000/.test(content) && !/fields\[key\]\s*=\s*mlsStr\([^\n]*2000/.test(content), 'content bridge still silently truncates reviewed order details');
 const actionLabelSource = extractFunction(clickGate, '_mlsActionLabelMatches');
 const actionLabelMatches = Function(`${actionLabelSource}; return _mlsActionLabelMatches;`)();
-assert.strictEqual(actionLabelMatches('place_order', 'Confirm & place one order'), true, 'visible human-permission label does not arm place_order');
+assert.strictEqual(actionLabelMatches('place_order', 'Confirm & place one order'), true, 'dormant label parser fixture drifted');
 assert.strictEqual(actionLabelMatches('place_order', 'Place Order'), false, 'an Athena DOM button could arm the MLS execute bridge without its confirmation label');
 for (const reason of [
   'order-catalog-near-match-rejected', 'order-catalog-duplicate-rejected',
@@ -67,8 +68,9 @@ assert(!/for\s*\([^)]*order/i.test(place.split('placeDecision.item.click()')[1] 
 assert(place.indexOf('mutationAttempted = true') >= 0 && place.indexOf('mutationAttempted = true') < place.indexOf('candidate.option.click()'), 'catalog selection is not treated as the first order mutation boundary');
 assert(/uncertainOrderMutation\('order-required-field-missing'|uncertainOrderMutation\(fieldHit\.error/.test(place) && /partialMutation:\s*true/.test(place), 'post-selection failures can still claim that nothing was attempted');
 for (const word of ['save', 'sign', 'submit', 'prescribe', 'billing', 'claim', 'delete']) assert(driver.toLowerCase().includes(word), `final-action denylist omits ${word}`);
-assert(/Confirm place one reviewed order/.test(flow), 'human permission copy is missing');
-assert(/Confirm\s*&amp;\s*place one order|Confirm & place one order/.test(flow), 'visible single-order confirmation button is missing');
+assert(!/Confirm place one reviewed order/.test(flow), 'order placement confirmation copy is still visible');
+assert(!/Confirm\s*&amp;\s*place one order|Confirm & place one order/.test(flow), 'single-order execute button is still visible');
+assert(/Complete in Athena/.test(flow) && /MLS (?:keeps[^.]+visible, but never selects or places|does not place)/.test(flow), 'manual order review copy is missing');
 
 // Exercise exact catalog identity and isolated readback helpers with adversarial
 // candidate/row shapes. Missing, near, and duplicate candidates never become a
@@ -148,6 +150,8 @@ assert.strictEqual(helper.oneExactOrderChoice([{ label: 'Place Order' }, { label
 // and the immutable audit IDs independently of DOM fixtures.
 let listener = null;
 let tokenCounter = 0;
+let liveAthenaTabs = [{ id: 91, url: 'https://athenanet.athenahealth.com/encounter/77777' }];
+let probeInjectionTabIds = [];
 const lockedContext = {
   patientName: 'Example Patient', dob: '1/2/1980', mrn: '12345', appointmentId: '54321', encounterId: '77777',
   encounterUrl: 'https://athenanet.athenahealth.com/encounter/77777', visitDate: '7/14/2026',
@@ -163,9 +167,10 @@ const handlerContext = {
   mlsAthenaActionV2DriverFn() {},
   chrome: {
     runtime: { onMessage: { addListener(fn) { listener = fn; } } },
-    tabs: { async query() { return [{ id: 91, url: lockedContext.encounterUrl }]; } },
+    tabs: { async query() { return liveAthenaTabs.map(tab => ({ ...tab })); } },
     scripting: { async executeScript(details) {
       const req = details.args[0];
+      if (req.mode === 'probe') probeInjectionTabIds.push(details.target.tabId);
       return [{ result: req.mode === 'probe'
         ? { ok: true, contextVerified: true, readOnly: true, reason: 'order-workspace-context-verified', context: { ...lockedContext } }
         : { ok: true, verified: true, orderPlaced: true, alreadyPresent: false, reason: 'one-exact-order-isolated-readback-verified', context: { ...lockedContext } } }];
@@ -204,6 +209,31 @@ function send(message) {
   assert.strictEqual(missingCatalog.reason, 'catalog-identity-required', 'label-only order payload was not rejected');
   const overlongField = await send({ ...probeMessage, order: { ...exactOrder, fields: { ...exactOrder.fields, indication: 'x'.repeat(2001) } } });
   assert.strictEqual(overlongField.reason, 'order-field-too-long', 'overlong order field was truncated or accepted');
+
+  // An exact appointment-open continuation probes only the tab which supplied
+  // its navigation proof. Missing/invalid target tabs fail before injection;
+  // omitting the optional field preserves the generic all-tab ambiguity gate.
+  liveAthenaTabs = [
+    { id: 91, url: lockedContext.encounterUrl },
+    { id: 92, url: lockedContext.encounterUrl }
+  ];
+  probeInjectionTabIds = [];
+  const pinnedTabProbe = await send({ ...probeMessage, expectedAthenaTabId: 91 });
+  assert.strictEqual(pinnedTabProbe.ok, true, 'navigation-proven Athena tab did not produce a read-only probe');
+  assert.strictEqual(pinnedTabProbe.athenaTabId, 91, 'probe receipt did not return the verified target tab');
+  assert.deepStrictEqual(probeInjectionTabIds, [91], 'exact-open continuation probed another Athena tab');
+  probeInjectionTabIds = [];
+  const missingPinnedTab = await send({ ...probeMessage, expectedAthenaTabId: 93 });
+  assert.strictEqual(missingPinnedTab.reason, 'athena-tab-mismatch', 'missing exact-open tab did not fail closed');
+  assert.deepStrictEqual(probeInjectionTabIds, [], 'missing exact-open tab reached the injected probe');
+  const invalidPinnedTab = await send({ ...probeMessage, expectedAthenaTabId: '91x' });
+  assert.strictEqual(invalidPinnedTab.reason, 'athena-tab-mismatch', 'invalid exact-open tab id was coerced or accepted');
+  assert.deepStrictEqual(probeInjectionTabIds, [], 'invalid exact-open tab id reached the injected probe');
+  const unpinnedGenericProbe = await send({ ...probeMessage });
+  assert.strictEqual(unpinnedGenericProbe.reason, 'ambiguous-athena-tabs', 'generic probe no longer scans every signed-in Athena tab');
+  assert.deepStrictEqual(probeInjectionTabIds, [91, 92], 'generic probe did not preserve all-tab unique discovery');
+  liveAthenaTabs = [{ id: 91, url: lockedContext.encounterUrl }];
+  probeInjectionTabIds = [];
 
   /* wsg-1.0.0 CONTRACT CHANGE (owner directive): order placement is
      PREVIEW-ONLY. Probes still mint read-only tokens with exact row bindings

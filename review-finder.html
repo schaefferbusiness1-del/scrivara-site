@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 <link rel="stylesheet" href="fonts/fonts.css">
 <title>MLS Reputation — Review Finder</title>
 <style>
@@ -174,6 +177,16 @@ var PLATFORMS=[
 function q(s){return encodeURIComponent((s||'').trim());}
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+var REVIEW_HOSTS=['google.com','maps.app.goo.gl','g.page','healthgrades.com','vitals.com','zocdoc.com','ratemds.com','yelp.com','webmd.com','facebook.com'];
+function safeReviewUrl(value){
+  try{
+    var u=new URL(String(value||''));
+    if(u.protocol!=='https:'||u.username||u.password||String(value).length>2048) return '';
+    var host=u.hostname.toLowerCase();
+    for(var i=0;i<REVIEW_HOSTS.length;i++) if(host===REVIEW_HOSTS[i]||host.slice(-(REVIEW_HOSTS[i].length+1))==='.'+REVIEW_HOSTS[i]) return u.href;
+  }catch(e){}
+  return '';
+}
 function doc(){return {name:$('dName').value,spec:$('dSpec').value,practice:$('dPractice').value,city:$('dCity').value,google:$('dGoogle').value,site:$('dSite').value};}
 function copyText(t){ try{ navigator.clipboard.writeText(String(t||'')); }catch(e){} }
 function copyOut(id){ var el=$(id); copyText(el?el.innerText:''); }
@@ -205,7 +218,7 @@ function renderPlatforms(){
     var c=CAP[p.k]||{};
     var badge = c.missing ? '<span class="chip miss">no profile</span>' : (c.rating? '<span class="chip ok">'+esc(c.rating)+'★ · '+esc(c.count||'?')+'</span>' : '<span class="chip">not scanned</span>');
     return '<div class="plat"><div class="ph"><div><div class="nm">'+p.nm+'</div><div class="sub2">'+p.sub+'</div></div>'+badge+'</div>'
-      +'<div class="row"><a class="btn ghost" style="text-decoration:none;font-size:12px;padding:7px 11px" target="_blank" rel="noopener" href="'+p.url(d)+'">Open search ↗</a></div>'
+      +'<div class="row"><a class="btn ghost" style="text-decoration:none;font-size:12px;padding:7px 11px" target="_blank" rel="noopener noreferrer" href="'+esc(safeReviewUrl(p.url(d)))+'">Open search ↗</a></div>'
       +'<div class="cap"><input placeholder="rating (e.g. 4.8)" value="'+esc(c.rating||'')+'" oninput="setCap(\''+p.k+'\',\'rating\',this.value)">'
       +'<input placeholder="#" value="'+esc(c.count||'')+'" oninput="setCap(\''+p.k+'\',\'count\',this.value)">'
       +'<button class="btn ghost" style="font-size:11px;padding:0" onclick="setCap(\''+p.k+'\',\'missing\',!('+(c.missing?'true':'false')+'))">'+(c.missing?'✓ gap':'No profile')+'</button></div></div>';
@@ -232,7 +245,9 @@ function quotes(){
   var pos=/\b(great|excellent|amazing|wonderful|best|caring|kind|thorough|professional|highly recommend|recommend|helpful|friendly|listened|attentive|gentle|painless|life[- ]changing|fantastic|outstanding|compassionate|knowledgeable|patient|trust|comfortable|relief|better)\b/i;
   var neg=/\b(rude|wait|worst|terrible|awful|never|refused|dismissive|pain|angry|billing|overcharg|cancel|late)\b/i;
   var picks=sents.filter(function(s){return pos.test(s)&&!neg.test(s)&&s.length>15&&s.length<240;}).slice(0,8);
-  $('qOut').innerHTML = picks.length? picks.map(function(s){return '<div class="quote">“'+esc(s.replace(/^["'“”]+|["'“”]+$/g,''))+'”</div>';}).join('')+'<button class="btn ghost" style="margin-top:8px" onclick="copyText(\''+picks.join(' | ').replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')">Copy all</button>' : '<div class="note" style="margin-top:8px">No clearly-positive lines detected — paste more review text.</div>';
+  var out=$('qOut');
+  out.innerHTML = picks.length? picks.map(function(s){return '<div class="quote">“'+esc(s.replace(/^["'“”]+|["'“”]+$/g,''))+'”</div>';}).join('')+'<button class="btn ghost" id="qCopyAll" type="button" style="margin-top:8px">Copy all</button>' : '<div class="note" style="margin-top:8px">No clearly-positive lines detected — paste more review text.</div>';
+  var copy=$('qCopyAll'); if(copy) copy.addEventListener('click',function(){ copyText(picks.join(' | ')); });
 }
 function respond(){
   var t=$('rIn').value.trim(); var d=doc();
@@ -294,7 +309,7 @@ load(); renderPlatforms(); dash();
     '<div id="repLiveBody"><div class="loadrow"><span class="lspin"></span> Enter the practice/doctor above — results appear here automatically.</div></div>'+
     '<div id="repSources"></div>'+
     '<div class="grp"><div class="lbl">➕ Add a profile link (Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, your website…)</div>'+
-    '<p class="note" style="margin:0 0 6px">Paste any profile URL — one per line. MLS files it under the right site and (as those APIs connect) pulls its rating too. Handy for directories the auto-scan can\'t reach yet.</p>'+
+    '<p class="note" style="margin:0 0 6px">Paste an HTTPS profile URL from Google, Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, Yelp, or Facebook — one per line. Unknown or insecure hosts are ignored.</p>'+
     '<textarea id="repLinks" placeholder="https://www.healthgrades.com/physician/...&#10;https://www.vitals.com/doctors/...&#10;https://www.zocdoc.com/doctor/..."></textarea>'+
     '<div class="row" style="margin-top:8px"><button class="btn ghost" onclick="window.__repScan(true)">↻ Save links &amp; re-scan</button><span class="note" id="repLiveNote"></span></div></div></div>'+
 
@@ -307,8 +322,7 @@ load(); renderPlatforms(); dash();
 
     '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Let MLS run your marketing</h2>'+
     '<p class="hint"><b>MLS Marketing</b> keeps your Google Business Profile optimized, drafts a reply to every review, and runs compliant review-request campaigns to real patients — every change doctor-approved before it publishes. Start with the free guided setup; add paid automation whenever you\'re ready.</p>'+
-    '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn green" style="text-decoration:none" href="gbp-setup.html">🌟 Set up my Google Business Profile (guided)</a>'+
-    '<a class="btn violet" style="text-decoration:none" href="mls-marketing.html">📈 See marketing plans</a></div>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn green" style="text-decoration:none" href="gbp-setup.html">🌟 Set up my Google Business Profile (guided)</a></div>'+
     '<p class="note" style="margin-top:6px">The guided setup is free and MLS never sees your Google password. Paid automation is optional — you approve everything before it publishes.</p></div>';
   if(docCard && docCard.parentNode){ docCard.parentNode.insertBefore(host, docCard.nextSibling); }
   else document.querySelector('.wrap').appendChild(host);
@@ -321,7 +335,7 @@ load(); renderPlatforms(); dash();
   try{ var savedM=localStorage.getItem('mlsRepMat'); if(savedM) el('repMat').value=savedM; el('repMat').addEventListener('input', function(){ try{ localStorage.setItem('mlsRepMat', el('repMat').value.slice(0,40000)); }catch(e){} }); }catch(e){}
   try{ var savedL=localStorage.getItem('mlsRFLinks'); if(savedL) el('repLinks').value=savedL; el('repLinks').addEventListener('input', function(){ try{ localStorage.setItem('mlsRFLinks', el('repLinks').value.slice(0,4000)); }catch(e){} }); }catch(e){}
 
-  function linksArr(){ try{ return (el('repLinks').value||'').split(/[\n,]+/).map(function(s){return s.trim();}).filter(function(u){return /^https?:\/\//i.test(u);}); }catch(e){ return []; } }
+  function linksArr(){ try{ return (el('repLinks').value||'').split(/[\n,]+/).map(function(s){return safeReviewUrl(s.trim());}).filter(Boolean).slice(0,6); }catch(e){ return []; } }
 
   /* ---------- render helpers ---------- */
   function summaryHTML(sum, dName){
@@ -353,7 +367,7 @@ load(); renderPlatforms(); dash();
         return '<div class="plat" style="margin-bottom:8px"><div class="ph"><span class="nm">'+h(L.name||'(unnamed)')+' '+scopeBadge(L.scope)+'</span>'+rc+'</div>'+
           '<div class="sub2">'+h(srcName(L.source))+(L.address?(' · '+h(L.address)):'')+'</div>'+
           (L.rating!=null?('<div class="stars">'+stars(L.rating)+'</div>'):'')+
-          (L.url?('<a href="'+h(L.url)+'" target="_blank" rel="noopener">Open profile ↗</a>'):'')+'</div>';
+          (safeReviewUrl(L.url)?('<a href="'+h(safeReviewUrl(L.url))+'" target="_blank" rel="noopener noreferrer">Open profile ↗</a>'):'')+'</div>';
       }).join('');
       out+='</div>';
     });
@@ -383,7 +397,8 @@ load(); renderPlatforms(); dash();
     // manual links echoed back, classified by the backend
     if(manualLinks&&manualLinks.length){
       manualLinks.forEach(function(m){
-        cells+='<div class="srccell"><div class="sn"><span class="dot2 ok"></span>'+h(srcName(m.source))+' (you added)</div><div class="ss"><a href="'+h(m.url)+'" target="_blank" rel="noopener">open link ↗</a></div></div>';
+        var safe=safeReviewUrl(m.url);
+        if(safe) cells+='<div class="srccell"><div class="sn"><span class="dot2 ok"></span>'+h(srcName(m.source))+' (you added)</div><div class="ss"><a href="'+h(safe)+'" target="_blank" rel="noopener noreferrer">open link ↗</a></div></div>';
       });
     }
     return '<div class="grp"><div class="lbl">🔌 Where MLS is looking</div><div class="srcgrid">'+cells+'</div>'+
@@ -400,9 +415,7 @@ load(); renderPlatforms(); dash();
     scanning=true; el('repLiveNote').textContent='';
     el('repLiveBody').innerHTML='<div class="loadrow"><span class="lspin"></span> Scanning the web for your real reviews…</div>';
     var links=linksArr();
-    var qs='doctor='+encodeURIComponent(doctor)+'&practice='+encodeURIComponent(practice)+'&city='+encodeURIComponent(city)+'&specialty='+encodeURIComponent(specialty);
-    if(links.length) qs+='&links='+encodeURIComponent(links.join(','));
-    fetch(BK+'/api/reviews/find?'+qs).then(function(r){return r.json();}).then(function(j){
+    fetch(BK+'/api/reviews/find',{method:'POST',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({doctor:doctor,practice:practice,city:city,specialty:specialty,links:links})}).then(function(r){return r.json();}).then(function(j){
       scanning=false;
       if(!j||!j.ok){ el('repLiveBody').innerHTML='<div class="note">⚠️ '+h((j&&(j.message||j.error))||'Could not reach the review service. Your details are saved — try Re-scan in a moment.')+'</div>'; return; }
       lastData=j;
@@ -420,7 +433,7 @@ load(); renderPlatforms(); dash();
           '<div class="nm">✨ No Google listing? MLS will help you CREATE one.</div>'+
           '<div class="sub2">A Google Business Profile is free and is how new patients find you. MLS pre-fills everything from your details above (and the resume materials below) — you approve before anything goes live.</div>'+
           '<div class="row" style="margin-top:8px">'+
-          '<a class="btn green" style="text-decoration:none" href="https://business.google.com/create" target="_blank" rel="noopener">🚀 Start my Google listing ↗</a>'+
+           '<a class="btn green" style="text-decoration:none" href="https://business.google.com/create" target="_blank" rel="noopener noreferrer">🚀 Start my Google listing ↗</a>'+
           '<button class="btn ghost" onclick="window.__repCopyPack()">📋 Copy my pre-filled info</button></div></div>';
       }
       el('repLiveBody').innerHTML=body;
@@ -460,7 +473,7 @@ load(); renderPlatforms(); dash();
       '== REVIEW REPLIES == (a warm reply template for 5-star reviews and a professional HIPAA-safe reply template for critical reviews; never confirm someone is a patient)\n'+
       'Truthful only; do not invent credentials that are not in the materials.';
     btn.disabled=true; note.textContent='Writing your listing… (a few seconds)';
-    fetch(BK+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({prompt:prompt,system:'You are an expert healthcare marketing copywriter. Truthful, compliant, warm, specific.'})})
+    fetch(BK+'/api/widget/ai',{method:'POST',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({prompt:prompt,system:'You are an expert healthcare marketing copywriter. Truthful, compliant, warm, specific.'})})
       .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
       .then(function(x){
         btn.disabled=false; note.textContent='';
@@ -490,9 +503,7 @@ load(); renderPlatforms(); dash();
     alert('Copied — paste as you go through Google’s listing steps.');
   };
 
-  /* auto-run on load (when details are saved) + after every Save */
-  try{ var _save=window.save; if(typeof _save==='function'){ window.save=function(){ var r=_save.apply(this,arguments); try{ window.__repScan(); }catch(e){} return r; }; } }catch(e){}
-  setTimeout(function(){ try{ window.__repScan(); }catch(e){} }, 400);
+  /* Network scans are explicit only. Saving profile fields never starts one. */
 })();
 </script>
 <script src="mls_reviews_scrape_app.js?v=20260718c"></script>

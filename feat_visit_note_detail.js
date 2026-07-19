@@ -40,7 +40,7 @@
   "use strict";
   if (window.__mlsVisitNoteDetail && window.__mlsVisitNoteDetail.installed) return;
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.1.0";
   var isFn = function (f) { return typeof f === "function"; };
   var S = function (x) { return x == null ? "" : String(x); };
 
@@ -175,9 +175,10 @@
       ".mlsvnd-modal{background:var(--card,#fff);color:var(--ink,#1A211C);border:1px solid var(--line,#E7E5DD);border-radius:16px;box-shadow:0 18px 60px rgba(15,28,46,.32);width:100%;max-width:760px;margin:auto 0;overflow:hidden}",
       ".mlsvnd-top{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line,#eef1f6);background:var(--soft,#FCFBF8)}",
       ".mlsvnd-ttl{font-weight:800;font-size:15px;color:var(--ink,#1A211C);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-      ".mlsvnd-sub{font-weight:600;font-size:12px;color:var(--muted,#79837C)}",
+      ".mlsvnd-sub{font-weight:600;font-size:12px;color:var(--muted,#68736B)}",
       ".mlsvnd-x{flex:0 0 auto;cursor:pointer;border:1px solid var(--line,#E7E5DD);background:#fff;color:var(--ink,#1A211C);border-radius:9px;font-size:16px;line-height:1;padding:6px 11px;font-weight:700}",
       ".mlsvnd-x:hover{background:var(--soft2,#EAF1EE)}",
+      ".mlsvnd-modal button:focus-visible,.mlsvnd-modal input:focus-visible,.mlsvnd-modal textarea:focus-visible,.mlsvnd-modal select:focus-visible{outline:3px solid rgba(46,106,75,.42);outline-offset:2px}",
       ".mlsvnd-host{padding:6px 18px 18px;max-height:74vh;overflow:auto}",
       ".mlsvnd-host .mlsvd-body{border-top:none;padding-top:6px}"
     ].join("\n");
@@ -197,35 +198,59 @@
       "athena-copy": "Athena copy", "cohort-injection": "Injection cohort", "note": "From saved note" })[v.source] || "Visit";
   }
 
-  var _openEl = null, _onKey = null;
-  function closeModal() {
+  var _openEl = null, _onKey = null, _returnFocus = null;
+  function visibleFocusTarget(el) {
+    try {
+      if (!el || !el.isConnected || el.disabled) return false;
+      var s = getComputedStyle(el), r = el.getBoundingClientRect();
+      return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0;
+    } catch (e) { return false; }
+  }
+  function focusables(root) {
+    if (!root) return [];
+    try {
+      return [].slice.call(root.querySelectorAll("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])")).filter(visibleFocusTarget);
+    } catch (e) { return []; }
+  }
+  function closeModal(restoreFocus) {
+    var back = _returnFocus;
     if (_openEl && _openEl.parentNode) _openEl.parentNode.removeChild(_openEl);
     _openEl = null;
     if (_onKey) { document.removeEventListener("keydown", _onKey, true); _onKey = null; }
+    _returnFocus = null;
+    if (restoreFocus !== false && visibleFocusTarget(back)) {
+      setTimeout(function () { try { back.focus({ preventScroll: true }); } catch (e) { try { back.focus(); } catch (_) {} } }, 0);
+    }
   }
 
   function showModal(patient, note, visit, inModel) {
     injectStyle();
-    closeModal();
+    var opener = document.activeElement;
+    closeModal(false);
+    _returnFocus = opener && opener !== document.body && opener !== document.documentElement ? opener : null;
     var D = DETAIL();
 
     var scrim = document.createElement("div");
     scrim.className = "mlsvnd-scrim";
     var modal = document.createElement("div");
     modal.className = "mlsvnd-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "mlsVndTitle");
     scrim.appendChild(modal);
 
     var top = document.createElement("div");
     top.className = "mlsvnd-top";
     var ttl = document.createElement("div");
     ttl.className = "mlsvnd-ttl";
+    ttl.id = "mlsVndTitle";
     ttl.textContent = fmtDate(visit.date) + " · " + (visit.type || "Visit");
     var sub = document.createElement("span");
     sub.className = "mlsvnd-sub";
     sub.textContent = sourceText(inModel, visit);
     var x = document.createElement("button");
     x.className = "mlsvnd-x";
-    x.setAttribute("aria-label", "Close");
+    x.setAttribute("aria-label", "Close saved visit detail");
     x.textContent = "✕";
     x.addEventListener("click", closeModal);
     top.appendChild(ttl);
@@ -237,7 +262,7 @@
     host.className = "mlsvnd-host";
     modal.appendChild(host);
 
-    function renderRead() {
+    function renderRead(focusAction) {
       host.innerHTML = "";
       var r = D.buildRead(visit);
       host.appendChild(r.body);
@@ -251,20 +276,21 @@
         raw.textContent = "📝 Edit raw note";
         raw.addEventListener("click", function (e) {
           e.stopPropagation();
-          closeModal();
+          closeModal(false);
           callOriginal(note.id);
         });
         acts.insertBefore(raw, acts.querySelector(".mlsvd-status") || null);
       }
       // refresh the header to reflect any edits
       ttl.textContent = fmtDate(visit.date) + " · " + (visit.type || "Visit");
+      if (focusAction) setTimeout(function () { try { r.editBtn.focus({ preventScroll: true }); } catch (e) { try { r.editBtn.focus(); } catch (_) {} } }, 0);
     }
 
     function renderEdit() {
       host.innerHTML = "";
       var ed = D.buildEdit(visit);
       host.appendChild(ed.body);
-      ed.cancelBtn.addEventListener("click", function (e) { e.stopPropagation(); renderRead(); });
+      ed.cancelBtn.addEventListener("click", function (e) { e.stopPropagation(); renderRead(true); });
       ed.saveBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         var parsed = D.readForm(ed.form);
@@ -272,8 +298,12 @@
         var ok = persistVisit(patient, note, visit, inModel);
         ed.status.className = "mlsvd-status " + (ok ? "ok" : "err");
         ed.status.textContent = ok ? "Saved ✓" : "Saved locally (sync unavailable)";
-        setTimeout(renderRead, 650);
+        setTimeout(function () { renderRead(true); }, 650);
       });
+      setTimeout(function () {
+        var first = focusables(ed.form || ed.body)[0];
+        if (first) try { first.focus({ preventScroll: true }); } catch (e) { try { first.focus(); } catch (_) {} }
+      }, 0);
     }
 
     function doRegen(btn, status) {
@@ -296,12 +326,23 @@
     }
 
     scrim.addEventListener("click", function (e) { if (e.target === scrim) closeModal(); });
-    _onKey = function (e) { if (e.key === "Escape") closeModal(); };
+    _onKey = function (e) {
+      if (e.key === "Escape" || e.key === "Esc") {
+        e.preventDefault(); e.stopImmediatePropagation(); closeModal(true); return;
+      }
+      if (e.key !== "Tab") return;
+      var rows = focusables(modal);
+      if (!rows.length) { e.preventDefault(); return; }
+      var first = rows[0], last = rows[rows.length - 1], current = document.activeElement;
+      if (e.shiftKey && (current === first || !modal.contains(current))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (current === last || !modal.contains(current))) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", _onKey, true);
 
     (document.body || document.documentElement).appendChild(scrim);
     _openEl = scrim;
     renderRead();
+    setTimeout(function () { try { x.focus({ preventScroll: true }); } catch (e) { try { x.focus(); } catch (_) {} } }, 0);
   }
 
   /* ---------- entry points ---------- */
@@ -323,11 +364,18 @@
   /* ---------- install: override openNoteFromHistory + delegate visit-history clicks ---------- */
   var _origONFH = null;
   function callOriginal(id) { try { if (isFn(_origONFH)) return _origONFH.call(window, id); } catch (e) {} }
+  function chainHasNoteDetail(fn) {
+    return !!(fn && (fn.__mlsNoteDetail === true || fn.__mlsContainsNoteDetail === true));
+  }
 
   function wrapONFH() {
     if (!isFn(window.openNoteFromHistory)) return false;
-    if (window.openNoteFromHistory.__mlsNoteDetail) return true;
-    _origONFH = window.openNoteFromHistory;
+    if (chainHasNoteDetail(window.openNoteFromHistory)) return true;
+    /* Keep the first raw opener forever. A later wrapper (notably autosave)
+       can close over this module's modern-detail wrapper. Replacing _origONFH
+       with that later chain makes "Edit raw note" re-enter the modern modal
+       instead of opening #viewModal. */
+    if (!_origONFH) _origONFH = window.openNoteFromHistory;
     var wrapped = function (id) {
       try { return openNoteDetail(id); }
       catch (e) { return callOriginal(id); }
@@ -374,7 +422,7 @@
     // openNoteFromHistory may be (re)defined after us on some loads — keep trying briefly.
     var tries = 0;
     var iv = setInterval(function () {
-      if (window.openNoteFromHistory && window.openNoteFromHistory.__mlsNoteDetail) { clearInterval(iv); return; }
+      if (chainHasNoteDetail(window.openNoteFromHistory)) { clearInterval(iv); return; }
       wrapONFH();
       if (++tries > 80) clearInterval(iv);
     }, 125);

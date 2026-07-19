@@ -23,15 +23,24 @@ const con = fs.readFileSync(path.join(root, 'feat_mls_wb_console.js'), 'utf8');
   assert(handler.indexOf('unified.click()') < handler.indexOf('writeNoteToChart({})'), 'the unified review must take precedence over the direct paste');
 }
 
-// chat-driven write+sign lane
+// Legacy chat/button "write + sign" requests may open the unified review, but
+// must never retain an independent write/sign fallback.
 {
   const flow = con.indexOf('function signSaveFlow()');
   assert(flow >= 0, 'signSaveFlow must exist');
-  const head = con.slice(flow, flow + 1100);
-  assert(head.includes('window.__mlsWriteFlow'), 'chat write must check for the unified review');
-  assert(head.includes('unifiedBtn.click()'), 'chat write must open the unified review when installed');
-  assert(head.indexOf('unifiedBtn.click()') < head.indexOf('signRunning = true'), 'the unified redirect must run BEFORE the legacy write+sign lane arms');
-  assert(head.includes('Sign unlocks only after the verified write'), 'the redirect reply must state the Sign gating honestly');
+  const end = con.indexOf('/* ================================================================\n   *  PART 4', flow);
+  assert(end > flow, 'signSaveFlow end marker is missing');
+  const signFlow = con.slice(flow, end);
+  assert(signFlow.includes("getElementById('pushAllEmrBtn')"), 'chat Sign request must route to the unified review control');
+  assert(signFlow.includes('unifiedBtn.click()'), 'chat write must open the unified review when installed');
+  assert(/Complete Sign & Save (?:directly )?in Athena/i.test(signFlow), 'redirect reply must tell the clinician Sign remains manual');
+  assert(!/Sign unlocks|unlock[^.\n]{0,100}Sign/i.test(signFlow), 'verified write still claims to unlock Sign');
+  assert(!/mlsAppSignSave|mlsAppPasteNote|signRunning\s*=\s*true|Signed & saved in athenaOne/.test(signFlow), 'legacy independent write/sign fallback remains reachable');
+
+  const injectAt = con.indexOf('function injectLaunchers()', end);
+  const injectEnd = con.indexOf('var pending = null', injectAt);
+  const inject = con.slice(injectAt, injectEnd);
+  assert(!/makeSignBtn\(\)|data-mlswbc-sign/.test(inject), 'legacy Sign & Save launcher is still injected');
 }
 
-console.log('PASS unified write surface: legacy visit-completion and chat write lanes open the one unified Athena review');
+console.log('PASS unified write surface: note writes open one review; legacy Sign requests stay manual with no independent fallback or launcher');

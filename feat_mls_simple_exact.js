@@ -162,7 +162,7 @@
         '<div id="simBody" style="padding:24px 32px 30px"></div>' +
         '<div id="simFoot" class="sim-foot" style="border-top:1px solid #F4F2EC;background:#FCFBF8;padding:22px 32px;display:flex;align-items:center;gap:18px;flex-wrap:wrap"></div>' +
       '</section>' +
-      '<p style="text-align:center;color:#A6AEA6;font-size:12px;margin-top:20px">' + E.lock + ' Synthetic data only &middot; HIPAA-ready architecture &middot; You sign every note</p>';
+      '<p style="text-align:center;color:#A6AEA6;font-size:12px;margin-top:20px">' + E.lock + ' Synthetic evaluation only &middot; Do not enter patient information &middot; You review every draft</p>';
     v.insertBefore(w, v.firstChild);
     return w;
   }

@@ -1,8 +1,9 @@
 /* ============================================================================
  * ext_reviews_reader.js -- MLS Assist review-site reader (candidate for v1.51+)
  * ----------------------------------------------------------------------------
- * CONTENT SCRIPT module. Add to manifest.json content_scripts "js" AFTER
- * content.js (matches <all_urls> is already the extension's pattern).
+ * CONTENT SCRIPT module. Loaded by its own manifest entry only on the named
+ * public review/profile hosts; it is not injected into MLS, Athena, or
+ * unrelated websites.
  *
  * What it does (READ-ONLY, public business pages, no PHI):
  *   - Exposes window.__mlsReviewsReader.read() which extracts the current

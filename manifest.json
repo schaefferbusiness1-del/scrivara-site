@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "2.9.42",
-  "version_name": "2.9.42+core-sha256:733771ce6116bb9294fb2e153dd354ae975a40cdbeff9ad76db4c23cf47d7acd",
-  "description": "AI scribe + supervised autopilot for any web EMR. Captures visits, drafts notes, and acts on screen with your approval.",
+  "version": "2.9.44",
+  "version_name": "2.9.44+core-sha256:afe50d7af1643aefdeea6d8e3f131efe588a14671376421e9a57b075eb1105a1",
+  "description": "Clinician companion for MLS Scribe and athenaOne. Reads only when requested, drafts notes, and requires review.",
   "permissions": [
     "storage",
     "tabs",
@@ -15,7 +15,22 @@
     "offscreen"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://athenanet.athenahealth.com/*",
+    "https://mlsscribe.com/*",
+    "https://*.mlsscribe.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://www.google.com/maps/*",
+    "https://maps.google.com/*",
+    "https://maps.app.goo.gl/*",
+    "https://g.page/*",
+    "https://*.healthgrades.com/*",
+    "https://*.vitals.com/*",
+    "https://*.webmd.com/*",
+    "https://*.ratemds.com/*",
+    "https://*.zocdoc.com/*",
+    "https://*.yelp.com/*",
+    "https://*.facebook.com/*"
   ],
   "icons": {
     "16": "icon-16.png",
@@ -50,25 +65,40 @@
     },
     {
       "matches": [
-        "<all_urls>"
-      ],
-      "exclude_matches": [
-        "*://github.com/*",
-        "*://*.github.com/*",
-        "*://*.githubusercontent.com/*",
-        "*://github.dev/*",
-        "*://*.github.dev/*"
+        "https://athenanet.athenahealth.com/*",
+        "https://mlsscribe.com/*",
+        "https://*.mlsscribe.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
       ],
       "js": [
         "write_safety_guard.js",
         "review_screen.js",
         "content.js",
-        "mls-popup.js",
-        "ext_reviews_reader.js"
+        "mls-popup.js"
       ],
       "css": [
         "content.css",
         "mls-popup.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.google.com/maps/*",
+        "https://maps.google.com/*",
+        "https://maps.app.goo.gl/*",
+        "https://g.page/*",
+        "https://*.healthgrades.com/*",
+        "https://*.vitals.com/*",
+        "https://*.webmd.com/*",
+        "https://*.ratemds.com/*",
+        "https://*.zocdoc.com/*",
+        "https://*.yelp.com/*",
+        "https://*.facebook.com/*"
+      ],
+      "js": [
+        "ext_reviews_reader.js"
       ],
       "run_at": "document_idle"
     }

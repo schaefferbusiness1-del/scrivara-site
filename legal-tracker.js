@@ -24,6 +24,12 @@
 (function () {
   if (window.__mlsLegalTrackerInit) return;
   window.__mlsLegalTrackerInit = true;
+  /* Fail closed for older cached app shells that still reference this file.
+     The networked legal workflow is not part of the current release. */
+  window.mlsLegalTracker = function () {
+    return '<div class="mlt-wrap"><b>Legal workflow unavailable</b><div class="mini">Case intake, records exchange, messages, testimony, payment, and report delivery are not released.</div></div>';
+  };
+  return;
 
   /* Inject the stylesheet once (themed with the app's CSS variables). */
   try {

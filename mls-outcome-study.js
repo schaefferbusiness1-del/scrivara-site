@@ -1145,7 +1145,7 @@
   function ensureXLSX(cb) {
     if (window.XLSX && window.XLSX.utils) return cb(true);
     var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.src = 'vendor/xlsx.full-0.20.3.min.js?v=cc015130aa8521e7';
     s.onload = function () { cb(!!(window.XLSX && window.XLSX.utils)); };
     s.onerror = function () { cb(false); };
     document.head.appendChild(s);

@@ -29,7 +29,7 @@ try {
   __mlsTrapWrite('boot', 'worker evaluation started v' + ((chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '?'), '');
 } catch (eTrapSetup) {}
 try { importScripts('feat_codes_driver.js'); } catch (e) {}
-try { importScripts('write_safety_guard.js', 'teach_destination_memory.js'); } catch (e) {} /* wsg-1.0.0 + tdm-1.0.0; a load failure fail-closes final actions at the gate below */
+try { importScripts('write_safety_guard.js', 'teach_destination_memory.js'); } catch (e) {} /* wsg-1.1.0 + tdm-1.0.0; a load failure fail-closes every execute action at the gate below */
 function mlsHostOnly(u){ try { return new URL(u).hostname; } catch (e) { return ''; } }
 function mlsIsAthenaTab(t) {
   try { return !!(t && /(^|\.)athenanet\.athenahealth\.com$/i.test(new URL(t.url || '').hostname)); } catch (e) { return false; }
@@ -2198,16 +2198,17 @@ function mlsAthenaTeachWatcherFn(config) {
       var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
       var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
       if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
-      /* MLS_WRITE_SAFETY_GATE_START (wsg-1.0.0)  sign/order/billing lanes are
+      /* MLS_WRITE_SAFETY_GATE_START (wsg-1.1.0)  sign/order/billing lanes are
          PREVIEW-ONLY: probe stays available for the review screen; execute is
          refused here, again inside the driver, and the athenanet synthetic-click
-         interceptor is the final backstop. Also enforces the Adam-only (7833832)
-         TEST-content policy on note writes. Fail-closed if the guard is absent. */
+         interceptor is the final backstop. Test/staging note content is refused
+         in production; it belongs in an explicitly configured Preview sandbox.
+         Fail closed for every execute action if the guard is absent. */
       if (self.MLSWriteSafety) {
         var wsGate = self.MLSWriteSafety.gateActionRequest({ mode: mode, action: action, expectedPatient: msg.expectedPatient, noteText: msg.noteText, isTest: msg.isTest === true });
         if (wsGate) return wsGate;
-      } else if (mode === 'execute' && (action === 'sign_encounter' || action === 'place_order' || action === 'stage_billing')) {
-        return { ok: false, blocked: true, reason: 'write-safety-guard-missing', error: 'The write-safety guard failed to load; final actions are blocked. Nothing was changed.' };
+      } else if (mode === 'execute') {
+        return { ok: false, blocked: true, reason: 'write-safety-guard-missing', error: 'The write-safety guard failed to load; this action is blocked. Nothing was changed.' };
       }
       /* MLS_WRITE_SAFETY_GATE_END */
       var actionToken = '', rec = null;
@@ -2220,6 +2221,9 @@ function mlsAthenaTeachWatcherFn(config) {
         rec.used = true; // the first execute attempt consumes the token, even on a later mismatch
       }
       var previewHash = clean(msg.previewHash), manifestHash = clean(msg.manifestHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {}, suppliedOrder = msg.order || {};
+      var hasExpectedAthenaTabId = msg.expectedAthenaTabId !== undefined && msg.expectedAthenaTabId !== null && clean(msg.expectedAthenaTabId) !== '';
+      var expectedAthenaTabId = hasExpectedAthenaTabId ? Number(msg.expectedAthenaTabId) : 0;
+      if (hasExpectedAthenaTabId && (!Number.isInteger(expectedAthenaTabId) || expectedAthenaTabId <= 0)) return { ok: false, blocked: true, reason: 'athena-tab-mismatch', error: 'The exact Athena tab binding was invalid. Nothing was changed.' };
       var rowHash = clean(msg.rowHash), clientOrderId = clean(msg.clientOrderId);
       var noteText = String(msg.noteText == null ? '' : msg.noteText), notePolicy = clean(msg.notePolicy || 'empty_only'), noteSections = Array.isArray(msg.sections) ? msg.sections : [];
       var canonicalNotePayload = notePayloadKey(noteText, noteSections, notePolicy);
@@ -2250,6 +2254,16 @@ function mlsAthenaTeachWatcherFn(config) {
         if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
         var all = await chrome.tabs.query({}), athCandidates = await pickAthenaWriteCandidates(all);
         if (athCandidates && athCandidates.__error) return { ok: false, blocked: true, reason: athCandidates.__error, error: athCandidates.__message };
+        /* An exact appointment-open continuation supplies the tab that just
+           produced its navigation proof. Probe only that tab. Without this
+           binding, a slow target tab could be combined with a matching encounter
+           already open in another tab, creating one false composite receipt.
+           Generic review probes omit the field and retain unique all-tab
+           discovery. */
+        if (hasExpectedAthenaTabId) {
+          athCandidates = athCandidates.filter(function (candidate) { return Number(candidate && candidate.id) === expectedAthenaTabId; });
+          if (athCandidates.length !== 1) return { ok: false, blocked: true, reason: 'athena-tab-mismatch', error: 'The Athena tab that opened this appointment is no longer available. Nothing was changed.' };
+        }
         /* Probe every signed-in Athena tab read-only. Exactly ONE tab must
            verify the expected patient+encounter context; zero verified tabs
            returns the first honest probe failure, and duplicate verified
@@ -2296,7 +2310,7 @@ function mlsAthenaTeachWatcherFn(config) {
           locked: probe.context
         };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', athenaTabId: tab.id, context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
 
       if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
@@ -2906,8 +2920,8 @@ async function mlsNotePaster(text, forcedSection, scan) {
 // ---- Patient identity reader: open Athena chart (injected, runs per frame) ----
 function mlsReadChartIdentity() {
   /* v1.52 REWRITE (live-verification ISSUE 5): the v1.51 extractor could not
-     parse athenaOne's real chart banner - "Adam J SCHAEFFER / 20yo M |
-     03-24-2006 | #7833832" - because its name regexes required a label or a
+     parse a real athenaOne chart-banner shape - "FIRST M LAST / 40yo M |
+     MM-DD-YYYY | #patient-id" - because its name regexes required a label or a
      lowercase surname, its DOB regex required a "DOB" label, and its fallback
      matched ACROSS NEWLINES (producing garbage like "Schaeffer,\n\nThe").
      This version parses the banner first, matches LINE-BY-LINE only, accepts
@@ -2927,7 +2941,7 @@ function mlsReadChartIdentity() {
   var STOP1 = /^(please|the|new|find|create|search|no|today|welcome|inbox|schedule|calendar|department|provider|patient|results|appointment|encounter|billing|orders|messages)$/i;
   /* v1.59: a candidate carrying a PROVIDER credential is the doctor, never the
      patient. athenaOne v26.3's appointment exam-prep/briefing view shows only
-     "Matthew Schaeffer, MD" (no patient banner) - without this, the reader
+     "Example Clinician, MD" (no patient banner) - without this, the reader
      returned the provider as the "patient" and the pull refused everything. */
   var PROVCRED = /^(MD|DO|PA|PAC|NP|CRNA|APRN|DPM|DDS|DMD|RN|CRNP|FNP|DNP|PHD|MBBS|OD|MSN|LPN|CNM|DC|DPT|DR|PHYS|PT)$/i; /* v1.67: +PHYS/PT ("Schaeffer, Phys" live phantom) */
   function looksName(s) {
@@ -2938,7 +2952,7 @@ function mlsReadChartIdentity() {
     var cand = m[1].replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
     var toks = cand.replace(/,/g, ' ').split(/\s+/);
     for (var q = 0; q < toks.length; q++) { if (STOP1.test(toks[q])) return ''; }
-    /* final-token-only credential check: kills "Schaeffer, MD" / "Matthew Schaeffer, MD"
+    /* final-token-only credential check: kills "Clinician, MD" / "Example Clinician, MD"
        without false-rejecting real surnames like "Do, John" (Do = first token there). */
     if (PROVCRED.test(toks[toks.length - 1].replace(/[.\-]/g, ''))) return '';
     if (/^DR\.?$/i.test(toks[0])) return '';
@@ -3001,7 +3015,7 @@ function mlsReadChartIdentity() {
     }
   }
   /* v1.60 pass 2b: banner-style "First MIDDLE? LASTALLCAPS" line on its own
-     (e.g. "Ruth GEHRMAN", "Adam J SCHAEFFER") - weakest pass, still
+     (e.g. "Ruth GEHRMAN", "Avery Q PATIENT") - weakest pass, still
      credential-guarded through looksName; grabs an adjacent bare DOB when present. */
   if (!name) {
     for (var j3 = 0; j3 < lines.length && !name; j3++) {
@@ -3161,16 +3175,16 @@ function mlsBestIdentityFrom(idr) {
  * athenaOne v26.3 renders the patient banner of some chart surfaces (the
  * clientsummary / airlock "briefing" view) inside OPEN shadow roots:
  * document.body.innerText never contains the name, so mlsReadChartIdentity
- * honestly finds nothing and every gate refuses (the live Adam write-back
- * refusal, root-caused 07-10 via mlsIdDiag: innerBanner:false, shadowBanner:true).
+ * honestly finds nothing and every gate refuses (a live synthetic write-back
+ * refusal, root-caused via mlsIdDiag: innerBanner:false, shadowBanner:true).
  * This ADDITIVE reader walks the rendered (flat) tree of each shadow host,
  * reconstructs LINES (block tags = line breaks, <slot>s flattened, nested
  * shadow roots descended), and parses ONLY text that lives inside shadow:
  *   A) the banner drawer's label block ("Legal First Name" / "Legal Last Name" /
  *      "Date of birth" / "Patient ID", value on the FOLLOWING line), else
- *   B) the demographics chip line ("20yo M | 03-24-2006 | #7833832") with the
+ *   B) the demographics chip line ("40yo M | MM-DD-YYYY | #patient-id") with the
  *      name JOINED from the 1-3 lines rendered directly above it (the banner
- *      splits "Adam J" / "SCHAEFFER" across elements - the line-based main
+ *      splits given/middle and family names across elements - the line-based main
  *      parser can never assemble that, which is why the 07-09 shadow attempts
  *      failed).
  * Frames with NO shadow roots return blank immediately, so plain-DOM phantom
@@ -3735,7 +3749,7 @@ function mlsReadActivePatient() {
     // fall back to the visible unified patient card / patient bar
     /* v1.73: prefer the app's controlled beacon ([data-mls-patient-card], well-formed
        "Last, First" + DOB) over the freeform patient card, and accept a middle
-       initial ("Adam J Schaeffer" - the bare regex missed it, leaving name empty). */
+       initial ("Avery Q Patient" - the bare regex missed it, leaving name empty). */
     try { var bar = document.querySelector('[data-mls-patient-card], #mlsPatientCard, #patientBar') || document.body; var bt = (bar.innerText || ''); if (!dob) { var dm = /([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{2,4})/.exec(bt); if (dm) dob = dm[1]; } if (!mrn) { var mm = /(?:mrn|a-?\d|chart)\s*[:#\-]?\s*([a-z]?\d[a-z0-9\-]{2,})/i.exec(bt); if (mm) mrn = mm[1]; } if (!name) { var nm = /\b([A-Z][a-z'\-]+,\s+[A-Z][a-zA-Z'\-\. ]{1,30}|[A-Z][a-z'\-]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z'\-]+)\b/.exec(bt); if (nm) name = nm[1].trim(); } } catch (e) {}
   }
   return { name: name, dob: dob, mrn: mrn };
@@ -3961,14 +3975,64 @@ async function getSessionToken() {
   return '';
 }
 
-async function callBackend(path, body) {
+/* MLS_BACKEND_AUTH_POLICY_START
+ * A normal MLS login token is a first-party browser session credential. It may
+ * authenticate ONLY to the exact production MLS backend. Custom deployments
+ * remain possible for advanced users, but they must supply their own explicit
+ * API key; a custom destination can never inherit the browser session JWT. */
+function mlsResolveBackendConfig(cfg) {
+  cfg = cfg && typeof cfg === 'object' ? cfg : {};
+  var raw = String(cfg.mlsBackend || DEFAULT_BACKEND).trim() || DEFAULT_BACKEND;
+  var key = String(cfg.mlsKey || '').trim();
+  var parsed = null;
+  try { parsed = new URL(raw); } catch (e) {
+    return { ok: false, reason: 'backend-url-invalid', error: 'Backend URL is malformed. Nothing was sent.' };
+  }
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, reason: 'backend-https-required', error: 'Backend URL must use HTTPS. Nothing was sent.' };
+  }
+  if (parsed.username || parsed.password) {
+    return { ok: false, reason: 'backend-credentials-rejected', error: 'Backend URLs cannot contain a username or password. Nothing was sent.' };
+  }
+  if (parsed.search || parsed.hash) {
+    return { ok: false, reason: 'backend-query-rejected', error: 'Backend URLs cannot contain a query string or fragment. Nothing was sent.' };
+  }
+  /* Session mode is deliberately stricter than URL equivalence: only the two
+     literal production spellings (with/without one trailing slash) qualify. A
+     path, port, alternate host spelling, or any other destination is custom. */
+  var canonical = raw === DEFAULT_BACKEND || raw === DEFAULT_BACKEND + '/';
+  var path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '');
+  var base = parsed.origin + path;
+  if (!canonical && !key) {
+    return { ok: false, reason: 'custom-backend-requires-api-key', error: 'A custom HTTPS backend requires its own API key. Your MLS login was not read or sent.' };
+  }
+  return { ok: true, base: base, key: key, canonical: canonical, authMode: key ? 'key' : 'session' };
+}
+
+async function mlsConnectionStatus() {
+  var cfg = await getCfg();
+  var policy = mlsResolveBackendConfig(cfg);
+  if (!policy.ok) return { mode: 'invalid', reason: policy.reason, error: policy.error };
+  if (policy.authMode === 'key') return { mode: 'key', backend: policy.base, custom: !policy.canonical };
+  var tok = await getSessionToken();
+  return { mode: tok ? 'session' : 'none', backend: policy.base, custom: false };
+}
+
+async function callBackend(path, body, beforeFetch) {
   const c = await getCfg();
-  const base = (c.mlsBackend || DEFAULT_BACKEND).replace(/\/+$/, '');
-  let key = (c.mlsKey || '').trim();
-  let viaSession = false;
-  if (!key) { key = await getSessionToken(); viaSession = true; }
+  const policy = mlsResolveBackendConfig(c);
+  if (!policy.ok) return { error: policy.error, reason: policy.reason, blocked: true };
+  const base = policy.base;
+  let key = policy.key;
+  let viaSession = policy.authMode === 'session';
+  /* Policy validation precedes this call. Rejected/custom no-key configs never
+     touch the session-token cache or inspect any MLS browser tab. */
+  if (viaSession) key = await getSessionToken();
   if (!key) return { error: 'Not connected. Open MLS (mlsscribe.com) in a tab and sign in — MLS Assist will use your login automatically. (Or add an API key via the toolbar icon.)' };
   try {
+    if (typeof beforeFetch === 'function' && !(await beforeFetch())) {
+      return { error: 'The source page changed before upload. Nothing was sent.', reason: 'source-preflight-rejected', blocked: true };
+    }
     const r = await fetch(base + path, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
@@ -3983,6 +4047,7 @@ async function callBackend(path, body) {
     return d;
   } catch (e) { return { error: 'Network error: ' + e.message }; }
 }
+/* MLS_BACKEND_AUTH_POLICY_END */
 // Find the signed-in EMR/Athena tab broadly (known Athena domains, else EMR-ish host keywords,
 // else the most-recently-active non-MLS http(s) tab). Shared by the Mode C search handlers; the
 // real resilience is content-based scoring inside the injected driver, not the tab URL.
@@ -4460,13 +4525,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   // Tell the popup how we're authenticating: a saved API key, the live MLS login, or nothing yet.
   if (msg.type === 'mlsConnStatus') {
-    (async () => {
-      const c = await getCfg();
-      if ((c.mlsKey || '').trim()) return sendResponse({ mode: 'key' });
-      const tok = await getSessionToken();
-      sendResponse({ mode: tok ? 'session' : 'none' });
-    })();
+    mlsConnectionStatus().then(sendResponse);
     return true;
+  }
+  if (msg.type === 'mlsValidateBackendConfig') {
+    const policy = mlsResolveBackendConfig({ mlsBackend: msg.backend, mlsKey: msg.key });
+    sendResponse(policy.ok
+      ? { ok: true, backend: policy.base, authMode: policy.authMode, custom: !policy.canonical }
+      : { ok: false, reason: policy.reason, error: policy.error });
+    return;
   }
   if (msg.type === 'mlsAssistGenerate') { callBackend('/api/assist/note', { transcript: msg.transcript }).then(sendResponse); return true; }
   if (msg.type === 'mlsAssistAgentStep') { callBackend('/api/assist/agent-step', { goal: msg.goal, pageText: msg.pageText, screenshot: msg.screenshot, history: msg.history }).then(sendResponse); return true; }
@@ -4496,7 +4563,19 @@ var mlsProv = (function () {
       .filter(function (t) { return t && t.length > 1 && !STOP.test(t) && !CRED_I.test(t); });
   }
   function hasTime(s) { return RE_TIME.test(S(s)); }
-  function firstTime(s) { var m = S(s).match(RE_TIME_G); return m ? clean(m[0]) : ''; }
+  /* Keep meridians exact and canonical.  A bare clock remains bare: guessing
+     AM/PM here can bind a patient to the wrong appointment.  In table readers
+     this is called on the isolated Time cell because row.textContent joins
+     adjacent cells (for example "8:30 AMAlpha") without a boundary. */
+  function firstTime(s) {
+    var raw = S(s);
+    var m = /\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)
+      || /\b(\d{1,2}):(\d{2})(?:\s*([ap])\.?\s*m\.?)?(?=$|[^A-Za-z])/i.exec(raw);
+    if (!m) return '';
+    var hour = +m[1], minute = +m[2];
+    if (minute > 59 || (m[3] ? (hour < 1 || hour > 12) : hour > 23)) return '';
+    return String(hour) + ':' + m[2] + (m[3] ? (' ' + m[3].toUpperCase() + 'M') : '');
+  }
 
   function cleanProvider(s) {
     var t = clean(s);
@@ -4562,22 +4641,85 @@ var mlsProv = (function () {
   }
 
   function mlsExtractScheduleFromText(text) {
-    var out = { appts: [], providers: [], diag: { strategy: 'text', lineCount: 0, headerCount: 0, apptCount: 0, providerCount: 0, credsSeen: [], providerNames: [] } };
+    var out = { appts: [], providers: [], diag: { strategy: 'text', lineCount: 0, headerCount: 0, tabularHeaderCount: 0, tabularRowCount: 0, tabularMalformedRows: 0, tabularAmbiguousHeaders: 0, tabularUnmappedRows: 0, apptCount: 0, providerCount: 0, credsSeen: [], providerNames: [] } };
     try {
       var raw = S(text);
       if (!raw.trim()) return out;
-      var lines = raw.split(/\r?\n/).map(clean).filter(function (l) { return l.length; });
-      out.diag.lineCount = lines.length;
+      var lines = raw.split(/\r?\n/).map(function (line) {
+        var source = S(line).replace(/\u00a0/g, ' ');
+        return { source: source, text: clean(source) };
+      });
+      out.diag.lineCount = lines.filter(function (line) { return !!line.text; }).length;
       var current = '';
       var provSet = {}, provOrder = [], credSet = {};
+      function noteProvider(value) {
+        var p = cleanProvider(value);
+        if (!p) return '';
+        if (!provSet[p.toLowerCase()]) { provSet[p.toLowerCase()] = 1; provOrder.push(p); }
+        var cm = p.match(RE_CRED); if (cm && cm[1]) credSet[cm[1].toUpperCase()] = 1;
+        return p;
+      }
+      function tabHeader(cells) {
+        var found = { time: [], patient: [], name: [], provider: [] }, relevant = false;
+        cells.forEach(function (cell, idx) {
+          var t = clean(cell).toLowerCase().replace(/[\s:*]+$/g, '').trim();
+          var role = '';
+          if (/^(?:(?:appointment|start)\s+)?time$/.test(t)) role = 'time';
+          else if (/^patient(?:\s+(?:name|details?))?$/.test(t)) role = 'patient';
+          else if (t === 'name') role = 'name';
+          else if (/^(?:(?:rendering|scheduling)\s+)?provider(?:\s+name)?$|^resource(?:\s+name)?$|^clinician$|^doctor$|^seen by$|^with$/.test(t)) role = 'provider';
+          if (role) { found[role].push(idx); relevant = true; }
+        });
+        if (!relevant) return null;
+        var patient = found.patient.length === 1 ? found.patient[0]
+          : (!found.patient.length && found.name.length === 1 && found.provider.length === 1 ? found.name[0] : -1);
+        var ambiguous = found.time.length !== 1 || patient < 0 || found.patient.length > 1 || found.name.length > 1 || found.provider.length > 1;
+        if (ambiguous) return { ambiguous: true };
+        return { time: found.time[0], patient: patient, provider: found.provider.length === 1 ? found.provider[0] : -1 };
+      }
+      var activeTable = null;
       for (var i = 0; i < lines.length; i++) {
-        var ln = lines[i];
+        var entry = lines[i], ln = entry.text;
+        if (!ln) { activeTable = null; continue; }
+        if (entry.source.indexOf('\t') >= 0) {
+          var cells = entry.source.split('\t').map(clean);
+          while (cells.length && !cells[cells.length - 1]) cells.pop();
+          var header = tabHeader(cells);
+          if (header) {
+            if (header.ambiguous) { activeTable = null; out.diag.tabularAmbiguousHeaders++; }
+            else { activeTable = header; out.diag.tabularHeaderCount++; }
+            continue;
+          }
+          if (activeTable) {
+            var maxIdx = Math.max(activeTable.time, activeTable.patient, activeTable.provider);
+            var timeCell = activeTable.time < cells.length ? cells[activeTable.time] : '';
+            if (hasTime(timeCell)) {
+              /* A proven table row is all-or-nothing.  Never flatten malformed
+                 cells and then let a provider token become part of a patient. */
+              if (maxIdx >= cells.length) { out.diag.tabularMalformedRows++; continue; }
+              var tabTime = firstTime(timeCell), tabName = clean(cells[activeTable.patient]);
+              var tabProvider = activeTable.provider >= 0 ? noteProvider(cells[activeTable.provider]) : current;
+              if (!tabTime || !tabName || nameTokens(tabName).length < 2 || RE_CRED.test(tabName) || isProviderUiLabel(tabName)) {
+                out.diag.tabularMalformedRows++;
+                continue;
+              }
+              out.appts.push({ time: tabTime, name: tabName, provider: tabProvider || '' });
+              out.diag.tabularRowCount++;
+              continue;
+            }
+          } else if (cells.length >= 3 && hasTime(cells[0])) {
+            /* Tabs prove columns exist, but without a unique header their
+               meaning is ambiguous.  Fail closed instead of guessing. */
+            out.diag.tabularUnmappedRows++;
+            continue;
+          }
+        } else if (activeTable) {
+          activeTable = null;
+        }
         if (looksLikeProviderHeader(ln)) {
-          var p = cleanProvider(ln);
+          var p = noteProvider(ln);
           if (p) {
             current = p;
-            if (!provSet[p.toLowerCase()]) { provSet[p.toLowerCase()] = 1; provOrder.push(p); }
-            var cm = ln.match(RE_CRED); if (cm && cm[1]) credSet[cm[1].toUpperCase()] = 1;
             out.diag.headerCount++;
           }
           continue;
@@ -4738,11 +4880,12 @@ var mlsProv = (function () {
         var rows = [].slice.call(grid.querySelectorAll('tbody tr, [role="row"]'));
         if (!rows.length) rows = [].slice.call(grid.querySelectorAll('tr'));
         if (!headerCells.length && rows.length) headerCells = [].slice.call(rows[0].querySelectorAll('th, td, [role="columnheader"], [role="cell"], [role="gridcell"]'));
-        var provIdx = -1, nameIdx = -1;
+        var provIdx = -1, nameIdx = -1, timeIdx = -1;
         headerCells.forEach(function (h, idx) {
           var ht = txt(h).toLowerCase();
           if (provIdx < 0 && /(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(ht) && !/patient/.test(ht)) provIdx = idx;
-          if (nameIdx < 0 && /(patient|name)/.test(ht)) nameIdx = idx;
+          if (nameIdx < 0 && /(patient|name)/.test(ht) && !/(provider|rendering|resource|clinician|doctor)/.test(ht)) nameIdx = idx;
+          if (timeIdx < 0 && /^(?:(?:appointment|start)\s+)?time\s*:?$/.test(ht)) timeIdx = idx;
         });
         if (provIdx < 0) continue;
         rows.forEach(function (r) {
@@ -4750,14 +4893,16 @@ var mlsProv = (function () {
           var cells = [].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));
           if (!cells.length) return;
           var rowText = txt(r);
-          if (!hasTime(rowText)) return;
+          var isolatedTime = timeIdx >= 0 && cells[timeIdx] ? txt(cells[timeIdx]) : rowText;
+          var parsedTime = firstTime(isolatedTime);
+          if (!parsedTime) return;
           var providerCell = cells[provIdx] || null;
           var prov = providerCell ? noteProv(txt(providerCell)) : '';
           var nm = nameIdx >= 0 && cells[nameIdx] ? txt(cells[nameIdx]) : patientNameFromRow(rowText);
           if (nm) {
             var ids = sourceIds(r, providerCell);
             var identity = explicitRowIdentity(r);
-            out.appts.push({ time: firstTime(rowText), name: clean(nm), provider: prov || '', appointmentId: ids.appointmentId || '', providerId: ids.providerId || '', dob: identity.dob || '', mrn: identity.mrn || '' });
+            out.appts.push({ time: parsedTime, name: clean(nm), provider: prov || '', appointmentId: ids.appointmentId || '', providerId: ids.providerId || '', dob: identity.dob || '', mrn: identity.mrn || '' });
           }
         });
         if (out.appts.length) out.diag.via = 'table-column';
@@ -4827,7 +4972,7 @@ var mlsProv = (function () {
            can also contain a time; require two surviving name tokens and no
            provider credential. This rejects false rows such as "Spine,No". */
         var nt = nameTokens(n);
-        if (!hasTime(a && a.time) || nt.length < 2 || isProviderUiLabel(n) || RE_CRED.test(n)) { invalid++; return; }
+        if (!firstTime(a && a.time) || nt.length < 2 || isProviderUiLabel(n) || RE_CRED.test(n)) { invalid++; return; }
         kept.push(a);
       });
       return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty, invalidRowsRemoved: invalid };
@@ -4843,10 +4988,12 @@ var mlsProv = (function () {
       var cp = cleanProvider(p), k = cp.toLowerCase();
       if (cp && !seen[k]) { seen[k] = 1; providers.push(cp); }
     });
-    var byRow = {}, rowsByBase = {}, appts = [], mergedFields = 0;
+    var byRow = {}, rowsByBase = {}, appts = [], structuredRows = [], mergedFields = 0;
+    var textProviderEchoRowsRemoved = 0, ambiguousTextProviderEchoRowsRemoved = 0;
     function copyRow(a) { var b = {}; for (var k in (a || {})) { if (Object.prototype.hasOwnProperty.call(a, k)) b[k] = a[k]; } return b; }
+    function rowTimeKey(a) { return firstTime(a && a.time).toLowerCase(); }
     function rowBase(a) {
-      return clean(a && a.time).toLowerCase() + '|' + clean(a && a.name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      return rowTimeKey(a) + '|' + clean(a && a.name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     }
     function rowProviderKey(a) {
       return cleanProvider(a && a.provider).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -4858,6 +5005,35 @@ var mlsProv = (function () {
       if (mrn) return 'mrn:' + mrn.toLowerCase().replace(/[^a-z0-9]/g, '');
       var dob = clean(a && a.dob);
       return dob ? ('dob:' + dob.replace(/[^0-9]/g, '')) : '';
+    }
+    function echoTokens(value) {
+      return clean(value).toLowerCase().replace(/[^a-z'\-]+/g, ' ').split(/\s+/).filter(function (token) {
+        return token && token.length > 1 && !CRED_I.test(token.replace(/-/g, ''));
+      });
+    }
+    /* A flat table row can read "Alpha Sample Avery" when text extraction
+       concatenates the Patient cell with the first Provider token.  Reconcile
+       that shadow only against exact structured rows at the same canonical
+       time.  Any identity/provider ambiguity drops the lossy alternate while
+       preserving every structured row; unrelated text rows remain additive
+       for virtualized schedules. */
+    function providerEchoDecision(a) {
+      var textTime = rowTimeKey(a), textName = echoTokens(a && a.name), textProvider = rowProviderKey(a), textProof = rowProofKey(a);
+      if (!textTime || textName.length < 3) return null;
+      var matches = structuredRows.filter(function (row) {
+        if (rowTimeKey(row) !== textTime) return false;
+        var patient = echoTokens(row && row.name), provider = echoTokens(row && row.provider);
+        if (patient.length < 2 || textName.length <= patient.length || !provider.length) return false;
+        for (var pi = 0; pi < patient.length; pi++) if (textName[pi] !== patient[pi]) return false;
+        var suffix = textName.slice(patient.length);
+        if (!suffix.length || suffix.length > provider.length) return false;
+        for (var si = 0; si < suffix.length; si++) if (suffix[si] !== provider[si]) return false;
+        if (textProvider && textProvider !== rowProviderKey(row)) return false;
+        var rowProof = rowProofKey(row);
+        if (textProof && (!rowProof || textProof !== rowProof)) return false;
+        return true;
+      });
+      return matches.length ? { ambiguous: matches.length !== 1, row: matches.length === 1 ? matches[0] : null } : null;
     }
     function mergeRowFields(prior, a, lane) {
       ['provider', 'providerId', 'provider_id', 'athenaProviderId', 'athena_provider_id', 'appointmentId', 'appointment_id', 'athenaAppointmentId', 'athena_appointment_id', 'date', 'appt_date', 'reason'].forEach(function (field) {
@@ -4874,6 +5050,14 @@ var mlsProv = (function () {
     }
     function addRows(rows, lane) {
       (rows || []).forEach(function (a) {
+        if (lane === 'text') {
+          var echo = providerEchoDecision(a);
+          if (echo) {
+            if (echo.ambiguous) ambiguousTextProviderEchoRowsRemoved++;
+            else textProviderEchoRowsRemoved++;
+            return;
+          }
+        }
         var base = rowBase(a), providerKey = rowProviderKey(a), proofKey = rowProofKey(a), key = base + '|' + providerKey + '|' + proofKey;
         if (!base || base === '|') return;
         var bucket = rowsByBase[base] || (rowsByBase[base] = []);
@@ -4900,7 +5084,7 @@ var mlsProv = (function () {
         if (!prior && lane === 'text' && !proofKey && bucket.length > 1 && bucket.every(function (row) { return !!rowProofKey(row); })) return;
         if (!prior) {
           prior = copyRow(a); prior.__lane = lane; byRow[key] = prior;
-          bucket.push(prior); appts.push(prior); return;
+          bucket.push(prior); appts.push(prior); if (lane === 'dom') structuredRows.push(prior); return;
         }
         mergeRowFields(prior, a, lane);
       });
@@ -4959,6 +5143,8 @@ var mlsProv = (function () {
         mergedRows: appts.length,
         mergedFields: mergedFields,
         dupRowsRemoved: dropped,
+        textProviderEchoRowsRemoved: textProviderEchoRowsRemoved,
+        ambiguousTextProviderEchoRowsRemoved: ambiguousTextProviderEchoRowsRemoved,
         slotRowsRemoved: domFiltered.slotRowsRemoved + textFiltered.slotRowsRemoved,
         domSlotRowsRemoved: domFiltered.slotRowsRemoved,
         textSlotRowsRemoved: textFiltered.slotRowsRemoved,
@@ -5932,7 +6118,7 @@ async function mlsSchedDomInline(doc, CFG){
        the app's b242 meridian handling gets one consistent shape). Meridian-less
        times are NEVER guessed: passed through bare + counted in diag.bareTimes
        so the app's time_display/start_local enrichment knows to take over. */
-    function ft(s){var m=String(s).match(RTG);if(!m)return '';var t=cl(m[0]);var p=/^(\d{1,2}):(\d{2})\s*([ap])/i.exec(t);if(p)return String(+p[1])+':'+p[2]+' '+p[3].toUpperCase()+'M';out.diag.bareTimes=(out.diag.bareTimes||0)+1;return t;}
+    function ft(s){var raw=String(s),m=/\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)||/\b(\d{1,2}):(\d{2})(?:\s*([ap])\.?\s*m\.?)?(?=$|[^A-Za-z])/i.exec(raw);if(!m)return '';var h=+m[1],mn=+m[2];if(mn>59||(m[3]?(h<1||h>12):h>23))return '';if(m[3])return String(h)+':'+m[2]+' '+m[3].toUpperCase()+'M';out.diag.bareTimes=(out.diag.bareTimes||0)+1;return String(h)+':'+m[2];}
     function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
     function pui(s){var t=cl(s).toLowerCase().replace(/[\s:|\-–—]+$/g,'').trim();return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
@@ -6340,10 +6526,10 @@ async function mlsSchedDomInline(doc, CFG){
       var rows=[].slice.call(grid.querySelectorAll('tbody tr, [role="row"]'));
       if(!rows.length)rows=[].slice.call(grid.querySelectorAll('tr'));
       if(!hc.length&&rows.length)hc=[].slice.call(rows[0].querySelectorAll('th, td, [role="columnheader"], [role="cell"], [role="gridcell"]'));
-      var pi=-1,ni=-1;
-      hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t))ni=idx;});
+      var pi=-1,ni=-1,ti=-1;
+      hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t)&&!/(provider|rendering|resource|clinician|doctor)/.test(t))ni=idx;if(ti<0&&/^(?:(?:appointment|start)\s+)?time\s*:?$/.test(t))ti=idx;});
       if(pi<0)continue;
-      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r);if(!ht(rt))return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:ft(rt),name:cl(nm),provider:prov||'',dob:proof.dob||'',mrn:proof.mrn||''});});
+      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm)return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||'',dob:proof.dob||'',mrn:proof.mrn||''});});
       if(out.appts.length)out.diag.via='table-column';
     }
     if(!out.appts.length){
@@ -7717,11 +7903,10 @@ async function mlsSchedDomInline(doc, CFG){
           return sendResponse({ error: match.status === 'mismatch' ? 'Patient mismatch — refusing to write into this chart.' : 'Could not confidently verify the patient — refusing to write.', blocked: true, patientStatus: match.status });
         }
 
-        /* MLS_WRITE_SAFETY_PASTE_GATE_START (wsg-1.0.0)  Adam-only TEST policy
+        /* MLS_WRITE_SAFETY_PASTE_GATE_START (wsg-1.1.0)  production TEST policy
            on the generic paste lane (athenanet targets are already refused
-           above): test-marked content may only reach Adam J Schaeffer
-           (7833832); any write to Adam must be TEST-marked and free of real
-           medication/order/instruction language. */
+           above): test/staging content is blocked unless a future explicit
+           Preview-sandbox boundary supplies synthetic recipients. */
         if (self.MLSWriteSafety) {
           const wsPasteGate = self.MLSWriteSafety.checkTestWritePolicy({ patient: { name: chartId.name || mlsPt.name, mrn: chartId.mrn || mlsPt.mrn }, noteText: note });
           if (wsPasteGate) return sendResponse(wsPasteGate);
@@ -7800,13 +7985,14 @@ try { chrome.runtime.onInstalled.addListener(mlsCheckBadge); } catch (e) {}
 
 // ===========================================================================
 // NIGHTLY BACKUP (browser-side). At the chosen local time, the extension may
-// capture only the chart already open in the signed-in EMR tab; it never walks
-// patient links or changes the user's Athena URL. Captures remain encrypted.
+// capture only ONE chart already open and identity-verified in the exact
+// athenaOne product host; it never walks patient links or changes a URL. Chart
+// text is sent over TLS to the configured MLS backend, then encrypted at rest.
 // REQUIRES: this computer ON, Chrome running, and the EMR tab still SIGNED IN.
 // Best-effort by design: web-UI scraping can miss patients an API sync wouldn't.
 // ===========================================================================
 const BK_KEY = 'mlsBackup';
-function getBackup() { return new Promise(r => chrome.storage.local.get([BK_KEY], c => r(Object.assign({ enabled: false, hour: 2, minute: 0, maxPatients: 250 }, c[BK_KEY] || {})))); }
+function getBackup() { return new Promise(r => chrome.storage.local.get([BK_KEY], c => r(Object.assign({ enabled: false, hour: 2, minute: 0 }, c[BK_KEY] || {})))); }
 function setBackup(v) { return new Promise(r => chrome.storage.local.set({ [BK_KEY]: v }, () => r(v))); }
 
 async function scheduleBackupAlarm() {
@@ -7823,74 +8009,115 @@ try { chrome.runtime.onStartup.addListener(scheduleBackupAlarm); } catch (e) {}
 try { chrome.runtime.onInstalled.addListener(scheduleBackupAlarm); } catch (e) {}
 scheduleBackupAlarm();
 
-function findEmrTab(tabs) {
-  const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|\/\/github\.com|mail\.google\.com|console\.twilio|dashboard\.stripe/.test(t.url || ''));
-  const ath = c.find(t => /athena/i.test((t.url || '') + ' ' + (t.title || '')));
-  if (ath) return ath;
-  c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-  return c[0] || null;
-}
-async function tabInnerText(tabId, max) {
-  try { const [r] = await chrome.scripting.executeScript({ target: { tabId }, args: [max || 20000], func: (m) => (document.body && document.body.innerText || '').slice(0, m) }); return (r && r.result) || ''; }
-  catch (e) { return ''; }
-}
-function waitTabComplete(tabId, timeout) {
-  return new Promise(res => {
-    let done = false;
-    const to = setTimeout(() => { if (!done) { done = true; try { chrome.tabs.onUpdated.removeListener(l); } catch (e) {} res(); } }, timeout || 15000);
-    function l(id, info) { if (id === tabId && info.status === 'complete') { done = true; clearTimeout(to); try { chrome.tabs.onUpdated.removeListener(l); } catch (e) {} res(); } }
-    chrome.tabs.onUpdated.addListener(l);
-  });
-}
-async function collectRoster(tabId) {
+/* MLS_NIGHTLY_BACKUP_SAFE_START */
+function mlsBackupAthenaProductUrl(url) {
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => {
-      const out = [], seen = new Set();
-      const re = /patient|chart|clinical|encounter|\bexam\b|chartid|enc=|patientid|deptid|pat_id/i;
-      for (const a of document.querySelectorAll('a[href]')) {
-        const href = a.href || '', raw = a.getAttribute('href') || '', txt = (a.innerText || '').trim();
-        if (!/^https?:/.test(href)) continue;
-        if (!re.test(href) && !re.test(raw)) continue;
-        if (seen.has(href)) continue; seen.add(href);
-        out.push({ href, txt: txt.slice(0, 80) });
-        if (out.length >= 400) break;
-      }
-      return out;
-    }});
-    return (r && r.result) || [];
-  } catch (e) { return []; }
+    const u = new URL(String(url || ''));
+    return u.protocol === 'https:' && !u.username && !u.password && u.hostname.toLowerCase() === 'athenanet.athenahealth.com';
+  } catch (e) { return false; }
+}
+function findBackupAthenaTabs(tabs) {
+  const exact = (tabs || []).filter(t => t && t.id != null && mlsBackupAthenaProductUrl(t.url));
+  exact.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+  return exact;
+}
+async function mlsBackupRevalidateTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return tab && mlsBackupAthenaProductUrl(tab.url) ? tab : null;
+  } catch (e) { return null; }
+}
+function mlsBackupStrongIdentity(identity) {
+  identity = identity && typeof identity === 'object' ? identity : {};
+  return !!(String(identity.name || '').trim()
+    && (String(identity.dob || '').trim() || String(identity.mrn || '').trim())
+    && Number(identity.score || 0) >= 0
+    && typeof identity.frameId === 'number');
+}
+function mlsBackupIdentityKey(identity) {
+  if (!mlsBackupStrongIdentity(identity)) return '';
+  let name = String(identity.name || '');
+  try { name = name.normalize('NFKC'); } catch (e) {}
+  name = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  const dob = String(identity.dob || '').replace(/\D/g, '');
+  const mrn = String(identity.mrn || '').toLowerCase().replace(/\s+/g, '');
+  return name + '|dob:' + dob + '|mrn:' + mrn;
+}
+async function mlsBackupReadChartIdentity(tabId) {
+  let best = null;
+  try {
+    const idr = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: mlsReadChartIdentity });
+    best = mlsBestIdentityFrom(idr);
+  } catch (e) {}
+  if (!mlsBackupStrongIdentity(best)) {
+    try { best = await mlsShadowIdentityTry(tabId, { noCache: true }); } catch (e) { best = null; }
+  }
+  return mlsBackupStrongIdentity(best) ? best : null;
+}
+async function tabInnerText(tabId, max, frameId) {
+  try {
+    const target = { tabId };
+    if (typeof frameId === 'number') target.frameIds = [frameId];
+    const [r] = await chrome.scripting.executeScript({ target, args: [max || 20000], func: (m) => (document.body && document.body.innerText || '').slice(0, m) });
+    return (r && r.result) || '';
+  }
+  catch (e) { return ''; }
 }
 async function runNightlyBackup(trigger) {
   const started = Date.now();
-  const cfg = await getBackup();
   const finish = async (res) => { await setBackup(Object.assign(await getBackup(), { lastRun: res.at, lastResult: res })); return res; };
   const tabs = await chrome.tabs.query({});
-  const emr = findEmrTab(tabs);
-  if (!emr) return finish({ ok: false, error: 'No EMR tab is open. Leave an Athena tab open and signed in.', at: new Date().toISOString() });
-  const firstText = await tabInnerText(emr.id, 6000);
-  if (firstText.length < 1500 && /\b(log\s?in|sign\s?in|password|username)\b/i.test(firstText)) {
-    return finish({ ok: false, error: 'The EMR tab looks signed out — nothing was backed up. Stay signed in to Athena overnight.', at: new Date().toISOString() });
+  const candidates = findBackupAthenaTabs(tabs);
+  if (!candidates.length) return finish({ ok: false, error: 'No exact athenaOne product tab is open. Nothing was read or sent.', at: new Date().toISOString() });
+
+  /* Select only a live exact-host tab which exposes a strong chart identity in
+     one concrete frame. A title, generic page, login host, or dashboard is
+     never sufficient evidence. Try other exact Athena tabs before giving up. */
+  let emr = null, identity = null;
+  for (const candidate of candidates) {
+    const checked = await mlsBackupRevalidateTab(candidate.id);
+    if (!checked) continue;
+    const found = await mlsBackupReadChartIdentity(candidate.id);
+    if (!found) continue;
+    emr = checked; identity = found; break;
   }
-  let captured = 0, patients = 0, errors = 0;
-  // 1) capture the chart currently open
-  if (firstText.trim()) {
-    const c = await callBackend('/api/assist/extract', { pageText: firstText, url: emr.url });
-    if (c && c.ok) { captured++; if (c.patient) patients++; } else if (c && c.error) { errors++; }
+  if (!emr || !identity) return finish({ ok: false, error: 'No signed-in Athena patient chart with verified identity is open. Nothing was read or sent.', at: new Date().toISOString() });
+
+  /* Revalidate immediately before reading and bind the text to the exact frame
+     which supplied the strong identity. */
+  const beforeRead = await mlsBackupRevalidateTab(emr.id);
+  if (!beforeRead || beforeRead.url !== emr.url) return finish({ ok: false, error: 'The Athena tab changed before it could be read. Nothing was sent.', at: new Date().toISOString() });
+  const firstText = await tabInnerText(emr.id, 6000, identity.frameId);
+  if (!firstText.trim()) return finish({ ok: false, error: 'The verified Athena chart had no readable chart text. Nothing was sent.', at: new Date().toISOString() });
+
+  /* Prove the same identity still owns the chart after the read. Revalidate the
+     exact top-level product URL as the final operation before the fetch. */
+  const identityAfterRead = await mlsBackupReadChartIdentity(emr.id);
+  if (!identityAfterRead || mlsBackupIdentityKey(identityAfterRead) !== mlsBackupIdentityKey(identity)) {
+    return finish({ ok: false, error: 'The open Athena patient changed during backup. Nothing was sent.', at: new Date().toISOString() });
   }
+  let safeUrl = '';
+  try { const u = new URL(beforeRead.url); safeUrl = u.origin + u.pathname; } catch (e) {}
+  const c = await callBackend('/api/assist/extract', { pageText: firstText, url: safeUrl }, async function () {
+    const finalTab = await mlsBackupRevalidateTab(emr.id);
+    return !!(finalTab && finalTab.url === beforeRead.url);
+  });
+  if (!(c && c.ok)) return finish({ ok: false, captured: 0, patients: 0, errors: 1, scanned: 1, navigationDisabled: true, trigger: trigger || 'manual', error: (c && c.error) || 'The verified Athena chart could not be captured.', at: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000) });
   /* The legacy backup walked every chart link by repeatedly changing the
      user's Athena tab URL. That could yank focus, disturb unsaved work, and
      invalidate the signed-in session. Backups are now non-navigating: they may
      capture only the chart that is already open. Full-history imports use the
      separate supervised read-only visit pipeline. */
-  return finish({ ok: true, captured, patients, errors, scanned: firstText.trim() ? 1 : 0,
+  return finish({ ok: true, captured: 1, patients: c.patient ? 1 : 0, errors: 0, scanned: 1,
     navigationDisabled: true, trigger: trigger || 'manual', at: new Date().toISOString(),
     seconds: Math.round((Date.now() - started) / 1000) });
 }
+/* MLS_NIGHTLY_BACKUP_SAFE_END */
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   if (msg.type === 'mlsGetBackup') { getBackup().then(sendResponse); return true; }
-  if (msg.type === 'mlsSetBackup') { setBackup(Object.assign({ enabled: false, hour: 2, minute: 0, maxPatients: 250 }, msg.value || {})).then(scheduleBackupAlarm).then(() => sendResponse({ ok: true })); return true; }
+  if (msg.type === 'mlsSetBackup') { setBackup(Object.assign({ enabled: false, hour: 2, minute: 0 }, msg.value || {})).then(scheduleBackupAlarm).then(() => sendResponse({ ok: true })); return true; }
   if (msg.type === 'mlsRunBackupNow') { runNightlyBackup('manual').then(sendResponse); return true; }
 });
 
@@ -11585,8 +11812,8 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       if (cur.length) lines.push(cur.join(' '));
       return lines;
     }
-    /* ---- 3) inline identity from the banner CHIP line ("20yo M | 03-24-2006
-       | #7833832" - live-verified: the #id equals the stable athena patient id,
+    /* ---- 3) inline identity from the banner CHIP line ("40yo M | MM-DD-YYYY
+       | #patient-id" - live-verified: the #id equals the stable athena patient id,
        NOT an encounter number). Name = SMALLEST join of the 1-3 lines rendered
        directly above the chip (kk=1..3 - never glue a badge line onto the
        name; wf_1 finding 3 fixed here, not replicated). */
@@ -12997,7 +13224,9 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       out.alarms = alarms.map(function (a) { return { name: a.name, periodInMinutes: a.periodInMinutes || null }; });
     } catch (e) { out.alarms = null; }
     try {
-      var tabs = await chrome.tabs.query({ url: '*://*.athenahealth.com/*' });
+      /* Exact product host only. Marketing, identity, support, and unrelated
+         athenahealth.com tabs are not usable clinical-product-tab evidence. */
+      var tabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' });
       var discarded = 0;
       for (var i = 0; i < tabs.length; i++) { if (tabs[i].discarded || tabs[i].status === 'unloaded') discarded++; }
       out.athena = { tabs: tabs.length, discarded: discarded };

@@ -62,13 +62,20 @@ assert(manifest.rows.every(row => Object.isFrozen(row) && Object.isFrozen(row.pa
 
 const byAction = Object.fromEntries(manifest.rows.filter(row => row.action).map(row => [row.action, row]));
 assert.strictEqual(byAction.write_note.capability, 'ready');
-assert.strictEqual(byAction.stage_billing.capability, 'ready');
 assert.strictEqual(byAction.save_draft.capability, 'ready');
-assert.strictEqual(byAction.sign_encounter.capability, 'blocked');
-assert(/never auto-chained/i.test(byAction.sign_encounter.reason));
 assert.strictEqual(byAction.write_note.payload.noteText, 'Full generated note.\nAssessment and plan remain intact.');
-assert.deepStrictEqual(Array.from(byAction.stage_billing.payload.billing.cptCodes), ['20610']);
 assert(byAction.write_note.payloadHash && byAction.write_note.rowHash && manifest.manifestHash);
+
+const billingRow = manifest.rows.find(row => row.id === 'stage-billing');
+const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
+assert(billingRow && signRow, 'billing and signing review payloads must remain visible');
+for (const row of [billingRow, signRow]) {
+  assert.strictEqual(row.capability, 'manual', `${row.id} must remain manual`);
+  assert.strictEqual(row.action, '', `${row.id} must never expose an executable action`);
+  assert(/complete in Athena/i.test(row.reason), `${row.id} must explicitly say Complete in Athena`);
+}
+assert.deepStrictEqual(Array.from(billingRow.payload.billing.cptCodes), ['20610']);
+assert(!manifest.rows.some(row => ['stage_billing', 'sign_encounter', 'place_order'].includes(row.action)), 'a final clinical/financial action leaked into an executable row');
 
 const dx = manifest.rows.find(row => row.kind === 'dx');
 const orders = manifest.rows.find(row => row.kind === 'orders');
@@ -97,4 +104,4 @@ for (const row of historical.rows.filter(row => row.action)) {
   assert.strictEqual(row.capability, 'blocked', `${row.action} must fail closed without original historical visit context`);
 }
 
-console.log('PASS unified Athena manifest: immutable identity/payload hashes, exact ready actions, manual structured rows, blocked unknowns and proof-gated Sign');
+console.log('PASS unified Athena manifest: immutable payloads, only note write/save ready, exact billing/sign review rows manual, and unknowns blocked');

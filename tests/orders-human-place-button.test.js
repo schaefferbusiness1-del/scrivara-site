@@ -144,35 +144,30 @@ assert.strictEqual(context._athenaOrderPlacementCandidate(suggestionOnly).eligib
 assert.strictEqual(context._athenaOrderPlacementCandidate({ ...safeOrder, id: 'order-no-catalog', catalogId: '', catalogCode: '' }).eligible, false, 'an order without durable catalog identity must fail closed');
 assert.strictEqual(context._athenaOrderPlacementCandidate({ ...safeOrder, id: 'order-long-field', fields: { ...safeOrder.fields, indication: 'x'.repeat(2001) } }).eligible, false, 'overlong order details must fail closed instead of being truncated');
 assert.strictEqual(context._athenaOrderPlacementCandidate({ ...safeOrder, id: 'order-bad-source', _source: 'legacy-auto-suggestion' }).eligible, false, 'an unapproved order source must fail closed');
-assert(!/Review &amp; place in Athena/.test(context._athenaOrderPlacementControl(incompleteOrder)), 'incomplete row received an executable button');
-assert(!/Review &amp; place in Athena/.test(context._athenaOrderPlacementControl(medicationOrder)), 'medication row received an executable button');
-assert(!/Review &amp; place in Athena/.test(context._athenaOrderPlacementControl(suggestionOnly)), 'suggestion-only row received an executable button');
-assert(/Review &amp; place in Athena/.test(context._athenaOrderPlacementControl(safeOrder)), 'complete reviewed supported row is missing its explicit button');
+assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(incompleteOrder)), 'incomplete row received a reviewed-payload button');
+assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(medicationOrder)), 'medication row received a reviewed-payload button');
+assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(suggestionOnly)), 'suggestion-only row received a reviewed-payload button');
+const safeControl = context._athenaOrderPlacementControl(safeOrder);
+assert(/Review for Athena/.test(safeControl), 'complete reviewed supported row is missing its manual review button');
+assert(!/Review &amp; place|Nothing is placed until|Confirm/.test(safeControl), 'manual order review still advertises placement or confirmation');
 
 context.window.__mlsExtensionCapabilities = {};
-const disabledForOldExtension = context._athenaOrderPlacementControl(safeOrder);
-assert(/disabled/.test(disabledForOldExtension) && /Update MLS Assist/.test(disabledForOldExtension), 'an extension without the explicit supervised-order capability must show update-required/manual-only UI');
-assert(!/reviewAndPlaceOrderInAthena/.test(disabledForOldExtension), 'an older extension received an executable order handler');
-assert.strictEqual(context.reviewAndPlaceOrderInAthena('order-safe-1', null), null, 'an older extension could open the executable order review');
-assert.strictEqual(confirmationCalls, 0, 'capability-missing client opened a confirmation');
+const oldExtensionControl = context._athenaOrderPlacementControl(safeOrder);
+assert(/Review for Athena/.test(oldExtensionControl), 'manual review should not depend on an execution capability handshake');
+assert(!/Update MLS Assist|disabled/.test(oldExtensionControl), 'manual review is incorrectly presented as a disabled executable action');
 context.window.__mlsExtensionCapabilities = { supervisedOrderPlacementV2: true };
 
 const missingMrn = Object.freeze(Object.assign({}, exactBinding, {
   id: 'visit-bind-missing-mrn', patient: Object.freeze({ name: 'Adam J Schaeffer', dob: '01/02/1980', mrn: '', patientId: 'local-patient-42' })
 }));
 assert.strictEqual(context._athenaOrderPlacementVisitSnapshot(missingMrn).eligible, false, 'patient identity without MRN must fail closed');
-context.currentVisitAthenaBinding = missingMrn;
-const disabledForIdentity = context._athenaOrderPlacementControl(safeOrder);
-assert(/disabled/.test(disabledForIdentity) && /Review &amp; place in Athena/.test(disabledForIdentity), 'complete order should show a disabled, clearly labeled button while identity is incomplete');
-assert(!/reviewAndPlaceOrderInAthena/.test(disabledForIdentity), 'identity-blocked button must not have an executable handler');
-context.currentVisitAthenaBinding = exactBinding;
 
 const result = context.reviewAndPlaceOrderInAthena('order-safe-1', null);
 assert(result && result.manifestId === 'one-order-confirmation');
-assert.strictEqual(confirmationCalls, 1, 'button must open exactly one unified confirmation');
-assert.strictEqual(directActionCalls, 0, 'button performed an Athena action before separate Confirm');
-assert.strictEqual(captured.preferredAction, 'place_order');
-assert.strictEqual(captured.requireExpectedVisit, true);
+assert.strictEqual(confirmationCalls, 1, 'button must open exactly one unified review');
+assert.strictEqual(directActionCalls, 0, 'button performed an Athena action');
+assert(!captured.preferredAction, 'manual order review selected an executable preferred action');
+assert.strictEqual(captured.requireExpectedVisit, false);
 assert.strictEqual(captured.visitBindingId, 'visit-bind-exact-42');
 assert.strictEqual(captured.patient.patientId, 'local-patient-42', 'local patient audit identity was lost');
 assert.strictEqual(captured.patient.dob, '01/02/1980');
@@ -182,14 +177,11 @@ assert.strictEqual(captured.expectedContext.provider, 'Matthew Schaeffer, MD');
 assert.strictEqual(captured.plan.length, 1, 'more than one confirmation plan was created');
 assert.strictEqual(captured.plan[0].orderDrafts.length, 1, 'confirmation did not freeze exactly one order');
 assert.strictEqual(captured.plan[0].orderDrafts[0].clientOrderId, 'order-safe-1');
-assert.strictEqual(captured.plan[0].orderSuggestions.length, 0, 'suggestions leaked into the executable confirmation');
+assert.strictEqual(captured.plan[0].orderSuggestions.length, 0, 'suggestions leaked into the exact reviewed payload');
 assert(Object.isFrozen(captured.patient) && Object.isFrozen(captured.expectedContext), 'patient/visit snapshots must be immutable');
-assert(Object.isFrozen(captured.plan) && Object.isFrozen(captured.plan[0]) && Object.isFrozen(captured.plan[0].orderDrafts), 'one-order confirmation plan must be immutable');
-assert(/one exact .* order only/i.test(captured.plan[0].consequence));
-assert(/only after you separately press Confirm/i.test(captured.plan[0].consequence));
-for (const consequence of ['write', 'Save', 'Sign', 'billing', 'claim', 'any other order']) {
-  assert(captured.plan[0].consequence.includes(consequence), 'consequence copy omitted ' + consequence);
-}
+assert(Object.isFrozen(captured.plan) && Object.isFrozen(captured.plan[0]) && Object.isFrozen(captured.plan[0].orderDrafts), 'one-order review plan must be immutable');
+assert(/Complete in Athena/i.test(captured.plan[0].consequence));
+assert(/MLS does not place, prescribe, or submit/i.test(captured.plan[0].consequence));
 
 for (const blockedId of ['order-incomplete-1', 'order-rx-1', 'order-suggestion-1']) {
   assert.strictEqual(context.reviewAndPlaceOrderInAthena(blockedId, null), null, blockedId + ' should be blocked');
@@ -200,13 +192,14 @@ assert.strictEqual(context.reviewAndPlaceOrderInAthena('order-safe-1', null), nu
 assert.strictEqual(confirmationCalls, 1, 'duplicate local order id opened another confirmation');
 assert.strictEqual(directActionCalls, 0);
 
-assert(source.includes('Review &amp; place in Athena'), 'production UI is missing the human-permission order button');
-assert(source.includes('supervisedOrderPlacementV2===true'), 'production UI does not strictly require the supervised-order capability handshake');
+assert(source.includes('Review for Athena'), 'production UI is missing the manual order-review button');
+assert(!/Review &amp; place in Athena/.test(controlSource), 'production row still advertises order placement');
+assert(!/supervisedOrderPlacementV2/.test(controlSource), 'manual order review incorrectly depends on an execution capability');
 assert(source.includes('id="ordCatalogCode"') && source.includes('id="ordCatalogId"'), 'Orders builder has no safe way to bind a normal reviewed draft to a durable Athena catalog identity');
 assert(source.includes("o._reviewStatus='accepted'") && source.includes('delete o.complete'), 'editing/binding a legacy draft does not record the clinician review or clear stale incomplete state');
-assert(source.includes("preferredAction:'place_order'"), 'button does not select the typed place_order confirmation row');
-assert(source.includes("preferredAction:''"), 'manual route overview must remain non-executable by default');
+assert(!/preferredAction\s*:\s*['"]place_order['"]/.test(placeSource), 'button still selects place_order');
 assert(!/startAthenaAction|sendToEMRviaAssist|sendMessage\s*\(/.test(placeSource), 'row button contains a direct or generic Athena write path');
-assert(/openUnifiedConfirmation/.test(placeSource), 'row button does not use the existing unified confirmation');
+assert(/openUnifiedConfirmation/.test(placeSource), 'row button does not use the immutable unified review');
+assert(/Complete in Athena/.test(placeSource) && /MLS did not place anything/.test(placeSource), 'row review does not tell the clinician the order remains manual');
 
-console.log('PASS order placement UI: one exact typed order, immutable exact patient/visit, separate Confirm, unsafe rows blocked, and no direct Athena action');
+console.log('PASS order review UI: one exact immutable patient/visit payload, unsafe rows blocked, explicit Complete in Athena copy, and no placement action');

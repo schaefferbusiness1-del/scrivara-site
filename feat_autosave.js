@@ -1,4 +1,4 @@
-/* feat_autosave.js  ->  window.__mlsAutosave  (v1.1.0)
+/* feat_autosave.js  ->  window.__mlsAutosave  (v1.1.1)
  *
  * AUTOSAVE + DRAFT RECOVERY for the MLS note editors, so a doctor NEVER
  * loses an in-progress note to an accidental navigation, refresh, crash,
@@ -47,7 +47,7 @@
   "use strict";
   try { if (window.__mlsAutosave && window.__mlsAutosave.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.1.1";
   var ASSET = "feat_autosave.js";
 
   // ---------------- tiny safe helpers ----------------
@@ -381,6 +381,12 @@
       return r;
     }
     wrapped.__mlsAsWrapped = true; wrapped.__mlsAsOrig = orig;
+    /* Preserve transitive ownership without pretending this autosave wrapper
+       itself is the modern-detail wrapper. This keeps the detail install retry
+       from wrapping a chain that already contains it and creating re-entry. */
+    if (orig.__mlsNoteDetail === true || orig.__mlsContainsNoteDetail === true) {
+      wrapped.__mlsContainsNoteDetail = true;
+    }
     safe(function () { window.openNoteFromHistory = wrapped; });
     _wrapped.push({ name: "openNoteFromHistory", orig: orig });
   }

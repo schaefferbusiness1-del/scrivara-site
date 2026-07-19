@@ -22,7 +22,7 @@ const save = between(app, 'function _athenaChartHistoryObject(chart)', '/* Bulk:
 const profile = between(app, 'function _athenaProfileEmptyText(p,key,fallback)', '/* "At a glance" chips');
 const structurer = between(connect,
   '/* =============================================================================\n * MLS Scribe - PULLED-CHART STRUCTURING',
-  '/* =========================================================================\n * MLS Scribe -- Pay Report');
+  '/* The old Visit-tab Pay Report floater is intentionally retired.');
 const easyPrep = between(connect,
   '/* =============================================================================\n * MLS Scribe - EASY PATIENT PREP',
   '/* =============================================================================\n * MLS Scribe - OUTSIDE RECORDS');

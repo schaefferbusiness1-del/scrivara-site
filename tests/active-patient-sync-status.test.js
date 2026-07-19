@@ -25,6 +25,11 @@ for (const [name, src] of [['production', prod], ['staging', staging]]) {
   assert(src.includes('Visit context changed — verify again'), `${name} does not invalidate on visit-context change`);
   assert(src.includes("if(!renderTimer)renderTimer=setInterval(render,4000)"), `${name} does not bound the passive refresh interval`);
   assert(src.includes('if(present&&html===lastChipHtml)'), `${name} can rebuild the unchanged status chip every refresh`);
+  assert(src.includes("typeof window.getSessionEmail==='function'") && src.includes("typeof session!=='undefined'") && src.includes('window.bkUser'), `${name} does not derive sync ownership from an authoritative signed-in account`);
+  assert(src.includes("dir:'review'") && src.includes("dir:'local'"), `${name} still classifies read-only review or clipboard clicks as Athena sends`);
+  assert(src.includes("if(ACTIONS[i].dir==='review'||ACTIONS[i].dir==='local')return"), `${name} still records read-only review openings as uncertain mutations`);
+  assert(src.includes("if(!e||e.dir!=='push')return"), `${name} send badge still counts pulls, reviews, or local clipboard actions`);
+  assert(!src.includes('document.body.innerText'), `${name} can confuse a patient/body email with the signed-in sync-log owner`);
   for (const forbidden of [
     'mlsAppPullSchedule', 'mlsAppGotoDate', 'mlsAppReadChart', 'mlsAppReadVisits',
     'mlsAppSearchOpenPatient', 'mlsAppFocusMlsTab', 'location.reload', '.focus()'
@@ -65,7 +70,7 @@ function runtime(source) {
   function emit(data) { for (const fn of [...(listeners.message || [])]) fn({ data }); }
   const document = {
     readyState: 'complete',
-    body: { innerText: 'doctor@example.com', appendChild() {} },
+    body: { innerText: 'Patient contact: wrong.patient@example.net', appendChild() {} },
     head: { appendChild() {} },
     documentElement: { appendChild() {} },
     addEventListener(type, fn) { (listeners[`document:${type}`] || (listeners[`document:${type}`] = [])).push(fn); },
@@ -76,6 +81,7 @@ function runtime(source) {
   };
   const window = {
     document, localStorage,
+    getSessionEmail: () => 'Doctor@Example.COM',
     getActivePtId: () => patient.id,
     findPatient: id => String(id) === patient.id ? patient : null,
     activePatient: () => patient,
@@ -121,7 +127,8 @@ function runtime(source) {
     setProbeIdentity(v) { probeIdentity = v; },
     get slotWrites() { return slotWrites; },
     get intervalCalls() { return intervalCalls; },
-    get messageListeners() { return (listeners.message || []).length; }
+    get messageListeners() { return (listeners.message || []).length; },
+    click(target) { for (const fn of [...(listeners['document:click'] || [])]) fn({ target }); }
   };
 }
 
@@ -140,6 +147,15 @@ function runtime(source) {
   assert.strictEqual(status.schedule.linked, true, 'exact-ID schedule linkage was not detected');
   assert.strictEqual(status.chart.verified, true, 'exact six-card chart receipt was not detected');
   assert.strictEqual(status.history.verified, true, 'body-complete exact visit history was not detected');
+
+  const reviewButton = { getAttribute(name) { return name === 'onclick' ? 'pushEntireVisitToAthena(this)' : null; }, parentElement: null };
+  for (let i = 0; i < 3; i++) rt.click(reviewButton);
+  assert.strictEqual(rt.api.getLog().length, 0, 'reopening the read-only Athena review created sync-log noise');
+  assert.strictEqual(rt.api.patientStatus().sends.total, 0, 'read-only Athena review openings accumulated as failed/uncertain sends');
+  const pullButton = { getAttribute(name) { return name === 'onclick' ? 'pullPatientFromAthena()' : null; }, parentElement: null };
+  rt.click(pullButton);
+  assert.strictEqual(rt.api.getLog().length, 1, 'passive chart-pull observation unexpectedly disappeared');
+  assert.strictEqual(rt.api.patientStatus().sends.total, 0, 'a read-only chart pull polluted the mutation send badge');
 
   rt.setProbeIdentity('Different Patient');
   assert.strictEqual(await rt.api.verifyNow(), false, 'wrong-patient probe was accepted');
@@ -192,10 +208,10 @@ function runtime(source) {
   });
   assert.strictEqual(rt.api.patientStatus().sends.verified, 1, 'verified typed result did not replace the pending row');
 
-  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, status: 'pending', label: 'Pending write', requestId: 'manual-pending' });
-  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, status: 'failed', label: 'Failed write', requestId: 'manual-failed' });
-  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, status: 'uncertain', label: 'Unknown write', requestId: 'manual-uncertain' });
-  rt.api.mark({ patientId: 'other-patient', patient: 'Other Patient', status: 'verified', label: 'Other receipt', requestId: 'other' });
+  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, dir: 'push', status: 'pending', label: 'Pending write', requestId: 'manual-pending' });
+  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, dir: 'push', status: 'failed', label: 'Failed write', requestId: 'manual-failed' });
+  rt.api.mark({ patientId: rt.patient.id, patient: rt.patient.name, dir: 'push', status: 'uncertain', label: 'Unknown write', requestId: 'manual-uncertain' });
+  rt.api.mark({ patientId: 'other-patient', patient: 'Other Patient', dir: 'push', status: 'verified', label: 'Other receipt', requestId: 'other' });
   status = rt.api.patientStatus();
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(status.sends)),
@@ -206,5 +222,19 @@ function runtime(source) {
   assert.strictEqual(rt.api._classifyResult('write_note', { ok: false, attempted: false }), 'failed');
   assert.strictEqual(rt.api._classifyResult('write_note', { ok: false, attempted: true }), 'uncertain');
 
-  console.log('PASS active-patient Athena status: exact ID freshness/receipts, stale/context invalidation, passive no-flicker lifecycle, explicit read-only Verify now, and honest send outcomes');
+  const productionKeys = [...rt.storage.keys()];
+  assert(productionKeys.includes('sf_u::doctor@example.com::mlsSyncLog'), 'production did not normalize/persist under the authoritative session account');
+  assert(productionKeys.every(key => !key.includes('wrong.patient@example.net')), 'production persisted sync data under the patient/body email');
+
+  const stagingRt = runtime(staging);
+  stagingRt.emit({
+    source: 'mls-app', type: 'mlsAppAthenaActionV2', mode: 'execute', action: 'write_note', requestId: 'staging-typed-write-1',
+    expectedPatient: { patientId: stagingRt.patient.id, name: stagingRt.patient.name, dob: stagingRt.patient.dob, mrn: stagingRt.patient.mrn }
+  });
+  assert.strictEqual(stagingRt.api.patientStatus().sends.pending, 1, 'staging did not persist the typed pending action for the signed-in account');
+  const stagingKeys = [...stagingRt.storage.keys()];
+  assert.deepStrictEqual(stagingKeys, ['sf_u::doctor@example.com::mlsSyncLog'], 'staging did not isolate/normalize sync storage to the authoritative session account');
+  assert(stagingKeys.every(key => !key.includes('wrong.patient@example.net')), 'staging persisted sync data under the patient/body email');
+
+  console.log('PASS active-patient Athena status: exact ID freshness/receipts, account-isolated production/staging logs, stale/context invalidation, passive no-flicker lifecycle, explicit read-only Verify now, and honest send outcomes');
 })().catch(err => { console.error(err); process.exit(1); });

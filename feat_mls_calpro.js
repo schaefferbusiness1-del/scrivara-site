@@ -200,9 +200,9 @@
        "no appointments" state. Range/procedure/pull-plan features stay. */
     row.innerHTML =
       '<b style="font-size:12.5px">Range:</b>' +
-      '<input type="date" id="cpFrom" style="' + CSS + ';cursor:auto" title="From">' +
+      '<input type="date" id="cpFrom" style="' + CSS + ';cursor:auto" title="Range start date" aria-label="Range start date">' +
       '<span style="font-size:12px;color:#69758c">to</span>' +
-      '<input type="date" id="cpTo" style="' + CSS + ';cursor:auto" title="To">' +
+      '<input type="date" id="cpTo" style="' + CSS + ';cursor:auto" title="Range end date" aria-label="Range end date">' +
       '<button id="cpApply" style="' + CSS + '">Apply</button>' +
       '<button id="cpMonth" style="' + CSS + '" title="Select the whole visible month">Full month</button>' +
       '<button id="cpClear" style="' + CSS + '">Clear</button>' +

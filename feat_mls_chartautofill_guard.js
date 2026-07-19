@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_chartautofill_guard.js  ->  window.__mlsChartFillGuard  (cfg-1.0.1)
+ * feat_mls_chartautofill_guard.js  ->  window.__mlsChartFillGuard  (cfg-1.0.2)
  * ---------------------------------------------------------------------------
  * BUG FIX (Bug Breaker): feat_mls_chartautofill.js auto-reads the open
  * athenaOne tab on load and fills the visit hero name (#heroPtName) + patient
@@ -22,8 +22,8 @@
  *      ~10s after load -- the athenaOne read is an extension round-trip that can
  *      land a junk fill several seconds in, and the structured-banner fill path
  *      bypasses the parser guard, so a one-shot scrub is not enough. The scrub
- *      never touches a field the user is editing and never clears a plausible
- *      real name.
+ *      never touches a field the user is editing and never clears the exact
+ *      selected patient's name, even if that name contains a generic UI word.
  *
  * It does not write to athenaOne, does not auto-submit/sign/save, and is fully
  * reversible via window.__mlsChartFillGuard.revert().
@@ -32,7 +32,7 @@
   'use strict';
   try { if (window.__mlsChartFillGuard && window.__mlsChartFillGuard.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cfg-1.0.1';
+  var VERSION = 'cfg-1.0.2';
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 
   // Tokens that are never part of a real patient name (athenaOne chrome, login
@@ -59,6 +59,15 @@
     return false;
   }
 
+  function selectedPatientName() {
+    return safe(function () {
+      var p = null;
+      if (typeof window.activePatient === 'function') p = window.activePatient();
+      else if (typeof window.activePt === 'function') p = window.activePt();
+      return p && p.id && p.name ? String(p.name).replace(/\s+/g, ' ').trim().toLowerCase() : '';
+    }, '');
+  }
+
   function install() {
     var cf = window.__mlsChartFill;
     if (!cf || cf.__guarded) return false;
@@ -79,10 +88,17 @@
 
   // Clear junk already auto-filled into the live fields.
   function scrubFields() {
+    var selectedName = selectedPatientName();
     ['heroPtName', 'patientLabel'].forEach(function (id) {
       var el = safe(function () { return document.getElementById(id); }, null);
       if (!el) return;
       if (el === document.activeElement) return;            // never touch what the user is editing
+      var fieldName = String(el.value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      // A selected patient record is a stronger identity source than this
+      // heuristic. Do not erase its exact name (or emit a synthetic input that
+      // makes an already-saved visit look unsaved) merely because a real name
+      // contains a generic token such as "Patient".
+      if (selectedName && fieldName === selectedName) return;
       if (el.value && nameIsJunk(el.value)) {
         el.value = '';
         safe(function () { el.dispatchEvent(new Event('input', { bubbles: true })); });

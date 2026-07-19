@@ -1,5 +1,5 @@
 /* =========================================================================
-   MLS Seamless Athena Pop-up  —  content-script overlay  (v0.2.0)
+   MLS Seamless Athena Pop-up  —  content-script overlay  (v1.60)
    Injected by MLS Assist on athenaOne pages. Clean, dead-simple control
    surface that sits OVER Athena. Presentation only: it sends intents to
    background.js (chrome.runtime) and renders honest, real progress.
@@ -17,7 +17,7 @@
   'use strict';
   if (typeof window !== 'undefined' && window.__mlsPopup && window.__mlsPopup.installed) return;
 
-  var VERSION = '1.50';
+  var VERSION = '1.60';
   var DISPLAY_VERSION = VERSION;
   try {
     var manifestVersion = String(chrome.runtime.getManifest().version || '').trim();
@@ -48,7 +48,9 @@
     // streamed progress events from background (mlsAppVisitsProgress, paste/code results)
     onMessage: function (cb) {
       if (!hasChrome || !chrome.runtime.onMessage) return function () {};
-      var handler = function (m) { try { cb(m); } catch (e) {} };
+      var handler = function (m, sender, sendResponse) {
+        try { return cb(m, sender, sendResponse); } catch (e) { return false; }
+      };
       chrome.runtime.onMessage.addListener(handler);
       return function () { try { chrome.runtime.onMessage.removeListener(handler); } catch (e) {} };
     }
@@ -57,7 +59,7 @@
   // ====================================================================== //
   //  CORE STATE MACHINE  (pure-ish — drives rendering; unit-tested)         //
   // ====================================================================== //
-  var STATES = ['idle','pulling','ready','recording','captured','generating',
+  var STATES = ['idle','pulling','ready','captured','generating',
                 'review','writingback','codeswriting','written'];
 
   function createCore(opts) {
@@ -73,12 +75,10 @@
       visitCount: null,
       transcript: '',
       typedNotes: '',
-      recording: false,
       note: null,              // {soap, insurance, em_level, icd10[], cpt[], ...}
       codes: null,             // validated codes from __mlsCodeSheet
       mismatch: null,          // {mlsIdentity, chartIdentity} when the gate blocks
       written: null,           // {sections[], codesAdded[], codesMissed[]}
-      signedConfirmed: false,  // true ONLY when Athena confirmed the sign+save
       narration: [],           // [{text, kind}]  kind: run|ok|warn|fail|note
       error: null,
       busy: false
@@ -111,10 +111,10 @@
         st.liveIdentity = r.identity || null;
         /* v1.51 STALE-BINDING FIX: if the chart open in athenaOne is not the
            patient this pill locked onto (or no chart is open anymore), DROP the
-           stale lock instead of offering Record under the wrong identity.
-           Never fires mid-recording — the writeback hard gate still protects. */
+           stale lock instead of offering actions under the wrong identity.
+           The writeback hard gate still protects every attempted write. */
         var changed = false;
-        if (st.patient && st.patient.name && !st.busy && !st.recording && st.state !== 'idle') {
+        if (st.patient && st.patient.name && !st.busy && st.state !== 'idle') {
           var lid = st.liveIdentity;
           var mismatch = !!(lid && lid.name && !mlspNameMatch(lid.name, st.patient.name));
           var gone = !st.conn.patientOpen;
@@ -165,29 +165,10 @@
       });
     }
 
-    // ---- STEP 2: Record (reuses §35 recorder via offscreen doc in BG) ----
-    function startRecording() {
-      if (st.state !== 'ready' && st.state !== 'recording') return Promise.resolve();
-      /* v1.51: NEVER start Record under a non-matching identity — re-check the
-         OPEN chart right now, not whatever was locked earlier. */
-      return refreshStatus().then(function () {
-        if (st.state !== 'ready' && st.state !== 'recording') return; /* stale lock was just dropped */
-        var lid = st.liveIdentity;
-        if (st.patient && st.patient.name && lid && lid.name && !mlspNameMatch(lid.name, st.patient.name)) {
-          narrate('athenaOne is on ' + lid.name + ', not ' + st.patient.name + ' — open the right chart and press Go first. Nothing was recorded.', 'fail');
-          return;
-        }
-        st.recording = true; setState('recording'); narrate('Recording…', 'run');
-        return tx.send({ type: 'MLS_OVL_RECORD_START' });
-      });
-    }
-    function stopRecording() {
-      st.recording = false;
-      return tx.send({ type: 'MLS_OVL_RECORD_STOP' }).then(function () {
-        if (hasContent()) setState('captured');
-        else { setState('recording'); narrate('Say something or type a note first.', 'warn'); }
-      });
-    }
+    // ---- STEP 2: current-visit note ------------------------------------
+    // Audio capture is owned by the MLS Visit screen/linked phone. This
+    // overlay deliberately accepts only a visible typed or pasted note until
+    // extension transcription is implemented and certified end to end.
     function setTypedNotes(t, silent) { st.typedNotes = t || ''; if (!silent) render(); } /* v1.42 fix #3: allow a silent update so typing in the overlay note box doesn't trigger a full re-render (which was stealing focus on every keystroke). */
     function hasContent() {
       return (st.transcript && st.transcript.trim().length > 0) ||
@@ -258,29 +239,10 @@
       });
     }
 
-    // ---- STEP 7 (optional, USER-INITIATED): Sign & Save in Athena ----------
-    // Fires ONLY from the doctor's click here. Background re-checks the name+DOB
-    // gate and auto-clicks Athena's Sign & Save, reporting "signed" ONLY when
-    // Athena confirms the save/sign. Never fakes success, never autonomous.
-    function signSave() {
-      if (st.busy || st.signedConfirmed) return Promise.resolve();
-      st.busy = true; st.error = null;
-      narrate('Signing & saving in athenaOne...', 'run');
-      return tx.send({ type: 'MLS_OVL_SIGNSAVE', userInitiated: true }).then(function (r) {
-        st.busy = false; r = r || {};
-        if (r.signed === true) { st.signedConfirmed = true; narrate('✓ Athena confirmed - signed & saved.', 'ok'); }
-        else if (r.blocked) { narrate('⛔ ' + (r.message || 'Patient gate failed - nothing signed.'), 'fail'); }
-        else if (r.error) { st.error = r.error; narrate(r.message || 'Sign & Save unavailable.', 'fail'); }
-        else { narrate(r.message || 'Clicked Sign & Save but Athena didn’t confirm - check the chart before relying on it.', 'warn'); }
-        render();
-        return r;
-      });
-    }
-
     function reset() {
       st.state = 'idle'; st.patient = null; st.visitCount = null; st.transcript = '';
-      st.typedNotes = ''; st.recording = false; st.note = null; st.codes = null;
-      st.mismatch = null; st.written = null; st.signedConfirmed = false; st.narration = []; st.error = null; st.busy = false;
+      st.typedNotes = ''; st.note = null; st.codes = null;
+      st.mismatch = null; st.written = null; st.narration = []; st.error = null; st.busy = false;
       render();
     }
 
@@ -296,23 +258,15 @@
         else st.transcript = t;
         render();
       }
-      else if (msg.type === 'MLS_OVL_RECORD_ERROR') {
-        // honest mic-failure degrade: stop recording, keep type-only path open
-        st.recording = false;
-        narrate(msg.reason === 'mic-denied'
-          ? 'Microphone blocked — type your note instead.'
-          : 'Mic problem — type your note instead.', 'warn');
-        if (st.state === 'recording') setState('ready');
-      }
     }
 
     return {
       st: st, STATES: STATES,
       render: render, setState: setState, narrate: narrate,
       refreshStatus: refreshStatus, connColor: connColor, canGo: canGo,
-      go: go, startRecording: startRecording, stopRecording: stopRecording,
+      go: go,
       setTypedNotes: setTypedNotes, hasContent: hasContent,
-      generate: generate, writeBack: writeBack, signSave: signSave, reset: reset, ingest: ingest,
+      generate: generate, writeBack: writeBack, reset: reset, ingest: ingest,
       /* v1.50 patient picker */
       listPatients: function () { return tx.send({ type: 'MLS_OVL_LIST_PATIENTS' }); },
       openPatient: function (name) {
@@ -331,11 +285,14 @@
   // ====================================================================== //
   //  DOM LAYER  (only runs in the browser; thin renderer over the core)    //
   // ====================================================================== //
-  var ATHENA_RE = /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i;
+  function isAthenaProductHost() {
+    try { return String(location.hostname || '').toLowerCase() === 'athenanet.athenahealth.com'; }
+    catch (e) { return false; }
+  }
 
   function mountDOM() {
     if (!hasDOM) return null;
-    if (!ATHENA_RE.test(location.host) && !ATHENA_RE.test(location.href) && !/athena/i.test(document.title || '')) return null;  /* v1.50 title-aware */
+    if (!isAthenaProductHost()) return null;
     if (document.getElementById('mls-popup-root')) return null;
 
     var root = document.createElement('div');
@@ -345,6 +302,7 @@
     var core = createCore({ transport: transport, onRender: paint });
     var collapsed = true;
     var pos = null;
+    var disposed = false, statusTimer = 0, offRuntime = function () {}, clearDrag = function () {};
 
     // restore persisted position / collapsed state
     try {
@@ -356,8 +314,20 @@
       }
     } catch (e) {}
 
+    function clampPos(next) {
+      next = next || {};
+      var r = root.getBoundingClientRect();
+      var w = Math.max(48, Number(r.width) || 48), h = Math.max(40, Number(r.height) || 40);
+      var maxLeft = Math.max(0, (window.innerWidth || w) - w);
+      var maxTop = Math.max(0, (window.innerHeight || h) - h);
+      return {
+        left: Math.max(0, Math.min(maxLeft, Number(next.left) || 0)),
+        top: Math.max(0, Math.min(maxTop, Number(next.top) || 0))
+      };
+    }
     function applyPos() {
       if (!pos) return;
+      pos = clampPos(pos);
       root.style.top = pos.top + 'px'; root.style.left = pos.left + 'px';
       root.style.right = 'auto';
     }
@@ -380,9 +350,30 @@
     }
 
     function paint(s) {
+      if (disposed) return;
+      var focus = null, active = document.activeElement;
+      try {
+        if (active && root.contains(active) && active.getAttribute('data-mlsp-focus')) {
+          focus = { key: active.getAttribute('data-mlsp-focus'), start: active.selectionStart, end: active.selectionEnd };
+        }
+      } catch (e) {}
       root.innerHTML = '';
-      if (collapsed) { root.appendChild(renderPill(s)); return; }
-      root.appendChild(renderCard(s));
+      if (collapsed) root.appendChild(renderPill(s));
+      else root.appendChild(renderCard(s));
+      applyPos();
+      if (focus) {
+        try {
+          var restored = root.querySelector('[data-mlsp-focus="' + focus.key + '"]');
+          if (restored) { restored.focus(); if (restored.setSelectionRange) restored.setSelectionRange(focus.start, focus.end); }
+        } catch (e2) {}
+      }
+    }
+
+    function openSurface() {
+      if (disposed) return false;
+      collapsed = false; saveCollapsed(); paint(core.st); core.refreshStatus();
+      setTimeout(applyPos, 0);
+      return true;
     }
 
     function renderPill(s) {
@@ -390,7 +381,7 @@
       var dot = el('span', 'mlsp-dot ' + core.connColor());
       pill.appendChild(dot);
       pill.appendChild(el('span', null, '🩺 MLS'));
-      pill.addEventListener('click', function () { collapsed = false; saveCollapsed(); core.refreshStatus(); paint(core.st); });
+      pill.addEventListener('click', openSurface);
       return pill;
     }
 
@@ -479,27 +470,24 @@
         case 'ready':
           body.appendChild(el('h2', 'mlsp-title', s.patient ? s.patient.name : 'Patient ready'));
           body.appendChild(el('p', 'mlsp-sub', (s.visitCount || 0) + ' visit(s) on file'));
-          var notes1 = el('textarea', 'mlsp-notes'); notes1.placeholder = 'Type a note (optional)…';
+          var notes1 = el('textarea', 'mlsp-notes'); notes1.placeholder = 'Type or paste the current visit note…';
+          notes1.setAttribute('data-mlsp-focus', 'visit-note');
           notes1.value = s.typedNotes; notes1.addEventListener('input', function (e) { core.setTypedNotes(e.target.value, true); }); /* v1.42 fix #3: silent update — keep focus while typing */
           body.appendChild(notes1);
-          body.appendChild(bigBtn('🎙  Record', 'primary', function () { core.startRecording(); }));
-          var skip = el('button', 'mlsp-btn secondary', 'Skip recording → type a note');
-          skip.addEventListener('click', function () { if (core.hasContent()) core.setState('captured'); });
-          body.appendChild(skip);
-          break;
-
-        case 'recording':
-          body.appendChild(el('h2', 'mlsp-title', 'Recording…'));
-          body.appendChild(el('p', 'mlsp-sub', 'Talk through the visit. Stop when done.'));
-          if (s.transcript) { var t = el('div', 'mlsp-narr'); t.appendChild(el('span', null, s.transcript)); body.appendChild(t); }
-          body.appendChild(bigBtn('⏹  Stop', 'danger', function () { core.stopRecording(); }));
+          body.appendChild(el('p', 'mlsp-sub', 'Record in the MLS Visit screen or on your linked phone. This Athena widget accepts an existing current-visit note.'));
+          var continueBtn = el('button', 'mlsp-btn primary', 'Continue to draft review →');
+          continueBtn.addEventListener('click', function () {
+            if (core.hasContent()) core.setState('captured');
+            else core.narrate('Type or paste the current visit note first.', 'warn');
+          });
+          body.appendChild(continueBtn);
           break;
 
         case 'captured':
-          body.appendChild(el('h2', 'mlsp-title', 'Ready to finish'));
-          body.appendChild(el('p', 'mlsp-sub', 'Generate the note + codes and write them into the chart.'));
-          body.appendChild(bigBtn('✨  Finish', 'primary', function () { core.generate(); }));
-          var re = el('button', 'mlsp-btn secondary', 'Re-record / edit text');
+          body.appendChild(el('h2', 'mlsp-title', 'Ready to build the draft'));
+          body.appendChild(el('p', 'mlsp-sub', 'Generate a reviewable note and code draft. Nothing is written yet.'));
+          body.appendChild(bigBtn('✨  Generate review draft', 'primary', function () { core.generate(); }));
+          var re = el('button', 'mlsp-btn secondary', 'Edit current note');
           re.addEventListener('click', function () { core.setState('ready'); });
           body.appendChild(re);
           break;
@@ -528,19 +516,13 @@
           break;
 
         case 'written':
-          body.appendChild(el('h2', 'mlsp-title', s.signedConfirmed ? '✓ Signed & saved' : '✓ Draft written'));
+          body.appendChild(el('h2', 'mlsp-title', '✓ Draft written'));
           body.appendChild(el('p', 'mlsp-sub', summaryLine(s)));
           renderNarration(body, s);
-          if (s.signedConfirmed) {
-            body.appendChild(el('p', 'mlsp-sub', 'Athena confirmed the note was signed & saved.'));
-          } else {
-            body.appendChild(el('p', 'mlsp-sub', 'The note is written (unsigned). You can sign & save it in Athena from here, or do it yourself.'));
-            body.appendChild(el('span', 'mlsp-writebadge', 'SIGNS THE CHART · ONLY ON YOUR CLICK'));
-            body.appendChild(bigBtn('🖊  Sign & Save in Athena', 'primary', function () { core.signSave(); }, s.busy));
-            body.appendChild(bigBtn('Just open Athena (I’ll sign) →', 'ghost', function () {
-              transport.send({ type: 'MLS_OVL_FOCUS_ATHENA' }); // brings tab forward, clicks nothing
-            }));
-          }
+          body.appendChild(el('p', 'mlsp-sub', 'The draft is not saved, signed, or attested. Review it in Athena and complete the final action yourself.'));
+          body.appendChild(bigBtn('Review and finish in Athena →', 'ghost', function () {
+            transport.send({ type: 'MLS_OVL_FOCUS_ATHENA' }); // brings tab forward, clicks nothing
+          }));
           var next = el('button', 'mlsp-btn secondary', '→ Next patient');
           next.addEventListener('click', function () { core.reset(); core.refreshStatus(); });
           body.appendChild(next);
@@ -597,37 +579,66 @@
 
     function enableDrag(handle) {
       var sx, sy, ox, oy, dragging = false;
-      handle.addEventListener('mousedown', function (e) {
+      clearDrag();
+      function onDown(e) {
         dragging = true; handle.classList.add('mlsp-dragging');
         var r = root.getBoundingClientRect();
         sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
         e.preventDefault();
-      });
-      document.addEventListener('mousemove', function (e) {
+      }
+      function onMove(e) {
         if (!dragging) return;
-        pos = { left: Math.max(0, ox + (e.clientX - sx)), top: Math.max(0, oy + (e.clientY - sy)) };
+        pos = clampPos({ left: ox + (e.clientX - sx), top: oy + (e.clientY - sy) });
         applyPos();
-      });
-      document.addEventListener('mouseup', function () {
+      }
+      function onUp() {
         if (!dragging) return; dragging = false; handle.classList.remove('mlsp-dragging'); savePos();
-      });
+      }
+      handle.addEventListener('mousedown', onDown);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      clearDrag = function () {
+        try { handle.removeEventListener('mousedown', onDown); } catch (e) {}
+        try { document.removeEventListener('mousemove', onMove); } catch (e2) {}
+        try { document.removeEventListener('mouseup', onUp); } catch (e3) {}
+        dragging = false;
+      };
     }
 
-    // streamed progress (real events only)
-    transport.onMessage(function (m) { core.ingest(m); });
+    // One runtime listener owns both streamed progress and toolbar expansion.
+    offRuntime = transport.onMessage(function (m, sender, sendResponse) {
+      if (m && m.type === 'mlsOpenPanel') {
+        var opened = openSurface();
+        try { if (sendResponse) sendResponse({ ok: opened, surface: 'athena-widget' }); } catch (e) {}
+        return false;
+      }
+      core.ingest(m);
+      return false;
+    });
 
     // first paint + status
     paint(core.st);
     core.refreshStatus();
     /* v1.51: keep the pill honest — re-check the OPEN chart every 5s (read-only,
        passive; re-renders only on change so it never steals typing focus). */
-    try { setInterval(function () { core.refreshStatus(); }, 5000); } catch (e) {}
+    try { statusTimer = setInterval(function () { if (!disposed) core.refreshStatus(); }, 5000); } catch (e) {}
+    function onResize() { if (pos) { applyPos(); savePos(); } }
+    try { window.addEventListener('resize', onResize); } catch (eResize) {}
 
     return {
       installed: true, version: VERSION, core: core,
-      revert: function () {
+      open: openSurface,
+      dispose: function () {
+        if (disposed) return;
+        disposed = true;
+        try { if (statusTimer) clearInterval(statusTimer); } catch (e) {}
+        statusTimer = 0;
+        try { offRuntime(); } catch (e2) {}
+        offRuntime = function () {};
+        try { clearDrag(); } catch (e3) {}
+        clearDrag = function () {};
+        try { window.removeEventListener('resize', onResize); } catch (e4) {}
         var n = document.getElementById('mls-popup-root'); if (n) n.remove();
-        if (window.__mlsPopup) window.__mlsPopup.installed = false;
       }
     };
   }
@@ -649,18 +660,34 @@
   }
 
   // ---- boot ----
-  var api = { installed: true, version: VERSION, createCore: createCore };
-  if (hasDOM) {
-    var inst = mountDOM();
-    if (inst) { api.revert = inst.revert; api.core = inst.core; }
-    // re-mount if Athena's SPA wipes the node
+  var api = { installed: true, version: VERSION, createCore: createCore, _stopped: false };
+  var inst = null, mo = null;
+  function bindInstance(next) {
+    inst = next || null;
+    api.core = inst ? inst.core : null;
+    return inst;
+  }
+  api.open = function () { return !!(inst && inst.open && inst.open()); };
+  api.revert = function () {
+    if (api._stopped) return;
+    api._stopped = true;
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    mo = null;
+    try { if (inst && inst.dispose) inst.dispose(); } catch (e2) {}
+    bindInstance(null);
+    api.installed = false;
+  };
+  if (hasDOM && isAthenaProductHost()) {
+    bindInstance(mountDOM());
+    // Athena's SPA may replace the content-script root. Dispose the prior
+    // owner before remounting so only one listener/timer/drag lifecycle lives.
     if (typeof MutationObserver !== 'undefined' && document.body) {
-      var mo = new MutationObserver(function () {
-        if (ATHENA_RE.test(location.href) && !document.getElementById('mls-popup-root')) {
-          var again = mountDOM(); if (again) { api.revert = again.revert; api.core = again.core; }
-        }
+      mo = new MutationObserver(function () {
+        if (api._stopped || document.getElementById('mls-popup-root')) return;
+        try { if (inst && inst.dispose) inst.dispose(); } catch (e) {}
+        bindInstance(mountDOM());
       });
-      try { mo.observe(document.body, { childList: true, subtree: false }); } catch (e) {}
+      try { mo.observe(document.body, { childList: true, subtree: false }); } catch (eObserve) {}
     }
   }
 

@@ -9,14 +9,14 @@
    2) Surfaces the EXISTING phone-record control next to the Start button (#captureBtn) in
       the full view's recording card. Reuses #phoneMicBtn / window.startPhoneMic(). No new recorder.
    3) Surfaces the EXISTING phone-record pairing QR (#phoneMicQR) in the top-right of the
-      recording card and PRE-GENERATES it on load (reusing window.startPhoneMic) so it is
-      visible and scannable immediately, with no extra click. Mirrors the live QR; no
-      duplicate QR mechanism. Retries generation until the live pairing code exists.
+      recording card after an explicit clinician click. It never starts pairing, network
+      work, or polling during boot/background repair. Mirrors the live QR; no duplicate
+      QR mechanism.
 */
 (function(){
   'use strict';
   if (window.__mlsFFP) return;
-  var S = { on:true, tries:0, sched:false, lastForce:0 };
+  var S = { on:true, sched:false, lastForce:0 };
   window.__mlsFFP = S;
 
   function addStyle(){
@@ -51,16 +51,22 @@
   }
 
   /* --- phone-record helpers (reuse existing mechanism) --- */
-  function pairLink(){ return document.querySelector('a[href*="phone.html?code="]'); }
+  function pairLink(){ return document.querySelector('a[href*="phone.html#code="]'); }
 
-  function pair(){
+  function pair(clickEvent){
+    /* Pairing can create a backend session and polling timer. Only a trusted
+      clinician click may cross that boundary; boot, repair ticks, mutations,
+      and programmatic .click() calls must remain passive. */
+    if (!clickEvent || clickEvent.isTrusted !== true) return false;
     try {
       if (typeof window.startPhoneMic === 'function') {
-        window.startPhoneMic();
+        window.startPhoneMic(clickEvent);
         setTimeout(syncQR, 700);
         setTimeout(syncQR, 1800);
+        return true;
       }
     } catch(e){}
+    return false;
   }
 
   function stripProto(u){
@@ -87,7 +93,7 @@
       if (hint) hint.style.display = 'none';
     }
     /* Derive the code label AND link from the SAME source as the scannable image
-       (the QR's encoded phone.html?code= URL), so the image, the code label and
+       (the QR's encoded phone.html#code= URL), so the image, the code label and
        the link can never drift to two different pairing codes. Fall back to the
        pair anchor only if the QR image has no encoded URL yet. */
     var canonUrl = (realQR && realQR.src) ? (function(s){ try{ var i=s.indexOf('data='); if(i<0) return ''; var d=s.slice(i+5); var amp=d.indexOf('&'); if(amp>=0) d=d.slice(0,amp); return decodeURIComponent(d); }catch(e){ return ''; } })(realQR.src) : '';
@@ -105,7 +111,7 @@
     }
   }
 
-  /* --- 3) QR top-right of the recording card; pre-generated on load --- */
+  /* --- 3) QR top-right of the recording card; generated only on click --- */
   function ensureQR(){
     var card = document.getElementById('captureCard');
     var startBtn = document.getElementById('captureBtn');
@@ -117,15 +123,14 @@
       box.innerHTML =
         '<div>&#128241; Record on phone</div>'
       + '<img id="mlsGpQrImg" alt="Scan to record on phone" style="display:none">'
-      + '<div class="h" id="mlsGpHint">Preparing scan code&#8230;</div>'
+      + '<div class="h" id="mlsGpHint">Click here to prepare a scan code</div>'
       + '<div class="c" id="mlsGpCode"></div>'
-      + '<a id="mlsGpLink" target="_blank" rel="noopener"></a>';
-      box.addEventListener('click', function(e){ if (e.target.tagName !== 'A') pair(); });
+      + '<a id="mlsGpLink" target="_blank" rel="noopener noreferrer"></a>';
+      box.addEventListener('click', function(e){ if (e.target.tagName !== 'A') pair(e); });
       var __m=document.getElementById('visitHero')||card;if(__m&&getComputedStyle(__m).position==='static'){__m.style.position='relative';}__m.appendChild(box);
     }
-    /* Pre-generate the pairing QR (reusing startPhoneMic). Retry until the live code exists. */
-    var realQR = document.getElementById('phoneMicQR');
-    if (realQR && !realQR.src && S.tries < 8) { S.tries++; pair(); }
+    /* Passive mirror only. A real clinician click on this box or the existing
+       phone-mic button owns creation of the pairing session. */
     syncQR();
   }
 
@@ -150,13 +155,36 @@
   function tick(){ try { addStyle(); forceFull(); ensureQR(); ensurePhoneOption(); syncQR(); } catch(e){} }
   function schedule(){ if (S.sched) return; S.sched = true; setTimeout(function(){ S.sched = false; tick(); }, 200); }
 
+  var WATCH = '#captureCard,#captureBtn,#phoneMicBtn,#mlsGpPhoneBtn,#mlsGpQrBox,#visitHero,#mlsViewToggle,#ezBackEasy,#mlsVtFull';
+  function touchesPhoneUi(node){
+    if (!node || node.nodeType !== 1) return false;
+    try { if (node.matches && node.matches(WATCH)) return true; } catch(e){}
+    try { return !!(node.querySelector && node.querySelector(WATCH)); } catch(e2){ return false; }
+  }
+  function needsRepair(rows){
+    for (var i=0; rows && i<rows.length; i++) {
+      var row=rows[i], j;
+      if (touchesPhoneUi(row.target)) return true;
+      for (j=0; row.addedNodes && j<row.addedNodes.length; j++) if (touchesPhoneUi(row.addedNodes[j])) return true;
+      for (j=0; row.removedNodes && j<row.removedNodes.length; j++) if (touchesPhoneUi(row.removedNodes[j])) return true;
+    }
+    return false;
+  }
+
   function boot(){
     tick();
     try {
-      var mo = new MutationObserver(schedule);
-      mo.observe(document.body, { childList:true, subtree:true });
+      var root = document.getElementById('appScreen') || document.body;
+      var mo = new MutationObserver(function(rows){ if (needsRepair(rows)) schedule(); });
+      mo.observe(root, { childList:true, subtree:true });
+      S.observer = mo;
     } catch(e){}
-    setInterval(tick, 1500); /* self-heal: keep full view + phone option + QR present and current */
+    /* Route/patient/UI lifecycle events cover ordinary remounts. The filtered
+       child-list observer above is the fallback for a real recording-card
+       replacement; there is intentionally no permanent polling interval. */
+    try { window.addEventListener('mls:ui-ready', schedule); } catch(e2){}
+    try { window.addEventListener('mls:view-changed', schedule); } catch(e3){}
+    try { window.addEventListener('mls:active-patient-changed', schedule); } catch(e4){}
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

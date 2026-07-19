@@ -46,6 +46,14 @@
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function now() { return Date.now(); }
+  function isDemoLocal() {
+    return safe(function () {
+      var host = String(location.hostname || '');
+      return location.protocol === 'file:' ||
+        /(?:^|[?&])demo=1(?:&|$)/.test(String(location.search || '')) ||
+        /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(host);
+    }, false);
+  }
   function text(v, max) { v = v == null ? '' : String(v); return v.slice(0, max || 160); }
   function lb() {
     var l = window.__mlsLoadingCalm;
@@ -175,6 +183,9 @@
    * ------------------------------------------------------------------ */
   var conn = { lastPing: 0, lastPong: 0, everConnected: false, pingTimer: null, autoConnects: 0 };
   function onPing() {
+    /* Local/demo sessions intentionally have no live Athena dependency. A
+       passive presence ping must not manufacture a connection job or floater. */
+    if (isDemoLocal()) return;
     conn.lastPing = now();
     var silent = !conn.lastPong || (now() - conn.lastPong > 90000);
     if (silent && !activeFlow('connect') && !activeFlow('reconnect')) {
@@ -424,6 +435,7 @@
       '#' + CHIP_ID + '.on{display:inline-flex}',
       '#' + CHIP_ID + ' .ps-dot{width:8px;height:8px;border-radius:50%;background:#2E6A4B;animation:mlsPsPulse 1.2s ease infinite}',
       '#' + CHIP_ID + '.idle .ps-dot{animation:none;background:#8A9590}',
+      '#' + CHIP_ID + '.attention .ps-dot{animation:none;background:#B42318}',
       '@keyframes mlsPsPulse{50%{opacity:.35}}',
       '#' + PANEL_ID + '{position:fixed;right:16px;bottom:118px;z-index:99968;width:min(400px,calc(100vw - 28px));max-height:min(520px,calc(100vh - 150px));overflow-y:auto;background:#FDFCF9;border:1px solid #E7E5DD;border-radius:16px;box-shadow:0 2px 4px rgba(20,33,28,.08),0 18px 48px rgba(20,33,28,.18);font:500 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;display:none}',
       '#' + PANEL_ID + '.on{display:block}',
@@ -480,13 +492,15 @@
     var jobsAll = safe(function () { return api.snapshot(); }, []) || [];
     var activeN = jobsAll.filter(function (j) { return ACTIVE_STATUS[j.status]; }).length;
     var recent = jobsAll.filter(function (j) { return ACTIVE_STATUS[j.status] || (now() - (j.finishedAt || j.updatedAt) < 90000); });
+    var attentionN = recent.filter(function (j) { return j.status === 'failed' || j.status === 'timed_out' || j.status === 'partial'; }).length;
     var c = chip();
     if (recent.length) {
       c.classList.add('on');
-      c.classList[activeN ? 'remove' : 'add']('idle');
+      c.classList[(activeN || attentionN) ? 'remove' : 'add']('idle');
+      c.classList[attentionN ? 'add' : 'remove']('attention');
       var lbl = c.querySelector('.ps-n');
-      if (lbl) lbl.textContent = activeN ? (activeN + ' running') : 'Progress';
-    } else { c.classList.remove('on'); if (panelOpen) panelOpen = false; }
+      if (lbl) lbl.textContent = activeN ? (activeN + ' running') : (attentionN ? (attentionN + ' needs attention') : 'Progress');
+    } else { c.classList.remove('on','idle','attention'); if (panelOpen) panelOpen = false; }
     var p = panel();
     if (!panelOpen) { p.classList.remove('on'); syncTick(activeN); return; }
     p.classList.add('on');

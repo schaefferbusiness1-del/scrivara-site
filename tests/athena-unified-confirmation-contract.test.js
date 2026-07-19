@@ -36,10 +36,11 @@ assert(/mode:\s*'probe'/.test(unified), 'selected action must be checked read-on
 assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint must execute one typed action');
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
-assert(/Select exactly one READY row|select exactly one ready action/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
+assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'UI must disclose the two allowed note lanes');
+assert(/Select one READY note row/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
 assert(/never retries or auto-chains|never auto-chain/i.test(unified), 'UI must disclose fail-closed no-chain behavior');
-assert(/Sign & Save requires[^\n]+proof/i.test(unified), 'Sign must require a pre-existing exact note proof');
-assert(/Review Sign & Save separately/.test(unified), 'a new note write may only offer a separate explicit Sign review');
+assert(/Complete Sign & Save directly in Athena/.test(unified), 'Sign must be visibly manual');
+assert(!/Review Sign & Save separately/.test(unified), 'verified note write must not recreate an executable Sign offer');
 assert(!/probeUnifiedRow\([^)]*sign[^)]*\)[^]{0,300}executeUnifiedSelection/.test(unified), 'Sign must not auto-chain after a new note write');
 
 const render = between(unified, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
@@ -47,11 +48,11 @@ assert(render.includes("document.getElementById('athenaReceipt')"), 'opening uni
 assert(flow.includes("closeActionConfirm();"), 'opening unified review must remove the old per-action modal');
 assert.strictEqual((render.match(/id=\\?"mlsAthenaUnifiedGo\\?"/g) || []).length, 1, 'unified page must render one Confirm & write button');
 
-const showReceipt = between(app, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)', '/* Review the superbill routing');
+const showReceipt = between(app, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)', '/* Review the frozen superbill payload');
 assert(showReceipt.indexOf('openUnifiedConfirmation') >= 0, 'top Athena review must delegate to the unified page');
 assert(showReceipt.indexOf('openUnifiedConfirmation') < showReceipt.indexOf("document.getElementById('athenaReceipt')"), 'unified page must be preferred before the legacy fallback renders');
 const superbill = between(app, 'function pushSuperbillToAthena()', '/* Preview a SAVED visit');
 assert(superbill.includes('openUnifiedConfirmation'), 'Superbill must enter the same unified confirmation page');
-assert(superbill.indexOf('openUnifiedConfirmation') < superbill.indexOf("startAthenaAction('stage_billing'"), 'legacy per-action Superbill confirmation must be fallback only');
+assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill must not retain an executable billing fallback');
 
-console.log('PASS unified Athena confirmation: one page/button, read-only probe, trusted hash binding, explicit receipts, no overlap or Sign auto-chain');
+console.log('PASS unified Athena confirmation: one page/button for note lanes, exact manual final-action rows, trusted hash binding, and no Sign/billing execution offer');

@@ -1,6 +1,6 @@
 'use strict';
-/* Contract + offline runtime harness for the obt-2.0.0 onboarding tour.
- * 1) The bundle carries exactly obt-2.0.0 (obt-1.0.0 module gone).
+/* Contract + offline runtime harness for the obt-2.1.0 onboarding tour.
+ * 1) The bundle carries exactly obt-2.1.0 (obt-1.0.0 module gone).
  * 2) The module installs under a stub DOM and exposes the stable API.
  * 3) Every id-based spotlight target that should come from the base app
  *    actually exists in ScribeFlow.html (the b324+ shell), so the tour
@@ -15,7 +15,7 @@ const bundle = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'ut
 const html = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf8');
 
 /* ---- 1. version presence ---- */
-assert(bundle.includes("VERSION = 'obt-2.0.0'"), 'obt-2.0.0 module missing');
+assert(bundle.includes("VERSION = 'obt-2.1.0'"), 'obt-2.1.0 module missing');
 assert(!bundle.includes("VERSION = 'obt-1.0.0'"), 'stale obt-1.0.0 module still in bundle');
 
 /* ---- extract the module IIFE ---- */
@@ -73,7 +73,7 @@ new Function(
 
 const api = win.__mlsOnboardingTour;
 assert(api && api.installed === true, 'tour did not install');
-assert.strictEqual(api.version, 'obt-2.0.0');
+assert.strictEqual(api.version, 'obt-2.1.0');
 assert(typeof api.open === 'function' && typeof api.reset === 'function' && typeof api.revert === 'function', 'stable API missing');
 assert(win.__mlsGuidedTour === api, 'legacy __mlsGuidedTour alias missing');
 
@@ -83,8 +83,9 @@ const keys = steps.map(s => s.key);
 assert.strictEqual(new Set(keys).size, keys.length, 'duplicate step keys');
 ['welcome', 'chrome', 'extension', 'find', 'newbtn', 'visit', 'pull', 'record', 'capture',
  'review', 'send', 'opnote', 'payreport', 'patients', 'calendar', 'history',
- 'menu-ask', 'menu-templates', 'menu-staff', 'menu-legal', 'menu-athena', 'settings', 'finish']
+ 'menu-ask', 'menu-templates', 'menu-staff', 'menu-athena', 'settings', 'finish']
   .forEach(k => assert(keys.includes(k), 'missing step: ' + k));
+assert(!keys.includes('menu-legal'), 'held Legal workspace remains in the released onboarding tour');
 
 /* browser detection sanity (pure fns) */
 const det = api.__test.detectBrowser;
@@ -102,8 +103,8 @@ for (const id of idTargets) {
   }
 }
 /* shell/module-provided ids referenced by scenes must at least be referenced in the bundle */
-['mlsTbMenuPanel', 'mlsTbMenuBtn', 'mlsRdNewBtn', 'mlsRdSearchSlot', 'mlsRdUserChip',
- 'ez3PullNow', 'ez3Prep', 'ez3flDictate', 'mlsPrvbBtn']
+['mlsTbMenuPanel', 'mlsTbMenuBtn', 'mlsRdNewBtn', 'mlsRdSearchSlot', 'mlsAccountMenuBtn',
+ 'mlsDsPullBtn', 'ez3Prep', 'ez3flDictate', 'mlsPayReportMenuItem']
   .forEach(id => assert(bundle.includes(id), 'shell id ' + id + ' not found anywhere in bundle'));
 
-console.log('PASS onboarding-tour-v2 contract: obt-2.0.0 installed, ' + steps.length + ' steps, targets grounded, Help un-hijacked');
+console.log('PASS onboarding-tour-v2 contract: obt-2.1.0 installed, ' + steps.length + ' steps, targets grounded, Help un-hijacked');

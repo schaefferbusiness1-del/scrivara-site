@@ -15,6 +15,7 @@ let createSequence = 0;
 const creates = [];
 const updates = [];
 let rendered = null;
+let failAuthoritativeWrite = false;
 
 function normTime(value) {
   const s = String(value || '').trim();
@@ -34,7 +35,10 @@ const context = {
   sessionStorage: { getItem: key => key === '__mlsNextUpDebugDate' ? '2026-07-14' : null },
   localStorage: {
     getItem: key => store.has(key) ? store.get(key) : null,
-    setItem: (key, value) => store.set(key, String(value)),
+    setItem: (key, value) => {
+      if (failAuthoritativeWrite && String(key).includes('schedAuthoritativeDaysV1')) throw new Error('synthetic quota');
+      store.set(key, String(value));
+    },
     removeItem: key => store.delete(key)
   },
   document: {
@@ -127,6 +131,27 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
   assert.strictEqual(idempotent.resolvedAppointments[0].backendAppointmentId, 'repeat-existing');
   assert.strictEqual(updates.length, 1, 'an idempotent repeat rewrote already-enriched fields');
 
+  const sourcePatient = { id: 'source-patient-exact', name: 'Source Metadata Patient', dob: '03/04/1975', mrn: 'MRN-SOURCE-1', athenaId: 'MRN-SOURCE-1' };
+  patients.push(sourcePatient);
+  backendRows = [{
+    id: 'source-metadata-existing', athena_appointment_id: 'athena-source-appt-1', athena_provider_id: 'athena-source-provider-1',
+    name: sourcePatient.name, dob: sourcePatient.dob, patient_external_id: sourcePatient.id,
+    appt_date: '2026-07-23', start_at: '2026-07-23T10:40:00.000Z',
+    provider: 'Doctor Exact', reason: 'Exact repeat'
+  }];
+  updates.length = 0;
+  const sourceMetadataRow = {
+    appointmentId: 'athena-source-appt-1', providerId: 'athena-source-provider-1',
+    name: sourcePatient.name, dob: sourcePatient.dob, mrn: sourcePatient.mrn,
+    date: '2026-07-23', time: '10:40 AM', provider: 'Doctor Exact', reason: 'Exact repeat'
+  };
+  const sourceRepeatOne = await api.importAppts([Object.assign({}, sourceMetadataRow)], { date: '2026-07-23', scopeDate: '2026-07-23' });
+  const sourceRepeatTwo = await api.importAppts([Object.assign({}, sourceMetadataRow)], { date: '2026-07-23', scopeDate: '2026-07-23' });
+  assert.strictEqual(sourceRepeatOne.skipped, 1);
+  assert.strictEqual(sourceRepeatTwo.skipped, 1);
+  assert.strictEqual(sourceRepeatOne.failed + sourceRepeatTwo.failed, 0);
+  assert.strictEqual(updates.length, 0, 'a backend row that echoed Athena source ids triggered an avoidable repeat-pull update');
+
   const day = '2026-07-14';
   const active = Array.from({ length: 18 }, (_, i) => ({
     id: `athena-active-${i + 1}`, name: `Verified ${i + 1}`, dob: '01/01/1980',
@@ -215,6 +240,30 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
   assert.strictEqual(providerPublished.published, true);
   assert.strictEqual(api.authoritativeRowsForDay(providerDay).length, 2);
   assert.strictEqual(api.authoritativeStatusForDay(providerDay).unclassifiedCount, 1);
+
+  const storageFailureDay = '2026-07-22';
+  context._calAppts.push({ id: 'storage-stable-backend-1', name: 'Synthetic Stable Snapshot', appt_date: storageFailureDay });
+  const storageStable = api._publishAuthoritativeSnapshot({
+    date: storageFailureDay, scheduleReceipt: { complete: true },
+    providerReceipt: { complete: true, reason: 'all-providers' },
+    calendarReceipt: { complete: true, attempted: 1 },
+    resolvedAppointments: [{ sourceIdentity: 'storage-stable-source-1', backendAppointmentId: 'storage-stable-backend-1' }]
+  });
+  assert.strictEqual(storageStable.published, true);
+  context._calAppts.push({ id: 'storage-replacement-backend-1', name: 'Synthetic Failed Replacement', appt_date: storageFailureDay });
+  failAuthoritativeWrite = true;
+  const storageFailed = api._publishAuthoritativeSnapshot({
+    date: storageFailureDay, scheduleReceipt: { complete: true },
+    providerReceipt: { complete: true, reason: 'all-providers' },
+    calendarReceipt: { complete: true, attempted: 1 },
+    resolvedAppointments: [{ sourceIdentity: 'storage-replacement-source-1', backendAppointmentId: 'storage-replacement-backend-1' }]
+  });
+  failAuthoritativeWrite = false;
+  assert.strictEqual(storageFailed.published, false, 'snapshot storage failure was reported as published');
+  assert.strictEqual(storageFailed.reason, 'snapshot-persist-failed');
+  const preservedAfterFailure = api.authoritativeRowsForDay(storageFailureDay);
+  assert.strictEqual(preservedAfterFailure.length, 1, 'failed replacement destroyed the last published same-day snapshot');
+  assert.strictEqual(preservedAfterFailure[0].id, 'storage-stable-backend-1', 'failed replacement leaked through the in-memory cache');
 
   rendered = null;
   context._renderTodayPatients.__wnRender = true;

@@ -43,7 +43,32 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.12";
+  var VERSION = "si-1.7.13";
+  /* Diagnostics cross a copy/support boundary, so reason keys are a closed
+     vocabulary rather than merely "identifier-looking" strings. A patient
+     name, MRN, or source id must collapse to the generic bucket even when it
+     happens to contain only letters, numbers, or hyphens. */
+  var CALENDAR_REASON_CODES = {
+    "calendar-row-unverified": 1,
+    "calendar-read-unverified": 1,
+    "appointment-patient-identity-conflict": 1,
+    "appointment-enrichment-ambiguous": 1,
+    "slot-patient-identity-conflict": 1,
+    "patient-not-resolved": 1,
+    "appointment-identity-unresolved": 1,
+    "appointment-source-identity-conflict": 1,
+    "appointment-update-http": 1,
+    "appointment-update-network": 1,
+    "source-identity-missing": 1,
+    "backend-id-missing": 1,
+    "patient-id-missing": 1,
+    "mapping-unresolved": 1,
+    "ledger-backend-day-mismatch": 1,
+    "import-in-flight": 1,
+    "appointment-create-http": 1,
+    "appointment-create-network": 1,
+    "appointment-create-dispatch-failed": 1
+  };
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
      site-published current version — used ONLY to explain receipt-gate
@@ -179,6 +204,43 @@
   function isFn(f) { return typeof f === "function"; }
   function gfn(n) { return safe(function () { return isFn(window[n]) ? window[n] : null; }, null); }
   function callG(n, a, b, c) { var f = gfn(n); return f ? safe(function () { return f(a, b, c); }) : undefined; }
+
+  /* Managed schedule/history pulls can update many patient rows within one
+     short result burst. The base store owns the account-scoped shadow and all
+     durability rules; this feature only brackets its own workflow and forces
+     durable checkpoints after schedule import and at every terminal outcome. */
+  function patientBatchApi() {
+    return safe(function () {
+      var api = window.__mlsPatientStoreBatch;
+      return api && isFn(api.begin) && isFn(api.checkpoint) && isFn(api.end) ? api : null;
+    }, null);
+  }
+  function beginPatientBatch(label) {
+    var api = patientBatchApi();
+    return api ? api.begin({ label: String(label || "managed-pull"), maxChanges: 4, maxDelayMs: 5000 }) : null;
+  }
+  function checkpointPatientBatch(token, reason, force) {
+    if (!token) return null;
+    var api = patientBatchApi();
+    return api ? api.checkpoint(token, String(reason || "checkpoint"), force === true) : null;
+  }
+  function endPatientBatch(token, reason) {
+    if (!token) return { batched: false };
+    var api = patientBatchApi();
+    return api ? api.end(token, String(reason || "end")) : { batched: false };
+  }
+  function withPatientBatch(label, task) {
+    var token = beginPatientBatch(label);
+    return Promise.resolve().then(function () { return task(token); }).then(function (value) {
+      var receipt = endPatientBatch(token, "receipt");
+      if (value && typeof value === "object") value.patientPersistenceReceipt = receipt;
+      return value;
+    }, function (error) {
+      try { endPatientBatch(token, "error"); }
+      catch (flushError) { try { flushError.originalError = String(error && error.message || error || "").slice(0, 180); } catch (_) {} throw flushError; }
+      throw error;
+    });
+  }
 
   /* ---- staging/prod gate: active on the staging page OR on prod via the data: marker ---- */
   function gateOn() {
@@ -535,9 +597,15 @@
   }
   function writeAuthoritativeStore(x) {
     x = x && x.days ? x : { v: 1, days: {} };
-    authoritativeMemory = x;
-    var k = authoritativeKey(); if (!k) return;
-    safe(function () { localStorage.setItem(k, JSON.stringify(x)); });
+    var k = authoritativeKey(); if (!k) return false;
+    var raw = safe(function () { return JSON.stringify(x); }, "");
+    if (!raw) return false;
+    var stored = safe(function () {
+      localStorage.setItem(k, raw);
+      return localStorage.getItem(k) === raw;
+    }, false);
+    if (stored) authoritativeMemory = x;
+    return stored;
   }
   function backendRowId(row) { return String(row && row.id != null ? row.id : "").trim(); }
   function localDayOf(row) {
@@ -586,7 +654,11 @@
       sourceSeen[sourceIdentity] = 1; backendSeen[backendId] = 1; backendIds.push(backendId);
     }
     if (mappings.length !== expected || backendIds.length !== expected) { out.reason = "mapping-incomplete"; return out; }
-    var store = readAuthoritativeStore(), entry = store.days[date] || { all: null, providers: {} };
+    /* Work on a detached copy so a quota/storage failure cannot mutate the
+       last verified in-memory snapshot by reference before persistence. */
+    var store = safe(function () { return JSON.parse(JSON.stringify(readAuthoritativeStore())); }, { v: 1, days: {} });
+    if (!store || !store.days) store = { v: 1, days: {} };
+    var entry = store.days[date] || { all: null, providers: {} };
     if (!entry.providers || typeof entry.providers !== "object") entry.providers = {};
     var snap = { v: 1, date: date, mode: req.mode, providerKey: req.key || "", backendIds: backendIds, sourceCount: expected, updated: Date.now() };
     if (req.mode === "selected") { entry.providers[req.key] = snap; entry.active = { mode: "provider", key: req.key }; }
@@ -599,7 +671,7 @@
       return at - bt;
     });
     while (days.length > 45) delete store.days[days.shift()];
-    writeAuthoritativeStore(store);
+    if (!writeAuthoritativeStore(store)) { out.reason = "snapshot-persist-failed"; return out; }
     out.published = true; out.complete = true; out.reason = expected ? "exact" : "authoritative-empty";
     out.backendCount = backendIds.length;
     safe(function () {
@@ -791,7 +863,7 @@
         wrongDay: Number(wrongDay || 0), invalidDate: Number(invalidDate || 0),
         reason: reason || "empty", days: {}, target: normDate(opts.scopeDate || opts.date) || "",
         scope: normDate(opts.scopeDate) || "", historyTargets: [], historyUnresolved: [],
-        resolvedAppointments: [], unresolvedMappings: [],
+        resolvedAppointments: [], unresolvedMappings: [], failureReasons: {},
         providerReceipt: providerReceipt || null };
     }
 
@@ -921,6 +993,7 @@
           wrongDay: wrongDay, invalidDate: invalidDate, reason: "calendar-read-unverified", days: {}, target: target,
           scope: scopeDate || "", historyTargets: [], historyUnresolved: [], resolvedAppointments: [],
           unresolvedMappings: appts.map(function (a) { return { sourceIdentity: importKey(a, a._date || normDate(a.date) || target, normTime(a.time)), reason: "calendar-read-unverified", date: a._date || normDate(a.date) || target }; }),
+          failureReasons: { "calendar-read-unverified": appts.length },
           providerReceipt: providerScope.receipt };
       }
       var backendAppointments = ed.appointments || [], ledgerByDay = Object.create(null);
@@ -974,6 +1047,20 @@
       }
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};
+      /* PHI-free row-failure telemetry. The old receipt exposed only `failed:N`,
+         so an unavailable calendar GET, a refused identity merge, a backend
+         write error, and a one-to-one mapping refusal all looked identical.
+         Keep counts by fixed reason code only; never retain a patient/row. */
+      var failureReasons = Object.create(null);
+      function noteImportFailure(reason, amount) {
+        reason = String(reason || "calendar-row-unverified").toLowerCase();
+        if (!CALENDAR_REASON_CODES[reason]) reason = "calendar-row-unverified";
+        amount = Number(amount == null ? 1 : amount);
+        if (!isFinite(amount) || amount <= 0) amount = 1;
+        failed += amount;
+        failureReasons[reason] = Number(failureReasons[reason] || 0) + amount;
+        return reason;
+      }
       var resolvedAppointments = [], unresolvedMappings = [];
       var requirePatientBinding = opts.requirePatientBinding === true || opts.includeHistory === true;
       function recordResolution(sourceIdentity, backendAppointmentId, date, kind, patientId) {
@@ -984,6 +1071,10 @@
         }
         resolvedAppointments.push({ sourceIdentity: sourceIdentity, backendAppointmentId: backendAppointmentId, patientId:patientId, date: String(date || ""), kind: String(kind || "existing") });
         return true;
+      }
+      function lastMappingReason(fallback) {
+        var last = unresolvedMappings.length ? unresolvedMappings[unresolvedMappings.length - 1] : null;
+        return String(last && last.reason || fallback || "mapping-unresolved");
       }
       /* Bind every imported/skipped appointment to one immutable MLS patient
          before any asynchronous chart work begins. The history pipeline uses
@@ -1113,7 +1204,7 @@
             if (proofConflict || (existing && String(existing.id || "") !== String(oldRow.patient_external_id || ""))) {
               if (boundPatient && boundPatient.id) blockHistoryPatient(boundPatient.id, "source-proof-conflict");
               if (existing && existing.id && (!boundPatient || String(existing.id) !== String(boundPatient.id))) blockHistoryPatient(existing.id, "source-proof-conflict");
-              failed++;
+              noteImportFailure("appointment-patient-identity-conflict");
               if (onEach) safe(function () { onEach("error", { name: name, error: "appointment-patient-identity-conflict" }); });
               return;
             }
@@ -1139,14 +1230,14 @@
               }
               if (dayProviderRow && String(dayProviderRow.start_at || "").trim()) dayProviderRow = null; /* only repair a proven missing-time row */
               if (coreRow && dayProviderRow && String(coreRow.id || "") !== String(dayProviderRow.id || "")) {
-                failed++;
+                noteImportFailure("appointment-enrichment-ambiguous");
                 if (onEach) safe(function () { onEach("error", { name: name, error: "appointment-enrichment-ambiguous" }); });
                 return;
               }
               oldRow = coreRow || dayProviderRow || null;
             }
             if (oldRow && oldRow.patient_external_id && String(oldRow.patient_external_id) !== ext) {
-              failed++;
+              noteImportFailure("slot-patient-identity-conflict");
               if (onEach) safe(function () { onEach("error", { name: name, error: "slot-patient-identity-conflict" }); });
               return;
             }
@@ -1162,7 +1253,7 @@
           if(!existing||!existing.id){
             if(requirePatientBinding){
               historyUnresolved.push({patientId:"",reason:patientIdentity(a,false)?"local-patient-materialization-failed":"patient-not-resolved"});
-              failed++;
+              noteImportFailure("patient-not-resolved");
               if(onEach)safe(function(){onEach("error",{name:name,error:"patient-not-resolved"});});
               return;
             }
@@ -1170,7 +1261,7 @@
           if (existing && existing.id) { ext = String(existing.id); a.patient_external_id = ext; }
           var ledgerKey = importKey(a, date, nt);
           if (!ledgerKey) {
-            failed++;
+            noteImportFailure("appointment-identity-unresolved");
             historyUnresolved.push({ patientId: ext || "", reason: "appointment-identity-unresolved" });
             if (onEach) safe(function () { onEach("error", { name: name, error: "appointment-identity-unresolved" }); });
             return;
@@ -1181,7 +1272,7 @@
             var incomingProviderId2 = rowProviderId(a), storedProviderId2 = rowProviderId(oldRow);
             if ((incomingAppointmentId && storedAppointmentId && incomingAppointmentId.toLowerCase() !== storedAppointmentId.toLowerCase()) ||
                 (incomingProviderId2 && storedProviderId2 && incomingProviderId2.toLowerCase() !== storedProviderId2.toLowerCase())) {
-              failed++;
+              noteImportFailure("appointment-source-identity-conflict");
               if (onEach) safe(function () { onEach("error", { name: name, error: "appointment-source-identity-conflict" }); });
               return;
             }
@@ -1217,21 +1308,21 @@
                 if (rr.ok) {
                   enrichKeys.forEach(function (field) { oldRow[field] = enrich[field]; });
                   markDone(ledgerKey, { patientId: ext || oldRow.patient_external_id || "", backendAppointmentId: oldRow.id, date: date });
-                  if (!recordResolution(ledgerKey, oldRow.id, date, "repaired",ext||oldRow.patient_external_id)) { failed++; return; }
+                  if (!recordResolution(ledgerKey, oldRow.id, date, "repaired",ext||oldRow.patient_external_id)) { noteImportFailure(lastMappingReason()); return; }
                   enrichedFields += enrichKeys.length;
                   repaired++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("repaired", { name: name, fields: enrichKeys.slice() }); });
                 } else {
-                  failed++;
+                  noteImportFailure("appointment-update-http");
                   if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + rr.status }); });
                 }
               }).catch(function () {
-                failed++;
+                noteImportFailure("appointment-update-network");
                 if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); });
               });
             }
             markDone(ledgerKey, { patientId: ext || (oldRow && oldRow.patient_external_id) || "", backendAppointmentId: oldRow && oldRow.id, date: date });
-            if (!recordResolution(ledgerKey, oldRow && oldRow.id, date, "existing",ext||(oldRow&&oldRow.patient_external_id))) { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "backend-id-missing" }); }); return; }
+            if (!recordResolution(ledgerKey, oldRow && oldRow.id, date, "existing",ext||(oldRow&&oldRow.patient_external_id))) { noteImportFailure(lastMappingReason()); if (onEach) safe(function () { onEach("error", { name: name, error: "backend-id-missing" }); }); return; }
             skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return;
           }
           var owner = claim(ledgerKey, { date: date });
@@ -1243,11 +1334,11 @@
                 queueHistory(a, existing, date);
                 if (recordResolution(ledgerKey, ledgerBackendId, date, "ledger-existing",ext||ledgerState.patientId||(ledgerBackend&&ledgerBackend.patient_external_id))) {
                   skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); });
-                } else failed++;
+                } else noteImportFailure(lastMappingReason());
                 return;
               }
               if (ledgerBackend) {
-                failed++;
+                noteImportFailure("ledger-backend-day-mismatch");
                 unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "ledger-backend-day-mismatch", date: date });
                 if (onEach) safe(function () { onEach("error", { name: name, error: "ledger-backend-day-mismatch" }); });
                 return;
@@ -1262,7 +1353,7 @@
               /* A pending/unknown ledger row is not an imported appointment.
                  Mark the calendar partial and do not repeat the old bug where
                  history saved even though no appointment landed. */
-              failed++;
+              noteImportFailure("import-in-flight");
               if (onEach) safe(function () { onEach("error", { name: name, error: "import-in-flight" }); });
             }
             if (!owner) return;
@@ -1279,28 +1370,40 @@
           if (sourceAppointmentId) body.athena_appointment_id = sourceAppointmentId;
           if (sourceProviderId) body.athena_provider_id = sourceProviderId;
           if (onEach) safe(function () { onEach("save", { name: name }); });
-          return safe(function () {
+          var createRequest = safe(function () {
             return fetch(base + "/api/appointments", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) })
               .then(function (r) {
-                if (!r.ok) { rollback(ledgerKey, owner, date); failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + r.status }); }); return; }
+                if (!r.ok) { rollback(ledgerKey, owner, date); noteImportFailure("appointment-create-http"); if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + r.status }); }); return; }
                 return Promise.resolve(safe(function () { return isFn(r.json) ? r.json() : null; }, null)).catch(function () { return null; }).then(function (saved) {
                   var backendAppointmentId = String((saved && (saved.id || (saved.appointment && saved.appointment.id) || (saved.data && saved.data.id))) || "");
                   markDone(ledgerKey, { patientId: ext, backendAppointmentId: backendAppointmentId, date: date });
                   if (!backendAppointmentId) {
-                    unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "backend-id-missing", date: date }); failed++;
+                    unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "backend-id-missing", date: date }); noteImportFailure("backend-id-missing");
                     if (onEach) safe(function () { onEach("error", { name: name, error: "backend-id-missing" }); });
                     return;
                   }
                   var savedRow = {}; for (var sk in body) if (body.hasOwnProperty(sk)) savedRow[sk] = body[sk];
                   if (saved && typeof saved === "object") for (var rk in saved) if (saved.hasOwnProperty(rk)) savedRow[rk] = saved[rk];
                   savedRow.id = backendAppointmentId; backendById[backendAppointmentId] = savedRow; existingRows[ledgerKey] = savedRow;
-                  recordResolution(ledgerKey, backendAppointmentId, date, "created",ext);
+                  if (!recordResolution(ledgerKey, backendAppointmentId, date, "created",ext)) {
+                    noteImportFailure(lastMappingReason());
+                    if (onEach) safe(function () { onEach("error", { name: name, error: "mapping-unresolved" }); });
+                    return;
+                  }
                   queueHistory(a, existing, date); created++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("saved", { name: name }); });
                 });
               })
-              .catch(function () { rollback(ledgerKey, owner, date); failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); }); });
-          }, null) || (rollback(ledgerKey, owner, date), Promise.resolve());
+              .catch(function () { rollback(ledgerKey, owner, date); noteImportFailure("appointment-create-network"); if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); }); });
+          }, null);
+          if (!createRequest) {
+            rollback(ledgerKey, owner, date);
+            unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "appointment-create-dispatch-failed", date: date });
+            noteImportFailure("appointment-create-dispatch-failed");
+            if (onEach) safe(function () { onEach("error", { name: name, error: "dispatch" }); });
+            return Promise.resolve();
+          }
+          return createRequest;
         });
       });
 
@@ -1348,7 +1451,7 @@
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
           historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
-          return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, providerReceipt: providerScope.receipt };
+          return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt };
         });
       });
     });
@@ -2315,12 +2418,65 @@
       };
     }
     return runManagedAthenaOperation(function () {
-      return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {});
+      return withPatientBatch("history-retry", function () {
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {});
+      });
     }, retryBusy).then(function (receipt) {
       receipt.retryOf = String(history.requestId || "");
       receipt.manualRetry = true;
       return receipt;
     });
+  }
+
+  /* A calendar-partial receipt is a safety result, not one single failure.
+     Separate backend write failures from exact-identity refusals, mapping
+     proof, snapshot publication, and accounting. The returned diagnostics are
+     fixed reason-code counts only (no names, DOBs, MRNs, or source ids). */
+  function phiFreeReasonCounts(raw) {
+    var out = {}, src = raw && typeof raw === "object" ? raw : {};
+    Object.keys(src).forEach(function (key) {
+      var safeKey = String(key || "").toLowerCase();
+      if (!CALENDAR_REASON_CODES[safeKey]) safeKey = "calendar-row-unverified";
+      var n = Number(src[key] || 0);
+      if (!isFinite(n) || n <= 0) return;
+      out[safeKey] = Number(out[safeKey] || 0) + n;
+    });
+    return out;
+  }
+  function mappingReasonCounts(items) {
+    var raw = {};
+    (Array.isArray(items) ? items : []).forEach(function (item) {
+      var reason = String(item && item.reason || "mapping-unresolved");
+      raw[reason] = Number(raw[reason] || 0) + 1;
+    });
+    return phiFreeReasonCounts(raw);
+  }
+  function reasonPresent(counts, names) {
+    for (var i = 0; i < names.length; i++) if (Number(counts && counts[names[i]] || 0) > 0) return true;
+    return false;
+  }
+  function classifyCalendarFailure(res, receipt) {
+    res = res || {}; receipt = receipt || {};
+    if (receipt.complete === true) return "complete";
+    var reasons = phiFreeReasonCounts(res.failureReasons || receipt.failureReasons);
+    if (Number(receipt.wrongDay || 0) > 0 || Number(receipt.invalidDate || 0) > 0) return "date-unverified";
+    if (reasonPresent(reasons, ["calendar-read-unverified"])) return "calendar-read-unverified";
+    if (reasonPresent(reasons, [
+      "appointment-create-http", "appointment-create-network", "appointment-create-dispatch-failed",
+      "appointment-update-http", "appointment-update-network"
+    ])) return "save-failed";
+    if (reasonPresent(reasons, ["import-in-flight"])) return "concurrent-import";
+    if (reasonPresent(reasons, [
+      "appointment-patient-identity-conflict", "appointment-enrichment-ambiguous",
+      "slot-patient-identity-conflict", "patient-not-resolved",
+      "appointment-identity-unresolved", "appointment-source-identity-conflict"
+    ])) return "identity-unverified";
+    if (receipt.mappingComplete === false || Number(receipt.unresolvedMappings || 0) > 0 ||
+        reasonPresent(reasons, ["backend-id-missing", "patient-id-missing", "source-identity-missing", "ledger-backend-day-mismatch", "mapping-unresolved"])) return "mapping-unverified";
+    if (receipt.accountingComplete === false || Number(receipt.accounted || 0) !== Number(receipt.attempted || 0)) return "accounting-unverified";
+    if (receipt.snapshotPublished === false) return "snapshot-unverified";
+    if (Number(receipt.failed || 0) > 0) return "row-unverified";
+    return "calendar-unverified";
   }
 
   function pullUnlocked(opts) {
@@ -2584,6 +2740,10 @@
           };
           return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true, includeHistory: includeHistory, requirePatientBinding: includeHistory, onEach: onEachImport }).then(async function (res) {
             res = res || {};
+            /* Crash-safe phase boundary: appointments and any materialized or
+               enriched patient identities are durable before chart navigation
+               starts. Later history saves remain coalesced in bounded groups. */
+            checkpointPatientBatch(opts.__patientStoreBatch, "schedule-import", true);
             res.identityBootstrapReceipt = identityBootstrap && identityBootstrap.receipt || null;
             var selectedProvider = providerRequest(providerTarget);
             if (!res.providerReceipt || res.providerReceipt.complete !== true) {
@@ -2601,11 +2761,28 @@
               if (sk) uniqueSources[sk] = 1; if (bk) uniqueBackend[bk] = 1;
             });
             var mappingComplete = mappings.length === attempted && Object.keys(uniqueSources).length === attempted && Object.keys(uniqueBackend).length === attempted && !(res.unresolvedMappings && res.unresolvedMappings.length);
-            var calendarReceipt = { complete: Number(res.failed || 0) === 0 && Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0 && accounted === attempted && mappingComplete, attempted: attempted, accounted: accounted, mapped: mappings.length, uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length, mappingComplete: mappingComplete, unresolvedMappings: Number(res.unresolvedMappings && res.unresolvedMappings.length || 0), created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0), failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0) };
+            var rowFailuresAbsent = Number(res.failed || 0) === 0;
+            var dateComplete = Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0;
+            var accountingComplete = accounted === attempted;
+            var preSnapshotComplete = rowFailuresAbsent && dateComplete && accountingComplete && mappingComplete;
+            var calendarReceipt = {
+              complete: preSnapshotComplete,
+              attempted: attempted, accounted: accounted, mapped: mappings.length,
+              uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length,
+              rowFailuresAbsent: rowFailuresAbsent, dateComplete: dateComplete,
+              accountingComplete: accountingComplete, mappingComplete: mappingComplete,
+              preSnapshotComplete: preSnapshotComplete,
+              unresolvedMappings: Number(res.unresolvedMappings && res.unresolvedMappings.length || 0),
+              failureReasons: phiFreeReasonCounts(res.failureReasons),
+              mappingReasons: mappingReasonCounts(res.unresolvedMappings),
+              created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0),
+              failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0)
+            };
             var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, returnedAppointments: r.appts, providerDiag: r.providerDiag, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
             calendarReceipt.snapshotPublished = snapshotReceipt.published === true;
             calendarReceipt.snapshotReason = snapshotReceipt.reason;
             if (calendarReceipt.complete && !calendarReceipt.snapshotPublished) calendarReceipt.complete = false;
+            calendarReceipt.failureClass = classifyCalendarFailure(res, calendarReceipt);
             res.authoritativeSnapshot = snapshotReceipt;
             if (res.created > 0 || res.repaired > 0) {
               var parts = [];
@@ -2630,7 +2807,7 @@
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
-            res.retry = { schedule: false, calendarFailed: calendarReceipt.failed, history: historyReceipt.retry || [] };
+            res.retry = { schedule: false, calendarFailed: calendarReceipt.failed, calendarClass: calendarReceipt.failureClass, history: historyReceipt.retry || [] };
             var scheduleSummary = calendarReceipt.accounted + "/" + calendarReceipt.attempted;
             var historySummary = historyReceipt.processed + "/" + historyReceipt.requested;
             var historyFailures = Number(historyReceipt.failures != null ? historyReceipt.failures : (historyReceipt.retry || []).length);
@@ -2652,7 +2829,14 @@
      a surprise pull later; the user must explicitly retry instead. */
   function pull(opts) {
     opts = opts || {};
-    var run = function () { return Promise.resolve().then(function () { return pullUnlocked(opts); }); };
+    var run = function () {
+      return withPatientBatch("schedule-pull", function (token) {
+        var runOpts = {};
+        for (var k in opts) if (opts.hasOwnProperty(k)) runOpts[k] = opts[k];
+        runOpts.__patientStoreBatch = token;
+        return pullUnlocked(runOpts);
+      });
+    };
     return runManagedAthenaOperation(run, function (scope) {
       return { ok: false, complete: false, reason: "pull-in-flight", error: scope === "other-tab"
         ? "Another MLS tab is already running an explicit pull. Nothing else was started."
@@ -2885,6 +3069,8 @@
       return out;
     },
     _publishAuthoritativeSnapshot: publishAuthoritativeSnapshot,
+    _classifyCalendarFailure: classifyCalendarFailure,
+    _phiFreeReasonCounts: phiFreeReasonCounts,
     _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,

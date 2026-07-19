@@ -40,22 +40,24 @@ const historyPlan = between(app, 'function pushHistoryNoteToAthena(id)', 'functi
 assert(/kind:'billing'[^}]*billing:_athenaCanonicalBilling\(c\)/.test(historyPlan), 'saved visit billing plan must carry its saved typed billing snapshot');
 
 const receiptAction = between(app, 'function _athenaReceiptAction(action)', '/* One truthful destination map');
-assert(/opts\.billing\s*=\s*billing&&billing\.billing\?billing\.billing:null/.test(receiptAction), 'receipt action must pass the frozen typed billing payload');
-assert(receiptAction.indexOf('opts.billing=') < receiptAction.indexOf("startAthenaAction('stage_billing'"), 'typed billing must be bound before the supervised action starts');
+assert(/action!==['"]write_note['"]&&action!==['"]save_draft['"]/.test(receiptAction), 'receipt action must allow only note write and Save Draft');
+assert(/Complete billing, orders, prescriptions, electronic signature, attestation, and claim submission directly in Athena/.test(receiptAction), 'receipt action must give a truthful manual-final-action response');
+assert(!/startAthenaAction\(['"]stage_billing['"]/.test(receiptAction), 'receipt action must never start billing execution');
 
-const receipt = between(app, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)', '/* Review the superbill routing');
+const receipt = between(app, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)', '/* Review the frozen superbill payload');
 assert(/x\.billing=\{emCode:/.test(receipt) && /Object\.freeze\(x\.billing\.cptCodes\)/.test(receipt), 'receipt must copy and freeze exact billing codes');
 assert(/hashInput=\{patient:patientCopy,sections:sectionCopy\}/.test(receipt), 'the preview hash must include the frozen billing snapshot');
-assert(/final Confirm button immediately performs only that named action/.test(receipt), 'receipt must explain confirmation semantics truthfully');
+assert(/Only reviewed note write and Save Draft can be confirmed here/.test(receipt), 'receipt must limit confirmation to the two note lanes');
+assert(/Complete in Athena:[^]{0,220}billing[^]{0,220}Sign &amp; Save/.test(receipt), 'receipt must visibly route billing and signature to Athena');
 assert(/Dx links manual; no claim/.test(app), 'billing destination must not imply diagnosis links or claim submission');
 
-/* The Superbill shortcut may start only the existing supervised probe/final
- * confirmation controller. It must never send an execute request itself. */
+/* The Superbill shortcut opens one immutable review-only billing payload. It
+ * must never start a billing probe/execute controller. */
 const superbill = between(app, 'function pushSuperbillToAthena()', '/* Preview a SAVED visit');
-assert(/startAthenaAction\('stage_billing',\{patient:snap\.patient,billing:billing,statusEl:status/.test(superbill), 'Superbill shortcut must start the typed supervised billing action');
+assert(/openUnifiedConfirmation\(\{patient:snap\.patient,plan:\[\{kind:['"]billing['"]/.test(superbill), 'Superbill shortcut must open a billing review row');
 assert(/snap\.bindingId!==binding\.id/.test(superbill), 'Superbill action must reject a stale display/visit binding');
-assert(!/mode\s*:\s*['"]execute['"]|mlsAppAthenaActionV2/.test(superbill), 'Superbill shortcut must not bypass the final confirmation controller');
-const directCalls = [];
+assert(!/startAthenaAction|mode\s*:\s*['"]execute['"]|mlsAppAthenaActionV2/.test(superbill), 'Superbill shortcut must not enter a billing execution path');
+const reviewCalls = [];
 const directStatus = { nodeType: 1, style: {}, textContent: '' };
 const directBinding = { id: 'visit-bind-1', historical: false };
 const directSnapshot = {
@@ -69,18 +71,19 @@ const directSnapshot = {
 const directContext = {
   _athenaBoundVisitForAction: () => directBinding,
   currentSuperbillSnapshot: directSnapshot,
-  window: { __mlsWriteFlow: { startAthenaAction: (action, opts) => directCalls.push({ action, opts }) } },
+  window: { __mlsWriteFlow: { openUnifiedConfirmation: opts => { reviewCalls.push(opts); return { manifestId: 'billing-review' }; } } },
   document: { getElementById: id => id === 'billAthenaStatus' ? directStatus : null },
   toast: () => {}
 };
 vm.runInNewContext(superbill + '\npushSuperbillToAthena();', directContext, { timeout: 100 });
-assert.strictEqual(directCalls.length, 1, 'one Superbill click must start one supervised action');
-assert.strictEqual(directCalls[0].action, 'stage_billing');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(directCalls[0].opts.billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] });
-assert(!directCalls[0].opts.billing.cptCodes.includes('M5450'), 'Superbill shortcut leaked an ICD code into executable billing');
-assert.strictEqual(directCalls[0].opts.patient.name, 'Example Patient');
+assert.strictEqual(reviewCalls.length, 1, 'one Superbill click must open one immutable review');
+assert.strictEqual(reviewCalls[0].plan.length, 1);
+assert.strictEqual(reviewCalls[0].plan[0].kind, 'billing');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] });
+assert(!reviewCalls[0].plan[0].billing.cptCodes.includes('M5450'), 'Superbill shortcut leaked an ICD code into the reviewed billing payload');
+assert.strictEqual(reviewCalls[0].patient.name, 'Example Patient');
 directSnapshot.billing.cptCodes[0] = 'M5450';
-assert.deepStrictEqual(JSON.parse(JSON.stringify(directCalls[0].opts.billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] }, 'post-preview coding mutation changed the confirmed billing snapshot');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] }, 'post-preview coding mutation changed the reviewed billing snapshot');
 
 const identitySource = between(app, 'function _athenaNormIdentity(v)', 'function _athenaResetSuperbill(hide)');
 const sameBoundPatient = Function(identitySource + '\nreturn _athenaSameBoundPatient;')();
@@ -143,7 +146,7 @@ const desktopRecognition = between(app, 'function initRecog()', 'function showMi
 assert(desktopRecognition.includes('instance!==recog||!capturing') && desktopRecognition.includes('instance._mlsCaptureEpoch!==captureSessionEpoch') && desktopRecognition.includes('instance._mlsBindingId!==currentVisitAthenaBinding.id') && desktopRecognition.includes('instance._mlsBindingEpoch') && desktopRecognition.includes('currentVisitAthenaEpoch'), 'late desktop recognition events could land in a new visit');
 const desktopStop = between(app, 'function stopCapture()', 'function clearTranscript()');
 assert(desktopStop.indexOf('recog=null') < desktopStop.indexOf('oldRecog.stop()'), 'desktop stop must invalidate the old recognition instance before a late result can fire');
-const phoneStart = between(app, 'async function startPhoneMic()', 'async function pollPhoneMic()');
+const phoneStart = between(app, 'async function startPhoneMic(clickEvent)', 'async function pollPhoneMic()');
 assert(phoneStart.indexOf("_athenaPrepareRecording('phone recording')") < phoneStart.indexOf('/api/mic/start'), 'phone capture must safely prepare or refuse a stale patient binding before starting remotely');
 assert(phoneStart.indexOf('!res.ok || !data.code') < phoneStart.indexOf('_athenaSetVisitBinding(phoneBindingCandidate)'), 'phone capture must not bind the patient until the server returns a valid recording code');
 assert(phoneStart.indexOf("_athenaAsyncBindingStillSafe(phoneBindingCandidate,'phone recording',phoneBindingEpoch)") < phoneStart.indexOf('phoneMicCode=data.code'), 'a delayed phone response must be discarded after any patient/visit change');
@@ -337,4 +340,4 @@ assert.deepStrictEqual(normalizeBilling({ billingText: 'CPT charges:\n• J3301\
 assert.deepStrictEqual(normalizeBilling({ cpt: [], cptCodes: ['J3301'] }).cptCodes, ['J3301'], 'empty CPT alias shadowed populated cptCodes');
 assert.deepStrictEqual(normalizeBilling({ invalid: [], conflicts: ['Conflicting CPT aliases'] }).invalid, ['Conflicting CPT aliases'], 'an empty invalid list shadowed explicit billing conflicts');
 
-console.log('PASS confirmed billing contract: final confirmation uses a frozen typed code payload and excludes diagnosis/order prose');
+console.log('PASS confirmed billing contract: review-only Superbill uses a frozen typed code payload and excludes diagnosis/order prose');

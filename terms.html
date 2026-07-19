@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Terms of Service — MLS</title>
-<meta name="description" content="Terms of Service for MLS and the MLS Assist browser extension — the agreement between MLS Scribe LLC and the practices that use the service.">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>Synthetic Evaluation Terms — MLS</title>
+<meta name="description" content="Terms for the synthetic-data MLS evaluation build. This is not an offer of production clinical service, a subscription, or a BAA.">
 <style>
   :root{
     --ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
@@ -98,20 +100,19 @@
 <main class="wrap">
 
   <section class="hero">
-    <h1>Terms of Service</h1>
-    <p class="lede">These terms are the agreement between <strong>MLS Scribe LLC</strong> ("MLS," "we," "us") and the
-      clinicians and practices that use the MLS web application, the <strong>MLS Assist</strong> browser extension,
-      and related services (together, the "Service"). By creating an account or using the Service, you agree to them.</p>
-    <p class="meta">Last updated: July 17, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
+    <h1>Synthetic Evaluation Terms</h1>
+    <p class="lede">These terms apply to the synthetic-data evaluation build provided by <strong>MLS Scribe LLC</strong>
+      ("MLS," "we," "us"), including the MLS web application and the published <strong>MLS Assist</strong> browser
+      extension. They are not an offer of production clinical service.</p>
+    <p class="meta">Last updated: July 18, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
   </section>
 
   <section class="doc">
 
     <div class="callout">
-      <strong>The plain-English version.</strong> MLS drafts clinical notes and coding suggestions for you — but you,
-      the licensed clinician, review, edit, and sign everything before it counts. Pay monthly or annually per
-      provider, cancel whenever you like, and your patient data stays yours. Protected health information belongs in
-      MLS only once a Business Associate Agreement is in place with your practice.
+      <strong>Current boundary.</strong> Use fictional or de-identified test data only. Do not submit protected health
+      information (PHI), rely on the build for patient care, buy a subscription, or treat any draft as a final medical
+      record. Production scope, commercial terms, vendor agreements, and any BAA require separate written review.
     </div>
 
     <div class="toc">
@@ -120,13 +121,13 @@
         <li><a href="#agreement">The agreement</a></li>
         <li><a href="#service">What the Service is — and isn't</a></li>
         <li><a href="#accounts">Accounts &amp; eligibility</a></li>
-        <li><a href="#billing">Plans, billing &amp; cancellation</a></li>
-        <li><a href="#phi">Health information &amp; BAAs</a></li>
+        <li><a href="#billing">Billing status</a></li>
+        <li><a href="#phi">Health-information prohibition</a></li>
         <li><a href="#responsibility">Clinical &amp; coding responsibility</a></li>
         <li><a href="#acceptable">Acceptable use</a></li>
         <li><a href="#customer-data">Your data &amp; our IP</a></li>
         <li><a href="#thirdparty">EHR connections &amp; third-party services</a></li>
-        <li><a href="#legalportal">Legal / IME report portal</a></li>
+        <li><a href="#legalportal">Held workflows</a></li>
         <li><a href="#disclaimers">Disclaimers</a></li>
         <li><a href="#liability">Limitation of liability</a></li>
         <li><a href="#indemnity">Indemnification</a></li>
@@ -138,16 +139,16 @@
     </div>
 
     <h2 id="agreement">1. The agreement</h2>
-    <p>These Terms of Service, together with our <a href="/privacy.html">Privacy Policy</a> and any Business
-      Associate Agreement ("BAA") or order form executed between MLS and your practice, form the agreement between
-      you and MLS Scribe LLC. If you use the Service on behalf of a practice or other organization, you represent
-      that you have authority to bind that organization, and "you" means that organization. If a signed agreement
-      between MLS and your practice conflicts with these terms, the signed agreement controls.</p>
+    <p>These Evaluation Terms and our <a href="/privacy.html">Privacy Policy</a> govern use of the current synthetic
+      evaluation. Creating an evaluation account does not execute a BAA, order form, subscription, production
+      agreement, or integration contract. Anyone evaluating on behalf of a practice must have permission to do so,
+      but the evaluator may not use this page to bind the practice to unreleased commercial or clinical service.</p>
 
     <h2 id="service">2. What the Service is — and isn't</h2>
-    <p>MLS is an ambient AI documentation and practice platform for clinicians: it captures or accepts a record of
-      a visit, drafts structured clinical notes, suggests E/M, ICD-10, and CPT codes, connects to supported EHRs,
-      and provides related tools such as patient intake, outcomes tracking, reporting, and reputation features.</p>
+    <p>MLS is a product candidate for clinical documentation and related practice workflows. In this evaluation it
+      can accept synthetic visit material, draft test notes, suggest test codes, and exercise selected integration
+      flows. Availability in the interface does not mean that a workflow is released for real patient data,
+      production EHR access, billing, legal-report delivery, or patient communication.</p>
     <p><strong>MLS is not a medical device and does not practice medicine.</strong> The Service produces drafts and
       suggestions for a licensed clinician to review. It does not diagnose, treat, or make clinical or billing
       decisions, and it is not a substitute for professional judgment. Nothing produced by the Service is medical
@@ -166,30 +167,16 @@
     <p>You are responsible for activity that occurs under your account, except to the extent caused by our breach of
       these terms.</p>
 
-    <h2 id="billing">4. Plans, billing &amp; cancellation</h2>
-    <p>Paid plans are billed <strong>per provider</strong>, monthly or annually, at the prices shown on our
-      <a href="/#pricing">pricing page</a> when you subscribe. Payments are processed by <strong>Stripe</strong>;
-      MLS does not store your full card details. Applicable taxes may be added where required.</p>
-    <ul>
-      <li><strong>Renewal.</strong> Subscriptions renew automatically at the end of each billing period until
-        cancelled.</li>
-      <li><strong>Cancellation.</strong> You may cancel at any time; cancellation takes effect at the end of the
-        current billing period, and you keep access until then. Except where required by law, fees already paid are
-        non-refundable.</li>
-      <li><strong>Seat counts.</strong> Plans priced per provider (including Enterprise's three-seat minimum) are
-        based on the number of providers using the Service; you agree to keep your seat count accurate.</li>
-      <li><strong>Price changes.</strong> We may change prices with at least 30 days' notice; changes apply from
-        your next renewal, never mid-term.</li>
-      <li><strong>Kickstarter / promotional terms.</strong> Founder rewards and other promotions are honored as
-        described in the specific offer.</li>
-    </ul>
+    <h2 id="billing">4. Billing status</h2>
+    <p>Self-service checkout, paid subscriptions, renewals, seat commitments, refunds, and promotional packages are
+      disabled in this release. Prices shown elsewhere are planning information, not an offer that can be accepted
+      through the evaluation build. No click in the current public flow should create a charge or subscription.</p>
 
-    <h2 id="phi">5. Health information &amp; BAAs</h2>
-    <p>Where MLS processes protected health information ("PHI") on behalf of your practice, MLS acts as a
-      <strong>Business Associate</strong> under HIPAA and will enter into a Business Associate Agreement with your
-      practice. <strong>Do not enter PHI into the Service until a BAA between MLS and your practice is in
-      effect.</strong> Our handling of information, including our subprocessors, is described in the
-      <a href="/privacy.html">Privacy Policy</a>.</p>
+    <h2 id="phi">5. Health-information prohibition</h2>
+    <p><strong>Do not enter PHI or other real patient information into this release.</strong> Hosted clinical access
+      is server-gated and not released. These terms do not represent that MLS, any vendor, or any evaluator has
+      executed a BAA or enabled a regulated-production configuration. Any future clinical use requires separate
+      verified technical readiness and written agreements. See the <a href="/privacy.html">Privacy Policy</a>.</p>
 
     <h2 id="responsibility">6. Clinical &amp; coding responsibility</h2>
     <p>The clinician is always the final word. You agree that:</p>
@@ -214,30 +201,26 @@
     </ul>
 
     <h2 id="customer-data">8. Your data &amp; our IP</h2>
-    <p><strong>Your data is yours.</strong> As between you and MLS, your practice owns the clinical records, notes,
-      transcripts, and other content you create or upload ("Customer Content"). You grant MLS the limited rights
-      needed to operate the Service — to process, store, back up, and transmit Customer Content on your behalf as
-      described in the Privacy Policy and any BAA. You can export your records from the Service, and you are
-      responsible for retaining medical records as your state and payers require.</p>
+    <p><strong>Your synthetic evaluation content remains yours.</strong> You grant MLS the limited permission needed
+      to process the fictional or de-identified test content you intentionally submit to the evaluation. The local
+      demo may store that content in browser storage as disclosed in the Privacy Policy. This build is not a medical-
+      record repository and makes no hosted clinical retention, backup, or export promise.</p>
     <p><strong>The Service is ours.</strong> MLS and its software, models, templates, designs, and branding are the
       property of MLS Scribe LLC and its licensors. We grant you a limited, non-exclusive, non-transferable right to
-      use the Service during your subscription. Feedback you choose to send us may be used to improve the Service
+      use the evaluation while MLS makes it available. Feedback you choose to send us may be used to improve MLS
       without obligation.</p>
 
     <h2 id="thirdparty">9. EHR connections &amp; third-party services</h2>
-    <p>The Service can connect to third-party systems — for example pulling schedules and chart data from
-      athenahealth and writing notes back to your EHR, including via the MLS Assist browser extension. You represent
-      that you are authorized to access the EHR accounts you connect, and you remain responsible for your
-      obligations to those vendors. Third-party services (such as your EHR, Stripe, or the Chrome Web Store) are
-      governed by their own terms, and MLS is not responsible for third-party services we do not control. EHR
-      integrations depend on those systems remaining available to us; where a integration guarantee is offered, it
-      is as described on our site at the time you rely on it.</p>
+    <p>The published MLS Assist channel and isolated candidate are being evaluated with clinician-started Athena
+      workflows. Do not connect an account or page unless you are authorized to access it, and use only synthetic
+      records during this evaluation. The current page does not promise production writeback, compatibility with any
+      other EHR, uninterrupted third-party availability, or a delivery date. Third-party systems remain governed by
+      their own terms.</p>
 
-    <h2 id="legalportal">10. Legal / IME report portal</h2>
-    <p>Where your plan includes the legal / IME portal, you may offer signed reports to attorneys and set your own
-      prices. MLS charges the platform fee disclosed on the pricing page (currently 5% of what you earn through the
-      portal), and payouts are processed through our payment partner. You are solely responsible for the content and
-      professional standards of reports you sign and sell, and for your own tax treatment of amounts you earn.</p>
+    <h2 id="legalportal">10. Held workflows</h2>
+    <p>Legal/IME case intake, patient-record upload, authorization verification, report signature, payment, sale,
+      release, and delivery are unavailable. Reputation automation, production patient communications, and other
+      pages marked held or synthetic-only are likewise not commercial services under these terms.</p>
 
     <h2 id="disclaimers">11. Disclaimers</h2>
     <p>We work hard to keep MLS accurate, secure, and available, but the Service is provided
@@ -252,9 +235,7 @@
       consequential, or punitive damages, or for lost profits, revenue, or data; and (b) MLS's total liability
       arising out of or relating to the Service is limited to the amounts you paid to MLS for the Service in the
       <strong>twelve (12) months</strong> before the event giving rise to the claim. These limits do not apply to
-      either party's obligations under a signed BAA to the extent that agreement says otherwise, or to liability
-      that cannot be limited by law. Nothing in these terms limits your patients' rights, which are matters between
-      them and your practice.</p>
+      liability that cannot be limited by law. No BAA is executed by these terms.</p>
 
     <h2 id="indemnity">13. Indemnification</h2>
     <p>You will defend and indemnify MLS against third-party claims arising from your Customer Content, your
@@ -263,11 +244,10 @@
       their intellectual-property rights.</p>
 
     <h2 id="termination">14. Suspension &amp; termination</h2>
-    <p>You may stop using the Service and cancel at any time (see Section 4). We may suspend or terminate access for
-      material breach of these terms, for non-payment after notice, or where necessary to protect the Service or
-      comply with law — and where practical we will give you notice and a chance to cure first. After termination,
-      we will make your Customer Content available for export for at least 30 days on request, after which our
-      retention and deletion practices in the Privacy Policy and any BAA apply.</p>
+    <p>You may stop using the evaluation at any time. MLS may suspend or end evaluation access for misuse, security,
+      legal, or operational reasons. Because this is not a hosted clinical-record service, do not rely on it for
+      medical-record retention or a post-termination export. Clear local synthetic data from the supported logout or
+      browser site-data controls; other retention details are in the Privacy Policy.</p>
 
     <h2 id="law">15. Governing law &amp; disputes</h2>
     <p>These terms are governed by the laws of the Commonwealth of Pennsylvania, without regard to conflict-of-law

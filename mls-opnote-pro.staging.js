@@ -41,8 +41,8 @@
        default; clinic name/address configurable — see MLS_OPNOTE_LETTERHEAD
        below), and the normalized section headings.
      • Filename: OpNote_<patient>_<date>.pdf  (no PHI is written to logs).
-     • Uses the app's own loadJsPdf() (jsPDF 2.5.1) when present, else lazy-
-       loads the same CDN build itself.
+     • Uses the app's own loadJsPdf() (jsPDF 4.2.1) when present, else lazy-
+       loads the same pinned same-origin build itself.
 
    Discipline: own IIFE, all external work in try/catch, no required globals
    (every dependency is feature-detected), degrades to a silent no-op on any
@@ -436,7 +436,7 @@
       if (ex) { ex.addEventListener('load', ok); ex.addEventListener('error', function () { reject(new Error('jsPDF load error')); }); return; }
       var s = document.createElement('script');
       s.id = 'jspdfScript';
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.src = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
       s.onload = ok; s.onerror = function () { reject(new Error('jsPDF load error')); };
       document.head.appendChild(s);
     });

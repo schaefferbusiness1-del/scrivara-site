@@ -1,13 +1,16 @@
 /* =========================================================================
- * MLS -- Command Palette  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.0)
+ * MLS -- Find shortcut compatibility  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.3)
  * 2026-07-12, final integration sweep (demo polish lane).
  * ----------------------------------------------------------------------------
- * Ctrl+K / Cmd+K (or the header "Search" pill) opens a fast fuzzy palette over:
+ * Ctrl+K / Cmd+K opens the same canonical Find surface as the persistent
+ * top-bar field. The former Commands pill is retired so doctors never need
+ * to choose between overlapping search controls. If canonical Find has not
+ * loaded during a partial startup, this file's legacy palette fails open over:
  *   - PATIENTS (name / MRN / DOB; rows always show name + DOB + MRN so a
  *     same-name pick is identity-labeled, never name-alone) -> verified
  *     id-based selectPatient + Patients view
  *   - ACTIONS (start/stop recording, generate note, dictate a letter, guided
- *     tour, legal requests, reviews, every main view) -- this is also the
+ *     tour, reviews, and every released main view) -- this is also the
  *     coherence bridge for features that were only reachable via the Menu
  *   - NOTES full-text search (>=3 chars) -> opens that patient's History
  * Safety: no writeback, no orders, no signing; "start recording" refuses
@@ -16,9 +19,15 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  try { if (window.__mlsCmdPalette && window.__mlsCmdPalette.installed) return; } catch (e) { return; }
-
-  var VERSION = 'cpal-1.0.0';
+  var VERSION = 'cpal-1.0.3';
+  var _priorPalette = null;
+  try {
+    _priorPalette = window.__mlsCmdPalette || null;
+    if (_priorPalette && _priorPalette.installed) {
+      if (_priorPalette.version === VERSION) return;
+      if (typeof _priorPalette.revert === 'function') _priorPalette.revert();
+    }
+  } catch (e) {}
   var OV_ID = 'mlsCpalOverlay', BTN_ID = 'mlsCpalBtn', STYLE_ID = 'mlsCpalStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -75,7 +84,6 @@
           var b = $('mlsdlLaunch'); if (b) { b.click(); } else { toast('The letter tool has not loaded yet.', 'err'); }
         } },
       { icon: '🎓', title: 'Guided tour', desc: 'Open the onboarding walkthrough', kw: 'tour help onboarding how to guide', run: function () { safe(function () { var t = window.__mlsOnboardingTour || window.__mlsGuidedTour; if (t && isFn(t.open)) t.open(); }); } },
-      { icon: '⚖️', title: 'Legal requests', desc: 'Attorney requests and medical-legal reports', kw: 'legal attorney lawyer report narrative', run: function () { var r = $('mlsNavRow_legalreq'); if (r) r.click(); else nav('legalreq'); } },
       { icon: '⭐', title: 'Reviews & reputation', desc: 'Practice reviews dashboard', kw: 'reviews reputation google rating', run: function () { if (!nav('reviews')) toast('Reviews opens from the Menu on this build.', ''); } }
     ];
     var views = [['visit', '🏠', 'Visit'], ['patients', '👥', 'Patients'], ['calendar', '📅', 'Calendar'], ['history', '🗃', 'History'], ['analysis', '📊', 'Analysis'], ['studio', '✨', 'AI Studio'], ['settings', '⚙️', 'Settings']];
@@ -219,45 +227,69 @@
     }
   }
 
-  /* ---------------- global hotkey + header button ---------------- */
+  /* ---------------- global hotkey; canonical Find owns the header -------- */
+  var _legacyCmdK = safe(function () { return window.__mlsCmdK || null; }, null);
+  var _compatCmdK = null;
+  function retireLegacySurface() {
+    /* A pre-upgrade mls-connect bundle may already have registered its own
+       capture listener. We cannot remove a closure we do not own, but we can
+       synchronously close/remove its overlay in the same key event before the
+       browser paints. stopImmediatePropagation below also prevents any legacy
+       listener registered after this owner from running at all. */
+    if (_legacyCmdK && _legacyCmdK !== _compatCmdK && !_legacyCmdK.compatibilityOnly && isFn(_legacyCmdK.close)) {
+      safe(function () { _legacyCmdK.close(); });
+    }
+    var old = $('mlsCmdkOverlay');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  }
+  function openCanonicalFind() {
+    retireLegacySurface();
+    if (isFn(window.mlsQuickFind)) {
+      close();
+      safe(function () { window.mlsQuickFind(); });
+      return true;
+    }
+    open(); /* fail open during a partial or slow startup */
+    return false;
+  }
   function onKey(e) {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 'k') {
-      e.preventDefault(); e.stopPropagation();
-      if ($(OV_ID)) close(); else open();
+      e.preventDefault();
+      if (isFn(e.stopImmediatePropagation)) e.stopImmediatePropagation();
+      else if (isFn(e.stopPropagation)) e.stopPropagation();
+      retireLegacySurface();
+      if ($(OV_ID)) close(); else openCanonicalFind();
     }
   }
   function ensureBtn() {
-    if ($(BTN_ID)) return;
-    var host = document.querySelector('#appHeader .nav, #appHeader nav, #appHeader') || null;
-    if (!host) return;
-    var b = document.createElement('button');
-    b.id = BTN_ID; b.type = 'button';
-    /* RS consolidation (2026-07-13): the header field is THE search (patients,
-       notes); this trigger is the COMMAND palette — distinct vocabulary so the
-       two entry points never read as duplicates. */
-    b.innerHTML = 'Commands <kbd>Ctrl K</kbd>';
-    b.title = 'Command palette — actions, navigation, patients (Ctrl+K / ⌘K)';
-    b.addEventListener('click', function () { open(); });
-    host.appendChild(b);
+    var stale = $(BTN_ID);
+    if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
   }
 
-  var tickIv = null;
   function boot() {
-    css();
     safe(ensureBtn);
+    retireLegacySurface();
+    _compatCmdK = {
+      open: openCanonicalFind,
+      close: function () { retireLegacySurface(); close(); safe(function () { if (isFn(window.mlsQuickFindClose)) window.mlsQuickFindClose(); }); },
+      toggle: openCanonicalFind,
+      compatibilityOnly: true,
+      owner: 'canonical-find'
+    };
+    safe(function () { window.__mlsCmdK = _compatCmdK; });
     document.addEventListener('keydown', onKey, true);
-    tickIv = setInterval(function () { safe(ensureBtn); }, 2500);
   }
   function revert() {
     try { document.removeEventListener('keydown', onKey, true); } catch (e) {}
-    if (tickIv) { clearInterval(tickIv); tickIv = null; }
+    retireLegacySurface();
     close();
     ['mlsCpalBtn', STYLE_ID].forEach(function (id) { var n = $(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    try { if (window.__mlsCmdK === _compatCmdK) window.__mlsCmdK = _legacyCmdK; } catch (e) {}
     try { window.__mlsCmdPalette.installed = false; } catch (e) {}
     return 'command palette reverted';
   }
 
-  window.__mlsCmdPalette = { installed: true, version: VERSION, asset: 'feat_mls_command_palette.js', open: open, close: close, _search: search, revert: revert };
+  window.__mlsCmdPalette = { installed: true, version: VERSION, asset: 'feat_mls_command_palette.js', open: openCanonicalFind, close: close, _search: search, revert: revert };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

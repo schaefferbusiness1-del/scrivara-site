@@ -1,5 +1,5 @@
 /* =====================================================================
- * feat_mls_status_center.js  ->  window.__mlsStatusCenter  (v1.0.0)
+ * feat_mls_status_center.js  ->  window.__mlsStatusCenter  (v1.1.0)
  * ---------------------------------------------------------------------
  * ONE polished, honest, MLS-Scribe-style STATUS CENTER for MLS Assistant
  * and the Athena pull — plus the root-cause fix for "Athena is connected
@@ -26,23 +26,22 @@
  *            with a freshness timestamp; no probe needed while real
  *            results keep landing.
  *        (b) active probe — mlsPing (3 tries; wakes a cold service
- *            worker) then a schedule probe with escalating timeouts
- *            (9s/14s/20s), never while a user pull is in flight.
- *        (c) v1.42+ extension fast path — mlsAppConnCheck (tab presence
- *            by host, no page read) when the loaded extension supports
- *            it; feature-detected, falls back silently on v1.40/1.41.
+ *            worker) then mlsExtHealth with escalating timeouts, never
+ *            while a clinician-started pull is in flight.
+ *        (c) Health returns only exact Athena product-tab and discarded-
+ *            tab counts. It never reads a schedule, chart, or patient.
  *      - A single failed/slow probe NEVER flips the app to red. Failures
- *        show "Checking Athena connection…" and retry; DISCONNECTED is
+ *        show "Checking MLS Assist readiness…" and retry; unavailable is
  *        declared only when retries are exhausted AND there is no fresh
  *        positive evidence (or the extension truly does not answer, or
- *        Athena is truly signed out — those are definitive).
+ *        no usable exact Athena product tab is reported).
  *      - isConnected()/describe()/check()/state are wrapped so every
  *        consumer (context chip, status dot, sign-in banner, assistant,
  *        status-unify) reads the SAME verdict. A visible-surface
  *        corrector repaints the chip/dot/banner if an old subscriber
  *        briefly renders a contradictory state, so pages can no longer
  *        disagree. Downgrade-safe: "connected" is never invented — it
- *        always traces to a real athena-host reply.
+ *        always traces to worker health or a real explicit operation.
  *   2. STATUS CENTER DOCK (one surface, fixed position, no layout shift):
  *      current task · current step · current patient/date · data source ·
  *      completed / running / failed / retry steps · per-area statuses
@@ -53,7 +52,7 @@
  *      position:fixed => zero reflow of app content; rows have fixed
  *      heights => no flicker/jumping; buttons never move while visible.
  *   3. HONEST NARRATION of the pull, driven ONLY by real events:
- *      "Checking Athena connection" → "Athena connection confirmed" →
+ *      "Checking MLS Assist readiness" → "MLS Assist ready" →
  *      "Reading Athena calendar" → "Reading provider schedule" →
  *      "Reading visits for <real date>" → "Loading patient: <name>" →
  *      "Pulling appointment data" → "Updating MLS calendar" →
@@ -82,7 +81,7 @@
  *      while not ready). This module itself NEVER writes to athenaOne,
  *      never clicks Save/Sign, never posts write messages — it is a
  *      read-only observer plus the same read-only probes the app
- *      already uses (ping + schedule read).
+ *      already uses (ping + operational extension health).
  *
  * PHI SAFETY
  *   On screen it may show a patient display name the app itself is
@@ -107,7 +106,7 @@
   if (!W || !W.document) return;
   if (W.__mlsStatusCenter && W.__mlsStatusCenter.installed) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var ASSET = 'feat_mls_status_center.js';
   var DOCK_ID = 'mlsScDock';
   var STYLE_ID = 'mlsScStyle';
@@ -122,8 +121,8 @@
   var GRACE_MS = tn('GRACE_MS', 120000);          // recent-connected grace: fail->checking, not red
   var PING_TIMEOUT_MS = tn('PING_TIMEOUT_MS', 2500);
   var PING_TRIES = tn('PING_TRIES', 3);             // wakes a cold MV3 service worker
-  var SCHED_TIMEOUTS = TUNE.SCHED_TIMEOUTS || [9000, 14000, 20000]; // escalating probe timeouts
-  var FASTCHECK_TIMEOUT_MS = tn('FASTCHECK_TIMEOUT_MS', 1600);// v1.42 mlsAppConnCheck
+  var HEALTH_TIMEOUTS = TUNE.HEALTH_TIMEOUTS || TUNE.SCHED_TIMEOUTS || [4000, 6000, 9000]; // PHI-free worker/tab health retries
+  var FASTCHECK_TIMEOUT_MS = tn('FASTCHECK_TIMEOUT_MS', 2500);// first mlsExtHealth attempt
   var PROBE_MIN_GAP_MS = tn('PROBE_MIN_GAP_MS', 20000);   // never probe more often than this
   var POLL_MS = tn('POLL_MS', 45000);            // background re-verdict cadence (visible only)
   var STEP_SLOW_MS = tn('STEP_SLOW_MS', 90000);       // running step -> "taking longer than usual"
@@ -150,10 +149,20 @@
   var cleanups = [];   // fns run on revert
   var timers = [];     // interval ids
   var timeouts = [];   // timeout ids
+  var sessionTimeouts = []; // clinical/task waits cancelled at every account boundary
   var observers = [];  // MutationObservers
+  var sessionObservers = []; // task DOM watches cancelled at every account boundary
   function remember(fn) { cleanups.push(fn); }
   function every(ms, fn) { var id = setInterval(function () { safe(fn); }, ms); timers.push(id); return id; }
   function later(ms, fn) { var id = setTimeout(function () { safe(fn); }, ms); timeouts.push(id); return id; }
+  function laterSession(ms, fn) {
+    var epoch = sessionEpoch;
+    var id = setTimeout(function () {
+      if (epoch === sessionEpoch) safe(fn);
+    }, ms);
+    sessionTimeouts.push(id);
+    return id;
+  }
   function listen(target, ev, fn, opts) {
     target.addEventListener(ev, fn, opts || false);
     remember(function () { safe(function () { target.removeEventListener(ev, fn, opts || false); }); });
@@ -164,13 +173,35 @@
     observers.push(mo);
     return mo;
   }
+  function observeSession(node, fn, cfg) {
+    var epoch = sessionEpoch;
+    var mo = new MutationObserver(function (m) {
+      if (epoch === sessionEpoch) safe(function () { fn(m); });
+    });
+    mo.observe(node, cfg);
+    observers.push(mo);
+    sessionObservers.push(mo);
+    return mo;
+  }
+  function normalizeAccount(value) { return String(value == null ? '' : value).trim().toLowerCase(); }
+  function readAccountIdentity() {
+    return normalizeAccount(safe(function () {
+      if (isFn(W.getSessionEmail)) return W.getSessionEmail();
+      return W.sessionStorage && W.sessionStorage.getItem ? W.sessionStorage.getItem('sf_session') : '';
+    }, ''));
+  }
+  var boundAccount = readAccountIdentity();
+  var sessionEpoch = 1;
+  var lastBoundaryEpoch = null;
+  var lastBoundaryAccount = null;
+  var lastBoundaryAt = 0;
 
   /* =====================================================================
    * SECTION A — CONNECTION TRUTH v2 (evidence + retries + coherence)
    * =================================================================== */
   var conn = {
     verdict: 'checking',            // connected | checking | disconnected
-    reason: 'Checking Athena connection',
+    reason: 'Checking MLS Assist readiness',
     detailStatus: 'checking',       // connected|no-extension|no-tab|error|checking (legacy vocab)
     lastConnectedAt: 0,
     evidence: { pong: 0, athenaResult: 0, probeOk: 0, probeFail: 0, fastCheck: 0 },
@@ -247,8 +278,8 @@
       safe(function () { W.postMessage(payload, W.location.origin); });
     });
   }
-  function classifyScheduleReply(d) {
-    // Reads ONLY: resp.ok (bool), resp.signin (bool), host of resp.url. Never text/title. No PHI.
+  function classifyHealthReply(d) {
+    // Reads ONLY worker status plus exact Athena tab/discarded counts. No PHI.
     var resp = d && d.data && d.data.resp;
     if (!resp || typeof resp !== 'object') return { state: 'unknown', why: 'Empty reply from the extension.' };
     /* Extension RUNTIME failure ≠ Athena signed out. The content bridge answers
@@ -259,19 +290,13 @@
     if (/extension-error|bridge-error|context invalidated|worker-unreachable/i.test(ctl)) {
       return { state: 'ext-crashed', why: 'MLS Assist hit an internal error and needs a reload — open chrome://extensions, find MLS Assist, press ↻ Reload. athenaOne itself may still be signed in.' };
     }
-    if (resp.error) {
-      var em = String(resp.error).slice(0, 160);
-      if (/no athena|no tab|not found|no http/i.test(em)) return { state: 'no-tab', why: 'No athenaOne tab found.' };
-      return { state: 'unknown', why: 'Athena page not ready, retrying' };
-    }
-    var host = '';
-    safe(function () { var u = typeof resp.url === 'string' ? resp.url : ''; host = u ? String(u).replace(/^[a-z]+:\/\//i, '').split('/')[0] : ''; });
-    var isAthena = host ? /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(host) : null;
-    var signin = !!resp.signin;
-    if (signin) return { state: 'no-tab', why: 'athenaOne is showing a sign-in page — sign in, then retry.' };
-    if (resp.ok && (isAthena === true || isAthena === null)) return { state: 'connected', why: 'athenaOne connected — a signed-in tab is readable.' };
-    if (resp.ok && isAthena === false) return { state: 'no-tab', why: 'No athenaOne tab found (another site answered).' };
-    return { state: 'unknown', why: 'Athena page not ready, retrying' };
+    if (resp.ok !== true) return { state: 'ext-crashed', why: 'MLS Assist worker health did not answer — reload MLS Assist at chrome://extensions. Athena was not read.' };
+    var a = resp.athena && typeof resp.athena === 'object' ? resp.athena : {};
+    var tabs = Math.max(0, Number(a.tabs || 0));
+    var discarded = Math.max(0, Number(a.discarded || 0));
+    if (tabs > discarded) return { state: 'connected', why: 'MLS Assist ready — Athena tab detected; patient and encounter not yet verified.', tabs: tabs, discarded: discarded };
+    if (tabs > 0) return { state: 'no-tab', why: 'Athena tab detected but discarded by Memory Saver — activate it before a clinical action.', tabs: tabs, discarded: discarded };
+    return { state: 'no-tab', why: 'MLS Assist ready — no usable Athena product tab detected.', tabs: 0, discarded: 0 };
   }
 
   /* ---- the orchestrated probe: never one-shot-red ---- */
@@ -285,7 +310,7 @@
     }
     conn.lastProbeAt = now();
     conn.probing = true;
-    if (conn.verdict !== 'connected') setVerdict('checking', 'checking', 'Checking Athena connection');
+    if (conn.verdict !== 'connected') setVerdict('checking', 'checking', 'Checking MLS Assist readiness');
     else safe(renderConn);
 
     probeChain = (function () {
@@ -313,33 +338,37 @@
         // Step 2 (fast path, v1.42+): cheap tab check — no page read at all.
         return tryFastCheck().then(function (fc) {
           if (fc && fc.answered) {
-            if (fc.present && fc.loggedIn !== false) {
+            if (!fc.workerOk) {
+              conn.probing = false;
+              setVerdict('disconnected', 'no-extension', 'MLS Assist worker health failed — reload MLS Assist at chrome://extensions. Athena was not read.');
+              return connPublicState();
+            }
+            if (fc.present) {
               conn.evidence.fastCheck = now();
               conn.probing = false;
-              setVerdict('connected', 'connected', 'athenaOne connected' + (fc.host ? ' (' + fc.host + ')' : '') + '.');
+              setVerdict('connected', 'connected', 'MLS Assist ready — Athena tab detected; patient and encounter not yet verified.');
               return connPublicState();
             }
-            if (fc.present === false) {
-              conn.probing = false;
-              setVerdict('disconnected', 'no-tab', 'No athenaOne tab is open — open athenaOne and sign in.');
-              return connPublicState();
-            }
-            // present but maybe on a login page -> fall through to the real read probe
+            conn.probing = false;
+            setVerdict('disconnected', 'no-tab', fc.tabs > 0
+              ? 'Athena tab detected but discarded by Memory Saver — activate it before a clinical action.'
+              : 'MLS Assist ready — no usable Athena product tab detected.');
+            return connPublicState();
           }
-          // Step 3: schedule probe with escalating timeouts.
+          // Step 3: retry the same PHI-free health snapshot with longer timeouts.
           var attempt = 0;
           function tryOnce() {
             if (pullIsBusy()) { conn.probing = false; return Promise.resolve(connPublicState()); }
             if (evidenceFresh()) { // real data landed while we were probing — that wins
               conn.probing = false;
-              setVerdict('connected', 'connected', 'athenaOne connected — live data came back while rechecking.');
+              setVerdict('connected', 'connected', 'MLS Assist ready — an explicit Athena operation responded; the next action still verifies its exact patient and encounter.');
               return Promise.resolve(connPublicState());
             }
             conn.attempt = attempt + 1;
-            conn.attemptsMax = SCHED_TIMEOUTS.length;
+            conn.attemptsMax = HEALTH_TIMEOUTS.length;
             safe(renderConn);
-            return bridgeRequest('mlsAppPullSchedule', 'mlsAppScheduleResult', SCHED_TIMEOUTS[attempt]).then(function (r) {
-              var cls = r.ok ? classifyScheduleReply(r) : { state: 'unknown', why: 'Athena page not ready, retrying' };
+            return bridgeRequest('mlsExtHealth', 'mlsExtHealthResult', HEALTH_TIMEOUTS[attempt]).then(function (r) {
+              var cls = r.ok ? classifyHealthReply(r) : { state: 'unknown', why: 'MLS Assist health not ready, retrying' };
               if (cls.state === 'connected') {
                 conn.evidence.probeOk = now();
                 conn.probing = false;
@@ -347,7 +376,7 @@
                 return connPublicState();
               }
               if (cls.state === 'no-tab') {
-                // definitive negative (real reply said sign-in / wrong host / no tab)
+                // definitive operational negative: no usable exact product tab
                 conn.evidence.probeFail = now();
                 conn.probing = false;
                 setVerdict('disconnected', 'no-tab', cls.why);
@@ -361,21 +390,21 @@
                 return connPublicState();
               }
               attempt++;
-              if (attempt < SCHED_TIMEOUTS.length) {
-                setVerdict('checking', 'checking', 'Athena page not ready, retrying (' + (attempt + 1) + '/' + SCHED_TIMEOUTS.length + ')');
+              if (attempt < HEALTH_TIMEOUTS.length) {
+                setVerdict('checking', 'checking', 'MLS Assist health not ready, retrying (' + (attempt + 1) + '/' + HEALTH_TIMEOUTS.length + ')');
                 return new Promise(function (res) { later(RETRY_GAP_MS, function () { res(tryOnce()); }); });
               }
               // Retries exhausted. Only now may we go red — unless fresh positive evidence exists.
               conn.evidence.probeFail = now();
               conn.probing = false;
               if (evidenceFresh()) {
-                setVerdict('connected', 'connected', 'athenaOne connected — live data came back while rechecking.');
+                setVerdict('connected', 'connected', 'MLS Assist ready — an explicit Athena operation responded; the next action still verifies its exact patient and encounter.');
                 return connPublicState();
               }
               if ((now() - conn.lastConnectedAt) < GRACE_MS) {
-                setVerdict('checking', 'checking', 'Athena was connected moments ago but is not answering — rechecking. If this persists, click the athenaOne tab once to wake it.');
+                setVerdict('checking', 'checking', 'MLS Assist was ready moments ago but health is not answering — rechecking.');
               } else {
-                setVerdict('disconnected', 'error', 'athenaOne did not answer after ' + SCHED_TIMEOUTS.length + ' attempts — click the athenaOne tab once to wake it, then Recheck.');
+                setVerdict('disconnected', 'error', 'MLS Assist health did not answer after ' + HEALTH_TIMEOUTS.length + ' attempts — reload MLS Assist, then Recheck. Athena was not read.');
               }
               return connPublicState();
             });
@@ -389,16 +418,17 @@
   }
   function tryFastCheck() {
     if (conn.fastCheckSupported === false) return Promise.resolve(null);
-    return bridgeRequest('mlsAppConnCheck', 'mlsAppConnCheckResult', FASTCHECK_TIMEOUT_MS).then(function (r) {
+    return bridgeRequest('mlsExtHealth', 'mlsExtHealthResult', FASTCHECK_TIMEOUT_MS).then(function (r) {
       if (!r.ok) {
-        if (conn.fastCheckSupported === null) conn.fastCheckSupported = false; // old extension — never ask again
+        if (conn.fastCheckSupported === null) conn.fastCheckSupported = false;
         return { answered: false };
       }
       conn.fastCheckSupported = true;
       var resp = (r.data && r.data.resp) || {};
       var a = resp.athena || {};
-      safe(function () { conn.extVersion = String(resp.extVersion || '').slice(0, 12); });
-      return { answered: true, present: !!a.present, loggedIn: (a.loggedIn === undefined ? null : !!a.loggedIn), host: typeof a.host === 'string' ? a.host.slice(0, 60) : '' };
+      var tabs = Math.max(0, Number(a.tabs || 0)), discarded = Math.max(0, Number(a.discarded || 0));
+      safe(function () { conn.extVersion = String(resp.version || resp.versionName || '').slice(0, 20); });
+      return { answered: true, workerOk: resp.ok === true, present: resp.ok === true && tabs > discarded, tabs: tabs, discarded: discarded, reason: String(resp.reason || resp.error || '').slice(0, 120) };
     });
   }
 
@@ -415,7 +445,7 @@
     var isAthena = host ? /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(host) : null;
     if (resp.ok && isAthena !== false) {
       conn.evidence.athenaResult = now();
-      if (conn.verdict !== 'connected') setVerdict('connected', 'connected', 'athenaOne connected — live data just came back from your athenaOne tab.');
+      if (conn.verdict !== 'connected') setVerdict('connected', 'connected', 'MLS Assist ready — an explicit Athena operation responded; exact context is verified per action.');
       else conn.lastConnectedAt = now();
     }
   }
@@ -426,10 +456,10 @@
   function backgroundReverdict() {
     if (document.visibilityState === 'hidden') return;
     if (pullIsBusy()) return;
-    if (evidenceFresh()) { if (conn.verdict !== 'connected') setVerdict('connected', 'connected', 'athenaOne connected.'); return; }
+    if (evidenceFresh()) { if (conn.verdict !== 'connected') setVerdict('connected', 'connected', 'MLS Assist ready — Athena operation or tab health responded.'); return; }
     if (conn.verdict === 'connected') {
       // evidence went stale -> honestly demote to checking and re-probe (never straight to red)
-      setVerdict('checking', 'checking', 'Checking Athena connection');
+      setVerdict('checking', 'checking', 'Checking MLS Assist readiness');
     }
     probeConnection(false);
   }
@@ -448,10 +478,7 @@
     };
     safe(function () { if (isFn(ct.stop)) ct.stop(); }); // stop the old flappy 30s poll; we drive cadence now
     ct.isConnected = function () { return conn.verdict === 'connected'; };
-    /* de-dupe (2026-07-09, BROKEN-4): conn.reason often BEGINS with the same
-       label the panel renders right next to it ("athenaOne connected — ..."),
-       which painted the doubled "athenaOne connectedathenaOne connected — ..."
-       status text. Strip the leading duplicate at the one place label+detail meet. */
+    /* Strip a repeated readiness label at the one place label+detail meet. */
     function scDedupDetail(lbl, txt) {
       txt = String(txt || '');
       var l = String(lbl || '').replace(/[.…]+\s*$/, '');
@@ -463,9 +490,9 @@
     }
     ct.describe = function (s) {
       var v = (s && s.verdict) ? s.verdict : conn.verdict;
-      if (v === 'connected') return { status: 'connected', color: 'green', label: 'athenaOne connected', detail: scDedupDetail('athenaOne connected', conn.reason) };
-      if (v === 'checking') return { status: 'checking', color: 'grey', label: 'Checking Athena connection…', detail: scDedupDetail('Checking Athena connection', conn.reason) };
-      var lbl = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No signed-in athenaOne tab';
+      if (v === 'connected') return { status: 'connected', color: 'green', label: 'MLS Assist ready · Athena tab detected', detail: scDedupDetail('MLS Assist ready · Athena tab detected', conn.reason) };
+      if (v === 'checking') return { status: 'checking', color: 'grey', label: 'Checking MLS Assist readiness…', detail: scDedupDetail('Checking MLS Assist readiness', conn.reason) };
+      var lbl = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected';
       return { status: conn.detailStatus, color: 'red', label: lbl, detail: scDedupDetail(lbl, conn.reason) };
     };
     ct.check = function () { return probeConnection(true).then(function () { return connPublicState(); }); };
@@ -483,7 +510,7 @@
         get: function () { return connPublicState(); },
         set: function (v) { // old layers may still write their view — take it as EVIDENCE, don't let it clobber
           safe(function () {
-            if (v && v.status === 'connected') { conn.evidence.athenaResult = Math.max(conn.evidence.athenaResult, now()); if (conn.verdict !== 'connected') setVerdict('connected', 'connected', String(v.reason || 'athenaOne connected.')); }
+            if (v && v.status === 'connected') { conn.evidence.athenaResult = Math.max(conn.evidence.athenaResult, now()); if (conn.verdict !== 'connected') setVerdict('connected', 'connected', String(v.reason || 'MLS Assist ready — Athena tab detected; patient not yet verified.')); }
             // negative writes are ignored here on purpose: negatives must come from OUR retried probes or definitive replies
           });
         }
@@ -529,11 +556,11 @@
       var nodes = document.querySelectorAll('[data-mls-athena-chip], .mls-athena-chip, #mlsAthenaStatusDot, .mlsasd-dot');
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i]; var txt = String(n.textContent || '');
-        var saysDisc = /not connected|disconnected|no signed-in|not detected/i.test(txt);
+        var saysDisc = /not connected|disconnected|no signed-in|not detected|no usable/i.test(txt);
         var saysConn = /connected/i.test(txt) && !saysDisc;
-        if (v === 'connected' && saysDisc) { n.textContent = 'athenaOne connected'; }
-        else if (v === 'checking' && (saysDisc || /idle/i.test(txt))) { n.textContent = 'Checking Athena connection…'; }
-        else if (v === 'disconnected' && saysConn) { n.textContent = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No signed-in athenaOne tab'; }
+        if (v === 'connected' && saysDisc) { n.textContent = 'MLS Assist ready · Athena tab detected · patient not yet verified'; }
+        else if (v === 'checking' && (saysDisc || /idle/i.test(txt))) { n.textContent = 'Checking MLS Assist readiness…'; }
+        else if (v === 'disconnected' && saysConn) { n.textContent = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected'; }
       }
     });
   }
@@ -542,7 +569,7 @@
    * SECTION B — STATUS STORE (task / steps / sources)
    * =================================================================== */
   var SOURCES = [
-    ['athena',   'Athena connection'],
+    ['athena',   'MLS Assist readiness'],
     ['reading',  'Athena reading'],
     ['pull',     'Athena pull'],
     ['backend',  'Backend sync'],
@@ -561,7 +588,66 @@
     next: '',          // "What the user should do next"
     blocked: []        // {action, why, at}
   };
-  for (var si = 0; si < SOURCES.length; si++) store.sources[SOURCES[si][0]] = { state: 'idle', text: 'Idle', at: 0 };
+  function resetSources() {
+    store.sources = {};
+    for (var si = 0; si < SOURCES.length; si++) store.sources[SOURCES[si][0]] = { state: 'idle', text: 'Idle', at: 0 };
+  }
+  resetSources();
+
+  /* A UI bundle lives for the whole tab, but clinical task state belongs to one
+     signed-in account. This boundary is deliberately synchronous: the shell
+     calls it before revealing another account, while the identity watcher below
+     is only a defensive fallback for older shells. */
+  function resetSession(nextAccount, detail) {
+    detail = detail && typeof detail === 'object' ? detail : {};
+    var boundaryEpoch = detail.epoch != null ? detail.epoch : detail.boundaryEpoch;
+    if (boundaryEpoch != null && String(boundaryEpoch) === String(lastBoundaryEpoch)) return false;
+    var nextIdentity = normalizeAccount(arguments.length ? nextAccount : readAccountIdentity());
+    /* The shell calls the API directly, then emits the same boundary event for
+       passive modules. Coalesce that same-tick pair even if an older caller did
+       not forward the generated epoch into the direct API detail. */
+    if (nextIdentity === lastBoundaryAccount && (now() - lastBoundaryAt) < 100) {
+      if (boundaryEpoch != null) lastBoundaryEpoch = boundaryEpoch;
+      return false;
+    }
+    if (boundaryEpoch != null) lastBoundaryEpoch = boundaryEpoch;
+    boundAccount = nextIdentity;
+    lastBoundaryAccount = nextIdentity;
+    lastBoundaryAt = now();
+    sessionEpoch++;
+
+    for (var i = 0; i < sessionTimeouts.length; i++) safe((function (id) { return function () { clearTimeout(id); }; })(sessionTimeouts[i]));
+    sessionTimeouts = [];
+    for (var o = 0; o < sessionObservers.length; o++) safe((function (mo) { return function () { mo.disconnect(); }; })(sessionObservers[o]));
+    sessionObservers = [];
+    if (persistT) { safe(function () { clearTimeout(persistT); }); persistT = 0; }
+
+    store.task = null;
+    store.steps = [];
+    resetSources();
+    store.changes = [];
+    store.next = '';
+    store.blocked = [];
+    lastPatientShown = '';
+    lastPullArgs = null;
+    lastHero = '';
+    pullBusy.active = false;
+    pullBusy.at = 0;
+    safe(function () { W.__mlsPullBusyAt = 0; });
+    safe(function () { sessionStorage.removeItem(SS_KEY); });
+    renderAll();
+    return true;
+  }
+  function syncAccountIdentity() {
+    var next = readAccountIdentity();
+    if (next === boundAccount) return false;
+    return resetSession(next, { reason: 'identity-change' });
+  }
+  listen(W, 'mls:session-boundary', function (e) {
+    var d = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
+    var hasNext = Object.prototype.hasOwnProperty.call(d, 'nextAccount') || Object.prototype.hasOwnProperty.call(d, 'nextEmail');
+    if (hasNext) resetSession(d.nextAccount != null ? d.nextAccount : d.nextEmail, d);
+  });
 
   function srcSet(key, state, text) {
     var s = store.sources[key]; if (!s) return;
@@ -582,6 +668,7 @@
     return st;
   }
   function taskBegin(label, sourceText) {
+    syncAccountIdentity();
     store.task = { id: 't' + now(), label: label, source: sourceText || 'athenaOne', startedAt: now(), patient: '', date: '', finishedAt: 0, outcome: '' };
     store.steps = [];
     store.changes = [];
@@ -590,7 +677,7 @@
     renderAll(); persist();
     // whole-task watchdog
     (function (tid) {
-      later(TASK_FAIL_MS, function () {
+      laterSession(TASK_FAIL_MS, function () {
         if (store.task && store.task.id === tid && !store.task.finishedAt) {
           taskFinish('Did not finish within ' + Math.round(TASK_FAIL_MS / 60000) + ' minutes.', 'fail');
           store.next = 'Click Retry to run it again, or check the athenaOne tab.';
@@ -638,6 +725,7 @@
    * =================================================================== */
   var lastPatientShown = ''; // display-only, never persisted/logged
   listen(W, 'message', function (e) {
+    syncAccountIdentity();
     var d = e && e.data;
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
 
@@ -658,11 +746,12 @@
     if (d.source !== 'mls-ext') return;
     var resp = d.resp;
 
-    // Every extension reply is connection EVIDENCE first:
-    if (d.type !== 'mlsPong' && d.type !== 'mlsAppConnCheckResult') safe(function () { feedEvidenceFromResult(d.type, resp); });
+    // Explicit clinical-operation replies are evidence. Health is classified
+    // separately and must never masquerade as a patient/chart response.
+    if (d.type !== 'mlsPong' && d.type !== 'mlsExtHealthResult') safe(function () { feedEvidenceFromResult(d.type, resp); });
 
     if (d.type === 'mlsAppScheduleResult') {
-      if (!pullBusy.active) return; // probe replies (ours or legacy) — connection layer already consumed them
+      if (!pullBusy.active) return; // stale/unowned explicit reply; do not mutate the task UI
       var ok = resp && resp.ok && !resp.error;
       if (ok) {
         stepUpsert('sched', 'Reading Athena calendar', 'done', 'Schedule page read.');
@@ -742,12 +831,14 @@
     if (!isFn(orig) || orig.__scWrapped) return !!(orig && orig.__scWrapped);
     wrapped.pull = orig;
     var w = function () {
+      syncAccountIdentity();
+      var pullEpoch = sessionEpoch;
       lastPullArgs = Array.prototype.slice.call(arguments);
       pullBusy.active = true; pullBusy.at = now();
       safe(function () { W.__mlsPullBusyAt = now(); });
-      taskBegin('Pulling patients from athenaOne', 'athenaOne (your signed-in tab)');
-      stepUpsert('conn', 'Checking Athena connection', 'running', '');
-      srcSet('athena', 'working', 'Checking Athena connection');
+      taskBegin('Pulling patients from athenaOne', 'Athena tab selected for this explicit pull');
+      stepUpsert('conn', 'Checking MLS Assist readiness', 'running', '');
+      srcSet('athena', 'working', 'Checking MLS Assist readiness');
       srcSet('pull', 'working', 'Starting pull');
       // Evidence-first: if fresh, confirm instantly; else quick ping only (never a schedule
       // probe here — the pull ITSELF is about to do the schedule read; racing it would cross replies).
@@ -758,11 +849,12 @@
             return bridgeRequest('mlsPing', 'mlsPong', PING_TIMEOUT_MS).then(function (r2) { if (r2.ok) { conn.evidence.pong = now(); } return r2.ok; });
           });
       connGate.then(function (extOk) {
+        if (pullEpoch !== sessionEpoch) return;
         if (extOk) {
-          stepUpsert('conn', evidenceFresh() ? 'Athena connection confirmed' : 'Extension responding — confirming with the live read', 'done', '');
-          srcSet('athena', conn.verdict === 'connected' ? 'ok' : 'working', conn.verdict === 'connected' ? 'Athena connection confirmed' : 'Confirming during the read…');
+          stepUpsert('conn', evidenceFresh() ? 'MLS Assist readiness confirmed' : 'Extension responding — explicit pull will verify its clinical context', 'done', '');
+          srcSet('athena', conn.verdict === 'connected' ? 'ok' : 'working', conn.verdict === 'connected' ? 'MLS Assist ready · Athena tab detected' : 'Confirming during the explicit read…');
         } else {
-          stepUpsert('conn', 'Checking Athena connection', 'fail', 'MLS Assist did not answer — load/enable the extension, then Retry.', retryLastPull);
+          stepUpsert('conn', 'Checking MLS Assist readiness', 'fail', 'MLS Assist did not answer — load/enable the extension, then Retry.', retryLastPull);
           srcSet('athena', 'fail', 'MLS Assist not detected');
           store.next = 'Enable the MLS Assist extension, then click Retry.';
           renderNext();
@@ -798,7 +890,7 @@
   function hookHero(tries) {
     var st = $id('heroPullStatus');
     if (heroWatch.armed) return;
-    if (!st) { if ((tries || 0) < 12) later(1200, function () { hookHero((tries || 0) + 1); }); return; }
+    if (!st) { if ((tries || 0) < 12) laterSession(1200, function () { hookHero((tries || 0) + 1); }); return; }
     heroWatch.armed = true; heroWatch.node = st;
     var mo = observe(st, function () {
       var txt = String(st.textContent || '').trim();
@@ -809,6 +901,7 @@
   }
   var lastHero = '';
   function mirrorHero(txt) {
+    if (!pullBusy.active && !store.task) return;
     if (txt === lastHero) return;
     lastHero = txt;
     // date lines from the app's own honest status (e.g. "…for Wed, Jul 1")
@@ -845,17 +938,17 @@
     for (var i = 0; i < selectors.length && !node; i++) safe(function () { node = document.querySelector(selectors[i]); });
     srcSet(key, 'working', workingLabel);
     if (!node) {
-      later(DOM_CONFIRM_MS, function () { if (store.sources[key].state === 'working') srcSet(key, 'warn', 'Could not confirm on this screen — open that tab to verify.'); });
+      laterSession(DOM_CONFIRM_MS, function () { if (store.sources[key].state === 'working') srcSet(key, 'warn', 'Could not confirm on this screen — open that tab to verify.'); });
       return;
     }
     var fired = false;
-    var mo = observe(node, function () {
+    var mo = observeSession(node, function () {
       if (fired) return; fired = true;
       srcSet(key, 'ok', okLabel);
       stepUpsert('upd_' + key, okLabel, 'done', '');
       safe(function () { mo.disconnect(); });
     }, { childList: true, subtree: true });
-    later(DOM_CONFIRM_MS, function () {
+    laterSession(DOM_CONFIRM_MS, function () {
       if (!fired) {
         srcSet(key, 'warn', warnLabel);
         stepUpsert('upd_' + key, warnLabel, 'retry', 'No visible change yet — it may update when you open that view.');
@@ -873,15 +966,15 @@
       }
     });
     srcSet('matching', 'working', 'Matching pulled visits to your patients');
-    if (!node) { later(DOM_CONFIRM_MS, function () { if (store.sources.matching.state === 'working') srcSet('matching', 'warn', 'Could not confirm on this screen — open Who’s Next to verify.'); }); return; }
+    if (!node) { laterSession(DOM_CONFIRM_MS, function () { if (store.sources.matching.state === 'working') srcSet('matching', 'warn', 'Could not confirm on this screen — open Who’s Next to verify.'); }); return; }
     var fired = false;
-    var mo = observe(node, function () {
+    var mo = observeSession(node, function () {
       if (fired) return; fired = true;
       srcSet('matching', 'ok', 'Who’s Next updated');
       stepUpsert('upd_wn', 'Updating Who’s Next', 'done', '');
       safe(function () { mo.disconnect(); });
     }, { childList: true, subtree: true });
-    later(DOM_CONFIRM_MS, function () { if (!fired) srcSet('matching', 'warn', 'Who’s Next shows older data — pull again or open it to refresh.'); });
+    laterSession(DOM_CONFIRM_MS, function () { if (!fired) srcSet('matching', 'warn', 'Who’s Next shows older data — pull again or open it to refresh.'); });
   }
 
   /* =====================================================================
@@ -891,6 +984,8 @@
     var orig = W.fetch;
     if (!isFn(orig) || orig.__scWrapped) return;
     var w = function (input, init) {
+      syncAccountIdentity();
+      var requestEpoch = sessionEpoch;
       var url = '';
       safe(function () { url = typeof input === 'string' ? input : (input && input.url) || ''; });
       var isBackend = /scrivara-backend\.onrender\.com/i.test(url) || (/^\/?api\//i.test(String(url).replace(/^https?:\/\/[^/]+/i, '').replace(/^\//, '')));
@@ -904,11 +999,12 @@
       var p = orig.apply(this, arguments);
       if (isBackend && method !== 'GET') {
         p.then(function (res) {
+          if (requestEpoch !== sessionEpoch) return;
           safe(function () {
             if (res && res.ok) srcSet('backend', 'ok', 'Backend saved (' + method + ' ' + path + ' → HTTP ' + res.status + ')');
             else srcSet('backend', 'fail', 'Backend rejected ' + method + ' ' + path + ' (HTTP ' + (res && res.status) + ')');
           });
-        }, function () { srcSet('backend', 'fail', 'Network error talking to the MLS backend'); });
+        }, function () { if (requestEpoch === sessionEpoch) srcSet('backend', 'fail', 'Network error talking to the MLS backend'); });
       }
       return p;
     };
@@ -924,7 +1020,7 @@
     var connected = conn.verdict === 'connected';
     var wb = safe(function () { return W.__mlsAthenaWriteback; }, null);
     var hasPatient = !!(lastPatientShown || safe(function () { return (W.activePatient && (W.activePatient.name || W.activePatient.display)) || document.querySelector('[data-active-patient]'); }, null));
-    if (!connected) { srcSet('writeback', 'warn', 'Not ready — athenaOne connection is ' + (conn.verdict === 'checking' ? 'still being checked' : 'down') + '.'); return; }
+    if (!connected) { srcSet('writeback', 'warn', 'Not ready — MLS Assist readiness is ' + (conn.verdict === 'checking' ? 'still being checked' : 'unavailable') + '.'); return; }
     if (!wb) { srcSet('writeback', 'idle', 'Write-back module not on this screen.'); return; }
     if (!hasPatient) { srcSet('writeback', 'warn', 'Not ready — no active patient loaded.'); return; }
     srcSet('writeback', 'ok', 'Ready — every write still needs your explicit approval.');
@@ -996,7 +1092,7 @@
       '<div class="sc-card">' +
         '<div class="sc-head" title="MLS status — click to expand/collapse">' +
           '<span class="sc-dot chk"></span>' +
-          '<span class="sc-title">Checking Athena connection…</span>' +
+          '<span class="sc-title">Checking MLS Assist readiness…</span>' +
           '<span class="sc-min">–</span>' +
         '</div>' +
         '<div class="sc-body">' +
@@ -1007,7 +1103,7 @@
           '<div class="sc-block sc-chg" style="display:none"><div class="h">What changed in MLS Scribe</div><div class="c"></div></div>' +
           '<div class="sc-block sc-nxt" style="display:none"><div class="h">What to do next</div><div class="c"></div></div>' +
           '<div class="sc-foot">' +
-            '<button type="button" class="sc-btn pri" data-act="recheck">Recheck connection</button>' +
+            '<button type="button" class="sc-btn pri" data-act="recheck">Recheck readiness</button>' +
             '<button type="button" class="sc-btn" data-act="retry">Retry last failure</button>' +
           '</div>' +
         '</div>' +
@@ -1025,7 +1121,7 @@
       if (!b) return;
       e.stopPropagation();
       var act = b.getAttribute('data-act');
-      if (act === 'recheck') { setVerdict('checking', 'checking', 'Checking Athena connection'); probeConnection(true); }
+      if (act === 'recheck') { setVerdict('checking', 'checking', 'Checking MLS Assist readiness'); probeConnection(true); }
       if (act === 'retry') {
         var target = null;
         for (var i = store.steps.length - 1; i >= 0; i--) if ((store.steps[i].state === 'fail' || store.steps[i].state === 'retry') && store.steps[i].retryFn) { target = store.steps[i]; break; }
@@ -1056,14 +1152,14 @@
     var v = conn.verdict;
     dot.className = 'sc-dot ' + (v === 'connected' ? 'ok' : (v === 'checking' ? 'chk' : 'bad'));
     var label;
-    if (v === 'connected') label = 'athenaOne connected';
-    else if (v === 'checking') label = conn.probing && conn.attempt > 1 ? ('Checking Athena connection… (attempt ' + conn.attempt + '/' + conn.attemptsMax + ')') : 'Checking Athena connection…';
-    else label = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'athenaOne not connected';
+    if (v === 'connected') label = 'MLS Assist ready · Athena tab detected · patient not yet verified';
+    else if (v === 'checking') label = conn.probing && conn.attempt > 1 ? ('Checking MLS Assist readiness… (attempt ' + conn.attempt + '/' + conn.attemptsMax + ')') : 'Checking MLS Assist readiness…';
+    else label = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected';
     if (store.task && !store.task.finishedAt) label = store.task.label + ' — ' + label;
     title.textContent = label;
     title.title = conn.reason || label;
     srcSet('athena', v === 'connected' ? 'ok' : (v === 'checking' ? 'working' : 'fail'),
-      v === 'connected' ? 'Athena connection confirmed' : (v === 'checking' ? 'Checking Athena connection' : (conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No signed-in athenaOne tab')));
+      v === 'connected' ? 'MLS Assist ready · Athena tab detected · patient not yet verified' : (v === 'checking' ? 'Checking MLS Assist readiness' : (conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected')));
   }
   function renderTask() {
     if (!ui.dock) return;
@@ -1159,9 +1255,11 @@
    * =================================================================== */
   var persistT = 0;
   function persist() {
+    if (!boundAccount) return;
     if (persistT) return;
     persistT = later(500, function () {
       persistT = 0;
+      if (!boundAccount) return;
       safe(function () {
         var snap = {
           v: VERSION, at: now(),
@@ -1224,6 +1322,15 @@
   /* =====================================================================
    * BOOT (app pages only; marketing page stays untouched)
    * =================================================================== */
+  function hookAccountBoundary() {
+    if (!W.MutationObserver) return;
+    safe(function () {
+      var nodes = [$id('whoLabel'), $id('appScreen'), $id('authScreen')];
+      for (var i = 0; i < nodes.length; i++) if (nodes[i]) {
+        observe(nodes[i], syncAccountIdentity, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+      }
+    });
+  }
   var bootTries = 0;
   function boot() {
     bootTries++;
@@ -1234,6 +1341,8 @@
     }
     addStyles();
     buildDock();
+    syncAccountIdentity();
+    hookAccountBoundary();
     restore();
     wrapConnTruth();
     wrapPull();
@@ -1245,12 +1354,12 @@
       var cur = ctWrap.orig && ctWrap.orig.stateVal;
       if (cur && cur.status === 'connected' && cur.at && (now() - cur.at) < EVIDENCE_TTL_MS) {
         conn.evidence.probeOk = cur.at;
-        setVerdict('connected', 'connected', String(cur.reason || 'athenaOne connected.'));
+        setVerdict('connected', 'connected', String(cur.reason || 'MLS Assist ready — Athena tab detected; patient not yet verified.'));
       }
     });
     probeConnection(true);
     every(POLL_MS, backgroundReverdict);
-    listen(W, 'focus', function () { later(400, function () { backgroundReverdict(); }); });
+    listen(W, 'focus', function () { syncAccountIdentity(); later(400, function () { backgroundReverdict(); }); });
     listen(document, 'visibilitychange', function () { if (document.visibilityState === 'visible') later(400, backgroundReverdict); });
     every(2500, correctLegacySurfaces);
     every(30000, function () { if (!ctWrap.done) wrapConnTruth(); if (!isFn(W.pullScheduleViaAssist) || !W.pullScheduleViaAssist.__scWrapped) wrapPull(); });
@@ -1274,14 +1383,18 @@
     blocked: function (action, why) { safe(function () { blockedAction(String(action || 'action').slice(0, 90), String(why || 'Blocked by a safety rule.').slice(0, 160)); }); },
     setSource: function (key, state, text) { safe(function () { srcSet(String(key), String(state), String(text || '').slice(0, 120)); }); },
     note: function (line) { safe(function () { addChange(String(line || '').slice(0, 160)); }); },
+    resetSession: resetSession,
     recheck: function () { return probeConnection(true); },
     _conn: conn,           // introspection for tests
-    _classify: classifyScheduleReply,
+    _classify: classifyHealthReply,
     _scrub: scrubPHI,
+    _syncAccount: syncAccountIdentity,
+    _sessionEpoch: function () { return sessionEpoch; },
     revert: function () {
       for (var i = cleanups.length - 1; i >= 0; i--) safe(cleanups[i]);
       for (var t = 0; t < timers.length; t++) safe(function () { clearInterval(timers[t]); });
       for (var o = 0; o < timeouts.length; o++) safe(function () { clearTimeout(timeouts[o]); });
+      for (var so = 0; so < sessionTimeouts.length; so++) safe((function (id) { return function () { clearTimeout(id); }; })(sessionTimeouts[so]));
       for (var m = 0; m < observers.length; m++) safe(function () { observers[m].disconnect(); });
       safe(function () { sessionStorage.removeItem(SS_KEY); });
       W.__mlsStatusCenter.installed = false;

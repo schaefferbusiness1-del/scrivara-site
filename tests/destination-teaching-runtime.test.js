@@ -12,6 +12,8 @@ const content = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
 const service = fs.readFileSync(path.join(root, 'feat_mls_show_assistant.js'), 'utf8');
 const flow = fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8');
 const guard = fs.readFileSync(path.join(root, 'destination_teach_navigation_guard.js'), 'utf8');
+const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const stagingConnect = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
 function between(source, begin, end) {
@@ -46,12 +48,16 @@ assert(/appointmentId:\s*mlsStr\(v\.appointmentId/.test(content), 'appointment I
 assert(/!digits\(patient\.mrn\)/.test(background) && /!patient\.mrn/.test(flow), 'patient binding still permits a name+DOB-only Athena action');
 assert(/teacher\.cancelForRow\(state\.manifest, row\)[\s\S]{0,140}teacher\.clearForRow/.test(flow), 'Clear/re-teach does not cancel the active watcher first');
 assert(/addEventListener\(['"]pagehide['"],\s*onPageExit/.test(service) && /cancelAllActive\(['"]revert/.test(service), 'service teardown does not exact-cancel active watchers');
+assert(!/addEventListener\(['"]unload['"]/.test(service), 'Chrome-blocked unload lifecycle listener returned');
+assert(connect.includes('A+"?v=20260718sa3"') && stagingConnect.includes('A+"?v=20260718sa3"'), 'fixed destination-teaching lifecycle script is not cache-busted in both loaders');
 assert(manifest.permissions.includes('webNavigation'), 'frame-generation retirement lacks webNavigation permission');
 assert(/runAt:\s*['"]document_start['"]/.test(background) && /destination_teach_navigation_guard\.js/.test(background), 'new Athena documents are not shielded from document_start');
 assert(/stopImmediatePropagation/.test(guard) && /mlsAthenaTeachNavigationGuardReady/.test(guard), 'navigation guard does not block activation until background retirement');
 
-// App lifecycle: pagehide/unload/revert must emit one exact Cancel before local
+// App lifecycle: pagehide/revert must emit one exact Cancel before local
 // teardown, remain idempotent, and allow a BFCache-restored page to start anew.
+// Chrome blocks unload listeners in this document, so pagehide is the sole
+// browser-exit owner and must not be paired with the obsolete unload event.
 const serviceEvents = Object.create(null);
 const servicePosts = [];
 const sessionData = new Map();
@@ -79,8 +85,7 @@ const firstServiceId = serviceWindow.__mlsShowAsst.startForRow(serviceManifest, 
 assert(firstServiceId && servicePosts.some(message => message.type === 'mlsAppTeachStart' && message.requestId === firstServiceId), 'service did not start exact teaching');
 serviceEvents.pagehide[0]({ persisted: true });
 assert.strictEqual(servicePosts.filter(message => message.type === 'mlsAppTeachCancel' && message.requestId === firstServiceId).length, 1, 'pagehide did not emit one exact cancel');
-serviceEvents.unload[0]();
-assert.strictEqual(servicePosts.filter(message => message.type === 'mlsAppTeachCancel' && message.requestId === firstServiceId).length, 1, 'unload duplicated pagehide cancellation');
+assert.strictEqual((serviceEvents.unload || []).length, 0, 'obsolete unload listener was registered');
 const restoredServiceId = serviceWindow.__mlsShowAsst.startForRow(serviceManifest, serviceRow, function () {});
 assert(restoredServiceId && restoredServiceId !== firstServiceId, 'BFCache-style pagehide prevented a fresh teaching session');
 serviceWindow.__mlsShowAsst.revert();

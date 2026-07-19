@@ -122,6 +122,10 @@ function artifactHarness(name) {
   const binding = { id: 'binding-A', patient: { patientId: 'A', name: 'Patient A' } };
   const context = {
     console,
+    // The public app holds IME generation closed before any async work. Enable
+    // the isolated harness lane so this test can continue proving the dormant
+    // implementation discards stale exact-patient results if it is released.
+    __MLS_LEGAL_WORKSPACE_RELEASED: name === 'generateIME',
     currentSoap: 'note A',
     currentInsurance: '',
     currentCoding: { em: '99213', icd: ['M54.50'], cpt: ['97110'] },

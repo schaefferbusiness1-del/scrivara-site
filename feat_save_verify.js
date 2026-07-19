@@ -269,7 +269,7 @@
       '.mls-sv-card{pointer-events:auto;border-radius:12px;padding:13px 16px;color:#fff;' +
       'box-shadow:0 10px 30px rgba(0,0,0,.30);border:1px solid rgba(0,0,0,.18);' +
       'font-size:14px;line-height:1.4;display:flex;gap:11px;align-items:flex-start;animation:mlsSvIn .18s ease-out;}' +
-      '.mls-sv-ok{background:#0f8a3c;}.mls-sv-warn{background:#b3500e;}.mls-sv-info{background:#204034;}' +
+      '.mls-sv-ok{background:#0d7e37;}.mls-sv-warn{background:#b3500e;}.mls-sv-info{background:#204034;}' +
       '.mls-sv-icon{font-size:18px;line-height:1.2;flex:0 0 auto;}' +
       '.mls-sv-body{flex:1 1 auto;min-width:0;}.mls-sv-title{font-weight:700;letter-spacing:.1px;}' +
       '.mls-sv-lines{margin-top:3px;opacity:.97;font-size:13px;white-space:pre-line;word-break:break-word;}' +
@@ -282,22 +282,58 @@
       '.mls-sv-report{margin:8px 0;border:1px solid #cfd8e3;border-radius:10px;background:#f6f9fc;' +
       'color:#1A211C;padding:11px 13px;font-size:13px;line-height:1.45;}' +
       '.mls-sv-report b{color:#0d2238;}.mls-sv-report .mls-sv-good{color:#0f6b30;font-weight:700;}' +
-      '.mls-sv-report .mls-sv-bad{color:#a5400b;font-weight:700;}.mls-sv-report ul{margin:6px 0 0;padding-left:18px;}';
+      '.mls-sv-report .mls-sv-bad{color:#a5400b;font-weight:700;}.mls-sv-report ul{margin:6px 0 0;padding-left:18px;}' +
+      '#' + STACK_ID + ':empty{display:none!important;}' +
+      '@media(max-width:760px){#mlsMobileNoticeShelf>#' + STACK_ID + '{position:static;left:auto;bottom:auto;transform:none;' +
+      'z-index:auto;width:100%;max-width:none;display:flex;gap:8px;box-sizing:border-box;}' +
+      '#mlsMobileNoticeShelf .mls-sv-card{width:100%;box-sizing:border-box;border-radius:11px;padding:11px 13px;' +
+      'font-size:13.5px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.15);}}';
     var st = document.createElement('style'); st.id = STYLE_ID; st.type = 'text/css';
     st.appendChild(document.createTextNode(css));
     (document.head || document.documentElement).appendChild(st);
   }
+  function refreshMobileShelf() {
+    try { if (typeof window.__mlsRefreshMobileNoticeShelf === 'function') window.__mlsRefreshMobileNoticeShelf(); } catch (e) {}
+  }
+  function syncStackHost(node) {
+    var s = node && node.id === STACK_ID ? node : document.getElementById(STACK_ID);
+    if (!s) return null;
+    try { if (typeof window.__mlsPlaceMobileNotice === 'function') window.__mlsPlaceMobileNotice(s); } catch (e) {}
+    refreshMobileShelf();
+    return s;
+  }
+  function removeCard(card) {
+    try { if (card && card.parentNode) card.parentNode.removeChild(card); } catch (e) {}
+    refreshMobileShelf();
+  }
   function stack() {
     var s = document.getElementById(STACK_ID);
-    if (!s) { s = document.createElement('div'); s.id = STACK_ID; (document.body || document.documentElement).appendChild(s); }
-    return s;
+    if (!s) {
+      s = document.createElement('div'); s.id = STACK_ID; s.setAttribute('aria-label', 'Save verification notices');
+      (document.body || document.documentElement).appendChild(s);
+    }
+    return syncStackHost(s);
   }
   function banner(kind, title, lines, opts) {
     opts = opts || {};
     try {
       injectStyle();
+      var host = stack();
+      var key = String(kind || 'info') + '|' + String(title || '') + '|' + (Array.isArray(lines) ? lines.join('\n') : String(lines || ''));
+      var oldSuccess = [];
+      for (var ci = 0; host && ci < host.children.length; ci++) {
+        var prior = host.children[ci];
+        if (prior.__mlsSvKey === key) return prior;
+        if (kind === 'ok' && prior.__mlsSvKind === 'ok') oldSuccess.push(prior);
+      }
+      /* Success is current state, not a growing activity log. Keep only the
+         newest success; persistent warnings/errors remain until dismissed. */
+      for (var oi = 0; oi < oldSuccess.length; oi++) removeCard(oldSuccess[oi]);
       var card = document.createElement('div');
       card.className = 'mls-sv-card mls-sv-' + (kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : 'info');
+      card.__mlsSvKey = key; card.__mlsSvKind = kind || 'info';
+      card.setAttribute('role', kind === 'warn' ? 'alert' : 'status');
+      card.setAttribute('aria-live', kind === 'warn' ? 'assertive' : 'polite'); card.setAttribute('aria-atomic', 'true');
       if (opts.pullFailure) card.setAttribute('data-mls-athena-pull-failure', '1');
       var icon = document.createElement('div'); icon.className = 'mls-sv-icon';
       icon.textContent = kind === 'ok' ? '✓' : kind === 'warn' ? '⚠' : 'ℹ';
@@ -308,11 +344,11 @@
         l.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines); body.appendChild(l);
       }
       var x = document.createElement('button'); x.className = 'mls-sv-x'; x.setAttribute('aria-label', 'Dismiss'); x.textContent = '×';
-      x.onclick = function () { if (card.parentNode) card.parentNode.removeChild(card); };
+      x.onclick = function () { removeCard(card); };
       card.appendChild(icon); card.appendChild(body); card.appendChild(x);
-      stack().appendChild(card);
+      host.appendChild(card); refreshMobileShelf();
       var ttl = opts.ttl != null ? opts.ttl : (kind === 'ok' ? 6000 : 0);
-      if (ttl > 0) setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, ttl);
+      if (ttl > 0) setTimeout(function () { removeCard(card); }, ttl);
       return card;
     } catch (e) { return null; }
   }
@@ -610,6 +646,7 @@
     injectStyle();
     try { if (!_serverReader && fn('bkBase') && fn('bkToken')) configureServer({ read: _defaultServerRead }); } catch (e) {}
     window.addEventListener('message', onResultMessage, true); // capture phase, passive
+    window.addEventListener('resize', syncStackHost, { passive: true });
     wrapUpsert();
     ensureButton();
     // Re-add the profile button if the profile re-renders, and re-wrap upsert if
@@ -628,6 +665,7 @@
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {} _obs = null;
     try { window.removeEventListener('message', onResultMessage, true); } catch (e) {}
+    try { window.removeEventListener('resize', syncStackHost, { passive: true }); } catch (e) {}
     try {
       if (window.upsertPatient && window.upsertPatient.__mlsVerifyWrapped && window.upsertPatient.__mlsOrig)
         window.upsertPatient = window.upsertPatient.__mlsOrig;

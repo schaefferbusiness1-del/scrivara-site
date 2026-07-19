@@ -1,21 +1,15 @@
-/* feat_athena_status_dot.js — always-on Athena connection indicator (v1.0.0)
+/* feat_athena_status_dot.js — PHI-free Athena readiness indicator (v1.1.0)
  *
  * Adds a small fixed dot in the TOP-RIGHT corner of MLS that honestly reflects, in
- * real time, whether MLS is connected to athenaOne:
- *   GREEN = the MLS Assist extension is responding (mlsPing/mlsPong) AND a signed-in
- *           athenaOne tab is readable (the athena-open probe: the same
- *           mlsAppPullSchedule -> mlsAppScheduleResult message used by
- *           _assistReadAthenaTab; we read ONLY resp.ok).
- *   RED   = MLS Assist extension not detected, OR no signed-in athenaOne tab readable.
+ * real time, whether MLS Assist is ready and an Athena tab is present:
+ *   GREEN = the extension worker is responding and a non-discarded Athena tab exists.
+ *   RED   = MLS Assist is unavailable, or no usable Athena tab is open.
  *   GREY  = first check still in flight (only momentarily, right after load, or while
  *           the MLS tab has never been brought to the foreground).
  *
- * It REUSES the app's real detection at the protocol level (the extension's
- * mlsPing/mlsPong handshake and its mlsAppPullSchedule probe). It NEVER fabricates a
- * "connected" state, and it never reads, stores, logs, or transmits any chart/schedule
- * text -- it inspects only the boolean resp.ok, so no PHI is touched. The schedule probe
- * is a passive read-only DOM read inside the extension; it does NOT focus, click, or
- * navigate the athenaOne tab.
+ * It uses mlsPing plus mlsExtHealth operational metadata. It never requests a schedule,
+ * reads a chart, focuses Athena, or receives patient data. A green dot means "ready",
+ * not that a patient or encounter has been verified.
  *
  * Lightweight + idempotent: one probe at a time (in-flight guard); it polls only while
  * this tab is visible (so it never touches the athenaOne tab while MLS is in the
@@ -31,10 +25,10 @@
   'use strict';
   if (window.__mlsAthenaStatusDot && window.__mlsAthenaStatusDot.installed) return;
 
-  var VERSION = '1.0.0';
-  var POLL_MS = 7000;
+  var VERSION = '1.1.0';
+  var POLL_MS = 30000;
   var PING_MS = 1500;
-  var ATHENA_MS = 6000;
+  var HEALTH_MS = 4000;
 
   var COLORS = { connected: '#2E6A4B', red: '#dc2626', checking: '#9aa0a6' };
 
@@ -74,10 +68,10 @@
     lastState = state;
     var d = ensureDot();
     var color, label;
-    if (state === 'connected') { color = COLORS.connected; label = 'Athena connected'; }
-    else if (state === 'noext') { color = COLORS.red; label = 'Athena not connected -- MLS Assist not detected'; }
-    else if (state === 'noathena') { color = COLORS.red; label = 'Athena not connected -- open a signed-in athenaOne tab'; }
-    else { color = COLORS.checking; label = 'Checking Athena connection...'; }
+    if (state === 'connected') { color = COLORS.connected; label = 'MLS Assist ready · Athena tab detected · patient not yet verified'; }
+    else if (state === 'noext') { color = COLORS.red; label = 'MLS Assist not detected · Athena was not checked'; }
+    else if (state === 'noathena') { color = COLORS.red; label = 'MLS Assist ready · open an Athena tab when you need it'; }
+    else { color = COLORS.checking; label = 'Checking MLS Assist readiness...'; }
     d.style.background = color;
     if (tip) tip.textContent = label;
     d.setAttribute('aria-label', label);
@@ -91,30 +85,46 @@
       }
     } catch (e) {}
     return new Promise(function (resolve) {
-      var done = false;
+      var done = false, timer = null;
+      function finish(value) {
+        if (done) return;
+        done = true;
+        if (timer != null) { try { clearTimeout(timer); } catch (e) {} }
+        window.removeEventListener('message', on);
+        resolve(value);
+      }
       function on(ev) {
-        if (ev.data && ev.data.type === 'mlsPong') { if (done) return; done = true; window.removeEventListener('message', on); resolve(true); }
+        if (ev.data && ev.data.type === 'mlsPong') finish(true);
       }
       window.addEventListener('message', on);
+      timer = setTimeout(function () { finish(false); }, PING_MS);
       try { window.postMessage({ type: 'mlsPing', source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) {}
-      setTimeout(function () { if (done) return; done = true; window.removeEventListener('message', on); resolve(false); }, PING_MS);
     });
   }
 
   function probeAthenaOpen() {
     return new Promise(function (resolve) {
-      var done = false;
+      var done = false, timer = null;
+      var requestId = 'mlsdot_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+      function finish(value) {
+        if (done) return;
+        done = true;
+        if (timer != null) { try { clearTimeout(timer); } catch (e) {} }
+        window.removeEventListener('message', on);
+        resolve(value);
+      }
       function on(ev) {
         if (done) return;
         var d = ev.data;
-        if (d && d.source === 'mls-ext' && d.type === 'mlsAppScheduleResult') {
-          done = true; window.removeEventListener('message', on);
-          resolve(!!(d.resp && d.resp.ok));
+        if (d && d.source === 'mls-ext' && d.type === 'mlsExtHealthResult') {
+          if (d.requestId && d.requestId !== requestId) return;
+          var health = d.resp || {}, athena = health.athena || {};
+          finish(health.ok === true && Number(athena.tabs || 0) > Number(athena.discarded || 0));
         }
       }
       window.addEventListener('message', on);
-      try { window.postMessage({ source: 'mls-app', type: 'mlsAppPullSchedule' }, '*'); } catch (e) {}
-      setTimeout(function () { if (done) return; done = true; window.removeEventListener('message', on); resolve(false); }, ATHENA_MS);
+      timer = setTimeout(function () { finish(false); }, HEALTH_MS);
+      try { window.postMessage({ source: 'mls-app', type: 'mlsExtHealth', requestId: requestId }, '*'); } catch (e) {}
     });
   }
 
@@ -126,7 +136,7 @@
       var ext = await pingExtension();
       if (!ext) { render('noext'); return; }
       var open = await probeAthenaOpen();
-      render((open && (!window.__mlsConnTruth || window.__mlsConnTruth.isConnected())) ? 'connected' : 'noathena');
+      render(open ? 'connected' : 'noathena');
     } catch (e) {
       render('noext');
     } finally { checking = false; }

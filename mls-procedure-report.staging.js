@@ -19,7 +19,7 @@
  *   • RVU + estimated Medicare $ totals for the range and per-type subtotals
  *     (reuses window.__mlsRVU). Clean "No procedures in this range" empty state.
  *   • Export: Save as PDF (real selectable text; reuses window.loadJsPdf /
- *     jsPDF 2.5.1) and CSV. Exports contain aggregate counts only — NO PHI.
+ *     pinned same-origin jsPDF 4.2.1) and CSV. Exports contain aggregate counts only — NO PHI.
  *
  * SAFETY: one guarded IIFE, all work in try/catch, no monkey-patching of any
  * existing function, no-op on any error. Removing the loader line (or blanking
@@ -447,7 +447,7 @@
       var ok = function () { (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf) : reject(new Error('jsPDF unavailable')); };
       if (ex) { ex.addEventListener('load', ok); ex.addEventListener('error', function () { reject(new Error('jsPDF load error')); }); return; }
       var s = document.createElement('script'); s.id = 'jspdfScript';
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.src = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
       s.onload = ok; s.onerror = function () { reject(new Error('jsPDF load error')); };
       document.head.appendChild(s);
     });

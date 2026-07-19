@@ -80,7 +80,15 @@ const window = {
             controlLabel: 'Athena Billing / Charges'
           }
         }
-      : { ok: true, staged: true, verified: true, stagedCodes: ['99214', '20610'] };
+      : {
+          ok: true, written: true, noteWritten: true, verified: true,
+          noteWriteProof: 'proof-runtime-note', noteWriteProofExpiresAt: Date.now() + 120000,
+          context: {
+            patientName: 'Example Patient', dob: '1/2/1980', mrn: '123',
+            encounterId: 'enc-1', encounterUrl: 'https://athenanet.athenahealth.com/encounter/enc-1',
+            visitDate: '7/14/2026', provider: 'Example Doctor, MD', controlLabel: 'Encounter note editor'
+          }
+        };
     setTimeout(() => {
       [...(listeners.message || [])].forEach(f => f({
         data: {
@@ -130,30 +138,38 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 
 (async () => {
   const opts = {
-    patient: { name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
-    billing: { emCode: '99214', cptCodes: ['20610'] }
+    patient: { patientId: 'pt-runtime-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
+    expectedContext: { visitDate: '07/14/2026', provider: 'Example Doctor, MD', appointmentId: 'appt-runtime-1' },
+    plan: [{ kind: 'note', body: 'NOTE TEXT:\nExact reviewed note.' }]
   };
 
-  await window.__mlsWriteFlow.startAthenaAction('stage_billing', opts);
+  for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
+    const refused = await window.__mlsWriteFlow.startAthenaAction(action, opts);
+    assert.strictEqual(refused.error, 'manual-only-final-action', `${action} was not refused at the UI controller`);
+  }
+  assert.deepStrictEqual(sent, [], 'a manual final action crossed the bridge');
+
+  await window.__mlsWriteFlow.startAthenaAction('write_note', opts);
   await tick();
-  assert.deepStrictEqual(sent.map(x => x.mode), ['probe'], 'opening billing performed a mutation before final confirmation');
+  assert.deepStrictEqual(sent.map(x => x.mode), ['probe'], 'opening note confirmation did not remain read-only');
 
   byId.mlsAthenaActionCancel.onclick();
   await tick();
   assert.deepStrictEqual(sent.map(x => x.mode), ['probe'], 'Cancel emitted an execute request');
 
-  await window.__mlsWriteFlow.startAthenaAction('stage_billing', opts);
+  await window.__mlsWriteFlow.startAthenaAction('write_note', opts);
   await tick();
   assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe']);
 
   byId.mlsAthenaActionGo.listeners.click[0]({ target: byId.mlsAthenaActionGo });
   await tick();
   assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute'], 'final confirmation did not emit exactly one execute');
-  assert.deepStrictEqual(sent[1].billing, sent[2].billing, 'billing payload changed between visible probe and final confirmation');
-  assert.deepStrictEqual(sent[2].billing.cptCodes, ['20610']);
-  assert(!sent.some(x => /claim|order|sign|save/i.test(String(x.action || ''))), 'billing confirmation auto-chained another final action');
+  assert.strictEqual(sent[2].action, 'write_note');
+  assert.strictEqual(sent[1].noteText, 'Exact reviewed note.');
+  assert.strictEqual(sent[2].noteText, sent[1].noteText, 'note payload changed between visible probe and final confirmation');
+  assert(!sent.some(x => ['stage_billing', 'sign_encounter', 'place_order'].includes(x.action)), 'a final action crossed the bridge');
 
-  console.log('PASS Athena confirmation runtime: probe only, cancel no-op, one final execute with identical billing');
+  console.log('PASS Athena confirmation runtime: manual final actions never cross the bridge; note probe/cancel/one confirmed execute stay exact');
 })().catch(err => {
   console.error(err);
   process.exitCode = 1;

@@ -29,17 +29,19 @@ function beforeMutation(source, needle, mutationNeedle) {
 /*
  * This is deliberately a separate, narrow capability from mlsAppWriteV2.
  * Generic AI/autopilot routes remain unable to Save, Sign, bill, or place an
- * order. Only a visible, trusted doctor click can authorize one exact action.
+ * order. Only write_note and save_draft can receive a trusted-click arm.
  */
 assert(/mlsAppAthenaActionV2\s*:\s*1/.test(content), 'the typed Athena action must be origin-gated by the content bridge');
 
 const appActions = between(writeflow, '/* ---------------- explicit Athena actions', '/* ---- identity helpers');
-for (const action of ['stage_billing', 'save_draft', 'sign_encounter']) {
-  assert(appActions.includes(action), `app must expose a separate ${action} action`);
-}
+for (const action of ['write_note', 'save_draft', 'stage_billing', 'sign_encounter', 'place_order']) assert(appActions.includes(action), `app policy metadata must name ${action}`);
+assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must contain only note write/save');
 const appProbeStart = appActions.indexOf('function startAthenaAction(action, opts)');
 assert(appProbeStart >= 0);
 const appProbe = appActions.slice(appProbeStart);
+const manualRefusalAt = appProbe.indexOf('manual-only-final-action');
+const bridgeProbeAt = appProbe.indexOf("mode: 'probe'");
+assert(manualRefusalAt >= 0 && bridgeProbeAt > manualRefusalAt, 'manual final actions must be refused before any probe crosses the bridge');
 assert(appProbe.indexOf("mode: 'probe'") < appProbe.indexOf('showActionConfirm('), 'opening the action must probe read-only before showing confirmation');
 assert(appProbe.includes('previewHash'));
 const appConfirm = between(appActions, 'function showActionConfirm(action, opts, patient, previewHash, payload, probe)', 'function startAthenaAction(action, opts)');
@@ -50,7 +52,6 @@ for (const label of ['Patient', 'DOB', 'MRN', 'Encounter date', 'Provider', 'Ath
 }
 assert(/setAttribute\(['"]data-mls-athena-action['"],\s*action\)/.test(appConfirm));
 assert(/setAttribute\(['"]data-mls-preview-hash['"],\s*previewHash\)/.test(appConfirm), 'the trusted confirmation click must be bound to the visible preview');
-assert(/billing\s*:\s*(?:payload\s*&&\s*)?payload\.billing|billing\s*:\s*payload\.billing/.test(appConfirm), 'billing execute payload must cross the bridge in the typed billing field');
 assert(/(?:expectedContext|probeContext|context)\s*:\s*[a-zA-Z_$][\w$]*/.test(appConfirm), 'execute must carry the probed encounter context fingerprint');
 assert(/(?:expectedContext|context)\s*:\s*[a-zA-Z_$][\w$]*/.test(appProbe), 'probe must carry visit date and provider context');
 assert(/No claim is submitted/.test(appActions));
@@ -131,12 +132,13 @@ assert(/d\.mode/.test(bridge), 'the app must send an explicit mode');
 assert(/['"]probe['"]/.test(bridge), 'preview/probe mode must be explicit');
 assert(/['"]execute['"]/.test(bridge), 'execute mode must be explicit');
 for (const action of ['stage_billing', 'save_draft', 'sign_encounter']) {
-  assert(bridge.includes(action), `content bridge must allow the exact ${action} action`);
+  assert(bridge.includes(action), `content bridge must recognize ${action} for probe/refusal policy`);
 }
 assert(bridge.includes('mlsAppAthenaActionV2Request'));
 assert(bridge.includes('mlsAppAthenaActionV2Result'));
 assert(/probeContext\s*:/.test(bridge), 'the content bridge must forward the probed context fingerprint');
 assert(/billing\s*:/.test(bridge), 'the content bridge must forward the typed billing payload');
+assert(/expectedAthenaTabId\s*:/.test(bridge), 'the content bridge must forward an optional exact-open Athena tab binding');
 assert(/_mlsAthenaActionGesture\s*=\s*\{|delete\s+[^;]*gesture|\.delete\([^)]*gesture/.test(bridge), 'the trusted-click arm must be consumed before the action result');
 
 const handler = between(background, '/* ATHENA_ACTION_V2_HANDLER_START */', '/* ATHENA_ACTION_V2_HANDLER_END */');
@@ -144,6 +146,13 @@ for (const action of ['stage_billing', 'save_draft', 'sign_encounter']) {
   assert(handler.includes(action), `background must recognize ${action}`);
 }
 assert(/unknown-action/.test(handler), 'unknown actions must fail closed');
+const safetyGateAt = handler.indexOf('MLS_WRITE_SAFETY_GATE_START');
+const tokenGateAt = handler.indexOf("if (mode === 'execute')");
+assert(safetyGateAt >= 0 && tokenGateAt > safetyGateAt, 'background final-action refusal must precede token and mutation processing');
+assert(/write-safety-guard-missing/.test(handler), 'background must fail closed if the final-action safety guard is unavailable');
+const bridgeSafety = between(content, '/* MLS_WRITE_SAFETY_BRIDGE_GATE', 'var previewHash');
+for (const action of ['stage_billing', 'sign_encounter', 'place_order']) assert(bridgeSafety.includes(action), `${action} is missing from the content execute refusal`);
+assert(/write-safety-final-action-blocked/.test(bridgeSafety), 'content execute refusal lost its stable reason');
 assert(/mode[^\n]*(probe|execute)/.test(handler), 'handler must have explicit probe and execute modes');
 assert(/ambiguous-athena-tabs/.test(handler), 'ambiguous Athena targets must fail closed');
 /* v2.9.31 multi-tab contract: the write lane no longer demands a single
@@ -159,6 +168,9 @@ assert(/athCandidates\.length/.test(probeScan), 'the probe must iterate every si
 assert(/contextVerified/.test(probeScan) && /lockedContextShape\(athProbe\.context\)/.test(probeScan), 'a tab only counts as verified after full context verification');
 assert(/verifiedTabCount\s*>\s*1/.test(handler) && /ambiguous-athena-tabs/.test(between(handler, 'verifiedTabCount > 1', 'noteWriteProofFailure')), 'duplicate verified encounters across Athena tabs must fail closed as ambiguous');
 assert(/if \(!tab \|\| !probe\) return probeFailure/.test(handler), 'zero verified tabs must return the honest probe failure, never proceed');
+assert(/hasExpectedAthenaTabId/.test(handler) && /athCandidates\s*=\s*athCandidates\.filter/.test(handler), 'an exact-open continuation must restrict its probe to the navigation-proven Athena tab');
+assert(/Number\(candidate\s*&&\s*candidate\.id\)\s*===\s*expectedAthenaTabId/.test(handler), 'exact-open tab filtering does not compare the requested tab id exactly');
+assert(/athenaTabId\s*:\s*tab\.id/.test(handler), 'the read-only probe receipt does not return the exact verified Athena tab id');
 
 /* The execute capability is bound end to end. Every mismatch must be rejected
  * before the driver is injected and therefore before any DOM mutation. */
@@ -256,8 +268,9 @@ const firstMutation = driver.indexOf('/* STAGE_BILLING_START */');
 assert(probeReturn >= 0 && firstMutation > probeReturn, 'probe must return a read-only preview before the mutation boundary');
 assert(/readOnly\s*:\s*true/.test(driver.slice(probeReturn, firstMutation)), 'probe must label its result read-only');
 
-/* Billing is staging only. Codes are exact, duplicates/near matches are
- * rejected, and the committed billing context is read back before success. */
+/* Dormant driver code remains fail-closed as defense in depth if a future
+ * policy intentionally re-enables it. The active handler/bridge guards above
+ * make this branch unreachable for billing execute today. */
 const billing = between(driver, '/* STAGE_BILLING_START */', '/* STAGE_BILLING_END */');
 for (const marker of [
   'billing-near-match-rejected',
@@ -284,8 +297,7 @@ assert(!codeMatchers.tokenRe('99214').test('A99214X near match'));
 assert(codeMatchers.tokenRe('J3301').test('J3301 Injection'));
 assert(!codeMatchers.tokenRe('J3301').test('XJ33010 near match'));
 
-/* Every candidate click flows through a final-action denylist. Stage billing
- * can add a code to the draft charge context, but cannot submit a claim. */
+/* Every dormant candidate click also flows through a final-action denylist. */
 for (const label of ['submit', 'post', 'file', 'claim', 'sign', 'place order']) {
   assert(billing.toLowerCase().includes(label), `billing denylist must name ${label}`);
 }
@@ -334,4 +346,4 @@ const genericWriteDriver = between(background, 'async function mlsUnifiedWriteDr
 assert(/forcedHeld/.test(genericWriteDriver), 'generic write route must keep structured routes held');
 assert(!/sign_encounter|save_draft|stage_billing/.test(genericWriteDriver), 'generic note writer must not gain final-action capabilities');
 
-console.log('PASS Athena action contract: trusted one-shot actions, exact destinations, no chaining or unsafe finalization');
+console.log('PASS Athena action contract: only note write/save can arm; billing/sign/order execute are refused before mutation with dormant defenses preserved');

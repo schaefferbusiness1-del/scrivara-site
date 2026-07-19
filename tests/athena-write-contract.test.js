@@ -112,7 +112,8 @@ assert(/r\.written && r\.verified && durable/.test(resultUi), 'Done must require
 assert(/persisted\|\|r\.serverVerified/.test(resultUi), 'durable evidence must be persisted or server verified');
 
 // Full-visit/history controls open the destination review. The Superbill
-// shortcut starts only the typed read-only probe/final-confirmation controller.
+// shortcut opens the same immutable review with a manual billing row; it must
+// never start the typed billing executor (which is policy-blocked).
 // A saved visit uses its immutable saved identity, never the active patient.
 const fullVisit = between(app, 'function pushEntireVisitToAthena(btn)', '/* Legacy natural-language autopilot');
 assert(fullVisit.includes('_athenaPushPlan'));
@@ -121,8 +122,10 @@ const fullPlan = between(app, 'function _athenaPushPlan(sections, who, immutable
 assert(!fullPlan.includes('postMessage'));
 assert(fullPlan.includes('_athenaShowReceipt'));
 const billingPlan = between(app, 'function pushSuperbillToAthena()', '/* Preview a SAVED visit');
-assert(/startAthenaAction\(['"]stage_billing['"]/.test(billingPlan), 'Superbill must use the supervised typed billing action');
-assert(!billingPlan.includes('postMessage') && !/mode\s*:\s*['"]execute['"]/.test(billingPlan), 'Superbill must not bypass the final confirmation controller');
+assert(/openUnifiedConfirmation/.test(billingPlan), 'Superbill must open the immutable Athena review');
+assert(/kind\s*:\s*['"]billing['"]/.test(billingPlan), 'Superbill review must retain the typed billing payload as a visible row');
+assert(!/startAthenaAction\(['"]stage_billing['"]/.test(billingPlan), 'Superbill must not advertise or start billing execution');
+assert(!billingPlan.includes('postMessage') && !/mode\s*:\s*['"]execute['"]/.test(billingPlan), 'Superbill must not bypass the review-only boundary');
 const savedPlan = between(app, 'function pushHistoryNoteToAthena(id)', 'function getAutoSendEMR()');
 assert(savedPlan.includes('_athenaBindingForSavedRecord(n)'), 'saved history must rebuild its immutable saved-record binding');
 assert(savedPlan.includes('savedBinding.identityConflict'), 'saved history must fail closed when saved identity conflicts with the linked chart');

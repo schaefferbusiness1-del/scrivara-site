@@ -6,8 +6,8 @@
  *
  *  WHAT THIS PANEL IS
  *  ------------------
- *  ONE clean, good-looking panel that matches the redesign (white card, Plus Jakarta
- *  Sans / Newsreader, blue gradient accents) with two tabs:
+ *  ONE clean, good-looking panel that matches the redesign (white card, reliable
+ *  system sans / Georgia typography, blue gradient accents) with two tabs:
  *
  *    SCHEDULE tab
  *      - The honest connection status (Slice 1) read straight from window.__mlsConnTruth.
@@ -475,23 +475,46 @@
    *  PART B - the panel
    * ===================================================================== */
   var PANEL_ID = "mlsAsstPanel", FAB_ID = "mlsAsstFab", STYLE_ID = "mlsAsstStyle";
-  /* Chat is patient-owned state. A single module-global array allowed a delayed
-     patient-A reply to land in the thread after the doctor had switched to B.
-     Keep one bucket (and one in-flight request slot) per stable patient id. */
+  /* Chat is account + patient-owned state. A patient id is not globally unique:
+     two practices can both have patient "42", and the bundle survives logout in
+     the same tab. Never let those accounts share a bucket or request epoch. */
   var CHAT_NONE = "patient:none";
-  var chatStates = Object.create(null); // owner -> {history,busy,requestSeq}
+  function normalizeAccount(value) { return String(value == null ? "" : value).trim().toLowerCase(); }
+  function readAccountIdentity() {
+    return normalizeAccount(safe(function () {
+      if (isFn(window.getSessionEmail)) return window.getSessionEmail();
+      return window.sessionStorage && window.sessionStorage.getItem ? window.sessionStorage.getItem("sf_session") : "";
+    }, ""));
+  }
+  function accountScope(value) {
+    value = normalizeAccount(value);
+    return value ? encodeURIComponent(value) : "signed-out";
+  }
+  var boundAccount = readAccountIdentity();
+  var accountEpoch = 1;
+  var lastBoundaryEpoch = null;
+  var lastBoundaryAccount = null;
+  var lastBoundaryAt = 0;
+  var chatStates = Object.create(null); // account|patient owner -> {history,busy,requestSeq,controller}
   var renderedChatOwner = "";
   var patientPickedHandler = null;
-  function chatOwnerKey() {
+  function patientOwnerKey() {
     var id = safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ""; }, "");
     if (id != null && String(id).trim()) return "patient:" + String(id).trim();
     var p = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
     if (p && p.id != null && String(p.id).trim()) return "patient:" + String(p.id).trim();
     return CHAT_NONE;
   }
+  function scopeOwner(patientOwner, account) {
+    return "account:" + accountScope(account == null ? boundAccount : account) + "|" + patientOwner;
+  }
+  function chatOwnerKey() {
+    syncAccountIdentity();
+    return scopeOwner(patientOwnerKey(), boundAccount);
+  }
   function chatState(owner) {
     owner = owner || chatOwnerKey();
-    if (!chatStates[owner]) chatStates[owner] = { history: [], busy: false, requestSeq: 0 };
+    if (!chatStates[owner]) chatStates[owner] = { history: [], busy: false, requestSeq: 0, controller: null };
     return chatStates[owner];
   }
   function ensureGreeting(owner) {
@@ -503,12 +526,78 @@
   var tab = "schedule";       // 'schedule' | 'chat'
   var selDate = todayStr();
   var selProvider = "All doctors";
+  var providerRosterEpoch = -1;
+  var activePullCancel = null;
+
+  function abortChatRequests() {
+    for (var owner in chatStates) if (Object.prototype.hasOwnProperty.call(chatStates, owner)) {
+      var state = chatStates[owner];
+      if (state && state.controller && isFn(state.controller.abort)) safe(function () { state.controller.abort(); });
+      if (state) { state.controller = null; state.busy = false; state.requestSeq++; }
+    }
+  }
+  function clearAssistantDom() {
+    var p = $(PANEL_ID);
+    if (!p) return;
+    safe(function () { p.classList.remove("open"); });
+    var f = $(FAB_ID); if (f) f.style.display = "";
+    var thread = p.querySelector(".as-thread"); if (thread) thread.innerHTML = "";
+    var ta = p.querySelector("textarea"); if (ta) ta.value = "";
+    var prov = p.querySelector(".as-prov");
+    if (prov) { prov.innerHTML = ""; prov.value = ""; prov.__mlsAccountEpoch = -1; prov.__mlsRosterSig = ""; }
+    var di = p.querySelector(".as-date"); if (di) di.value = selDate;
+    var list = p.querySelector(".as-list"); if (list) list.innerHTML = "";
+    var hd = p.querySelector(".as-listhd"); if (hd) hd.textContent = "";
+    var pn = p.querySelector(".as-stat-pt b"); if (pn) pn.textContent = "0";
+    var on = p.querySelector(".as-stat-op b"); if (on) on.textContent = "0";
+    setPullStatus("", false);
+    setSendEnabled(true);
+  }
+  function resetSession(nextAccount, detail) {
+    detail = detail && typeof detail === "object" ? detail : {};
+    var boundaryEpoch = detail.epoch != null ? detail.epoch : detail.boundaryEpoch;
+    if (boundaryEpoch != null && String(boundaryEpoch) === String(lastBoundaryEpoch)) return false;
+    var nextIdentity = normalizeAccount(arguments.length ? nextAccount : readAccountIdentity());
+    /* Direct shell call + broadcast event are one boundary. Older callers may
+       omit the generated epoch from the direct detail, so coalesce the same-tick
+       pair by account too. */
+    if (nextIdentity === lastBoundaryAccount && (Date.now() - lastBoundaryAt) < 100) {
+      if (boundaryEpoch != null) lastBoundaryEpoch = boundaryEpoch;
+      return false;
+    }
+    if (boundaryEpoch != null) lastBoundaryEpoch = boundaryEpoch;
+    boundAccount = nextIdentity;
+    lastBoundaryAccount = nextIdentity;
+    lastBoundaryAt = Date.now();
+    accountEpoch++;
+    abortChatRequests();
+    chatStates = Object.create(null);
+    renderedChatOwner = "";
+    selDate = todayStr();
+    selProvider = "All doctors";
+    providerRosterEpoch = -1;
+    if (isFn(activePullCancel)) safe(activePullCancel);
+    activePullCancel = null;
+    _wbInFlight = null;
+    clearAssistantDom();
+    return true;
+  }
+  function syncAccountIdentity() {
+    var next = readAccountIdentity();
+    if (next === boundAccount) return false;
+    return resetSession(next, { reason: "identity-change" });
+  }
+  var accountBoundaryHandler = function (e) {
+    var d = e && e.detail && typeof e.detail === "object" ? e.detail : {};
+    var hasNext = Object.prototype.hasOwnProperty.call(d, "nextAccount") || Object.prototype.hasOwnProperty.call(d, "nextEmail");
+    if (hasNext) resetSession(d.nextAccount != null ? d.nextAccount : d.nextEmail, d);
+  };
+  safe(function () { window.addEventListener("mls:session-boundary", accountBoundaryHandler); });
 
   function injectStyle() {
     if ($(STYLE_ID)) return;
     var s = el("style"); s.id = STYLE_ID;
     s.textContent = [
-      "@import url('https://fonts.googleapis.com/css2?family=Newsreader:wght@400;500&display=swap');",
       "#" + FAB_ID + "{position:fixed;left:18px;bottom:18px;z-index:2147483600;",
       "background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;border:none;border-radius:999px;padding:11px 17px;",
       "font:700 13px/1 'Plus Jakarta Sans',system-ui,Arial,sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(32,64,52,.4);}",
@@ -522,7 +611,7 @@
       /* header */
       "#" + PANEL_ID + " .as-head{display:flex;align-items:center;gap:10px;padding:15px 18px 13px;",
       "background:linear-gradient(135deg,#1A211C,#1E2B24);color:#fff;}",
-      "#" + PANEL_ID + " .as-title{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;flex:1;}",
+      "#" + PANEL_ID + " .as-title{font-family:Georgia,'Times New Roman',serif;font-weight:500;font-size:19px;flex:1;}",
       "#" + PANEL_ID + " .as-x{background:rgba(255,255,255,.12);border:none;color:#E7E5DD;font-size:17px;cursor:pointer;",
       "width:30px;height:30px;border-radius:8px;line-height:1;}",
       "#" + PANEL_ID + " .as-x:hover{background:rgba(255,255,255,.2);}",
@@ -546,7 +635,7 @@
       "#" + PANEL_ID + " .as-pane[hidden]{display:none;}",
       /* pull controls */
       "#" + PANEL_ID + " .as-pull{border:1px solid #E7E5DD;border-radius:13px;padding:12px;background:#FCFBF8;margin-bottom:13px;}",
-      "#" + PANEL_ID + " .as-pull h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:16px;margin:0 0 9px;color:#1A211C;}",
+      "#" + PANEL_ID + " .as-pull h4{font-family:Georgia,'Times New Roman',serif;font-weight:500;font-size:16px;margin:0 0 9px;color:#1A211C;}",
       "#" + PANEL_ID + " .as-dayrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px;}",
       "#" + PANEL_ID + " .as-daybtn{height:32px;padding:0 12px;border-radius:8px;border:1px solid #D9D6CD;background:#fff;",
       "color:#3D453E;font:700 12px/1 'Plus Jakarta Sans';cursor:pointer;}",
@@ -658,6 +747,7 @@
 
   /* ---------- SCHEDULE pane render ---------- */
   function renderSchedule() {
+    if (syncAccountIdentity()) return;
     var p = $(PANEL_ID); if (!p) return;
     var pane = p.querySelector(".as-pane-schedule"); if (!pane) return;
 
@@ -670,7 +760,16 @@
       dayBtns[i].classList.toggle("on", !!on);
     }
     var di = pane.querySelector(".as-date"); if (di && di.value !== selDate) di.value = selDate;
-    var prov = pane.querySelector(".as-prov"); if (prov && prov.innerHTML.indexOf("option") < 0) prov.innerHTML = providerOptionsHTML(selProvider);
+    var prov = pane.querySelector(".as-prov");
+    if (prov) {
+      var rosterHTML = providerOptionsHTML(selProvider);
+      if (providerRosterEpoch !== accountEpoch || prov.__mlsAccountEpoch !== accountEpoch || prov.__mlsRosterSig !== rosterHTML || prov.innerHTML.indexOf("option") < 0) {
+        prov.innerHTML = rosterHTML;
+        providerRosterEpoch = accountEpoch;
+        prov.__mlsAccountEpoch = accountEpoch;
+        prov.__mlsRosterSig = rosterHTML;
+      }
+    }
 
     var list = dayList(selDate, selProvider);
     var op = opNoteCount(list);
@@ -734,6 +833,8 @@
      THAT date in EST, non-blocking so the app stays usable, stores when done. Falls back to
      the legacy pullScheduleViaAssist only if __mlsSI is absent. */
   function doPull(btn) {
+    if (syncAccountIdentity()) return;
+    var pullEpoch = accountEpoch;
     var c = ct();
     var connected = !!(c && isFn(c.isConnected) && safe(function () { return c.isConnected(); }, false));
     if (c && !connected) {
@@ -746,27 +847,47 @@
     if (SI && isFn(SI.pull)) {
       if (btn) btn.disabled = true;
       setPullStatus("Starting to import visits... you can keep working - I'll store them when done.", false);
+      var siCancelled = false;
+      activePullCancel = function () { siCancelled = true; if (btn) btn.disabled = false; };
       safe(function () {
-        SI.pull({ date: selDate, provider: selProvider, onStatus: function (msg, kind) { setPullStatus(msg, kind === "ok"); } })
+        SI.pull({ date: selDate, provider: selProvider, onStatus: function (msg, kind) { if (!siCancelled && pullEpoch === accountEpoch) setPullStatus(msg, kind === "ok"); } })
           .then(function (res) {
+            if (siCancelled || pullEpoch !== accountEpoch) return;
+            activePullCancel = null;
             if (btn) btn.disabled = false;
             /* FIX 2026-07-01: only stamp "pulled at" when the import actually created or
                refreshed rows -- cards were claiming a pull that never happened. */
             try { if (res && (res.created > 0 || res.skipped > 0)) { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } } catch (e) {}
             renderSchedule();
           })
-          .catch(function () { if (btn) btn.disabled = false; setPullStatus("Couldn't finish the import - open your athenaOne Day schedule and try again.", false); });
+          .catch(function () {
+            if (siCancelled || pullEpoch !== accountEpoch) return;
+            activePullCancel = null;
+            if (btn) btn.disabled = false;
+            setPullStatus("Couldn't finish the import - open your athenaOne Day schedule and try again.", false);
+          });
       });
       return;
     }
     if (!isGFn("pullScheduleViaAssist")) { setPullStatus("Schedule pull is unavailable right now.", false); return; }
     if (btn) btn.disabled = true;
     setPullStatus("Starting to import visits...", false);
-    var n0 = appts().length, done = false;
+    var n0 = appts().length, done = false, finishTimer = 0, deadlineTimer = 0;
+    function cancelLegacyPull() {
+      done = true;
+      window.removeEventListener("message", onRes);
+      if (finishTimer) clearTimeout(finishTimer);
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      if (btn) btn.disabled = false;
+    }
+    activePullCancel = cancelLegacyPull;
     function onRes(e) {
       if (!(e.data && e.data.source === "mls-ext" && e.data.type === "mlsAppScheduleResult")) return;
+      if (pullEpoch !== accountEpoch) { cancelLegacyPull(); return; }
       done = true; window.removeEventListener("message", onRes);
-      setTimeout(function () {
+      finishTimer = setTimeout(function () {
+        if (pullEpoch !== accountEpoch) return;
+        activePullCancel = null;
         if (btn) btn.disabled = false;
         var n1 = appts().length, added = n1 - n0;
         try { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } catch (e) {}
@@ -776,8 +897,10 @@
       }, 1800);
     }
     window.addEventListener("message", onRes);
-    setTimeout(function () {
+    deadlineTimer = setTimeout(function () {
       if (!done) {
+        if (pullEpoch !== accountEpoch) { cancelLegacyPull(); return; }
+        activePullCancel = null;
         window.removeEventListener("message", onRes); if (btn) btn.disabled = false;
         var sEl = pullStatusEl();
         if (sEl && /import/i.test(sEl.textContent)) setPullStatus("Didn't hear back from athenaOne - make sure MLS Assist is enabled and your signed-in Day schedule is open, then pull again.", false);
@@ -838,6 +961,12 @@
     }
     state.busy = true;
     var requestId = ++state.requestSeq;
+    var requestEpoch = accountEpoch;
+    var controller = safe(function () { return typeof AbortController === "function" ? new AbortController() : null; }, null);
+    state.controller = controller;
+    function requestCurrent() {
+      return requestEpoch === accountEpoch && chatStates[owner] === state && state.requestSeq === requestId;
+    }
     if (owner === chatOwnerKey()) setSendEnabled(false);
     state.history.push({ role: "pending", text: "Thinking...", requestId: requestId }); renderThread(owner);
     var base = safe(function () { return window.bkBase(); }, "");
@@ -861,22 +990,31 @@
     var body = { question: q, history: hist };
     if (ctx) body.context = ctx;
     if (asstCtx) body.assistant_context = asstCtx;
-    return fetch(base + "/api/copilot", {
+    var requestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
       body: JSON.stringify(body)
-    }).then(function (r) { return r.json().catch(function () { return {}; }); })
+    };
+    if (controller) requestInit.signal = controller.signal;
+    return fetch(base + "/api/copilot", requestInit)
+      .then(function (r) { return requestCurrent() ? r.json().catch(function () { return {}; }) : null; })
       .then(function (d) {
+        if (!requestCurrent()) return;
         dropPending(owner, requestId);
         var reply = (d && (d.reply || d.text || d.answer)) || "";
         reply = String(reply).trim();
         if (!reply) reply = "The assistant did not return a response. Please try again.";
         addMsg("ai", reply, owner);
       })
-      .catch(function () { dropPending(owner, requestId); addMsg("ai", "Couldn't reach the assistant just now (network or backend). Please try again in a moment.", owner); })
+      .catch(function (err) {
+        if (!requestCurrent() || (err && err.name === "AbortError")) return;
+        dropPending(owner, requestId);
+        addMsg("ai", "Couldn't reach the assistant just now (network or backend). Please try again in a moment.", owner);
+      })
       .then(function () {
         state.busy = false;
-        if (owner === chatOwnerKey()) setSendEnabled(true);
+        if (state.controller === controller) state.controller = null;
+        if (requestCurrent() && owner === chatOwnerKey()) setSendEnabled(true);
       });
   }
   function dropPending(owner, requestId) {
@@ -972,6 +1110,9 @@
     di.addEventListener("change", function () { if (this.value) { selDate = this.value; setPullStatus("", false); renderSchedule(); } });
     var prov = sp.querySelector(".as-prov");
     prov.innerHTML = providerOptionsHTML(selProvider);
+    providerRosterEpoch = accountEpoch;
+    prov.__mlsAccountEpoch = accountEpoch;
+    prov.__mlsRosterSig = prov.innerHTML;
     prov.addEventListener("change", function () { selProvider = this.value || "All doctors"; renderSchedule(); });
     sp.querySelector(".as-pullbtn").addEventListener("click", function () { doPull(this); });
 
@@ -998,6 +1139,7 @@
   }
 
   function toggle(open) {
+    syncAccountIdentity();
     var p = $(PANEL_ID), f = $(FAB_ID); if (!p) return;
     var willOpen = open == null ? !p.classList.contains("open") : !!open;
     p.classList.toggle("open", willOpen);
@@ -1078,6 +1220,7 @@
     if (_dupRaf) return;
     _dupRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
       _dupRaf = 0;
+      syncAccountIdentity();
       killBadge();
       /* Patient changes repaint the context UI, so this existing observer is a
          zero-extra-poll backstop for selection paths that emit no custom event. */
@@ -1105,17 +1248,38 @@
   }
 
   /* ---------- boot / revert ---------- */
+  var _accountObs = null;
+  function startAccountWatch() {
+    if (!window.MutationObserver) return;
+    safe(function () {
+      var nodes = [$("whoLabel"), $("appScreen"), $("authScreen")];
+      _accountObs = new MutationObserver(function () { syncAccountIdentity(); });
+      var watched = false;
+      for (var i = 0; i < nodes.length; i++) if (nodes[i]) {
+        _accountObs.observe(nodes[i], { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+        watched = true;
+      }
+      if (!watched) { _accountObs.disconnect(); _accountObs = null; }
+    });
+  }
   function boot() {
+    syncAccountIdentity();
     installEstHooks();          /* re-assert in case the app (re)defined a hook after our sync install */
     startHealWatch();
     startWbWatch();
     injectSuppress();
     startDupWatch();
     buildPanel();
+    startAccountWatch();
     repaintAll();
     try { [250, 1200, 3000].forEach(function (ms) { setTimeout(repaintAll, ms); }); } catch (e) {}
   }
   function revert() {
+    abortChatRequests();
+    if (isFn(activePullCancel)) safe(activePullCancel);
+    activePullCancel = null;
+    safe(function () { if (_accountObs) _accountObs.disconnect(); _accountObs = null; });
+    safe(function () { window.removeEventListener("mls:session-boundary", accountBoundaryHandler); });
     safe(function () { if (_healPoll) clearInterval(_healPoll); });
     safe(function () { if (_wbPoll) clearInterval(_wbPoll); });
     safe(function () { if (isFn(unsub)) unsub(); });
@@ -1141,6 +1305,7 @@
     close: function () { toggle(false); },
     setTab: setTab,
     ask: ask,
+    resetSession: resetSession,
     _renderStatus: renderStatus,
     _renderSchedule: renderSchedule,
     _dayList: dayList,
@@ -1156,11 +1321,18 @@
     _killDup: killDupFull,
     _ownerKey: chatOwnerKey,
     _syncChatOwner: function () { syncChatOwner(true); },
+    _syncAccount: syncAccountIdentity,
+    _accountEpoch: function () { return accountEpoch; },
+    _selection: function () { return { date: selDate, provider: selProvider }; },
     _history: function () { return chatState(chatOwnerKey()).history.slice(); },
     _historyFor: function (owner) {
       owner = String(owner || "");
-      if (owner && owner.indexOf("patient:") !== 0) owner = "patient:" + owner;
-      return chatState(owner || CHAT_NONE).history.slice();
+      syncAccountIdentity();
+      if (owner.indexOf("account:") !== 0) {
+        if (owner && owner.indexOf("patient:") !== 0) owner = "patient:" + owner;
+        owner = scopeOwner(owner || CHAT_NONE, boundAccount);
+      }
+      return chatState(owner).history.slice();
     },
     revert: revert
   };

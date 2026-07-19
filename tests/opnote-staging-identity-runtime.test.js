@@ -105,7 +105,7 @@ async function main() {
 
   assert(pro.includes('mlsOpNotePatientId: String(exactPatient.id)'), 'staging professional formatter drops immutable id');
   assert(pro.includes("e.code === 'MLS_OPNOTE_IDENTITY'"), 'staging professional formatter swallows identity failures');
-  assert(connector.includes("mls-opnote-pro.staging.js?v=20260714id1"), 'staging professional formatter cache key is stale');
+  assert(connector.includes("mls-opnote-pro.staging.js?v=20260718stglib1"), 'staging professional formatter cache key is stale');
 
   console.log('PASS staging op-note identity: duplicate name/DOB remains exact-id bound through the actual AI request');
 }

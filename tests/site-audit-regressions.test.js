@@ -15,22 +15,34 @@ const directory = read('lawyers.html');
 const profile = read('expert.html');
 const portal = read('patient-portal.html');
 const siteBundle = read('mls-connect.js');
+const studyGroups = read('feat_mls_studygroups.js');
+const studyCalm = read('feat_mls_study_calm.js');
+const studyAnalysis = read('feat_mls_task7_analysis_sg.js');
 
 new Function(redesign); // eslint-disable-line no-new-func
 new Function(loading); // eslint-disable-line no-new-func
+new Function(studyGroups); // eslint-disable-line no-new-func
+new Function(studyAnalysis); // eslint-disable-line no-new-func
 
 assert(redesign.includes('#mlsRdSearchSlot{ flex:0 0 38px !important; min-width:38px !important; width:38px !important; }'), 'mobile search slot must not squeeze the page title');
 assert(redesign.includes('#mlsRdKbd{ display:none !important; }'), 'mobile icon-only search must not retain the slash key badge');
 assert(redesign.includes('#mlsFab, #mlsFabMenu{ display:none !important; }'), 'mobile quick actions must not float over working controls');
 assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38px;'), 'mobile quick actions need one compact top-bar owner');
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
-assert(siteBundle.includes("feat_mls_redesign.js?v=20260718rd315"), 'the repaired responsive/performance asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_redesign.js?v=20260719rd322"), 'the repaired responsive/performance asset needs a fresh deployment URL');
 
 assert(loading.includes("p.setAttribute('role', 'status')"), 'busy pill needs status semantics');
 assert(loading.includes("p.setAttribute('aria-live', 'polite')"), 'busy pill needs polite announcements');
 assert(loading.includes("p.setAttribute('aria-hidden', 'true')") && loading.includes("p.setAttribute('aria-hidden', 'false')"), 'busy pill must leave and re-enter the accessibility tree with its visual state');
 assert(loading.includes('opacity:0;visibility:hidden;'), 'idle busy pill must be visually and semantically hidden');
 assert(siteBundle.includes("feat_mls_loading_calm.js?v=20260718lb201"), 'the shared progress asset needs a fresh deployment URL');
+
+assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260718sg1c4'), 'reconciled Study Groups mount needs a fresh deployment URL');
+assert(studyGroups.includes("document.querySelectorAll('[id=\"mls-sg-root\"]')") && studyGroups.includes("[0, 250, 1000, 3000, 8000]"), 'Study Groups no longer deduplicates and reconciles its late mount');
+assert(!studyGroups.includes('id="mls-sg-athena"') && !studyCalm.includes('pull visits from Athena'), 'unverified Study Groups Athena-visit control remains visible');
+assert(!studyAnalysis.includes('mls-sg-athena') && siteBundle.includes('feat_mls_task7_analysis_sg.js') && siteBundle.includes('A+"?v=20260718t7ac2"'), 'retired Study Groups Athena-visit enhancement remains loaded or callable');
+assert(siteBundle.includes('A wrapper sentinel') && siteBundle.includes('head.setAttribute("aria-expanded"') && siteBundle.includes('if (sg.parentNode !== body) body.appendChild(sg)'), 'Study Groups shell does not repair incomplete header/body/root state');
+assert(!siteBundle.includes('var sg = $("mls-sg-root"); if (!sg || $("mlsB39SgWrap"))'), 'Study Groups still trusts the broken wrapper-only sentinel');
 
 assert.strictEqual((home.match(/id="mlsChatBtn"/g) || []).length, 1, 'homepage needs one sales-chat button');
 assert(home.includes('#mlsChatBtn{position:static;right:auto;bottom:auto;'), 'mobile sales chat must participate in layout instead of covering CTAs');
@@ -39,13 +51,15 @@ assert(!home.includes('<a href="easy-book.html">Book</a>'), 'homepage must not s
 
 assert(app.includes('id="appFooterNotice"'), 'app footer notice needs a stable owner');
 assert(app.includes('This local demo stores its synthetic patient and note data only in this browser on this device.'), 'local demo must describe local storage truthfully');
-assert(portal.includes('booking.removeAttribute("href")') && portal.includes('Booking available after sign-in'), 'sample portal must not open an unconfigured booking link');
+assert(portal.includes('id="bookingBtn" type="button"') && portal.includes('openReq("appointment")'), 'portal booking must use the reviewed in-portal appointment-request flow');
+assert(!portal.includes('easy-book.html') && !portal.includes('j.booking_url'), 'portal must not expose an unreviewed external or retired booking URL');
 
 assert(directory.includes('sample profile;\\s*edit your board certifications here'), 'directory must strip backend profile-edit instructions');
 assert(profile.includes('function publicCredentials') && profile.includes('function publicExperience') && profile.includes('function publicDocuments'), 'public profile needs placeholder sanitizers');
-assert(profile.includes("if(/board[ -]?cert/i.test(credentials))"), 'board certification badge must use cleaned public credentials');
-assert(profile.includes("if(/24[ -]?hour/i.test(availability))"), 'turnaround badge must be based on published availability');
-assert(profile.includes('if(documents.length)') && profile.includes('+documents.map('), 'placeholder documents must be filtered before rendering');
+assert(directory.includes('if(d.released!==true)') && directory.includes('.filter(isReleasedProfile)'), 'directory must require explicit release and reject held profile content');
+assert(profile.includes('d.released!==true||!isReleasedProfile(d.expert)'), 'profile detail must require explicit release and clean content');
+assert(directory.includes('HELD_PROFILE_MARKER') && profile.includes('HELD_PROFILE_MARKER'), 'public profile surfaces must reject draft, sample, placeholder, lorem, and synthetic markers');
+assert(directory.includes('No independently verified public experts are released yet') && profile.includes('No independently verified public expert profile is released here'), 'held public profiles need a calm, honest empty state');
 
 for (const html of [home, directory, profile, portal]) {
   for (const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {

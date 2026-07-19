@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="t token code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Your appointment · MLS</title>
 <!-- build: appointment-v1 2026-06-12 -->
 <style>
@@ -35,6 +40,7 @@
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 <div class="wrap">
   <div class="brand"><span class="mark">+</span> MLS</div>
 
@@ -78,7 +84,7 @@
 
 <script>
 var BACKEND_URL = 'https://scrivara-backend.onrender.com';
-var ptoken = new URLSearchParams(location.search).get('t') || '';
+var ptoken = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.t) || '';
 function show(id){ ['loading','notfound','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
 
 function render(a){
@@ -101,7 +107,7 @@ function render(a){
 
 function init(){
   if(!ptoken){ show('notfound'); return; }
-  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
+  mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
     .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
     .then(function(j){ if(j && j.ok && j.appointment){ render(j.appointment); } else { show('notfound'); } })
     .catch(function(){ show('notfound'); });
@@ -109,21 +115,21 @@ function init(){
 
 function confirmAppt(){
   var btn=document.getElementById('confirmBtn'); btn.disabled=true; btn.textContent='Confirming…';
-  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/confirm', { method:'POST' })
+  mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/confirm', { method:'POST' })
     .then(function(r){ return r.json(); })
     .then(function(j){
       if(j && j.ok){ document.getElementById('confirmWrap').classList.add('hide'); document.getElementById('confirmedMsg').classList.remove('hide'); var p=document.getElementById('statusPill'); p.className='pill conf'; p.textContent='Confirmed'; }
       else { showErr('Could not confirm. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; }
     })
-    .catch(function(){ showErr('Network error. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; });
+    .catch(function(){ showErr("We couldn't reach the office. Check your connection and try again."); btn.disabled=false; btn.textContent="Confirm I'll be there"; });
 }
 
 function cancelAppt(){
   if(!confirm('Cancel this appointment? The office will be notified.')) return;
-  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
+  mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
     .then(function(r){ return r.json(); })
     .then(function(j){ if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please call the office.'); } })
-    .catch(function(){ showErr('Network error. Please try again.'); });
+    .catch(function(){ showErr("We couldn't reach the office. Check your connection and try again, or call the office."); });
 }
 
 function showErr(t){ var e=document.getElementById('apptErr'); e.textContent=t; e.classList.remove('hide'); }

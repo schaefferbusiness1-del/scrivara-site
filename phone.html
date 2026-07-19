@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; connect-src https://scrivara-backend.onrender.com; img-src 'self' data:; media-src 'self' blob:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; manifest-src 'self'; worker-src 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MLS Recorder</title>
 <script>
 /* __mlsOldBrowserCompat v1.0.0 (b406) — old-Chrome / old-Mac support layer.
@@ -141,8 +144,12 @@
     schedulePatch();
   }
 
-  var parseOk = true;
-  try { new Function('async function _t(){ await 0; } var _o = { x: 1 }; var _s = { ..._o };'); } catch (e) { parseOk = false; }
+  /* Avoid `new Function`: the clinical page's CSP deliberately disallows
+     eval-like execution. Chrome 60 is the documented syntax floor here. */
+  var parseOk = safe(function () {
+    var m = String(navigator.userAgent || '').match(/(?:Chrome|Chromium)\/(\d+)/i);
+    return !m || Number(m[1]) >= 60;
+  }, true);
   var runtimeOk = !!(window.Promise && window.fetch);
   if (!parseOk || !runtimeOk) {
     api.tooOld = true;
@@ -207,14 +214,11 @@
   .pill{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.16); border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600; }
   .foot{ text-align:center; font-size:11.5px; opacity:.7; margin-top:14px; }
   a{ color:#fff; }
-  /* task-9 polish: the __mlsPhoneGuard "Download my audio" rescue button was
-     inheriting unstyled UA defaults; give it the ghost look of the page. */
-  #pgDl{ background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.4); max-width:340px; }
 </style>
 </head>
 <body>
   <div class="brand"><span class="dot">🎙️</span> MLS Recorder</div>
-  <div class="sub" id="subline">Record a visit from your phone — it streams to your computer.</div>
+  <div class="sub" id="subline">Record a visit from your phone — short clips upload to MLS.</div>
 
   <!-- CONNECT SCREEN -->
   <div class="screen" id="connectScreen">
@@ -239,14 +243,14 @@
       <div class="err" id="recErr"></div>
       <button class="btn btn-ghost" id="doneBtn" onclick="finishRec()" style="display:none;max-width:260px">✓ Done — back to computer</button>
     </div>
-    <div class="foot">Audio streams to the MLS app open on your computer, where it becomes the visit note. Nothing is stored on this phone.</div>
+    <div class="foot">Short audio clips upload to MLS for transcription. They are not saved to this phone's storage. Keep this page open until MLS confirms each upload, then confirm the transcript on your computer.</div>
   </div>
 
 <script>
   var BK='https://scrivara-backend.onrender.com';
   var code='', rec=null, stream=null, sentCount=0, active=false; var segTimer=null, recMime='';
 
-  function qp(name){ try{ return new URLSearchParams(location.search).get(name)||''; }catch(e){ return ''; } }
+  function hp(name){ try{ return new URLSearchParams((location.hash||'').replace(/^#/, '')).get(name)||''; }catch(e){ return ''; } }
   function show(id){ document.getElementById('connectScreen').classList.toggle('hidden', id!=='connect'); document.getElementById('recScreen').classList.toggle('hidden', id!=='rec'); }
 
   function doConnect(){
@@ -259,6 +263,7 @@
   function enterRecorder(c){
     code=c;
     document.getElementById('codeShown').textContent=c;
+    var input=document.getElementById('codeInput'); if(input) input.value='';
     show('rec');
     if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
       document.getElementById('recErr').textContent='Recording isn’t supported in this browser. Use a recent Safari or Chrome.';
@@ -313,11 +318,12 @@
       try{
         var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{
           method:'POST', headers:{'Content-Type':'application/json'},
+          cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
           body:JSON.stringify({audio:reader.result, mimetype:mimetype||blob.type||'audio/webm'})
         });
-        if(rr.ok){ sentCount++; document.getElementById('sent').textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; }
+        if(rr.ok){ sentCount++; document.getElementById('sent').textContent=sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS'; }
         else if(rr.status===404){ document.getElementById('recErr').textContent='That code isn’t active. Re-open 📱 Phone mic on your computer for a fresh code.'; }
-      }catch(e){ /* transient — next chunk retries */ }
+      }catch(e){ document.getElementById('recErr').textContent='This clip could not upload. Keep this page open and try recording again after the connection returns.'; }
     };
     reader.readAsDataURL(blob);
   }
@@ -329,79 +335,159 @@
     rec=null;
     var btn=document.getElementById('recBtn'); btn.classList.remove('on');
     document.getElementById('recIc').textContent='\u25CF'; document.getElementById('recLabel').textContent='Record';
-    document.getElementById('status').textContent=sentCount?'Stopped \u2014 your computer has the audio.':'Stopped.';
+    document.getElementById('status').textContent=sentCount?'Stopped \u2014 '+sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS.':'Stopped.';
   }
-  function finishRec(){ stopRec(); document.getElementById('status').textContent='Done. You can switch back to your computer.'; }
+  function finishRec(){ stopRec(); document.getElementById('status').textContent='Done. Return to your computer and confirm the transcript before closing this page.'; }
 
-  // Auto-fill the code from the QR/link (?code= or ?mic=), and skip straight to the recorder.
+  function scrubPairingUrl(){
+    try{
+      if(window.history && typeof window.history.replaceState==='function'){
+        window.history.replaceState(null, document.title, location.pathname);
+      }
+    }catch(e){}
+  }
+
+  // Capture the code only from a non-request fragment, erase the full URL
+  // payload, and skip straight to the recorder. Legacy query codes fail closed.
   (function(){
-    var c=(qp('code')||qp('mic')||'').trim().toUpperCase();
-    if(c){ enterRecorder(c); } else { show('connect'); var i=document.getElementById('codeInput'); if(i) setTimeout(function(){ try{ i.focus(); }catch(e){} }, 200); }
+    var hadLegacyQuery=!!location.search;
+    var c=(hp('code')||hp('mic')||'').trim().toUpperCase();
+    if(location.search||location.hash) scrubPairingUrl();
+    if(c){ enterRecorder(c); }
+    else {
+      show('connect');
+      if(hadLegacyQuery){ var er=document.getElementById('connectErr'); if(er) er.textContent='That old pairing link is no longer accepted. Create a fresh Phone mic link on your computer.'; }
+      var i=document.getElementById('codeInput'); if(i) setTimeout(function(){ try{ i.focus(); }catch(e){} }, 200);
+    }
   })();
 </script>
 <script>
 /* =====================================================================
-   __mlsPhoneGuard (b40, 2026-07-06) — bullet-proof phone recording.
-   A doctor must NEVER lose a visit recording. This layer adds:
-   1. LOCAL SAFETY NET: every audio clip is ALSO stored in IndexedDB on the
-      phone before upload (kept ~48h). Even if the network/code dies, the
-      audio exists — a "Download my audio" button appears when needed.
-   2. RETRY QUEUE: failed uploads are queued and retried every 6s with the
-      clip intact (old behavior silently DROPPED failed clips).
-   3. WAKE LOCK: the screen is kept awake while recording (screen lock was
-      silently killing recordings), re-acquired when the app returns.
-   4. INTERRUPTION RECOVERY: if the mic track ends (phone call, Siri, app
-      switch), recording auto-restarts the moment it can, with a clear
-      "resuming" message — no silent dead mic.
-   5. HONEST STATUS: green = recording & uploading; amber = recording,
-      clips waiting to send; red = mic lost (auto-recovering).
+   __mlsPhoneGuard (b421) — secure, volatile phone recording lifecycle.
+   Audio clips exist only in memory while this page uploads or retries them.
+   The retired IndexedDB backup is erased on startup and session end. Failed
+   clips are never downloaded or persisted, and the UI states that plainly.
+   Wake lock and mic interruption recovery remain active only while recording.
    ===================================================================== */
 (function(){
-  var DBN='mlsPhoneRec', ST='clips', db=null, queue=[], sending=false, wake=null;
-  function idb(){ return new Promise(function(res){ if(db) return res(db); try{ var rq=indexedDB.open(DBN,1); rq.onupgradeneeded=function(){ rq.result.createObjectStore(ST,{keyPath:'id',autoIncrement:true}); }; rq.onsuccess=function(){ db=rq.result; res(db); }; rq.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }
-  function saveClip(blob,mt){ idb().then(function(d){ if(!d) return; try{ d.transaction(ST,'readwrite').objectStore(ST).add({t:Date.now(),mt:mt,blob:blob}); pruneOld(d); }catch(e){} }); }
-  function pruneOld(d){ try{ var cut=Date.now()-48*3600*1000; var st=d.transaction(ST,'readwrite').objectStore(ST); st.openCursor().onsuccess=function(ev){ var c=ev.target.result; if(!c) return; if(c.value.t<cut) c.delete(); c.continue(); }; }catch(e){} }
-  function setStatus(txt,color){ try{ var s=document.getElementById('status'); if(s){ s.textContent=txt; s.style.color=color||''; } }catch(e){} }
-  function pendBadge(){ try{ var er=document.getElementById('recErr'); if(queue.length){ er.style.color='#ffdcae'; er.textContent='⏳ '+queue.length+' clip'+(queue.length===1?'':'s')+' waiting to send — kept safe on this phone, retrying…'; } else if(/waiting to send/.test(er.textContent||'')){ er.textContent=''; } }catch(e){} }
+  var LEGACY_DB='mlsPhoneRec', LEGACY_STORE='clips';
+  var queue=[], sending=false, retryTimer=null, wake=null, closing=false, sessionEpoch=1;
 
-  /* ---- 2) retry queue: wrap uploadChunk ---- */
-  var _origUpload = window.uploadChunk;
-  window.uploadChunk = function(blob, mimetype){
-    saveClip(blob, mimetype||blob.type);                    /* 1) local first */
-    sendOne(blob, mimetype, 0);
-  };
-  function sendOne(blob, mimetype, attempt){
-    var reader=new FileReader();
-    reader.onloadend=async function(){
-      try{
-        var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({audio:reader.result, mimetype:mimetype||blob.type||'audio/webm'})
-        });
-        if(rr.ok){ sentCount++; var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; pendBadge(); if(active) setStatus('● Recording… talk normally','#A9E3C4'); return; }
-        if(rr.status===404){ document.getElementById('recErr').textContent='That code expired. Your audio is SAFE on this phone — tap "Download my audio" below, or get a fresh code on your computer.'; ensureDownloadBtn(); return; }
-        throw new Error('http '+rr.status);
-      }catch(e){
-        queue.push({blob:blob, mt:mimetype}); pendBadge();
-        if(active) setStatus('● Recording… (offline — clips saved on this phone)','#ffdcae');
-      }
-    };
-    reader.readAsDataURL(blob);
+  function deleteLegacyDatabase(done){
+    var settled=false, timer=null;
+    function finish(ok){ if(settled) return; settled=true; if(timer) clearTimeout(timer); done(!!ok); }
+    try{
+      var rq=indexedDB.deleteDatabase(LEGACY_DB);
+      rq.onsuccess=function(){ finish(true); };
+      rq.onerror=function(){ finish(false); };
+      rq.onblocked=function(){ finish(false); };
+      timer=setTimeout(function(){ finish(false); },1500);
+    }catch(e){ finish(false); }
   }
-  setInterval(function(){
-    if(sending||!queue.length) return; sending=true;
-    var it=queue.shift(); pendBadge();
-    var reader=new FileReader();
-    reader.onloadend=async function(){
+  function purgeLegacyAudio(){
+    return new Promise(function(resolve){
+      if(!window.indexedDB || typeof indexedDB.open!=='function'){ resolve(false); return; }
       try{
-        var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio:reader.result,mimetype:it.mt||'audio/webm'})});
-        if(rr.ok){ sentCount++; var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; }
-        else queue.unshift(it);
-      }catch(e){ queue.unshift(it); }
-      sending=false; pendBadge();
-    };
-    reader.readAsDataURL(it.blob);
-  }, 6000);
+        var rq=indexedDB.open(LEGACY_DB);
+        rq.onupgradeneeded=function(){ try{ rq.transaction.abort(); }catch(e){} };
+        rq.onerror=function(){ deleteLegacyDatabase(resolve); };
+        rq.onsuccess=function(){
+          var legacy=rq.result, finished=false;
+          function closeAndDelete(){ if(finished) return; finished=true; try{ legacy.close(); }catch(e){} deleteLegacyDatabase(resolve); }
+          try{
+            if(!legacy.objectStoreNames || !legacy.objectStoreNames.contains(LEGACY_STORE)){ closeAndDelete(); return; }
+            var tx=legacy.transaction(LEGACY_STORE,'readwrite');
+            tx.objectStore(LEGACY_STORE).clear();
+            tx.oncomplete=closeAndDelete;
+            tx.onerror=closeAndDelete;
+            tx.onabort=closeAndDelete;
+          }catch(e){ closeAndDelete(); }
+        };
+      }catch(e){ deleteLegacyDatabase(resolve); }
+    });
+  }
+  purgeLegacyAudio();
+
+  function releaseItem(item){ if(!item) return; item.blob=null; item.mt=''; }
+  function clearVolatileAudio(){
+    if(retryTimer){ clearTimeout(retryTimer); retryTimer=null; }
+    for(var i=0;i<queue.length;i++) releaseItem(queue[i]);
+    queue.length=0;
+    pendBadge();
+  }
+  function setStatus(txt,color){ try{ var s=document.getElementById('status'); if(s){ s.textContent=txt; s.style.color=color||''; } }catch(e){} }
+  function pendBadge(){ try{ var er=document.getElementById('recErr'); if(queue.length){ er.style.color='#ffdcae'; er.textContent='⏳ '+queue.length+' clip'+(queue.length===1?'':'s')+' waiting to upload — held only in temporary memory while this page stays open; retrying…'; } else if(/waiting to upload/.test(er.textContent||'')){ er.textContent=''; } }catch(e){} }
+
+  /* ---- volatile retry queue: wrap uploadChunk without writing audio at rest ---- */
+  function readBlob(blob){
+    return new Promise(function(resolve,reject){
+      try{
+        var reader=new FileReader();
+        reader.onloadend=function(){ var value=reader.result; reader.onloadend=null; reader.onerror=null; value?resolve(value):reject(new Error('empty audio')); };
+        reader.onerror=function(){ reader.onloadend=null; reader.onerror=null; reject(new Error('audio read failed')); };
+        reader.readAsDataURL(blob);
+      }catch(e){ reject(e); }
+    });
+  }
+  function showDiscarded(){
+    try{
+      var er=document.getElementById('recErr');
+      if(er){ er.style.color='#ffd9d9'; er.textContent='An audio clip could not upload and was discarded from temporary memory. It was not saved on this phone. Return to your computer and confirm what MLS received.'; }
+    }catch(e){}
+  }
+  function scheduleRetry(){
+    if(retryTimer||sending||closing||!queue.length) return;
+    retryTimer=setTimeout(function(){ retryTimer=null; retryNext(); },6000);
+  }
+  function queueForRetry(item){
+    if(closing||item.epoch!==sessionEpoch){ releaseItem(item); showDiscarded(); return; }
+    queue.push(item); pendBadge();
+    if(active) setStatus('● Recording… (offline — retrying from temporary memory)','#ffdcae');
+    scheduleRetry();
+  }
+  async function sendOne(item, mayRetry){
+    var audio='';
+    try{
+      audio=await readBlob(item.blob);
+      var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
+        body:JSON.stringify({audio:audio,mimetype:item.mt||item.blob.type||'audio/webm'})
+      });
+      if(rr.ok){
+        sentCount++;
+        var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS';
+        releaseItem(item); pendBadge();
+        if(active) setStatus('● Recording… talk normally','#A9E3C4');
+        return true;
+      }
+      if(rr.status===404){
+        releaseItem(item);
+        var expired=document.getElementById('recErr');
+        if(expired) expired.textContent='That code expired. This clip was not saved on this phone. Re-open Phone mic on your computer for a fresh code.';
+        return false;
+      }
+      throw new Error('http '+rr.status);
+    }catch(e){
+      if(mayRetry&&!closing&&item.epoch===sessionEpoch) queueForRetry(item);
+      else { releaseItem(item); showDiscarded(); }
+      return false;
+    }finally{
+      audio='';
+    }
+  }
+  async function retryNext(){
+    if(sending||closing||!queue.length){ if(closing) clearVolatileAudio(); return; }
+    sending=true;
+    var item=queue.shift(); pendBadge();
+    await sendOne(item,true);
+    sending=false; pendBadge(); scheduleRetry();
+  }
+  window.uploadChunk=function(blob,mimetype){
+    if(!blob||!blob.size) return;
+    var item={blob:blob,mt:mimetype||blob.type||'audio/webm',epoch:sessionEpoch};
+    sendOne(item,!closing);
+  };
 
   /* ---- 3) wake lock ---- */
   async function grabWake(){ try{ if(navigator.wakeLock&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',function(){ wake=null; }); } }catch(e){} }
@@ -411,12 +497,25 @@
   /* ---- 4) interruption recovery ---- */
   var _origStart = window.startRec;
   window.startRec = async function(){
+    if(closing){ closing=false; sessionEpoch++; clearVolatileAudio(); purgeLegacyAudio(); }
     var r = await _origStart.apply(this, arguments);
-    grabWake(); watchTrack();
+    if(active){ grabWake(); watchTrack(); scheduleNudge(); }
     return r;
   };
   var _origStop = window.stopRec;
-  window.stopRec = function(){ dropWake(); return _origStop.apply(this, arguments); };
+  window.stopRec = function(){
+    dropWake();
+    if(nudgeTimer){ clearTimeout(nudgeTimer); nudgeTimer=null; }
+    return _origStop.apply(this, arguments);
+  };
+  var _origFinish = window.finishRec;
+  window.finishRec = function(){
+    var result=_origFinish.apply(this, arguments);
+    closing=true; sessionEpoch++;
+    clearVolatileAudio();
+    purgeLegacyAudio();
+    return result;
+  };
   function watchTrack(){
     try{
       if(!stream) return;
@@ -433,30 +532,33 @@
       try{
         stream=await navigator.mediaDevices.getUserMedia({audio:true});
         watchTrack(); startSegment();
-        setStatus('● Recording… (recovered — you did not lose anything)','#A9E3C4');
+        setStatus('● Recording… (mic recovered — confirm received clips on your computer)','#A9E3C4');
         recovering=false; return;
       }catch(e){ await new Promise(function(r){ setTimeout(r,1500); }); }
     }
     recovering=false;
-    if(active) setStatus('⚠️ Mic unavailable — tap Record to resume. Your clips so far are safe.','#FFB4B4');
+    if(active) setStatus('⚠️ Mic unavailable — tap Record to resume. Unsent clips exist only in temporary memory while this page stays open.','#FFB4B4');
   }
   function nudge(){ try{ if(active&&(!rec||rec.state==='inactive')) recover(); }catch(e){} }
-  setInterval(nudge, 5000);
-
-  /* ---- 1) download-my-audio (safety hatch) ---- */
-  function ensureDownloadBtn(){
-    if(document.getElementById('pgDl')) return;
-    var b=document.createElement('button'); b.id='pgDl'; b.className='btn'; b.style.marginTop='10px';
-    b.textContent='⬇ Download my audio (saved on this phone)';
-    b.onclick=function(){ idb().then(function(d){ if(!d) return; var st=d.transaction(ST,'readonly').objectStore(ST); var req=st.getAll?st.getAll():null; if(!req) return; req.onsuccess=function(){ var rows=req.result||[]; rows.slice(-40).forEach(function(row,i){ try{ var u=URL.createObjectURL(row.blob); var a=document.createElement('a'); a.href=u; a.download='mls_visit_audio_'+new Date(row.t).toISOString().replace(/[:.]/g,'-')+'.webm'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(u); a.remove(); }, 400+i*200); }catch(e){} }); }; }); };
-    var host=document.getElementById('recErr'); (host&&host.parentNode?host.parentNode:document.body).appendChild(b);
+  var nudgeTimer=null;
+  function scheduleNudge(){
+    if(nudgeTimer||!active) return;
+    nudgeTimer=setTimeout(function(){ nudgeTimer=null; nudge(); scheduleNudge(); },5000);
   }
-  window.__mlsPhoneGuard={v:'b40', pending:function(){return queue.length;}, download:ensureDownloadBtn};
+  function endVolatileSession(){
+    closing=true; sessionEpoch++;
+    clearVolatileAudio();
+    try{ if(active||rec||stream) window.stopRec(); else dropWake(); }catch(e){ dropWake(); }
+    purgeLegacyAudio();
+  }
+  window.addEventListener('pagehide',endVolatileSession);
+  window.addEventListener('beforeunload',endVolatileSession);
+  window.__mlsPhoneGuard={v:'b421',pending:function(){return queue.length;},clear:endVolatileSession};
 })();
 </script>
 <script>
   (function(){
-    var tips={connectBtn:'Connect this phone to the MLS visit open on your computer',recBtn:'Start or pause recording from this phone',doneBtn:'Finish the phone recording and continue the visit on your computer'};
+    var tips={connectBtn:'Connect this phone to the MLS visit open on your computer',recBtn:'Start or stop recording from this phone',doneBtn:'Finish the phone recording and continue the visit on your computer'};
     Object.keys(tips).forEach(function(id){var el=document.getElementById(id);if(el)el.title=tips[id];});
   })();
 </script>

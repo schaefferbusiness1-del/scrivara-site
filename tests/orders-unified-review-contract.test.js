@@ -49,24 +49,25 @@ const suggestion = orders.find(row => /suggestion only/i.test(row.payload.review
 assert(reviewed && incomplete && suggestion, 'order status separation is missing');
 assert.strictEqual(manifest.patient.patientId, 'local-patient-exact-7', 'immutable frontend manifest lost the local patient id');
 assert(Object.isFrozen(manifest.patient), 'frontend patient binding must be immutable');
-assert.strictEqual(reviewed.capability, 'ready', 'complete canonical supported order should expose the dedicated typed adapter');
-assert.strictEqual(reviewed.action, 'place_order', 'complete canonical supported order did not receive the single-order action');
+assert.strictEqual(reviewed.capability, 'manual', 'a complete canonical order must remain a visible manual review payload');
+assert.strictEqual(reviewed.action, '', 'a reviewed order must never expose place_order');
+assert(/Complete in Athena/i.test(reviewed.reason), 'reviewed order must explicitly direct the clinician to complete it in Athena');
 assert.strictEqual(reviewed.payload.fields.indication, 'Persistent radicular pain');
 assert.strictEqual(reviewed.payload.order.clientOrderId, 'order-reviewed-imaging-1');
 assert.strictEqual(reviewed.payload.order.query, 'MRI Lumbar spine');
 assert(/Orders > Imaging/.test(reviewed.destination), 'order-specific proposed destination is missing');
 assert(/Accepted AI suggestion/.test(reviewed.source), 'accepted source label is missing');
-assert.strictEqual(incomplete.capability, 'blocked', 'incomplete reviewed order must fail closed');
+assert.strictEqual(incomplete.capability, 'manual', 'incomplete high-risk medication review must stay manual');
 assert.strictEqual(incomplete.action, '', 'incomplete reviewed order must not gain an executable action');
 assert.strictEqual(incomplete.payload.complete, false, 'incomplete status was lost from the immutable payload');
-assert(/required|incomplete|blocked|adapter/i.test(incomplete.reason));
+assert(/Complete in Athena/i.test(incomplete.reason));
 assert.strictEqual(suggestion.capability, 'blocked', 'unaccepted AI suggestion must be blocked');
 assert.strictEqual(suggestion.action, '', 'unaccepted AI suggestion must never be executable');
 assert(/not accepted/i.test(suggestion.reason));
 assert(/AI suggestion \(not accepted\)/.test(suggestion.source));
 assert(Object.isFrozen(reviewed.payload.fields), 'complete order payload must be immutable');
-assert(Object.isFrozen(reviewed.payload.order) && Object.isFrozen(reviewed.payload.order.fields), 'canonical executable order must be immutable');
-assert.strictEqual(orders.filter(row => row.action === 'place_order').length, 1, 'one reviewed order row should expose exactly one typed order action');
+assert(Object.isFrozen(reviewed.payload.order) && Object.isFrozen(reviewed.payload.order.fields), 'canonical reviewed order must be immutable');
+assert.strictEqual(orders.filter(row => row.action === 'place_order').length, 0, 'no reviewed order row may expose place_order');
 
 window.__mlsExtensionCapabilities = {};
 const oldClientManifest = window.__mlsWriteFlow.buildUnifiedManifest({
@@ -79,9 +80,9 @@ const oldClientManifest = window.__mlsWriteFlow.buildUnifiedManifest({
   }], orderSuggestions: [] }]
 });
 const oldClientOrder = oldClientManifest.rows.find(row => row.payload.category === 'order');
-assert.strictEqual(oldClientOrder.capability, 'blocked', 'version-only/older clients must never expose the executable order action');
+assert.strictEqual(oldClientOrder.capability, 'manual', 'extension capability must not change a manual order into an executable action');
 assert.strictEqual(oldClientOrder.action, '', 'capability-missing client received place_order');
-assert(/Update MLS Assist/i.test(oldClientOrder.reason), 'capability-missing row does not explain the update/manual route');
+assert(/Complete in Athena/i.test(oldClientOrder.reason), 'capability-missing row lost the same truthful manual route');
 window.__mlsExtensionCapabilities = { supervisedOrderPlacementV2: true };
 
 function extractFunction(source, name) {
@@ -144,4 +145,4 @@ assert(scribeSource.includes('orderDrafts:orderReview.drafts,orderSuggestions:or
 assert(flowSource.includes('function bridgePatient(p)'), 'patient binding bridge helper is missing');
 assert(/patientId:\s*S\(p\.patientId/.test(flowSource), 'local patient audit ID does not cross the supervised bridge');
 
-console.log('PASS Orders final review: one immutable exact-patient review, one typed supported order action, blocked incomplete/suggestion rows, and manual high-risk orders');
+console.log('PASS Orders final review: immutable exact-patient payloads, every reviewed order manual, and incomplete/suggestion rows blocked');

@@ -1,4 +1,4 @@
-/* feat_mls_topbar_unify.js  ->  window.__mlsTopbar  (v1.0.2)
+/* feat_mls_topbar_unify.js  ->  window.__mlsTopbar  (v1.0.10)
  *
  * Declutters the top toolbar (the `.tools` row) and unifies the two "find"
  * surfaces. Additive, reversible, composes with -- never edits -- the host app.
@@ -31,7 +31,7 @@
  *    the real, still-present-but-hidden button) -- nothing is reimplemented.
  *    The account email shows as a non-clickable header inside the menu.
  * 2) UNIFIED FIND. Keeps the always-visible search box, but makes it "find
- *    anything": focusing/typing in it opens the powerful Find (mlsQuickFind),
+ *    anything": clicking/focusing/typing opens the powerful Find (mlsQuickFind),
  *    seeded with whatever was typed, so it finds patients AND screen jumps.
  *    The standalone "Find" button is hidden (merged into the box) and the
  *    native patient-only dropdown (#mlsPqsPanel) is suppressed so there is one
@@ -46,16 +46,24 @@
  */
 ;(function () {
   "use strict";
-  try { if (window.__mlsTopbar && window.__mlsTopbar.installed) return; } catch (e) { return; }
-
-  var VERSION = "1.0.2";
+  var VERSION = "1.0.10";
+  try {
+    if (window.__mlsTopbar && window.__mlsTopbar.installed) {
+      if (window.__mlsTopbar.version === VERSION) return;
+      if (typeof window.__mlsTopbar.revert === "function") window.__mlsTopbar.revert();
+    }
+  } catch (e) {}
   var ASSET = "feat_mls_topbar_unify.js";
   var HIDE = "mlsTbHidden";
   var STYLE_ID = "mlsTbStyle";
   var MENU_ID = "mlsTbMenu";
   var BTN_ID = "mlsTbMenuBtn";
   var PANEL_ID = "mlsTbMenuPanel";
-  var PQS_PLACEHOLDER = "🔍  Find anything — patients & screens";
+  /* Patients + screens are the guaranteed shared index in production and
+     staging. Production may enrich that index with features/templates, but
+     the persistent field never promises a category a deployment cannot find. */
+  var PQS_PLACEHOLDER = "Find patients and screens…";
+  var PQS_ARIA_LABEL = "Find patients and screens";
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -76,18 +84,109 @@
       return null;
     };
   }
+  /* Staff prep is intentionally owned by Menu. The active Easy workspace is
+     the sole receiver of this private menu-intent event. No global Staff
+     opener is published and no schedule pull is started here. */
+  function activateStaffPrepFromMenu() {
+    var requestId = "staff-menu-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
+    var acknowledged = false;
+    function onOpened(ev) {
+      if (!ev || !ev.detail || ev.detail.requestId !== requestId) return;
+      acknowledged = true;
+      safe(function () { window.removeEventListener("mls:menu-staff-prep-opened", onOpened); });
+    }
+    safe(function () { window.addEventListener("mls:menu-staff-prep-opened", onOpened); });
+    safe(function () {
+      window.dispatchEvent(new CustomEvent("mls:menu-staff-prep-request", {
+        detail: { source: "mls-topbar-menu", requestId: requestId }
+      }));
+    });
+    setTimeout(function () {
+      safe(function () { window.removeEventListener("mls:menu-staff-prep-opened", onOpened); });
+      if (!acknowledged) safe(function () {
+        if (typeof window.toast === "function") window.toast("Staff prep is still loading. Open Menu and try again.", "err");
+      });
+    }, 800);
+  }
   var MENU_ITEMS = [
-    { label: "Ask", icon: "✦", find: function () { return gid("askCopilotHdrBtn"); } },
-    { label: "Patient intake", icon: "📝", find: function () { return gid("intakeBtn"); } },
-    { label: "Templates", icon: "🗂", find: byOnclick("openTemplates") },
-    { label: "Custom widget", icon: "＋", find: function () { return gid("customWidgetHdrBtn"); } },
-    { label: "Troubleshoot Athena", icon: "🔧", find: function () { return gid("mlsAthenaDoctorBtn"); } },
-    { label: "Settings", icon: "⚙", find: byOnclick("openSettings") },
-    { label: "Log out", icon: "⏻", find: byOnclick("logout(") }
+    { key: "staff-prep", capability: "standard", label: "Staff prep & Athena month pull", icon: "&#128451;", always: true, run: activateStaffPrepFromMenu },
+    { key: "ask", capability: "standard", label: "Ask", icon: "✦", find: function () { return gid("askCopilotHdrBtn"); } },
+    { key: "intake", capability: "clinician", label: "Patient intake", icon: "📝", find: function () { return gid("intakeBtn"); } },
+    { key: "templates", capability: "clinician", label: "Templates", icon: "🗂", find: byOnclick("openTemplates") },
+    { key: "custom-widget", capability: "clinician", label: "Custom widget", icon: "＋", find: function () { return gid("customWidgetHdrBtn"); } },
+    { key: "athena-help", capability: "standard", label: "Troubleshoot Athena", icon: "🔧", find: function () { return gid("mlsAthenaDoctorBtn"); } },
+    { key: "settings", capability: "signed", label: "Settings", icon: "⚙", find: byOnclick("openSettings") },
+    { key: "logout", capability: "signed", label: "Log out", icon: "⏻", find: byOnclick("logout(") }
   ];
   function findBtnEl() { return byOnclick("mlsQuickFind")(); } // the standalone "Find" button (to hide)
   function pqsInput() { return gid("mlsPqsInput"); }
   function emailText() { var e = gid("whoLabel"); return e ? (e.textContent || "").trim() : ""; }
+  function normalizeAccount(value) { return String(value || "").trim().toLowerCase(); }
+  function authoritativeSessionState() {
+    var explicit = safe(function () { return typeof window.__mlsSessionAccount === "string"; }, false);
+    var bindingKnown = false, u = null, source = "none";
+    /* ScribeFlow declares `let bkUser` in the global lexical environment.
+       A top-level let is deliberately not a window property, but it is the
+       authoritative /api/me identity visible to later classic scripts. Never
+       prefer a mutable window.bkUser shadow when that lexical binding exists. */
+    try {
+      if (typeof bkUser !== "undefined") {
+        bindingKnown = true;
+        u = bkUser || null;
+        source = "lexical-bkUser";
+      }
+    } catch (e0) {}
+    /* Compatibility for standalone embeds/tests that do not declare the
+       lexical binding. This fallback cannot override ScribeFlow's binding. */
+    if (!bindingKnown) {
+      u = safe(function () { return window.bkUser || null; }, null);
+      if (u) source = "window-bkUser-compat";
+    }
+    var active = normalizeAccount(explicit ? window.__mlsSessionAccount :
+      safe(function () { return (typeof window.getSessionEmail === "function" && window.getSessionEmail()) || (u && u.email) || ""; }, ""));
+    var identity = normalizeAccount(u && u.email);
+    /* Unknown mode defaults to hosted/strict. Only the explicit backend-off
+       local evaluator may derive its fixed clinician role from its own signed
+       account. Hosted mode always waits for an exact /api/me identity. */
+    var hosted = safe(function () { return typeof backendMode === "function" ? !!backendMode() : true; }, true);
+    var pending = false;
+    if (!active) {
+      u = null;
+    } else if (u && identity !== active) {
+      pending = true;
+      u = null;
+    } else if (!u && hosted) {
+      pending = true;
+    } else if (!u) {
+      u = { email: active, role: "user", lite: false, localEvaluation: true };
+      source = "local-session";
+    }
+    return { active: active, user: u, pending: pending, hosted: hosted, source: source };
+  }
+  function accountText() {
+    return safe(function () {
+      var state = authoritativeSessionState(), u = state.user;
+      return String(state.active ? ((u && u.email) || state.active) : (emailText() || "")).trim();
+    }, emailText());
+  }
+  function roleState() {
+    var state = authoritativeSessionState(), u = state.user;
+    var role = String((u && u.role) || "").toLowerCase();
+    return {
+      signed: !!state.active,
+      pending: state.pending,
+      lawyer: !!(u && (u.isLawyer || role === "lawyer")),
+      receptionist: !!(u && role === "receptionist"),
+      lite: !!(u && u.lite)
+    };
+  }
+  function menuItemAllowed(it) {
+    var r = roleState();
+    if (!r.signed || r.pending) return false;
+    if (it.capability === "signed") return true;
+    if (it.capability === "clinician") return !r.lawyer && !r.receptionist && !r.lite;
+    return !r.lawyer && !r.lite;
+  }
 
   // ---- styles ----
   function injectStyle() {
@@ -126,13 +225,57 @@
   }
 
   // ---- build the menu ----
+  function createMenuRow(it) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "mlsTbItem";
+    b.setAttribute("data-mls-topbar-owned", "1");
+    b.setAttribute("data-mls-menu-key", it.key);
+    if (it.run === activateStaffPrepFromMenu) b.setAttribute("data-mls-action", "staff-prep");
+    b.innerHTML = '<span class="mlsTbIco">' + it.icon + "</span><span></span>";
+    b.lastChild.textContent = it.label;
+    b.addEventListener("click", function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      closePanel();
+      if (!menuItemAllowed(it)) { safe(apply); return; }
+      if (typeof it.run === "function") {
+        safe(it.run);
+        return;
+      }
+      var target = it.find();
+      if (target) safe(function () { target.click(); });
+    });
+    return b;
+  }
+  function reconcileMenuContent(panel) {
+    if (!panel) return;
+    var old = panel.querySelectorAll('[data-mls-topbar-owned="1"],.mlsTbWho,[data-mls-action="staff-prep"]');
+    for (var i = 0; i < old.length; i++) if (old[i].parentNode === panel) old[i].parentNode.removeChild(old[i]);
+    var anchor = panel.firstChild;
+    var who = accountText();
+    if (who) {
+      var w = document.createElement("div");
+      w.className = "mlsTbWho";
+      w.setAttribute("data-mls-topbar-owned", "1");
+      w.textContent = who;
+      panel.insertBefore(w, anchor);
+    }
+    for (var j = 0; j < MENU_ITEMS.length; j++) {
+      var it = MENU_ITEMS[j];
+      if (!menuItemAllowed(it)) continue;
+      if (!it.always && (!it.find || !it.find())) continue;
+      panel.insertBefore(createMenuRow(it), anchor);
+    }
+  }
   function buildMenu() {
     var t = tools(), host = menuHost(); if (!t || !host) return;
     var existing = gid(MENU_ID);
     /* Editorial Calm intentionally relocates the live menu into its top-bar
        slot. Treat either host as canonical so Topbar and Redesign do not
        remove/recreate/move the same menu forever. */
-    if (existing && (t.contains(existing) || host.contains(existing))) return;
+    if (existing && (t.contains(existing) || host.contains(existing))) {
+      reconcileMenuContent(existing.querySelector("#" + PANEL_ID));
+      return existing;
+    }
     if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
     var wrap = document.createElement("div");
     wrap.id = MENU_ID;
@@ -146,29 +289,7 @@
 
     var panel = document.createElement("div");
     panel.id = PANEL_ID;
-
-    var who = emailText();
-    if (who) {
-      var w = document.createElement("div");
-      w.className = "mlsTbWho";
-      w.textContent = who; // non-clickable account label
-      panel.appendChild(w);
-    }
-
-    MENU_ITEMS.forEach(function (it) {
-      if (!it.find()) return; // skip items whose control isn't present
-      var b = document.createElement("button");
-      b.type = "button"; b.className = "mlsTbItem";
-      b.innerHTML = '<span class="mlsTbIco">' + it.icon + "</span><span></span>";
-      b.lastChild.textContent = it.label;
-      b.addEventListener("click", function (ev) {
-        ev.preventDefault(); ev.stopPropagation();
-        closePanel();
-        var target = it.find();              // re-resolve live (host may re-render)
-        if (target) safe(function () { target.click(); }); // forward to the REAL control
-      });
-      panel.appendChild(b);
-    });
+    reconcileMenuContent(panel);
 
     btn.addEventListener("click", function (ev) {
       ev.preventDefault(); ev.stopPropagation();
@@ -198,26 +319,62 @@
 
   // ---- hide the originals (cluster buttons, email, standalone Find) ----
   function hideOriginals() {
-    MENU_ITEMS.forEach(function (it) { var el = it.find(); if (el&&!el.classList.contains(HIDE)) el.classList.add(HIDE); });
+    MENU_ITEMS.forEach(function (it) { var el = it.find ? it.find() : null; if (el&&!el.classList.contains(HIDE)) el.classList.add(HIDE); });
     var email = gid("whoLabel"); if (email&&!email.classList.contains(HIDE)) email.classList.add(HIDE);
     var fb = findBtnEl(); if (fb&&!fb.classList.contains(HIDE)) fb.classList.add(HIDE);
   }
 
   // ---- unified find: the visible box launches the powerful Find ----
-  var _boxFocus = null, _boxInput = null, _origPlaceholder = null;
+  var _boxFocus = null, _boxInput = null, _boxClick = null, _origPlaceholder = null;
+  var _origAriaLabel = null, _origTitle = null;
+  function findSurfaceVisible(el) {
+    if (!el) return false;
+    return safe(function () {
+      var s = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
+      var display = (s && s.display) || (el.style && el.style.display) || "";
+      var visibility = (s && s.visibility) || (el.style && el.style.visibility) || "";
+      return display !== "none" && visibility !== "hidden" && el.getAttribute("aria-hidden") !== "true";
+    }, false);
+  }
+  function currentFindOwner() {
+    var pro = !!(window.mlsQuickFind && window.mlsQuickFind.__fpWrap);
+    return pro
+      ? { overlay: "mlsFpQf", input: "mlsFpQfInput", other: "mlsQuickFindOv" }
+      : { overlay: "mlsQuickFindOv", input: "mlsQfInput", other: "mlsFpQf" };
+  }
+  function retireClosedLegacyFind() {
+    var legacy = gid("mlsQuickFindOv");
+    if (!legacy || findSurfaceVisible(legacy)) return;
+    /* The legacy launcher refuses to rebuild while any #mlsQuickFindOv exists,
+       even when its close path left that node display:none. Remove only that
+       closed node; a current owner will recreate its own surface on demand. */
+    safe(function () { if (legacy.parentNode) legacy.parentNode.removeChild(legacy); else legacy.remove(); });
+  }
   function wireFind() {
     var input = pqsInput(); if (!input) return;
     if (input.__mlsTbWired) return;
     Object.defineProperty(input, "__mlsTbWired", { value: true, configurable: true });
     _origPlaceholder = input.getAttribute("placeholder");
+    _origAriaLabel = input.getAttribute("aria-label");
+    _origTitle = input.getAttribute("title");
     safe(function () { input.setAttribute("placeholder", PQS_PLACEHOLDER); });
+    safe(function () { input.setAttribute("aria-label", PQS_ARIA_LABEL); });
+    safe(function () { input.setAttribute("title", PQS_ARIA_LABEL); });
 
     function openFind(seed) {
       if (typeof window.mlsQuickFind !== "function") return; // fall back: leave native box alone
-      if (gid("mlsQuickFindOv")) return;                     // already open
-      safe(function () { window.mlsQuickFind(); });
+      var owner = currentFindOwner();
+      var competing = gid(owner.other);
+      if (competing && findSurfaceVisible(competing)) safe(function () { competing.style.display = "none"; });
+      retireClosedLegacyFind();
+      if (!findSurfaceVisible(gid(owner.overlay))) safe(function () { window.mlsQuickFind(); });
       setTimeout(function () {
-        var qf = gid("mlsQfInput");
+        var liveOwner = currentFindOwner();
+        var qf = gid(liveOwner.input);
+        if (!qf) {
+          var proInput = gid("mlsFpQfInput"), legacyInput = gid("mlsQfInput");
+          qf = findSurfaceVisible(gid("mlsFpQf")) ? proInput : legacyInput;
+        }
         if (qf) {
           if (seed) { qf.value = seed; safe(function () { qf.dispatchEvent(new Event("input", { bubbles: true })); }); }
           safe(function () { qf.focus(); });
@@ -227,14 +384,22 @@
     }
     _boxFocus = function () { openFind(input.value || ""); };
     _boxInput = function () { openFind(input.value || ""); };
+    /* A launcher that was already focused does not emit another focus event
+       when clicked. Keep click as an idempotent open signal so route changes
+       and closed Find surfaces cannot leave a focused-but-inert launcher. */
+    _boxClick = function () { openFind(input.value || ""); };
     input.addEventListener("focus", _boxFocus);
     input.addEventListener("input", _boxInput);
+    input.addEventListener("click", _boxClick);
   }
   function unwireFind() {
     var input = pqsInput(); if (!input) return;
     safe(function () { if (_boxFocus) input.removeEventListener("focus", _boxFocus); });
     safe(function () { if (_boxInput) input.removeEventListener("input", _boxInput); });
+    safe(function () { if (_boxClick) input.removeEventListener("click", _boxClick); });
     safe(function () { if (_origPlaceholder != null) input.setAttribute("placeholder", _origPlaceholder); });
+    safe(function () { if (_origAriaLabel == null) input.removeAttribute("aria-label"); else input.setAttribute("aria-label", _origAriaLabel); });
+    safe(function () { if (_origTitle == null) input.removeAttribute("title"); else input.setAttribute("title", _origTitle); });
     safe(function () { delete input.__mlsTbWired; });
   }
 
@@ -387,7 +552,7 @@
   }
   function bindSignals() {
     if (_signalsBound) return;
-    ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered"].forEach(function (type) { window.addEventListener(type, onTopbarSignal); });
+    ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered", "mls:session-boundary"].forEach(function (type) { window.addEventListener(type, onTopbarSignal); });
     window.addEventListener("pageshow", onTopbarSignal);
     document.addEventListener("visibilitychange", onTopbarVisible);
     document.addEventListener("pointerdown", onTopbarActivity, true);
@@ -411,7 +576,7 @@
         else clearTimeout(_raf);
       }
     });
-    safe(function () { ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered"].forEach(function (type) { window.removeEventListener(type, onTopbarSignal); }); });
+    safe(function () { ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered", "mls:session-boundary"].forEach(function (type) { window.removeEventListener(type, onTopbarSignal); }); });
     safe(function () { window.removeEventListener("pageshow", onTopbarSignal); });
     safe(function () { document.removeEventListener("visibilitychange", onTopbarVisible); });
     safe(function () { document.removeEventListener("pointerdown", onTopbarActivity, true); });
@@ -436,6 +601,7 @@
     version: VERSION,
     asset: ASSET,
     apply: function () { applyAndObserve(); },
+    reconcile: function () { applyAndObserve(); },
     openMenu: openPanel,
     closeMenu: closePanel,
     items: function () { return MENU_ITEMS.map(function (i) { return i.label; }); },

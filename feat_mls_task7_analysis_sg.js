@@ -288,7 +288,6 @@
   function onSelChange(ev){
     if (ev.target && ev.target.id === "mls-sg-group") {
       wantGid = ev.target.value;
-      var st = $("mls-sg-athena-status"); if (st) st.textContent = "";   // stale cross-group status
       sgStatus(null);
     }
   }
@@ -400,20 +399,6 @@
         return;
       }
 
-      /* athena pull — empty guard, honest timer, heavy-defer */
-      if (t.closest("#mls-sg-athena")) {
-        armAlerts(); rememberSel();
-        var g1 = sgCurrentGroup();
-        if (g1 && (!g1.patients || !g1.patients.length)) {
-          ev.stopImmediatePropagation(); ev.preventDefault();
-          sgStatus("info","Add patients to the group first — the athena pull looks each one up (read-only).");
-          return;
-        }
-        startPullTimer();
-        passHeavy(ev, t.closest(".mls-sg-card"), "Starting athena read…");
-        return;
-      }
-
       /* create/delete: allow module default, then refresh augmentations */
       if (t.closest("#mls-sg-create") || t.closest("#mls-sg-del")) {
         armAlerts();
@@ -424,27 +409,6 @@
   }
   document.addEventListener("click", captureRouter, true);
   onRevert(function(){ document.removeEventListener("click", captureRouter, true); });
-
-  /* elapsed timer while the module's own status shows "Pulling k/n" */
-  var pullTimer = null;
-  function startPullTimer(){
-    var t0 = Date.now();
-    if (pullTimer) clearInterval(pullTimer);
-    pullTimer = setInterval(function(){
-      var st = $("mls-sg-athena-status");
-      if (!st) { clearInterval(pullTimer); pullTimer=null; return; }
-      var pulling = /Pulling/i.test(st.textContent||"");
-      var secs = Math.round((Date.now()-t0)/1000);
-      if (pulling) {
-        sgStatus("info","Reading athena (read-only)… " + secs + "s elapsed. Each patient can take ~20s; leave your athenaOne tab open.");
-      } else if ((st.textContent||"").trim() && secs > 3) {
-        sgStatus("ok", esc(st.textContent.trim())); clearInterval(pullTimer); pullTimer=null;
-        setTimeout(function(){ ensureRemoveButtons(); }, 300);
-      }
-      if (secs > 900) { clearInterval(pullTimer); pullTimer=null; }
-    }, 1000);
-  }
-  onRevert(function(){ if (pullTimer) clearInterval(pullTimer); });
 
   /* per-patient remove buttons (rows render as "<name> · <dob> … N visit(s)") */
   function ensureRemoveButtons(){

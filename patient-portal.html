@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="robots" content="noindex" />
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+<meta http-equiv="Pragma" content="no-cache" />
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="invite token code" data-fragment-keys="session claim setup token code invite" referrerpolicy="no-referrer"></script>
 <title>MLS Patient Portal</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
@@ -122,6 +126,7 @@
 </style>
 </head>
 <body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
 
 <!-- ============ LOGIN ============ -->
 <section id="login">
@@ -159,7 +164,7 @@
   <div class="wrap">
     <div id="demoBanner" class="demo-banner hide">👀 You're viewing <b>sample demo data</b> — this is not a real patient. Sign in to see your own records.</div>
 
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Choose a real opening from your practice calendar.</div></div><a id="bookingBtn" href="easy-book.html" style="text-decoration:none;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Book an appointment</a></div>
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Send a request and your practice will confirm the exact time.</div></div><button id="bookingBtn" type="button" style="border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Request an appointment</button></div>
 
     <div class="grid">
       <!-- LEFT: records -->
@@ -225,14 +230,14 @@
   try{ PSESS = sessionStorage.getItem("mls_patient_session") || null; }catch(e){}
   try{ FIRSTTIME = sessionStorage.getItem("mls_patient_setup") === "1"; }catch(e){}
   try{
-    var mS = (location.hash||"").match(/[#&]session=([A-Za-z0-9._~-]{20,600})/);
-    if(mS){
-      PSESS = mS[1]; try{ sessionStorage.setItem("mls_patient_session", PSESS); }catch(e){}
+    var portalBoot=window.__mlsSensitiveUrl||{query:{},fragment:{}};
+    var mS=String((portalBoot.fragment&&portalBoot.fragment.session)||"");
+    if(/^[A-Za-z0-9._~-]{20,600}$/.test(mS)){
+      PSESS = mS; try{ sessionStorage.setItem("mls_patient_session", PSESS); }catch(e){}
       // &setup=1 → this account was just created from an invite and still has a
       // random placeholder password: the patient MUST choose their own now, or
       // they lose access when this session expires.
-      if(/[#&]setup=1\b/.test(location.hash||"")){ FIRSTTIME = true; try{ sessionStorage.setItem("mls_patient_setup","1"); }catch(e){} }
-      history.replaceState(null, "", location.pathname + location.search); // scrub token from the bar/history
+      if(portalBoot.fragment&&portalBoot.fragment.setup==="1"){ FIRSTTIME = true; try{ sessionStorage.setItem("mls_patient_setup","1"); }catch(e){} }
     }
   }catch(e){}
   function setSess(t){
@@ -313,7 +318,7 @@
     } else {
       opts.credentials = "include"; // legacy cookie path (needs the backend CORS/samesite fix)
     }
-    return fetch(API+path, opts);
+    return mlsSensitiveFetch(API+path, opts);
   }
 
   function enterApp(){ hide($("login")); show($("app")); }
@@ -331,7 +336,6 @@
         visits: j.visits || (j.patient && j.patient.visits) || []
       });
       renderPatient(patient);
-      if(j.booking_url){ $("bookingBtn").href=j.booking_url; }
     });
   }
 
@@ -349,18 +353,20 @@
     var body = { username:$("u").value.trim(), password:$("p").value, dob:$("d").value };
     function fail(msg){ errBox.textContent = msg || "Sign in failed. Please try again."; show(errBox); }
     function sessionBlocked(){
-      // Credentials were CORRECT but the browser can't keep a session: the
-      // legacy cookie is cross-site (SameSite=Strict / preflight without
-      // allow-credentials) and the backend didn't return a bearer token yet.
-      errBox.textContent = "Your details are correct, but the browser couldn't keep you signed in (cross-site cookies are blocked between this page and the MLS server). The office needs to apply the MLS portal-session update on the server — please let them know. [code: PORTAL-SESSION]";
+      try{ console.warn('[patient portal] sign-in completed without a usable browser session'); }catch(e){}
+      errBox.textContent = "We couldn't finish signing you in on this device. Open the latest portal link from your care team, or ask them to send a new one.";
       show(errBox);
     }
     // 1) Bearer-mode attempt: NO credentials → no credentialed preflight → not
     //    blocked by the current server CORS config.
-    fetch(API+"/api/patient/auth/login", { method:"POST", credentials:"omit", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) })
+    mlsSensitiveFetch(API+"/api/patient/auth/login", { method:"POST", credentials:"omit", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
-        if(!res.ok){ fail((res.j && (res.j.error||res.j.message)) || "Sign in failed. Please check your details."); return null; }
+        if(!res.ok){
+          try{ console.warn('[patient portal] sign-in declined',res.j||{}); }catch(e){}
+          fail("We couldn't sign you in. Check your username, password, and date of birth, then try again.");
+          return null;
+        }
         var tok = res.j && (res.j.session || res.j.token);
         if(tok){
           setSess(tok);
@@ -383,7 +389,7 @@
           })
           .catch(function(){ sessionBlocked(); });
       })
-      .catch(function(){ fail("Network error — please check your connection and try again."); })
+      .catch(function(){ fail("We couldn't reach the portal. Check your connection and try again."); })
       .then(function(){ btn.disabled=false; btn.textContent=old; });
   });
 
@@ -417,8 +423,6 @@
   $("demoBtn").addEventListener("click", function(){
     DEMO=true; enterApp(); show($("demoBanner"));
     renderPatient(DEMO_DATA);
-    var booking=$("bookingBtn");
-    if(booking){ booking.removeAttribute("href"); booking.setAttribute("aria-disabled","true"); booking.style.opacity=".65"; booking.style.cursor="not-allowed"; booking.title="A real booking link is available after portal sign-in."; booking.textContent="Booking available after sign-in"; }
     addSys("This is sample data so you can preview the portal. Try a question below.");
   });
 
@@ -456,7 +460,7 @@
     var deflect=portalSafetyFilter(question);
     if(deflect){ thinking.textContent=deflect; btn.disabled=false; return; }
     if(DEMO){
-      setTimeout(function(){ thinking.textContent="(Demo mode) Sign in to your real account to get answers grounded in your actual records. Your care team sends you a portal invite with a username and password."; btn.disabled=false; }, 500);
+      setTimeout(function(){ thinking.textContent="This is sample data. The preview does not contact a care team. Continue using only fictional information."; btn.disabled=false; }, 500);
       return;
     }
     api("/api/patient/chat",{method:"POST", body:JSON.stringify({question:question})})
@@ -465,9 +469,10 @@
         if(res.status===401){ thinking.textContent="Your session ended. Please sign in again."; return; }
         var ans = res.j && (res.j.answer||res.j.reply||res.j.text||res.j.message||res.j.content);
         while(ans && typeof ans === "object") ans = ans.content || ans.text || ans.reply || ans.answer || ans.message || "";
-        thinking.textContent = ans || (res.ok ? "I couldn't find an answer to that in your records." : ((res.j&&res.j.error)||"Something went wrong. Please try again."));
+        if(!res.ok){ try{ console.warn('[patient portal] record question declined',res.status,res.j||{}); }catch(e){} }
+        thinking.textContent = ans || (res.ok ? "I couldn't find an answer to that in your records." : "We couldn't answer that right now. Try again, or contact your care team.");
       })
-      .catch(function(){ thinking.textContent="Network error — please try again."; })
+      .catch(function(){ thinking.textContent="We couldn't reach the portal. Check your connection and try again."; })
       .then(function(){ btn.disabled=false; });
   }
   $("chatForm").addEventListener("submit", function(e){ e.preventDefault(); ask($("q").value); });
@@ -521,13 +526,15 @@
             return;
           }
           b.disabled=false; b.textContent="Save my password";
-          if(res.status===404){ // backend PATCH A applied without the set-password route
-            perr("Password setup isn't available yet on the server. You're signed in for now — please ask your care team for a sign-in password before you leave the portal.");
+          if(res.status===404){
+            try{ console.warn('[patient portal] password setup unavailable'); }catch(e){}
+            perr("We couldn't save a password for this invite. Ask your care team to send a new invite before you leave the portal.");
             return;
           }
-          perr((res.j&&res.j.error)||"Could not save the password — please try again.");
+          try{ console.warn('[patient portal] password setup declined',res.status,res.j||{}); }catch(e){}
+          perr("We couldn't save your password. Try again, or ask your care team for a new invite.");
         })
-        .catch(function(){ b.disabled=false; b.textContent="Save my password"; perr("Network problem — please try again."); });
+        .catch(function(){ b.disabled=false; b.textContent="Save my password"; perr("We couldn't reach the portal. Check your connection and try again."); });
     };
   }
   if(FIRSTTIME && PSESS){ showPwSetup(); }
@@ -556,9 +563,8 @@
   /* Friendly banner for the backend redeem flow (GET /api/patient/auth/redeem
      redirects here with ?invite=expired|invalid|unavailable|error on failure). */
   try{
-    var iv=new URLSearchParams(location.search).get("invite");
+    var iv=window.__mlsSensitiveUrl&&window.__mlsSensitiveUrl.query&&window.__mlsSensitiveUrl.query.invite;
     if(iv){
-      history.replaceState(null,"",location.pathname);
       var msgs={expired:"That sign-in link has expired or was already used. Ask your care team to send a fresh one — it only takes a moment.",invalid:"That sign-in link isn't valid. Ask your care team to send a new one.",unavailable:"The portal is briefly unavailable — please try your link again in a few minutes.",error:"Something went wrong opening your link. Please try again, or ask your care team for a new link."};
       var bar=document.createElement("div");
       bar.style.cssText="background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:11px 14px;font-size:13.5px;max-width:410px;margin:14px auto 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -568,10 +574,8 @@
     }
   }catch(e){}
 
-  var m=(location.hash||"").match(/[#&]claim=([A-Za-z0-9_-]{20,64})/);
-  if(!m) return;
-  var token=m[1];
-  try{ history.replaceState(null,"",location.pathname); }catch(e){} // scrub token from the bar/history
+  var token=String((window.__mlsSensitiveUrl&&window.__mlsSensitiveUrl.fragment&&window.__mlsSensitiveUrl.fragment.claim)||"");
+  if(!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return;
 
   var back=document.createElement("div");
   back.id="mlsClaimBack";
@@ -605,26 +609,32 @@
       var btn=$("mcGo"); btn.disabled=true; btn.textContent="Saving…";
       var spHdrs={"Content-Type":"application/json"}, spCreds="include";
       try{ var spTok=window.__mlsPortalSess&&window.__mlsPortalSess.get(); if(spTok){ spHdrs.Authorization="Bearer "+spTok; spCreds="omit"; } }catch(e){}
-      fetch(API+"/api/patient/auth/set-password",{method:"POST",credentials:spCreds,headers:spHdrs,body:JSON.stringify({password:p1})})
+      mlsSensitiveFetch(API+"/api/patient/auth/set-password",{method:"POST",credentials:spCreds,headers:spHdrs,body:JSON.stringify({password:p1})})
         .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,j:j}; }); })
         .then(function(res){
-          if(!res.ok){ btn.disabled=false; btn.textContent="Save password & open my records"; err((res.j&&res.j.error)||"Could not save the password — please try again."); return; }
+          if(!res.ok){
+            try{ console.warn('[patient portal] invite password setup declined',res.j||{}); }catch(e){}
+            btn.disabled=false; btn.textContent="Save password & open my records";
+            err("We couldn't save your password. Try again, or ask your care team for a new invite.");
+            return;
+          }
           close(); location.reload(); // checkSession() picks up the live session
         })
-        .catch(function(){ btn.disabled=false; btn.textContent="Save password & open my records"; err("Network problem — please try again."); });
+        .catch(function(){ btn.disabled=false; btn.textContent="Save password & open my records"; err("We couldn't reach the portal. Check your connection and try again."); });
     };
   }
 
-  fetch(API+"/api/patient/auth/claim",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token})})
+  mlsSensitiveFetch(API+"/api/patient/auth/claim",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token})})
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
       // portal-send-fix: capture the bearer session token if the patched backend returns one
       try{ var st=res.j&&(res.j.session||res.j.token); if(res.ok&&st&&window.__mlsPortalSess) window.__mlsPortalSess.set(st); }catch(e){}
       if(res.ok){ pwForm(res.j&&res.j.username); return; }
-      if(res.status===404){ body('This type of setup link isn\'t enabled yet. Please sign in with the <b>username and password</b> your care team gave you.'+OKBTN); return; }
-      body('⏳ '+(((res.j&&res.j.error)||'This link has expired or was already used.'))+'<div style="color:#55605A;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
+      try{ console.warn('[patient portal] invite claim declined',res.status,res.j||{}); }catch(e){}
+      if(res.status===404){ body('This setup link cannot be completed. Sign in with the <b>username and password</b> from your care team, or ask them for a new invite.'+OKBTN); return; }
+      body('This link has expired or was already used.<div style="color:#55605A;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
     })
-    .catch(function(){ body('Network problem while setting up your access. Check your connection and re-open the link from your email.'+OKBTN); });
+    .catch(function(){ body('We could not open your invite. Check your connection, then open the latest link from your email again.'+OKBTN); });
 })();
 </script>
 <script>
@@ -721,7 +731,7 @@
 
     appointment:{ icon:"📅", title:"Request an appointment", cat:"Appointment request",
       safe:"This sends a request — a team member confirms the exact time with you. For a medical emergency, call 911.",
-      extra:'<div style="margin-top:12px;font-size:13px">Prefer the full booking form? <a href="easy-book.html">Open Book an appointment ↗</a></div>',
+      extra:'<div style="margin-top:12px;font-size:13px">Your practice will review this request and contact you to confirm a time.</div>',
       fields:function(){
         return '<label>Reason for the visit (briefly)</label><textarea id="mReqReason" placeholder="What would you like to be seen for?"></textarea>'+
                '<label>Preferred time of day</label><select id="mReqWhen"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select>'+
@@ -785,6 +795,9 @@
     $("mReqSend").addEventListener("click", function(){ submitReq(key); });
   }
 
+  var bookingAction=$("bookingBtn");
+  if(bookingAction) bookingAction.addEventListener("click", function(){ openReq("appointment"); });
+
   function submitReq(key){
     var T=TYPES[key];
     var data=T.collect();
@@ -792,13 +805,13 @@
     if(!T.valid(data)){ res.className="res warn"; res.textContent=T.need; return; }
     var btn=$("mReqSend"); btn.disabled=true; var old=btn.textContent; btn.textContent="Sending…";
     if(isDemo()){
-      setTimeout(function(){ res.className="res warn"; res.innerHTML="You're previewing sample data. Sign in to your real portal account to send requests to the office."; btn.disabled=false; btn.textContent=old; }, 400);
+      setTimeout(function(){ res.className="res warn"; res.innerHTML="This sample preview never contacts a care team. Continue using only fictional information."; btn.disabled=false; btn.textContent=old; }, 400);
       return;
     }
     var payload=Object.assign({ type:key, category:T.cat, submittedAt:new Date().toISOString(), clientRequestId:openClientRequestId }, data);
     var rqHdrs={"Content-Type":"application/json"}, rqCreds="include";
     try{ var rqTok=window.__mlsPortalSess&&window.__mlsPortalSess.get(); if(rqTok){ rqHdrs.Authorization="Bearer "+rqTok; rqCreds="omit"; } }catch(e){}
-    fetch(API+"/api/patient/request",{ method:"POST", credentials:rqCreds, headers:rqHdrs, body:JSON.stringify(payload) })
+    mlsSensitiveFetch(API+"/api/patient/request",{ method:"POST", credentials:rqCreds, headers:rqHdrs, body:JSON.stringify(payload) })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
       .then(function(x){
         if(x.ok && x.j && x.j.ok!==false){
@@ -850,7 +863,7 @@
     opts=opts||{}; opts.headers=Object.assign({"Content-Type":"application/json"},opts.headers||{});
     var token=""; try{ token=window.__mlsPortalSess&&window.__mlsPortalSess.get(); }catch(e){}
     if(token){ opts.headers.Authorization="Bearer "+token; opts.credentials="omit"; } else opts.credentials="include";
-    return fetch(API+path,opts);
+    return mlsSensitiveFetch(API+path,opts);
   }
   var requestsLoading=false;
   function loadRequests(){

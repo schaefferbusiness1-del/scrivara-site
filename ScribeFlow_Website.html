@@ -118,7 +118,7 @@
     <a class="btn btn-p" href="#demo">📅 Book a 15-minute demo</a>
     <a class="btn btn-w" href="https://mlsscribe.com/ScribeFlow.html">⬇ Open the app</a>
   </div>
-  <div class="fine">⚕️ HIPAA-ready architecture · Provider reviews & signs every note · Runs in your browser — no install</div>
+  <div class="fine">⚕️ Synthetic evaluation only · Provider reviews every draft · Do not enter patient information</div>
   <div class="stats">
     <div class="stat"><b>~2 hrs/day</b><span>charting time reclaimed</span></div>
     <div class="stat"><b>One round-trip</b><span>schedule → note → back into Athena</span></div>
@@ -174,7 +174,7 @@
     <div class="card"><span class="ic">🧾</span><h3>Referral, UR, IME & procedure notes</h3><p>One-click referral reports, utilization-review assessments, IME reports, and injection procedure notes from the documented visit.</p></div>
     <div class="card"><span class="ic">⚖️</span><h3>Legal / IME lawyer portal <small style="color:#2f7ce0">Premium</small></h3><p>Attorneys request records through their own portal; MLS drafts the medical-legal report for the clinician to review and e-sign.</p></div>
     <div class="card"><span class="ic">📱</span><h3>Phone-mic recorder app</h3><p>Use your phone as a wireless mic — an installable web app that streams the visit to your main screen.</p></div>
-    <div class="card"><span class="ic">🔐</span><h3>2FA, audit logs & encrypted sync</h3><p>Two-factor auth, inactivity log-off, audit logging, encrypted backups, and multi-device sync — a HIPAA-ready architecture.</p></div>
+    <div class="card"><span class="ic">🔐</span><h3>Security controls under evaluation</h3><p>Two-factor authentication, inactivity log-off, audit logging, backup, and sync controls require production verification.</p></div>
   </div>
 </div></section>
 
@@ -223,7 +223,7 @@
         <li>Custom Widget Builder — unlimited</li>
         <li>iPad intake · outcomes · referral/UR/IME/procedure notes</li>
         <li>Phone-mic app · encrypted multi-device sync</li>
-        <li>2FA, audit logs, encrypted backups · HIPAA-ready architecture</li>
+        <li>2FA, audit logs, and backup controls under synthetic evaluation</li>
       </ul>
       <a class="btn btn-g" href="#demo" style="width:100%;text-align:center">Book a demo</a>
     </div>
@@ -261,7 +261,7 @@
     <details><summary>Does it really push everything back, or just the note?</summary><p>The whole encounter: the note, each ICD-10 diagnosis, the E/M level and CPT codes, and every order — placed into their proper Athena fields, not dumped as one block of text. It stops before Save/Sign so you confirm.</p></details>
     <details><summary>What is the procedure-day op-note feature?</summary><p>Upload your own operative notes once. On procedure day, MLS matches each scheduled procedure to the right template and drafts a ready op report per patient, prompting you for the case-specific blanks (needle size, dose) with a dropdown of your prior values.</p></details>
     <details><summary>Does MLS upcode to inflate billing?</summary><p>No — by design. It only suggests codes supported by what's documented, and is instructed never to invent findings to raise a level. It helps you stop <i>under</i>-coding; the provider reviews and confirms every code.</p></details>
-    <details><summary>Is it HIPAA compliant?</summary><p>It's a HIPAA-ready architecture — encryption, two-factor auth, access controls, audit logging, encrypted backups — with BAAs in progress. We don't claim "certification" (that doesn't exist for HIPAA). Real patient data is used only after BAAs are signed and a compliance review is complete; demos use synthetic data.</p></details>
+    <details><summary>Is it ready for real patient information?</summary><p>No. This release is for synthetic evaluation only. MLS does not claim HIPAA compliance, executed vendor BAAs, zero-retention treatment, or production clinical readiness.</p></details>
     <details><summary>Do I need to install anything or train my staff?</summary><p>The app runs in your browser and intake runs on any iPad. The only install is the free MLS Assist companion for the EMR round-trip. Onboarding is minutes, not an IT project.</p></details>
     <details><summary>Will it replace my judgment?</summary><p>Never. It drafts; you decide. You edit the note, confirm the codes, and sign. You're always the final medical and coding authority.</p></details>
   </div>
@@ -271,16 +271,16 @@
   <div class="eyebrow">Security you can stand behind</div>
   <h2>We're straight with you about what's true today.</h2>
   <div class="grid g3" style="margin-top:22px">
-    <div class="card"><span class="ic">🔒</span><h3>HIPAA-ready architecture</h3><p>Encryption in transit and at rest, 2FA, automatic inactivity log-off, audit logging, encrypted backups. "HIPAA-ready architecture; BAAs in progress" — not "certified," because HIPAA certification doesn't exist.</p></div>
+    <div class="card"><span class="ic">🔒</span><h3>Security evaluation in progress</h3><p>Encryption, 2FA, inactivity log-off, audit logging, and backup controls are being tested. This is not a compliance determination.</p></div>
     <div class="card"><span class="ic">✍️</span><h3>You sign every note</h3><p>AI drafts; the clinician reviews, edits and signs. Nothing is submitted to the EMR without your confirmation — MLS Assist never clicks Save or Sign.</p></div>
-    <div class="card"><span class="ic">🤝</span><h3>BAA before any PHI</h3><p>Real patient data is used only after Business Associate Agreements are signed with our AI and hosting providers and a compliance review is complete. Until then, demos use synthetic data.</p></div>
+    <div class="card"><span class="ic">🤝</span><h3>Legal/vendor readiness not released</h3><p>MLS does not claim that vendor BAAs, zero-retention terms, or a regulated-production configuration are active. Use synthetic data only.</p></div>
   </div>
 </div></section>
 
 <footer><div class="wrap">
   <div class="logo" style="color:#fff;margin-bottom:8px"><span class="dot"></span> MLS</div>
   <div><a href="#emr">Inside your EMR</a> · <a href="#features">Features</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a> · <a href="https://mlsscribe.com/ScribeFlow.html">Open the app</a></div>
-  <p class="disc">MLS is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. The EMR round-trip is performed via the MLS Assist browser companion and always stops before Save/Sign for provider review. "HIPAA-ready architecture" describes our design; it is not a claim of certification, and BAAs are in progress. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 MLS.</p>
+  <p class="disc">MLS is a synthetic-evaluation documentation and coding-support tool. AI-generated drafts and suggested codes require licensed-provider review. MLS Assist supports clinician-started Athena schedule reads and reviewed draft workflows, but production legal, vendor, security, and clinical readiness have not been released. Do not enter real patient information. © 2026 MLS.</p>
 </div></footer>
 </body>
 </html>
