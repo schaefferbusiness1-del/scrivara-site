@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b451';
+  window.__MLS_AV = window.__MLS_AV || 'b452';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b451';
+  var MLS_APP_BUILD='2026-07-20-b452';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42116,6 +42116,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       })()
     };
     var msg = messages[reason] || 'The pull did not return a verified completion receipt (' + reason + '). Nothing is being reported as complete.';
+    /* An athenaOne sign-out must NEVER read as "no patients" or a generic
+       failed pull. The extension reports it as no-athena-tab (the tab finder
+       excludes login/identity pages) or as an error naming the sign-in page;
+       both become one calm instruction with a visible Retry beside it. */
+    var errText = String((r && (r.error || r.message)) || '');
+    var signinRequired = reason === 'no-athena-tab' ||
+      /sign-?in page|signed[- ]?out|sign in to athenaone|no signed-?in athenaone/i.test(errText) ||
+      (reason === 'no-read' && /sign-?in|login/i.test(errText));
+    if (signinRequired) {
+      return { ok: false, signinRequired: true, message: 'Athena sign-in required. Sign in to athenaOne, then select Retry.' };
+    }
     /* si-1.7.7: receipt-gate failures on a machine running an outdated MLS
        Assist carry an explicit update-this-computer hint — surface it in the
        verdict instead of a bare "not verified" dead end. */
@@ -42252,7 +42263,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
     if (stat) { stat.style.display = 'block'; stat.textContent = 'Starting the Athena pull for ' + fmtDay(day) + '...'; }
     var closed = false;
-    function done(ok, msg, keepStatus) {
+    function done(ok, msg, keepStatus, signinRequired) {
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true;
       DS.pulling = false;
@@ -42261,6 +42272,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
       if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
       if (stat) { stat.style.display = (keepStatus || !ok) ? 'block' : 'none'; if (keepStatus || !ok) stat.textContent = msg; }
+      /* "select Retry" must point at a REAL visible control beside the
+         message: one Retry button, shown only for the sign-in state, wired to
+         the same pull. It disappears the moment any pull starts (recovery
+         succeeds -> the normal success path hides the whole status). */
+      try {
+        var retryBtnEl = document.getElementById('mlsDsSigninRetryBtn');
+        if (signinRequired) {
+          if (!retryBtnEl && stat && stat.parentNode) {
+            retryBtnEl = document.createElement('button');
+            retryBtnEl.type = 'button'; retryBtnEl.id = 'mlsDsSigninRetryBtn';
+            retryBtnEl.style.cssText = 'border:1px solid #2E6A4B;background:#fff;color:#2E6A4B;font:700 12px system-ui;border-radius:9px;padding:8px 14px;cursor:pointer;';
+            retryBtnEl.textContent = 'Retry';
+            retryBtnEl.onclick = function () { retryBtnEl.style.display = 'none'; startPull(); };
+            stat.parentNode.insertBefore(retryBtnEl, stat.nextSibling);
+          }
+          if (retryBtnEl) retryBtnEl.style.display = '';
+        } else if (retryBtnEl) { retryBtnEl.style.display = 'none'; }
+      } catch (e) {}
       try { var dsBar = document.getElementById('mlsDsPullBar'); if (dsBar) dsBar.style.display = 'none'; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
       renderList();
@@ -42296,7 +42325,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
-          done(outcome.ok, outcome.message, retryCount > 0);
+          done(outcome.ok, outcome.message, retryCount > 0, outcome.signinRequired === true);
         },
                function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
       } else {

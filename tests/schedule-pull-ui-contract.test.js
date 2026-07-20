@@ -99,6 +99,22 @@ assert(/expected 17/.test(result.message) && /found 17/.test(result.message), 'r
 assert(/resolved 16 \(12 already present, 4 new\)/.test(result.message), 'refused rows lack the resolved breakdown');
 assert(/unresolved 1 — patient not resolved ×1/.test(result.message), 'unresolved rows lack their per-reason counts');
 
+/* An athenaOne sign-out must surface as the sign-in instruction with a Retry,
+   never as "no patients" or a generic failed pull. */
+result = classify({ ok: false, complete: false, reason: 'no-athena-tab', error: 'Open a signed-in athenaOne tab, then try again.' }, '2026-07-20');
+assert.strictEqual(result.signinRequired, true, 'signed-out athena did not raise the sign-in state');
+assert.strictEqual(result.message, 'Athena sign-in required. Sign in to athenaOne, then select Retry.',
+  'signed-out athena must show the exact sign-in instruction');
+result = classify({ ok: false, complete: false, reason: 'nav-failed', error: 'That tab is on a sign-in page — sign in to athenaOne there first, then pick it.' }, '2026-07-20');
+assert.strictEqual(result.signinRequired, true, 'a sign-in-page nav failure must raise the sign-in state, not a generic nav error');
+result = classify({ ok: false, complete: false, reason: 'nav-failed', error: 'athena week strip shows no selected day instead of 2026-07-20.' }, '2026-07-20');
+assert.notStrictEqual(result.signinRequired, true, 'an ordinary nav failure must NOT masquerade as a sign-out');
+assert(/Athena could not be opened/i.test(result.message), 'ordinary nav failures keep their honest message');
+const moduleSourceText = require('fs').readFileSync(require('path').join(__dirname, '..', 'mls-connect.js'), 'utf8');
+assert(moduleSourceText.includes("retryBtnEl.textContent = 'Retry';") && moduleSourceText.includes('mlsDsSigninRetryBtn'),
+  'the sign-in message must have a visible Retry control wired beside it');
+assert(moduleSourceText.includes('startPull();'), 'the Retry control must run the real pull recovery');
+
 result = classify({
   ok: true, complete: true, reason: 'complete',
   scheduleReceipt: { parsedCount: 17 },
