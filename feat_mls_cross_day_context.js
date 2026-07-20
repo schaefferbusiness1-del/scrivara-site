@@ -1,4 +1,4 @@
-/* feat_mls_cross_day_context.js -> window.__mlsCrossDayContext (xdc-2.0.2)
+/* feat_mls_cross_day_context.js -> window.__mlsCrossDayContext (xdc-2.0.3)
  *
  * Every selected date now uses the native MLS Easy Visit workspace. This
  * companion adds no alternate appointment list, banner, or "full workspace"
@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCrossDayContext", VERSION = "xdc-2.0.2";
+  var NS = "__mlsCrossDayContext", VERSION = "xdc-2.0.3";
   /* A backend asset refresh runs inside the existing document.  b419's
      xdc-1.0.0 owned a whole-body MutationObserver and continually rewrote its
      obsolete "Open full workspace" buttons.  A truthy-only guard left that
@@ -168,7 +168,23 @@
     if (candidates.length !== 1) return { ok: false, reason: candidates.length ? "ambiguous-appointment" : "stale-row" };
     var a = candidates[0];
     if (!sourceId(a)) return { ok: false, reason: "source-id-missing" };
-    if (!appointmentId(a)) return { ok: false, reason: "appointment-id-missing" };
+    /* b438: an Athena appointment id is a DESTINATION identifier, not a patient
+       identifier, so its absence is not an identity failure and must not block
+       OPENING the chart. Nothing in this module's identity ladder reads it:
+       the single-candidate rule above, source-id, provider below, and the whole
+       resolvePatient chain (exact name + DOB against exactly one chart) are all
+       independent of it, and exactRowSignature still separates rows on its other
+       fields when every appointmentId is "".
+       It was required here from b430 onward, which walled off every non-today
+       day: the only producer is the extension's schedule DOM scrape, and when
+       that yields nothing the field is empty for every pulled row. Today already
+       degrades to a warning in this exact situation (mls-connect.js
+       installScheduledVisitBinding / exactBindingReady) rather than refusing to
+       open, so requiring it here made non-today strictly harsher than today for
+       identical data.
+       Athena WRITE and verification still fail closed without it, independently
+       of this module - feat_mls_writeflow exactVisitBlocked, exact-encounter
+       verify, and the extension's own digits(appointmentId) policy. */
     if (!providerOf(a)) return { ok: false, reason: "provider-missing" };
     return { ok: true, appointment: a };
   }
@@ -271,7 +287,10 @@
       "stale-row": "That appointment row is no longer part of the selected date. MLS did not open a patient or run an action.",
       "ambiguous-appointment": "More than one appointment matches that row. MLS will not guess; refresh the selected date and choose the exact appointment again.",
       "source-id-missing": "That row is missing its MLS appointment reference. Refresh the selected date before continuing.",
-      "appointment-id-missing": "That row has no exact Athena appointment ID. MLS kept the visit tools closed.",
+      /* b438: no longer reachable from resolveForKey - a missing Athena
+         appointment id no longer blocks opening. Kept only so an older cached
+         copy of this module cannot surface an empty modal body. */
+      "appointment-id-missing": "That row has no exact Athena appointment ID. The chart is open, but Athena verification and send stay unavailable for it.",
       "provider-missing": "That appointment has no exact provider. MLS kept the visit tools closed so the visit cannot be filed under the wrong context.",
       "conflicting-patient-ids": "That appointment carries conflicting patient IDs. MLS will not guess between charts.",
       "linked-chart-not-exact": "The linked chart does not exactly match this appointment's patient identity. Nothing was started.",
@@ -284,7 +303,10 @@
       "activation-failed": "MLS could not prove that the exact appointment opened. The requested action did not run.",
       "binding-unavailable": "MLS could not create the exact date, appointment, and provider binding. The requested action did not run.",
       "unsafe-action": "That appointment action is not approved for selected-date use, so MLS blocked it.",
-      "action-unavailable": "The requested action is not available on this Visit screen. No substitute action was run.",
+      /* b438: the visit stays OPEN and stays locked to this exact patient, date
+         and provider when an action cannot start - say so, or the doctor reads
+         this as "nothing happened" and re-clicks. */
+      "action-unavailable": "The visit is open and locked to this exact patient, date, and provider, but the requested action could not start. Nothing was written and no substitute action ran.",
       "action-failed": "The exact visit opened, but the requested action could not start. MLS cleared the visit binding; try again."
     };
     return messages[reason] || "MLS could not safely open that exact appointment. The requested action did not run.";
@@ -361,8 +383,17 @@
       if (selectedDay() !== day || validDay(remote.currentVisitDay()) !== day) throw new Error("wrong-selected-day");
       current = ctx;
       dispatchContext({ active: true, appointmentId: ctx.appointmentId, patientId: ctx.patientId, date: ctx.date, provider: ctx.provider, requestedAction: requestedAction });
+      /* b438: an action that could not START is not an identity failure, so the
+         frozen binding must survive it. The binding is a CONSTRAINT, not a
+         capability: it pins this note to the selected day/provider/patient and
+         is what makes every Athena write path refuse. Clearing it here left the
+         visit OPEN and unbound, and the next edit re-bound it through the
+         manual-entry path, which stamps displayDate = today - silently
+         re-dating a pulled-day note to the current date and, because the empty
+         date/provider then miss the writeflow short-circuit, flipping the write
+         gate from blocked to ready. Keep the binding and report the failure. */
       if (!performAction(requestedAction, a, resolvedPatient.patient, remote)) {
-        clear("action-failed"); return showFailure("action-unavailable");
+        return showFailure("action-unavailable");
       }
       return true;
     } catch (e) {

@@ -9,8 +9,8 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_cross_day_context.js'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 new Function(source); // syntax gate / ES5-compatible source syntax
-assert(source.includes('VERSION = "xdc-2.0.2"'), 'observer-free xdc-2.0.2 release marker is missing');
-assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.includes("?v=20260719xdc202"),
+assert(source.includes('VERSION = "xdc-2.0.3"'), 'observer-free xdc-2.0.3 release marker is missing');
+assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.includes("?v=20260719xdc203"),
   'account-clearing cross-day context is not loaded through a fresh immutable asset URL');
 
 // A backend refresh re-executes mls-connect.js in the existing document.  It
@@ -60,7 +60,7 @@ assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.
   assert.deepStrictEqual(classRemovals.sort(), ['body:mls-xdc-active', 'easy:mls-xdc-active'].sort(),
     'the loader left the legacy full-workspace presentation class active');
   assert.strictEqual(appended.length, 1, 'the current xdc asset was not loaded exactly once');
-  assert.strictEqual(appended[0].src, 'feat_mls_cross_day_context.js?v=20260719xdc202');
+  assert.strictEqual(appended[0].src, 'feat_mls_cross_day_context.js?v=20260719xdc203');
   assert.strictEqual(appended[0].attributes['data-mls-asset'], 'feat_mls_cross_day_context.js');
 }
 
@@ -78,7 +78,7 @@ assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.
   nodes.set('mlsEz3Body', { classList: { remove() {} } });
   let reverted = 0;
   const context = {
-    NS: '__mlsCrossDayContext', VERSION: 'xdc-2.0.2',
+    NS: '__mlsCrossDayContext', VERSION: 'xdc-2.0.3',
     window: { __mlsCrossDayContext: { installed: true, version: 'xdc-1.0.0', revert() { reverted += 1; } } },
     document: {
       body: { classList: { remove() {} } },
@@ -212,7 +212,7 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'feat_mls_cross_day_context.js' });
 
 const api = window.__mlsCrossDayContext;
-assert(api && api.installed && api.version === 'xdc-2.0.2', 'selected-day native-workspace guard did not install');
+assert(api && api.installed && api.version === 'xdc-2.0.3', 'selected-day native-workspace guard did not install');
 assert.strictEqual(api._test.selectedDay(), '2026-07-17', 'selected day did not come from the DaySwitch API');
 assert(windowListeners.click && windowListeners.click.length === 1 && windowListeners.click[0].capture, 'guard must intercept on window capture before Easy document capture');
 assert(!documentListeners.click, 'a late document capture listener cannot preempt native Easy and must not be used');
@@ -426,5 +426,40 @@ assert(source.includes('window.addEventListener("click", onCaptureClick, true)')
 assert(source.includes('window.addEventListener("mls:session-boundary", onSessionBoundary)') &&
        source.includes('window.removeEventListener("mls:session-boundary", onSessionBoundary)'),
   'account-boundary listener lifecycle is incomplete');
+
+/* ---------------------------------------------------------------------------
+ * b438 regression pins.
+ *
+ * Every appointment fixture in this file supplies an invented appointment_id
+ * ('A-FRI', 'A-TODAY', ...). Real pulled rows routinely have NONE: the only
+ * producer is the extension's schedule DOM scrape, and when it yields nothing
+ * the field is empty for the whole day. Because the fixtures fabricated the
+ * field, this suite stayed green while every non-today patient click failed
+ * closed with "Appointment not opened" in production. These pins encode the
+ * two contracts that regression violated.
+ * ------------------------------------------------------------------------- */
+
+// (1) A missing Athena appointment id must not block OPENING a chart. It is a
+//     destination identifier, not a patient identifier.
+assert(!/reason:\s*"appointment-id-missing"/.test(source),
+  'resolveForKey blocks opening on a missing Athena appointment id again - every pulled row without one becomes unopenable');
+
+// (2) ...while every real identity check still fails closed.
+['source-id-missing', 'provider-missing', 'ambiguous-appointment', 'stale-row', 'wrong-selected-day'].forEach(reason => {
+  assert(source.includes('"' + reason + '"'),
+    'identity check "' + reason + '" was removed from the selected-day resolver');
+});
+assert(/candidates\.length !== 1/.test(source),
+  'the single-candidate rule that makes ambiguity fail closed was removed');
+
+// (3) An action that could not START must not clear the frozen binding. The
+//     binding is a constraint, not a capability: it pins the note to the
+//     selected day and forces Athena writes to refuse. Clearing it while the
+//     visit stayed open handed the visit to manual-entry binding, which
+//     re-dated a pulled-day note to today AND flipped the write gate to ready.
+assert(!/clear\("action-failed"\)/.test(source),
+  'an action failure clears the exact visit binding again - the open visit re-dates itself to today');
+assert(/if \(!performAction\(requestedAction, a, resolvedPatient\.patient, remote\)\) \{\s*\n\s*return showFailure\("action-unavailable"\);/.test(source),
+  'the action-failure path no longer returns with the binding intact');
 
 console.log('PASS cross-day appointment context: every date stays in native Easy; exact selected-day clicks bind before one requested safe action and ambiguity fails closed');

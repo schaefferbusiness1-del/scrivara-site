@@ -77,14 +77,39 @@ const row = {
   assert.deepStrictEqual(h.calls.set.map(x => x.replaceExisting), [true]);
 }
 
+/* b438: date and provider are what pin a note to the right day and clinician,
+ * so their absence still fails closed. An Athena appointment id is a
+ * DESTINATION identifier - its absence must NOT block binding, because the only
+ * producer is the extension's schedule scrape and a pulled row routinely
+ * arrives without one. Blocking on it stopped the doctor recording or
+ * generating on such rows, on every date. */
 for (const bad of [
-  { ...row, appointment_id: '' },
   { ...row, provider: '' },
   { ...row, appt_date: '', day_local: '' }
 ]) {
   const h = harness();
   assert.strictEqual(h.install(bad), false, 'incomplete exact row was bound');
   assert.strictEqual(h.calls.set.length, 0, 'incomplete exact row mutated the binding');
+}
+
+/* A row with no Athena appointment id binds, and the binding records the empty
+ * id VERBATIM. That empty string is load-bearing downstream: it is what keeps
+ * write_note / save_draft blocked and exact-encounter verification unavailable.
+ * A placeholder, sentinel, or the backend row id substituted here would
+ * silently convert those from blocked to ready. */
+{
+  const h = harness();
+  assert.strictEqual(h.install({ ...row, appointment_id: '' }), true,
+    'a pulled row without an Athena appointment id refused to bind');
+  assert.strictEqual(h.calls.set.length, 1, 'id-less exact row did not install exactly one binding');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.calls.freeze[0].meta.visitContext)), {
+    historical: false,
+    visitDate: '2026-07-22',
+    provider: 'Exact Provider, MD',
+    appointmentId: '',
+    encounterId: '',
+    encounterUrl: ''
+  }, 'id-less binding must carry appointmentId "" verbatim, never a substitute');
 }
 
 {

@@ -17791,7 +17791,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function installScheduledVisitBinding(a) {
     try {
       var apptId = scheduledAppointmentId(a), day = apptDay(a), provider = String(a && a.provider || '').trim();
-      if (!apptId || !day || !provider || typeof window._athenaFreezeVisitBinding !== 'function' || typeof window._athenaSetVisitBinding !== 'function') return false;
+      /* b438: recording and note generation are LOCAL - audio into MLS's own
+         transcript box, generation against MLS's own model. Neither touches
+         Athena, so an Athena appointment id is not a precondition for either.
+         Requiring its PRESENCE here blocked record/generate on every pulled row
+         whenever the extension's schedule scrape yielded no ids, on today as
+         well as other days. The equality check below is untouched: a row whose
+         id DISAGREES with its binding still fails closed, and rows that do carry
+         an id keep full strictness. Date and provider stay required - they are
+         what pin the note to the right day. */
+      if (!day || !provider || typeof window._athenaFreezeVisitBinding !== 'function' || typeof window._athenaSetVisitBinding !== 'function') return false;
       /* XDC already installed the stronger non-today binding synchronously;
          its context must not be replaced by this delayed activation check. */
       var xdc = window.__mlsCrossDayContext, xctx = xdc && typeof xdc.current === 'function' ? xdc.current() : null;
@@ -17823,7 +17832,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var binding = currentVisitBinding(), ctx = binding && binding.visitContext;
     var active = safe(function () { return typeof window.activePatient === 'function' ? window.activePatient() : null; }, null);
     var appointmentId = scheduledAppointmentId(a), day = apptDay(a), provider = String(a && a.provider || '').trim();
-    if (!a || !appointmentId || !day || !provider || !binding || !ctx || !binding.patient || !active || !active.id) return false;
+    /* b438: presence of an Athena appointment id is not required (see
+       installScheduledVisitBinding above); AGREEMENT still is, on the very next
+       line. Every identity check below is untouched - exact name across row,
+       active patient and binding; non-conflicting DOB across all three;
+       binding.patient.patientId === active.id; exact date; provider tokens. */
+    if (!a || !day || !provider || !binding || !ctx || !binding.patient || !active || !active.id) return false;
     if (String(ctx.appointmentId || '').trim() !== appointmentId || String(ctx.visitDate || '').slice(0, 10) !== day) return false;
     if (normTokens(ctx.provider).join('|') !== normTokens(provider).join('|')) return false;
     if (!nameMatch(active.name, a.name) || !nameMatch(binding.patient.name, a.name) || !nameMatch(binding.patient.name, active.name)) return false;
@@ -18512,6 +18526,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<span class="ez3-badge">' + esc(visitType(a)) + '</span>' +
              '<span class="ez3-badge ' + (isSeen(a) ? 'g' : 'a') + '">' + esc(statusOf(a)) + '</span>' : '') +
         (activeProvider() ? '<span class="ez3-badge">🩺 ' + esc(activeProvider()) + '</span>' : '') +
+        /* b438: b430 surfaced a missing Athena appointment id through S.lastWarn,
+           but computePhase() clears lastWarn once the note reaches 30 characters and
+           renderDoctor reads it AFTER that clear - so the signal vanished exactly when
+           the doctor started working. Derive it from the row instead, so it persists
+           for the whole visit and the doctor learns Athena send is unavailable BEFORE
+           dictating a full note rather than at Send. */
+        (a && !scheduledAppointmentId(a) ? '<span class="ez3-badge a" title="This row arrived without an Athena appointment ID, so MLS cannot prove the exact encounter. Recording, the note and history all work; Athena verification and send stay unavailable for this row.">📄 No Athena appointment ID — stays in MLS</span>' : '') +
       '</div>' +
       (a ? vRowHtml() : '') + /* v3.6: trustworthy Athena/history verification */
     '</div>';
@@ -32699,7 +32720,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b437';
+  window.__MLS_AV = window.__MLS_AV || 'b438';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33009,7 +33030,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-19-b437';
+  var MLS_APP_BUILD='2026-07-19-b438';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44108,7 +44129,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.2.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719ps120';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pm-1.0.1 exact-duplicate patient auto-merge (defers while an explicit pull is busy; boot + post-pull + on-demand) */ /* ps-1.2.0 named-stage progress wiring + panel: plain-language zero-row and all-charts-failed guidance, observer-driven real stages/counts/context */
 ;(function(){try{
-  var A='feat_mls_cross_day_context.js',V='xdc-2.0.2',old=window.__mlsCrossDayContext||null;
+  var A='feat_mls_cross_day_context.js',V='xdc-2.0.3',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;
   if(old){try{if(typeof old.revert==='function')old.revert();}catch(e0){}try{delete window.__mlsCrossDayContext;}catch(e1){window.__mlsCrossDayContext=null;}}
   var stale=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;
@@ -44117,8 +44138,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var buttons=document.querySelectorAll('.mls-xdc-open');for(i=0;i<buttons.length;i++){node=buttons[i];if(node&&node.parentNode)node.parentNode.removeChild(node);}
   if(document.body&&document.body.classList)document.body.classList.remove('mls-xdc-active');
   var eb=document.getElementById('mlsEz3Body');if(eb&&eb.classList)eb.classList.remove('mls-xdc-active');
-  var s=document.createElement('script');s.src=A+'?v=20260719xdc202';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
-}catch(e){}})(); /* xdc-2.0.2: backend hot refreshes evict b419's observer/list owner; every selected date stays in native Easy and exact actions still fail closed */
+  var s=document.createElement('script');s.src=A+'?v=20260719xdc203';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})(); /* xdc-2.0.3: backend hot refreshes evict b419's observer/list owner; every selected date stays in native Easy and exact actions still fail closed */
 ;(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{
   var A='feat_mls_strip_day_couple.js',V='sdc-2.0.1',old=window.__mlsStripDayCouple||null;
