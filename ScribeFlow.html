@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b438"></script>
+<script src="public-preview-policy.js?v=b439"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -25634,7 +25634,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b438"></script>
+<script src="public-preview-runtime.js?v=b439"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25743,7 +25743,20 @@ function _ptGroupSort(mode){
     /* Cross-tab patient saves can call refresh repeatedly. Preserve the existing
        subtree (focus, popovers and add-on chips) when the rendered facts did not
        change instead of visibly tearing the whole header down and rebuilding it. */
-    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions');
+    /* b439: also rebuild when the ACTION BUTTONS are gone, not just when the
+       container is. baseHtml always defines exactly five [data-act] controls
+       (chart, visit, history, schedule, switch). Checking only for
+       .mlsctx-actions meant that if any later owner emptied or partially
+       replaced that row — several modules inject into it after first paint
+       (portal invite, AVS, snapshot, recent, status chip) — the memoised
+       __mlsCardBaseHtml still matched, so the row was never restored and the
+       patient bar showed the name and "Switch patient" with no Chart / Visit /
+       History / Schedule for the rest of the session. Counting the surviving
+       controls makes the bar self-healing on the next refresh. Strictly "fewer
+       than expected" so a module that ADDS its own [data-act] control cannot
+       trigger a rebuild loop. */
+    var mlsCtxActionsPresent = bar.querySelectorAll('.mlsctx-actions button[data-act]').length;
+    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions') || mlsCtxActionsPresent < 5;
     if (needsBase){
       bar.innerHTML = baseHtml;
       bar.__mlsCardBaseHtml = baseHtml;
@@ -25836,6 +25849,49 @@ function _ptGroupSort(mode){
         _stT = setTimeout(function(){ _stT = null; refresh(); }, 500);
       });
     })();
+    /* b439: self-heal the action row.
+       refresh() otherwise runs only at init, on mls:active-patient-changed, and
+       on a cross-tab storage write. At first sign-in this card renders once and
+       ~200 feature scripts load AFTER it; an owner that empties or partially
+       replaces .mlsctx-actions at that point left the bar with no Chart / Visit
+       / History / Schedule for the whole session, and nothing was scheduled to
+       notice - the reported "no buttons on the patient bar when I first log in".
+       A short startup poll is not enough: the damage can land after it retires.
+       Use one debounced observer scoped to this small bar (NOT the document),
+       disconnected across the repair write so the rebuild cannot re-trigger it.
+       The degraded test is a single subtree query; the expensive refresh() -
+       which parses the whole patient store, see the storm fix above - runs only
+       when the row is genuinely short of its five controls. */
+    (function(){
+      var healing = false, deb = null, obs = null, armT = null;
+      function degraded(){
+        try{
+          var b = document.getElementById(BAR_ID);
+          return !!(b && b.querySelector('.mlsctx-actions') &&
+            b.querySelectorAll('.mlsctx-actions button[data-act]').length < 5);
+        }catch(e){ return false; }
+      }
+      function observe(){
+        try{ var b = document.getElementById(BAR_ID); if (obs && b) obs.observe(b, {childList:true, subtree:true}); }catch(e){}
+      }
+      function heal(){
+        if (healing || !degraded()) return;
+        healing = true;
+        try{ if (obs) obs.disconnect(); }catch(e){}
+        try{ refresh(); }catch(e){}
+        observe();
+        healing = false;
+      }
+      function schedule(){ if (deb) return; deb = setTimeout(function(){ deb = null; heal(); }, 400); }
+      try{
+        obs = new MutationObserver(schedule);
+        armT = setInterval(function(){
+          if (!document.getElementById(BAR_ID)) return;   // bar mounts on the first active patient
+          clearInterval(armT); armT = null;
+          observe(); schedule();
+        }, 500);
+      }catch(e){}
+    })();
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
@@ -25849,7 +25905,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b438';
+  window.__MLS_AV='b439';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

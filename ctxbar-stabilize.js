@@ -39,9 +39,27 @@
         try {
           if (this && this.id && TARGET[this.id] === 1) {
             var s = '' + v;
-            if (last.get(this) === s) return;   // redundant identical render -> skip
-            last.set(this, s);
-            return desc.set.call(this, s);
+            var cached = last.get(this);
+            /* b439: a write may be skipped only when it is TRULY redundant -
+               we wrote this exact string AND the element still holds what that
+               write produced.
+               The original guard compared the incoming string to the last
+               string alone. Several owners mutate this bar's children by other
+               routes (appendChild / remove() / writing a CHILD's innerHTML,
+               none of which pass through this setter for #mlsCtxBar), so the
+               live DOM could diverge while the cache still said "already
+               wrote that". The repair path then rebuilt byte-identical markup
+               and this setter SILENTLY DISCARDED it - so a patient bar that
+               lost its Chart / Visit / History / Schedule controls could never
+               be restored for the rest of the session, which is exactly the
+               reported "no buttons on the patient bar after logging in".
+               Verifying against live serialization keeps the anti-flicker
+               purpose intact (a genuine no-op re-render still skips) while
+               making it impossible to suppress a real repair. */
+            if (cached && cached.value === s && desc.get.call(this) === cached.rendered) return;
+            desc.set.call(this, s);
+            try { last.set(this, { value: s, rendered: desc.get.call(this) }); } catch (e2) { last.delete(this); }
+            return;
           }
         } catch (e) { /* fall through to native on any guard error */ }
         return desc.set.call(this, v);          // all other elements: unchanged
