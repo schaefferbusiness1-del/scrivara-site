@@ -1,11 +1,18 @@
-/* feat_mls_baricon.js -> window.__mlsBarIcons (bi-1.1.0)
+/* feat_mls_baricon.js -> window.__mlsBarIcons (bi-1.2.0)
  * ITEM 15: On the white patient-context bar (#mlsCtxBar .mlsctx-actions),
- * convert ONLY the Chart / Visit / History / Schedule pill buttons from text
- * labels to clear inline-SVG ICONS. Same height/position/order. Each gets an
- * aria-label + a native hover tooltip (title) so its purpose stays obvious.
+ * give the Chart / Visit / History / Schedule pill buttons a clear inline-SVG
+ * ICON ALONGSIDE THEIR TEXT LABEL. Same height/position/order.
  * "After-visit summary" (#mlsavsBtn) and the blue "Switch patient"
  * (data-act="switch") are intentionally LEFT AS TEXT. No other button anywhere
  * else in the app is touched.
+ *
+ * b436: bi-1.1.0 replaced the labels outright, leaving four unlabeled 16px
+ * glyphs on a white bar next to a text link. The owner reported the patient
+ * banner as simply "not showing the buttons" - they rendered (34px wide,
+ * aria-label + title set) but read as decoration rather than controls, and a
+ * hover tooltip does not help a doctor scanning the bar. Icons now sit beside
+ * their words, so the controls are legible at a glance and still carry the
+ * visual cue ITEM 15 wanted.
  *
  * The bar re-renders its innerHTML on patient change (renderInto), so a
  * MutationObserver re-applies the icons after every rebuild. We only ever change
@@ -15,9 +22,18 @@
  */
 (function () {
   "use strict";
-  try { if (window.__mlsBarIcons && window.__mlsBarIcons.installed) return; } catch (e) { return; }
+  var VERSION = "bi-1.2.0";
+  /* Hot-upgrade: an older icon-only install must be torn down first, otherwise
+     its buttons keep their per-element "already iconified" flag and never pick
+     up the labelled markup. */
+  try {
+    var prior = window.__mlsBarIcons;
+    if (prior && prior.installed) {
+      if (prior.version === VERSION) return;
+      if (typeof prior.revert === "function") { try { prior.revert(); } catch (e0) {} }
+    }
+  } catch (e) { return; }
 
-  var VERSION = "bi-1.1.0";
   var STYLE_ID = "mlsBarIconCss";
   var BAR_ID = "mlsCtxBar";
   var FLAG = "__mlsBarIconified";
@@ -56,8 +72,13 @@
     if (safe(function () { return document.getElementById(STYLE_ID); })) return;
     var css = [
       "#" + BAR_ID + " .mlsctx-actions button.mls-baricon{display:inline-flex;align-items:center;",
-      "justify-content:center;min-width:34px;padding:5px 9px;line-height:0;}",
-      "#" + BAR_ID + " .mlsctx-actions button.mls-baricon .mls-baricon-svg{display:block;}"
+      "justify-content:center;gap:6px;padding:5px 11px;line-height:1.2;}",
+      "#" + BAR_ID + " .mlsctx-actions button.mls-baricon .mls-baricon-svg{display:block;flex:0 0 auto;}",
+      "#" + BAR_ID + " .mlsctx-actions button.mls-baricon .mls-baricon-label{display:inline;white-space:nowrap;}",
+      /* Very narrow bars fall back to icon-only rather than wrapping or
+         clipping the row; the aria-label and title still name the control. */
+      "@media (max-width:640px){#" + BAR_ID + " .mlsctx-actions button.mls-baricon .mls-baricon-label{display:none;}",
+      "#" + BAR_ID + " .mlsctx-actions button.mls-baricon{gap:0;min-width:34px;padding:5px 9px;}}"
     ].join("");
     var s = safe(function () { return document.createElement("style"); });
     if (!s) return;
@@ -79,7 +100,12 @@
       safe(function () { b.setAttribute("aria-label", label); });
       safe(function () { b.setAttribute("title", label); });
       safe(function () { b.classList.add("mls-baricon"); });
-      safe(function () { b.innerHTML = svgFor(act); });
+      safe(function () {
+        b.innerHTML = svgFor(act) + '<span class="mls-baricon-label"></span>';
+        // textContent, never innerHTML, so a label can never inject markup.
+        var span = b.querySelector(".mls-baricon-label");
+        if (span) span.textContent = label;
+      });
       b[FLAG] = 1;
     });
   }
