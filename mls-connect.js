@@ -6180,33 +6180,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ==========================================================================*/
 (function () {
   'use strict';
-  /* b432: retired. MLS Easy v3.7+ now owns the complete doctor room
-     synchronously (patient binding, recorder, transcript, generation, review,
-     send, and quick tools). Keeping this late observer/polling owner active
-     created a second recorder/transcript lane after render and was the direct
-     cause of controls visibly popping into place. Leave a small compatibility
-     receipt for diagnostics, but do not mount nodes, observers, listeners, or
-     timers. The old implementation remains below only as rollback source and
-     is unreachable after this return. */
+  /* b435: UN-RETIRED. b432 disabled this module on the theory that MLS Easy
+     v3.7+ had taken over the whole doctor room (patient binding, recorder,
+     transcript, generation, review, send, quick tools). It had not. With this
+     module retired the visit screen rendered with NO transcript box and NO
+     quick-action lane at all - verified at runtime on b434 with the public
+     preview OFF and a session started: ez3flTranscript absent, .ez3fl-tx 0,
+     .ez3fl-record 0, and document.querySelectorAll('textarea') had zero
+     VISIBLE entries on the visit view. The only remaining way to type was the
+     "Advanced visit workspace" button. This module owns #ez3flTranscript and
+     the Record / Assistant / Dictate / Paste / Phone mic / AVS / Orders lane,
+     so retiring it removed the doctor's primary working surface.
+
+     The b432 concern was real but narrower than the fix applied: a SECOND
+     recorder/transcript lane could appear after the engine render, so controls
+     visibly popped into place. That is handled below by the mountedLane reuse
+     path - an existing .ez3fl-record is ADOPTED (_primaryLane = mountedLane;
+     syncTopLane) and never duplicated - so the calm-surface behaviour is kept
+     while the lane itself comes back. */
   var previousFlow = null;
   try { previousFlow = window.__mlsEz3Flow; } catch (e0) {}
   if (previousFlow && previousFlow.retired !== true && typeof previousFlow.revert === 'function') {
     try { previousFlow.revert(); } catch (e1) {}
   }
-  try {
-    document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (node) { node.remove(); });
-    if (document.body) document.body.classList.remove('mls-top-voice-tools');
-  } catch (e2) {}
-  try {
-    window.__mlsEz3Flow = Object.freeze({
-      installed: false,
-      retired: true,
-      version: 'retired-b432',
-      owner: 'mls-easy-v3-canonical'
-    });
-  } catch (e3) {}
-  return;
-  var VERSION = 'fl-1.7.0';
+  var VERSION = 'fl-1.7.1';
   var _obs = null, _deb = null, _iv = null, _laneIv = null, _laneRaf = null;
   var _primaryLane = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -32681,7 +32678,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b434';
+  window.__MLS_AV = window.__MLS_AV || 'b435';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32991,7 +32988,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-19-b434';
+  var MLS_APP_BUILD='2026-07-19-b435';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

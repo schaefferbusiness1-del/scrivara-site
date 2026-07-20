@@ -24,11 +24,36 @@ function executeRetirement(headerNeedle, returnNeedle, suppliedContext) {
   return context;
 }
 
-const retiredFlowContext = executeRetirement(' * __mlsEz3Flow', '  return;');
-const retiredFlow = retiredFlowContext.window;
-assert(retiredFlow.__mlsEz3Flow && retiredFlow.__mlsEz3Flow.retired === true,
-  'duplicate visit flow did not retire at runtime');
-assert.strictEqual(retiredFlow.__mlsEz3Flow.installed, false, 'retired visit flow still claims installation');
+/* b435: the contract is ONE transcript lane - not ZERO.
+ *
+ * b432 enforced "single transcript" by retiring __mlsEz3Flow outright, on the
+ * theory that MLS Easy v3.7+ had taken over the doctor room. It had not: with
+ * the flow retired the visit screen rendered with NO transcript box and no
+ * quick-action lane at all, so the only way to type was the "Advanced visit
+ * workspace" button. Zero lanes satisfied the old assertion and broke the
+ * product. Pin the real invariant instead - the flow is ACTIVE, and it is
+ * structurally incapable of leaving a second lane behind. */
+const flowStart = source.indexOf(' * __mlsEz3Flow');
+const flowIife = source.indexOf('(function () {', flowStart);
+assert(flowStart >= 0 && flowIife > flowStart, 'the Easy visit-flow owner is missing');
+
+const flowBody = source.slice(flowIife, flowIife + 60000);
+assert(/var VERSION = 'fl-1\.7\.\d+'/.test(flowBody),
+  'the Easy visit-flow owner is not active (expected a live fl-1.7.x VERSION)');
+assert(!flowBody.includes("version: 'retired-b432'"),
+  'the Easy visit-flow owner is retired again - the visit screen loses its transcript box');
+
+/* The anti-duplication guard that makes "exactly one" true: adopt the already
+ * mounted lane, and actively remove any accidental extras. */
+assert(flowBody.includes("var mountedLanes = body.querySelectorAll('.ez3fl-record');"),
+  'single-lane adoption query missing');
+assert(/if \(mountedLanes\[laneIndex\] !== mountedLane\) mountedLanes\[laneIndex\]\.remove\(\);/.test(flowBody),
+  'the flow no longer removes duplicate transcript lanes - a second lane could reappear');
+assert(flowBody.includes('if (!mountedLane) {'),
+  'the flow no longer creates the lane only when it is truly absent');
+assert(flowBody.includes("var tx = document.getElementById('ez3flTranscript')") ||
+  flowBody.includes("id=\"ez3flTranscript\""),
+  'the flow no longer owns the #ez3flTranscript node');
 
 const monthContext = executeRetirement(' * MLS Scribe - ONE MONTH PULL', '  return;');
 assert(monthContext.window.__mlsMonthPullOne && monthContext.window.__mlsMonthPullOne.retired === true,
@@ -64,7 +89,19 @@ function fakeDocument(ids) {
   };
 }
 
-// Hot-loading b432 over b431 must actively tear down the old visit-flow owner.
+/* Hot-loading a newer visit-flow owner over an older one must still tear the
+ * old one down, so a reload cannot leave two observer/timer owners running.
+ * b435 keeps that teardown but no longer follows it with an early return, so
+ * execute only the module preamble (up to its VERSION line) rather than the
+ * whole implementation, which needs real timers and a live DOM. */
+function flowPreamble() {
+  const header = source.indexOf(' * __mlsEz3Flow');
+  const start = source.indexOf('(function () {', header);
+  const version = source.indexOf("var VERSION = 'fl-1.7", start);
+  assert(header >= 0 && start > header && version > start, 'visit-flow preamble missing');
+  return source.slice(start, version) + '\n})();';
+}
+
 let flowReverts = 0;
 const staleFlowNodes = [removable('old-flow-a'), removable('old-flow-b')];
 const flowDocument = fakeDocument();
@@ -74,12 +111,19 @@ const hotFlowContext = {
   document: flowDocument,
   window: { __mlsEz3Flow: { installed: true, version: 'fl-1.7.0', revert() { flowReverts++; } } }
 };
-executeRetirement(' * __mlsEz3Flow', '  return;', hotFlowContext);
+vm.createContext(hotFlowContext);
+vm.runInContext(flowPreamble(), hotFlowContext);
 assert.strictEqual(flowReverts, 1, 'hot upgrade did not revert the previously loaded visit-flow owner');
-assert(staleFlowNodes.every(node => node.removed), 'hot upgrade left stale duplicate visit controls mounted');
-assert.strictEqual(hotFlowContext.window.__mlsEz3Flow.retired, true, 'hot upgrade did not replace visit owner with retirement receipt');
-vm.runInContext(retirementCode(' * __mlsEz3Flow', '  return;'), hotFlowContext);
-assert.strictEqual(flowReverts, 1, 'idempotent retirement reverted an already retired visit owner');
+
+// A retired receipt from an older build must not be reverted a second time.
+const retiredCarryContext = {
+  Object,
+  document: fakeDocument(),
+  window: { __mlsEz3Flow: { installed: false, retired: true, version: 'retired-b432', revert() { flowReverts++; } } }
+};
+vm.createContext(retiredCarryContext);
+vm.runInContext(flowPreamble(), retiredCarryContext);
+assert.strictEqual(flowReverts, 1, 'idempotent load reverted an already retired visit owner');
 
 // Month-pull b431 exposed teardown through a global fallback, not api.revert().
 let monthReverts = 0;

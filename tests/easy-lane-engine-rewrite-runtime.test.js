@@ -95,13 +95,24 @@ assert.strictEqual(phaseChange.state.stopCalls, 1, 'phase change left Dictate at
 
 assert(source.includes('txTop.oninput = function ()'), 'preserved transcript input owner is not replaced deterministically after repaint');
 
+/* b435: the Easy flow owner is ACTIVE again and owns the transcript lane.
+ *
+ * b432 retired it to stop a second recorder/transcript lane appearing after
+ * the engine render. That removed the doctor's only transcript box along with
+ * the duplicate. The narrower guarantee - one lane, never two - is enforced
+ * inside the flow itself (fl-1.5.0 adopt-and-dedupe), so assert that instead
+ * of asserting the whole owner is switched off. */
 const flowStart = source.indexOf(' * __mlsEz3Flow');
 const flowIife = source.indexOf('(function () {', flowStart);
-const retiredReturn = source.indexOf('  return;', flowIife);
-const oldVersion = source.indexOf("var VERSION = 'fl-1.7.0'", flowIife);
-assert(flowStart >= 0 && flowIife > flowStart && retiredReturn > flowIife && oldVersion > retiredReturn,
-  'the late Easy flow owner is not retired before its observer/timer implementation');
-assert(source.slice(flowIife, retiredReturn).includes("version: 'retired-b432'"),
-  'retired Easy flow diagnostic receipt missing');
+assert(flowStart >= 0 && flowIife > flowStart, 'the Easy flow owner is missing');
+
+const flowBody = source.slice(flowIife, flowIife + 60000);
+assert(/var VERSION = 'fl-1\.7\.\d+'/.test(flowBody),
+  'the Easy flow owner is not active (expected a live fl-1.7.x VERSION)');
+assert(!flowBody.includes("version: 'retired-b432'"),
+  'the Easy flow owner is retired again - the visit screen renders with no transcript lane');
+assert(flowBody.includes("var mountedLanes = body.querySelectorAll('.ez3fl-record');") &&
+  /if \(mountedLanes\[laneIndex\] !== mountedLane\) mountedLanes\[laneIndex\]\.remove\(\);/.test(flowBody),
+  'the Easy flow no longer guarantees a single mounted lane');
 
 console.log('PASS Easy render ownership: one atomic canonical room with transcript node/focus/Dictate continuity');
