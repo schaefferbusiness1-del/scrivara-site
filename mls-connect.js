@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b454';
+  window.__MLS_AV = window.__MLS_AV || 'b455';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b454';
+  var MLS_APP_BUILD='2026-07-20-b455';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42204,7 +42204,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        relay: the office computer runs the pull, this device shows live status
        and syncs the result. Same UI, zero extra steps. */
     if (window.__mlsRelayLink && window.__mlsRelayLink.shouldRelay && window.__mlsRelayLink.shouldRelay()) {
-      DS.pulling = true;
+      DS.pulling = true; DS.pullStartedAt = Date.now();
       var rday = DS.day;
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
@@ -42229,7 +42229,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (mm && Number(mm[2]) > 0) {
             var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
             var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
-            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2];
+            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + (DS.pullStartedAt ? ' · ' + Math.floor((Date.now() - DS.pullStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - DS.pullStartedAt) % 60000) / 1000) + 's' : '');
           } else if (bar.style.display !== 'block') {
             bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Working on your office computer…';
           }
@@ -42257,7 +42257,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
       return;
     }
-    DS.pulling = true;
+    DS.pulling = true; DS.pullStartedAt = Date.now();
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
@@ -42313,7 +42313,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (mm && Number(mm[2]) > 0) {
             var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
             var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
-            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2];
+            bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + (DS.pullStartedAt ? ' · ' + Math.floor((Date.now() - DS.pullStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - DS.pullStartedAt) % 60000) / 1000) + 's' : '');
           } else if (bar.style.display !== 'block') {
             bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
           }
