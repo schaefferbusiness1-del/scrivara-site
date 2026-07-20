@@ -1062,10 +1062,19 @@
       chip: 'index only',
       detail: 'Only the schedule/chart index row was pulled for this visit — the full visit note has not been retrieved. Re-pull this day with visit details ON to fetch it.'
     };
-    if (!(v.fullDetail === true && v.bodyComplete === true && trim(v.raw))) return {
-      chip: 'partial',
-      detail: 'A copied excerpt was pulled for this visit, not the complete verified note. Re-pull this day with visit details ON to fetch the full note.'
-    };
+    if (!(v.fullDetail === true && v.bodyComplete === true && trim(v.raw))) {
+      /* A pulled row that carries NO text at all is an index shell even when the
+         marker was never stamped — saying "a copied excerpt was pulled" would
+         claim content that does not exist. */
+      if (!trim(v.raw) && !trim(v.textHead)) return {
+        chip: 'index only',
+        detail: 'Only the schedule/chart index row was pulled for this visit — the full visit note has not been retrieved. Re-pull this day with visit details ON to fetch it.'
+      };
+      return {
+        chip: 'partial',
+        detail: 'A copied excerpt was pulled for this visit, not the complete verified note. Re-pull this day with visit details ON to fetch the full note.'
+      };
+    }
     return null;
   }
 

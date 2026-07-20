@@ -6153,7 +6153,13 @@ function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
 function upsertPatient(p){
   const arr=getPatients(); const i=arr.findIndex(x=>x.id===p.id);
   p.updated=Date.now();
-  if(i>=0) arr[i]=p; else { p.created=Date.now(); arr.unshift(p); }
+  if(i>=0){
+    /* Athena-owned proof fields survive a stale-reference upsert (see the
+       production upsertPatient for the live 2026-07-20 clobber this prevents). */
+    const __prev=arr[i];
+    if(__prev){for(const __f of ['athenaProfileCoverage','athenaChartSnapshot','athenaChartSummaryBlock','athenaChartImportedAt']){ if(p[__f]==null&&__prev[__f]!=null)p[__f]=__prev[__f]; }}
+    arr[i]=p;
+  } else { p.created=Date.now(); arr.unshift(p); }
   savePatients(arr);
   // hosted mode: mirror to the server (best-effort, non-blocking)
   if(backendMode() && bkToken()){ try{ syncPatientToServer(p); }catch(e){} }
@@ -22791,6 +22797,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b445';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b446';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

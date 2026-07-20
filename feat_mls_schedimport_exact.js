@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.13";
+  var VERSION = "si-1.7.14";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -2564,17 +2564,27 @@
          app-tab reload verifies against athena's week strip while it still
          reads "Today", so navigation honestly fails — and the SAME goto
          succeeds a moment later once the day view has re-rendered. Give
-         navigation ONE settle-and-retry before failing the whole pull. */
+         navigation ONE settle-and-retry before failing the whole pull.
+         si-1.7.14 (live 2026-07-20): with athena parked on the dashboard the
+         first click can open the Day view so slowly that ONE 2.5s settle still
+         misses it ("week strip shows no selected day"), while the very next
+         manual pull succeeds. Escalate the settle waits (2.5s/5s/8s) so the
+         first click absorbs that render lag instead of asking the clinician
+         to click again. */
       function gotoDateSettled() {
-        return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
-          var day0 = normDate(nav && nav.schedDate);
-          var bad = !nav || nav.ok === false || (day0 && day0 !== date);
-          if (!bad) return nav;
-          onStatus("Athena is still switching days — re-checking in a moment...", "");
-          return new Promise(function (resWait) { setTimeout(resWait, 2500); }).then(function () {
-            return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
+        var settleWaits = [2500, 5000, 8000];
+        function attempt(round) {
+          return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+            var day0 = normDate(nav && nav.schedDate);
+            var bad = !nav || nav.ok === false || (day0 && day0 !== date);
+            if (!bad || round >= settleWaits.length) return nav;
+            onStatus("Athena is still switching days — re-checking in a moment...", "");
+            return new Promise(function (resWait) { setTimeout(resWait, settleWaits[round]); }).then(function () {
+              return attempt(round + 1);
+            });
           });
-        });
+        }
+        return attempt(0);
       }
       return gotoDateSettled().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);

@@ -42,6 +42,12 @@ assert(/Re-pull this day/.test(shell.detail), 'index marker lacks the remedy');
 const copy = prov({ source: 'athena-copy', textHead: 'copied excerpt', raw: '' });
 assert(copy && copy.chip === 'partial', 'unflagged copied excerpt not marked partial');
 
+// 2b. unflagged pulled row with NO text at all → "index only", never "partial"
+//     ("partial" claims a copied excerpt exists; an empty unmarked row has none)
+const bare = prov({ source: 'athena-visits', raw: '', textHead: '' });
+assert(bare && bare.chip === 'index only', 'content-less unmarked pulled row must read as index only, got: ' + JSON.stringify(bare));
+assert(/Re-pull this day/.test(bare.detail), 'content-less unmarked row lacks the re-pull remedy');
+
 // 3. full verified body → unmarked
 assert.strictEqual(prov({ source: 'athena-visits', fullDetail: true, bodyComplete: true, raw: 'Full verified encounter body text.' }), null,
   'a complete verified body must carry no caveat');
@@ -53,7 +59,7 @@ assert.strictEqual(prov({ source: 'mls-visit-editor', indexOnly: false }), null,
 // 5. loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260720vis5'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  assert(text.includes('feat_visits.js?v=20260720vis6'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
 }
 
 console.log('PASS visit-history provenance: index shells and copied excerpts are honestly marked with a remedy; verified bodies and clinician-authored visits stay unmarked; loader pins bumped');

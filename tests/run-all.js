@@ -161,6 +161,7 @@ const tests = [
   'patient-wipe-guard-hatch.test.js',
   'visit-draft-patient-identity-runtime.test.js',
   'visit-history-provenance-chip.test.js',
+  'upsert-athena-proof-carryforward.test.js',
   'visit-binding-notice-persistence.test.js',
   'writeflow-auto-open-runtime.test.js',
   'provider-roster-provenance.test.js',
