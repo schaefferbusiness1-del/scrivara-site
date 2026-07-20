@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b447"></script>
+<script src="public-preview-policy.js?v=b448"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -6914,6 +6914,33 @@ function getPatients(){
   }catch(e){return [];}
 }
 var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null,__mlsPtsLastSavedKey='';
+var __mlsAthenaProofByKey={};
+/* Newest-verified-proof index: bulk roster writers (render/sweep paths calling
+   savePatients with an array they materialized BEFORE a chart save) roll the
+   whole store back and bypass upsertPatient's same-id guard entirely. Live
+   2026-07-20: even with the upsert guard, 8 of 17 day-pull histories still lost
+   their fresh coverage to exactly these bulk writes. The four Athena-owned
+   proof fields are stamped together by _savePatientChart, so they move as one
+   unit and the NEWEST coverage.capturedAt wins on EVERY persist path. */
+function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
+function __mlsAthenaProofGuard(key,arr){
+  if(!Array.isArray(arr))return;
+  var idx=__mlsAthenaProofByKey[key];
+  if(!idx)idx=__mlsAthenaProofByKey[key]={};
+  for(var i=0;i<arr.length;i++){
+    var row=arr[i]; if(!row||!row.id)continue;
+    var at=__mlsAthenaProofAt(row.athenaProfileCoverage);
+    var kept=idx[row.id];
+    if(at>=(kept?kept.at:0)){
+      if(at>0)idx[row.id]={at:at,cov:row.athenaProfileCoverage,snap:row.athenaChartSnapshot,block:row.athenaChartSummaryBlock,imp:row.athenaChartImportedAt};
+    }else{
+      row.athenaProfileCoverage=kept.cov;
+      if(kept.snap!=null)row.athenaChartSnapshot=kept.snap;
+      if(kept.block!=null)row.athenaChartSummaryBlock=kept.block;
+      if(kept.imp!=null)row.athenaChartImportedAt=kept.imp;
+    }
+  }
+}
 function savePatients(arr,__storageKey){
   var __key=__mlsPtsStorageKey(__storageKey);
   /* While an old account's managed pull is draining, an unbound write from a
@@ -6925,6 +6952,7 @@ function savePatients(arr,__storageKey){
     __accountErr.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';
     throw __accountErr;
   }
+  try{ __mlsAthenaProofGuard(__key,arr); }catch(e){}
   var __json=JSON.stringify(arr);
   /* b392 perf: identical content + untouched storage → skip the multi-MB LZ
      compress and the write outright. Render/sweep paths re-save unchanged
@@ -25690,7 +25718,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b447"></script>
+<script src="public-preview-runtime.js?v=b448"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25961,7 +25989,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b447';
+  window.__MLS_AV='b448';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

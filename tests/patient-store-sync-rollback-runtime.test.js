@@ -26,12 +26,17 @@ function patientStoreBlock(file) {
   return html.slice(start, end);
 }
 
-const B428_PATIENT_STORE_SHA256 = '8471a2ac3a11c333709125a9d2616ed43d449adcb84192664d7ef0164e67a8d9';
+/* b448 re-pin: the b428 synchronous writer gained the Athena proof guard
+   (__mlsAthenaProofGuard newest-wins index in savePatients + the same-id
+   carry-forward in upsertPatient) after the live 2026-07-20 clobber. Still
+   fully synchronous — the retired-marker sweep below proves the b429
+   worker/journal experiment stays out. */
+const B448_PATIENT_STORE_SHA256 = 'acf7986a7abff098d76601353a47cdb6b78a1d190a2d523bcbd0774c89146334';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),
-  B428_PATIENT_STORE_SHA256,
-  'current patient persistence is not byte-identical to the pinned pre-worker b428 runtime',
+  B448_PATIENT_STORE_SHA256,
+  'current patient persistence is not byte-identical to the pinned synchronous b448 runtime',
 );
 const rollbackSource = source;
 for (const retired of [

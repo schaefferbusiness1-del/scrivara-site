@@ -103,6 +103,47 @@ function runScenario(file) {
   assert(stored.some(x => x.id === 'pNew' && x.created), file + ': new-patient path broken');
 }
 
+/* Bulk writers (render/sweep savePatients with a pre-save array) bypass
+ * upsertPatient entirely and rolled the whole roster back (live b447: 8 of 17
+ * still failing after the upsert-only guard). The __mlsAthenaProofGuard index
+ * must restore the newest proof on EVERY savePatients call. */
+function runBulkScenario(file) {
+  const src = fs.readFileSync(path.join(root, file), 'utf8');
+  const gStart = src.indexOf('var __mlsAthenaProofByKey={};');
+  assert(gStart > 0, file + ': __mlsAthenaProofByKey index missing');
+  const gEnd = src.indexOf('function savePatients', gStart);
+  assert(gEnd > gStart, file + ': proof-guard boundary not found');
+  const ctx = vm.createContext({ Date: Date });
+  vm.runInContext(src.slice(gStart, gEnd) + '\nthis.guard = __mlsAthenaProofGuard;', ctx, { filename: file + ':proofGuard' });
+  assert(src.includes('__mlsAthenaProofGuard('), file + ': savePatients never calls the proof guard');
+
+  const fresh = { complete: true, patientId: 'pX', capturedAt: '2026-07-20T17:00:00Z', saveRequestId: 'req-new' };
+  // save 1: the verified pull persists fresh coverage → indexed
+  ctx.guard('k', [{ id: 'pX', athenaProfileCoverage: fresh, athenaChartSnapshot: { s: 1 }, athenaChartSummaryBlock: 'B', athenaChartImportedAt: 'T' }]);
+  // save 2: a sweep persists a stale roster (older coverage) → restored to fresh
+  const staleRow = { id: 'pX', athenaProfileCoverage: { complete: true, patientId: 'pX', capturedAt: '2026-07-20T12:00:00Z', saveRequestId: 'req-old' } };
+  ctx.guard('k', [staleRow]);
+  assert.strictEqual(staleRow.athenaProfileCoverage.saveRequestId, 'req-new', file + ': bulk save rolled coverage back');
+  assert.deepStrictEqual(staleRow.athenaChartSnapshot, { s: 1 }, file + ': bulk save lost the snapshot');
+  // save 3: a coverage-less stale roster → restored too
+  const bareRow = { id: 'pX' };
+  ctx.guard('k', [bareRow]);
+  assert.strictEqual(bareRow.athenaProfileCoverage.saveRequestId, 'req-new', file + ': bulk save erased coverage entirely');
+  // a NEWER save updates the index and wins thereafter
+  const newer = { id: 'pX', athenaProfileCoverage: { complete: true, patientId: 'pX', capturedAt: '2026-07-20T18:00:00Z', saveRequestId: 'req-newer' } };
+  ctx.guard('k', [newer]);
+  const after = { id: 'pX' };
+  ctx.guard('k', [after]);
+  assert.strictEqual(after.athenaProfileCoverage.saveRequestId, 'req-newer', file + ': index did not advance to the newest proof');
+  // other accounts' keys are isolated
+  const otherKey = { id: 'pX' };
+  ctx.guard('k2', [otherKey]);
+  assert(!otherKey.athenaProfileCoverage, file + ': proof index leaked across account keys');
+}
+
+runBulkScenario('ScribeFlow.html');
+runBulkScenario('ScribeFlow-staging.html');
+
 runScenario('ScribeFlow.html');
 runScenario('ScribeFlow-staging.html');
 

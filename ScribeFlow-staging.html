@@ -6139,11 +6139,34 @@ function _infoDialog(title, text){
    - notes are tagged with note.patientId so visit history is per-patient
    ========================================================= */
 function getPatients(){ try{return JSON.parse(localStorage.getItem(uns('patients')))||[];}catch(e){return [];} }
+var __mlsAthenaProofByKey={};
+/* Newest-verified-proof guard on every persist path — see the production
+   savePatients for the live 2026-07-20 bulk-writer rollback this prevents. */
+function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
+function __mlsAthenaProofGuard(key,arr){
+  if(!Array.isArray(arr))return;
+  var idx=__mlsAthenaProofByKey[key];
+  if(!idx)idx=__mlsAthenaProofByKey[key]={};
+  for(var i=0;i<arr.length;i++){
+    var row=arr[i]; if(!row||!row.id)continue;
+    var at=__mlsAthenaProofAt(row.athenaProfileCoverage);
+    var kept=idx[row.id];
+    if(at>=(kept?kept.at:0)){
+      if(at>0)idx[row.id]={at:at,cov:row.athenaProfileCoverage,snap:row.athenaChartSnapshot,block:row.athenaChartSummaryBlock,imp:row.athenaChartImportedAt};
+    }else{
+      row.athenaProfileCoverage=kept.cov;
+      if(kept.snap!=null)row.athenaChartSnapshot=kept.snap;
+      if(kept.block!=null)row.athenaChartSummaryBlock=kept.block;
+      if(kept.imp!=null)row.athenaChartImportedAt=kept.imp;
+    }
+  }
+}
 function savePatients(arr){
   /* The production app stores this key LZ-packed ('MLSZ1|' prefix). This dev
      snapshot cannot read that format, so it must never overwrite it: doing so
      would wipe the real patient list for the whole origin. */
   try{ var _cur=localStorage.getItem(uns('patients')); if(_cur&&_cur.lastIndexOf('MLSZ1|',0)===0) return; }catch(e){}
+  try{ __mlsAthenaProofGuard(uns('patients'),arr); }catch(e){}
   localStorage.setItem(uns('patients'),JSON.stringify(arr));
 }
 function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
@@ -22806,6 +22829,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b447';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b448';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
