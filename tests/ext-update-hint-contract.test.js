@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.15"'), 'si-1.7.15 release marker missing');
+assert(si.includes('var VERSION = "si-1.7.16"'), 'si-1.7.16 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);
@@ -153,16 +153,25 @@ assert(waits.length >= 3, 'first-click nav needs at least three settle rounds, g
 assert(waits.every((w, i) => i === 0 || w > waits[i - 1]), 'settle waits must escalate: ' + settleWaits[1]);
 assert(si.includes('return attempt(round + 1);') && si.includes('round >= settleWaits.length'), 'settle recursion must be bounded by the wait table');
 
-/* si-1.7.15: the post-save verification read-back can race the ingest chain
-   (store settles to the newest stamp within ms). ONE bounded settle-recheck
-   for the race-class refusals only — every other failure still throws
-   immediately, and a second failure refuses honestly. */
+/* si-1.7.15→16: the post-save verification read-back can trail the async
+   save pipeline (measured live: the request-bound fresh stamp appeared ~20s
+   after the gate's first read while the store converged correctly).
+   ESCALATING bounded settle-rechecks close that window for the race-class
+   refusals only. This can never false-pass: the verdict requires the stamp
+   bound to THIS operation's requestId, which exists only if this exact save
+   persisted. Non-race failures still throw immediately. */
 assert(si.includes('function verifyStored()'), 'post-save verification helper missing');
-const settleRecheck = si.match(/catch \(firstErr\) \{[\s\S]{0,600}?\.then\(verifyStored\);/);
-assert(settleRecheck, 'the bounded settle-recheck is missing');
-assert(/save-unproven\|freshness-unproven\|save-request-unproven\|persistence-unproven/.test(settleRecheck[0]),
+const settleTable = si.match(/var verifySettleWaits = \[([0-9, ]+)\];/);
+assert(settleTable, 'escalating verify settle waits missing');
+const vWaits = settleTable[1].split(',').map(s => Number(s.trim()));
+assert(vWaits.length >= 4 && vWaits[vWaits.length - 1] >= 20000,
+  'the settle series must reach the measured ~20s pipeline lag: ' + settleTable[1]);
+assert(vWaits.every((w, i) => i === 0 || w > vWaits[i - 1]), 'verify settle waits must escalate');
+const settleBody = si.match(/function verifyWithSettle\(round\) \{[\s\S]*?verifyWithSettle\(round \+ 1\);[\s\S]*?\}/);
+assert(settleBody, 'the bounded settle-recheck recursion is missing');
+assert(/save-unproven\|freshness-unproven\|save-request-unproven\|persistence-unproven/.test(settleBody[0]),
   'the settle-recheck must cover exactly the read-back race class');
-assert(/if \(!racy\) throw firstErr;/.test(settleRecheck[0]), 'non-race failures must still throw immediately');
-assert(/setTimeout\(resSettle, 150\)/.test(settleRecheck[0]), 'the recheck must be one bounded settle, not a poll loop');
+assert(/if \(!racy \|\| round >= verifySettleWaits\.length\) return Promise\.reject\(vErr\);/.test(settleBody[0]),
+  'non-race failures must reject immediately and the recursion must be bounded');
 
 console.log('PASS ext-update hint + duplicate detection: receipt-gate failures on an outdated MLS Assist name the installed vs published version; TWO answering copies of MLS Assist are called out with the chrome://extensions fix (one answer stays silent, foreign traffic ignored); sign-in and wrong-day failures never blame the extension; version compare is numeric and fail-safe');

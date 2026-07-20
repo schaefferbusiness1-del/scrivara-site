@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.15";
+  var VERSION = "si-1.7.16";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -1834,20 +1834,25 @@
         var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(storedCoverage.cards&&storedCoverage.cards[k]&&storedCoverage.cards[k].populated?1:0);},0);
         return {chartCoverage:coverage,profileCoverage:storedCoverage,clinicalFieldCount:clinicalFieldCount,dobVerified:true};
       }
-      /* si-1.7.15 (live 2026-07-20 night): the instant read-back can race the
-         post-save ingest chain — the store settles to the NEWEST stamp within
-         milliseconds (proof-guard), but a read taken mid-clobber sees the
-         previous pull's coverage and refuses freshness even though the save
-         landed (verified live: "failed" rows held fresh request-bound stamps
-         seconds later). ONE bounded settle-recheck converts that race into a
-         deterministic verdict; a genuinely stale or dropped save still fails
-         both checks and refuses honestly. */
-      try { return verifyStored(); }
-      catch (firstErr) {
-        var racy = /save-unproven|freshness-unproven|save-request-unproven|persistence-unproven/.test(String(firstErr && firstErr.message || ""));
-        if (!racy) throw firstErr;
-        return new Promise(function (resSettle) { setTimeout(resSettle, 150); }).then(verifyStored);
+      /* si-1.7.15/16 (live 2026-07-20 night): the read-back can trail the
+         post-save pipeline — under evening load the request-bound fresh stamp
+         was measured becoming visible ~20s after the gate's first read while
+         the store always converged to the newest verified data. Escalating
+         bounded settle-rechecks close that window. This can NEVER false-pass:
+         the verdict requires storedCoverage.saveRequestId === THIS operation's
+         requestId, a stamp that exists only if this exact save persisted; a
+         dropped or stale save keeps failing every recheck and refuses
+         honestly. Non-race failures still throw immediately. */
+      var verifySettleWaits = [150, 1000, 5000, 25000];
+      function verifyWithSettle(round) {
+        try { var v = verifyStored(); return Promise.resolve(v); }
+        catch (vErr) {
+          var racy = /save-unproven|freshness-unproven|save-request-unproven|persistence-unproven/.test(String(vErr && vErr.message || ""));
+          if (!racy || round >= verifySettleWaits.length) return Promise.reject(vErr);
+          return new Promise(function (resSettle) { setTimeout(resSettle, verifySettleWaits[round]); }).then(function () { return verifyWithSettle(round + 1); });
+        }
       }
+      return verifyWithSettle(0);
     });
   }
   function saveVerifiedVisits(target, r) {
