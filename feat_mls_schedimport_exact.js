@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.14";
+  var VERSION = "si-1.7.15";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -1798,40 +1798,56 @@
         throw echoErr;
       }
       if (!requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
-      var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
-      if(!storedCoverage||storedCoverage.complete!==true||storedCoverage.exactIdentityVerified!==true) throw new Error("clinical-field-save-unproven");
-      /* A sink reporting success is not proof that this operation replaced the
-         six-card profile. Without a current timestamp, yesterday's exact but
-         stale receipt can mask a dropped save and make the patient green. The
-         chart sink stamps capturedAt locally after this read begins, so require
-         it to fall inside this exact operation before accepting the cards. */
-      var profileCapturedRaw=storedCoverage.capturedAt;
-      var profileCapturedAt=Number(profileCapturedRaw||0);
-      if(!isFinite(profileCapturedAt)||profileCapturedAt<=0) profileCapturedAt=Date.parse(String(profileCapturedRaw||""))||0;
-      if(!profileCapturedAt||profileCapturedAt<Number(readStartedAt||0)||profileCapturedAt>Date.now()+5000) throw new Error("six-card-profile-freshness-unproven");
-      /* Timestamp freshness alone is not persistence proof: a failed sink could
-         stamp a new receipt while leaving yesterday's clinical fields in place.
-         Bind the receipt to this exact operation and compare the canonical
-         Athena-owned snapshot actually stored for the patient with the snapshot
-         derived from this operation's parsed chart. */
-      if(String(storedCoverage.saveRequestId||"")!==requestId) throw new Error("six-card-save-request-unproven");
-      var storedPatient=patientById(target.patientId);
-      /* A chart may be safely identity-matched by MRN while the local DOB is
-         still blank. That is not a complete patient import: the visible card,
-         future exact-patient reads, and op-note binding all depend on the DOB
-         surviving this operation. Require the requested, observed, and stored
-         DOBs to be present and identical before the profile can turn green. */
-      var readIdentity=rd&&rd.identity||{};
-      var targetDobProof=validDobProof(target&&target.dob||"");
-      var observedDobProof=validDobProof(readIdentity.dob||rd&&rd.chartDob||"");
-      var storedDobProof=validDobProof(storedPatient&&storedPatient.dob||"");
-      if(!targetDobProof||!observedDobProof||!storedDobProof||targetDobProof!==observedDobProof||storedDobProof!==targetDobProof) throw new Error("patient-dob-persistence-unproven");
-      var expectedSnapshot=safe(function(){return isFn(window._athenaChartSnapshotFromChart)?window._athenaChartSnapshotFromChart(chart):null;},null);
-      var expectedProof=safe(function(){return expectedSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(expectedSnapshot):"";},"");
-      var storedProof=safe(function(){return storedPatient&&storedPatient.athenaChartSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(storedPatient.athenaChartSnapshot):"";},"");
-      if(!expectedProof||!storedProof||storedProof!==expectedProof) throw new Error("six-card-persistence-unproven");
-      var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(storedCoverage.cards&&storedCoverage.cards[k]&&storedCoverage.cards[k].populated?1:0);},0);
-      return {chartCoverage:coverage,profileCoverage:storedCoverage,clinicalFieldCount:clinicalFieldCount,dobVerified:true};
+      function verifyStored(){
+        var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
+        if(!storedCoverage||storedCoverage.complete!==true||storedCoverage.exactIdentityVerified!==true) throw new Error("clinical-field-save-unproven");
+        /* A sink reporting success is not proof that this operation replaced the
+           six-card profile. Without a current timestamp, yesterday's exact but
+           stale receipt can mask a dropped save and make the patient green. The
+           chart sink stamps capturedAt locally after this read begins, so require
+           it to fall inside this exact operation before accepting the cards. */
+        var profileCapturedRaw=storedCoverage.capturedAt;
+        var profileCapturedAt=Number(profileCapturedRaw||0);
+        if(!isFinite(profileCapturedAt)||profileCapturedAt<=0) profileCapturedAt=Date.parse(String(profileCapturedRaw||""))||0;
+        if(!profileCapturedAt||profileCapturedAt<Number(readStartedAt||0)||profileCapturedAt>Date.now()+5000) throw new Error("six-card-profile-freshness-unproven");
+        /* Timestamp freshness alone is not persistence proof: a failed sink could
+           stamp a new receipt while leaving yesterday's clinical fields in place.
+           Bind the receipt to this exact operation and compare the canonical
+           Athena-owned snapshot actually stored for the patient with the snapshot
+           derived from this operation's parsed chart. */
+        if(String(storedCoverage.saveRequestId||"")!==requestId) throw new Error("six-card-save-request-unproven");
+        var storedPatient=patientById(target.patientId);
+        /* A chart may be safely identity-matched by MRN while the local DOB is
+           still blank. That is not a complete patient import: the visible card,
+           future exact-patient reads, and op-note binding all depend on the DOB
+           surviving this operation. Require the requested, observed, and stored
+           DOBs to be present and identical before the profile can turn green. */
+        var readIdentity=rd&&rd.identity||{};
+        var targetDobProof=validDobProof(target&&target.dob||"");
+        var observedDobProof=validDobProof(readIdentity.dob||rd&&rd.chartDob||"");
+        var storedDobProof=validDobProof(storedPatient&&storedPatient.dob||"");
+        if(!targetDobProof||!observedDobProof||!storedDobProof||targetDobProof!==observedDobProof||storedDobProof!==targetDobProof) throw new Error("patient-dob-persistence-unproven");
+        var expectedSnapshot=safe(function(){return isFn(window._athenaChartSnapshotFromChart)?window._athenaChartSnapshotFromChart(chart):null;},null);
+        var expectedProof=safe(function(){return expectedSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(expectedSnapshot):"";},"");
+        var storedProof=safe(function(){return storedPatient&&storedPatient.athenaChartSnapshot&&isFn(window._athenaChartSnapshotProof)?window._athenaChartSnapshotProof(storedPatient.athenaChartSnapshot):"";},"");
+        if(!expectedProof||!storedProof||storedProof!==expectedProof) throw new Error("six-card-persistence-unproven");
+        var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(storedCoverage.cards&&storedCoverage.cards[k]&&storedCoverage.cards[k].populated?1:0);},0);
+        return {chartCoverage:coverage,profileCoverage:storedCoverage,clinicalFieldCount:clinicalFieldCount,dobVerified:true};
+      }
+      /* si-1.7.15 (live 2026-07-20 night): the instant read-back can race the
+         post-save ingest chain — the store settles to the NEWEST stamp within
+         milliseconds (proof-guard), but a read taken mid-clobber sees the
+         previous pull's coverage and refuses freshness even though the save
+         landed (verified live: "failed" rows held fresh request-bound stamps
+         seconds later). ONE bounded settle-recheck converts that race into a
+         deterministic verdict; a genuinely stale or dropped save still fails
+         both checks and refuses honestly. */
+      try { return verifyStored(); }
+      catch (firstErr) {
+        var racy = /save-unproven|freshness-unproven|save-request-unproven|persistence-unproven/.test(String(firstErr && firstErr.message || ""));
+        if (!racy) throw firstErr;
+        return new Promise(function (resSettle) { setTimeout(resSettle, 150); }).then(verifyStored);
+      }
     });
   }
   function saveVerifiedVisits(target, r) {
