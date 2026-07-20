@@ -6154,10 +6154,19 @@ function upsertPatient(p){
   const arr=getPatients(); const i=arr.findIndex(x=>x.id===p.id);
   p.updated=Date.now();
   if(i>=0){
-    /* Athena-owned proof fields survive a stale-reference upsert (see the
-       production upsertPatient for the live 2026-07-20 clobber this prevents). */
+    /* Athena-owned proof fields: the NEWEST coverage.capturedAt wins as a unit
+       (see the production upsertPatient for the live 2026-07-20 clobber this
+       prevents — including stale objects carrying an EARLIER pass's coverage). */
     const __prev=arr[i];
-    if(__prev){for(const __f of ['athenaProfileCoverage','athenaChartSnapshot','athenaChartSummaryBlock','athenaChartImportedAt']){ if(p[__f]==null&&__prev[__f]!=null)p[__f]=__prev[__f]; }}
+    if(__prev){
+      const __covAt=c=>{ if(!c||!c.capturedAt)return 0; const n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; };
+      if(__covAt(__prev.athenaProfileCoverage)>__covAt(p.athenaProfileCoverage)){
+        p.athenaProfileCoverage=__prev.athenaProfileCoverage;
+        if(__prev.athenaChartSnapshot!=null)p.athenaChartSnapshot=__prev.athenaChartSnapshot;
+        if(__prev.athenaChartSummaryBlock!=null)p.athenaChartSummaryBlock=__prev.athenaChartSummaryBlock;
+        if(__prev.athenaChartImportedAt!=null)p.athenaChartImportedAt=__prev.athenaChartImportedAt;
+      }
+    }
     arr[i]=p;
   } else { p.created=Date.now(); arr.unshift(p); }
   savePatients(arr);
@@ -22797,6 +22806,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b446';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b447';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

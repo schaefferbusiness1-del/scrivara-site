@@ -34,8 +34,9 @@ const PROOF_FIELDS = ['athenaProfileCoverage', 'athenaChartSnapshot', 'athenaCha
 function runScenario(file) {
   const fnSrc = extractUpsert(file);
   for (const f of PROOF_FIELDS) {
-    assert(fnSrc.includes("'" + f + "'"), file + ': upsertPatient does not carry ' + f + ' forward');
+    assert(fnSrc.includes(f), file + ': upsertPatient does not guard ' + f);
   }
+  assert(/capturedAt/.test(fnSrc), file + ': the guard must compare coverage capturedAt (newest wins), not mere presence');
 
   const stored = [];
   const ctx = vm.createContext({
@@ -82,7 +83,22 @@ function runScenario(file) {
   assert.strictEqual(row.athenaProfileCoverage.saveRequestId, 'req-2', file + ': fresh coverage must win');
   assert.strictEqual(row.athenaChartSnapshot.problems.length, 2, file + ': fresh snapshot must win');
 
-  // 3. new-patient insert unchanged
+  // 3. a stale object carrying an EARLIER pass's coverage must NOT roll back
+  //    the newer stamp (live b447 finding: null-only carry-forward let old
+  //    coverage overwrite fresh, failing six-card-profile-freshness-unproven)
+  ctx.upsertPatient({
+    id: 'pX', name: 'Test Patient',
+    athenaProfileCoverage: { complete: true, exactIdentityVerified: true, patientId: 'pX', capturedAt: '2026-07-20T12:00:00Z', saveRequestId: 'req-0-older' },
+    athenaChartSnapshot: { capturedAt: '2026-07-20T12:00:00Z', problems: ['stale'] },
+    athenaChartSummaryBlock: '— stale block —',
+    athenaChartImportedAt: '2026-07-20T12:00:00Z'
+  });
+  row = stored.find(x => x.id === 'pX');
+  assert.strictEqual(row.athenaProfileCoverage.saveRequestId, 'req-2', file + ': OLDER coverage rolled back the newer stamp');
+  assert.strictEqual(row.athenaChartSnapshot.problems.length, 2, file + ': OLDER snapshot rolled back the newer one');
+  assert.strictEqual(row.athenaChartImportedAt, '2026-07-20T17:00:00Z', file + ': OLDER import stamp rolled back the newer one');
+
+  // 4. new-patient insert unchanged
   ctx.upsertPatient({ id: 'pNew', name: 'Someone Else' });
   assert(stored.some(x => x.id === 'pNew' && x.created), file + ': new-patient path broken');
 }

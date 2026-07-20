@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b446"></script>
+<script src="public-preview-policy.js?v=b447"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -7064,14 +7064,26 @@ function upsertPatient(p){
   if(i>=0){
     /* Athena-owned proof fields survive a stale-reference upsert: a caller that
        materialized its patient object BEFORE the chart save (post-save ingest,
-       organize, dedup sweeps) must not silently erase the just-verified
-       coverage/snapshot when it writes that older object back. Live 2026-07-20:
-       11-14 of 16 day-pull histories lost athenaProfileCoverage to exactly this
-       clobber, failing every pull with clinical-field-save-unproven. The only
-       legitimate erasure path (purgeAthenaImportedPatients) removes whole rows
-       via savePatients, never a field via upsert. */
+       organize, dedup sweeps) must not silently erase or ROLL BACK the
+       just-verified coverage/snapshot when it writes that older object back.
+       Live 2026-07-20: 11-14 of 16 day-pull histories lost
+       athenaProfileCoverage to exactly this clobber; after a null-only
+       carry-forward, stale objects that carried an EARLIER pass's coverage
+       still overwrote the fresh stamp and failed the freshness gate. The four
+       fields are stamped together by _savePatientChart, so they move as one
+       unit and the NEWEST coverage.capturedAt wins. The only legitimate
+       erasure path (purgeAthenaImportedPatients) removes whole rows via
+       savePatients, never fields via upsert. */
     const __prev=arr[i];
-    if(__prev){for(const __f of ['athenaProfileCoverage','athenaChartSnapshot','athenaChartSummaryBlock','athenaChartImportedAt']){ if(p[__f]==null&&__prev[__f]!=null)p[__f]=__prev[__f]; }}
+    if(__prev){
+      const __covAt=c=>{ if(!c||!c.capturedAt)return 0; const n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; };
+      if(__covAt(__prev.athenaProfileCoverage)>__covAt(p.athenaProfileCoverage)){
+        p.athenaProfileCoverage=__prev.athenaProfileCoverage;
+        if(__prev.athenaChartSnapshot!=null)p.athenaChartSnapshot=__prev.athenaChartSnapshot;
+        if(__prev.athenaChartSummaryBlock!=null)p.athenaChartSummaryBlock=__prev.athenaChartSummaryBlock;
+        if(__prev.athenaChartImportedAt!=null)p.athenaChartImportedAt=__prev.athenaChartImportedAt;
+      }
+    }
     arr[i]=p;
   } else { p.created=Date.now(); arr.unshift(p); }
   if(__batch&&__batch.depth>0){
@@ -25678,7 +25690,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b446"></script>
+<script src="public-preview-runtime.js?v=b447"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25949,7 +25961,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b446';
+  window.__MLS_AV='b447';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
