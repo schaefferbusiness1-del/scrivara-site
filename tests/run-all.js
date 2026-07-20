@@ -160,6 +160,7 @@ const tests = [
   'writeflow-athena-appointment-id-resolution.test.js',
   'patient-wipe-guard-hatch.test.js',
   'visit-draft-patient-identity-runtime.test.js',
+  'visit-history-provenance-chip.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',

@@ -6,13 +6,13 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v29';
+const CACHE = 'mls-v30';
 
 const SHELL = [
   '/ScribeFlow.html',
   '/clinical-state-purge.js?v=20260718csp1',
-  '/public-preview-policy.js?v=b441',
-  '/public-preview-runtime.js?v=b441',
+  '/public-preview-policy.js?v=b442',
+  '/public-preview-runtime.js?v=b442',
   '/index.html',
   '/manifest.webmanifest',
   '/icon-192.png',

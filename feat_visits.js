@@ -1050,6 +1050,25 @@
     return s;
   }
 
+  /* Honest completeness marker for pulled rows. Three trust tiers exist in the
+     store (indexOnly shell / unflagged copied excerpt / fullDetail+bodyComplete
+     verified body) but the timeline used to render them identically, silently
+     presenting an index row as if it were the whole visit. Mark what is MISSING
+     only; clinician-authored MLS visits and complete verified bodies stay
+     unmarked. */
+  function visitProvenance(v) {
+    if (!v || !/athena|legacy|grab|pullrec/i.test(S(v.source))) return null;
+    if (v.indexOnly === true) return {
+      chip: 'index only',
+      detail: 'Only the schedule/chart index row was pulled for this visit — the full visit note has not been retrieved. Re-pull this day with visit details ON to fetch it.'
+    };
+    if (!(v.fullDetail === true && v.bodyComplete === true && trim(v.raw))) return {
+      chip: 'partial',
+      detail: 'A copied excerpt was pulled for this visit, not the complete verified note. Re-pull this day with visit details ON to fetch the full note.'
+    };
+    return null;
+  }
+
   function visitCard(p, v) {
     var card = document.createElement('div'); card.className = 'mlsvh-v'; card.dataset.vid = v.id;
     var head = document.createElement('div'); head.className = 'mlsvh-vh';
@@ -1057,11 +1076,23 @@
     var type = document.createElement('span'); type.className = 'mlsvh-type'; type.textContent = v.type || (v.aiSummary ? v.aiSummary.split('\n')[0].slice(0, 80) : 'Visit');
     head.appendChild(date); head.appendChild(type);
     head.appendChild(codePills(v));
+    var prov = visitProvenance(v);
+    if (prov) {
+      var pv = document.createElement('span'); pv.className = 'mlsvh-pill mlsvh-prov';
+      pv.style.background = '#fff7e6'; pv.style.color = '#8a5a00';
+      pv.textContent = prov.chip; pv.title = prov.detail;
+      head.appendChild(pv);
+    }
     var chev = document.createElement('span'); chev.className = 'mlsvh-chev'; chev.textContent = '▶'; head.appendChild(chev);
     head.addEventListener('click', function () { card.classList.toggle('open'); });
     card.appendChild(head);
 
     var body = document.createElement('div'); body.className = 'mlsvh-body';
+    if (prov) {
+      var pvLine = document.createElement('div'); pvLine.className = 'mlsvh-status mlsvh-prov-line';
+      pvLine.textContent = prov.detail;
+      body.appendChild(pvLine);
+    }
     var sum = document.createElement('div'); sum.className = 'mlsvh-sum';
     sum.textContent = v.aiSummary || '';
     body.appendChild(sum);
