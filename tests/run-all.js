@@ -163,6 +163,8 @@ const tests = [
   'upsert-athena-proof-carryforward.test.js',
   'writeflow-duplicate-click-guard.test.js',
   'coding-suggestion-separation-contract.test.js',
+  'templates-workspace-contract.test.js',
+  'settings-workspace-contract.test.js',
   'pricing-billing-truth.test.js',
   'visit-binding-notice-persistence.test.js',
   'writeflow-auto-open-runtime.test.js',

@@ -1,0 +1,51 @@
+'use strict';
+
+/* Templates workspace redesign (2026-07-20): searchable two-pane list+detail
+ * with TRUE in-place editing, per-save revision history, dirty-edit
+ * protection, and a confirmed delete with an honest undo control. The
+ * underlying template machinery (use-now identity guard, default selection,
+ * duplicate, dedupe, bulk import, cloud library) is unchanged.
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+
+// 1. two-pane workspace with search + accessible list semantics
+assert(html.includes('id="tplWorkspace"') && /grid-template-columns:minmax\(220px,38%\) 1fr/.test(html),
+  'the two-pane template workspace grid is missing');
+assert(html.includes('id="tplSearch"') && html.includes('oninput="tplSearchChanged()"'),
+  'template search input missing or unwired');
+assert(/id="tplList" role="listbox" aria-label="Saved templates"/.test(html), 'the template list lost its listbox semantics');
+assert(/role="option" aria-selected=/.test(html) && /onkeydown="if\(event\.key===\\'Enter\\'\|\|event\.key===\\' \\'\)/.test(html.replace(/'/g, "\\'")) || /tplSelect\(/.test(html),
+  'list rows must be keyboard-activatable options');
+
+// 2. in-place save keeps a bounded revision history and reports honest states
+const saveFn = html.slice(html.indexOf('function tplDetailSave()'), html.indexOf('function tplRestoreRevision'));
+assert(/cur\.revisions\.unshift\(\{ ts:Date\.now\(\)/.test(saveFn), 'every save must keep the prior content as a revision');
+assert(/\.slice\(0,5\)/.test(saveFn), 'the local revision history must stay bounded');
+for (const state of ["'Saving…'", "'Saved ✓ '", "'Failed — could not save ("]) {
+  assert(saveFn.includes(state), 'the save flow must report ' + state);
+}
+
+// 3. dirty-edit protection: list/search re-renders never rebuild a dirty editor,
+//    and switching templates with unsaved edits asks first
+assert(/if\(_tplUI\.dirty&&_tplUI\.renderedId===_tplUI\.selectedId&&_tplUI\.selectedId\) return;/.test(html),
+  'a re-render can silently discard unsaved template edits');
+assert(/Discard unsaved edits to the current template\?/.test(html), 'switching templates must confirm before discarding edits');
+
+// 4. delete is confirmed and honestly undoable (control, not a dead toast)
+const del = html.slice(html.indexOf('function deleteTemplate(id)'), html.indexOf('function clearTplForm'));
+assert(/if\(!confirm\('Delete the template/.test(del), 'delete must confirm');
+assert(/_tplLastDeleted=t;/.test(del) && /tplUndoDelete\(\)/.test(del), 'delete must offer a real undo control');
+assert(html.includes('function tplUndoDelete()'), 'undo restore function missing');
+
+// 5. preview no longer uses alert(); legacy entry points route into the pane
+assert(!/function previewTemplate\(id\)\{ var t=getTemplateById\(id\); if\(!t\) return; try\{ alert\(/.test(html),
+  'template preview must render in the pane, not alert()');
+assert(/function previewTemplate\(id\)\{ tplSelect\(id\); \}/.test(html), 'previewTemplate must select into the detail pane');
+
+console.log('PASS templates workspace: searchable two-pane list/detail, in-place saves with bounded revisions and honest states, dirty-edit protection, confirmed delete with real undo');

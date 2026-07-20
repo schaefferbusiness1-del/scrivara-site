@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b456"></script>
+<script src="public-preview-policy.js?v=b457"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -3188,6 +3188,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- Settings tab bar (MLS — additive). Built at runtime from the .set-section blocks below. -->
     <div id="settingsTabBar" role="tablist" aria-label="Settings sections"></div>
+    <div class="field" style="margin:8px 0 10px">
+      <input type="text" id="settingsSearch" placeholder="🔎 Search settings…" aria-label="Search settings" oninput="settingsSearchChanged()" style="width:100%">
+    </div>
 
     <!-- ============ SECTION: Account & access (MLS — additive heading wrapper) ============ -->
     <div class="set-section">
@@ -3339,6 +3342,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- ============ SECTION: Display (groups existing appearance toggles) ============ -->
     <div class="set-section"><p class="set-head">🎨 Display</p>
     <p class="set-desc">Appearance and workflow preferences for this device.</p>
+
+    <div class="field">
+      <label for="navLayoutSel">Navigation layout <span style="font-weight:400;color:var(--muted)">(this device)</span></label>
+      <select class="sf-select" id="navLayoutSel" onchange="setNavLayout(this.value)">
+        <option value="top">Top bar (default)</option>
+        <option value="left">Left sidebar</option>
+      </select>
+      <p class="note">Left sidebar adds a collapse button; when collapsed, a slim icon rail stays on the left edge — always clickable, keyboard accessible, and it never covers your work.</p>
+      <span id="navLayoutStatus" role="status" style="font-size:12px;color:var(--muted)"></span>
+    </div>
 
     <!-- QoL: appearance + workflow preferences (MLS) -->
     <div class="field" style="padding-top:0;margin-top:0">
@@ -3729,7 +3742,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
 <!-- TEMPLATES MODAL (optional output-formatting templates) -->
 <div class="modal-bg" id="templatesModal">
-  <div class="modal" style="max-width:720px">
+  <div class="modal" style="max-width:960px">
     <button class="modal-x" onclick="closeTemplates()">×</button>
     <h3>📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></h3>
     <p class="note">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. Off by default — when off, generation is unchanged.</p>
@@ -3790,7 +3803,15 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;padding:6px 11px" onclick="fixTemplateNames()" title="Rename your saved templates by NOTE TYPE (the procedure) instead of patient name — fixes op notes you already uploaded">🏷 Rename by note type</button>
       <button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="dedupeSavedTemplates(true)" title="Remove duplicate templates (same name + same text)">🧹 Remove duplicates</button>
     </div>
-    <div id="tplList"></div>
+    <div class="field" style="margin:0 0 8px">
+      <input type="text" id="tplSearch" placeholder="🔎 Search templates by name, keyword, or content…" aria-label="Search templates" oninput="tplSearchChanged()" style="width:100%">
+    </div>
+    <div id="tplWorkspace" style="display:grid;grid-template-columns:minmax(220px,38%) 1fr;gap:12px;align-items:start">
+      <div id="tplList" role="listbox" aria-label="Saved templates" style="max-height:420px;overflow-y:auto"></div>
+      <div id="tplDetail" style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:200px;position:sticky;top:0">
+        <p style="color:var(--muted);font-size:13px;margin:0">Select a template on the left to preview and edit it here.</p>
+      </div>
+    </div>
 
     <div class="row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeTemplates()" style="flex:1">Close</button>
@@ -6439,8 +6460,9 @@ function saveSettings(){
   document.getElementById('keyOk').className=k?'keyok show':'keyok';
   toast('Settings saved on this device.','ok');
   // MLS additive — cloud-sync preferences so they follow the account (hosted
-  // mode only; fire-and-forget; silent on success or failure).
-  try{ syncPrefsToServer(); }catch(e){}
+  // mode only; fire-and-forget; on failure the device save still holds, so the
+  // explicit Save button reports the sync miss honestly instead of staying silent).
+  try{ syncPrefsToServer({notify:true}); }catch(e){}
   setTimeout(closeSettings,500);
 }
 
@@ -6457,7 +6479,8 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
   'providerCred','npi','clinicAddress','clinicPhone','googleBusinessUrl','defaultFormat','noteStyle',
   'featMME','featSurgical','featUR','featCost',
   'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1'];
-function syncPrefsToServer(){
+function syncPrefsToServer(opts){
+  opts=opts||{};
   if(!backendMode()||!bkToken()) return;   // hosted mode only
   try{
     const prefs={};
@@ -6469,7 +6492,11 @@ function syncPrefsToServer(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({prefs:prefs})
-    }).catch(()=>{ /* offline / transient — next save retries */ });
+    }).then(r=>{
+      if(!r.ok&&opts.notify) toast('Saved on this device — cloud sync failed ('+r.status+'); it will retry on your next save.','warn');
+    }).catch(()=>{ /* offline / transient — next save retries */
+      if(opts.notify) toast('Saved on this device — cloud sync unreachable; it will retry on your next save.','warn');
+    });
   }catch(e){ /* never block settings save */ }
 }
 async function loadPrefsFromServer(opts){
@@ -12533,28 +12560,213 @@ function renderTemplateActiveSelect(){
   // keep storage consistent if the active template was deleted
   if(sel.value!==cur) localStorage.setItem(uns('templateActive'),sel.value);
 }
+/* Templates workspace (redesign 2026-07-20): searchable list + one detail
+   pane with TRUE in-place editing, a small local revision history, and a
+   confirmed delete with undo. Every underlying behavior (use-now with the
+   identity binding guard, default selection, duplicate, dedupe, bulk import,
+   cloud library sync) is unchanged — this is a presentation upgrade. */
+var _tplUI={ selectedId:'', query:'', dirty:false, renderedId:'' };
+var _tplLastDeleted=null;
+function tplSearchChanged(){ var q=document.getElementById('tplSearch'); _tplUI.query=String(q&&q.value||'').toLowerCase().trim(); renderTemplateList(); }
+function _tplMatches(t){
+  if(!_tplUI.query) return true;
+  var hay=(String(t.name||'')+' '+((t.keywords||[]).join(' '))+' '+String(t.text||'').slice(0,4000)).toLowerCase();
+  return _tplUI.query.split(/\s+/).every(function(w){ return hay.indexOf(w)>=0; });
+}
 function renderTemplateList(){
   const box=document.getElementById('tplList'); if(!box) return;
   try{ dedupeSavedTemplates(true); }catch(e){}   // auto-remove duplicate templates (announces once)
   const list=getTemplates();
-  if(!list.length){ box.innerHTML='<p style="color:var(--muted);font-size:13px">No templates yet. Add one above.</p>'; return; }
+  if(!list.length){ box.innerHTML='<p style="color:var(--muted);font-size:13px">No templates yet. Add one above, or drop files into the import card.</p>'; try{ renderTplDetail(); }catch(e){} return; }
   const activeId=getActiveTemplateId();
-  box.innerHTML=list.map(t=>{
-    const kw=(t.keywords&&t.keywords.length)?'<div style="font-size:12px;color:var(--muted)">Keywords: '+esc(t.keywords.join(', '))+'</div>':'';
-    const len=(t.text||'').length;
-    const isActive=t.id===activeId;
-    return '<div style="border:1px solid '+(isActive?'#EAF1EE':'var(--line)')+';border-radius:8px;padding:8px 10px;margin-bottom:8px;background:'+(isActive?'#f4f9ff':'transparent')+'">'+
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-      '<div style="flex:1;min-width:160px"><strong>'+esc(t.name)+'</strong> '+(isActive?'<span style="font-size:10.5px;color:#127a55;font-weight:700">● ACTIVE</span> ':'')+'<span style="font-size:11px;color:var(--muted)">('+len+' chars)</span>'+kw+'</div>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="useTemplateNow(\''+esc(t.id)+'\')" title="Reformat the note you have open right now to match this template">⚡ Use on current note</button>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="setActiveTemplateId(\''+esc(t.id)+'\')" title="Make this the default template for new notes">'+(isActive?'✓ Default':'Set default')+'</button>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="previewTemplate(\''+esc(t.id)+'\')">👁 Preview</button>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="editTemplate(\''+esc(t.id)+'\')">✏️ Edit</button>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="duplicateTemplate(\''+esc(t.id)+'\')">⧉ Duplicate</button>'+
-      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px;color:#a12c2c" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑</button>'+
-      '</div></div>';
+  const shown=list.filter(_tplMatches);
+  if(_tplUI.selectedId&&!list.some(function(t){return t.id===_tplUI.selectedId;})) _tplUI.selectedId='';
+  box.innerHTML=(shown.length?'':'<p style="color:var(--muted);font-size:13px">No templates match “'+esc(_tplUI.query)+'”.</p>')+shown.map(t=>{
+    const isActive=t.id===activeId, isSel=t.id===_tplUI.selectedId;
+    const kw=(t.keywords&&t.keywords.length)?'<div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(t.keywords.join(', '))+'</div>':'';
+    const revs=(t.revisions&&t.revisions.length)?' · '+t.revisions.length+' rev'+(t.revisions.length===1?'':'s'):'';
+    return '<div role="option" aria-selected="'+(isSel?'true':'false')+'" tabindex="0" onclick="tplSelect(\''+esc(t.id)+'\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();tplSelect(\''+esc(t.id)+'\');}"'+
+      ' style="border:1px solid '+(isSel?'#2E6A4B':'var(--line)')+';border-radius:8px;padding:8px 10px;margin-bottom:6px;background:'+(isSel?'#f2f8f4':(isActive?'#f7fbff':'transparent'))+';cursor:pointer">'+
+      '<div style="display:flex;align-items:center;gap:6px"><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.name)+'</strong>'+
+      (isActive?'<span style="font-size:10px;color:#127a55;font-weight:700;white-space:nowrap">● DEFAULT</span>':'')+'</div>'+
+      kw+'<div style="font-size:11px;color:var(--muted)">'+(t.text||'').length+' chars'+revs+'</div>'+
+      '</div>';
   }).join('');
+  try{ renderTplDetail(); }catch(e){}
 }
+function tplSelect(id){
+  if(_tplUI.dirty&&_tplUI.selectedId&&_tplUI.selectedId!==id&&!confirm('Discard unsaved edits to the current template?')) return;
+  _tplUI.selectedId=id; _tplUI.dirty=false; _tplUI.renderedId=''; renderTemplateList();
+}
+function renderTplDetail(){
+  var pane=document.getElementById('tplDetail'); if(!pane) return;
+  /* never rebuild the editor mid-edit: a search keystroke or list refresh
+     must not discard the doctor's unsaved changes */
+  if(_tplUI.dirty&&_tplUI.renderedId===_tplUI.selectedId&&_tplUI.selectedId) return;
+  _tplUI.renderedId=_tplUI.selectedId;
+  var t=getTemplateById(_tplUI.selectedId);
+  if(!t){ pane.innerHTML='<p style="color:var(--muted);font-size:13px;margin:0">Select a template on the left to preview and edit it here.</p>'; return; }
+  var isActive=t.id===getActiveTemplateId();
+  var revOpts=(t.revisions||[]).map(function(r,i){ return '<option value="'+i+'">'+new Date(r.ts).toLocaleString()+' — '+esc(String(r.name||'').slice(0,30))+' ('+String(r.text||'').length+' chars)</option>'; }).join('');
+  pane.innerHTML=
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetName">Name</label><input type="text" id="tplDetName" value="'+esc(t.name||'')+'" oninput="tplDetailDirty()"></div>'+
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords</label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
+    '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
+    '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">Saved ✓</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      '<button class="btn-green" style="font-size:12.5px;padding:7px 12px" onclick="tplDetailSave()">💾 Save changes</button>'+
+      '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="useTemplateNow(\''+esc(t.id)+'\')" title="Reformat the note you have open right now to match this template">⚡ Use on current note</button>'+
+      '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="setActiveTemplateId(\''+esc(t.id)+'\')">'+(isActive?'✓ Default':'Set default')+'</button>'+
+      '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="duplicateTemplate(\''+esc(t.id)+'\')">⧉ Duplicate</button>'+
+      '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px;color:#a12c2c" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑 Delete…</button>'+
+    '</div>'+
+    ((t.revisions&&t.revisions.length)?'<div class="field" style="margin:10px 0 0"><label for="tplDetRev">Restore an earlier version (kept automatically on every save)</label><div style="display:flex;gap:6px"><select id="tplDetRev" class="sf-select" style="flex:1">'+revOpts+'</select><button class="btn-ghost" style="font-size:12.5px" onclick="tplRestoreRevision(\''+esc(t.id)+'\')">↺ Restore</button></div></div>':'');
+}
+function tplDetailDirty(){ _tplUI.dirty=true; var s=document.getElementById('tplDetStatus'); if(s){ s.textContent='Edited — not saved yet'; s.style.color='#8A5A00'; } }
+function tplDetailSave(){
+  var t=getTemplateById(_tplUI.selectedId); if(!t){ toast('Select a template first.','err'); return; }
+  var s=document.getElementById('tplDetStatus'); if(s){ s.textContent='Saving…'; s.style.color='var(--muted)'; }
+  var list=getTemplates(); var i=list.findIndex(function(x){return x.id===t.id;}); if(i<0){ if(s){s.textContent='Failed — template no longer exists';s.style.color='#a12c2c';} return; }
+  var cur=list[i];
+  /* every save keeps the prior content as a restorable revision (last 5) */
+  cur.revisions=(cur.revisions||[]);
+  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), text:cur.text });
+  cur.revisions=cur.revisions.slice(0,5);
+  cur.name=String((document.getElementById('tplDetName')||{}).value||'').trim()||cur.name;
+  cur.keywords=String((document.getElementById('tplDetKw')||{}).value||'').split(',').map(function(k){return k.trim();}).filter(Boolean);
+  cur.text=String((document.getElementById('tplDetText')||{}).value||'');
+  try{ setTemplates(list); }catch(e){ if(s){ s.textContent='Failed — could not save ('+String(e&&e.message||e).slice(0,60)+')'; s.style.color='#a12c2c'; } return; }
+  _tplUI.dirty=false; _tplUI.renderedId='';
+  renderTemplateList(); renderTemplateActiveSelect();
+  var s2=document.getElementById('tplDetStatus'); if(s2){ s2.textContent='Saved ✓ '+new Date().toLocaleTimeString(); s2.style.color='#127a55'; }
+}
+function tplRestoreRevision(id){
+  var t=getTemplateById(id); if(!t||!t.revisions||!t.revisions.length) return;
+  var sel=document.getElementById('tplDetRev'); var idx=sel?Number(sel.value):0;
+  var r=t.revisions[idx]; if(!r) return;
+  if(!confirm('Restore the version from '+new Date(r.ts).toLocaleString()+'? The current content is kept as a revision.')) return;
+  var list=getTemplates(); var i=list.findIndex(function(x){return x.id===id;}); if(i<0) return;
+  var cur=list[i];
+  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), text:cur.text });
+  cur.revisions=cur.revisions.filter(function(x){return x!==r;}).slice(0,5);
+  cur.name=r.name; cur.keywords=(r.keywords||[]).slice(); cur.text=r.text;
+  setTemplates(list); _tplUI.dirty=false; _tplUI.renderedId='';
+  renderTemplateList(); toast('Restored the earlier version. The replaced content is still in revisions.','ok');
+}
+function tplUndoDelete(){
+  if(!_tplLastDeleted) return;
+  var list=getTemplates(); list.unshift(_tplLastDeleted); setTemplates(list);
+  _tplUI.selectedId=_tplLastDeleted.id; _tplLastDeleted=null;
+  renderTemplateList(); renderTemplateActiveSelect(); toast('Template restored.','ok');
+}
+
+/* ============ Settings & navigation enhancements (redesign 2026-07-20) ======
+   Additive: settings search across sections, per-section scope chips, nav
+   accessibility (keyboard + ARIA), and a left/top navigation layout setting
+   with a collapsed icon rail. No stored values or save paths change. */
+function settingsSearchChanged(){
+  var q=String((document.getElementById('settingsSearch')||{}).value||'').toLowerCase().trim();
+  var modal=document.getElementById('settingsModal'); if(!modal) return;
+  var sections=modal.querySelectorAll('.modal > .set-section');
+  var tabBar=document.getElementById('settingsTabBar');
+  if(tabBar) tabBar.style.display=q?'none':'';
+  if(!q){
+    sections.forEach(function(sec){ sec.querySelectorAll('.field').forEach(function(f){ f.style.display=''; }); });
+    try{ /* restore the tab view exactly as it was */
+      var on=tabBar?tabBar.querySelector('.set-tab.on'):null;
+      mlsSelectSettingsTab(on?(Number(on.getAttribute('data-set-tab-btn'))||0):0);
+    }catch(e){}
+    return;
+  }
+  sections.forEach(function(sec){
+    /* role-gated sections (e.g. clinical settings hidden from lawyer accounts)
+       must never be surfaced by search */
+    if(sec.getAttribute('data-set-hidden')==='1'){ sec.classList.add('set-tab-hidden'); return; }
+    var any=false;
+    sec.querySelectorAll('.field').forEach(function(f){
+      var hit=(f.innerText||f.textContent||'').toLowerCase().indexOf(q)>=0;
+      f.style.display=hit?'':'none'; if(hit) any=true;
+    });
+    var head=sec.querySelector('.set-head');
+    if(head&&(head.textContent||'').toLowerCase().indexOf(q)>=0){
+      any=true; sec.querySelectorAll('.field').forEach(function(f){ f.style.display=''; });
+    }
+    sec.classList.toggle('set-tab-hidden',!any);
+  });
+}
+var _SET_SCOPES={ 'Account & access':'Your account · this device key', 'Practice & provider':'Practice', 'Note defaults':'Your account', 'AI personalization':'Your account', 'Display':'This device', 'Provider preferences':'Provider', 'Features':'Your account', 'App tabs':'This device', 'Security & privacy':'Your account', 'Legal expert profile':'Practice', 'Integrations':'Practice' };
+function decorateSettingsScopes(){
+  document.querySelectorAll('#settingsModal .set-head').forEach(function(h){
+    if(h.querySelector('.set-scope')) return;
+    var name=(h.textContent||'').replace(/^[^\w]*\s*/,'').replace(/\s+/g,' ').trim();
+    var scope=_SET_SCOPES[name]; if(!scope) return;
+    var chip=document.createElement('span'); chip.className='set-scope';
+    chip.style.cssText='margin-left:8px;font-size:10.5px;font-weight:600;color:#4a6a58;background:#eef5f0;border:1px solid #d7e6dc;border-radius:999px;padding:2px 8px;vertical-align:middle';
+    chip.textContent=scope; chip.title='Who this group of settings belongs to';
+    h.appendChild(chip);
+  });
+}
+function enhanceMainNavA11y(){
+  document.querySelectorAll('.mainnav .navtab').forEach(function(tab){
+    if(tab.getAttribute('data-a11y')) return; tab.setAttribute('data-a11y','1');
+    if(!tab.hasAttribute('hidden')){ tab.setAttribute('role','button'); tab.setAttribute('tabindex','0'); }
+    var label=(tab.textContent||'').replace(/\d+/g,'').replace(/^[^\w]*\s*/,'').replace(/\s+/g,' ').trim();
+    if(label&&!tab.getAttribute('aria-label')) tab.setAttribute('aria-label',label);
+    tab.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); tab.click(); } });
+  });
+  try{
+    new MutationObserver(function(){
+      document.querySelectorAll('.mainnav .navtab').forEach(function(t){ t.setAttribute('aria-current',t.classList.contains('on')?'page':'false'); });
+    }).observe(document.querySelector('.mainnav')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});
+  }catch(e){}
+}
+function setNavLayout(mode,silent){
+  mode=mode==='left'?'left':'top';
+  try{ localStorage.setItem(uns('navLayout'),mode); }catch(e){}
+  applyNavLayout();
+  var s=document.getElementById('navLayoutStatus');
+  if(s&&!silent){ s.textContent='Saved ✓ — '+(mode==='left'?'left sidebar':'top bar'); s.style.color='#127a55'; setTimeout(function(){ if(s.textContent.indexOf('Saved')===0) s.textContent=''; },4000); }
+}
+function applyNavLayout(){
+  var mode='top'; try{ mode=localStorage.getItem(uns('navLayout'))==='left'?'left':'top'; }catch(e){}
+  document.body.classList.toggle('mls-nav-left',mode==='left');
+  var sel=document.getElementById('navLayoutSel'); if(sel&&sel.value!==mode) sel.value=mode;
+  var nav=document.querySelector('.mainnav'); if(!nav) return;
+  var btn=document.getElementById('navCollapseBtn');
+  if(mode==='left'){
+    if(!btn){
+      btn=document.createElement('button'); btn.id='navCollapseBtn'; btn.type='button';
+      btn.setAttribute('aria-label','Collapse or expand the sidebar');
+      btn.style.cssText='border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 8px;cursor:pointer;font-size:12px;margin:4px 0;';
+      btn.onclick=function(){
+        var c=document.body.classList.toggle('mls-nav-collapsed');
+        try{ localStorage.setItem(uns('navCollapsed'),c?'1':'0'); }catch(e){}
+        btn.textContent=c?'⟩':'⟨'; btn.title=c?'Expand the sidebar':'Collapse to the icon rail';
+      };
+      nav.insertBefore(btn,nav.firstChild);
+    }
+    var col=false; try{ col=localStorage.getItem(uns('navCollapsed'))==='1'; }catch(e){}
+    document.body.classList.toggle('mls-nav-collapsed',col);
+    btn.textContent=col?'⟩':'⟨'; btn.title=col?'Expand the sidebar':'Collapse to the icon rail';
+  }else{
+    document.body.classList.remove('mls-nav-collapsed');
+    if(btn) btn.remove();
+  }
+}
+(function installNavLayoutCss(){
+  if(document.getElementById('mlsNavLayoutCss')) return;
+  var st=document.createElement('style'); st.id='mlsNavLayoutCss';
+  st.textContent=
+    'body.mls-nav-left #appWrap{display:grid;grid-template-columns:190px 1fr;column-gap:14px;align-items:start}'+
+    'body.mls-nav-left #appWrap>*{grid-column:2;min-width:0}'+
+    'body.mls-nav-left #appWrap>.mainnav{grid-column:1;grid-row:1 / span 60;display:flex;flex-direction:column;align-items:stretch;position:sticky;top:8px;z-index:5}'+
+    'body.mls-nav-left .mainnav .navtab{text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+    'body.mls-nav-left.mls-nav-collapsed #appWrap{grid-template-columns:52px 1fr}'+
+    'body.mls-nav-left.mls-nav-collapsed .mainnav .navtab{font-size:17px;padding:9px 8px}'+
+    '@media (max-width:900px){body.mls-nav-left #appWrap{display:block}body.mls-nav-left #appWrap>.mainnav{position:static;flex-direction:row}}';
+  document.head.appendChild(st);
+})();
+try{ setTimeout(function(){ decorateSettingsScopes(); enhanceMainNavA11y(); applyNavLayout(); },400); }catch(e){}
 /* MORE WAYS TO USE A TEMPLATE: */
 function setActiveTemplateId(id){ try{ localStorage.setItem(uns('templateActive'),id); }catch(e){} try{ renderTemplateList(); renderTemplateActiveSelect(); }catch(e){} try{ toast('Set as the default template for new notes.','ok'); }catch(e){} }
 async function useTemplateNow(id){
@@ -12567,13 +12779,21 @@ async function useTemplateNow(id){
   toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
   try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||'',expectedBinding,expectedEpoch); }catch(e){ toast('Couldn’t apply that template.','err'); }
 }
-function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ alert('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
-function editTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ document.getElementById('tplName').value=t.name||''; document.getElementById('tplKeywords').value=(t.keywords||[]).join(', '); document.getElementById('tplText').value=t.text||''; document.getElementById('tplName').scrollIntoView({behavior:'smooth',block:'center'}); toast('Loaded into the form — edit and Save (it adds a copy; delete the old one if replacing).',''); }catch(e){} }
-function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); list.unshift({ id:'tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }); setTemplates(list); renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated.','ok'); }
+function previewTemplate(id){ tplSelect(id); }
+function editTemplate(id){ tplSelect(id); try{ var n=document.getElementById('tplDetName'); if(n) n.focus(); }catch(e){} return true; }
+function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); var copyId='tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); list.unshift({ id:copyId, name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }); setTemplates(list); _tplUI.selectedId=copyId; renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated — now editing the copy.','ok'); }
 function deleteTemplate(id){
-  setTemplates(getTemplates().filter(t=>t.id!==id));
+  var t=getTemplateById(id); if(!t) return;
+  if(!confirm('Delete the template “'+(t.name||'')+'”? You can undo right after.')) return;
+  _tplLastDeleted=t;
+  setTemplates(getTemplates().filter(x=>x.id!==id));
+  if(_tplUI.selectedId===id) _tplUI.selectedId='';
   renderTemplateList();
   renderTemplateActiveSelect();
+  /* the honest undo lives in the detail pane, not a dead toast */
+  var pane=document.getElementById('tplDetail');
+  if(pane) pane.innerHTML='<p style="font-size:13px;margin:0 0 8px">Deleted “'+esc(t.name||'')+'”.</p>'+
+    '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="tplUndoDelete()">↩ Undo delete</button>';
   toast('Template deleted.','ok');
 }
 function clearTplForm(){
@@ -25823,7 +26043,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b456"></script>
+<script src="public-preview-runtime.js?v=b457"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26094,7 +26314,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b456';
+  window.__MLS_AV='b457';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
