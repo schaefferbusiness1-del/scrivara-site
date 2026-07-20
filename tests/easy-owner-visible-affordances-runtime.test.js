@@ -78,19 +78,51 @@ assert(contrast('#2E6A4B', '#FFFFFF') >= 4.5, 'expanded Close action contrast is
   vm.createContext(context);
   vm.runInContext(`${functionBlock(active, 'rowHtml')}\nthis.rowHtml = rowHtml;`, context);
 
-  const closed = context.rowHtml({ name: 'Ada Example', provider: 'Dr Example' });
-  assert(closed.includes('data-more="appt-17"'), 'collapsed Open action lost delegated data-more ownership');
-  assert(closed.includes('aria-expanded="false"'), 'collapsed Open action does not expose aria-expanded=false');
-  assert(closed.includes('aria-label="Open actions for Ada Example"') && closed.includes('>Open</button>'),
-    'collapsed action is not visibly and accessibly labeled Open');
+  /* b436: picking a patient PICKS the patient.
+   *
+   * Through b435 a doctor's row carried an Open/Close expander that unfolded a
+   * four-choice card (Start Recording / Pull Chart Context / Generate Note /
+   * Send to Athena). That re-asked a question the doctor had already answered
+   * by tapping the patient, and every one of those actions is available in the
+   * visit workspace lane once the patient is bound. The row header itself is
+   * the affordance: its data-hd branch runs lockAndStart(record:false), which
+   * binds identity and opens the workspace. Assert the expander is gone for
+   * doctors and that the pick affordance survives. */
+  const docRow = context.rowHtml({ name: 'Ada Example', provider: 'Dr Example' });
+  assert(!docRow.includes('data-more='),
+    'doctor row still renders the retired Open/Close expander');
+  assert(!docRow.includes('ez3-exgrid'),
+    'doctor row still renders the retired four-choice action card');
+  assert(!docRow.includes('Start Recording') && !docRow.includes('Send to Athena'),
+    'doctor row still re-offers row-level clinical actions');
+  assert(docRow.includes('data-hd="appt-17"'),
+    'doctor row lost the header pick affordance that binds the patient');
+  assert(docRow.includes('Ada Example') && docRow.includes('DOB 01/02/1980'),
+    'doctor row no longer identifies the patient it would bind');
 
+  // Expanding is a no-op for a doctor: the row renders identically either way.
   context.S.expanded = 'appt-17';
-  const open = context.rowHtml({ name: 'Ada Example', provider: 'Dr Example' });
-  assert(open.includes('data-more="appt-17"'), 'expanded Close action lost delegated data-more ownership');
-  assert(open.includes('aria-expanded="true"'), 'expanded Close action does not expose aria-expanded=true');
-  assert(open.includes('aria-label="Close actions for Ada Example"') && open.includes('>Close</button>'),
-    'expanded action is not visibly and accessibly labeled Close');
+  const docRowExpanded = context.rowHtml({ name: 'Ada Example', provider: 'Dr Example' });
+  assert(!docRowExpanded.includes('ez3-exgrid'),
+    'a stale expanded key still unfolds the retired action card for a doctor');
+
+  /* Staff prep keeps the expansion grid - staff genuinely triage a day and
+   * open row actions from the header (the data-hd branch toggles S.expanded
+   * when the mode is not doctor). */
+  context.S.mode = 'staff';
+  context.S.expanded = 'appt-17';
+  const staffRow = context.rowHtml({ name: 'Ada Example', provider: 'Dr Example' });
+  assert(staffRow.includes('ez3-exgrid'), 'staff row lost its expansion grid');
+  assert(staffRow.includes('data-act="rec"') && staffRow.includes('data-act="send"'),
+    'staff row lost its delegated row actions');
+  assert(staffRow.includes('Identity guards active'),
+    'staff row lost the identity-guard assurance line');
 }
+
+/* The delegated handler must bind the patient rather than expand when a stale
+ * Open button survives in a cached or hot-reloaded DOM. */
+assert(active.includes("if (S.mode === 'doctor') { var am = apptByKey(km); if (am) { lockAndStart(am, { record: false }); return; } }"),
+  'delegated More action no longer binds the patient for doctors');
 
 assert(active.includes("if ((el = t.closest('[data-more]')))"), 'delegated More action handler is missing');
 assert(active.includes('S.expanded = (S.expanded === km ? null : km); render(); return;'),

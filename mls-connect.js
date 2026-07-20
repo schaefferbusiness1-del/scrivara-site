@@ -17561,6 +17561,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if ((el = t.closest('[data-more]'))) {           /* row ⋯ (before data-hd) */
         ev.stopPropagation();
         var km = el.getAttribute('data-more');
+        /* b436: a doctor never expands a row into a choice card - picking a
+           patient picks them. b436 stops rendering this button in doctor mode;
+           this guard also covers a stale button left in a cached/hot-reloaded
+           DOM, so it binds the patient instead of reopening the old card. */
+        if (S.mode === 'doctor') { var am = apptByKey(km); if (am) { lockAndStart(am, { record: false }); return; } }
         S.expanded = (S.expanded === km ? null : km); render(); return;
       }
       if ((el = t.closest('[data-act]'))) {            /* row 4-action grid */
@@ -18249,9 +18254,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<span class="dob">' + dobLabel(a) + '</span></div>' +
         '<div class="meta"><span class="tm">🕐 ' + esc(t12(a)) + '</span>' +
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
-        (S.mode === 'doctor' ? '<button type="button" class="moredots" data-more="' + esc(k) + '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-label="' + (open ? 'Close' : 'Open') + ' actions for ' + esc(a.name || 'this patient') + '" title="' + (open ? 'Close' : 'Open') + ' patient actions">' + (open ? 'Close' : 'Open') + '</button>' : '') +
+        /* b436: doctors do not get a per-row expander. Picking a patient PICKS
+           the patient - the row header click below runs lockAndStart(record:false),
+           which binds identity and opens the workspace. The old "Open" button
+           expanded a 4-choice card (Start Recording / Pull Chart Context /
+           Generate Note / Send to Athena) that re-asked what the doctor had
+           already decided by tapping the patient, and every one of those actions
+           lives in the visit workspace lane once the patient is bound. Staff mode
+           never rendered this button and is unchanged. */
+        '' +
       '</div>' +
       '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
+      /* b436: the expansion grid is staff-only for the same reason. Staff mode
+         still opens it by tapping the row header (see the data-hd branch). */
+      (S.mode === 'doctor' ? '' :
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -18262,7 +18278,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
           'Identity-guard module not detected on this load — double-check the patient label before sending.') + '</span></div>' +
-      '</div>' +
+      '</div>') +
     '</div>';
   }
 
@@ -22613,6 +22629,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if ((el = t.closest('[data-more]'))) {           /* row ⋯ (before data-hd) */
         ev.stopPropagation();
         var km = el.getAttribute('data-more');
+        /* b436: a doctor never expands a row into a choice card - picking a
+           patient picks them. b436 stops rendering this button in doctor mode;
+           this guard also covers a stale button left in a cached/hot-reloaded
+           DOM, so it binds the patient instead of reopening the old card. */
+        if (S.mode === 'doctor') { var am = apptByKey(km); if (am) { lockAndStart(am, { record: false }); return; } }
         S.expanded = (S.expanded === km ? null : km); render(); return;
       }
       if ((el = t.closest('[data-act]'))) {            /* row 4-action grid */
@@ -32678,7 +32699,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b435';
+  window.__MLS_AV = window.__MLS_AV || 'b436';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -32988,7 +33009,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-19-b435';
+  var MLS_APP_BUILD='2026-07-19-b436';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
