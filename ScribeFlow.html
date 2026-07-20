@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b455"></script>
+<script src="public-preview-policy.js?v=b456"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -2641,6 +2641,37 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           </tr></thead>
           <tbody id="adminUsersBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="ic">💳</span> Admin — Billing &amp; plans
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBilling()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Plans and paid access are separate from roles. <b>Access source</b> shows exactly why each account has access: role, subscription, trial, grant, or admin override. Granting a plan applies an admin override without touching Stripe; clearing it returns the account to normal billing (an active Stripe subscription keeps access, otherwise access ends).</p>
+      <div id="adminBillingStatus" class="empty"><span class="big">💳</span>Press <b>Refresh</b> to load billing state.</div>
+      <div style="overflow-x:auto">
+        <table id="adminBillingTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Email</th><th style="padding:8px 6px">Role</th>
+            <th style="padding:8px 6px">Plan</th><th style="padding:8px 6px">Access source</th>
+            <th style="padding:8px 6px">Stripe</th><th style="padding:8px 6px">Connect</th>
+            <th style="padding:8px 6px">Plan actions</th>
+          </tr></thead>
+          <tbody id="adminBillingBody"></tbody>
+        </table>
+      </div>
+      <div id="adminWebhookBox" style="display:none;margin-top:14px">
+        <h3 style="margin:0 0 6px;font-size:15px">Webhook &amp; billing diagnostics</h3>
+        <div id="adminWebhookSummary" class="sub" style="margin:0 0 8px"></div>
+        <div style="overflow-x:auto;max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="text-align:left;border-bottom:1px solid var(--line)">
+              <th style="padding:6px">When</th><th style="padding:6px">Event type</th><th style="padding:6px">Outcome</th>
+            </tr></thead>
+            <tbody id="adminWebhookBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -5485,6 +5516,72 @@ function fmtAccess(u){
   return label;
 }
 
+/* Admin — Billing & plans: reads the owner-only billing overview + PHI-free
+   webhook diagnostics, and drives the safe plan grant/clear workflow. Access
+   source is server-derived truth (role/subscription/trial/grant/override). */
+var _adminBillingPlans=[];
+async function loadAdminBilling(){
+  var status=document.getElementById('adminBillingStatus');
+  status.style.display='block'; status.innerHTML='Loading billing state…';
+  try{
+    var d=await adminFetch('/api/admin/billing/overview');
+    _adminBillingPlans=(d.plans||[]).filter(function(p){ return !p.lawyer; });
+    var body=document.getElementById('adminBillingBody'); body.innerHTML='';
+    (d.users||[]).forEach(function(u){
+      var tr=document.createElement('tr'); tr.style.borderBottom='1px solid var(--line)';
+      var planOpts=_adminBillingPlans.map(function(p){
+        var money=p.amountCents?('$'+(p.amountCents/100)+(p.perSeat?'/provider':'')+'/'+(p.interval==='year'?'yr':'mo')):'free';
+        return '<option value="'+p.key+'">'+p.key+' — '+money+'</option>';
+      }).join('');
+      var stripeState=u.hasSubscription?('subscription'+(u.stripe_status?(' ('+u.stripe_status+')'):'')):(u.hasStripeCustomer?'customer only':'—');
+      var connectState=u.hasConnectAccount?(u.connectReady?'ready':'pending'):'—';
+      tr.innerHTML=
+        '<td style="padding:8px 6px">'+esc(u.email)+'</td>'+
+        '<td style="padding:8px 6px">'+esc(u.role||'user')+'</td>'+
+        '<td style="padding:8px 6px">'+esc(u.plan||'—')+(u.premium?' <span title="premium">★</span>':'')+(u.lite?' <span title="lite">Lite</span>':'')+'</td>'+
+        '<td style="padding:8px 6px"><b>'+esc(u.accessSource)+'</b></td>'+
+        '<td style="padding:8px 6px">'+esc(stripeState)+'</td>'+
+        '<td style="padding:8px 6px">'+esc(connectState)+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+
+          (u.role==='admin'?'<span class="sub">owner</span>':
+            '<select data-billing-plan="'+u.id+'" style="max-width:230px">'+planOpts+'</select> '+
+            '<button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminGrantPlan('+u.id+', this)">Grant</button>'+
+            (u.accessSource==='admin-override'?' <button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminClearPlan('+u.id+', this)">Clear override</button>':''))+
+        '</td>';
+      body.appendChild(tr);
+    });
+    document.getElementById('adminBillingTable').style.display='table';
+    status.style.display='none';
+    var wh=await adminFetch('/api/admin/billing/webhooks');
+    var box=document.getElementById('adminWebhookBox'); box.style.display='block';
+    var counts=(wh.counts||[]).map(function(c){ return c.outcome+': '+c.n; }).join(' · ');
+    document.getElementById('adminWebhookSummary').textContent=
+      'Webhook secret configured: '+(wh.webhookConfigured?'yes':'NO')+(counts?(' — events: '+counts):' — no events recorded yet');
+    var wb=document.getElementById('adminWebhookBody'); wb.innerHTML='';
+    (wh.events||[]).forEach(function(ev){
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td style="padding:6px;white-space:nowrap">'+esc(ev.created_at||'')+'</td><td style="padding:6px">'+esc(ev.type||'')+'</td><td style="padding:6px">'+esc(ev.outcome||'')+(ev.summary?(' — '+esc(ev.summary)):'')+'</td>';
+      wb.appendChild(tr);
+    });
+  }catch(e){
+    status.style.display='block';
+    status.innerHTML='Could not load billing state — '+esc(e.message||'request failed')+'. <button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="loadAdminBilling()">Retry</button>';
+  }
+}
+async function adminGrantPlan(id, btn){
+  var sel=document.querySelector('select[data-billing-plan="'+id+'"]'); if(!sel) return;
+  var plan=sel.value;
+  if(!confirm('Grant plan "'+plan+'" to this account as an admin override?')) return;
+  btn.disabled=true; btn.textContent='Granting…';
+  try{ await adminFetch('/api/admin/billing/plan',{method:'POST',body:JSON.stringify({userId:id,action:'grant',plan:plan})}); toast('Plan granted.','ok'); loadAdminBilling(); }
+  catch(e){ toast('Grant failed: '+(e.message||'error'),'err'); btn.disabled=false; btn.textContent='Grant'; }
+}
+async function adminClearPlan(id, btn){
+  if(!confirm('Remove the admin override and return this account to normal billing?')) return;
+  btn.disabled=true; btn.textContent='Clearing…';
+  try{ await adminFetch('/api/admin/billing/plan',{method:'POST',body:JSON.stringify({userId:id,action:'clear'})}); toast('Override cleared — account follows normal billing.','ok'); loadAdminBilling(); }
+  catch(e){ toast('Clear failed: '+(e.message||'error'),'err'); btn.disabled=false; btn.textContent='Clear override'; }
+}
 async function loadAdminUsers(){
   if(!backendMode()){ return; }
   const empty=document.getElementById('adminUsersEmpty');
@@ -25726,7 +25823,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b455"></script>
+<script src="public-preview-runtime.js?v=b456"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25997,7 +26094,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b455';
+  window.__MLS_AV='b456';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

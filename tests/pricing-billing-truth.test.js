@@ -1,0 +1,54 @@
+'use strict';
+
+/* Payments/pricing goal (2026-07-20): the pricing page tells the truth from
+ * the SERVER capability check — no false per-card "Checkout unavailable"
+ * bars, no dead alert() CTAs, one status line for the pricing area, and the
+ * $20 Enterprise tier displayed exactly as the backend charges it. The admin
+ * screen gains the billing/plan panel wired to the owner-only routes.
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const root = path.join(__dirname, '..');
+const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const scribe = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+
+// --- Enterprise $20 display, matching the backend PLANS amounts -------------
+assert(/<div class="tier">Enterprise<\/div>\s*<div class="amt">\$20<span> \/ provider \/ mo<\/span><\/div>/.test(index),
+  'Enterprise must display $20/provider/mo');
+assert(index.includes('3+ providers · or $200/yr each'), 'Enterprise must show the $200 annual equivalent and 3+ minimum');
+assert(!/\$50<span> \/ provider \/ mo/.test(index), 'the retired $50 Enterprise price must not appear');
+
+// annual equivalents stay present and consistent on every tier
+for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$200/yr']) {
+  assert(index.includes(annual), 'missing annual equivalent: ' + annual);
+}
+
+// --- no false error bars; capability-driven status --------------------------
+assert(!index.includes('>Checkout unavailable<'), 'static per-card "Checkout unavailable" bars must be gone');
+assert((index.match(/<span class="demolink" data-checkout-note>/g) || []).length === 4, 'each card keeps one truthful note slot');
+assert(index.includes('id="pricingStatus"'), 'one pricing-area status line must exist');
+assert(index.includes("fetch(BILLING_API + '/api/billing/health'"), 'the status must come from the server capability check');
+assert(!/function startCheckout[\s\S]{0,200}alert\(/.test(index), 'the checkout CTA must not be a dead alert()');
+assert(index.includes('var MLS_SALES_RELEASED = false;'), 'the sales hold must be an explicit, deliberate flag');
+assert(/Purchasing is held pending release of production, legal and refund terms/.test(index),
+  'the held state must be stated as policy, not as an error');
+assert(/stripe-authentication|Stripe key was rejected/.test(index), 'authentication failures must be named specifically');
+assert(/could not reach Stripe|network/i.test(index), 'network failures must be named specifically');
+assert(index.includes("retry.onclick = refreshBillingStatus"), 'the network state must carry a real Retry action');
+assert(/Checkout and subscriptions are disabled until the production, legal and refund terms are released\./.test(index),
+  'the public honesty sentence stays until release');
+
+// --- admin billing panel -----------------------------------------------------
+assert(scribe.includes('Admin — Billing &amp; plans'), 'the admin billing panel is missing');
+assert(scribe.includes("adminFetch('/api/admin/billing/overview')"), 'the panel must read the owner-only overview');
+assert(scribe.includes("action:'grant'") && scribe.includes("action:'clear'"), 'grant and clear-override workflows must both exist');
+assert(scribe.includes('Access source'), 'the panel must show WHY each account has access');
+assert(scribe.includes("adminFetch('/api/admin/billing/webhooks')"), 'webhook diagnostics must be wired');
+assert(/confirm\('Grant plan/.test(scribe) && /confirm\('Remove the admin override/.test(scribe),
+  'plan changes must be explicitly confirmed');
+assert(scribe.includes('returns the account to normal billing'), 'the clear action must explain the return-to-billing semantics');
+
+console.log('PASS pricing/billing truth: $20 Enterprise displayed as charged, capability-driven single status with named reasons and a real Retry, no dead CTAs or false bars, and a confirmed+audited admin plan panel with access sources');

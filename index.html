@@ -757,7 +757,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>Security controls under evaluation with synthetic data</li>
 </ul>
 <button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Discuss Lite evaluation</button>
-<span class="demolink">Checkout unavailable</span>
+<span class="demolink" data-checkout-note></span>
 </div>
 <div class="price">
 <div class="tier">Standard</div>
@@ -774,7 +774,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>2FA, audit and storage controls under verification</li>
 </ul>
 <button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Discuss Standard evaluation</button>
-<span class="demolink">Checkout unavailable</span>
+<span class="demolink" data-checkout-note></span>
 </div>
 <div class="price feat">
 <span class="tag">Most popular</span>
@@ -793,24 +793,25 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <li>Team analytics &amp; priority support</li>
 </ul>
 <button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Discuss Premium evaluation</button>
-<span class="demolink">Checkout unavailable</span>
+<span class="demolink" data-checkout-note></span>
 </div>
 <div class="price">
 <div class="tier">Enterprise</div>
-<div class="amt">$50<span> / provider / mo</span></div>
-<div class="note">3+ providers · or $500/yr each</div>
+<div class="amt">$20<span> / provider / mo</span></div>
+<div class="note">3+ providers · or $200/yr each</div>
 <ul>
 <li>Everything in Premium, for the whole group</li>
-<li>Volume pricing from your 3rd provider on</li>
+<li>Volume pricing — below every solo tier per provider</li>
 <li>White-glove onboarding &amp; template migration</li>
 <li>Practice-wide rollout, training &amp; team setup</li>
 <li>Dedicated support with a named contact</li>
 </ul>
 <button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Discuss group evaluation</button>
-<span class="demolink">Checkout unavailable</span>
+<span class="demolink" data-checkout-note></span>
 </div>
 </div>
-<p style="text-align:center;color:var(--muted);font-size:14px;margin:28px auto 0;max-width:640px">These are planning prices, not an offer for production clinical service. No savings or reimbursement outcome is guaranteed.</p>
+<div id="pricingStatus" role="status" style="margin:18px auto 0;max-width:760px;text-align:center;font-size:14px;color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:12px 16px">Checking billing status…</div>
+<p style="text-align:center;color:var(--muted);font-size:14px;margin:18px auto 0;max-width:640px">These are planning prices, not an offer for production clinical service. No savings or reimbursement outcome is guaranteed.</p>
 </div>
 </section>
 
@@ -955,9 +956,75 @@ if(!m) return;
 m.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); }); });
 document.addEventListener('click',function(e){ if(m.classList.contains('open') && !e.target.closest('header.site')){ m.classList.remove('open'); var b=document.querySelector('.menu-btn'); if(b) b.setAttribute('aria-expanded','false'); } });
 })();
+/* Billing truth comes from the SERVER capability check, never from what the
+   browser can see. One status line for the whole pricing area; each card's
+   note slot stays empty unless there is something specific and true to say.
+   Purchasing remains deliberately held until production, legal and refund
+   terms are released — that hold is a policy statement, not an error. */
+var MLS_SALES_RELEASED = false; // flip deliberately at release; checkout stays policy-held until then
+var BILLING_API = 'https://scrivara-backend.onrender.com';
+var _billingHealth = null;
+async function refreshBillingStatus(){
+  var box = document.getElementById('pricingStatus');
+  if (!box) return;
+  try {
+    var r = await fetch(BILLING_API + '/api/billing/health', { cache: 'no-store' });
+    var d = await r.json();
+    _billingHealth = d;
+    var parts = [];
+    if (d.checkout && d.checkout.ready) parts.push('Billing backend: configured and reachable ✓' + (d.mode ? ' (' + d.mode + ' mode)' : ''));
+    else if (d.checkout && d.checkout.reason === 'checkout-configuration') parts.push('Billing backend: Stripe is not configured on the server.');
+    else if (d.checkout && d.checkout.reason === 'stripe-authentication') parts.push('Billing backend: the Stripe key was rejected — server configuration needs repair.');
+    else if (d.checkout && d.checkout.reason === 'network') parts.push('Billing backend: could not reach Stripe just now.');
+    else parts.push('Billing backend: temporary Stripe error.');
+    parts.push(d.webhook && d.webhook.configured ? 'Webhooks: configured ✓' : 'Webhooks: not configured.');
+    if (!MLS_SALES_RELEASED) parts.push('Purchasing is held pending release of production, legal and refund terms — request a demo below and we’ll set you up.');
+    box.innerHTML = parts.join(' · ');
+    if (d.checkout && !d.checkout.ready && d.checkout.reason === 'network') {
+      var retry = document.createElement('button');
+      retry.className = 'btn btn-ghost'; retry.style.cssText = 'margin-left:10px;padding:6px 12px;font-size:13px';
+      retry.textContent = 'Retry'; retry.onclick = refreshBillingStatus;
+      box.appendChild(retry);
+    }
+  } catch (e) {
+    box.innerHTML = 'Billing status could not be checked (network). ';
+    var retry2 = document.createElement('button');
+    retry2.className = 'btn btn-ghost'; retry2.style.cssText = 'margin-left:6px;padding:6px 12px;font-size:13px';
+    retry2.textContent = 'Retry'; retry2.onclick = refreshBillingStatus;
+    box.appendChild(retry2);
+  }
+}
+document.addEventListener('DOMContentLoaded', refreshBillingStatus);
+/* Released-path only: reached exclusively through the policy gate below once
+   MLS_SALES_RELEASED is deliberately flipped at release. */
+async function launchCheckout(plan, el, say){
+  if (el) { el.disabled = true; }
+  say('Starting checkout…');
+  try {
+    var r = await fetch(BILLING_API + '/api/billing/checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: plan })
+    });
+    var d = await r.json();
+    if (r.ok && d && d.url) { location.href = d.url; return false; }
+    say((d && d.error) || 'Checkout could not start. Please try again.');
+  } catch (e) {
+    say('Network problem starting checkout — please try again.');
+  } finally { if (el) el.disabled = false; }
+  return false;
+}
 function startCheckout(plan, el){
-alert('Checkout is not released. These are planning prices for synthetic evaluation only; no subscription was created.');
-return false;
+  var note = el && el.parentElement ? el.parentElement.querySelector('[data-checkout-note]') : null;
+  var say = function(msg){ if (note) { note.textContent = msg; } };
+  if (!MLS_SALES_RELEASED) {
+    // Checkout is not released. Purchasing is held as policy; the truthful
+    // action is the demo request — nothing contacts a payment service here.
+    say('Purchasing is held — request a demo below.');
+    var demo = document.getElementById('demo');
+    if (demo && demo.scrollIntoView) demo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return false;
+  }
+  return launchCheckout(plan, el, say);
 }
 async function submitDemo(e){
 e.preventDefault();
