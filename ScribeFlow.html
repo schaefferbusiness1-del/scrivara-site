@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b440"></script>
+<script src="public-preview-policy.js?v=b441"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -6527,7 +6527,7 @@ function _saveVisitDraft(){
     if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
     var binding=(typeof currentVisitAthenaBinding!=='undefined'&&currentVisitAthenaBinding)?currentVisitAthenaBinding:null;
     var bindingCopy=binding?{patient:binding.patient||null,source:binding.source||'',historical:binding.historical===true,identityConflict:binding.identityConflict===true,routeBlocked:binding.routeBlocked===true,visitContext:binding.visitContext||null,noteTimestamp:binding.noteTimestamp||null,displayDate:binding.displayDate||'',displayProvider:binding.displayProvider||''}:null;
-    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(bindingCopy&&bindingCopy.patient&&bindingCopy.patient.patientId)||(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
   }catch(e){}
 }
 function _wipeVisitDraft(){ if(_visitDraftTimer){ clearTimeout(_visitDraftTimer); _visitDraftTimer=null; } _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
@@ -6539,16 +6539,48 @@ function _maybeRestoreVisitDraft(){
     var raw=sessionStorage.getItem(_visitDraftKey()); if(!raw) return;
     var d=JSON.parse(raw); if(!d || (!String(d.t||'').trim() && !String(d.soap||'').trim())) return;
     var when=d.ts?(' from '+new Date(d.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})):'';
+    /* Name the draft's patient, and never invite a restore onto a DIFFERENT
+       active patient: the single per-user draft slot survives patient
+       switches, and an anonymous "Restore it" on the wrong chart only
+       dead-ends later at the bound-editor save guard. */
+    var draftName=String(d.pt||(d.athenaBinding&&d.athenaBinding.patient&&d.athenaBinding.patient.name)||'').trim();
+    var draftPtId=String(d.ptId||'').trim();
+    var activeId=''; try{activeId=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';}catch(eA){}
+    var mismatch=!!(draftPtId&&activeId&&draftPtId!==activeId);
     var bar=document.createElement('div'); bar.id='_visitRestoreBar';
     bar.style.cssText='background:#fff7e6;border:1px solid #f0d9a0;border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px;color:#8a5a00;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
-    bar.innerHTML='💾 You have an unsaved visit'+when+'. <button class="btn-primary" style="font-size:12px;padding:5px 11px" onclick="_restoreVisitDraft()">Restore it</button> <button class="btn-ghost" style="font-size:12px;padding:5px 11px" onclick="_dismissVisitRestore()">Discard</button>';
+    var lead=document.createElement('span');
+    lead.textContent='💾 You have an unsaved visit'+(draftName?(' for '+draftName):'')+when+(mismatch?'. It belongs to a different patient than the one open now.':'.');
+    bar.appendChild(lead);
+    var act=document.createElement('button'); act.className='btn-primary'; act.style.cssText='font-size:12px;padding:5px 11px';
+    if(mismatch){ act.textContent='Open '+(draftName||'that patient'); act.onclick=function(){ _openVisitDraftPatient(); }; }
+    else { act.textContent='Restore it'; act.onclick=function(){ _restoreVisitDraft(); }; }
+    bar.appendChild(act);
+    var dis=document.createElement('button'); dis.className='btn-ghost'; dis.style.cssText='font-size:12px;padding:5px 11px';
+    dis.textContent='Discard'; dis.onclick=function(){ _dismissVisitRestore(); };
+    bar.appendChild(dis);
     var host=document.getElementById('transcript'); if(host && host.parentNode){ host.parentNode.insertBefore(bar, host); }
+  }catch(e){}
+}
+function _openVisitDraftPatient(){
+  try{
+    var d=JSON.parse(sessionStorage.getItem(_visitDraftKey())||'{}');
+    var pid=String(d.ptId||'').trim(); if(!pid) return;
+    if(typeof findPatient==='function'&&!findPatient(pid)){ try{ toast('That patient is no longer on this device. The draft stays recoverable from this bar.','err'); }catch(e0){} return; }
+    if(typeof openPatient==='function') openPatient(pid);
+    var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); // re-evaluates for the now-matching patient
+    if(typeof showView==='function') showView('visit');
   }catch(e){}
 }
 function _restoreVisitDraft(){
   try{
     if(typeof _athenaGuardBoundEditor==='function'&&!_athenaGuardBoundEditor('restoring a draft'))return;
     var d=JSON.parse(sessionStorage.getItem(_visitDraftKey())||'{}');
+    /* Refuse to restore another patient's draft onto the open chart — the bar
+       offers to open that patient instead; this guard covers any direct call. */
+    var _dpid=String(d.ptId||'').trim(), _aid='';
+    try{_aid=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';}catch(eG){}
+    if(_dpid&&_aid&&_dpid!==_aid){ try{ toast('That unsaved visit belongs to '+String(d.pt||'another patient')+'. Open their chart to restore it; nothing was changed.','err'); }catch(eT){} return; }
     var tx=document.getElementById('transcript'); if(tx) tx.value=d.t||'';
     if(typeof finalText!=='undefined') finalText=d.t||'';
     if(typeof currentSoap!=='undefined') currentSoap=d.soap||'';
@@ -25634,7 +25666,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b440"></script>
+<script src="public-preview-runtime.js?v=b441"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -25905,7 +25937,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b440';
+  window.__MLS_AV='b441';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
