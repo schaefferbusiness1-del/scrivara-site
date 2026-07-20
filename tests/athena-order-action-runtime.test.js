@@ -210,25 +210,19 @@ function send(message) {
   const overlongField = await send({ ...probeMessage, order: { ...exactOrder, fields: { ...exactOrder.fields, indication: 'x'.repeat(2001) } } });
   assert.strictEqual(overlongField.reason, 'order-field-too-long', 'overlong order field was truncated or accepted');
 
-  // An exact appointment-open continuation probes only the tab which supplied
-  // its navigation proof. Missing/invalid target tabs fail before injection;
-  // omitting the optional field preserves the generic all-tab ambiguity gate.
+  // RELEASED 3.0.0 (accepted 2.9.43 core): the order lane has no pinned-tab
+  // continuation — that was part of the REJECTED 2.9.44 exact-encounter
+  // verifier. Two same-URL Athena tabs are an ambiguity the generic all-tab
+  // gate must refuse, and an advisory expectedAthenaTabId field must NEVER
+  // manufacture confidence the released bytes cannot verify.
   liveAthenaTabs = [
     { id: 91, url: lockedContext.encounterUrl },
     { id: 92, url: lockedContext.encounterUrl }
   ];
   probeInjectionTabIds = [];
   const pinnedTabProbe = await send({ ...probeMessage, expectedAthenaTabId: 91 });
-  assert.strictEqual(pinnedTabProbe.ok, true, 'navigation-proven Athena tab did not produce a read-only probe');
-  assert.strictEqual(pinnedTabProbe.athenaTabId, 91, 'probe receipt did not return the verified target tab');
-  assert.deepStrictEqual(probeInjectionTabIds, [91], 'exact-open continuation probed another Athena tab');
+  assert.notStrictEqual(pinnedTabProbe.ok, true, 'an advisory tab pin must not bypass the released ambiguity gate');
   probeInjectionTabIds = [];
-  const missingPinnedTab = await send({ ...probeMessage, expectedAthenaTabId: 93 });
-  assert.strictEqual(missingPinnedTab.reason, 'athena-tab-mismatch', 'missing exact-open tab did not fail closed');
-  assert.deepStrictEqual(probeInjectionTabIds, [], 'missing exact-open tab reached the injected probe');
-  const invalidPinnedTab = await send({ ...probeMessage, expectedAthenaTabId: '91x' });
-  assert.strictEqual(invalidPinnedTab.reason, 'athena-tab-mismatch', 'invalid exact-open tab id was coerced or accepted');
-  assert.deepStrictEqual(probeInjectionTabIds, [], 'invalid exact-open tab id reached the injected probe');
   const unpinnedGenericProbe = await send({ ...probeMessage });
   assert.strictEqual(unpinnedGenericProbe.reason, 'ambiguous-athena-tabs', 'generic probe no longer scans every signed-in Athena tab');
   assert.deepStrictEqual(probeInjectionTabIds, [91, 92], 'generic probe did not preserve all-tab unique discovery');

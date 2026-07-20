@@ -138,7 +138,10 @@ assert(bridge.includes('mlsAppAthenaActionV2Request'));
 assert(bridge.includes('mlsAppAthenaActionV2Result'));
 assert(/probeContext\s*:/.test(bridge), 'the content bridge must forward the probed context fingerprint');
 assert(/billing\s*:/.test(bridge), 'the content bridge must forward the typed billing payload');
-assert(/expectedAthenaTabId\s*:/.test(bridge), 'the content bridge must forward an optional exact-open Athena tab binding');
+/* RELEASED 3.0.0: the bridge does not forward an exact-open tab binding —
+   that field belonged to the REJECTED 2.9.44 verifier. The background's own
+   exact-context probe is the enforced destination gate. */
+assert(!/expectedAthenaTabId\s*:/.test(bridge), 'the released content bridge must not claim a tab-binding forward it does not verify');
 assert(/_mlsAthenaActionGesture\s*=\s*\{|delete\s+[^;]*gesture|\.delete\([^)]*gesture/.test(bridge), 'the trusted-click arm must be consumed before the action result');
 
 const handler = between(background, '/* ATHENA_ACTION_V2_HANDLER_START */', '/* ATHENA_ACTION_V2_HANDLER_END */');
@@ -168,8 +171,10 @@ assert(/athCandidates\.length/.test(probeScan), 'the probe must iterate every si
 assert(/contextVerified/.test(probeScan) && /lockedContextShape\(athProbe\.context\)/.test(probeScan), 'a tab only counts as verified after full context verification');
 assert(/verifiedTabCount\s*>\s*1/.test(handler) && /ambiguous-athena-tabs/.test(between(handler, 'verifiedTabCount > 1', 'noteWriteProofFailure')), 'duplicate verified encounters across Athena tabs must fail closed as ambiguous');
 assert(/if \(!tab \|\| !probe\) return probeFailure/.test(handler), 'zero verified tabs must return the honest probe failure, never proceed');
-assert(/hasExpectedAthenaTabId/.test(handler) && /athCandidates\s*=\s*athCandidates\.filter/.test(handler), 'an exact-open continuation must restrict its probe to the navigation-proven Athena tab');
-assert(/Number\(candidate\s*&&\s*candidate\.id\)\s*===\s*expectedAthenaTabId/.test(handler), 'exact-open tab filtering does not compare the requested tab id exactly');
+/* RELEASED 3.0.0: no exact-open tab-pin filter in this handler (rejected
+   2.9.44 feature). Ambiguity handling above and full context verification are
+   the enforced gates; a pin field must not exist half-implemented. */
+assert(!/hasExpectedAthenaTabId/.test(handler), 'the released handler must not carry the rejected exact-open tab-pin filter');
 assert(/athenaTabId\s*:\s*tab\.id/.test(handler), 'the read-only probe receipt does not return the exact verified Athena tab id');
 
 /* The execute capability is bound end to end. Every mismatch must be rejected

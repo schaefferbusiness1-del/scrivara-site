@@ -280,4 +280,21 @@ try {
   fs.rmSync(temporary, { recursive: true, force: true });
 }
 
+/* /api/versions/report regression (live 2026-07-20): the worker's version
+ * report is a cross-origin fetch; the backend's CORS allowlist covers web
+ * origins and one canonical extension id, NOT arbitrary unpacked ids. The
+ * fetch is reliable ONLY because the backend origin is a granted host
+ * permission (MV3 host-permitted fetches skip CORS). Dropping this entry
+ * silently kills version reporting on every unpacked install. */
+{
+  const hosts = manifest.host_permissions || [];
+  assert(hosts.includes('https://scrivara-backend.onrender.com/*'),
+    'manifest must keep the backend host permission — the worker version report relies on the CORS exemption');
+  assert.strictEqual(hosts.filter(h => /onrender\.com/.test(h)).length, 1,
+    'exactly one narrow backend origin — never a broader onrender grant');
+  const bg = read('background.js');
+  assert(bg.includes("fetch('https://scrivara-backend.onrender.com/api/versions/report'"),
+    'background.js must report the running version to the backend versions endpoint');
+}
+
 console.log(`PASS extension package: v${manifest.version}, ${EXPECTED_FILES.length} exact root files, deterministic and byte-verified`);

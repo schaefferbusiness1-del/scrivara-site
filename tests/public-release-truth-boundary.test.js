@@ -38,7 +38,10 @@ assert(/Manual candidate package withheld/i.test(download) && /\bdisabled\b/.tes
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 const feed = JSON.parse(read('extension-version.json'));
-assert.strictEqual(feed.version, '2.9.41', 'public feed must remain on the immutable known-good channel until candidate release');
+/* 3.0.0 released 2026-07-20: accepted 2.9.43 core (identical core digest,
+   816d57a6…) + version bump + the narrow backend host permission that fixes
+   worker version reporting. Loaded and live-verified before this pin moved. */
+assert.strictEqual(feed.version, '3.0.0', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

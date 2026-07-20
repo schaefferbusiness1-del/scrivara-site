@@ -703,12 +703,6 @@
           noteWriteProof: mlsStr(d.noteWriteProof || (d.payload && d.payload.noteWriteProof), 220),
           expectedPatient: safePatient(d.expectedPatient || d.patient || (d.payload && d.payload.patient)),
           expectedContext: safeContext(d.expectedContext || d.context || (d.payload && d.payload.context)),
-          /* Optional exact-open continuation binding. Normal review probes omit
-             this and retain the established all-tab unique-discovery behavior.
-             When the app just proved one appointment navigation, the probe must
-             stay on that same Athena tab instead of silently succeeding in a
-             different already-open tab. The background validates it again. */
-          expectedAthenaTabId: d.expectedAthenaTabId == null || d.expectedAthenaTabId === '' ? '' : Number(d.expectedAthenaTabId),
           probeContext: (function (v) { v = (v && typeof v === 'object') ? v : {}; return { patientName: mlsStr(v.patientName, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn, 80), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200), framePath: mlsStr(v.framePath, 80), encounterRootFingerprint: mlsStr(v.encounterRootFingerprint, 120), controlLabel: mlsStr(v.controlLabel, 200), controlFingerprint: mlsStr(v.controlFingerprint, 120), noteScopeFingerprint: mlsStr(v.noteScopeFingerprint, 120), actionContainerFingerprint: mlsStr(v.actionContainerFingerprint, 120), editorFingerprint: mlsStr(v.editorFingerprint, 120), contextHash: mlsStr(v.contextHash, 120), taughtDestinationFingerprint: mlsStr(v.taughtDestinationFingerprint, 120), taughtDestinationLabel: mlsStr(v.taughtDestinationLabel, 240) }; })(d.probeContext || (d.payload && d.payload.probeContext)),
           billing: safeBilling(d.billing || (d.payload && d.payload.billing)),
           order: safeOrderResult.value,

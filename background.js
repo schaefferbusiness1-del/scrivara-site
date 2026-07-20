@@ -2221,9 +2221,6 @@ function mlsAthenaTeachWatcherFn(config) {
         rec.used = true; // the first execute attempt consumes the token, even on a later mismatch
       }
       var previewHash = clean(msg.previewHash), manifestHash = clean(msg.manifestHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {}, suppliedOrder = msg.order || {};
-      var hasExpectedAthenaTabId = msg.expectedAthenaTabId !== undefined && msg.expectedAthenaTabId !== null && clean(msg.expectedAthenaTabId) !== '';
-      var expectedAthenaTabId = hasExpectedAthenaTabId ? Number(msg.expectedAthenaTabId) : 0;
-      if (hasExpectedAthenaTabId && (!Number.isInteger(expectedAthenaTabId) || expectedAthenaTabId <= 0)) return { ok: false, blocked: true, reason: 'athena-tab-mismatch', error: 'The exact Athena tab binding was invalid. Nothing was changed.' };
       var rowHash = clean(msg.rowHash), clientOrderId = clean(msg.clientOrderId);
       var noteText = String(msg.noteText == null ? '' : msg.noteText), notePolicy = clean(msg.notePolicy || 'empty_only'), noteSections = Array.isArray(msg.sections) ? msg.sections : [];
       var canonicalNotePayload = notePayloadKey(noteText, noteSections, notePolicy);
@@ -2254,16 +2251,6 @@ function mlsAthenaTeachWatcherFn(config) {
         if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
         var all = await chrome.tabs.query({}), athCandidates = await pickAthenaWriteCandidates(all);
         if (athCandidates && athCandidates.__error) return { ok: false, blocked: true, reason: athCandidates.__error, error: athCandidates.__message };
-        /* An exact appointment-open continuation supplies the tab that just
-           produced its navigation proof. Probe only that tab. Without this
-           binding, a slow target tab could be combined with a matching encounter
-           already open in another tab, creating one false composite receipt.
-           Generic review probes omit the field and retain unique all-tab
-           discovery. */
-        if (hasExpectedAthenaTabId) {
-          athCandidates = athCandidates.filter(function (candidate) { return Number(candidate && candidate.id) === expectedAthenaTabId; });
-          if (athCandidates.length !== 1) return { ok: false, blocked: true, reason: 'athena-tab-mismatch', error: 'The Athena tab that opened this appointment is no longer available. Nothing was changed.' };
-        }
         /* Probe every signed-in Athena tab read-only. Exactly ONE tab must
            verify the expected patient+encounter context; zero verified tabs
            returns the first honest probe failure, and duplicate verified
@@ -2310,7 +2297,7 @@ function mlsAthenaTeachWatcherFn(config) {
           locked: probe.context
         };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', athenaTabId: tab.id, context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
 
       if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };

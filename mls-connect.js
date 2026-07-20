@@ -29666,7 +29666,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* report what this client runs (no PHI, just versions) */
       try {
         fetch(API + '/api/versions/report', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ component: 'webapp', build: (window.MLS_APP_BUILD || 'unknown'), version: inst || 'not-installed' }) }).catch(function () {});
+          body: JSON.stringify({ component: 'webapp', build: (window.MLS_APP_BUILD || window.__MLS_AV || 'unknown'), version: inst || 'not-installed' }) }).catch(function () {});
       } catch (e) {}
       var iN = verNum(inst), lN = verNum(v.assistant);
       if (inst && iN != null && lN != null && iN < lN) {
@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b450';
+  window.__MLS_AV = window.__MLS_AV || 'b451';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b450';
+  var MLS_APP_BUILD='2026-07-20-b451';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
