@@ -17773,8 +17773,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       S.lastWarn = 'Note generation timed out. Your full transcript is still safe below — try Generate again.';
       return;
     }
-    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = ''; return; }
+    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = ''; bindingNotice(); return; }
     if (S.phase !== 'stopped') S.phase = 'idle';
+    bindingNotice();
+  }
+  /* b443: the exact-scheduled gate refusal must stay visible for as long as it
+     is TRUE. lastWarn is a one-shot string that computePhase wipes the moment a
+     note exists, so a doctor on a row that cannot bind (live-caught 2026-07-20:
+     an appointment with no provider) lost the only explanation before ever
+     seeing it — record/generate then refused with no visible reason. The
+     cross-day path already derives a persistent badge from the ROW (b438);
+     this is the same idea for today: recompute the notice each pass, present
+     while the binding is not provable, gone the moment it becomes ready. A
+     more specific active warning is never overwritten. */
+  function bindingNotice() {
+    try {
+      if (!S.appt || S.lastWarn) return;
+      if (exactScheduledBindingMatches(S.appt)) return;
+      var provider = String(S.appt.provider || '').trim();
+      S.lastWarn = S.appt._pt
+        ? 'This visit was opened by patient search, not from a schedule row. Recording and generation need the exact scheduled appointment — open this patient from the day\'s schedule.'
+        : (!provider
+          ? 'This appointment row has no provider, so MLS cannot pin the note to an exact provider and day. Recording, generation, and Athena verification stay off for it — re-pull this day or set the appointment\'s provider.'
+          : (scheduledAppointmentId(S.appt)
+            ? 'MLS could not prove this row\'s exact Athena appointment binding. Re-pull this day before using Athena verification or send.'
+            : 'This row is missing its exact Athena appointment ID. The note stays in MLS — re-pull this day before using Athena verification or send.'));
+    } catch (e) {}
   }
   function fmtTimer() {
     var s = Math.max(0, Math.floor((Date.now() - S.recStart) / 1000));
@@ -32720,7 +32744,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b442';
+  window.__MLS_AV = window.__MLS_AV || 'b443';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33030,7 +33054,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b442';
+  var MLS_APP_BUILD='2026-07-20-b443';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
