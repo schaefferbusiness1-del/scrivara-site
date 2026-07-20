@@ -85,6 +85,20 @@ result = classify({
 assert(/1 calendar save\/update request failed/i.test(result.message), 'mixed refusal types overstated the number of failed writes');
 assert(!/3 calendar save\/update requests failed/i.test(result.message), 'total row refusals were mislabeled as failed writes');
 
+/* "Schedule read, rows refused" must carry the full reconciliation ledger:
+   expected, found, resolved (already-present vs new), unresolved + reasons. */
+result = classify({
+  ok: false, complete: false, reason: 'calendar-partial',
+  scheduleReceipt: { expectedCount: 17, parsedCount: 17 },
+  calendarReceipt: {
+    failureClass: 'identity-unverified', attempted: 17, mapped: 16, skipped: 12, created: 4, failed: 1,
+    failureReasons: { 'patient-not-resolved': 1 }
+  }
+}, '2026-07-20');
+assert(/expected 17/.test(result.message) && /found 17/.test(result.message), 'refused rows lack expected/found counts');
+assert(/resolved 16 \(12 already present, 4 new\)/.test(result.message), 'refused rows lack the resolved breakdown');
+assert(/unresolved 1 — patient not resolved ×1/.test(result.message), 'unresolved rows lack their per-reason counts');
+
 result = classify({
   ok: true, complete: true, reason: 'complete',
   scheduleReceipt: { parsedCount: 17 },
@@ -92,6 +106,15 @@ result = classify({
 }, '2026-07-15');
 assert.strictEqual(result.ok, true, 'fully reconciled pull was not accepted');
 assert(/17 appointment/.test(result.message) && /17 patient/.test(result.message), 'complete receipt summary omits reconciled counts');
+
+result = classify({
+  ok: true, complete: true, reason: 'complete',
+  scheduleReceipt: { expectedCount: 17, parsedCount: 17 },
+  calendarReceipt: { attempted: 17, mapped: 17, skipped: 13, created: 4, failed: 0 },
+  historyReceipt: { requested: 17, processed: 17, complete: true }
+}, '2026-07-15');
+assert(/expected 17/.test(result.message) && /resolved 17 \(13 already present, 4 new\)/.test(result.message) && /unresolved 0/.test(result.message),
+  'the complete verdict omits the reconciliation ledger');
 
 result = classify({
   ok: true, complete: true, reason: 'empty-day',

@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b449';
+  window.__MLS_AV = window.__MLS_AV || 'b450';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b449';
+  var MLS_APP_BUILD='2026-07-20-b450';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42037,6 +42037,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
 
+  /* One honest reconciliation ledger for every pull verdict: expected, found,
+     resolved (with how many were already present vs newly created), and
+     unresolved WITH the per-reason counts. "Schedule read, rows refused" with
+     no numbers is not an acceptable final message. */
+  function pullReconLine(r) {
+    var sr = r && r.scheduleReceipt || {}, cr = r && r.calendarReceipt || {};
+    if (sr.expectedCount == null && cr.attempted == null) return '';
+    var expected = Number(sr.expectedCount != null ? sr.expectedCount : (sr.candidateCount || 0));
+    var found = Number(sr.parsedCount || 0);
+    var resolved = Number(cr.mapped != null ? cr.mapped : 0);
+    var already = Number(cr.skipped || 0), created = Number(cr.created || 0);
+    var unresolved = Number(cr.failed || 0);
+    var reasons = dsSafeReasonCounts(cr.failureReasons);
+    var reasonBits = Object.keys(reasons).map(function (k) { return k.replace(/-/g, ' ') + ' ×' + reasons[k]; });
+    var parts = ['expected ' + expected, 'found ' + found, 'resolved ' + resolved +
+      ((already || created) ? ' (' + [already ? already + ' already present' : '', created ? created + ' new' : ''].filter(Boolean).join(', ') + ')' : ''),
+      'unresolved ' + unresolved + (unresolved && reasonBits.length ? ' — ' + reasonBits.join(', ') : '')];
+    return parts.join(' · ');
+  }
   function pullOutcome(result, day) {
     var r = result && typeof result === 'object' ? result : null;
     if (r && r.ok === true && r.complete === true) {
@@ -42046,7 +42065,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       var rows = Number(sr.parsedCount != null ? sr.parsedCount : (sr.mergedRows != null ? sr.mergedRows : 0));
       var hist = Number(hr.processed != null ? hr.processed : 0);
-      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history checked for ' + hist + ' patient' + (hist === 1 ? '' : 's')) : '') + '.' };
+      var recon = pullReconLine(r);
+      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history checked for ' + hist + ' patient' + (hist === 1 ? '' : 's')) : '') + '.' + (recon ? ' [' + recon + ']' : '') };
     }
     var reason = r && r.reason || 'unverified-result';
     var sr2 = r && r.scheduleReceipt || {};
@@ -42070,12 +42090,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (kind === 'calendar-read-unverified') return 'Athena\'s schedule was read, but MLS could not verify the existing MLS calendar before reconciling it. No day was marked complete; retry when the MLS connection is stable.';
         if (kind === 'save-failed') return 'Athena\'s schedule was read, but ' + (writeFailures || 'one or more') + ' calendar save/update request' + (writeFailures === 1 ? '' : 's') + ' failed. Appointments and history that did finish remain available; retry safely checks existing rows before writing.';
         if (kind === 'concurrent-import') return 'Athena\'s schedule was read, but another schedule import still owned one or more rows. MLS did not guess or duplicate them; wait for that pull to finish, then retry.';
-        if (kind === 'identity-unverified') return 'Athena\'s schedule was read, but MLS refused one or more rows because their exact patient or appointment identity could not be proven. No guessed match was saved; retry after the full Athena day grid is stable.';
-        if (kind === 'mapping-unverified') return 'The appointments were processed, but MLS could not prove a one-to-one Athena-to-calendar mapping for every row. Existing saves remain; the day was not marked complete and is safe to retry.';
-        if (kind === 'snapshot-unverified') return 'Every appointment was accounted for, but MLS could not publish the exact verified-day snapshot. Existing calendar rows remain saved; retry to rebuild the day proof.';
-        if (kind === 'date-unverified') return 'Athena\'s schedule contained a row whose date did not match this day, so MLS refused to mark the calendar complete. Reopen the exact Athena day and retry.';
-        if (kind === 'accounting-unverified') return 'Athena\'s schedule was read, but the number of calendar rows accounted for did not match the verified schedule count. MLS did not mark the day complete; retry.';
-        return 'Athena\'s schedule was read, but the MLS calendar could not produce a complete verification receipt. Existing successful work remains; copy the error report for the exact PHI-free gate counts, then retry.';
+        var recon2 = pullReconLine(r);
+        var reconSuffix = recon2 ? ' [' + recon2 + ']' : '';
+        if (kind === 'identity-unverified') return 'Athena\'s schedule was read, but MLS refused one or more rows because their exact patient or appointment identity could not be proven. No guessed match was saved; retry after the full Athena day grid is stable.' + reconSuffix;
+        if (kind === 'mapping-unverified') return 'The appointments were processed, but MLS could not prove a one-to-one Athena-to-calendar mapping for every row. Existing saves remain; the day was not marked complete and is safe to retry.' + reconSuffix;
+        if (kind === 'snapshot-unverified') return 'Every appointment was accounted for, but MLS could not publish the exact verified-day snapshot. Existing calendar rows remain saved; retry to rebuild the day proof.' + reconSuffix;
+        if (kind === 'date-unverified') return 'Athena\'s schedule contained a row whose date did not match this day, so MLS refused to mark the calendar complete. Reopen the exact Athena day and retry.' + reconSuffix;
+        if (kind === 'accounting-unverified') return 'Athena\'s schedule was read, but the number of calendar rows accounted for did not match the verified schedule count. MLS did not mark the day complete; retry.' + reconSuffix;
+        return 'Athena\'s schedule was read, but the MLS calendar could not produce a complete verification receipt. Existing successful work remains; copy the error report for the exact PHI-free gate counts, then retry.' + reconSuffix;
       })(),
       'history-partial': (function () {
         /* Name the exact patients whose history is incomplete — a bare count
