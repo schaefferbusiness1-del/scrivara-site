@@ -13,7 +13,7 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
  * would deterministically replay stale code for an existing clinician. */
 const assets = [
   ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
-  ['feat_athena_tooltip_dedupe.js', '20260719ui117', '20260719ui116'],
+  ['feat_athena_tooltip_dedupe.js', '20260720ui118', '20260719ui117'],
   ['feat_b18_qa.js', '20260719b18v9', '20260719b18v8'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260719asst143', '20260717asst142'],

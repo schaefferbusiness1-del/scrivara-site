@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b457"></script>
+<script src="public-preview-policy.js?v=b458"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -974,6 +974,13 @@
   .rec-group.doc .rec-item{border-left-color:var(--gold)}
   .rec-group.doc .rec-item .chk{color:var(--gold)}
   .rec-empty{font-size:14px;color:var(--muted);font-style:italic;padding:4px 0}
+  /* ===== Templates workspace (redesign 2026-07-20) — runtime feature modules
+     (template health, upload toolbar, cloud library) insert themselves next to
+     #tplList, becoming grid items; they must span the full row so the
+     list/detail panes keep their two columns. ===== */
+  #tplWorkspace>*{grid-column:1 / -1;min-width:0}
+  #tplWorkspace>#tplList{grid-column:1}
+  #tplWorkspace>#tplDetail{grid-column:2}
   /* ===== Settings sections (additive, MLS) — titled groups in the Settings modal ===== */
   .set-section{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
   .set-section:first-of-type{border-top:none;padding-top:0;margin-top:0}
@@ -12612,7 +12619,7 @@ function renderTplDetail(){
     '<div class="field" style="margin:0 0 8px"><label for="tplDetName">Name</label><input type="text" id="tplDetName" value="'+esc(t.name||'')+'" oninput="tplDetailDirty()"></div>'+
     '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords</label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
     '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
-    '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">Saved ✓</div>'+
+    '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">No unsaved changes</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
       '<button class="btn-green" style="font-size:12.5px;padding:7px 12px" onclick="tplDetailSave()">💾 Save changes</button>'+
       '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="useTemplateNow(\''+esc(t.id)+'\')" title="Reformat the note you have open right now to match this template">⚡ Use on current note</button>'+
@@ -12667,8 +12674,16 @@ function tplUndoDelete(){
 function settingsSearchChanged(){
   var q=String((document.getElementById('settingsSearch')||{}).value||'').toLowerCase().trim();
   var modal=document.getElementById('settingsModal'); if(!modal) return;
-  var sections=modal.querySelectorAll('.modal > .set-section');
   var tabBar=document.getElementById('settingsTabBar');
+  /* The settings-clean organizer (feat module) is the single owner of section
+     visibility. When it is running, hand the query to it and write nothing
+     here — two writers on the same nodes is how flicker starts. */
+  if(tabBar&&tabBar.getAttribute('data-mls-settings-clean')==='1'){
+    try{ document.dispatchEvent(new CustomEvent('mls:settings-search',{detail:{query:q}})); }catch(e){}
+    return;
+  }
+  /* Fallback (organizer not loaded): filter the raw sections directly. */
+  var sections=modal.querySelectorAll('.modal > .set-section');
   if(tabBar) tabBar.style.display=q?'none':'';
   if(!q){
     sections.forEach(function(sec){ sec.querySelectorAll('.field').forEach(function(f){ f.style.display=''; }); });
@@ -12684,7 +12699,7 @@ function settingsSearchChanged(){
     if(sec.getAttribute('data-set-hidden')==='1'){ sec.classList.add('set-tab-hidden'); return; }
     var any=false;
     sec.querySelectorAll('.field').forEach(function(f){
-      var hit=(f.innerText||f.textContent||'').toLowerCase().indexOf(q)>=0;
+      var hit=(f.textContent||'').toLowerCase().indexOf(q)>=0;
       f.style.display=hit?'':'none'; if(hit) any=true;
     });
     var head=sec.querySelector('.set-head');
@@ -12728,6 +12743,13 @@ function setNavLayout(mode,silent){
   if(s&&!silent){ s.textContent='Saved ✓ — '+(mode==='left'?'left sidebar':'top bar'); s.style.color='#127a55'; setTimeout(function(){ if(s.textContent.indexOf('Saved')===0) s.textContent=''; },4000); }
 }
 function applyNavLayout(){
+  /* The public-preview shell draws its own navigation; the classic-layout
+     setting must never stack a second sidebar on top of it. */
+  if(document.body.classList.contains('mls-public-preview')){
+    document.body.classList.remove('mls-nav-left','mls-nav-collapsed');
+    var pb=document.getElementById('navCollapseBtn'); if(pb) pb.remove();
+    return;
+  }
   var mode='top'; try{ mode=localStorage.getItem(uns('navLayout'))==='left'?'left':'top'; }catch(e){}
   document.body.classList.toggle('mls-nav-left',mode==='left');
   var sel=document.getElementById('navLayoutSel'); if(sel&&sel.value!==mode) sel.value=mode;
@@ -26043,7 +26065,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b457"></script>
+<script src="public-preview-runtime.js?v=b458"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26314,7 +26336,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b457';
+  window.__MLS_AV='b458';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

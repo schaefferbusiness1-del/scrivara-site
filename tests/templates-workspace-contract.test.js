@@ -48,4 +48,16 @@ assert(!/function previewTemplate\(id\)\{ var t=getTemplateById\(id\); if\(!t\) 
   'template preview must render in the pane, not alert()');
 assert(/function previewTemplate\(id\)\{ tplSelect\(id\); \}/.test(html), 'previewTemplate must select into the detail pane');
 
+// 6. truthful initial status (caught live: a fresh pane claimed "Saved ✓"
+//    before anything was saved)
+assert(html.includes('>No unsaved changes</div>'), 'a freshly rendered detail pane must not claim Saved');
+
+// 7. runtime modules (template health, upload toolbar, cloud library) insert
+//    themselves beside #tplList and become grid items — they must span the
+//    full row so the two panes keep their columns (caught live on b457)
+assert(html.includes('#tplWorkspace>*{grid-column:1 / -1;min-width:0}')
+  && html.includes('#tplWorkspace>#tplList{grid-column:1}')
+  && html.includes('#tplWorkspace>#tplDetail{grid-column:2}'),
+  'injected sibling panels must span the workspace grid, keeping list/detail side by side');
+
 console.log('PASS templates workspace: searchable two-pane list/detail, in-place saves with bounded revisions and honest states, dirty-edit protection, confirmed delete with real undo');

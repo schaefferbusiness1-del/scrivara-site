@@ -462,6 +462,10 @@
   var reconciling = false;
   var initialAdvancedSettled = false;
   var activeSettingsGroup = 'account';
+  /* Settings search (2026-07-20): this module is the single owner of section
+     visibility, so the search filter lives here too — the #settingsSearch
+     input in ScribeFlow only dispatches 'mls:settings-search'. */
+  var settingsSearchQuery = '';
   var settingsWasOpen = false;
   var settingsMoves = [];
   var concernRaf = 0;
@@ -476,6 +480,9 @@
     var st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = [
+      /* Settings search hides non-matching fields by class only, so leaving
+         search restores everything without tracking prior inline styles. */
+      '#settingsModal .field.mls-search-hidden{display:none!important;}',
       /* When the easy lane owns the Advanced trigger, suppress the second
          legacy toggle below it. If the easy lane is absent, the legacy row
          remains available as the fallback owner. */
@@ -996,11 +1003,57 @@
     if (modal && modal.getAttribute('data-mls-settings-active') !== key) modal.setAttribute('data-mls-settings-active', key);
   }
 
+  function applySettingsSearch() {
+    /* Search mode: show every matching field across ALL groups this role may
+       see. Role-gated groups (allowedSettingsGroup / data-set-hidden) are never
+       surfaced by search. Field hiding uses a class, never inline styles, so
+       leaving search restores everything without tracking prior state. */
+    var q = settingsSearchQuery;
+    directSettingsSections().forEach(function (section) {
+      var gk = settingsGroupFor(section);
+      var allowed = !!gk && allowedSettingsGroup(gk) && section.getAttribute('data-set-hidden') !== '1';
+      var any = false;
+      var headHit = allowed && settingsHeading(section).toLowerCase().indexOf(q) >= 0;
+      Array.prototype.slice.call(section.querySelectorAll('.field')).forEach(function (f) {
+        var hit = allowed && (headHit || String(f.textContent || '').toLowerCase().indexOf(q) >= 0);
+        if (f.classList.contains('mls-search-hidden') !== !hit) f.classList.toggle('mls-search-hidden', !hit);
+        if (hit) any = true;
+      });
+      var show = allowed && any;
+      if (section.classList.contains('set-tab-hidden') !== !show) section.classList.toggle('set-tab-hidden', !show);
+      var sectionDisplay = show ? '' : 'none';
+      if (section.style.display !== sectionDisplay) section.style.display = sectionDisplay;
+    });
+    var bar = byId('settingsTabBar');
+    if (bar) Array.prototype.slice.call(bar.querySelectorAll('[data-mls-settings-group]')).forEach(function (tab) {
+      if (tab.classList.contains('on')) tab.classList.remove('on');
+      if (tab.getAttribute('aria-selected') !== 'false') tab.setAttribute('aria-selected', 'false');
+    });
+    updateSettingsFooter(activeSettingsGroup);
+  }
+
+  function clearSettingsSearchClasses() {
+    directSettingsSections().forEach(function (section) {
+      Array.prototype.slice.call(section.querySelectorAll('.field.mls-search-hidden')).forEach(function (f) {
+        f.classList.remove('mls-search-hidden');
+      });
+    });
+  }
+
   function selectSettingsGroup(key, focusTab, resetScroll) {
     var modal = byId('settingsModal'), bar = byId('settingsTabBar');
     if (!modal || !bar || !allowedSettingsGroup(key)) return;
     var body = modal.querySelector('.modal');
+    /* An explicit tab choice while searching means "take me there" — leave
+       search mode and clear the input so the view and the box agree. */
+    if (resetScroll === true && settingsSearchQuery) {
+      settingsSearchQuery = '';
+      var searchInput = byId('settingsSearch');
+      if (searchInput && searchInput.value) searchInput.value = '';
+    }
     activeSettingsGroup = key;
+    if (settingsSearchQuery) { applySettingsSearch(); return; }
+    clearSettingsSearchClasses();
     directSettingsSections().forEach(function (section) {
       var show = settingsGroupFor(section) === key && allowedSettingsGroup(key);
       if (section.classList.contains('set-tab-hidden') !== !show) section.classList.toggle('set-tab-hidden', !show);
@@ -1228,14 +1281,24 @@
     if (!safe(function () { return !!target.closest('#' + ACCOUNT_WRAP_ID); }, false)) closeAccountMenu();
   }
 
+  function onSettingsSearch(ev) {
+    settingsSearchQuery = String((ev && ev.detail && ev.detail.query) || '').toLowerCase().trim();
+    if (settingsSearchQuery) applySettingsSearch();
+    else selectSettingsGroup(activeSettingsGroup, false, false);
+  }
+
   function boot() {
     injectStyle();
     document.addEventListener('click', onDocumentClick, true);
+    document.addEventListener('mls:settings-search', onSettingsSearch);
     scheduleReconcile(true);
   }
 
   function revert() {
     document.removeEventListener('click', onDocumentClick, true);
+    document.removeEventListener('mls:settings-search', onSettingsSearch);
+    settingsSearchQuery = '';
+    clearSettingsSearchClasses();
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     if (concernRaf) { if (W.cancelAnimationFrame) W.cancelAnimationFrame(concernRaf); else clearTimeout(concernRaf); concernRaf = 0; }
     concernQueue = {};

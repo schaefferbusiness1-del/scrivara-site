@@ -25,6 +25,25 @@ assert(searchFn.includes('mlsSelectSettingsTab('), 'clearing the search must res
 assert(searchFn.includes("classList.toggle('set-tab-hidden',!any)"),
   'search must reveal matches via the same class the tab system uses');
 
+// 1b. the settings-clean organizer (feat module) is the single visibility
+//     owner at runtime — the input hands the query to it instead of writing
+//     over the same nodes, and the organizer implements the filter itself
+assert(searchFn.includes("tabBar.getAttribute('data-mls-settings-clean')==='1'")
+  && searchFn.includes("'mls:settings-search'"),
+  'when the organizer owns Settings, the search input must dispatch to it, not double-write');
+const organizer = fs.readFileSync(path.join(root, 'feat_athena_tooltip_dedupe.js'), 'utf8');
+assert(organizer.includes('function applySettingsSearch()') && organizer.includes("'mls:settings-search'"),
+  'the settings organizer must implement the search filter');
+assert(organizer.includes("section.getAttribute('data-set-hidden') !== '1'")
+  && organizer.includes('allowedSettingsGroup(gk)'),
+  'organizer search must respect role gating');
+assert(organizer.includes('mls-search-hidden') && organizer.includes('#settingsModal .field.mls-search-hidden{display:none!important;}'),
+  'organizer search must hide fields by class only, so exiting search restores everything');
+assert(organizer.includes('if (resetScroll === true && settingsSearchQuery)'),
+  'an explicit tab choice while searching must exit search mode');
+assert(organizer.includes('if (settingsSearchQuery) { applySettingsSearch(); return; }'),
+  'reconciles during search must re-apply the filter, not fight it');
+
 // 2. scope chips: every settings group is labeled with who it belongs to
 assert(html.includes('function decorateSettingsScopes()'), 'scope-chip decorator missing');
 for (const scope of ["'This device'", "'Your account'", "'Practice'"]) {
