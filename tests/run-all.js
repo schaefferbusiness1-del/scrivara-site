@@ -162,6 +162,7 @@ const tests = [
   'visit-draft-patient-identity-runtime.test.js',
   'visit-history-provenance-chip.test.js',
   'visit-binding-notice-persistence.test.js',
+  'writeflow-auto-open-runtime.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',

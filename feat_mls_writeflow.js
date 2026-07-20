@@ -74,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.9.0';
+  var VERSION = 'wf2-2.0.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -621,6 +621,48 @@
       });
     });
   }
+  /* wf2-2.0.0: reach the destination on our own. When the write probe refuses
+     because the exact patient/encounter is not open in Athena, MLS drives
+     athenaOne's own patient search (the extension's proven SearchOpen verb,
+     with the frozen identity + appointment id + schedule date) to open the
+     chart, then re-runs the SAME action once from the top — a fresh probe
+     against the newly opened context. Exactly one attempt (the retry carries
+     __autoOpened), never on identity/token/tab failures, and the one-click
+     human confirm is unchanged: auto-open only removes the "go open the chart
+     first" manual step, never the review. */
+  var AUTO_OPEN_REASONS = { 'context-unverified': 1, 'context-mismatch': 1 };
+  function wfDayKey(v) {
+    v = S(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+    if (!m) return '';
+    return m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+  }
+  function searchOpenTarget(patient, expectedContext) {
+    return new Promise(function (resolve) {
+      var requestId = 'wf-open-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      var done = false;
+      function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} resolve(v || {}); }
+      function onMsg(ev) {
+        var d = ev && ev.data;
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppSearchOpenResult') return;
+        var rid = String(d.requestId || (d.resp && d.resp.requestId) || '');
+        if (rid && rid !== requestId) return;
+        fin(d.resp && typeof d.resp === 'object' ? d.resp : d);
+      }
+      window.addEventListener('message', onMsg);
+      try {
+        window.postMessage({
+          source: 'mls-app', type: 'mlsAppSearchOpenPatient',
+          name: S(patient.name), dob: S(patient.dob), mrn: S(patient.mrn),
+          appointmentId: S(expectedContext && expectedContext.appointmentId || ''),
+          scheduleDate: wfDayKey(expectedContext && expectedContext.visitDate),
+          requestId: requestId, deadlineAt: Date.now() + 75000
+        }, window.location.origin);
+      } catch (e) { fin({ ok: false, error: String((e && e.message) || e) }); }
+      setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 76000);
+    });
+  }
   function startAthenaAction(action, opts) {
     opts = opts || {};
     if (!ATHENA_ACTIONS[action]) { actionSay(opts, 'Unsupported Athena action. Nothing was changed.', 'err'); return Promise.resolve({ ok: false, error: 'unsupported-action' }); }
@@ -672,7 +714,20 @@
       clientOrderId: action === 'place_order' ? S(payload.order && payload.order.clientOrderId).trim() : ''
     }, 'mlsAppAthenaActionV2Result', 90000).then(function (probe) {
       probe = probe || {};
-      if (!probe.ok) { athenaActionRunning = false; actionSay(opts, probe.error || probe.message || 'Athena context could not be verified. Nothing was changed.', 'err'); return probe; }
+      if (!probe.ok) {
+        var canAutoOpen = AUTO_OPEN_REASONS[String(probe.reason || '')] === 1 && opts.autoOpen !== false && opts.__autoOpened !== true;
+        if (!canAutoOpen) { athenaActionRunning = false; actionSay(opts, probe.error || probe.message || 'Athena context could not be verified. Nothing was changed.', 'err'); return probe; }
+        actionSay(opts, patient.name + ' is not open in Athena. MLS is opening the chart there now — nothing is written without your confirmation.', '');
+        return searchOpenTarget(patient, expectedContext).then(function (openRes) {
+          athenaActionRunning = false;
+          if (!openRes || openRes.ok !== true) {
+            actionSay(opts, 'MLS could not open ' + patient.name + ' in Athena on its own' + ((openRes && (openRes.error || openRes.reason)) ? (': ' + (openRes.error || openRes.reason)) : '') + '. Open the chart in Athena, then try again. Nothing was changed.', 'err');
+            return probe;
+          }
+          actionSay(opts, patient.name + ' is open in Athena. Re-verifying the exact encounter…', '');
+          return startAthenaAction(action, Object.assign({}, opts, { __autoOpened: true }));
+        });
+      }
       try { if (typeof opts.onProbe === 'function') opts.onProbe(probe); } catch (e0) {}
       showActionConfirm(action, opts, patient, previewHash, payload, probe);
       return probe;
