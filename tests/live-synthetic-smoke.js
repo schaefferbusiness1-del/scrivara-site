@@ -1003,23 +1003,46 @@ async function proveCrossDayNativeWorkspace(cdp, todayScreenshotPath, nextScreen
     const row=(id,day,time,name,dob,mrn)=>({
       id,appointment_id:String(id),appt_date:day,day_local:day,start_local:time,time_display:time,
       start_at:day+'T'+(time==='08:15 AM'?'08:15:00':'09:45:00'),name,dob,mrn,
-      patient_external_id:'synthetic-date-'+id,provider:'',reason:'Synthetic isolated date acceptance',
+      patient_external_id:'synthetic-date-'+id,provider:'Synthetic Provider, MD',reason:'Synthetic isolated date acceptance',
       status:'booked',source:'synthetic-live-date-matrix'
     });
     window._calAppts=[];
+    /* Fixture DOBs must never share a month-day with ANY fixture date (or the
+       clock-rollover dates), or the data-driven birthday decoration on that
+       one date legitimately breaks the identical-topology-across-dates proof.
+       today/past/tomorrow are relative, so pick collision-free month-days
+       dynamically instead of hardcoding. */
+    const bdayExclude=new Set(['01-31','02-01','12-31','01-01','01-02','03-07','03-08','03-09',today.slice(5),plus(today,-1).slice(5),plus(today,1).slice(5)]);
+    const bdayPool=['04-15','05-16','06-17','09-18','10-19','11-20'].filter(md=>!bdayExclude.has(md));
+    const dobAlpha='1981-'+bdayPool[0], dobBeta='1982-'+bdayPool[1];
     cases.forEach((c,index)=>{
       c.names=[c.prefix+' Alpha',c.prefix+' Beta'];
       window._calAppts.push(
-        row(9910000+index*10+1,c.day,'08:15 AM',c.names[0],'1981-01-01','SYN-DATE-'+index+'A'),
-        row(9910000+index*10+2,c.day,'09:45 AM',c.names[1],'1982-02-02','SYN-DATE-'+index+'B')
+        row(9910000+index*10+1,c.day,'08:15 AM',c.names[0],dobAlpha,'SYN-DATE-'+index+'A'),
+        row(9910000+index*10+2,c.day,'09:45 AM',c.names[1],dobBeta,'SYN-DATE-'+index+'B')
       );
     });
+    /* b436 row-tap proof needs real activation: cross-day opens resolve the
+       LOCAL chart by exact name+DOB (xdc resolvePatient) and refuse without
+       one, so register one chart per fixture appointment through the app's own
+       patient store API. The UI-driven New-patient proof stays separate. */
+    var chartsAdded=0;
+    if(typeof getPatients==='function'&&typeof savePatients==='function'){
+      var existing=getPatients()||[],have={};
+      existing.forEach(function(p){if(p&&p.id)have[String(p.id)]=1});
+      var charts=[];
+      window._calAppts.forEach(function(r){
+        if(!have[String(r.patient_external_id)]){have[String(r.patient_external_id)]=1;charts.push({id:r.patient_external_id,name:r.name,dob:r.dob,mrn:r.mrn,sex:'F'})}
+      });
+      if(charts.length){savePatients(existing.concat(charts));chartsAdded=charts.length}
+    }
     const accepted=window.__mlsDaySwitch.setDay(today);
     window.__mlsEasyV32.open('home');
-    return {today,next:plus(today,1),cases,accepted,fixtureCount:window._calAppts.length};
+    return {today,next:plus(today,1),cases,accepted,fixtureCount:window._calAppts.length,chartsAdded};
   })()`);
   assert.strictEqual(fixture.accepted, true, `Easy refused the synthetic Today fixture: ${JSON.stringify(fixture)}`);
   assert.strictEqual(fixture.fixtureCount, fixture.cases.length*2, 'date-matrix fixture did not install exactly two isolated appointments per date');
+  assert.strictEqual(fixture.chartsAdded, fixture.cases.length*2, 'date-matrix fixture did not register one local chart per synthetic appointment');
 
   let proof;
   try {
@@ -1073,19 +1096,52 @@ async function proveCrossDayNativeWorkspace(cdp, todayScreenshotPath, nextScreen
         assert.deepStrictEqual(state.ownerCounts,canonical.ownerCounts,`${dateCase.label}: UI ownership differs from Today`);
       }
 
-      await click(cdp,'#ez3Wrap .ez3-prow .moredots');
-      const actions=await waitFor(cdp,`${dateCase.label} core row actions`,`(() => {
-        const row=document.querySelector('#ez3Wrap .ez3-prow.open');if(!row)return false;
-        return [...row.querySelectorAll('[data-act]')].filter(el=>getComputedStyle(el).display!=='none').map(el=>el.getAttribute('data-act'));
-      })()`);
-      assert.deepStrictEqual(actions,['rec','chart','gen','send'],`${dateCase.label}: core appointment actions changed`);
+      /* b436: doctor rows carry no per-row expander (.moredots) or action grid
+         (.ez3-exgrid) — tapping the row header simply picks the patient via
+         lockAndStart(record:false). Prove the retired affordances stay absent
+         on every date, prove the filter, then prove the tap route locks the
+         exact row patient and lands on the doctor screen. Full patient
+         activation/recording is proven later with a registered synthetic
+         patient; day changes clear the lock (setVisitDay), which the next
+         iteration's cleanState assertion re-verifies. */
+      const rowTopology=await evaluate(cdp,`(() => ({
+        moredots:document.querySelectorAll('#ez3Wrap .ez3-prow .moredots').length,
+        exgrid:document.querySelectorAll('#ez3Wrap .ez3-exgrid').length,
+        headers:document.querySelectorAll('#ez3Wrap .ez3-prow .hd[data-hd]').length
+      }))()`);
+      assert.deepStrictEqual(rowTopology,{moredots:0,exgrid:0,headers:2},`${dateCase.label}: b436 doctor row topology changed (expander must stay retired, both headers tappable)`);
       await fill(cdp,'#ez3Search',dateCase.names[0]);
       const filtered=await waitFor(cdp,`${dateCase.label} local patient filter`,`(() => {
         const names=[...document.querySelectorAll('#ez3Wrap .ez3-prow .nm')].map(el=>(el.textContent||'').trim());
         return names.length===1?names:false;
       })()`);
       assert.deepStrictEqual(filtered,[dateCase.names[0]],`${dateCase.label}: patient filter returned another date/patient`);
-      matrix.push({label:dateCase.label,day:dateCase.day,patientNames:state.patientNames,actions,searchIsolation:true,ownerCounts:state.ownerCounts,todayShortcut:state.todayShortcut});
+      await fill(cdp,'#ez3Search','');
+      await waitFor(cdp,`${dateCase.label} filter cleared`,`document.querySelectorAll('#ez3Wrap .ez3-prow').length===2`);
+      await click(cdp,'#ez3Wrap .ez3-prow .hd[data-hd]');
+      let opened;
+      try{
+        opened=await waitFor(cdp,`${dateCase.label} row tap picked the patient`,`(() => {
+          const st=window.__mlsEasyV32.state();
+          if(st.screen!=='doctor'||!st.locked){
+            const xdc=window.__mlsCrossDayContext;
+            window.__mlsLiveRowTapDiag=(xdc&&xdc._test)?(()=>{try{
+              const row=document.querySelector('#ez3Wrap .ez3-prow .hd[data-hd]');
+              const key=row?row.getAttribute('data-hd'):'(no row)';
+              const r=xdc._test.resolveForKey(key,${JSON.stringify(dateCase.day)});
+              return {key,resolve:(r&&r.reason)||(r&&r.ok?'ok':'no-result'),screen:st.screen,hasLocked:!!st.locked};
+            }catch(e){return {err:String(e)}}})():{noXdc:true,screen:st.screen};
+            return false;
+          }
+          return {screen:st.screen,name:String(st.locked.name||''),day:window.__mlsEasyV32.remote.currentVisitDay()};
+        })()`,8000);
+      }catch(err){
+        const diag=await evaluate(cdp,'window.__mlsLiveRowTapDiag||null');
+        throw new Error(err.message+' rowTapDiag='+JSON.stringify(diag));
+      }
+      assert.strictEqual(opened.name,dateCase.names[0],`${dateCase.label}: row tap locked the wrong patient`);
+      assert.strictEqual(opened.day,dateCase.day,`${dateCase.label}: opening a patient changed the selected day`);
+      matrix.push({label:dateCase.label,day:dateCase.day,patientNames:state.patientNames,rowTopology,openProof:opened,searchIsolation:true,ownerCounts:state.ownerCounts,todayShortcut:state.todayShortcut});
     }
 
     const rollover=await evaluate(cdp,`(() => {
@@ -1124,14 +1180,40 @@ async function proveCrossDayNativeWorkspace(cdp, todayScreenshotPath, nextScreen
       if(saved){if(saved.had)window._calAppts=saved.value;else delete window._calAppts;}
       if(saved&&saved.todayFn)window._acctTodayKey=saved.todayFn;
       delete window.__mlsLiveClockDay;
+      /* Remove the fixture-registered date-matrix charts so later single-patient
+         store invariants stay exact. Match by the fixture's unique name shape
+         (ids may be normalized by the store on save). */
+      let chartCleanup={before:-1,removed:-1,after:-1};
+      try{
+        if(typeof getPatients==='function'&&typeof savePatients==='function'){
+          const batchDiag=()=>{try{return Object.keys(__mlsPtsBatchByKey).map(k=>{const st=__mlsPtsBatchByKey[k];return {key:k.slice(-14),depth:st.depth,dirty:st.dirty,arrLen:(st.arr||[]).length,flushing:st.flushing}})}catch(e){return String(e)}};
+          try{if(window.__mlsPatientStoreBatch)window.__mlsPatientStoreBatch._flushAll('date-matrix-cleanup')}catch(_){}
+          const all=getPatients()||[];
+          const isFixture=p=>p&&/^Synthetic (Today|Past|Tomorrow|Month End|Month Start|Year End|Year Start|DST Before|DST Start|DST After) (Alpha|Beta)$/.test(String(p.name||''));
+          const kept=all.filter(p=>!isFixture(p));
+          const batchBefore=batchDiag();
+          /* The store's wipe guard hard-blocks a >=8 -> 0 collapse by design
+             (mls-connect __mlsWipeGuard). This teardown legitimately empties a
+             fixture-only store, so consume the documented one-time hatch. */
+          if(!kept.length&&all.length>=8&&window.__mlsWipeGuard&&typeof window.__mlsWipeGuard.allowOnce==='function')window.__mlsWipeGuard.allowOnce();
+          if(kept.length!==all.length)savePatients(kept);
+          const rawLen=(()=>{try{return String(localStorage.getItem(uns('patients'))||'').length}catch(e){return -1}})();
+          chartCleanup={before:all.length,removed:all.length-kept.length,after:(getPatients()||[]).filter(isFixture).length,batchBefore,batchAfter:batchDiag(),rawLen};
+        }
+      }catch(e){chartCleanup={error:String(e)}}
+      window.__mlsLiveChartCleanup=chartCleanup;
       const today=typeof window._acctTodayKey==='function'?window._acctTodayKey():new Date().toISOString().slice(0,10);
       try{window.__mlsDaySwitch.setDay(today)}catch(_){}
       try{window.__mlsEasyV32.open('home')}catch(_){}
       delete window.__mlsLiveCrossDayOriginal;
       delete window.__mlsLiveCrossDayWrap;
       delete window.__mlsLiveCrossDayStrip;
-      return true;
-    })()`);
+      return window.__mlsLiveChartCleanup||true;
+    })()`).then(cleanup=>{
+      if(cleanup&&typeof cleanup==='object'&&(cleanup.error||cleanup.removed<1||cleanup.after!==0)){
+        throw new Error(`date-matrix chart cleanup failed: ${JSON.stringify(cleanup)}`);
+      }
+    });
   }
 }
 

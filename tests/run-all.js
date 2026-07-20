@@ -158,6 +158,7 @@ const tests = [
   'provider-roster-ingest-dedupe-runtime.test.js',
   'provider-roster-machine-echo-collapse.test.js',
   'writeflow-athena-appointment-id-resolution.test.js',
+  'patient-wipe-guard-hatch.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'status-notifier-guard.test.js',

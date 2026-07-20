@@ -6,8 +6,16 @@
  * gate and would only fail at the live probe as context-mismatch — a
  * guaranteed first-click failure. The unified manifest's exact-visit context
  * must prefer the REAL Athena appointment id resolved from the day's
- * schedule-import index, and must keep the prior value when the index has no
- * exactly-one match (fail-closed at the probe, never a guess).
+ * schedule-import index.
+ *
+ * wf2-1.9.0: when the index has no exactly-one match, the appointment id is
+ * EMPTY — never the backend row id. The extension's probe requires an exact
+ * match on any supplied appointment id, so a fabricated id guaranteed a
+ * confusing first-click "context-unverified" refusal, while its truthiness
+ * flipped the manifest's exact-visit gate from blocked to ready. An empty id
+ * makes the manifest block honestly up front (unless a bound encounter id +
+ * URL exists), matching the b438 rule that an Athena appointment id is a
+ * destination identifier that is never guessed or synthesized.
  */
 
 const assert = require('assert');
@@ -17,7 +25,8 @@ const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8');
-assert(src.includes("var VERSION = 'wf2-1.8.0'"), 'writeflow version must be wf2-1.8.0');
+assert(src.includes("var VERSION = 'wf2-1.9.0'"), 'writeflow version must be wf2-1.9.0');
+assert(!/appointmentId:\s*suppliedAppointment\s*\|\|[^,]*\|\|\s*S\(hit\.id/.test(src), 'the backend row id must never be the appointment-id fallback');
 
 function makeContext(indexRows, calAppts) {
   const store = new Map();
@@ -87,21 +96,26 @@ function manifestFor(indexRows, calAppts) {
   assert(note && note.capability === 'ready', 'write-note must be ready with full identity + resolved visit');
 }
 
-// 2. No index (or no match): prior behavior preserved — backend row id stays,
-//    and the live probe remains the fail-closed arbiter.
+// 2. No index (or no match): the appointment id is EMPTY — never the backend
+//    row id — and the unified manifest blocks the write with the honest
+//    exact-visit reason instead of presenting a ready action that the live
+//    probe is guaranteed to refuse.
 {
   const manifest = manifestFor(null, [ADAM_ROW]);
-  assert.strictEqual(manifest.visit.appointmentId, '3794', 'without an index match the prior calendar-row id must be preserved');
+  assert.strictEqual(manifest.visit.appointmentId, '', 'without an index match the appointment id must be empty, never the backend row id');
+  const note = manifest.rows.find(r => r.id === 'write-note');
+  assert(note && note.capability !== 'ready', 'write-note must not be ready without a real appointment id or bound encounter');
+  assert(/appointment ID|encounter/i.test(String(note && note.reason || '')), 'the block reason must name the missing exact-visit context');
 }
 
-// 3. Ambiguity fails closed to prior behavior: two index entries claiming the
-//    same backend row + patient + day never produce a guessed id.
+// 3. Ambiguity fails closed: two index entries claiming the same backend row +
+//    patient + day never produce a guessed id — the id stays empty.
 {
   const manifest = manifestFor({
     'appointment-id:52585118': { state: 'done', patientId: 'mr85n5sdkd6o', backendAppointmentId: '3794', appt_date: '2026-07-16' },
     'appointment-id:52585120': { state: 'done', patientId: 'mr85n5sdkd6o', backendAppointmentId: '3794', appt_date: '2026-07-16' }
   }, [ADAM_ROW]);
-  assert.strictEqual(manifest.visit.appointmentId, '3794', 'ambiguous index entries must not pick an arbitrary Athena id');
+  assert.strictEqual(manifest.visit.appointmentId, '', 'ambiguous index entries must not pick an arbitrary or fabricated id');
 }
 
 // 4. A supplied explicit context always wins over the index.
@@ -135,8 +149,9 @@ function manifestFor(indexRows, calAppts) {
   assert.strictEqual(manifest.visit.visitDate, '7/16/2026', 'visit date must come from the resolvable row');
 }
 
-// 6. wf2-1.8.0 fail-open: when NO row resolves, the nearest-row behavior is
-//    unchanged (probe stays the arbiter).
+// 6. wf2-1.9.0: when NO row resolves, the nearest row still supplies date and
+//    provider, but the appointment id stays empty — the row's backend id never
+//    leaks into the Athena appointment-id field.
 {
   const MLS_ONLY_FUTURE_ROW = {
     id: '3821', patient_external_id: 'mr85n5sdkd6o', name: 'Adam J Schaeffer', dob: '03/24/2006',
@@ -144,7 +159,9 @@ function manifestFor(indexRows, calAppts) {
     start_at: '2026-07-18T06:00:00.000Z', status: 'booked'
   };
   const manifest = manifestFor(null, [MLS_ONLY_FUTURE_ROW, ADAM_ROW]);
-  assert(manifest.visit.appointmentId === '3821' || manifest.visit.appointmentId === '3794', 'without any index the nearest-row fallback must be preserved');
+  assert.strictEqual(manifest.visit.appointmentId, '', 'without any index the appointment id must stay empty');
+  assert(manifest.visit.visitDate, 'the nearest row must still supply a visit date');
+  assert(manifest.visit.provider, 'the nearest row must still supply a provider');
 }
 
 console.log('PASS unified manifest resolves the real Athena appointment id from the day import index; MLS-only rows never outrank resolvable ones; no-match/ambiguous/supplied paths preserved');

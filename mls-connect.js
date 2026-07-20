@@ -32720,7 +32720,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b439';
+  window.__MLS_AV = window.__MLS_AV || 'b440';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33030,7 +33030,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-19-b439';
+  var MLS_APP_BUILD='2026-07-20-b440';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41236,10 +41236,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   var G = {
     installed: true,
-    version: '1.0.0',
+    version: '1.1.0',
     blocked: 0,      // count of hard-blocked wipes
     warned: 0,       // count of suspicious-shrink warnings
     _allowNext: false,
+    _allowDepth: 0,  // v1.1.0: authorizes every stacked guard layer of ONE save
     lastBlock: null,
     allowOnce: function () { G._allowNext = true; return 'next savePatients([]) will be permitted once'; }
   };
@@ -41265,9 +41266,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var curLen = storedCount();
 
       // HARD BLOCK: full -> empty collapse of a non-trivial list. Never legitimate here.
+      /* v1.1.0: the self-heal can stack this guard more than once in the
+         wrapper chain (later modules re-wrap savePatients without forwarding
+         the guard marker, so install() wraps again on top). All layers share
+         this one G, so a boolean hatch died at the outermost layer and the
+         stale inner layer still blocked — allowOnce() could never work in a
+         booted session. The outermost layer that consumes the hatch now holds
+         _allowDepth open across orig.apply so every inner layer of the SAME
+         save passes; the next save starts blocked again. */
+      var allowedByHatch = false;
       if (newLen === 0 && curLen >= EMPTY_BLOCK_MIN) {
-        if (G._allowNext) {
+        if (G._allowDepth > 0) {
+          // an outer guard layer already authorized this exact save
+        } else if (G._allowNext) {
           G._allowNext = false; // consume the one-time escape hatch
+          allowedByHatch = true;
         } else {
           G.blocked++;
           G.lastBlock = { curLen: curLen, at: (function () { try { return new Date().toISOString(); } catch (e) { return ''; } })() };
@@ -41283,6 +41296,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         try { console.warn('[mlsWipeGuard] large patient-list shrink ' + curLen + ' -> ' + newLen + ' (allowed; leaving a breadcrumb).'); } catch (e) {}
       }
 
+      if (allowedByHatch) {
+        G._allowDepth++;
+        try { return orig.apply(this, arguments); } finally { G._allowDepth--; }
+      }
       return orig.apply(this, arguments);
     }
     guarded.__mlsWipeGuarded = true;

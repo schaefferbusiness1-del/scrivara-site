@@ -74,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.8.0';
+  var VERSION = 'wf2-1.9.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -255,7 +255,14 @@
     var day = suppliedDate || visitDay(hit.day_local || hit.appt_date || hit.start_at);
     var provider = suppliedProvider || apptProvider(hit);
     if (!day || !provider) return null;
-    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || athenaAppointmentIdFromImportIndex(pid, hit.id, day) || S(hit.id || ''), encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
+    /* wf2-1.9.0: never present the backend calendar-row id as an Athena
+       appointment id. The backend id is a different namespace; the extension's
+       probe requires an exact match on any supplied appointment id, so a
+       fabricated id guarantees a confusing first-click context refusal, while
+       its mere truthiness flipped the unified manifest's exact-visit gate from
+       blocked to ready. An empty id is honest: the manifest blocks with the
+       real reason unless a bound encounter id + URL exists. */
+    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || athenaAppointmentIdFromImportIndex(pid, hit.id, day) || '', encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
   }
   function statusEl(opts) {
     try {
