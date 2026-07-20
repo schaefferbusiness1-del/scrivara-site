@@ -1,0 +1,39 @@
+# UI quality goal — Templates + Settings redesign, live acceptance (2026-07-20 evening)
+
+## Builds
+- **b457** (`6e34fbb`): Templates two-pane workspace (search, in-place edit, per-save revisions ×5, dirty-guard, confirmed delete + real Undo button), Settings search + scope chips + nav a11y + left/top navigation layout with collapse rail, honest cloud-sync miss reporting on Save. CACHE mls-v44.
+- **b458** (`0a4ee24`): fixes found ONLY by live acceptance (below). CACHE mls-v45, feat_athena_tooltip_dedupe pin ui117→ui118.
+- Full registry green both times: **252 suites**, including new `templates-workspace-contract.test.js` + `settings-workspace-contract.test.js`.
+
+## Production incident discovered mid-acceptance (not caused by the site builds)
+At 6:01:38 PM EDT the owner manually deployed backend `1522b27`, which carries the July-19 "Harden clinical release gates" lineage the owner had rolled back twice. Result, verified live: `/api/agreements/me` → `userAccess: denied` (5 `LEGAL_RELEASE_*` env vars unset) and `/api/appointments` → 503 `PHI_GATE_CLOSED` (`PHI_ENABLED` unset). **Every hosted account is locked to the "Clinical workspace not enabled" screen** (its Retry re-checks honestly and stays locked — that new-message-plus-action surface behaved exactly as designed). Owner decision doc: `MLS_EVERYTHING/CLINICAL_GATE_LOCKOUT_2026-07-20.md`. I set no gate env vars and did not roll back — both are owner-only calls.
+
+## What was verified live (sample workspace, `mlsscribe.com/ScribeFlow.html?demo=1` → "Explore a sample day", synthetic data only, b457)
+- Two-pane workspace renders; list rows are `role="option"` with keyboard activation (Enter moved selection — dispatched KeyboardEvent).
+- Row click renders detail editor (name/keywords/body/actions/revisions slot).
+- Search: `facet` → exactly the "Lumbar Facet Joint Injection" row; clear → all 3 rows; **selection survives filter re-renders**.
+- Dirty flow: edit → status "Edited — not saved yet"; switching rows while dirty → native confirm "Discard unsaved edits to the current template?"; refusing keeps selection AND the edit text; accepting rebuilds clean on the new row.
+- Read-only sample honesty: real click on "💾 Save changes" → banner "Editing is disabled in the read-only sample workspace.", store untouched (3 templates, 0 revisions) — no silent partial failure, no false Saved claim from the click.
+- Settings modal: search input present; 11 scope chips rendered on section heads ("YOUR ACCOUNT · THIS DEVICE KEY", "YOUR ACCOUNT", …).
+
+## Defects found live and fixed in b458 (code review + tests had passed without catching them)
+1. **Template grid scrambled by injected panels**: `tpfPanel`, `mlsP1TplBar`, `tlPanel` insert next to `#tplList` and became grid items → panes stacked/swapped. Fix: `#tplWorkspace>*` spans the full row; `#tplList`/`#tplDetail` keep columns 1/2. Verified live by injecting the identical CSS into the running b457 page: panes side-by-side at equal y, panels full-width.
+2. **Settings search fought the real owner**: the visible tab rail is the settings-clean organizer in `feat_athena_tooltip_dedupe.js` (groups: Account & security / Notes & AI / Features & navigation / …), which re-applies section visibility on every reconcile. My ScribeFlow-side filter produced zero results and a broken restore. Fix: the filter now lives IN the organizer (`applySettingsSearch`, `mls:settings-search` event, class-only field hiding, tab-click exits search, reconciles re-apply the filter); the input only dispatches. ScribeFlow keeps a fallback filter for organizer-absent boots.
+3. **Untruthful fresh-pane status**: detail pane initialized to "Saved ✓" before any save → now "No unsaved changes".
+4. **Nav layout vs preview shell**: `applyNavLayout` now no-ops under `mls-public-preview` so the left rail can never stack on the preview chrome.
+
+## b458 live verification (sample workspace, ~19:20 EDT; Pages stalled once → empty-commit retrigger, live in 50s)
+All four b457 defect fixes proven on the deployed build:
+- Template workspace grid: 2 columns, `#tplList` col 1 (x820, narrower), `#tplDetail` col 2 (x1172), same row; injected panels full-width above.
+- Fresh detail pane status: "No unsaved changes" (no false Saved claim).
+- Settings search via the organizer: `theme` → ONLY the 🎨 Display section with the theme field visible, all rail tabs deselected; clearing the input restores the exact prior group (Account & security showing BOTH its sections — the b457 restore bug is gone); typing a query then clicking a rail tab exits search and clears the box; 11 scope chips.
+- Nav layout deployed CSS: `mls-nav-left` → 190px reserved first column on #appWrap; + `mls-nav-collapsed` → 52px; preview guard confirmed (`setNavLayout('left')` persists the preference but never applies the class under the preview shell).
+- Console: zero errors in the sample tab. Pricing page still degrades honestly against the gated backend ("Billing status could not be checked … Retry"; minor wording nit: labels an HTTP 503 as "(network)" — polish candidate, not a defect of substance).
+
+## Billing follow-up (owner approved the chain 19:00 EDT)
+Owner said "override I approve" for the 1522b27 deploy + sandbox chain — but had already self-deployed 1522b27 at 18:01, and its clinical gates 503 every billing route (webhook/checkout/health verified live), so the chain cannot run. Prepared draft **PR #9** (billing routes pass the closed clinical gates; all 30 backend suites green; merge deploys nothing). Owner picks: gates env vars (A), rollback (B), or PR #9 (C).
+
+## Deferred to hosted-mode resume (blocked by the owner's clinical gates, not by the build)
+- Real-keystroke search/edit/save/revision-restore/delete-undo (sample workspace is read-only; write path is pinned by the contract tests).
+- Left-sidebar + collapsed rail interaction in the classic chrome (preview shell hides the classic nav by design; CSS mechanics pinned + structurally verified).
+- Resume point: reload signed-in schaefferbusiness1 tab (256592442) once the workspace is re-enabled, re-run the Templates/Settings sweep with real input, then verify nav layout left/top + collapse + keyboard + no-overlap.
