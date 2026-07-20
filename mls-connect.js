@@ -16843,6 +16843,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resolveAppProvider() {
     var el = $('mlsProvChip'); if (!el) return null;
     var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    /* b445: "Pulling as: <name>" is the PULL IDENTITY, not a view filter.
+       Substring-matching the account name against row providers silently hid
+       every other provider's rows (live: 20 pulled, "1 on today's schedule").
+       Only an explicit provider pick may scope the schedule view. */
+    if (/pulling as/i.test(t)) return null;
     var seen = {}, best = null;
     appts().forEach(function (a) {
       var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
@@ -22137,6 +22142,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resolveAppProvider() {
     var el = $('mlsProvChip'); if (!el) return null;
     var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    /* b445: "Pulling as: <name>" is the PULL IDENTITY, not a view filter.
+       Substring-matching the account name against row providers silently hid
+       every other provider's rows (live: 20 pulled, "1 on today's schedule").
+       Only an explicit provider pick may scope the schedule view. */
+    if (/pulling as/i.test(t)) return null;
     var seen = {}, best = null;
     appts().forEach(function (a) {
       var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
@@ -24222,6 +24232,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resolveAppProvider() {
     var el = $('mlsProvChip'); if (!el) return null;
     var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    /* b445: "Pulling as: <name>" is the PULL IDENTITY, not a view filter.
+       Substring-matching the account name against row providers silently hid
+       every other provider's rows (live: 20 pulled, "1 on today's schedule").
+       Only an explicit provider pick may scope the schedule view. */
+    if (/pulling as/i.test(t)) return null;
     var seen = {}, best = null;
     appts().forEach(function (a) {
       var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
@@ -26132,6 +26147,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resolveAppProvider() {
     var el = $('mlsProvChip'); if (!el) return null;
     var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    /* b445: "Pulling as: <name>" is the PULL IDENTITY, not a view filter.
+       Substring-matching the account name against row providers silently hid
+       every other provider's rows (live: 20 pulled, "1 on today's schedule").
+       Only an explicit provider pick may scope the schedule view. */
+    if (/pulling as/i.test(t)) return null;
     var seen = {}, best = null;
     appts().forEach(function (a) {
       var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
@@ -27727,6 +27747,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resolveAppProvider() {
     var el = $('mlsProvChip'); if (!el) return null;
     var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    /* b445: "Pulling as: <name>" is the PULL IDENTITY, not a view filter.
+       Substring-matching the account name against row providers silently hid
+       every other provider's rows (live: 20 pulled, "1 on today's schedule").
+       Only an explicit provider pick may scope the schedule view. */
+    if (/pulling as/i.test(t)) return null;
     var seen = {}, best = null;
     appts().forEach(function (a) {
       var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
@@ -32744,7 +32769,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b444';
+  window.__MLS_AV = window.__MLS_AV || 'b445';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33054,7 +33079,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b444';
+  var MLS_APP_BUILD='2026-07-20-b445';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
