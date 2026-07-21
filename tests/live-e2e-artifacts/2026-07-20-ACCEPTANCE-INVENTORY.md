@@ -1,4 +1,15 @@
-# MLS Scribe — Master acceptance inventory (as of 2026-07-20 ~19:45 EDT, site b458, ext 3.0.0, backend 1522b27)
+# MLS Scribe — Master acceptance inventory (updated 2026-07-20 ~21:55 EDT, site b461, ext 3.0.0, backend 1522b27 + gates configured)
+
+## UPDATE 21:55 EDT — the lockout is resolved; most GATED rows below are live again
+- **Clinical gates CONFIGURED tonight** (owner env values, my key-name/format fixes, grants recorded via Render Shell: `active grants: 2`). App restored for both accounts; every `GATED` row below became reachable. PHI capabilities all true; honest lockout behavior was itself live-verified end-to-end.
+- **Hosted real-input sweep ran on b459**: template create/search/select/edit/save/revision with real keystrokes — all truthful states proven live (`2026-07-20-ui-quality-acceptance.md`). Delete human-confirm proven; its dialog froze all same-origin tabs (one renderer) — deadlock broken by closing the tab, which by design ended the per-tab session. **Remaining sweep needs one owner sign-in** (delete-undo, Settings keystrokes, nav layouts + rail).
+- **b459–b461 shipped**: $100/yr Enterprise (page LIVE-verified: "3+ providers · or $100/yr each"; backend catalog on PR #9); Admin Wksp Grant/Revoke UI (b460); **first-sign-in legal ceremony restored** (b461 client + PR #9 server; 8-document set incl. two-party BAA with owner countersign; commercial-only invariant pinned both sides; preview/lawyer exclusions LIVE-verified on b461; sample workspace enters clean, zero console errors).
+- **Payments**: Render key is LIVE mode; anonymous checkout → real Stripe Checkout session verified; live webhook destination re-enabled (had been auto-disabled after 127/127 failures — route predates 1522b27); resend test isolated the last gap: **`STRIPE_WEBHOOK_SECRET` holds the TEST endpoint's secret → owner copies the live `whsec_`**. Pricing page now reports "configured and reachable ✓ (live mode) · Webhooks: configured ✓" (LIVE b461).
+- **Registration is DOWN for new customers** (SIGNUP_MANIFEST_UNAVAILABLE): production manifest built + validated READY against the backend's own inspector; 3 owner env pastes in `SIGNUP_MANIFEST_VALUES_2026-07-20.txt`.
+- **Admin grants API** shipped (PR #9): owner-only audited grant/revoke, bootstrap-safe, self-revoke refused — ends Shell-only grant management.
+- **Extension rollout observation**: live version reports show 2.9.41 / 2.9.29 from active devices — 3.0.0 not yet installed everywhere (owner: update other machines).
+- **PR #9 now carries four changes in one owner deploy**: billing-through-gates, $100/yr Enterprise, grants API, ceremony server-side.
+- Backend suite 31/31 green; site registry 252/252 green.
 
 One row per intended surface. **Status legend:** `LIVE` = proven by hand in the installed product (build + artifact cited) · `SUITE` = pinned by automated regression only (252 site + 30 backend suites, all green) · `GATED` = was live-proven earlier, currently unreachable because backend 1522b27's clinical gates (PHI_ENABLED + LEGAL_RELEASE_* unset since 18:01 EDT) lock all hosted accounts and 503 all clinical routes · `OPEN` = known item, deliberately not closed.
 
@@ -38,12 +49,13 @@ Evidence files: `2026-07-20-b446-readonly-qa.md` (phases 1–5, all five prior g
 - Auth/2FA/password floors, agreements, PHI gate, legal-release gate, relay v2, device registry, SMART/FHIR, template library, portal APIs, outreach guards, billing readiness/admin/webhook ledger — **SUITE** (30 suites green tonight) + gates' fail-closed behavior **LIVE-verified tonight** (agreements/me denied; appointments/billing 503; app lockout screen + honest Retry).
 - Billing sandbox chain (checkout→sub→invoice→webhook→entitlement→portal→plan change→cancel→failed payment→replay→Connect→$20 Enterprise via admin) — **BLOCKED**: owner approved it, but every billing route 503s under the PHI gate. Unblock = owner path A (gate env vars) or C (merge+deploy draft PR #9, prepared tonight, 30 suites green) or B (rollback 79510ca, loses billing endpoints).
 
-## Known OPEN items (deliberately not closed)
-1. Clinical-gate lockout decision — owner-only (CLINICAL_GATE_LOCKOUT_2026-07-20.md; task #4).
-2. Hosted real-input acceptance sweep of the two redesigns + classic-chrome nav layouts — resume point saved (tab 256592442, reload after gates lift).
-3. Pricing 503 labeled "(network)" — cosmetic copy.
-4. Staff-prep is Menu-only; held workspaces; `/api/readiness` client surfacing (carried from b435 era).
-5. Outreach email finder needs owner's SERPER_API_KEY or yield stays 0 (unchanged).
-6. PULL-004 junk-row cleanup awaits owner OK (carried).
+## Known OPEN items (updated 21:55 EDT)
+1. ~~Clinical-gate lockout decision~~ — RESOLVED tonight (gates configured, grants recorded, app live).
+2. Final hosted sweep (delete-undo, Settings keystrokes, nav layouts + collapse rail, ceremony render) — needs one **owner sign-in** (per-tab session ended when the dialog-frozen tab was closed); exact steps in the ui-quality artifact resume point.
+3. **Owner one-click/paste queue**: merge+deploy PR #9 (4 changes) · 3 signup-manifest env pastes (registration is DOWN until then) · live webhook `whsec_` copy (pay→auto-access) · update devices still on ext 2.9.x.
+4. Polish (non-blocking): pricing 503 labeled "(network)"; ceremony skip-link appears only after a completed sign attempt during the 410 transition; template-health panel doesn't join workspace search; cloud-library 403 wording shipped b460 pending clinician-account live check.
+5. Staff-prep is Menu-only; held workspaces; `/api/readiness` client surfacing (carried from b435 era).
+6. Outreach email finder needs owner's SERPER_API_KEY or yield stays 0 (unchanged); PULL-004 junk-row cleanup awaits owner OK (carried).
+7. Athena-dependent re-verification (pulls/writes) on request — needs athenaOne + doctor sign-ins.
 
-**Net:** every intended surface above is accounted for with its evidence class; no known reproducible defect is unfixed in reachable code; everything not LIVE-proven is either pinned by suites or explicitly gated behind the single owner decision, with exact resume steps recorded.
+**Net:** every intended surface is accounted for with its evidence class. The two redesigns are shipped, pinned, and live-verified except the short keystroke tail behind one owner sign-in. No known reproducible defect is unfixed in reachable code; what remains is the owner action queue above, each with an exact, prepared step.
