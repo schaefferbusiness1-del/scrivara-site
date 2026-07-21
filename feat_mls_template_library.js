@@ -38,7 +38,7 @@
     if(options.body!==undefined)headers['Content-Type']='application/json';if(options.idempotencyKey)headers['Idempotency-Key']=options.idempotencyKey;
     var response=await window.fetch(window.bkBase()+path,{method:options.method||'GET',headers:headers,body:options.body===undefined?undefined:JSON.stringify(options.body),signal:options.signal});
     progressLink(options.progress,response);var data={};try{data=await response.json();}catch(e){}
-    if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;if(response.status===404&&!(raw&&raw.code)){markUnsupported();err.code='TEMPLATE_UNSUPPORTED';err.message='Cloud template sync is not available on this server yet — templates stay on this device.';}throw err;}
+    if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;if(response.status===404&&!(raw&&raw.code)){markUnsupported();err.code='TEMPLATE_UNSUPPORTED';err.message='Cloud template sync is not available on this server yet — templates stay on this device.';}else if(response.status===403&&!(raw&&raw.message)){err.message='Cloud template sets are available on clinician accounts — this account’s templates stay on this device.';}throw err;}
     return data;
   }
 

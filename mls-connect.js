@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b459';
+  window.__MLS_AV = window.__MLS_AV || 'b460';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b459';
+  var MLS_APP_BUILD='2026-07-20-b460';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41411,7 +41411,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sr232";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260718pr204';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260718tl110';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260720tl111';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */
 ;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260719cmd103';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; version-aware compatibility owner (cpal-1.0.3; revert()). */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */

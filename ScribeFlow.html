@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b459"></script>
+<script src="public-preview-policy.js?v=b460"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -5620,19 +5620,37 @@ async function loadAdminUsers(){
     const users=(d&&d.users)||[];
     if(!users.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No users yet.'; table.style.display='none'; return; }
     empty.style.display='none'; table.style.display='table';
+    /* Clinical-workspace grants (owner-managed, server-recorded). Absent
+       endpoint (backend not yet updated) or unconfigured release degrade to
+       an honest note instead of dead buttons. */
+    let wksp=null;
+    try{ wksp=await adminFetch('/api/admin/legal-release'); }catch(e){ wksp=null; }
+    const wkspActive={};
+    if(wksp&&wksp.grants) wksp.grants.forEach(function(g){ if(g&&!g.revokedAt) wkspActive[String(g.userId)]=true; });
+    const wkspBtnFor=function(u){
+      if(!wksp) return '';
+      if(!wksp.releaseConfigured) return '';
+      return wkspActive[String(u.id)]
+        ? ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:#127a55" onclick="adminWkspRevoke(\''+u.id+'\',\''+esc(u.email||'')+'\')" title="Clinical workspace access is GRANTED — click to revoke (takes effect immediately)">Wksp ✓</button>'
+        : ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminWkspGrant(\''+u.id+'\')" title="Grant clinical workspace access under the configured legal release">Wksp Grant</button>';
+    };
     // heads available for assignment (role==='head', not the owner)
     const heads=users.filter(u=>u.role==='head'&&!(u.role==='owner'||u.isAdmin));
-    body.innerHTML=users.map(u=>{
+    body.innerHTML=(wksp===null
+      ? '<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">Workspace access grants appear here after the next backend update.</td></tr>'
+      : (wksp.releaseConfigured?'':'<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">No legal release is configured on the server — workspace grants are unavailable until the LEGAL_RELEASE_* values are set.</td></tr>'))
+      + users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
       const premOn=!!(u.premium===1||u.premium===true);
       const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#C9DCD2,#9B82D4);color:#fff;border-color:#C9DCD2':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
       const actions=isOwner
-        ? '<span style="color:var(--muted)">Owner</span>'
+        ? '<span style="color:var(--muted)">Owner</span>'+(wksp&&wksp.releaseConfigured&&!wkspActive[String(u.id)]?wkspBtnFor(u):'')
         : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '+
           premBtn+' '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminResetPassword(\''+u.id+'\',\''+esc(u.email||'')+'\')">Reset PW</button> '+
-          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>';
+          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>'+
+          wkspBtnFor(u);
       const roleHead=isOwner ? '<span style="color:var(--muted)">Owner</span>' : adminRoleHeadCell(u,heads);
       return '<tr style="border-bottom:1px solid var(--line)">'+
         '<td style="padding:8px 6px">'+esc(u.email||'')+'</td>'+
@@ -5646,6 +5664,21 @@ async function loadAdminUsers(){
   }catch(e){ toast('Could not load users: '+e.message,'err'); }
 }
 
+async function adminWkspGrant(id){
+  try{
+    await adminFetch('/api/admin/legal-release/grant',{method:'POST',body:JSON.stringify({userId:Number(id)})});
+    toast('Clinical workspace access granted.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Grant failed: '+e.message,'err'); }
+}
+async function adminWkspRevoke(id,email){
+  if(!confirm('Revoke clinical workspace access for '+(email||'this account')+'? The lock takes effect on their next request.')) return;
+  try{
+    await adminFetch('/api/admin/legal-release/revoke',{method:'POST',body:JSON.stringify({userId:Number(id)})});
+    toast('Workspace access revoked.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Revoke failed: '+e.message,'err'); }
+}
 async function adminSetAccess(id,access,days){
   try{
     const body={access:access};
@@ -26065,7 +26098,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b459"></script>
+<script src="public-preview-runtime.js?v=b460"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26336,7 +26369,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b459';
+  window.__MLS_AV='b460';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
