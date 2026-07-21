@@ -39,7 +39,12 @@ for (const [name, source] of [['production', live], ['staging', staging]]) {
   for (const phrase of ['Clinical workspace not enabled', 'not enabled for this deployment or account', 'PHI deployment readiness', 'release configuration', 'account grant']) {
     assert(gate.includes(phrase), `${name} clinical gate omits: ${phrase}`);
   }
-  assert(!/BAA|counsel|contract|signature|synthetic evaluation/i.test(gate), `${name} clinical gate guesses at legal/BAA status`);
+  /* The LOCKED-mode copy must never guess at legal/BAA status. In production
+     the same gate container also hosts the restored signing CEREMONY (a
+     separate mode that legitimately names the BAA/signature) — the no-guessing
+     rule applies to the locked wrap; staging predates the ceremony restore. */
+  const lockedCopy = name === 'production' ? between(gate, '<div id="agLockedWrap">', '</div>') : gate;
+  assert(!/BAA|counsel|contract|signature|synthetic evaluation/i.test(lockedCopy), `${name} clinical gate guesses at legal/BAA status`);
   assert(gate.includes('Access remains locked.'), `${name} clinical gate no longer states its fail-closed result`);
 
   const auth = between(source, 'async function doAuth()', '\n/* ---------- Two-factor login');

@@ -49,7 +49,14 @@ for (const [name, source] of [['live', live], ['staging', staging]]) {
   assert(markup.includes('id="authPracticeAuthorityText"') && markup.includes('credentials may not be shared') && !/shared account holder|authorized shared account/i.test(markup), `${name}: authority copy makes an unsafe shared-account representation`);
   assert(!/continued use|by continuing|deemed accepted/i.test(markup), `${name}: signup uses continued-use acceptance language`);
   assert(markup.includes('does not authorize patient information') && markup.includes('does not') && markup.includes('BAA'), `${name}: synthetic/BAA hold is not explicit`);
-  assert(source.includes("const AGREEMENTS_VERSION='';") && source.includes('const MLS_AGREEMENTS=Object.freeze([]);'), `${name}: synthetic-only agreement hold was replaced by client-authored legal content`);
+  /* Ceremony restored 2026-07-20: production carries the restored agreement
+     set + version (signup assent stays manifest-driven and separate); the
+     stale staging snapshot keeps the empty synthetic-only hold. */
+  if (name === 'live') {
+    assert(source.includes("const AGREEMENTS_VERSION='2026-07-21';") && source.includes('const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);'), `${name}: restored agreement set/version missing`);
+  } else {
+    assert(source.includes("const AGREEMENTS_VERSION='';") && source.includes('const MLS_AGREEMENTS=Object.freeze([]);'), `${name}: synthetic-only agreement hold was replaced by client-authored legal content`);
+  }
   const auth = sliceBetween(source, 'async function doAuth()', '\n/* ---------- Two-factor login');
   assert(auth.indexOf('signupIntent=await prepareSignupAcceptance(email)') < auth.indexOf("'/api/auth/register'"), `${name}: register can run before current assent verification`);
   assert(auth.includes('body.signupAssent=signupIntent;'), `${name}: exact assent intent is not attached to registration`);

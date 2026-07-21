@@ -17,23 +17,17 @@ function between(source, start, end) {
   return source.slice(a, b);
 }
 
-// The browser-owned contract/signature UI is gone from both clinician builds.
+// Shared safety pins for both clinician builds. (The onboarding CEREMONY was
+// restored in production 2026-07-20 as commercial-paperwork-only; the stale
+// staging snapshot still carries the retired state and is pinned as such.)
 for (const [name, source] of [['production', app], ['staging', staging]]) {
-  assert(source.includes('const MLS_AGREEMENTS=Object.freeze([]);'), `${name} still activates embedded browser agreement templates`);
-  assert(source.includes('RETIRED_BROWSER_AGREEMENT_TEMPLATES'), `${name} does not label the rollback text inert`);
-  assert(!/<input[^>]+id="(?:agSignName|csName)"/i.test(source), `${name} still renders a legal-name signing input`);
-  assert(!/<canvas[^>]+id="(?:agSigPad|csSigPad)"/i.test(source), `${name} still renders a signature pad`);
-  assert(!/onclick="(?:agSubmitSign|submitCountersign|signLegalReport|signAndReturnLegal)\(/i.test(source), `${name} still exposes a browser signing control`);
   assert(source.includes('Clinical workspace not enabled'), `${name} lacks the hosted readiness block`);
   assert(source.includes('Clinical workspace access is checked separately'), `${name} does not distinguish sign-in from workspace access`);
   assert(!source.includes('MLS did not receive the immutable'), `${name} makes an unsupported claim about the owner's agreement records`);
   assert(source.includes('id="legalReturnBtn" disabled'), `${name} legal release control is executable`);
   assert.doesNotMatch(source, /Michael(?: L)? Schaeffer|HIPAA Security (?:&|&amp;) Privacy Officer|Treating Physician/, `${name} hardcodes a signer identity or generic signer fallback`);
+  assert(!/onclick="(?:signLegalReport|signAndReturnLegal)\(/i.test(source), `${name} exposes a legal-report signing control`);
 
-  const submit = between(source, 'async function agSubmitSign()', '/* ---- Admin:');
-  assert(submit.indexOf('return false;') < submit.indexOf('/api/agreements/sign'), `${name} legacy agreement POST is reachable`);
-  const counter = between(source, 'async function submitCountersign()', '/* Make any string safe');
-  assert(counter.indexOf('return false;') < counter.indexOf('/countersign'), `${name} legacy countersign POST is reachable`);
   const legalSign = between(source, 'function signAndReturnLegal()', '/* Resilient POST');
   assert(legalSign.indexOf('return false;') < legalSign.indexOf('returnLegalToAttorney()'), `${name} still collapses signing and sending`);
   const legalSend = between(source, 'async function returnLegalToAttorney()', '/* ============ Per-request');
@@ -42,6 +36,34 @@ for (const [name, source] of [['production', app], ['staging', staging]]) {
   assert(legalPay.indexOf('return false;') < legalPay.indexOf('/pay'), `${name} legal report checkout is reachable`);
   const legalRelease = between(source, 'async function releaseLegalReport(id)', 'function renderLegalDashboard');
   assert(legalRelease.indexOf('return false;') < legalRelease.indexOf('/unlock'), `${name} legal report override release is reachable`);
+}
+
+// Staging snapshot: the ceremony stays retired exactly as shipped.
+assert(staging.includes('const MLS_AGREEMENTS=Object.freeze([]);'), 'staging must not activate embedded browser agreement templates');
+assert(staging.includes('RETIRED_BROWSER_AGREEMENT_TEMPLATES'), 'staging does not label the rollback text inert');
+{
+  const submit = between(staging, 'async function agSubmitSign()', '/* ---- Admin:');
+  assert(submit.indexOf('return false;') < submit.indexOf('/api/agreements/sign'), 'staging legacy agreement POST is reachable');
+  const counter = between(staging, 'async function submitCountersign()', '/* Make any string safe');
+  assert(counter.indexOf('return false;') < counter.indexOf('/countersign'), 'staging legacy countersign POST is reachable');
+}
+
+// Production: the RESTORED ceremony is commercial-paperwork-only and can never
+// unlock or lock out clinical use on its own.
+assert(app.includes("const AGREEMENTS_VERSION='2026-07-21';"), 'production agreement set must carry the restored version');
+assert(app.includes('const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);'), 'production must activate the restored agreement set');
+assert(!app.includes('Retired browser-authored template'), 'the BAA intro must be real agreement text again');
+assert(!app.includes('Retired template text.'), 'the BAA flow-down clause must be real agreement text again');
+{
+  const need = between(app, 'function agCeremonyNeeded()', 'function showAgreementsCeremony(');
+  assert(need.includes("classList.contains('mls-public-preview')"), 'the ceremony must never appear in the sample workspace');
+  assert(need.includes('bkUser.isLawyer'), 'attorney accounts keep their own portal terms');
+  const reveal = between(app, 'if(gated){ try{ showAgreementsGate(true); }catch(e){} }', 'document.documentElement.classList.add');
+  assert(reveal.includes('agCeremonyNeeded()'), 'the ceremony shows only after the clinical gate has PASSED');
+  const submit = between(app, 'async function agSubmitSign()', '/* ---- Admin:');
+  assert(submit.includes("res.status===410||res.status===404"), 'a server without ceremony endpoints must be reported honestly');
+  assert(submit.includes('nothing was recorded'), 'the transition message must say nothing was recorded');
+  assert(!/legal-release|legal_release_grants|\/api\/admin\/legal-release/.test(submit), 'signing must never touch clinical grant endpoints');
 }
 
 // Compatibility contract: the exact current server-recorded legacy agreement is
@@ -169,7 +191,7 @@ async function runGate(options) {
   const externalDelivery = intake.indexOf('fetch(REQUEST_ENDPOINT');
   assert(externalDelivery === -1 || intake.indexOf('return false;') < externalDelivery, 'public legal intake still reaches external delivery');
 
-  console.log('PASS legal readiness safety: hosted failures gate closed, browser ceremony retired, synthetic demo preserved, and public/vendor claims constrained');
+  console.log('PASS legal readiness safety: hosted failures gate closed, restored ceremony is commercial-only (staging keeps retirement), synthetic demo preserved, and public/vendor claims constrained');
 })().catch(error => {
   console.error(error);
   process.exit(1);

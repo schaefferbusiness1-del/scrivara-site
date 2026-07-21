@@ -341,22 +341,29 @@ function inspectPublicCopy(file, source, failures) {
 }
 
 function inspectScribeFlow(source, failures) {
+  /* Ceremony restored 2026-07-20: the onboarding signature ceremony is present
+     BY DESIGN and is commercial-paperwork-only. The release boundary now pins
+     (a) the restored agreement set, (b) the untouched server-owned clinical
+     gate, and (c) the safety guards that keep the ceremony out of the sample
+     workspace and off the clinical grant surface. */
   for (const marker of [
-    'const MLS_AGREEMENTS=Object.freeze([]);',
+    "const AGREEMENTS_VERSION='2026-07-21';",
+    'const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);',
     'Clinical workspace not enabled',
     'Synthetic evaluation only',
     'const MLS_LEGAL_WORKSPACE_RELEASED=false;',
     'function hasVerifiedServerLegalRelease(payload)',
+    'function agCeremonyNeeded()',
   ]) {
     if (!source.includes(marker)) addFailure(failures, 'scribeflow_release_boundary_missing', 'ScribeFlow.html', `Missing marker: ${marker}`);
   }
-  for (const [label, re] of [
-    ['browser legal-name signing input', /<input[^>]+id=["']agSignName["']/i],
-    ['browser signature canvas', /<canvas[^>]+id=["']agSigPad["']/i],
-    ['browser agreement signing handler', /onclick=["']agSubmitSign\s*\(/i],
-    ['browser BAA countersigning handler', /onclick=["']submitCountersign\s*\(/i],
-  ]) {
-    if (re.test(source)) addFailure(failures, 'retired_browser_legal_ceremony_visible', 'ScribeFlow.html', `Found ${label}`);
+  const need = source.slice(source.indexOf('function agCeremonyNeeded()'), source.indexOf('function showAgreementsCeremony('));
+  if (!need.includes("classList.contains('mls-public-preview')")) {
+    addFailure(failures, 'ceremony_guard_missing', 'ScribeFlow.html', 'Ceremony is not excluded from the sample workspace');
+  }
+  const submit = source.slice(source.indexOf('async function agSubmitSign()'), source.indexOf('/* ---- Admin:'));
+  if (/\/api\/admin\/legal-release/.test(submit)) {
+    addFailure(failures, 'ceremony_touches_clinical_grants', 'ScribeFlow.html', 'Signing flow references clinical grant endpoints');
   }
 }
 

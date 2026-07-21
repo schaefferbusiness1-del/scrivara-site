@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b460"></script>
+<script src="public-preview-policy.js?v=b461"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -1607,9 +1607,31 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 <div id="agreementsGate" role="dialog" aria-modal="true" aria-labelledby="agGateTitle" aria-describedby="agGateSummary" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg,#f4f7fb);overflow:auto;padding:24px 16px">
   <div style="max-width:760px;margin:0 auto">
     <div class="card">
-      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> Clinical workspace not enabled</h2>
-      <p class="sub" id="agGateSummary"><b>The clinical workspace is not enabled for this deployment or account.</b> This may reflect PHI deployment readiness, release configuration, or an account grant. A valid sign-in does not by itself enable clinical use. Do not enter real patient information.</p>
-      <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">Account sign-in and clinical workspace availability are separate checks. This browser cannot change deployment readiness, release configuration, or account grants. Contact your MLS administrator if you expected access.</div>
+      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> <span id="agGateTitleText">Clinical workspace not enabled</span></h2>
+      <div id="agLockedWrap">
+        <p class="sub" id="agGateSummary"><b>The clinical workspace is not enabled for this deployment or account.</b> This may reflect PHI deployment readiness, release configuration, or an account grant. A valid sign-in does not by itself enable clinical use. Do not enter real patient information.</p>
+        <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;line-height:1.55">Account sign-in and clinical workspace availability are separate checks. This browser cannot change deployment readiness, release configuration, or account grants. Contact your MLS administrator if you expected access.</div>
+      </div>
+      <!-- Restored 2026-07-20: the first-sign-in signing ceremony (commercial
+           paperwork only — never a clinical unlock). Doctor signs; the owner
+           countersigns the BAA from Admin; both parties receive copies. -->
+      <div id="agCeremonyWrap" style="display:none">
+        <p class="sub">Before you start, please review and electronically sign your onboarding agreements. Your signed copy downloads as a PDF, and a compliance record is sent to your administrator. The two-party Business Associate Agreement is fully executed once MLS countersigns.</p>
+        <div id="agGateSections"></div>
+        <div class="field" style="margin-top:16px">
+          <label for="agSignName">Type your full legal name</label>
+          <input type="text" id="agSignName" autocomplete="name" oninput="agSyncSignState()" style="width:100%">
+        </div>
+        <div class="field" style="margin-top:8px">
+          <label for="agSigPad">Draw your signature</label>
+          <canvas id="agSigPad" width="640" height="160" style="width:100%;max-width:640px;height:160px;border:1px dashed var(--line);border-radius:10px;background:#fbfcfe;touch-action:none"></canvas>
+          <div><button type="button" class="btn-ghost" style="font-size:12.5px;padding:5px 10px;margin-top:6px" onclick="sigPadClear('agSigPad');agSyncSignState()">Clear signature</button></div>
+        </div>
+        <div class="row tight" style="margin-top:14px;align-items:center;gap:14px">
+          <button class="btn-primary" id="agSignBtn" onclick="agSubmitSign()" disabled>Sign &amp; continue</button>
+          <a href="#" id="agCerSkip" onclick="agCeremonySkip(event)" style="display:none;font-size:14px;color:var(--muted)">Continue without signing for now</a>
+        </div>
+      </div>
       <div id="agGateErr" role="status" aria-live="polite" class="auth-err" style="display:block;margin-top:12px">Clinical workspace access could not be verified for this deployment and account. Access remains locked.</div>
       <div class="row tight" style="margin-top:16px;align-items:center;gap:14px">
         <button class="btn-primary" id="agRetryBtn" onclick="retryLegalReadiness()">Check workspace access again</button>
@@ -2770,7 +2792,19 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- Admin — server-owned legal readiness -->
     <div class="card">
       <h2><span class="ic">🛡️</span> Admin — clinical legal readiness</h2>
-      <p class="sub"><b>Access records are managed by the server.</b> This browser cannot create, alter, or countersign agreements and does not decide whether an account has clinical workspace access.</p>
+      <p class="sub"><b>Clinical workspace access is decided by the server</b> (the counsel-declared release plus per-user grants — manage grants from the Users table above). The onboarding signature ceremony below is separate commercial paperwork: users sign at first sign-in, you countersign the two-party BAA here, and neither ever unlocks clinical access by itself.</p>
+      <div id="adminAgreementsEmpty" class="empty" style="display:none"></div>
+      <div style="overflow-x:auto">
+        <table id="adminAgreementsTable" style="display:none;width:100%;border-collapse:collapse;font-size:13.5px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Name</th><th style="padding:8px 6px">Role</th>
+            <th style="padding:8px 6px">Account</th><th style="padding:8px 6px">Signed</th>
+            <th style="padding:8px 6px">Version</th><th style="padding:8px 6px">Status</th>
+            <th style="padding:8px 6px">Document</th>
+          </tr></thead>
+          <tbody id="adminAgreementsBody"></tbody>
+        </table>
+      </div>
     </div>
   </div><!-- /adminView -->
 
@@ -3738,10 +3772,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 <div class="modal-bg" id="countersignModal">
   <div class="modal" style="max-width:680px">
     <button class="modal-x" onclick="closeCountersign()">×</button>
-    <h3>🛡️ Browser signing retired</h3>
-    <p class="note">MLS cannot countersign or execute agreements in the browser. No signer identity, signature image, legal title, or execution status is created here.</p>
-    <div id="csErr" class="auth-err" style="display:block;margin-top:12px">Unavailable until a counsel-approved server-side ceremony is implemented.</div>
+    <h3>🖋️ Countersign the Business Associate Agreement</h3>
+    <p class="note">You are executing the two-party BAA as the Business Associate. Signer: <b id="csSignerLabel"></b>. Once countersigned, the executed record is stored server-side and both parties can download it.</p>
+    <div id="csBaaText" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--soft,#f9fbfe);font-size:13px;line-height:1.55"></div>
+    <div class="field"><label for="csName">Type your full legal name</label>
+      <input type="text" id="csName" autocomplete="name" oninput="csSyncState()" style="width:100%"></div>
+    <div class="field"><label for="csSigPad">Draw your countersignature</label>
+      <canvas id="csSigPad" width="600" height="140" style="width:100%;max-width:600px;height:140px;border:1px dashed var(--line);border-radius:10px;background:#fbfcfe;touch-action:none"></canvas>
+      <div><button type="button" class="btn-ghost" style="font-size:12.5px;padding:5px 10px;margin-top:6px" onclick="sigPadClear('csSigPad');csSyncState()">Clear signature</button></div></div>
+    <div id="csErr" class="auth-err" style="display:none;margin-top:12px"></div>
     <div class="row" style="margin-top:14px">
+      <button class="btn-primary" id="csSubmitBtn" onclick="submitCountersign()" disabled>Countersign &amp; execute</button>
       <button class="btn-ghost" onclick="closeCountersign()">Close</button>
     </div>
   </div>
@@ -21563,12 +21604,13 @@ let _jspdfLoading=null;
    is checked after refreshMe; a network error on the check NEVER locks anyone
    out of the clinical tool (re-checked next login).
    ========================================================= */
-const AGREEMENTS_VERSION='';
-const MLS_AGREEMENTS=Object.freeze([]);
-/* RETIRED_BROWSER_AGREEMENT_TEMPLATES
-   Preserved temporarily as inert rollback text only. It is not parsed, rendered,
-   signed, posted, or treated as legal/compliance evidence by this client.
-const RETIRED_BROWSER_AGREEMENT_TEMPLATES=[
+/* Ceremony restored 2026-07-20 (owner directive): the onboarding paperwork is
+   COMMERCIAL only — signing records contracts and notifies the owner; the
+   clinical workspace stays locked/unlocked solely by the server-owned legal
+   release + per-user grants. The version must match the server's
+   AGREEMENTS_VERSION or signing is refused with 409 version_mismatch. */
+const AGREEMENTS_VERSION='2026-07-21';
+const BROWSER_AGREEMENT_TEMPLATES=[
   {
     // 1. Master Subscription & Services Agreement (commercial contract MLS<->customer).
     // One-party: the customer's authorized representative accepts. Carries the
@@ -21600,12 +21642,12 @@ const RETIRED_BROWSER_AGREEMENT_TEMPLATES=[
     title:'Business Associate Agreement (Practice ↔ MLS)',
     requiresCountersign:true,
     role:'On behalf of the Covered Entity, as its authorized representative.',
-    intro:'Retired browser-authored template. It is not an agreement, is not offered for acceptance, and cannot be executed by this client.',
+    intro:'This is the two-party HIPAA Business Associate Agreement between your practice (the Covered Entity) and MLS (the Business Associate). You sign as the practice’s authorized representative; it becomes fully executed once MLS countersigns, and both parties receive the executed record.',
     recitals:'This Business Associate Agreement (“Agreement”) is entered into by and between the Covered Entity and MLS (“Business Associate”), an artificial-intelligence ambient clinical-documentation and mini-EMR service provider. The parties enter into this Agreement to comply with the Health Insurance Portability and Accountability Act of 1996, the HITECH Act, and their implementing regulations at 45 C.F.R. Parts 160 and 164 (collectively, the “HIPAA Rules”). Capitalized terms used but not defined herein have the meanings ascribed to them under the HIPAA Rules. “Protected Health Information” (“PHI”) has the meaning set forth at 45 C.F.R. § 160.103, limited to information Business Associate creates, receives, maintains, or transmits on behalf of Covered Entity; “ePHI” means PHI in electronic form.',
     clauses:[
       {h:'1. Permitted Uses and Disclosures', t:'Business Associate may use or disclose PHI only (a) to perform the services described in the underlying services arrangement (AI-assisted clinical documentation, transcription, and mini-EMR record management); (b) as Required by Law; and (c) for the proper management and administration of Business Associate or to carry out its legal responsibilities, provided that any such disclosure is Required by Law or is made under reasonable assurances of confidentiality and breach notification from the recipient. Business Associate shall not use or disclose PHI in any manner that would violate the HIPAA Rules if done by Covered Entity, shall make reasonable efforts to limit PHI to the Minimum Necessary, and shall not sell PHI or use PHI for marketing except as permitted by the HIPAA Rules and authorized by Covered Entity.'},
       {h:'2. Safeguards', t:'Business Associate shall use appropriate administrative, physical, and technical safeguards, and shall comply with the HIPAA Security Rule (45 C.F.R. Part 164, Subpart C) with respect to ePHI, to prevent use or disclosure of PHI other than as provided by this Agreement. Current safeguards include AES-256-GCM encryption of PHI at rest, TLS/HSTS encryption in transit, role-based access controls, multi-factor authentication, a tamper-evident audit log, and encrypted backups.'},
-      {h:'3. Subcontractors (Flow-Down)', t:'Retired template text. This client makes no assertion that any vendor agreement, data-retention term, or regulated hosting environment is in effect.'},
+      {h:'3. Subcontractors (Flow-Down)', t:'In accordance with 45 C.F.R. §§ 164.502(e)(1)(ii) and 164.308(b)(2), Business Associate shall ensure that any subcontractor that creates, receives, maintains, or transmits PHI on behalf of Business Associate agrees in writing to restrictions and conditions at least as stringent as those that apply to Business Associate under this Agreement, including compliance with the HIPAA Security Rule with respect to ePHI.'},
       {h:'4. Reporting of Breaches and Security Incidents', t:'Business Associate shall report to Covered Entity any use or disclosure of PHI not permitted by this Agreement of which it becomes aware, any Security Incident, and any Breach of Unsecured PHI, without unreasonable delay and no later than sixty (60) calendar days after discovery, and shall provide the information Covered Entity reasonably needs to meet its obligations under the Breach Notification Rule (45 C.F.R. §§ 164.400–414).'},
       {h:'5. Individual Rights', t:'At Covered Entity’s request and within a reasonable time, Business Associate shall make PHI in a Designated Record Set available to satisfy an individual’s right of access (§ 164.524), make PHI available for amendment and incorporate amendments (§ 164.526), and make available the information required for an accounting of disclosures (§ 164.528).'},
       {h:'6. Availability to HHS', t:'Business Associate shall make its internal practices, books, and records relating to the use and disclosure of PHI available to the Secretary of the U.S. Department of Health and Human Services for purposes of determining Covered Entity’s compliance with the HIPAA Rules.'},
@@ -21703,7 +21745,7 @@ const RETIRED_BROWSER_AGREEMENT_TEMPLATES=[
     closing:'I certify that I am authorized to bind the practice or entity and I consent to the electronic execution of these agreements.'
   }
 ];
-END_RETIRED_BROWSER_AGREEMENT_TEMPLATES */
+const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);
 
 // Convenience: does the current agreements set include any two-party document
 // that must await the owner's countersignature?
@@ -22027,6 +22069,7 @@ function sfHideGateLoading(gated,options){
     sfRafSoon(()=>{
       if(token!==sfGateHideToken){ resolve(); return; }
       if(gated){ try{ showAgreementsGate(true); }catch(e){} }
+      else { try{ if(agCeremonyNeeded()) showAgreementsCeremony(true); }catch(e){} }
       document.documentElement.classList.add('mls-app-revealing');
       document.documentElement.classList.remove('mls-secure-loading');
       if(el) el.style.opacity='0';
@@ -22051,9 +22094,54 @@ function showAgreementsGate(fromLoading){
     document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
   }
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
+  /* locked mode (default): hide the ceremony layout */
+  const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='';
+  const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='none';
+  const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Clinical workspace not enabled';
+  const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='';
   agGateErr('Clinical workspace access could not be verified for this deployment and account. Access remains locked.');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
   const retry=document.getElementById('agRetryBtn'); if(retry) try{ retry.focus(); }catch(e){}
+}
+/* Restored 2026-07-20 — the first-sign-in signing ceremony. Shown only when
+   the clinical gate has PASSED and the signed-in account has not signed the
+   current agreement set. Commercial paperwork only. */
+function agCeremonyNeeded(){
+  try{
+    if(!backendMode()||!bkToken()||!bkUser) return false;
+    if(document.body.classList.contains('mls-public-preview')) return false;
+    if(bkUser.isLawyer) return false;               // attorney portal has its own terms
+    if(!MLS_AGREEMENTS.length) return false;
+    return bkUser.agreements_signed_version!==AGREEMENTS_VERSION;
+  }catch(e){ return false; }
+}
+function showAgreementsCeremony(fromLoading){
+  const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  if(!fromLoading){
+    const ld=document.getElementById('sfGateLoading'); if(ld){ ld.style.display='none'; ld.setAttribute('aria-busy','false'); }
+    document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
+  }
+  const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
+  const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='none';
+  const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='';
+  const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Review & sign your onboarding agreements';
+  const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='none';
+  const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='none';
+  agGateErr('');
+  try{ agRenderSections(); }catch(e){}
+  try{ sigPadInit('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
+  try{ agSyncSignState(); }catch(e){}
+  const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  const nm=document.getElementById('agSignName'); if(nm) try{ nm.focus(); }catch(e){}
+}
+/* Transition escape hatch: shown ONLY after the server answers 410/404 (the
+   ceremony endpoints are not deployed yet). Never lets an error lock anyone
+   out of a workspace the clinical gate already opened. */
+function agCeremonySkip(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  hideAgreementsGate();
+  const em=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
+  startSession(em);
 }
 function hideAgreementsGate(){
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='none';
@@ -22108,6 +22196,7 @@ async function retryLegalReadiness(){
   try{
     const gated=await checkAgreementsGate({});
     if(gated){ agGateErr('The clinical workspace is still not enabled for this deployment or account. Access remains locked.'); return; }
+    if(agCeremonyNeeded()){ showAgreementsCeremony(false); return; }
     hideAgreementsGate();
     const email=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
     await startSession(email);
@@ -22178,10 +22267,9 @@ async function agBuildReceiptPdf(name,signatureImg){
   return doc;
 }
 
-/* Submit the signing: build the PDF, POST to the server, enter the app on success. */
+/* Submit the signing: build the PDF, POST to the server, enter the app on success.
+   Restored 2026-07-20 — commercial paperwork only; never touches the clinical gate. */
 async function agSubmitSign(){
-  agGateErr('Browser signing is retired. Access remains locked until the server verifies a counsel-approved legal release.');
-  return false;
   const name=((document.getElementById('agSignName')||{}).value||'').trim();
   if(!name){ agGateErr('Type your full legal name to sign.'); return; }
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
@@ -22223,6 +22311,13 @@ async function agSubmitSign(){
     }catch(netErr){ agGateErr('Could not reach the MLS server. Please try again.'); return; }
     try{ data=await res.json(); }catch(e){ data={}; }
     if(res.status===401){ handle401(); return; }
+    if(res.status===410||res.status===404){
+      /* Transition window: the server does not accept ceremony signatures yet.
+         Say so honestly and let the user continue — nothing was recorded. */
+      agGateErr('Signing isn’t available on the server yet — nothing was recorded. You can continue and will be asked again on a later sign-in.');
+      const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='';
+      return;
+    }
     if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
     // Success: mark signed locally, hide the gate, enter the app normally.
     if(bkUser) bkUser.agreements_signed_version=AGREEMENTS_VERSION;
@@ -22237,9 +22332,8 @@ async function agSubmitSign(){
   }
 }
 
-/* ---- Admin: signed compliance forms table ---- */
+/* ---- Admin: signed compliance forms table (restored 2026-07-20) ---- */
 async function loadAdminAgreements(){
-  return; // legacy browser agreement administration is retired
   if(!backendMode()) return;
   const empty=document.getElementById('adminAgreementsEmpty');
   const table=document.getElementById('adminAgreementsTable');
@@ -22333,10 +22427,9 @@ function csErr(m){ const e=document.getElementById('csErr'); if(e){ e.textConten
 // Find the BAA section definition (the one flagged requiresCountersign).
 function agBaaSection(){ return MLS_AGREEMENTS.filter(s=>s&&s.requiresCountersign===true)[0]||null; }
 async function openCountersign(id,signerName){
-  const retiredModal=document.getElementById('countersignModal'); if(retiredModal) retiredModal.classList.add('show');
-  csErr('Unavailable until a counsel-approved server-side ceremony is implemented.');
-  return false;
+  /* Restored 2026-07-20 — owner-side BAA execution. */
   _csCurrentId=Number(id); _csSignerName=String(signerName||''); _csSignerSig='';
+  const _lbl=document.getElementById('csSignerLabel'); if(_lbl) _lbl.textContent=_csSignerName||'—';
   const modal=document.getElementById('countersignModal'); if(!modal) return;
   // Render the BAA operative text into the modal (escaped).
   const baa=agBaaSection();
@@ -22434,8 +22527,8 @@ async function agBuildExecutedPdf(signerName,signerSig,ownerName,ownerSig){
   return doc;
 }
 async function submitCountersign(){
-  csErr('Browser countersigning is retired. No agreement was executed.');
-  return false;
+  /* Restored 2026-07-20 — the owner countersigns the BAA as the Business
+     Associate; the server records the executed two-party document. */
   if(_csCurrentId==null) return;
   const name=((document.getElementById('csName')||{}).value||'').trim();
   if(!name){ csErr('Type your full legal name to countersign.'); return; }
@@ -26098,7 +26191,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b460"></script>
+<script src="public-preview-runtime.js?v=b461"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26369,7 +26462,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b460';
+  window.__MLS_AV='b461';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
