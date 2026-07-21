@@ -127,6 +127,12 @@ include:
   - "mammoth.browser-1.12.0.min.js"
   - "jspdf.umd-4.2.1.min.js"
 
+  # The exact released MLS Assist package (owner directive 2026-07-20).
+  # SHA-256 54ae79510dcf7127fccf7893c7f25b7ba79a6fb30e1c8057c29b09346e91b503 —
+  # identical bytes to the stamped 3.0.0 Web Store release. Candidate/historical
+  # ZIPs remain excluded by the fail-closed patterns above.
+  - "MLS_Assist_v3.0.0.zip"
+
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"
 

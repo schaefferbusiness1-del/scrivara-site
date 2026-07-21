@@ -32772,7 +32772,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b466';
+  window.__MLS_AV = window.__MLS_AV || 'b467';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b466';
+  var MLS_APP_BUILD='2026-07-20-b467';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -40092,7 +40092,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_clinicaltools_scroll.js"]'))return;var s=document.createElement('script');s.src='feat_mls_clinicaltools_scroll.js?v=20260625cts2c1';s.setAttribute('data-mls-asset','feat_mls_clinicaltools_scroll.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item4: Clinical tools auto-scroll (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_commands.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_commands.js?v=20260625vc1c1';s.setAttribute('data-mls-asset','feat_mls_voice_commands.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item5: Alexa-style voice commands (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260625cf1c1';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260720cf1c2';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_clean.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_clean.js?v=20260625lc2c1';s.setAttribute('data-mls-asset','feat_mls_login_clean.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item7: login shows only login UI (gate app chrome pre-login, additive reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1c1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item8: visit timeline includes visits referenced in the summary (additive reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calbox_uniform.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calbox_uniform.js?v=20260625cb1c1';s.setAttribute('data-mls-asset','feat_mls_calbox_uniform.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item9: uniform blue calendar Week/Day appt boxes (additive reversible) */

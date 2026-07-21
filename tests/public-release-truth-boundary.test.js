@@ -34,7 +34,9 @@ assert(/Staff prep &amp; Athena month pull/i.test(assist));
 assert(/synthetic evaluation only/i.test(assist));
 
 const download = read('get-extension.html');
-assert(/Manual candidate package withheld/i.test(download) && /\bdisabled\b/.test(download));
+assert(/MLS_Assist_v3\.0\.0\.zip/.test(download) &&
+  /54ae79510dcf7127fccf7893c7f25b7ba79a6fb30e1c8057c29b09346e91b503/i.test(download) &&
+  !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 const feed = JSON.parse(read('extension-version.json'));

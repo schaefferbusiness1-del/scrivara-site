@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b466"></script>
+<script src="public-preview-policy.js?v=b467"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -3670,7 +3670,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <b>Already installed it before?</b> Update to the latest version: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still can't read your EMR, remove it and <b>Load unpacked</b> the freshly-downloaded <code>mls-assist-extension</code> folder.
         </div>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options</a></span>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.0.zip" download="MLS_Assist_v3.0.0.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:9px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.0 ZIP)</a>
+        <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options</a> · ZIP SHA-256 <code style="font-size:11px">54ae7951…b503</code> (exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
           <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
@@ -5274,7 +5275,14 @@ function startSession(email){
          green boot cover up while unrelated patient/prefs hydration finishes;
          that work may safely continue behind the already-mounted gate. */
       if(gated) return true;
-      return Promise.all([_refreshPromise,_uiReady]).then(()=>false);
+      /* Local-first boot (owner directive 2026-07-20): when this device already
+         holds the account's patient store, the app is fully usable immediately —
+         reveal after the UI bundle and let cloud refresh finish behind the app.
+         First sign-in on a fresh device still waits for hydration. */
+      let _hasLocalStore=false;
+      try{ _hasLocalStore=(typeof getPatients==='function'&&(getPatients()||[]).length>0); }catch(e){}
+      const _revealWait=_hasLocalStore?_uiReady:Promise.all([_refreshPromise,_uiReady]);
+      return Promise.resolve(_revealWait).then(()=>false);
     }).then(gated=>sfStartupValid(_startupOpts)?!!gated:true).catch(()=>true);
     /* Absolute recovery still exists, but it now leaves a full protected budget
        after the gate phase for the large first-run UI bundle and quiet-frame
@@ -21871,6 +21879,10 @@ function agRenderSections(){
     html+='<div style="border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">';
     html+='<h3 style="margin:0 0 8px">'+esc(sec.title)+'</h3>';
     if(sec.intro) html+='<p class="sub" style="margin:0 0 8px">'+esc(sec.intro)+'</p>';
+    /* Owner directive 2026-07-20: the ceremony was a wall of text. Every
+       document's FULL body stays one tap away (legally identical content),
+       but renders collapsed so the page is short, fast, and signable. */
+    html+='<details style="margin:4px 0"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:#127a55">Read the full document</summary><div style="margin-top:6px">';
     if(sec.points){
       html+='<ol style="margin:0;padding-left:20px;line-height:1.5">';
       sec.points.forEach(p=>{ html+='<li style="margin:4px 0">'+esc(p)+'</li>'; });
@@ -21892,6 +21904,7 @@ function agRenderSections(){
       html+='</div>';
     }
     if(sec.closing) html+='<p style="margin:10px 0 0;font-style:italic">'+esc(sec.closing)+'</p>';
+    html+='</div></details>';
     if(sec.role) html+='<p class="sub" style="margin:8px 0 0"><strong>You are signing:</strong> '+esc(sec.role)+'</p>';
     if(sec.requiresCountersign) html+='<p class="sub" style="margin:6px 0 0;font-style:italic">This document becomes fully executed once MLS countersigns as the Business Associate.</p>';
     // Lawyerly attestation above the consent for each section.
@@ -21918,9 +21931,11 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* The cover stays up through cloud hydration and a stable first-frame window.
-   It is deliberately bounded: an optional service can slow startup, never trap it. */
-const SF_GATE_MIN_MS=1800, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=700;
+/* Owner directive 2026-07-20: first load must feel near-instant. The minimum
+   veil is now just long enough to avoid a flash; accounts WITH a local store
+   reveal before cloud hydration finishes (it continues behind the app).
+   Still bounded: an optional service can slow startup, never trap it. */
+const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=350;
 /* "Ready" is a hand-off signal, not another loading step.  Keep it readable
    for one beat, then reveal the already-stable app in under 200 ms. */
 const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120;
@@ -22139,6 +22154,10 @@ function agCeremonyNeeded(){
        user in the ceremony during the server-410 transition window. The next
        tab / next sign-in prompts again. */
     try{ if(sessionStorage.getItem('mlsAgCerSkip')==='1') return false; }catch(e){}
+    /* Once THIS account signed on THIS device, never re-ask here even if a
+       cached/stale bkUser is missing the server-recorded field (owner
+       directive 2026-07-20: first sign-in only, never again). */
+    try{ if(localStorage.getItem(uns('agSignedVersion'))===AGREEMENTS_VERSION) return false; }catch(e){}
     return bkUser.agreements_signed_version!==AGREEMENTS_VERSION;
   }catch(e){ return false; }
 }
@@ -22156,9 +22175,30 @@ function showAgreementsCeremony(fromLoading){
   const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='none';
   agGateErr('');
   try{ agRenderSections(); }catch(e){}
-  try{ sigPadInit('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
-  try{ agSyncSignState(); }catch(e){}
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  /* Init the signature pad only AFTER the gate is visible and laid out: sizing
+     the canvas while its container is display:none produced a 0-rect → 300px
+     fallback that CSS then stretched, so strokes landed in the wrong place
+     ("the signature doesn't work", live 2026-07-20). Re-init on resize keeps
+     the coordinate space honest; an in-progress signature survives via its
+     required re-draw prompt. */
+  requestAnimationFrame(function(){
+    try{ sigPadInit('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
+    try{ agSyncSignState(); }catch(e){}
+  });
+  if(!window.__agPadResizeWired){
+    window.__agPadResizeWired=1;
+    window.addEventListener('resize',function(){
+      try{
+        const cw2=document.getElementById('agCeremonyWrap');
+        if(!cw2||cw2.style.display==='none') return;
+        const wasEmpty=sigPadIsEmpty('agSigPad');
+        sigPadInit('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState;
+        if(!wasEmpty) agGateErr('The window was resized — please draw your signature again.');
+        agSyncSignState();
+      }catch(e){}
+    });
+  }
   const nm=document.getElementById('agSignName'); if(nm) try{ nm.focus(); }catch(e){}
   /* Capability probe: an empty POST records nothing on any backend (new: 400
      validation; transition-era: 410 retired). On 410/404, surface the honest
@@ -22368,6 +22408,8 @@ async function agSubmitSign(){
     if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
     // Success: mark signed locally, hide the gate, enter the app normally.
     if(bkUser) bkUser.agreements_signed_version=AGREEMENTS_VERSION;
+    /* Durable per-account marker so no cached bkUser can ever re-ask. */
+    try{ localStorage.setItem(uns('agSignedVersion'),AGREEMENTS_VERSION); }catch(e){}
     hideAgreementsGate();
     /* Same boot-aware reveal as the skip path: never re-boot a running app. */
     if(sfGateLoadingStarted&&!sfGateLoadingVisible){
@@ -26243,7 +26285,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b466"></script>
+<script src="public-preview-runtime.js?v=b467"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26514,7 +26556,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b466';
+  window.__MLS_AV='b467';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -24,7 +24,6 @@
   try { if (window.__mlsChartFill && window.__mlsChartFill.installed) return; } catch (e) { return; }
 
   var VERSION = 'cf-1.0.0';
-  var autoTriedForLoad = false;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -275,22 +274,15 @@
     else anchor.appendChild(btn);
   }
 
-  /* ===================== AUTO-ATTEMPT (gentle, once per load) ===================== */
-  function maybeAuto() {
-    if (autoTriedForLoad) return;
-    // only on the visit view, only when the name field is empty
-    var vv = gid('visitView');
-    if (!vv || vv.style.display === 'none' || vv.offsetParent === null) return;
-    var n = gid('heroPtName');
-    if (!n) return;
-    if (String(n.value || '').trim()) return; // already has a patient -> don't override
-    autoTriedForLoad = true;
-    pull(true).then(function (r) { /* silent on failure */ });
-  }
+  /* AUTO-ATTEMPT REMOVED (owner directive 2026-07-20): the silent once-per-load
+     read of the open athenaOne tab fired at every sign-in — an uninvited Athena
+     touch that also surfaced as a failing background chart read whenever Athena
+     sat on its dashboard. Athena is now read ONLY when the clinician clicks
+     ("From open Athena chart", Pull this day, etc.). */
 
   /* ===================== BOOT ===================== */
   var tickT = 0;
-  function tick() { ensureButton(); maybeAuto(); }
+  function tick() { ensureButton(); }
   function boot() {
     ensureButton();
     tickT = setInterval(tick, 1500);

@@ -52,10 +52,12 @@ function harness(ready, assetsSettled = true) {
   fast.context.api.setStart(0); fast.context.api.setToken(1);
   let fastResult = 'pending';
   fast.context.api.wait(1, false).then(v => { fastResult = v; });
-  await fast.advance(1799);
-  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the 1.8-second minimum');
-  await fast.advance(1920);
-  assert.strictEqual(fastResult, true, 'stable ready UI did not release at the minimum');
+  /* Owner directive 2026-07-20: near-instant first load — the anti-flash floor
+     is now 300ms with a 350ms quiet window (140ms check granularity). */
+  await fast.advance(299);
+  assert.strictEqual(fastResult, 'pending', 'ready UI revealed before the anti-flash minimum');
+  await fast.advance(920);
+  assert.strictEqual(fastResult, true, 'stable ready UI did not release shortly after the minimum');
 
   const deferred = harness(true, false);
   deferred.context.api.setStart(0); deferred.context.api.setToken(5);
@@ -86,5 +88,5 @@ function harness(ready, assetsSettled = true) {
   await stale.advance(140);
   assert.strictEqual(staleResult, false, 'a stale hide request can clear a newer loading owner');
 
-  console.log('PASS loader lifecycle: 4.5s minimum, deferred layout sampling, 32s bounded reveal, and stale-token safety');
+  console.log('PASS loader lifecycle: 300ms anti-flash floor, deferred layout sampling, 32s bounded reveal, and stale-token safety');
 })().catch(err => { console.error(err); process.exit(1); });

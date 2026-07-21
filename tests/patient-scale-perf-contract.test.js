@@ -140,6 +140,6 @@ assert(connect.includes('window.__mlsSanitizeV2.retired = true;'), 'sanitize swe
 assert(connect.includes('cleanRuns >= 5'), 'sanitize self-retire threshold changed unexpectedly');
 
 /* ---------- veil floor (also pinned by boot-loading-visual-contract) ---------- */
-assert(app.includes('const SF_GATE_MIN_MS=1800'), 'veil minimum floor regressed');
+assert(app.includes('const SF_GATE_MIN_MS=300'), 'veil anti-flash floor regressed (owner-directed near-instant first load, 2026-07-20)');
 
 console.log('PASS patient-scale perf contract: memoized base reads, indexed patientNotes, debounced searches, bounded history, VER fast path (runtime-proven), batched self-retiring sanitize sweep');

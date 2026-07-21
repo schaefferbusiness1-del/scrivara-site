@@ -42,9 +42,9 @@ button{background:#f4f2ec;color:#55605a;border:1.5px solid #d9d6cd;cursor:not-al
     <span class="tag">Published channel</span>
     <a class="store" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer">Open MLS Assist in the Chrome Web Store<span class="store-sub">Chrome manages installation and published updates</span></a>
     <div class="divider"><span>Manual installation</span></div>
-    <button id="dl" type="button" disabled aria-describedby="status">Manual candidate package withheld</button>
-    <div id="status" role="status">A newer candidate is being tested in an isolated browser. Loose source files and an unstamped ZIP are not distributed. Manual download will return only after the exact package and SHA-256 digest pass the release gate.</div>
-    <div class="note">Do not remove a working extension to try an unpublished candidate. If an update is eventually released, this page will show the exact version and package digest.</div>
+    <a id="dl" class="store" href="MLS_Assist_v3.0.0.zip" download="MLS_Assist_v3.0.0.zip" aria-describedby="status" style="background:#2e6a4b">Download MLS Assist v3.0.0 (ZIP)<span class="store-sub">Exact released package · 365&nbsp;KB · same bytes as the Web Store build</span></a>
+    <div id="status" role="status">Released package SHA-256 digest: <code style="word-break:break-all;font-size:12px">54ae79510dcf7127fccf7893c7f25b7ba79a6fb30e1c8057c29b09346e91b503</code>. Verify the digest after downloading before you load or upload the package. Only this exact stamped release is distributed — loose source files and unstamped candidate ZIPs never are.</div>
+    <div class="note">Prefer the Chrome Web Store install above so Chrome manages updates. The ZIP exists for a Chrome Web Store upload or an offline install of this exact reviewed version.</div>
   </section>
 </main>
 <script>
