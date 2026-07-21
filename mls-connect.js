@@ -32794,7 +32794,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b475';
+  window.__MLS_AV = window.__MLS_AV || 'b476';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33104,7 +33104,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b475';
+  var MLS_APP_BUILD='2026-07-20-b476';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41480,7 +41480,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.1.1', installed: true };
+  var api = { version: 'ft-1.1.2', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -41500,12 +41500,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
       });
-      /* ft-1.1.1 ROLLBACK (2026-07-21): ft-1.1.0's inline-important force-show
-         of the three bubbles seeded a style-rewrite war with an unidentified
-         competing writer and WEDGED the renderer solid on the owner's live
-         tab (Runtime.evaluate 45s timeout) within minutes of deploy. The
-         bubbles stay as they were before 1.1.0; any future restore must
-         first find and retire the competing writer — never out-write it. */
+      /* ft-1.1.2 (owner order 2026-07-21, second attempt): desktop force-show
+         of the three bottom-left bubbles. The b473 wedge was most plausibly a
+         native dialog freeze, not this write (the 'flex' echo that looked
+         like a competing writer is just position:fixed blockifying
+         inline-flex). Deterministic inline-important, write-only-on-change,
+         never while Settings is open; deployed WITH a live responsiveness
+         soak and instant-rollback standing by. */
+      var settingsOpen = false;
+      try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
+      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
+        try {
+          var el3 = $(id); if (!el3 || el3.__ftHidden) return;
+          if (settingsOpen) {
+            if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
+            return;
+          }
+          if (el3.style.getPropertyValue('display') !== 'inline-flex') el3.style.setProperty('display', 'inline-flex', 'important');
+        } catch (e) {}
+      });
     }
     ids.forEach(function (id) {
       try {

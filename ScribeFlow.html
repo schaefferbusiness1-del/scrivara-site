@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b475"></script>
+<script src="public-preview-policy.js?v=b476"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -12491,6 +12491,26 @@ function _opProcChanged(i,v){
 function _opAutoTpl(i){ var row=(window._opPrep||[])[i]; if(!row) return; var rank=_opRankTemplates(row.proc||''); if(rank[0]&&rank[0].tpl&&rank[0].score>0){ row.tplId=rank[0].tpl.id; opPrepRender(); try{ toast('Matched: '+(rank[0].tpl.name||'template'),'ok'); }catch(e){} } else { try{ toast('No clear match — pick a template from the dropdown.','err'); }catch(e){} } }
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
+  /* b476 (owner 2026-07-21): bulk drafting re-renders this whole list after
+     EVERY patient's draft lands, which destroyed the doctor's focus and
+     in-progress typing on any other row ("the fill field shows up then
+     glitches away"). Capture the focused field + caret + scroll and restore
+     them after the rebuild. Only the actively-focused field's text is
+     restored - unfocused fields re-read their row state, so a fresh draft
+     can never be overwritten by stale captured values. */
+  var _keep=null;
+  try{
+    var _modal=document.getElementById('opPrepModal');
+    var _ae=document.activeElement;
+    if(_modal){
+      _keep={focusId:'',val:null,selS:null,selE:null,boxScroll:box.scrollTop||0,modalScroll:_modal.scrollTop||0};
+      if(_ae&&_modal.contains(_ae)&&_ae.id&&/^(INPUT|TEXTAREA|SELECT)$/.test(_ae.tagName)){
+        _keep.focusId=_ae.id;
+        if(_ae.tagName!=='SELECT') _keep.val=_ae.value;
+        try{ _keep.selS=_ae.selectionStart; _keep.selE=_ae.selectionEnd; }catch(e){}
+      }
+    }
+  }catch(e){ _keep=null; }
   var rows=window._opPrep||[];
   var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
   // Reflect which mode is active in the switcher (blue = on).
@@ -12529,6 +12549,20 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
+  try{
+    if(_keep){
+      box.scrollTop=_keep.boxScroll;
+      var _m2=document.getElementById('opPrepModal'); if(_m2) _m2.scrollTop=_keep.modalScroll;
+      if(_keep.focusId){
+        var _el=document.getElementById(_keep.focusId);
+        if(_el){
+          if(_keep.val!=null && _el.value!==_keep.val) _el.value=_keep.val;
+          _el.focus({preventScroll:true});
+          try{ if(_keep.selS!=null&&_el.setSelectionRange) _el.setSelectionRange(_keep.selS,_keep.selE); }catch(e){}
+        }
+      }
+    }
+  }catch(e){}
 }
 function _isNeedleField(mf){ try{ var s=((mf.key||'')+' '+(mf.label||'')).toLowerCase(); return /needle/.test(s) || mf.key==='needle_size' || mf.key==='needle_gauge'; }catch(e){ return false; } }
 /* Needle-size picker: a dropdown of 3.5 / 5.0 / any previously-used custom size (it learns) / Other…,
@@ -23442,7 +23476,7 @@ function captureFromEMR(btn){
     tries++;
     if(ponged){ clearInterval(iv); return; }
     if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
-      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4750e'); return; }
+      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4760e'); return; }
     ping();
   }, 350);
   function proceed(){
@@ -26435,7 +26469,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b475"></script>
+<script src="public-preview-runtime.js?v=b476"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26706,7 +26740,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b475';
+  window.__MLS_AV='b476';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
