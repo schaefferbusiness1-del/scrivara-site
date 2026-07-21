@@ -33,6 +33,23 @@ All four b457 defect fixes proven on the deployed build:
 ## Billing follow-up (owner approved the chain 19:00 EDT)
 Owner said "override I approve" for the 1522b27 deploy + sandbox chain — but had already self-deployed 1522b27 at 18:01, and its clinical gates 503 every billing route (webhook/checkout/health verified live), so the chain cannot run. Prepared draft **PR #9** (billing routes pass the closed clinical gates; all 30 backend suites green; merge deploys nothing). Owner picks: gates env vars (A), rollback (B), or PR #9 (C).
 
+## Hosted acceptance sweep (b459, signed-in schaefferbusiness1 tab, REAL input, ~8:15–8:25 PM EDT)
+Workspace unlocked (gates configured + grants recorded ~8:05 PM). All interactions via real clicks/keystrokes:
+- **Create**: typed name/keywords/body into the Add form → Save template → store 3→4, appears first in list. (Observation: new template auto-gets ● DEFAULT when none was active — reasonable, noted.)
+- **Search**: real-typed "qa accept" → workspace list filtered to exactly the new template.
+- **Select**: row click → detail editor renders name/keywords/body; fresh status truthfully "No unsaved changes" (b458 fix live).
+- **Edit→Save→Revision**: typed " EDITED-v2" → status "Edited — not saved yet" (dirty:true) → Save changes → "Saved ✓ 8:22:08 PM", revisions:1, body persisted ending "v1 EDITED-v2".
+- **Delete confirm**: Delete… → native confirm appears and **blocks automation entirely** (renderer-modal; even sibling same-origin tabs freeze). Correct human-gate behavior; automation cannot self-approve deletes. Undo-leg verification pending the human click.
+- **Findings**: (1) cloud template library panel shows raw "Template request failed (403)" for the ADMIN (non-clinician) role — honest but unexplained; polish: say "cloud template sets are available on clinician accounts". (2) Template-health panel doesn't join the workspace search filter (separate panel; acceptable).
+
+## Backend/product state changes tonight (same evening, for context)
+- Clinical gates configured (PHI_ENABLED + 5 LEGAL_RELEASE_*; wrong key name + 2 empty values found and fixed; grants recorded via Render Shell: active grants: 2). App restored for all granted accounts.
+- Admin Users panel + Billing & plans verified live (owner screenshots + API 200s).
+- Live Stripe webhook destination re-enabled (was auto-disabled after 127/127 failures — route 404'd pre-1522b27); resend test exposed remaining defect: **STRIPE_WEBHOOK_SECRET mismatch (400 signature)** — owner must copy the live destination's whsec into Render.
+- Anonymous checkout verified reaching live Stripe Checkout (session created; expires unused).
+- **Signup registration is DOWN on live** (SIGNUP_MANIFEST_UNAVAILABLE): production manifest built + validated READY against the backend's own inspector; 3 env paste values in MLS_EVERYTHING/SIGNUP_MANIFEST_VALUES_2026-07-20.txt (terms/privacy sha256 of the deployed b459 files — regenerate if those files change).
+- Enterprise annual $200→$100: site b459 live; backend on PR #9 (awaiting owner merge + deploy).
+
 ## Deferred to hosted-mode resume (blocked by the owner's clinical gates, not by the build)
 - Real-keystroke search/edit/save/revision-restore/delete-undo (sample workspace is read-only; write path is pinned by the contract tests).
 - Left-sidebar + collapsed rail interaction in the classic chrome (preview shell hides the classic nav by design; CSS mechanics pinned + structurally verified).
