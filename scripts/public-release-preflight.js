@@ -26,26 +26,31 @@ const PUBLIC_ARTIFACTS = Object.freeze([
   Object.freeze({ file: 'app-version.json', route: '/app-version.json', kind: 'json', maxBytes: 64 * 1024 }),
 ]);
 
+/* 2026-07-21 (owner directive): MLS Scribe is confirmed HIPAA compliant. The
+   required markers move from the synthetic-era posture to the accurate one:
+   the pages must STATE the confirmed HIPAA posture, must NOT imply an
+   independent certification/audit, and every purchasing/BAA/commercial/
+   outcome honesty rule stays in force. */
 const REQUIRED_PUBLIC_MARKERS = Object.freeze({
   'index.html': Object.freeze([
-    Object.freeze({ label: 'synthetic evaluation boundary', re: /synthetic evaluation only/i }),
-    Object.freeze({ label: 'no unsupported HIPAA claim', re: /does not currently claim HIPAA compliance/i }),
+    Object.freeze({ label: 'confirmed HIPAA posture', re: /MLS Scribe is HIPAA compliant/i }),
+    Object.freeze({ label: 'no certification/audit claim', re: /No independent certification/i }),
     Object.freeze({ label: 'checkout hold', re: /checkout and subscriptions are disabled/i }),
   ]),
   'terms.html': Object.freeze([
-    Object.freeze({ label: 'synthetic Terms title', re: /Synthetic Evaluation Terms/i }),
-    Object.freeze({ label: 'PHI prohibition', re: /Do not enter PHI or other real patient information/i }),
+    Object.freeze({ label: 'current Terms title', re: /Evaluation & Site Terms/i }),
+    Object.freeze({ label: 'PHI scoped to authorized accounts', re: /Enter PHI only through an authorized, signed-in account/i }),
     Object.freeze({ label: 'BAA non-execution boundary', re: /No BAA is executed by these terms/i }),
   ]),
   'privacy.html': Object.freeze([
-    Object.freeze({ label: 'synthetic publication boundary', re: /currently published build is limited to synthetic evaluation/i }),
+    Object.freeze({ label: 'confirmed HIPAA posture', re: /MLS Scribe is HIPAA compliant/i }),
     Object.freeze({ label: 'clinical gate requirement', re: /Hosted clinical access must remain locked/i }),
-    Object.freeze({ label: 'vendor evidence disclaimer', re: /makes no claim of HIPAA compliance, vendor BAA execution/i }),
+    Object.freeze({ label: 'no certification/audit claim', re: /makes no claim of independent certification/i }),
   ]),
 });
 
 const FORBIDDEN_PUBLIC_CLAIMS = Object.freeze([
-  Object.freeze({ code: 'unsupported_hipaa_claim', label: 'affirmative HIPAA-compliance/readiness claim', re: /\b(?:fully\s+)?HIPAA[-\s]+(?:compliant|ready)\b/i }),
+  Object.freeze({ code: 'unsupported_certification_claim', label: 'independent HIPAA certification/audit claim', re: /\bHIPAA[-\s]+(?:certified|audited)\b/i }),
   Object.freeze({ code: 'unsupported_baa_claim', label: 'affirmative BAA-in-place claim', re: /\bBAAs?\s+in\s+place\b/i }),
   Object.freeze({ code: 'unsupported_baa_claim', label: 'affirmative signed Business Associate Agreement claim', re: /\bBusiness Associate Agreements?\s+(?:are\s+)?signed\b/i }),
   Object.freeze({ code: 'unsupported_baa_claim', label: 'affirmative signed BAA claim', re: /\bsigned\s+(?:vendor\s+)?BAAs?\b/i }),

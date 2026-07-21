@@ -182,7 +182,11 @@ async function runGate(options) {
     'assist-privacy.html', 'popup.html', 'expert.html', 'lawyers.html', 'feat_mls_simple_exact.js'
   ];
   const publicCopy = publicFiles.map(read).join('\n');
-  assert.doesNotMatch(publicCopy, /fully\s+HIPAA|HIPAA[- ]compliant|HIPAA[- ]ready|BAAs?\s+in\s+place|Business Associate Agreements?\s+(?:are\s+)?signed|under\s+a\s+signed\s+BAA|signed Business Associate Agreements?/i, 'public/privacy/extension copy contains an unsupported affirmative compliance or BAA claim');
+  /* 2026-07-21 (owner directive): MLS Scribe is confirmed HIPAA compliant, so
+     the accurate "HIPAA compliant" posture is now REQUIRED public copy (see
+     public-release-preflight + public-release-truth-boundary). What stays
+     forbidden: certification/audit claims and blanket signed-BAA claims. */
+  assert.doesNotMatch(publicCopy, /HIPAA[- ](?:certified|audited)|independently\s+(?:certified|audited)\s+HIPAA|BAAs?\s+in\s+place|Business Associate Agreements?\s+(?:are\s+)?signed|under\s+a\s+signed\s+BAA|signed Business Associate Agreements?/i, 'public/privacy/extension copy contains an unsupported certification/audit or blanket BAA claim');
 
   const lawyers = read('lawyers.html');
   assert(!lawyers.includes('formsubmit.co'), 'public legal intake can still send case details to a generic email form');

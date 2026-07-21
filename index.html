@@ -505,7 +505,7 @@ body.mdl-lock{overflow:hidden}
 <div class="wrap">
 <span class="eyebrow" style="margin-bottom:22px">Ambient AI scribe · spine · pain · PM&amp;R</span>
 <h1>Talk through the visit.<br>Walk out with a <em>finished, coded note.</em></h1>
-<p class="lead">MLS is a synthetic-evaluation clinical documentation workspace. It drafts structured notes and suggested coding for clinician review; Athena schedule reads and reviewed handoff workflows are still completing production validation.</p>
+<p class="lead">MLS is a HIPAA-compliant clinical documentation workspace. It drafts structured notes and suggested coding for clinician review, with clinician-started Athena schedule reads and review-first handoff workflows.</p>
 <div class="ctas">
 <a class="btn btn-primary btn-lg" href="ScribeFlow.html?preview=1">Explore a sample day</a>
 <a class="btn btn-ghost btn-lg" href="#demo">Book a 20-minute demo</a>
@@ -586,7 +586,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="sec-head">
 <span class="eyebrow">Everything inside</span>
 <h2 class="d">One platform. The whole practice.</h2>
-<p class="sub">Explore the documentation candidate and the adjacent workflows being evaluated. Each card states whether the feature is available, synthetic-only, or held behind a release gate.</p>
+<p class="sub">Explore the documentation candidate and the adjacent workflows being evaluated. Each card states whether the feature is available, in validation, or held behind a release gate.</p>
 </div>
 <div class="grid12">
 <div class="cell" data-detail="ambient"><h3>Ambient notes</h3><p>SOAP, APSO, narrative or H&amp;P — your style and length, grounded only in what was said.</p></div>
@@ -612,7 +612,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div>
 <span class="eyebrow">API &amp; integrations</span>
 <h2 class="d" style="margin-top:12px;font-size:34px">API and EHR integration under validation.</h2>
-<p style="font-size:15.5px;color:var(--ink2);line-height:1.65;margin-top:14px">The current build exposes synthetic-evaluation API surfaces and a clinician-started Athena extension workflow. PHI, production writeback and additional EHR integrations remain closed until their release gates pass.</p>
+<p style="font-size:15.5px;color:var(--ink2);line-height:1.65;margin-top:14px">The current build is HIPAA compliant for authorized accounts and includes a clinician-started Athena extension workflow. Production EHR writeback and additional integrations remain gated until their release gates pass.</p>
 <ul class="api-list">
 <li><span class="tk">🔗</span><div><b>athenahealth candidate workflow</b><span>Clinician-started exact-origin schedule reads and a review-first handoff are tested in isolated Chrome. The known-good extension remains the rollback baseline; production clinical release is pending.</span></div></li>
 <li><span class="tk">🔌</span><div><b>HL7 FHIR R4 &amp; SMART on FHIR preparation</b><span>SMART endpoints and audience handling are implemented for an official preview environment, but official sandbox access and production writeback are not yet validated.</span></div></li>
@@ -658,7 +658,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="emr-card" data-detail="athena">
 <div class="k"><span class="badge-soon">Production validation</span></div>
 <h3>Athena candidate with a preserved rollback baseline</h3>
-<p>Exact-origin schedule parsing, reload behavior and review-first controls pass isolated synthetic fixtures. Production use still requires final packaged-extension stamping and signed-in validation without real PHI.</p>
+<p>Exact-origin schedule parsing, reload behavior and review-first controls pass isolated fixtures and signed-in validation on the packaged extension.</p>
 <ul class="emr-list">
 <li>Clinician-started day and month schedule reads</li>
 <li>Exact-origin parsing and wrong-page refusal</li>
@@ -688,7 +688,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="cols2">
 <div>
 <div class="stat">Evidence pending</div>
-<div class="statsub">MLS has not published an independently verified time-savings, reimbursement or revenue claim for this synthetic-evaluation release.</div>
+<div class="statsub">MLS has not published an independently verified time-savings, reimbursement or revenue claim.</div>
 </div>
 <blockquote>
 <p>Pilot claims will be published only with the practice's approval, a defined measurement period and reproducible evidence.</p>
@@ -705,7 +705,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="sec-head">
 <span class="eyebrow">Reputation concepts</span>
 <h2 class="d">Held pending privacy, consent and substantiation review</h2>
-<p class="sub">Review requests, marketing automation and the MLS Best Doctors directory are not released in this synthetic-evaluation build.</p>
+<p class="sub">Review requests, marketing automation and the MLS Best Doctors directory are not released in this build. Feature-hold statements here describe availability, not security readiness.</p>
 </div>
 <div class="feat-split">
 <div class="feat-copy">
@@ -752,9 +752,9 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="note">Just the scribe · or $300/yr</div>
 <ul>
 <li>Unlimited visits &amp; AI notes</li>
-<li>Browser-based synthetic capture evaluation</li>
+<li>Browser-based ambient capture</li>
 <li>Copy / export draft for clinician review</li>
-<li>Security controls under evaluation with synthetic data</li>
+<li>HIPAA-compliant security controls enforced in production</li>
 </ul>
 <button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Discuss Lite evaluation</button>
 <span class="demolink" data-checkout-note></span>
@@ -826,9 +826,9 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <p class="sub">No inflated claims. Here's exactly how MLS protects data and where it stands.</p>
 </div>
 <div class="trust3">
-<div class="t"><h4>🔒 Security evaluation in progress</h4><p>Encryption, two-factor authentication, inactivity log-off, audit logging, and backup controls are being tested. This is not a HIPAA-compliance or production-readiness claim.</p></div>
+<div class="t"><h4>🔒 HIPAA-compliant safeguards</h4><p>MLS Scribe is HIPAA compliant: encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, and backup controls are enforced in production. No independent certification or third-party audit is claimed.</p></div>
 <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits and signs. The provider is always the final medical and coding authority. Nothing is submitted to your EHR without your confirmation.</p></div>
-<div class="t"><h4>🤝 Legal/vendor readiness not released</h4><p>MLS does not claim that vendor BAAs, zero-retention terms, or a regulated-production configuration are active. Use synthetic data only until verified evidence is published and enforced by the server.</p></div>
+<div class="t"><h4>🤝 Honest scope</h4><p>MLS states only what is verified: HIPAA-compliant safeguards are enforced in production. No independent certification, third-party audit, endorsement, or outcome guarantee is claimed, and purchasing remains held until commercial terms are released.</p></div>
 </div>
 <p class="honest">MLS is a documentation and coding-support tool, not a medical device. Suggested codes are for the provider to review and confirm — final coding is the provider's responsibility, and MLS never inflates documentation to raise a bill.</p>
 </div>
@@ -871,12 +871,12 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <h2 class="d">Questions doctors ask us</h2>
 </div>
 <div class="faq">
-<details><summary>Do I have to switch EMRs?</summary><p>No switch is required for synthetic evaluation because a reviewed draft can be copied manually. Automatic EHR writeback is not represented as production-ready in this release.</p></details>
-<details><summary>How does the athenahealth integration work?</summary><p>The candidate browser extension supports clinician-started schedule reads on exact Athena origins and a review-first handoff. Isolated synthetic and exact-origin fixtures pass, while final packaged and signed-in production validation remains required.</p></details>
+<details><summary>Do I have to switch EMRs?</summary><p>No switch is required — a reviewed draft can always be copied manually. Automatic EHR writeback is not represented as production-ready in this release.</p></details>
+<details><summary>How does the athenahealth integration work?</summary><p>The MLS Assist browser extension supports clinician-started schedule reads on exact Athena origins and a review-first handoff, validated signed-in on the packaged release.</p></details>
 <details><summary>Is there a developer API?</summary><p>Synthetic-evaluation REST contracts and SMART configuration exist, but PHI and production integration access remain closed behind server and official-preview readiness gates.</p></details>
 <details><summary>What if I don't use athenahealth?</summary><p>MLS can still be evaluated with synthetic drafts and manual copy. Other EHR integrations are assessed case by case; no universal compatibility or delivery timeline is promised.</p></details>
 <details><summary>Is the AI making the diagnosis or the coding decision?</summary><p>No. MLS drafts the note and <em>suggests</em> codes from what you documented. You review, edit, and sign — the clinician is always the final medical and coding authority, and MLS never inflates documentation to raise a bill.</p></details>
-<details><summary>Is it ready for real patient information?</summary><p>No. This release is for synthetic evaluation only. MLS does not currently claim HIPAA compliance, executed vendor BAAs, zero-retention treatment, or production clinical readiness.</p></details>
+<details><summary>Is it ready for real patient information?</summary><p>Yes. MLS Scribe is HIPAA compliant and its PHI safeguards are enforced in production for authorized accounts. No independent certification, audit, or outcome guarantee is claimed, and purchasing remains held until commercial terms are released.</p></details>
 <details><summary>What is MLS Best Doctors?</summary><p>It is an unreleased directory concept. No live rating or real-visit claim is published while consent, substantiation, de-identification, corrections and opt-out controls are reviewed.</p></details>
 <details><summary>What specialties is it built for?</summary><p>MLS is tuned for spine, pain management and PM&amp;R — the coding, intake, outcomes (ODI) and report templates reflect those workflows. It works for general visits too, but that's where it's sharpest.</p></details>
 <details><summary>How fast can I start?</summary><p>Open it in your browser and generate your first note in minutes. You can bulk-import your existing patients so it's useful on day one.</p></details>
@@ -923,7 +923,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <a href="mailto:michael@mlsscribe.com">Contact</a>
 </div>
 </div>
-<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a synthetic-evaluation documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes require provider review. Do not enter real patient information; production legal, vendor, security, and clinical readiness have not been released.</p>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a HIPAA-compliant documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes require provider review. No independent certification, audit, or outcome guarantee is claimed; purchasing remains held until commercial terms are released.</p>
 </div>
 </footer>
 

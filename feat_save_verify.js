@@ -32,7 +32,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.2';
+  var VERSION = '1.0.3';
   var ASSET = 'feat_save_verify.js';
 
   if (window.__mlsSaveVerify && window.__mlsSaveVerify.installed) { return; }
@@ -81,6 +81,32 @@
     return date + '|' + type + '|' + cpt;
   }
 
+  /* sv-1.0.3 (owner screenshot 2026-07-21): the dedupe guards deliberately
+     FOLD a pulled name variant ("Ellis Huff") into the existing full record
+     ("Ellis R Huff") under a DIFFERENT id — the save persists, but this
+     verifier's exact-name fallback could not see it, so every pull carrying a
+     name variant produced a false "Save not confirmed". The fallback now
+     mirrors the dedupe's identity rules: DOB- or MRN-anchored with
+     token-tolerant names (prefix / single-initial). Never name-only fuzzy. */
+  function _svNameTokens(s) { return lc(s).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }); }
+  function _svTokensCompatible(refName, storedName) {
+    var A = _svNameTokens(refName);
+    if (!A.length) return false;
+    var Ball = lc(storedName).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    if (!Ball.length) return false;
+    function okTok(t) {
+      for (var i = 0; i < Ball.length; i++) {
+        var h = Ball[i];
+        if (h === t) return true;
+        if (h.length >= 4 && t.length >= 4 && (h.indexOf(t) === 0 || t.indexOf(h) === 0)) return true;
+        if (h.length === 1 && h === t.charAt(0)) return true;
+      }
+      return false;
+    }
+    var hits = 0; A.forEach(function (t) { if (okTok(t)) hits++; });
+    return hits >= Math.min(2, A.length) && okTok(A[0]) && okTok(A[A.length - 1]);
+  }
+  function _svMrn(x) { return String((x && (x.athenaId || x.mrn)) || '').replace(/[^a-z0-9]/gi, '').toLowerCase(); }
   // Re-read a patient FRESH from the persisted store — never a stale in-memory ref.
   function freshPatient(ref) {
     var gp = fn('getPatients');
@@ -90,17 +116,23 @@
     var rid = ref.id != null ? String(ref.id) : null;
     var rname = lc(ref.name);
     var rdob = normDob(ref.dob);
-    var byKey = null;
+    var rmrn = _svMrn(ref);
+    var byKey = null, byFold = null;
     for (var i = 0; i < list.length; i++) {
       var p = list[i];
       if (!p) continue;
       if (rid && p.id != null && String(p.id) === rid) return p;
+      var pdob = normDob(p.dob);
       if (!byKey && rname && lc(p.name) === rname) {
-        var pdob = normDob(p.dob);
         if (!rdob || !pdob || pdob === rdob) byKey = p;
       }
+      if (!byKey && !byFold) {
+        var pmrn = _svMrn(p);
+        if (rmrn && pmrn && rmrn === pmrn) byFold = p;
+        else if (rdob && pdob && rdob === pdob && _svTokensCompatible(ref.name, p.name)) byFold = p;
+      }
     }
-    return byKey;
+    return byKey || byFold;
   }
 
   function storedVisits(p) {
@@ -527,7 +559,7 @@
      signed out, while account identity is unresolved, or while the app screen
      is hidden behind a gate; (3) repeated warnings collapse into ONE honest
      summary instead of a stacked wall. */
-  var _verifyEpoch = 0, _warnBurstTs = 0, _warnBurstN = 0;
+  var _verifyEpoch = 0;
   try {
     window.addEventListener('mls:session-boundary', function () {
       _verifyEpoch++;
@@ -545,20 +577,24 @@
       return false;
     }) === true;
   }
+  /* sv-1.0.3: ONE aggregated card instead of a stacked wall (owner screenshot:
+     three orange banners covering the page). Every unconfirmed name within a
+     rolling window folds into the same self-replacing card; the card names the
+     items, the state, and the safe retry. */
+  var _svUnconfirmed = [], _svUnconfirmedCard = null, _svUnconfirmedTs = 0;
   function warnSaveNotConfirmed(name) {
     var t = Date.now();
-    if (t - _warnBurstTs > 12000) _warnBurstN = 0;
-    _warnBurstTs = t; _warnBurstN++;
-    if (_warnBurstN > 4) return;
-    if (_warnBurstN === 4) {
-      banner('warn', '⚠ Several saves could not be confirmed', [
-        'This usually means the session refreshed or signed out mid-save — your charts stay safe on the MLS server.',
-        'Reload this page to re-sync. Individual banners are paused.'], { ttl: 14000 });
-      return;
-    }
-    banner('warn', '⚠ Save not confirmed',
-      ['"' + (name || 'patient') + '" was not found in the saved store after saving.',
-        'The save may not have persisted — please retry.']);
+    if (t - _svUnconfirmedTs > 90000) _svUnconfirmed = [];
+    _svUnconfirmedTs = t;
+    var nm = String(name || 'patient');
+    if (_svUnconfirmed.indexOf(nm) < 0) _svUnconfirmed.push(nm);
+    if (_svUnconfirmedCard) { try { _svUnconfirmedCard.remove(); } catch (e) {} _svUnconfirmedCard = null; }
+    var n = _svUnconfirmed.length;
+    var shown = _svUnconfirmed.slice(0, 4).join(', ') + (n > 4 ? ' and ' + (n - 4) + ' more' : '');
+    _svUnconfirmedCard = banner('warn',
+      n === 1 ? '⚠ Save not confirmed' : ('⚠ ' + n + ' saves not confirmed'),
+      [shown + (n === 1 ? ' was' : ' were') + ' not found in the saved store after saving.',
+        'Your charts stay safe on the MLS server — pull or reload to re-sync, then retry if an item is truly missing.']);
   }
 
   function scheduleUpsertVerify(p) {

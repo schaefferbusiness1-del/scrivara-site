@@ -147,13 +147,16 @@ function codes(report) {
     assert.strictEqual(headers.cookie, undefined, `cookie leaked into ${call.url}`);
   }
 
+  /* 2026-07-21: the confirmed-HIPAA posture makes "HIPAA compliant" a
+     REQUIRED marker; the forbidden class is now unsupported CERTIFICATION /
+     audit claims (plus the unchanged BAA/commercial/Athena/outcome rules). */
   const unsafe = successfulResponses();
-  const unsafeIndex = Buffer.from(snapshot.artifacts.find((item) => item.file === 'index.html').bytes.toString('utf8').replace('Synthetic evaluation only', 'Fully HIPAA compliant — BAAs in place — athenahealth live & proven'));
+  const unsafeIndex = Buffer.from(snapshot.artifacts.find((item) => item.file === 'index.html').bytes.toString('utf8').replace('MLS Scribe is HIPAA compliant', 'MLS Scribe is HIPAA certified — BAAs in place — athenahealth live & proven'));
   unsafe.set(`${SITE}/index.html`, html(unsafeIndex));
   const unsafeResult = await check(unsafe);
   assert.strictEqual(unsafeResult.report.ok, false);
   assert(codes(unsafeResult.report).includes('public_hash_mismatch'));
-  assert(codes(unsafeResult.report).includes('unsupported_hipaa_claim'));
+  assert(codes(unsafeResult.report).includes('unsupported_certification_claim'));
   assert(codes(unsafeResult.report).includes('unsupported_baa_claim'));
   assert(codes(unsafeResult.report).includes('unsupported_athena_claim'));
 
