@@ -46,7 +46,15 @@ Read this first, whole. It is honest about what was TESTED vs what was merely SH
 - Multiple signed-in Athena tabs cause nav-failed pull retries — keep ONE (candidate for an in-app hint).
 - Owner delegation: he pastes env values and clicks Render deploys; assistant runs everything else through his signed-in tabs when he says so. Money: branch+PR only, sandbox-first. Real-patient writes / orders / signatures: human-only.
 
-## 5. Suggested order of work for commercial readiness
+## 5. SKILLS — today's proven procedures, packaged for you
+Five invocable skills capture every procedure that WORKED today, with the exact commands, traps, and honesty bars. They live in TWO places: `MLS_EVERYTHING/.claude/skills/` (auto-discovered when a session runs from the usual working directory) and versioned in this repo at `.claude/skills/`.
+- **/mls-build-ship** — bump + 253-suite gate + deploy + live verification for ANY site change (the 27-replacement bump script template included).
+- **/mls-live-diagnose** — the probe-first playbook for "it's broken/frozen/can't log in" (tab probe JS, backend curls, the wedge/limbo/stale-SW decision table, async fire-and-poll, bridge probes).
+- **/mls-athena-pull-verify** — run a REAL pull and prove it from the import ledger (`schedImportIndexV1`/`schedImportDaysV1`), including every failure-reason meaning.
+- **/mls-extension-release** — the full 3.0.x release train with the complete moves-together pin list and the live byte-verification step.
+- **/mls-emergency-rollback** — the freeze/rollback response that recovered b473 in under 15 minutes (free the owner first, revert surgically, ship forward, verify every tab, blame accurately).
+
+## 6. Suggested order of work for commercial readiness
 1. Live-click "Verify active patient now" on a scheduled patient (proves b472 auto-binding) and one-click "Pull from Athena" on an open patient.
 2. Real multi-patient op-note bulk draft (proves b476 fill fix in anger).
 3. Full visit walkthrough on a safe patient: record → generate → write-lane preview (STOP before Sign/Save).
