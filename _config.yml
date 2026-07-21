@@ -128,10 +128,10 @@ include:
   - "jspdf.umd-4.2.1.min.js"
 
   # The exact released MLS Assist package (owner directive 2026-07-20).
-  # SHA-256 54ae79510dcf7127fccf7893c7f25b7ba79a6fb30e1c8057c29b09346e91b503 —
-  # identical bytes to the stamped 3.0.0 Web Store release. Candidate/historical
+  # SHA-256 5c0d678a1a8e265122e93340063d3010c4a5f2c200c4f21d681f8bf9b47178aa —
+  # identical bytes to the stamped 3.0.1 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.0.zip"
+  - "MLS_Assist_v3.0.1.zip"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

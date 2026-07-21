@@ -34,16 +34,16 @@ assert(/Staff prep &amp; Athena month pull/i.test(assist));
 assert(/synthetic evaluation only/i.test(assist));
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.0\.zip/.test(download) &&
-  /54ae79510dcf7127fccf7893c7f25b7ba79a6fb30e1c8057c29b09346e91b503/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.1\.zip/.test(download) &&
+  /5c0d678a1a8e265122e93340063d3010c4a5f2c200c4f21d681f8bf9b47178aa/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 const feed = JSON.parse(read('extension-version.json'));
-/* 3.0.0 released 2026-07-20: accepted 2.9.43 core (identical core digest,
+/* 3.0.1 released 2026-07-21 (label-only delta on the 3.0.0 core): accepted 2.9.43 core (identical core digest,
    816d57a6…) + version bump + the narrow backend host permission that fixes
    worker version reporting. Loaded and live-verified before this pin moved. */
-assert.strictEqual(feed.version, '3.0.0', 'public feed must state the released stable channel exactly');
+assert.strictEqual(feed.version, '3.0.1', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

@@ -6,13 +6,13 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v61';
+const CACHE = 'mls-v62';
 
 const SHELL = [
   '/ScribeFlow.html',
   '/clinical-state-purge.js?v=20260718csp1',
-  '/public-preview-policy.js?v=b474',
-  '/public-preview-runtime.js?v=b474',
+  '/public-preview-policy.js?v=b475',
+  '/public-preview-runtime.js?v=b475',
   '/index.html',
   '/manifest.webmanifest',
   '/icon-192.png',
@@ -113,10 +113,10 @@ function isRetiredPath(urlLike) {
   if (/\.html$/.test(name)) {
     return !PUBLIC_HTML_PATHS.has(name);
   }
-  /* Owner directive 2026-07-20: the EXACT released 3.0.0 package is public.
+  /* Owner directive 2026-07-20: the EXACT released 3.0.1 package is public.
    * Network passthrough only — isSafeCacheUrl still refuses to cache any ZIP,
    * and every other (candidate/historical) ZIP stays fail-closed below. */
-  if (name === 'mls_assist_v3.0.0.zip') return false;
+  if (name === 'mls_assist_v3.0.1.zip') return false;
   if (/\.zip$/.test(name)) return true;
   if (/\.staging\.js$/.test(name) || /_append_[^/]*\.js$/.test(name)) return true;
   return name === 'bg_worker_block.js';
