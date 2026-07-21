@@ -48,9 +48,42 @@
 7. **Explicit-click + relay pins extended** (startup-explicit-pull-contract):
    relay executes only phone-queued jobs at-most-once; schedule imports are
    request-scoped; the passive extension stash never imports or pulls.
-8. Suite count now **257**; b478/b479/b480 each shipped through the full gate.
-   OWNER actions outstanding: deploy backend main; merge+deploy PR #10; Web
-   Store 3.0.1; the §3.6 data items (unchanged).
+8. Suite count now **258**; b478/b479/b480/b481 each shipped through the full
+   gate. OWNER actions outstanding: deploy backend main; merge+deploy PR #10;
+   Web Store 3.0.1; the §3.6 data items (unchanged); **sign in again on the
+   doctor tab** (see 11).
+9. **b481 — the "Save not confirmed" wall FIXED (sv-1.0.3, commit efdb882).**
+   Root cause: the dedupe guards FOLD a pulled name variant ("Ellis Huff")
+   into the existing full record ("Ellis R Huff") under a different id; the
+   verifier's exact-name fallback couldn't see it → false warning per variant
+   per pull, each stacking its own card. freshPatient now mirrors the dedupe
+   (DOB/MRN-anchored token-tolerant, never name-only fuzzy) and warnings
+   aggregate into ONE self-replacing card naming the items + retry guidance.
+   Suite: tests/save-verify-fold-tolerant-contract.test.js. Live re-check of
+   the scan path is pending the owner signing back in.
+10. **b481 — confirmed-HIPAA public posture** (owner directive): index,
+   assist, terms ("Evaluation & Site Terms"), privacy state "MLS Scribe is
+   HIPAA compliant" consistently; NO certification/audit/endorsement/outcome
+   claims; purchasing stays held; storage honesty + no-BAA-by-browsing stay.
+   Truth pins moved deliberately (truth-boundary, preflight + its test,
+   legal-readiness-safety); demo signup-manifest fixture digests regenerated.
+11. **Session state at handoff:** BOTH MLS tabs signed out by the inactivity
+   logoff (correct behavior — the whole account idled >15 min while suites
+   ran; the lgn fixes held all evening before that with zero unexpected
+   logouts). The assistant cannot enter credentials, so ALL remaining live
+   work needs the owner to sign in again first.
+12. **REMAINING PROGRAM (new goal 2026-07-21 late):** (a) Notes ON bodies —
+   the batch reader (mlsAppReadAllVisits) fails its frame-identity gate for
+   every patient while a lone mlsAppReadVisits read SUCCEEDS with the engine
+   idle (diagnostic proven tonight): the divergence is in the batch reader's
+   encounter-frame selection in background.js (visitIdentityGate ~9388) —
+   fix = ext 3.0.2 release train, then 10 passing ON pulls; (b) writeback
+   pipeline hardening + 5 verified live writebacks on Adam J Schaeffer ONLY;
+   (c) full visit walkthrough; (d) mobile+desktop UI overhaul incl. replacing
+   the remaining native confirm()/prompt() dialogs (duplicate-remove,
+   big-import sanity check, Pull-from-Athena no-patient fallback, admin grant
+   confirms) with non-blocking app UI; (e) repeated-save/two-tab/offline
+   save regression breadth; (f) new-customer signup→ceremony→first-pull E2E.
 
 Read this first, whole. It is honest about what was TESTED vs what was merely SHIPPED. The owner (Michael, schaefferbusiness1@gmail.com, admin) is direct and wants results, not narration; his standing rule: **never say something works until you tested it and know it works.** Honor that.
 
