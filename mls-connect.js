@@ -14985,8 +14985,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var modal = $("templatesModal"); if (!modal || $("tpfPanel")) return;
       var anchor = $("tplList"); if (!anchor || !anchor.parentElement) return;
       var panel = document.createElement("div"); panel.id = "tpfPanel";
+      /* Collapsed by default (owner 2026-07-21): the health tooling is a
+         maintenance surface, not the main Templates flow \u2014 one summary line
+         until the doctor opens it. */
       panel.innerHTML =
-        "<h4>\uD83E\uDDF0 Template health \u2014 status, re-process &amp; matching test</h4>" +
+        '<details id="tpfFold">' +
+        '<summary style="cursor:pointer;font:700 13.5px system-ui,-apple-system,sans-serif;color:#204034;padding:6px 0">\uD83E\uDDF0 Template health \u2014 status, re-process &amp; matching test</summary>' +
         '<p class="tpf-sub">Templates processed by an earlier AI pass can be re-run through the current AI. Nothing is overwritten without your click, and deleting never touches your original files \u2014 re-upload any time.</p>' +
         '<div class="tpf-actions">' +
         '<button type="button" id="tpfReupload">\uD83D\uDCE4 Re-upload files</button>' +
@@ -14999,7 +15003,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<div class="tpf-chips">' + CHIPS.map(function (c) { return '<button type="button" data-chip="' + esc(c) + '">' + esc(c) + "</button>"; }).join("") + "</div>" +
         '<input type="text" id="tpfMatchIn" placeholder="Describe the visit or procedure \u2014 e.g. pre-op clearance, right SI joint injection\u2026">' +
         '<div id="tpfMatchOut"></div>' +
-        "</div>";
+        "</div>" +
+        "</details>";
       anchor.parentElement.insertBefore(panel, anchor);
       /* wire */
       panel.addEventListener("click", function (ev) {
@@ -15021,7 +15026,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (inp2) inp2.addEventListener("input", function () { runMatchTest(inp2.value); });
       /* Follow the workspace search live. */
       var ws = $("tplSearch");
-      if (ws && !ws.__tpfWired) { ws.__tpfWired = 1; ws.addEventListener("input", function () { renderPanel(); }); }
+      if (ws && !ws.__tpfWired) { ws.__tpfWired = 1; ws.addEventListener("input", function () {
+        /* an active search must not point at a collapsed panel */
+        try { var f = $("tpfFold"); if (f && String(ws.value || "").trim()) f.open = true; } catch (e) {}
+        renderPanel();
+      }); }
       renderPanel();
     } catch (e) {}
   }
@@ -32785,7 +32794,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b472';
+  window.__MLS_AV = window.__MLS_AV || 'b473';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33095,7 +33104,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b472';
+  var MLS_APP_BUILD='2026-07-20-b473';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41471,7 +41480,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.0.0', installed: true };
+  var api = { version: 'ft-1.1.0', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -41490,6 +41499,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* back on desktop: undo the phone-only inline hides */
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
+      });
+      /* ft-1.1.0 (owner 2026-07-21): the bottom-left Voice / Assistant /
+         Dictate bubbles must stay VISIBLE on desktop. Something in the
+         cascade kept resolving them to display:none with no findable author
+         rule, so the same deterministic inline-important this module already
+         uses to hide on phones now SHOWS on desktop. Settings keeps its
+         clean surface (never forced while body.mls-settings-open, and our
+         inline show is removed there so the Settings CSS hide wins); this
+         1.5s interval self-heals both directions. */
+      var settingsOpen = false;
+      try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
+      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
+        try {
+          var el3 = $(id); if (!el3 || el3.__ftHidden) return;
+          if (settingsOpen) {
+            if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
+            return;
+          }
+          if (el3.style.getPropertyValue('display') !== 'inline-flex') el3.style.setProperty('display', 'inline-flex', 'important');
+        } catch (e) {}
       });
     }
     ids.forEach(function (id) {
