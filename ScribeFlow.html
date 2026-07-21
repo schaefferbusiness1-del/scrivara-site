@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b479"></script>
+<script src="public-preview-policy.js?v=b480"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -719,7 +719,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4790a}
+  .sp-gap .sp-label{color:#b4800a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -6395,6 +6395,11 @@ function idleLogout(){
   // arrive while the doctor talks to the patient. Logging out here would stop
   // the capture and purge the audio-backup databases mid-visit (lgn-1.0.0).
   try{ if((typeof capturing!=='undefined'&&capturing)||(typeof phoneMicCode!=='undefined'&&phoneMicCode)){ resetIdle(); return; } }catch(e){}
+  // An ACTIVE Athena pull is work in progress with zero keyboard/mouse input
+  // (the engine drives the Athena tab for many minutes; the busy stamp is
+  // re-touched every 25s while it runs). Logging out mid-pull kills the pull
+  // and purges its receipts (lgn-1.1.0).
+  try{ if(window.__mlsPullBusyAt&&(Date.now()-Number(window.__mlsPullBusyAt))<180000){ resetIdle(); return; } }catch(e){}
   // Another same-account tab was active more recently than this tab's own
   // listeners saw — the account is NOT idle. Re-arm for the remaining window.
   const m=getIdleMins();
@@ -26537,7 +26542,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b479"></script>
+<script src="public-preview-runtime.js?v=b480"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26808,7 +26813,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b479';
+  window.__MLS_AV='b480';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -116,4 +116,23 @@ function harness({ idleMins = '10', ledgerAgeMs = null, capturing = undefined } 
   assert.deepStrictEqual(h.calls.logout, [true], 'a missing ledger must not disable the safeguard');
 }
 
+// 6) An ACTIVE Athena pull (fresh busy stamp) holds the timer even with a
+//    stale ledger — a multi-minute pull produces no keyboard/mouse events and
+//    must never be killed by the inactivity logoff (lgn-1.1.0).
+{
+  const h = harness({ ledgerAgeMs: 20 * 60 * 1000 });
+  h.context.window.__mlsPullBusyAt = Date.now() - 30 * 1000;
+  vm.runInContext('window.__mlsPullBusyAt = ' + h.context.window.__mlsPullBusyAt + ';', h.context);
+  h.context.idleLogout();
+  assert.strictEqual(h.calls.logout.length, 0, 'idleLogout must never fire mid-pull');
+  assert.strictEqual(h.calls.timeouts.length, 1, 'a held timer must re-arm');
+}
+// ...but a long-DEAD busy stamp (crashed pull) must not hold the lock open.
+{
+  const h = harness({ ledgerAgeMs: 20 * 60 * 1000 });
+  vm.runInContext('window.__mlsPullBusyAt = ' + (Date.now() - 10 * 60 * 1000) + ';', h.context);
+  h.context.idleLogout();
+  assert.deepStrictEqual(h.calls.logout, [true], 'a stale busy stamp must not disable the safeguard');
+}
+
 console.log('PASS session idle cross-tab: account-wide activity ledger holds background tabs, recording holds the timer, a genuinely idle account still locks, and eviction requires a confirmed 401');
