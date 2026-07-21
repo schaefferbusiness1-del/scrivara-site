@@ -18,11 +18,12 @@ const scribe = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 // --- Enterprise $20 display, matching the backend PLANS amounts -------------
 assert(/<div class="tier">Enterprise<\/div>\s*<div class="amt">\$20<span> \/ provider \/ mo<\/span><\/div>/.test(index),
   'Enterprise must display $20/provider/mo');
-assert(index.includes('3+ providers · or $200/yr each'), 'Enterprise must show the $200 annual equivalent and 3+ minimum');
+assert(index.includes('3+ providers · or $100/yr each'), 'Enterprise must show the $100 annual equivalent and 3+ minimum');
 assert(!/\$50<span> \/ provider \/ mo/.test(index), 'the retired $50 Enterprise price must not appear');
 
 // annual equivalents stay present and consistent on every tier
-for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$200/yr']) {
+// (Enterprise annual dropped to $100/yr per owner directive 2026-07-20 evening)
+for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$100/yr']) {
   assert(index.includes(annual), 'missing annual equivalent: ' + annual);
 }
 
