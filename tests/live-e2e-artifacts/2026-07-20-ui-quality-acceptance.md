@@ -79,3 +79,14 @@ Workspace unlocked (gates configured + grants recorded ~8:05 PM). All interactio
 - Mechanism: appointment->patient stub paths (schedule import ScribeFlow.html:14861, hero row :15057, exact-import materializePatient) can be handed a shorthand schedule name; the dedupe guards then correctly refuse/fold the stub (server log earlier: "dedupe-guard create matched existing patient ... nothing new"), so the verifier's fresh-store lookup by that shorthand identity finds nothing and raised a false DATA-LOSS alarm - and its "please retry" advice would just re-create stubs.
 - Fix (feat_save_verify.js, no own pin - busted by the b465 stamp): after the settle-recheck still misses, a name matching the shorthand shape (`First L.`) now gets a calm self-dismissing info banner - "no separate chart created; add real new patients from Patients with their full name" - claiming only what is actually verified (no new record). Full-name misses keep the loud honest warning unchanged.
 - Deeper cleanup noted for a future pass: those server appointment rows themselves carry shorthand names; resolving them to real charts at pull time would remove the stub attempts entirely.
+
+## b465 LIVE-VERIFIED + full account reconciliation (post-deploy, doctor tab)
+- b465 live on the doctor tab first reload: app boots straight in, ceremony not trapping, ZERO save banners, clean Today view (screenshot ss_7971q21gr), verifier installed.
+- Local vs server reconciliation (read-only): local 1439 / server 1445. The 6 server-only rows are ALL stale duplicates the local dedupe CORRECTLY refuses at hydration, and every canonical local chart has MORE visits than its duplicate:
+  - row 394445 "Sandra Obosnenko" (dup 3 visits) vs canonical local 7 visits
+  - row 394443 "John W Stansberry" (dup 1) vs canonical 11
+  - row 394437 "Beth Garahan" (dup 1) vs canonical 3
+  - row 3 "Adam" (0 visits) - ancient demo row from 07-11
+  - row 393658 "John M." (shorthand, 3 visits) + row 393402 "Barbara M." (shorthand, 1 visit) - ambiguous shorthand stubs; cannot be auto-matched (28 Johns / 11 Barbaras locally)
+- FINAL mechanism: every boot, hydration pulls these 6 rows down -> local dedupe refuses them (duplicate/ambiguous) -> the pre-b465 verifier misread the refusal as "save not persisted". b465 reports the shorthand shape calmly; nothing was ever lost.
+- HELD FOR OWNER OK (server rows, real account): delete/merge rows [3, 393658, 393402, 394437, 394443, 394445] server-side (joins the earlier held merge of [393707, 393710]). NOTE before deleting 393658/393402: their visit payloads (3+1 visits) should be owner-reviewed against the intended canonical John/Barbara charts in case any visit content is unique.
