@@ -12812,6 +12812,16 @@ function enhanceMainNavA11y(){
 function setNavLayout(mode,silent){
   mode=mode==='left'?'left':'top';
   try{ localStorage.setItem(uns('navLayout'),mode); }catch(e){}
+  /* Under the redesign shell (the product's real chrome) the LEFT RAIL is the
+     shell's own feature (#mlsRdNav + mls_rail_collapsed) — found live: the old
+     grid classes drew nothing there because the shell reparents .mainnav into
+     its rail. Single owner: 'left' pins the shell rail open, 'top' collapses
+     it to the 60px top bar + menu drawer. */
+  if(document.body.classList.contains('mls-rd-shell')){
+    try{ localStorage.setItem('mls_rail_collapsed',mode==='left'?'0':'1'); }catch(e){}
+    document.documentElement.classList.toggle('mls-rail-collapsed',mode!=='left');
+    try{ window.dispatchEvent(new Event('resize')); }catch(e){}
+  }
   applyNavLayout();
   var s=document.getElementById('navLayoutStatus');
   if(s&&!silent){ s.textContent='Saved ✓ — '+(mode==='left'?'left sidebar':'top bar'); s.style.color='#127a55'; setTimeout(function(){ if(s.textContent.indexOf('Saved')===0) s.textContent=''; },4000); }
@@ -12825,6 +12835,18 @@ function applyNavLayout(){
     return;
   }
   var mode='top'; try{ mode=localStorage.getItem(uns('navLayout'))==='left'?'left':'top'; }catch(e){}
+  if(document.body.classList.contains('mls-rd-shell')){
+    /* Redesign shell: the shell owns geometry. Enforce the saved preference
+       once known, mirror the TRUE rail state into the Settings select, and
+       keep the legacy grid classes off. */
+    document.body.classList.remove('mls-nav-left','mls-nav-collapsed');
+    var pb2=document.getElementById('navCollapseBtn'); if(pb2) pb2.remove();
+    var hasPref=false; try{ hasPref=localStorage.getItem(uns('navLayout'))!==null; }catch(e){}
+    if(hasPref) document.documentElement.classList.toggle('mls-rail-collapsed',mode!=='left');
+    var actual=document.documentElement.classList.contains('mls-rail-collapsed')?'top':'left';
+    var sel2=document.getElementById('navLayoutSel'); if(sel2&&sel2.value!==actual) sel2.value=actual;
+    return;
+  }
   document.body.classList.toggle('mls-nav-left',mode==='left');
   var sel=document.getElementById('navLayoutSel'); if(sel&&sel.value!==mode) sel.value=mode;
   var nav=document.querySelector('.mainnav'); if(!nav) return;
@@ -22157,6 +22179,14 @@ function agCeremonySkip(ev){
   if(ev&&ev.preventDefault) ev.preventDefault();
   try{ sessionStorage.setItem('mlsAgCerSkip','1'); }catch(e){}
   hideAgreementsGate();
+  /* The ceremony overlays an app whose boot CONTINUED underneath (the reveal
+     path). Re-running startSession here re-hydrated the entire patient store
+     — on large accounts that froze the UI on every continue. If the boot
+     loader already finished, just reveal the running app. */
+  if(sfGateLoadingStarted&&!sfGateLoadingVisible){
+    const app=document.getElementById('appScreen'); if(app) app.style.display='';
+    return;
+  }
   const em=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
   startSession(em);
 }
@@ -22339,8 +22369,13 @@ async function agSubmitSign(){
     // Success: mark signed locally, hide the gate, enter the app normally.
     if(bkUser) bkUser.agreements_signed_version=AGREEMENTS_VERSION;
     hideAgreementsGate();
-    const em=(bkUser&&bkUser.email)||(session&&session.email)||'';
-    startSession(em);
+    /* Same boot-aware reveal as the skip path: never re-boot a running app. */
+    if(sfGateLoadingStarted&&!sfGateLoadingVisible){
+      const app0=document.getElementById('appScreen'); if(app0) app0.style.display='';
+    }else{
+      const em=(bkUser&&bkUser.email)||(session&&session.email)||'';
+      startSession(em);
+    }
     toast('Thanks — your signed forms were saved and sent to your administrator.','ok');
     // Offer the user their own copy of the receipt.
     try{ if(doc) doc.save('MLS_Signed_Acknowledgment.pdf'); }catch(e){}
