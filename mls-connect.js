@@ -14945,8 +14945,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function renderPanel() {
     var panel = $("tpfPanel"); if (!panel) return;
     var list = tplList();
+    /* Owner polish 2026-07-21: the health rows follow the workspace search box
+       (same AND-multiword name/keyword/content match as the template list). */
+    var q = ""; try { q = String((window._tplUI && window._tplUI.query) || "").toLowerCase().trim(); } catch (e) {}
+    var totalAll = list.length;
+    if (q) list = list.filter(function (t) {
+      if (!t) return false;
+      var hay = (S(t.name) + " " + (t.keywords || []).join(" ") + " " + S(t.text)).toLowerCase();
+      return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
+    });
     var rows = "";
-    if (!list.length) rows = '<div class="tpf-meta">No templates saved yet \u2014 upload some with the buttons above.</div>';
+    if (!totalAll) rows = '<div class="tpf-meta">No templates saved yet \u2014 upload some with the buttons above.</div>';
+    else if (!list.length) rows = '<div class="tpf-meta">No templates match your search \u2014 clear it to see all ' + totalAll + '.</div>';
     list.forEach(function (t) {
       if (!t) return;
       var h = healthOf(t);
@@ -15009,6 +15019,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       });
       var inp2 = panel.querySelector("#tpfMatchIn");
       if (inp2) inp2.addEventListener("input", function () { runMatchTest(inp2.value); });
+      /* Follow the workspace search live. */
+      var ws = $("tplSearch");
+      if (ws && !ws.__tpfWired) { ws.__tpfWired = 1; ws.addEventListener("input", function () { renderPanel(); }); }
       renderPanel();
     } catch (e) {}
   }
@@ -32772,7 +32785,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b467';
+  window.__MLS_AV = window.__MLS_AV || 'b468';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33082,7 +33095,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b467';
+  var MLS_APP_BUILD='2026-07-20-b468';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
