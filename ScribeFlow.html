@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b469"></script>
+<script src="public-preview-policy.js?v=b470"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -5401,7 +5401,19 @@ function refreshMe(opts){
     try{
       const init={headers:{'Authorization':'Bearer '+token}};
       if(opts.signal) init.signal=opts.signal;
-      const r=await fetch(bkBase()+'/api/me',init);
+      /* Identity is the backbone of every namespaced read (uns, gate check,
+         hydration). A single transient /api/me failure used to leave a fresh
+         tab tokened-but-anonymous — "_" namespace, gate fail-closed to
+         "blocked", empty store, and a wall of false save-verify warnings
+         (live 2026-07-21, owner sign-in). Retry briefly like hydration does. */
+      let r=null;
+      for(let _m=1;_m<=3;_m++){
+        try{ r=await fetch(bkBase()+'/api/me',init); }catch(e){ r=null; if(opts.signal&&opts.signal.aborted){ notifyIdentity(); return false; } }
+        if(r&&(r.ok||r.status===401)) break;
+        if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
+        if(_m<3) await new Promise(rs=>setTimeout(rs,_m===1?500:1200));
+      }
+      if(!r){ notifyIdentity(); return false; }
       if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
       if(r.status===401){ notifyIdentity(); handle401(); return false; }
       if(r.ok){
@@ -7488,6 +7500,16 @@ async function deletePatientOnServer(externalId){
 async function loadPatientsFromServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
+  /* Boot-visible truth (owner 2026-07-21: "what happened to the bottom right
+     little loading thing"): register this hydration as a REAL job in the
+     shared progress store so the corner chip shows genuine background work.
+     (The chip's previous boot content was the since-removed silent auto
+     Athena read.) Fail-open when the store bundle hasn't loaded yet. */
+  let _hyJob=null;
+  const _hyStart=()=>{ if(_hyJob) return; try{ const l=window.__mlsLoadingCalm; if(l&&l.installed&&typeof l.start==='function') _hyJob=l.start({key:'patients:hydrate',kind:'patient_sync',label:'Syncing your charts',stages:['Downloading from MLS','Merging on this device'],timeoutMs:120000,replace:true,cancelable:false}); }catch(e){} };
+  const _hyStage=(s)=>{ try{ if(_hyJob&&typeof _hyJob.stage==='function') _hyJob.stage(s,{}); }catch(e){} };
+  const _hyEnd=(ok,msg)=>{ try{ if(!_hyJob) return; const j=_hyJob; _hyJob=null; if(ok) j.complete(msg||''); else if(typeof j.fail==='function') j.fail({message:msg||''}); }catch(e){} };
+  _hyStart();
   try{
     const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
     /* Commercial hardening 2026-07-21: a single-attempt hydration meant one
@@ -7496,14 +7518,15 @@ async function loadPatientsFromServer(opts){
        say so honestly (once per session). 401 and aborts never retry. */
     let r=null;
     for(let _h=1;_h<=3;_h++){
-      try{ r=await fetch(bkBase()+'/api/patients',init); }catch(e){ r=null; if(opts.signal&&opts.signal.aborted) return false; }
+      try{ r=await fetch(bkBase()+'/api/patients',init); }catch(e){ r=null; if(opts.signal&&opts.signal.aborted){ _hyEnd(true,''); return false; } }
       if(r&&(r.ok||r.status===401)) break;
-      if(!sfStartupValid(opts)) return false;
+      if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
       if(_h<3) await new Promise(rs=>setTimeout(rs,_h===1?600:1500));
     }
-    if(!sfStartupValid(opts)) return false;
-    if(r&&r.status===401){ handle401(); return false; }
+    if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
+    if(r&&r.status===401){ _hyEnd(false,'Your MLS sign-in expired.'); handle401(); return false; }
     if(!r||!r.ok){
+      _hyEnd(false,'Could not refresh from MLS — the copy on this device is unchanged.');
       try{
         if(!window.__mlsHydrateFailNoticed && (getPatients()||[]).length===0){
           window.__mlsHydrateFailNoticed=1;
@@ -7513,7 +7536,8 @@ async function loadPatientsFromServer(opts){
       return false;
     }
     let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
-    if(!sfStartupValid(opts)) return false;
+    if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
+    _hyStart(); _hyStage('Merging on this device');
     const rows=Array.isArray(d)?d:(d&&d.patients)||[];
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     let changed=false;
@@ -7548,8 +7572,9 @@ async function loadPatientsFromServer(opts){
         updateNavCounts();
       }
     }
+    _hyEnd(true, changed?'Charts updated from MLS':'Charts already up to date');
     return changed;
-  }catch(e){/* offline — keep local list */ return false; }
+  }catch(e){/* offline — keep local list */ _hyEnd(true,''); return false; }
 }
 
 /* ---------- HEAD-DOCTOR TEAM VIEW (read-only) ----------
@@ -14227,15 +14252,35 @@ function maybePromptInstallAssist(promptEpoch,promptAccount){
     };
     window.addEventListener('message',sfAssistPromptPongHandler);
     try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){}
+    /* Boot is near-instant since b467, so the first ping can beat the content
+       script's injection and a machine WITH the extension saw the install
+       nudge (live 2026-07-21, owner). Give it a second ping after a longer
+       settle before concluding the extension is absent — and even then, any
+       later extension message withdraws the banner. */
     sfAssistPromptPingTimer=setTimeout(function(){
-      sfAssistPromptPingTimer=0;
-      if(sfAssistPromptPongHandler){ window.removeEventListener('message',sfAssistPromptPongHandler); sfAssistPromptPongHandler=null; }
-      if(ponged||!sfSessionPromptValid(promptEpoch,promptAccount)) return;    // extension present or session changed → no nudge
-      _showAssistInstallBanner();
+      if(ponged||!sfSessionPromptValid(promptEpoch,promptAccount)){ sfAssistPromptPingTimer=0; return; }
+      try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){}
+      sfAssistPromptPingTimer=setTimeout(function(){
+        sfAssistPromptPingTimer=0;
+        if(sfAssistPromptPongHandler){ window.removeEventListener('message',sfAssistPromptPongHandler); sfAssistPromptPongHandler=null; }
+        if(ponged||!sfSessionPromptValid(promptEpoch,promptAccount)) return;    // extension present or session changed → no nudge
+        _showAssistInstallBanner();
+      }, 2200);
     }, 1300);
   }catch(e){}
 }
 function _dismissAssistPrompt(){ try{ localStorage.setItem(uns('assistPromptSeen'),'1'); }catch(e){} var b=document.getElementById('assistInstallBanner'); if(b) b.remove(); }
+/* Safety net: if the extension speaks at ANY later moment while the install
+   banner is up (slow content-script injection, extension re-enabled), the
+   nudge is wrong — withdraw it and remember the extension exists. */
+window.addEventListener('message',function(e){
+  try{
+    if(!(e&&e.data&&e.data.source==='mls-ext')) return;
+    var b=document.getElementById('assistInstallBanner'); if(!b) return;
+    b.remove();
+    try{ localStorage.setItem(uns('assistPromptSeen'),'1'); }catch(_){}
+  }catch(_){}
+});
 function _showAssistInstallBanner(){
   try{
     if(document.getElementById('assistInstallBanner')) return;
@@ -14913,7 +14958,12 @@ async function _importPulledSchedule(appts){
     if(_try<3) await new Promise(function(rs){ setTimeout(rs,_try===1?600:1500); });
   }
   if(!er||!er.ok){
-    try{ toast('Your existing MLS calendar could not be read just now, so nothing was imported (this prevents duplicate appointments). Retry the pull in a moment.','err'); }catch(e){}
+    var _erSt=Number(er&&er.status||0);
+    if(_erSt===401||_erSt===403){
+      try{ toast('Your MLS sign-in expired on this device, so nothing was imported. Sign in to MLS again, then pull.','err'); }catch(e){}
+    }else{
+      try{ toast('Your existing MLS calendar could not be read just now, so nothing was imported (this prevents duplicate appointments). Retry the pull in a moment.','err'); }catch(e){}
+    }
     return;
   }
   try{ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
@@ -23365,7 +23415,7 @@ function captureFromEMR(btn){
     tries++;
     if(ponged){ clearInterval(iv); return; }
     if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
-      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4690e'); return; }
+      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4700e'); return; }
     ping();
   }, 350);
   function proceed(){
@@ -26358,7 +26408,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b469"></script>
+<script src="public-preview-runtime.js?v=b470"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26629,7 +26679,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b469';
+  window.__MLS_AV='b470';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

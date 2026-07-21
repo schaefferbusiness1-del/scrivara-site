@@ -160,7 +160,7 @@ for (const id of ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock']) {
 assert(!connect.includes('No patients loaded yet — one tap gets today’s schedule'),
   'an empty schedule still falsely says no patient is loaded even when an active patient exists');
 assert(connect.includes('No appointments imported for ') &&
-       connect.includes('Use <b>Pull this day</b> above to load the schedule and chart history from Athena.'),
+       connect.includes('Use the <b>📥 Pull</b> button above to load the schedule and chart history from Athena.'),
   'the empty-day guidance no longer distinguishes schedule state or points to the canonical pull action');
 for (const [label, source] of [['production', app], ['staging', stagingApp]]) {
   const calendarLoader = between(source, 'async function loadCalendar(options){', 'function _calFilterVal', `${label} calendar loader`);

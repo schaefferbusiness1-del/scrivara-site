@@ -18297,7 +18297,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     return (visitIsToday() && S.autoPull === 'failed' && S.autoPullNote ? '<div class="ez3-warnbar">⚠️ ' + esc(S.autoPullNote) + '</div>' : '') +
            '<div class="ez3-empty" id="ez3DayEmpty" role="status"><b>No appointments imported for ' + esc(dayLabel) + '.</b><br>' +
-           'Use <b>Pull this day</b> above to load the schedule and chart history from Athena.</div>';
+           'Use the <b>📥 Pull</b> button above to load the schedule and chart history from Athena.</div>';
   }
   function wireEmptyToday() {
     on('ez3AllProv', function () { S.providerFilter = ''; S.providerRef = ''; S.showCount = 5; render(); });
@@ -32785,7 +32785,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b469';
+  window.__MLS_AV = window.__MLS_AV || 'b470';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33095,7 +33095,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b469';
+  var MLS_APP_BUILD='2026-07-20-b470';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41869,11 +41869,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e0) {}
   }
 
+  /* Owner 2026-07-21: the pull button names its target day — "Pull today" on
+     Today, "Pull Wednesday, July 22" elsewhere — so a mis-selected day is
+     visible BEFORE the click, not after an import lands on the wrong date. */
+  function dsPullVerb(day) {
+    var k = String(day || DS.day || todayKey()).slice(0, 10);
+    if (k === todayKey()) return 'Pull today';
+    var label = safe(function () {
+      return new Date(k + 'T12:00:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    }, '');
+    return 'Pull ' + (label || k);
+  }
   function syncStrip() {
     var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
     var isToday = (DS.day === todayKey());
     var desiredDayLabel = (isToday ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
     if (lb && lb.innerHTML !== desiredDayLabel) lb.innerHTML = desiredDayLabel;
+    try {
+      var pb = $('mlsDsPullBtn');
+      if (pb && !DS.pulling && !DS.retrying) {
+        var desiredPull = '📥 ' + esc(dsPullVerb());
+        if (pb.innerHTML !== desiredPull) pb.innerHTML = desiredPull;
+      }
+    } catch (ePb) {}
     /* Keep one stable strip topology on every date. The Today shortcut used
        to appear only after leaving Today, which made future/past workspaces
        look like a different page. It now remains in the same position and is
@@ -41946,6 +41964,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var DS_SAFE_REASON_CODES = {
     'calendar-row-unverified': 1,
     'calendar-read-unverified': 1,
+    'signin-expired': 1,
     'appointment-patient-identity-conflict': 1,
     'appointment-enrichment-ambiguous': 1,
     'slot-patient-identity-conflict': 1,
@@ -42039,7 +42058,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dsSyncDiagBtn(show) {
     var b = $('mlsDsDiagBtn'); if (!b) return;
-    b.style.display = show ? '' : 'none';
+    /* same stylesheet-baseline trap as the history-retry control: '' resolves
+       back to the CSS display:none, hiding the report button it promises */
+    b.style.display = show ? 'inline-block' : 'none';
   }
   function dsCopyDiag() {
     var text = '';
@@ -42086,6 +42107,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var hr2 = r && r.historyReceipt || {};
     var messages = {
       'signin': 'Sign in to MLS before pulling from Athena.',
+      'signin-expired': 'Your MLS sign-in expired on this device. Sign in to MLS again, then pull — nothing was imported.',
       'no-ext': 'MLS Assist is not available in this browser. Enable the extension, reload this page, and try again.',
       'nav-failed': 'Athena could not be opened to the requested day. Keep the signed-in Athena tab open and try again.',
       'wrong-day': 'Athena showed a different day, so nothing was accepted. Open the requested day and try again.',
@@ -42100,6 +42122,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           'appointment-create-http', 'appointment-create-network', 'appointment-create-dispatch-failed',
           'appointment-update-http', 'appointment-update-network'
         ].reduce(function (sum, key) { return sum + Number(safeReasons[key] || 0); }, 0);
+        if (kind === 'signin-expired') return 'Your MLS sign-in expired on this device, so the existing MLS calendar could not be read. Nothing was imported or guessed; sign in to MLS again, then pull.';
         if (kind === 'calendar-read-unverified') return 'Athena\'s schedule was read, but MLS could not verify the existing MLS calendar before reconciling it. No day was marked complete; retry when the MLS connection is stable.';
         if (kind === 'save-failed') return 'Athena\'s schedule was read, but ' + (writeFailures || 'one or more') + ' calendar save/update request' + (writeFailures === 1 ? '' : 's') + ' failed. Appointments and history that did finish remain available; retry safely checks existing rows before writing.';
         if (kind === 'concurrent-import') return 'Athena\'s schedule was read, but another schedule import still owned one or more rows. MLS did not guess or duplicate them; wait for that pull to finish, then retry.';
@@ -42158,7 +42181,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var items = retryItems(source), retryBtn = $('mlsDsRetryHistoryBtn');
     DS.lastResult = items.length ? source : null;
     if (!retryBtn) return items.length;
-    retryBtn.style.display = items.length ? '' : 'none';
+    /* live 2026-07-21 (owner: "there is still no retry failed histories
+       button"): display='' falls back to the stylesheet's baseline
+       display:none, so this control had NEVER been visible even with a full
+       retry queue while the verdict banner told the doctor to use it. */
+    retryBtn.style.display = items.length ? 'inline-block' : 'none';
     retryBtn.disabled = !!(DS.pulling || DS.retrying);
     retryBtn.textContent = items.length ? ('\u21bb Retry failed histories only (' + items.length + ')') : '\u21bb Retry failed histories only';
     return items.length;
@@ -42256,7 +42283,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           DS.pulling = false;
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
-          if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 Pull this day'; }
+          if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
           if (rstat) { rstat.style.display = ok ? 'none' : 'block'; if (!ok && msg) rstat.textContent = String(msg); }
           try { var rb = document.getElementById('mlsDsPullBar'); if (rb) rb.style.display = 'none'; } catch (e3) {}
           try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
@@ -42283,7 +42310,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       syncRetryControl(DS.lastResult);
       dsStatusLog(msg);
       dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
-      if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '📥 ' + esc(dsPullVerb()); }
       if (stat) { stat.style.display = (keepStatus || !ok) ? 'block' : 'none'; if (keepStatus || !ok) stat.textContent = msg; }
       /* "select Retry" must point at a REAL visible control beside the
          message: one Retry button, shown only for the sign-in state, wired to
@@ -42398,7 +42425,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<span class="ds-day" id="mlsDsDayLbl" aria-live="polite" aria-atomic="true"></span>' +
         '<button type="button" class="ds-nav" id="mlsDsNext" title="Next day" aria-label="Next day">&#8250;</button>' +
         '<button type="button" class="ds-today" id="mlsDsTodayBtn" aria-label="Go to Today">Today</button>' +
-        '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
+        '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull today</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
         '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: pull the schedule and each patient’s chart history cards only — much faster." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
@@ -42406,13 +42433,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* always the FIRST element of the Visit body — above the engine wrap,
          outside its innerHTML re-renders, so it can never sink or flicker */
       body.insertBefore(strip, body.firstChild);
-      /* "Full visit notes" preference: default ON; OFF pulls schedule + chart
-         history cards only (the importer records the skipped stage honestly). */
+      /* "Full visit notes" preference: default OFF (owner 2026-07-21 — the
+         bodies pass is the slow, fragile lane; the fast schedule + chart-
+         history-card pull is the right first experience). Turning it ON is
+         persisted per account; the importer records the skipped stage
+         honestly either way. */
       (function () {
         var tgl = $('mlsDsVisitBodies'); if (!tgl) return;
         var key = ''; try { key = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; } catch (e) {}
         var cur = null; try { cur = key ? localStorage.getItem(key) : null; } catch (e) {}
-        tgl.checked = cur == null ? true : cur !== '0';
+        tgl.checked = cur == null ? false : cur !== '0';
         tgl.onchange = function () { try { if (key) localStorage.setItem(key, tgl.checked ? '1' : '0'); } catch (e) {} };
       })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
@@ -43270,7 +43300,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             var intro = document.createElement('div');
             intro.id = 'mlsRlPhoneIntro';
             intro.style.cssText = 'background:#F4F8F5;border:1px solid #DCE8DF;border-radius:12px;padding:10px 13px;margin:0 0 10px;font:500 12.5px "Public Sans",system-ui,sans-serif;color:#204034;display:flex;gap:9px;align-items:flex-start';
-            intro.innerHTML = '<span aria-hidden="true">💡</span><span style="flex:1">Tap <b>📥 Pull this day</b> and the pull runs on your office computer (which must be on, with MLS open and signed in to athenaOne) — the results appear here automatically.</span><button style="border:0;background:none;color:#79837C;font-size:16px;cursor:pointer;padding:0 2px" title="Got it" onclick="try{localStorage.setItem(\'mlsRlPhoneIntroSeen\',\'1\')}catch(e){};this.parentNode.remove()">✕</button>';
+            intro.innerHTML = '<span aria-hidden="true">💡</span><span style="flex:1">Tap the <b>📥 Pull</b> button and the pull runs on your office computer (which must be on, with MLS open and signed in to athenaOne) — the results appear here automatically.</span><button style="border:0;background:none;color:#79837C;font-size:16px;cursor:pointer;padding:0 2px" title="Got it" onclick="try{localStorage.setItem(\'mlsRlPhoneIntroSeen\',\'1\')}catch(e){};this.parentNode.remove()">✕</button>';
             bar.parentNode.insertBefore(intro, bar.nextSibling);
           }
         } catch (e) {}

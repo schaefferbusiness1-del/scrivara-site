@@ -166,7 +166,7 @@ assert(easyMarker >= 0 && easyStart >= 0 && easyEnd > easyStart, 'active canonic
 const easy = connect.slice(easyStart, easyEnd);
 const empty = between(easy, '  function emptyTodayHtml() {', '\n  function wireEmptyToday() {', 'Easy empty state');
 assert(!empty.includes('ez3PullNow'), 'Easy empty state still paints a competing pull button');
-assert(empty.includes('id="ez3DayEmpty"') && empty.includes('Use <b>Pull this day</b> above'),
+assert(empty.includes('id="ez3DayEmpty"') && empty.includes('Use the <b>📥 Pull</b> button above'),
   'passive empty state does not direct the doctor to the canonical pull owner');
 assert(empty.includes('id="ez3AllProv"'), 'provider-filter recovery disappeared with pull deduplication');
 assert(connect.includes("$('mlsDsPullBtn').onclick = startPull;"), 'selected-day strip lost its pull handler');

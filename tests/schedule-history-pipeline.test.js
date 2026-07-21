@@ -60,7 +60,9 @@ const context = {
       }
     }
   },
-  localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  /* Full visit notes defaults OFF since b470 — this pipeline exercises the
+     bodies lane, so the harness opts IN the way a clinician would. */
+  localStorage: { getItem: (k) => (/pullVisitBodies/.test(String(k)) ? '1' : null), setItem: () => {}, removeItem: () => {} },
   document: {
     readyState: 'complete',
     querySelectorAll: () => [],
@@ -71,6 +73,7 @@ const context = {
   }
 };
 context.window = context;
+context.uns = (k) => 'pipeline::' + k;
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {

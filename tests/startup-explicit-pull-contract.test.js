@@ -41,7 +41,7 @@ assert(!easy.includes('maybeAutoPull();'), 'active Easy boot or polling still in
 
 assert(!emptyTodayHtml.includes('ez3PullNow'),
   'the Easy empty state must not duplicate the selected-day strip pull action');
-assert(emptyTodayHtml.includes('id="ez3DayEmpty"') && emptyTodayHtml.includes('Use <b>Pull this day</b> above'),
+assert(emptyTodayHtml.includes('id="ez3DayEmpty"') && emptyTodayHtml.includes('Use the <b>📥 Pull</b> button above'),
   'the passive empty state must point doctors to the canonical strip action');
 assert(!easy.includes("on('ez3PullNow'"), 'the retired Easy pull control must have no live handler');
 assert(connect.includes("$('mlsDsPullBtn').onclick = startPull;"),

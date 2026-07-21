@@ -518,12 +518,57 @@
   // ---------------------------------------------------------------------------
   var _pendingUpsert = {}, _prevVisitCount = {}, _knownPatients = null;
 
+  /* Live 2026-07-21 (owner screenshot): a login glitch mid-hydration produced a
+     WALL of "Save not confirmed" warnings — the session boundary purged the
+     store while dozens of upsert verifications were still queued, so every one
+     re-read an empty store and screamed false data loss over the access-gate
+     screen. Three guards: (1) a session epoch cancels every queued
+     verification at any account boundary; (2) verification is suppressed while
+     signed out, while account identity is unresolved, or while the app screen
+     is hidden behind a gate; (3) repeated warnings collapse into ONE honest
+     summary instead of a stacked wall. */
+  var _verifyEpoch = 0, _warnBurstTs = 0, _warnBurstN = 0;
+  try {
+    window.addEventListener('mls:session-boundary', function () {
+      _verifyEpoch++;
+      try { Object.keys(_pendingUpsert).forEach(function (k) { clearTimeout(_pendingUpsert[k]); }); } catch (e) {}
+      _pendingUpsert = {}; _prevVisitCount = {}; _knownPatients = null;
+    });
+  } catch (e) {}
+  function verifySuppressed() {
+    return safe(function () {
+      var hosted = (typeof window.backendMode === 'function') && window.backendMode();
+      if (hosted && !((typeof window.bkToken === 'function') && window.bkToken())) return true;
+      if (hosted && typeof window.uns === 'function' && String(window.uns('X')).indexOf('::_::') >= 0) return true;
+      var app = document.getElementById('appScreen');
+      if (app && window.getComputedStyle && getComputedStyle(app).display === 'none') return true;
+      return false;
+    }) === true;
+  }
+  function warnSaveNotConfirmed(name) {
+    var t = Date.now();
+    if (t - _warnBurstTs > 12000) _warnBurstN = 0;
+    _warnBurstTs = t; _warnBurstN++;
+    if (_warnBurstN > 4) return;
+    if (_warnBurstN === 4) {
+      banner('warn', '⚠ Several saves could not be confirmed', [
+        'This usually means the session refreshed or signed out mid-save — your charts stay safe on the MLS server.',
+        'Reload this page to re-sync. Individual banners are paused.'], { ttl: 14000 });
+      return;
+    }
+    banner('warn', '⚠ Save not confirmed',
+      ['"' + (name || 'patient') + '" was not found in the saved store after saving.',
+        'The save may not have persisted — please retry.']);
+  }
+
   function scheduleUpsertVerify(p) {
     if (!p) return;
     var key = patientId(p);
+    var ep = _verifyEpoch;
     if (_pendingUpsert[key]) clearTimeout(_pendingUpsert[key]);
     _pendingUpsert[key] = setTimeout(function () {
       delete _pendingUpsert[key];
+      if (ep !== _verifyEpoch || verifySuppressed()) return;
       try { runUpsertVerify(p, key); } catch (e) {}
     }, 650);
   }
@@ -551,7 +596,9 @@
          an upsert can verify before the store write settles — "John M." was
          flagged missing while present moments later. Re-check once after a
          settle; the honest warning fires only if the record is STILL absent. */
+      var epRecheck = _verifyEpoch;
       setTimeout(function () {
+        if (epRecheck !== _verifyEpoch || verifySuppressed()) return;
         try {
           var again = verifyPatientSaved(p);
           if (again.ok) { _prevVisitCount[key] = again.visitCount; return; }
@@ -567,9 +614,7 @@
               'If this is a real new patient, add them from Patients with their full name.'], { ttl: 8000 });
           return;
         }
-        banner('warn', '⚠ Save not confirmed',
-          ['"' + (res.name || 'patient') + '" was not found in the saved store after saving.',
-            'The save may not have persisted — please retry.']);
+        warnSaveNotConfirmed(res.name);
       }, 2500);
       return;
     }

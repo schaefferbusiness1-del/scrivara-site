@@ -443,6 +443,9 @@ assert(api && api.version === 'si-1.7.16');
   assert.strictEqual(mutations.length, 0, 'provider-id conflict mutated the backend appointment');
   assert.strictEqual(backendRows[0].athena_provider_id, 'provider-exact');
 
+  /* Full visit notes defaults OFF since b470; these sections exercise the
+     full bodies lane, so opt in exactly as a clinician would. */
+  store.set('identity-test::pullVisitBodies', '1');
   const historyRow = {
     patient_external_id: patients[0].id, _mlsTargetPatientId: patients[0].id,
     _mlsTargetDob: patients[0].dob, _mlsTargetMrn: patients[0].mrn,

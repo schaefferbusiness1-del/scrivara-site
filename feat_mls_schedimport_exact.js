@@ -1005,11 +1005,15 @@
       return readCalendarAttempt(1);
     }, Promise.resolve({ appointments: [], __mlsVerified: false })).then(async function (ed) {
       if (!ed || ed.__mlsVerified !== true) {
+        /* A 401/403 here is an expired MLS session, not an unstable connection
+           — name it so the clinician signs in instead of retrying forever. */
+        var calReadReason = (ed && (ed.status === 401 || ed.status === 403)) ? "signin-expired" : "calendar-read-unverified";
+        var calReadFailures = {}; calReadFailures[calReadReason] = appts.length;
         return { created: 0, repaired: 0, enrichedFields: 0, skipped: 0, failed: appts.length, attempted: appts.length,
-          wrongDay: wrongDay, invalidDate: invalidDate, reason: "calendar-read-unverified", days: {}, target: target,
+          wrongDay: wrongDay, invalidDate: invalidDate, reason: calReadReason, days: {}, target: target,
           scope: scopeDate || "", historyTargets: [], historyUnresolved: [], resolvedAppointments: [],
-          unresolvedMappings: appts.map(function (a) { return { sourceIdentity: importKey(a, a._date || normDate(a.date) || target, normTime(a.time)), reason: "calendar-read-unverified", date: a._date || normDate(a.date) || target }; }),
-          failureReasons: { "calendar-read-unverified": appts.length },
+          unresolvedMappings: appts.map(function (a) { return { sourceIdentity: importKey(a, a._date || normDate(a.date) || target, normTime(a.time)), reason: calReadReason, date: a._date || normDate(a.date) || target }; }),
+          failureReasons: calReadFailures,
           providerReceipt: providerScope.receipt };
       }
       var backendAppointments = ed.appointments || [], ledgerByDay = Object.create(null);
@@ -2019,8 +2023,10 @@
     var pullVisitBodies = safe(function () {
       var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
       var v = k ? localStorage.getItem(k) : null;
-      return v == null ? true : v !== "0";
-    }, true);
+      /* default OFF (owner 2026-07-21): bodies are the slow fragile lane;
+         an explicit opt-in persists per account. */
+      return v == null ? false : v !== "0";
+    }, false);
     /* si-1.7.4 SPEED (evidence-driven): the live b319 timing run measured the
        server parse+persist at 16.6s/patient vs 9.7s for the Athena chart
        open+read — 63% of wall clock spent while the Athena tab sits idle.
@@ -2497,6 +2503,7 @@
     if (receipt.complete === true) return "complete";
     var reasons = phiFreeReasonCounts(res.failureReasons || receipt.failureReasons);
     if (Number(receipt.wrongDay || 0) > 0 || Number(receipt.invalidDate || 0) > 0) return "date-unverified";
+    if (reasonPresent(reasons, ["signin-expired"])) return "signin-expired";
     if (reasonPresent(reasons, ["calendar-read-unverified"])) return "calendar-read-unverified";
     if (reasonPresent(reasons, [
       "appointment-create-http", "appointment-create-network", "appointment-create-dispatch-failed",
@@ -2590,6 +2597,24 @@
     if (!signedIn()) { onStatus("Sign in to import the schedule.", "err"); return Promise.resolve(fail("signin")); }
     if (!providerGate.ok) { onStatus(providerGate.error || "The selected provider could not be verified.", "err"); return Promise.resolve(fail(providerGate.reason, { error: providerGate.error || "", retry: { providerRoster: true } })); }
 
+    /* si-1.7.15 (live 2026-07-21): an EXPIRED token still passes signedIn()
+       (presence-only), so every pull from an idle tab ran the whole Athena read
+       and then died minutes later as "calendar-read-unverified" — the owner saw
+       "retry when the MLS connection is stable" on every attempt with no hint
+       the session was gone. Verify the session up front and refuse honestly.
+       A network blip (status 0) is NOT expiry; later reads keep their own
+       fail-closed handling. */
+    return safe(function () {
+      return fetch(bkBase() + "/api/me", { headers: { Authorization: "Bearer " + bkToken() } })
+        .then(function (meR) { return Number(meR && meR.status || 0); }, function () { return 0; });
+    }, Promise.resolve(0)).then(function (meStatus) {
+      if (meStatus === 401 || meStatus === 403) {
+        onStatus("Your MLS sign-in expired on this device. Sign in to MLS again, then pull.", "err");
+        return fail("signin-expired");
+      }
+      return pullAfterSession();
+    });
+    function pullAfterSession() {
     onStatus("Looking for MLS Assist...", "");
     fetchPublishedExtVersion(); /* pre-warm so a later receipt-gate failure can name the outdated version */
     armPongProbe(); /* count answers to THIS ping — 2+ means two installed copies */
@@ -2868,6 +2893,7 @@
         });
       });
     });
+    }
   }
 
   /* Hold one origin-scoped Web Lock for the managed pull lifetime. The lock is
@@ -2957,9 +2983,10 @@
        a per-day problem: after 3 consecutive days failing with the same
        systemic reason, stop the sweep, mark the remaining days not-attempted
        (they stay in Retry failed days), and say the one real cause. */
-    var SYSTEMIC_REASONS = { "signin": 1, "no-ext": 1, "pull-in-flight": 1, "no-read": 1, "nav-failed": 1, "wrong-day": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1 };
+    var SYSTEMIC_REASONS = { "signin": 1, "signin-expired": 1, "no-ext": 1, "pull-in-flight": 1, "no-read": 1, "nav-failed": 1, "wrong-day": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1 };
     var SYSTEMIC_TEXT = {
       "signin": "MLS is signed out — sign in to MLS first.",
+      "signin-expired": "your MLS sign-in expired — sign in to MLS again, then retry.",
       "no-ext": "MLS Assist is not answering — enable the extension and reload this tab.",
       "pull-in-flight": "another pull already holds the Athena engine — let it finish (or reload this tab if it crashed).",
       "no-read": "Athena is not returning a readable schedule — check the Athena tab is signed in and on the Day schedule.",
