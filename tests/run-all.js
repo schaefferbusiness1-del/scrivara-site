@@ -123,6 +123,7 @@ const tests = [
   'template-library-runtime.test.js',
   'staging-history-writeflow-parity.test.js',
   'active-patient-sync-status.test.js',
+  'voice-pill-persistence-runtime.test.js',
   'voice-dock-layout-contract.test.js',
   'portal-invite-placement-runtime.test.js',
   'portal-request-reliability-runtime.test.js',

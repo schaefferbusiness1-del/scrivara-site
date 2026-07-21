@@ -30343,9 +30343,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!el) return;
     var value = hidden ? 'none' : '';
     var priority = hidden ? 'important' : '';
-    if (el.style.getPropertyValue('display') === value && el.style.getPropertyPriority('display') === priority) return;
-    if (hidden) el.style.setProperty('display', value, priority);
-    else el.style.removeProperty('display');
+    if (hidden) {
+      if (el.style.getPropertyValue('display') !== value || el.style.getPropertyPriority('display') !== priority) {
+        el.style.setProperty('display', value, priority);
+      }
+      el.setAttribute('data-mls-r44-display-owner', '1');
+      return;
+    }
+    /* Only undo a display value this legacy settings module actually wrote.
+       Other layout owners deliberately keep the desktop Voice pill visible;
+       deleting their inline-important value every two seconds made it flicker. */
+    if (el.getAttribute('data-mls-r44-display-owner') === '1') {
+      el.style.removeProperty('display');
+      el.removeAttribute('data-mls-r44-display-owner');
+    }
   }
   function scopeAgenda() {
     try {
@@ -32794,7 +32805,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b476';
+  window.__MLS_AV = window.__MLS_AV || 'b477';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33104,7 +33115,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b476';
+  var MLS_APP_BUILD='2026-07-21-b477';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41480,7 +41491,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.1.2', installed: true };
+  var api = { version: 'ft-1.1.3', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -41500,7 +41511,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
       });
-      /* ft-1.1.2 (owner order 2026-07-21, second attempt): desktop force-show
+      /* ft-1.1.3 (owner order 2026-07-21): desktop force-show
          of the three bottom-left bubbles. The b473 wedge was most plausibly a
          native dialog freeze, not this write (the 'flex' echo that looked
          like a competing writer is just position:fixed blockifying
@@ -41512,6 +41523,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
         try {
           var el3 = $(id); if (!el3 || el3.__ftHidden) return;
+          if (id === 'mlsCopVoiceBtn') {
+            try {
+              var savedControls = JSON.parse(localStorage.getItem('mls_ctl_v1') || '{}');
+              if (savedControls.showVoice === false) return;
+            } catch (e) {}
+          }
           if (settingsOpen) {
             if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
             return;
