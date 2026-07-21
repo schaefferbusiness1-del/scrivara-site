@@ -88,7 +88,7 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed && lb.version === 'lb-2.1.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.2.0', 'progress-stages module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.2.1', 'progress-stages module missing');
 assert.strictEqual(lb.visualOwner, 'mlsProgressStages', 'the headless store does not identify its presentation owner');
 assert.strictEqual(ps.surfaceId, 'mlsPsChip', 'named stages do not identify the single automatic surface');
 assert(messageListeners.length >= 1, 'observer did not attach a message listener');
@@ -179,6 +179,13 @@ assert.strictEqual(j.status, 'failed', 'error result did not fail the job');
 assert(/signed-in Athena tab/.test(j.message), 'failure message not humanized');
 
 /* ---------------- 3. history pull: counts without fake percent ----------- */
+/* identity-less presence probes (athena-guard's dashboard probe, autofill's
+   empty-patient read — live 2026-07-20: every boot showed "Read 0 of 1 —
+   1 failed" + a red attention chip) never open a history job or count */
+post({ source: 'mls-app', type: 'mlsAppReadChart' });
+post({ source: 'mls-app', type: 'mlsAppReadChart', patient: '' });
+post({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'no chart open' } });
+assert.strictEqual(jobByKey('history:pull'), null, 'an identity-less chart probe manufactured a history job');
 post({ source: 'mls-app', type: 'mlsAppReadChart', name: 'Adam J Schaeffer' });
 j = jobByKey('history:pull');
 assert(j && j.status === 'running', 'history job did not start');
@@ -280,9 +287,9 @@ assert.strictEqual(j.status, 'timed_out', 'abandoned schedule pull did not time 
 /* ---------------- 8. loader line + registration wiring ------------------- */
 const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
 const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
-const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.2.0'")) || '';
+const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.2.1'")) || '';
 assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
-assert(psLoader.includes("s.src=A+'?v=20260719ps120'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260720ps121'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
 assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
 assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
 const lbAt = connect.indexOf(lbLoader);

@@ -1,4 +1,15 @@
-# MLS Scribe — Master acceptance inventory (updated 2026-07-20 ~21:55 EDT, site b461, ext 3.0.0, backend 1522b27 + gates configured)
+# MLS Scribe — Master acceptance inventory (updated 2026-07-20 ~22:45 PM EDT, site b466, ext 3.0.0, backend 1522b27 + gates configured)
+
+## UPDATE ~22:45 PM EDT (b462–b466) — hosted sweep COMPLETE on the real doctor account; late defects fixed
+- **The owner signed in on BOTH accounts** — every row below that said "needs one owner sign-in" was closed live on the doctor account (leeschaeffer41, 1439 local / 1445 server patients):
+  - Ceremony live-proven on a real first sign-in (8 documents render; skip now session-sticky b463; continue/sign-success reveal the running app instead of re-booting — the "glitchy/freezing" report was re-hydrating 1445 patients per continue, fixed b464).
+  - **Both nav layouts interactive in the installed product** (rail pinned 236px zero-overlap; collapsed → menu drawer; Display setting drives the redesign shell's rail — single owner, b463).
+  - Settings real-keystroke sweep (search narrows/restores exact groups, navigation-layout select saves + applies).
+  - Template delete → confirmed → real Undo → restore → cleanup on the real account; clinician cloud library renders for the doctor role (no 403 — closes that pending check).
+- **"Save not confirmed" banners root-caused b465** (NOT data loss): 6 stale duplicate server rows (incl. shorthand "John M."/"Barbara M.") are re-downloaded each boot and correctly refused by local dedupe; the verifier misread the refusal as a failed save. Verifier now reports shorthand folds calmly; full-name misses keep the loud warning. Reconciliation proven read-only: every canonical chart has MORE visits than its stale dup (7v3, 11v1, 3v1).
+- **Extension row CLOSED under the restored backend**: `__mlsConnTruth.describe()` = connected/green "MLS Assist ready · Athena tab detected" on the live doctor tab.
+- **b466: false "1 needs attention" chip fixed** — the athena-guard's read-only presence probe (bare `mlsAppReadChart`, fired at boot with the Athena tab on the dashboard) was counted by the progress-stages observer as a real failed history chart read ("Read 0 of 1 — 1 failed") at EVERY boot. Identity-less chart reads no longer open/count history jobs (ps-1.2.1, regression-pinned in progress-stages-runtime).
+- **HELD for owner OK (real rows)**: server delete/merge of the 6 stale dup rows [3, 393658, 393402, 394437, 394443, 394445] + earlier [393707, 393710]; owner should eyeball the 393658/393402 visit payloads vs the canonical charts first.
 
 ## UPDATE 21:55 EDT — the lockout is resolved; most GATED rows below are live again
 - **Clinical gates CONFIGURED tonight** (owner env values, my key-name/format fixes, grants recorded via Render Shell: `active grants: 2`). App restored for both accounts; every `GATED` row below became reachable. PHI capabilities all true; honest lockout behavior was itself live-verified end-to-end.
@@ -49,13 +60,14 @@ Evidence files: `2026-07-20-b446-readonly-qa.md` (phases 1–5, all five prior g
 - Auth/2FA/password floors, agreements, PHI gate, legal-release gate, relay v2, device registry, SMART/FHIR, template library, portal APIs, outreach guards, billing readiness/admin/webhook ledger — **SUITE** (30 suites green tonight) + gates' fail-closed behavior **LIVE-verified tonight** (agreements/me denied; appointments/billing 503; app lockout screen + honest Retry).
 - Billing sandbox chain (checkout→sub→invoice→webhook→entitlement→portal→plan change→cancel→failed payment→replay→Connect→$20 Enterprise via admin) — **BLOCKED**: owner approved it, but every billing route 503s under the PHI gate. Unblock = owner path A (gate env vars) or C (merge+deploy draft PR #9, prepared tonight, 30 suites green) or B (rollback 79510ca, loses billing endpoints).
 
-## Known OPEN items (updated 21:55 EDT)
-1. ~~Clinical-gate lockout decision~~ — RESOLVED tonight (gates configured, grants recorded, app live).
-2. Final hosted sweep (delete-undo, Settings keystrokes, nav layouts + collapse rail, ceremony render) — needs one **owner sign-in** (per-tab session ended when the dialog-frozen tab was closed); exact steps in the ui-quality artifact resume point.
-3. **Owner one-click/paste queue**: merge+deploy PR #9 (4 changes) · 3 signup-manifest env pastes (registration is DOWN until then) · live webhook `whsec_` copy (pay→auto-access) · update devices still on ext 2.9.x.
-4. Polish (non-blocking): pricing 503 labeled "(network)"; ceremony skip-link appears only after a completed sign attempt during the 410 transition; template-health panel doesn't join workspace search; cloud-library 403 wording shipped b460 pending clinician-account live check.
+## Known OPEN items (updated ~22:45 PM EDT)
+1. ~~Clinical-gate lockout decision~~ — RESOLVED (gates configured, grants recorded, app live).
+2. ~~Final hosted sweep~~ — COMPLETE on the real doctor account (see update above; delete-undo, Settings keystrokes, both nav layouts + rail, ceremony, cloud library all live-proven).
+3. **Owner one-click/paste queue**: merge+deploy PR #9 (4 changes) · 3 signup-manifest env pastes (registration is DOWN until then) · live webhook `whsec_` copy (pay→auto-access) · update devices still on ext 2.9.x · approve the stale-dup server-row cleanup [3, 393658, 393402, 394437, 394443, 394445] + [393707, 393710].
+4. Polish (non-blocking): pricing 503 labeled "(network)"; ceremony skip-link appears only after a completed sign attempt during the 410 transition; template-health panel doesn't join workspace search; ~~cloud-library 403 wording clinician check~~ (closed live).
 5. Staff-prep is Menu-only; held workspaces; `/api/readiness` client surfacing (carried from b435 era).
 6. Outreach email finder needs owner's SERPER_API_KEY or yield stays 0 (unchanged); PULL-004 junk-row cleanup awaits owner OK (carried).
-7. Athena-dependent re-verification (pulls/writes) on request — needs athenaOne + doctor sign-ins.
+7. Athena-dependent re-verification (pulls/writes) on request — athenaOne is signed in; extension link verified green under the restored backend (b465).
+8. Apply-template-to-note: the identity guard is now LIVE-proven in the installed product (real click on "Use on current note" with no bound visit → exact honest refusal toast "Open or generate this note inside the correct patient visit… Nothing changed in Athena.", err/alert role, zero note mutation); the POSITIVE AI-reformat path needs a real generated note in a bound visit — suite-pinned + proven in earlier live phases, hosted AI re-run on request. Real-keyboard nav walk also LIVE (drawer item focused, genuine Enter → History view + aria-current="page" + drawer auto-close). Still queued: bulk-import progress live re-check (b401-era states remain suite-pinned).
 
 **Net:** every intended surface is accounted for with its evidence class. The two redesigns are shipped, pinned, and live-verified except the short keystroke tail behind one owner sign-in. No known reproducible defect is unfixed in reachable code; what remains is the owner action queue above, each with an exact, prepared step.

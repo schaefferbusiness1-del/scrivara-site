@@ -40,7 +40,7 @@
  * ========================================================================== */
 (function () {
   'use strict';
-  var VERSION = 'ps-1.2.0';
+  var VERSION = 'ps-1.2.1';
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -265,6 +265,22 @@
   function chartPatient(d) {
     return text((d && (d.name || (d.patient && d.patient.name) || (d.want && d.want.name) || (d.params && d.params.name))) || '', 100);
   }
+  /* Identity-less mlsAppReadChart messages are presence probes / open-tab
+     reads (athena-guard's dashboard probe, chart autofill's empty-patient
+     read) — NOT history pulls. They must never open a history job or count
+     as a failed chart (live 2026-07-20: every boot raised "Read 0 of 1 —
+     1 failed" + a red attention chip from the guard probing a dashboard-only
+     Athena tab). Real pulls carry patient identity; the legacy chart-gate
+     re-post carries __cfxBare instead. */
+  function chartReadHasIdentity(d) {
+    if (!d) return false;
+    if (d.__cfxBare) return true;
+    var p = d.patient;
+    var pv = (typeof p === 'string') ? p : (p && (p.name || p.dob || p.mrn || p.athenaId || p.id)) || '';
+    return !!(String(pv || '').trim() || chartPatient(d) ||
+      String(d.patientDob || '').trim() || String(d.patientMrn || '').trim() ||
+      String(d.patientId || '').trim() || String(d.dob || '').trim() || String(d.athenaId || '').trim());
+  }
 
   /* ------------------------------------------------------------------ *
    * Schedule pull.                                                       *
@@ -397,7 +413,7 @@
       if (d.source === 'mls-app') {
         if (d.type === 'mlsPing') onPing();
         else if (d.type === 'mlsAppPullSchedule' || d.type === 'mlsAppPullMonth') onScheduleRequest(d);
-        else if (d.type === 'mlsAppReadChart') historyTouch(1, '', chartPatient(d));
+        else if (d.type === 'mlsAppReadChart') { if (chartReadHasIdentity(d)) historyTouch(1, '', chartPatient(d)); }
         else if (d.type === 'mlsAppReadVisits') historyTouch(0, 'Reading the visits list', chartPatient(d));
         else if (d.type === 'mlsAppGoHome') { if (activeFlow('history')) historyTouch(0, 'Returning to the schedule'); }
         else if (d.type === 'mlsAppAthenaActionV2') onActionRequest(d);
