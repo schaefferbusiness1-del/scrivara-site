@@ -9266,7 +9266,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   function saveDiag(diag) {
     try { chrome.storage.local.set({ mlsAthenaVisitsDiag: { at: Date.now(), diag: diag } }); } catch (e) {}
     // Redacted (no-PHI) structural map — safe to log so it can be copied for selector tuning.
-    try { console.log('[MLS Assist v2.9.22 r4 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
+    try { console.log('[MLS Assist v3.0.1 diag     — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
   }
 
   /* v2.9.22 r4: exact-patient, exact-encounter, full-body reader. This

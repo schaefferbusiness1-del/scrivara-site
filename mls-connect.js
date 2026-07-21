@@ -32794,7 +32794,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b473';
+  window.__MLS_AV = window.__MLS_AV || 'b474';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33104,7 +33104,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b473';
+  var MLS_APP_BUILD='2026-07-20-b474';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41480,7 +41480,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.1.0', installed: true };
+  var api = { version: 'ft-1.1.1', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -41500,26 +41500,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
       });
-      /* ft-1.1.0 (owner 2026-07-21): the bottom-left Voice / Assistant /
-         Dictate bubbles must stay VISIBLE on desktop. Something in the
-         cascade kept resolving them to display:none with no findable author
-         rule, so the same deterministic inline-important this module already
-         uses to hide on phones now SHOWS on desktop. Settings keeps its
-         clean surface (never forced while body.mls-settings-open, and our
-         inline show is removed there so the Settings CSS hide wins); this
-         1.5s interval self-heals both directions. */
-      var settingsOpen = false;
-      try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
-      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
-        try {
-          var el3 = $(id); if (!el3 || el3.__ftHidden) return;
-          if (settingsOpen) {
-            if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
-            return;
-          }
-          if (el3.style.getPropertyValue('display') !== 'inline-flex') el3.style.setProperty('display', 'inline-flex', 'important');
-        } catch (e) {}
-      });
+      /* ft-1.1.1 ROLLBACK (2026-07-21): ft-1.1.0's inline-important force-show
+         of the three bubbles seeded a style-rewrite war with an unidentified
+         competing writer and WEDGED the renderer solid on the owner's live
+         tab (Runtime.evaluate 45s timeout) within minutes of deploy. The
+         bubbles stay as they were before 1.1.0; any future restore must
+         first find and retire the competing writer — never out-write it. */
     }
     ids.forEach(function (id) {
       try {
