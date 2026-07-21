@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b477"></script>
+<script src="public-preview-policy.js?v=b478"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -5429,7 +5429,12 @@ function refreshMe(opts){
         try{
           var pp=d.practice||{};
           if(pp.name) localStorage.setItem(uns('practiceName'),String(pp.name));
-          if(pp.provider_name) localStorage.setItem(uns('providerName'),String(pp.provider_name));
+          /* Identity separation (2026-07-21): only an explicit provider
+             PREFERENCE may seed the clinical provider identity. When the
+             server marks provider_name as the login-account fallback, leave
+             providerName alone — the verified Athena roster resolution owns
+             it (a login/account name must never scope charts). */
+          if(pp.provider_name&&pp.provider_source!=='account-fallback') localStorage.setItem(uns('providerName'),String(pp.provider_name));
           if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
           if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
           if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
@@ -5495,8 +5500,12 @@ function handle401(){
   try{
     fetch(bkBase()+'/api/me',{headers:{Authorization:'Bearer '+tok}}).then(function(r){
       _h401Busy=false;
-      if(r.status===401||r.status===403) evict();
-      else { try{ console.warn('[MLS] Ignored a stray 401 — /api/me confirms this session is still valid.'); }catch(e){} }
+      /* Only a 401 from /api/me proves the TOKEN is dead. A 403 means
+         authenticated-but-refused (a server gate/policy state, e.g. a
+         readiness or release gate) — a configuration state must never sign
+         the doctor out or purge local clinical data (lgn-1.0.0). */
+      if(r.status===401) evict();
+      else { try{ console.warn('[MLS] Ignored a stray 401 — /api/me answered '+r.status+'; this session token is still valid.'); }catch(e){} }
     },function(){ _h401Busy=false; /* network blip — keep the session */ });
   }catch(e){ _h401Busy=false; }
 }
@@ -6349,12 +6358,50 @@ function getIdleMins(){
   const v=parseInt(raw,10);
   return (v && v>0) ? v : 30; // default: auto log off after 30 minutes of inactivity
 }
+/* lgn-1.0.0: ACCOUNT-WIDE activity ledger. Activity in ANY same-account MLS tab
+   counts toward the inactivity window. Without this, a background tab idles out
+   on its own per-tab clock while the doctor is active in another tab (or in
+   Athena), and its logout PURGES the shared account namespace + token seed out
+   from under the active tab — the reported "signed out / everything reloads
+   about every N minutes". The ledger is one per-account localStorage timestamp
+   written at most every 5s; the timer only fires when the WHOLE account has
+   been idle for the full window, otherwise it re-arms for the remaining time. */
+var _idleLedgerLast=0;
+function _idleLedgerKey(){
+  try{ if(session&&session.email) return uns('idleLastActive'); }catch(e){}
+  return '';
+}
+function _touchIdleLedger(){
+  const now=Date.now();
+  if(now-_idleLedgerLast<5000) return;
+  const k=_idleLedgerKey(); if(!k) return;
+  _idleLedgerLast=now;
+  try{ localStorage.setItem(k,String(now)); }catch(e){}
+}
+function _accountIdleRemainingMs(windowMs){
+  const k=_idleLedgerKey(); if(!k) return 0;
+  let last=0; try{ last=parseInt(localStorage.getItem(k),10)||0; }catch(e){ return 0; }
+  if(!last) return 0;
+  const remaining=last+windowMs-Date.now();
+  return remaining>0?remaining:0;
+}
 var _legalGenerating=false; // true while a medical-legal report is being generated
 function idleLogout(){
   if(!session) return;
   // Don't log the doctor out mid-generation (a gpt-5.2 expert report can run several
   // minutes with no keyboard/mouse activity) — reschedule instead.
   if(_legalGenerating){ resetIdle(); return; }
+  // A live visit recording is hands-free by design: no mouse/keyboard events
+  // arrive while the doctor talks to the patient. Logging out here would stop
+  // the capture and purge the audio-backup databases mid-visit (lgn-1.0.0).
+  try{ if((typeof capturing!=='undefined'&&capturing)||(typeof phoneMicCode!=='undefined'&&phoneMicCode)){ resetIdle(); return; } }catch(e){}
+  // Another same-account tab was active more recently than this tab's own
+  // listeners saw — the account is NOT idle. Re-arm for the remaining window.
+  const m=getIdleMins();
+  if(m>0){
+    const remaining=_accountIdleRemainingMs(m*60000);
+    if(remaining>1000){ clearTimeout(idleTimer); idleTimer=setTimeout(idleLogout,remaining); return; }
+  }
   toast('Logged out due to inactivity.','');
   logout(true);
 }
@@ -6363,6 +6410,7 @@ function resetIdle(){
   idleTimer=null;
   const m=getIdleMins();
   if(session && m>0){
+    _touchIdleLedger();
     idleTimer=setTimeout(idleLogout, m*60000);
   }
 }
@@ -9972,10 +10020,30 @@ async function suNext(btn){
   if(SU_STEP>=SU_MAX){ suFinish(); return; }
   SU_STEP++; suShow();
 }
+/* Identity separation (2026-07-21): the wizard's one name field used to seed
+   BOTH the account display name AND the clinical provider identity. When a
+   verified Athena roster exists and the typed name matches none of its
+   providers (whoever is filling the form is not a provider on this schedule),
+   keep the name as the ACCOUNT display name only — the provider identity
+   stays with the verified roster. Never removes an existing providerName. */
+function suProviderIdentityKey(s){
+  s=String(s||'').replace(/_/g,' ').replace(/^Dr\.?\s+/i,'').replace(/\b(?:MD|DO|PA-?C?|NP|APRN|DPM|DDS|DMD|CRNA|RN|PHD)\b\.?/ig,' ');
+  var m=/^\s*([^,]+),\s*(.+)$/.exec(s); if(m) s=m[2]+' '+m[1];
+  return s.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(function(x){return x&&x.length>1;}).sort().join('|');
+}
+function suRosterEntries(){
+  try{ var a=JSON.parse(localStorage.getItem(uns('mlsSchedProviders'))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; }
+}
 function suPersistIdentity(){
   var nm=document.getElementById('su_name').value.trim();
   localStorage.setItem(uns('docname'), nm);
-  localStorage.setItem(uns('providerName'), nm);
+  var suRoster=suRosterEntries(), suNmKey=suProviderIdentityKey(nm);
+  var suRosterMismatch=suRoster.length>0&&!!nm&&!suRoster.some(function(p){ return suProviderIdentityKey(p)===suNmKey; });
+  if(suRosterMismatch){
+    try{ if(typeof toast==='function') toast('Saved as your account name. The clinical provider identity comes from your verified Athena schedule, so it was not changed.',''); }catch(e){}
+  }else if(nm){
+    localStorage.setItem(uns('providerName'), nm);
+  }
   localStorage.setItem(uns('docspec'), document.getElementById('su_spec').value.trim());
   localStorage.setItem(uns('providerCred'), document.getElementById('su_cred').value.trim());
   localStorage.setItem(uns('practiceName'), document.getElementById('su_practice').value.trim());
@@ -26469,7 +26537,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b477"></script>
+<script src="public-preview-runtime.js?v=b478"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26740,7 +26808,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b477';
+  window.__MLS_AV='b478';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

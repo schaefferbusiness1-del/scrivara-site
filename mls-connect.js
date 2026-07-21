@@ -32805,7 +32805,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b477';
+  window.__MLS_AV = window.__MLS_AV || 'b478';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33115,7 +33115,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-21-b477';
+  var MLS_APP_BUILD='2026-07-21-b478';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41932,13 +41932,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* Owner 2026-07-21: the pull button names its target day — "Pull today" on
-     Today, "Pull Wednesday, July 22" elsewhere — so a mis-selected day is
-     visible BEFORE the click, not after an import lands on the wrong date. */
+     Today, "Pull Wednesday the 22nd" elsewhere — so a mis-selected day is
+     visible BEFORE the click, not after an import lands on the wrong date.
+     "today" is decided by the PRACTICE time zone (_acctTodayKey via todayKey),
+     never the device clock. */
+  function dsOrdinal(n) {
+    n = Number(n) || 0;
+    var tens = n % 100;
+    if (tens >= 11 && tens <= 13) return n + 'th';
+    switch (n % 10) { case 1: return n + 'st'; case 2: return n + 'nd'; case 3: return n + 'rd'; default: return n + 'th'; }
+  }
   function dsPullVerb(day) {
     var k = String(day || DS.day || todayKey()).slice(0, 10);
     if (k === todayKey()) return 'Pull today';
     var label = safe(function () {
-      return new Date(k + 'T12:00:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+      var d = new Date(k + 'T12:00:00');
+      var weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
+      return weekday + ' the ' + dsOrdinal(d.getDate());
     }, '');
     return 'Pull ' + (label || k);
   }

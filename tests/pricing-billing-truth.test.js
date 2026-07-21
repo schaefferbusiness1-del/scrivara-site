@@ -1,10 +1,11 @@
 'use strict';
 
-/* Payments/pricing goal (2026-07-20): the pricing page tells the truth from
- * the SERVER capability check — no false per-card "Checkout unavailable"
- * bars, no dead alert() CTAs, one status line for the pricing area, and the
- * $20 Enterprise tier displayed exactly as the backend charges it. The admin
- * screen gains the billing/plan panel wired to the owner-only routes.
+/* Payments/pricing goal (2026-07-20, Enterprise re-priced 2026-07-21): the
+ * pricing page tells the truth from the SERVER capability check — no false
+ * per-card "Checkout unavailable" bars, no dead alert() CTAs, one status line
+ * for the pricing area, and the $40 Enterprise tier displayed exactly as the
+ * backend charges it. The admin screen gains the billing/plan panel wired to
+ * the owner-only routes.
  */
 
 const assert = require('assert');
@@ -15,15 +16,25 @@ const root = path.join(__dirname, '..');
 const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const scribe = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
-// --- Enterprise $20 display, matching the backend PLANS amounts -------------
-assert(/<div class="tier">Enterprise<\/div>\s*<div class="amt">\$20<span> \/ provider \/ mo<\/span><\/div>/.test(index),
-  'Enterprise must display $20/provider/mo');
-assert(index.includes('3+ providers · or $100/yr each'), 'Enterprise must show the $100 annual equivalent and 3+ minimum');
+// --- Enterprise $40 display, matching the backend PLANS amounts -------------
+// (owner directive 2026-07-21: $40/provider/mo and $400/provider/yr; the
+//  3-provider minimum and every other tier price stay unchanged)
+assert(/<div class="tier">Enterprise<\/div>\s*<div class="amt">\$40<span> \/ provider \/ mo<\/span><\/div>/.test(index),
+  'Enterprise must display $40/provider/mo');
+assert(index.includes('3+ providers · or $400/yr each'), 'Enterprise must show the $400 annual equivalent and 3+ minimum');
 assert(!/\$50<span> \/ provider \/ mo/.test(index), 'the retired $50 Enterprise price must not appear');
+assert(!/\$20<span> \/ provider \/ mo/.test(index), 'the retired $20 Enterprise price must not appear');
+assert(!index.includes('$100/yr'), 'the retired $100 Enterprise annual must not appear');
+assert(!/Enterprise — \$50\/mo/.test(index) && !/Enterprise — \$20\//.test(index),
+  'retired Enterprise prices must not appear in the stat/tooltip copy');
+assert(/Enterprise — \$40\/provider\/mo \(3\+ providers\)/.test(index),
+  'the stat/tooltip copy must carry the current $40 Enterprise price');
+// $40 sits above Lite ($30): the card must not claim to undercut EVERY solo tier.
+assert(!index.includes('below every solo tier per provider'),
+  'the "below every solo tier" claim is false at $40 (Lite is $30) and must stay retired');
 
 // annual equivalents stay present and consistent on every tier
-// (Enterprise annual dropped to $100/yr per owner directive 2026-07-20 evening)
-for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$100/yr']) {
+for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$400/yr']) {
   assert(index.includes(annual), 'missing annual equivalent: ' + annual);
 }
 
@@ -52,4 +63,4 @@ assert(/confirm\('Grant plan/.test(scribe) && /confirm\('Remove the admin overri
   'plan changes must be explicitly confirmed');
 assert(scribe.includes('returns the account to normal billing'), 'the clear action must explain the return-to-billing semantics');
 
-console.log('PASS pricing/billing truth: $20 Enterprise displayed as charged, capability-driven single status with named reasons and a real Retry, no dead CTAs or false bars, and a confirmed+audited admin plan panel with access sources');
+console.log('PASS pricing/billing truth: $40 Enterprise displayed as charged, capability-driven single status with named reasons and a real Retry, no dead CTAs or false bars, and a confirmed+audited admin plan panel with access sources');

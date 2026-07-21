@@ -94,4 +94,34 @@ assert.deepStrictEqual(context.calls,
   { bridge: 0, lease: 0, marked: 0, rendered: 0, intervals: 0, toasts: 0 },
   'startup and passive reconciliation must have zero Athena side effects');
 
-console.log('PASS startup is Athena-passive; the selected-day strip is the one visible pull owner and the empty state is guidance only');
+// ---- explicit-click audit extensions (owner goal 2026-07-21) ----------------
+// Phone relay: the desktop agent may only EXECUTE a server-queued job (created
+// by an authenticated click on the phone). Polling alone must never pull.
+{
+  const relayStart = connect.indexOf("version: 'rl-2.0.0'");
+  assert(relayStart > 0, 'active relay module (rl-2.0.0) not found');
+  const relay = connect.slice(connect.lastIndexOf('/* ===== __mlsRelayLink', relayStart), connect.indexOf('phoneBarTick', relayStart));
+  const tick = relay.slice(relay.indexOf('function agentTick()'), relay.indexOf('var agentIv'));
+  assert(tick.includes("if (!job) { agentBusy = false; return; }"), 'an empty relay queue must be a no-op');
+  assert(tick.includes('executedJobs[job.id]'), 'a relay job id may execute at most once per device');
+  assert(!/si\.pull|pullScheduleViaAssist|_importPulledSchedule/.test(tick),
+    'agentTick itself must never enter a pull lane — only the fetched job runners may');
+  const runDay = relay.slice(relay.indexOf('function runPullDay(job)'), relay.indexOf('function runPullChart'));
+  assert(runDay.includes('job.payload'), 'the relay day pull must run ONLY the queued job payload');
+}
+// Tab messages: schedule imports are REQUEST-SCOPED. The import listener is
+// registered inside the click-driven pull and removed after one result; the
+// always-on extension listeners may only stash rows for enrichment.
+{
+  const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+  const pullFn = app.slice(app.indexOf('function onResult(e)'), app.indexOf('function _assistReadAthenaTab'));
+  assert(pullFn.includes("window.removeEventListener('message',onResult)"),
+    'the schedule-result listener must be one-shot');
+  assert(pullFn.includes("window.addEventListener('message',onResult)"),
+    'the schedule-result listener must be registered only inside the click-driven pull');
+  const passive = connect.slice(connect.indexOf('function extListener(ev)'), connect.indexOf('function chartDobFor'));
+  assert(!/(_importPulledSchedule|si\.pull|pullScheduleViaAssist)/.test(passive),
+    'the passive extension stash must never import or pull');
+}
+
+console.log('PASS startup is Athena-passive; the selected-day strip is the one visible pull owner, the empty state is guidance only, relay executes only phone-queued jobs, and schedule imports are request-scoped');
