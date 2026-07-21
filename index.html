@@ -967,8 +967,9 @@ var _billingHealth = null;
 async function refreshBillingStatus(){
   var box = document.getElementById('pricingStatus');
   if (!box) return;
+  var r = null;
   try {
-    var r = await fetch(BILLING_API + '/api/billing/health', { cache: 'no-store' });
+    r = await fetch(BILLING_API + '/api/billing/health', { cache: 'no-store' });
     var d = await r.json();
     _billingHealth = d;
     var parts = [];
@@ -976,6 +977,7 @@ async function refreshBillingStatus(){
     else if (d.checkout && d.checkout.reason === 'checkout-configuration') parts.push('Billing backend: Stripe is not configured on the server.');
     else if (d.checkout && d.checkout.reason === 'stripe-authentication') parts.push('Billing backend: the Stripe key was rejected — server configuration needs repair.');
     else if (d.checkout && d.checkout.reason === 'network') parts.push('Billing backend: could not reach Stripe just now.');
+    else if (!r.ok) parts.push('Billing backend: temporarily unavailable — ' + (d && d.error ? d.error : 'service reported HTTP ' + r.status) + '.');
     else parts.push('Billing backend: temporary Stripe error.');
     parts.push(d.webhook && d.webhook.configured ? 'Webhooks: configured ✓' : 'Webhooks: not configured.');
     if (!MLS_SALES_RELEASED) parts.push('Purchasing is held pending release of production, legal and refund terms — request a demo below and we’ll set you up.');
@@ -987,7 +989,11 @@ async function refreshBillingStatus(){
       box.appendChild(retry);
     }
   } catch (e) {
-    box.innerHTML = 'Billing status could not be checked (network). ';
+    /* Distinguish honestly: a response we could not parse is a SERVICE
+       problem (report the HTTP status); no response at all is a network one. */
+    box.innerHTML = r
+      ? 'Billing status could not be checked — the billing service returned HTTP ' + r.status + '. '
+      : 'Billing status could not be checked — network unreachable. ';
     var retry2 = document.createElement('button');
     retry2.className = 'btn btn-ghost'; retry2.style.cssText = 'margin-left:6px;padding:6px 12px;font-size:13px';
     retry2.textContent = 'Retry'; retry2.onclick = refreshBillingStatus;

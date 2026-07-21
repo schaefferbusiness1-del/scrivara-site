@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b461"></script>
+<script src="public-preview-policy.js?v=b463"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -22112,6 +22112,11 @@ function agCeremonyNeeded(){
     if(document.body.classList.contains('mls-public-preview')) return false;
     if(bkUser.isLawyer) return false;               // attorney portal has its own terms
     if(!MLS_AGREEMENTS.length) return false;
+    /* "Continue without signing" is session-sticky: without this, every
+       startSession re-entry (settings close, view switches) re-trapped the
+       user in the ceremony during the server-410 transition window. The next
+       tab / next sign-in prompts again. */
+    try{ if(sessionStorage.getItem('mlsAgCerSkip')==='1') return false; }catch(e){}
     return bkUser.agreements_signed_version!==AGREEMENTS_VERSION;
   }catch(e){ return false; }
 }
@@ -22133,12 +22138,24 @@ function showAgreementsCeremony(fromLoading){
   try{ agSyncSignState(); }catch(e){}
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
   const nm=document.getElementById('agSignName'); if(nm) try{ nm.focus(); }catch(e){}
+  /* Capability probe: an empty POST records nothing on any backend (new: 400
+     validation; transition-era: 410 retired). On 410/404, surface the honest
+     continue link IMMEDIATELY so nobody fills the whole form only to learn
+     the server cannot record signatures yet. */
+  try{
+    fetch(bkBase()+'/api/agreements/sign',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:'{}'})
+      .then(function(r){ if(r.status===410||r.status===404){
+        agGateErr('Heads up: signing isn’t available on the server yet — you can review now and you’ll be asked to sign on a later sign-in.');
+        const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='';
+      }}).catch(function(){});
+  }catch(e){}
 }
 /* Transition escape hatch: shown ONLY after the server answers 410/404 (the
    ceremony endpoints are not deployed yet). Never lets an error lock anyone
    out of a workspace the clinical gate already opened. */
 function agCeremonySkip(ev){
   if(ev&&ev.preventDefault) ev.preventDefault();
+  try{ sessionStorage.setItem('mlsAgCerSkip','1'); }catch(e){}
   hideAgreementsGate();
   const em=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
   startSession(em);
@@ -26191,7 +26208,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b461"></script>
+<script src="public-preview-runtime.js?v=b463"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26462,7 +26479,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b461';
+  window.__MLS_AV='b463';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
