@@ -547,9 +547,19 @@
     _prevVisitCount[key] = res.visitCount;
 
     if (!res.ok) {
-      banner('warn', '⚠ Save not confirmed',
-        ['"' + (res.name || 'patient') + '" was not found in the saved store after saving.',
-          'The save may not have persisted — please retry.']);
+      /* Settle-recheck (2026-07-20, seen live): during startup/cloud hydration
+         an upsert can verify before the store write settles — "John M." was
+         flagged missing while present moments later. Re-check once after a
+         settle; the honest warning fires only if the record is STILL absent. */
+      setTimeout(function () {
+        try {
+          var again = verifyPatientSaved(p);
+          if (again.ok) { _prevVisitCount[key] = again.visitCount; return; }
+        } catch (e) {}
+        banner('warn', '⚠ Save not confirmed',
+          ['"' + (res.name || 'patient') + '" was not found in the saved store after saving.',
+            'The save may not have persisted — please retry.']);
+      }, 2500);
       return;
     }
     if (isNew) {
