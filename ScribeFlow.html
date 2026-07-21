@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b470"></script>
+<script src="public-preview-policy.js?v=b471"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -5479,13 +5479,26 @@ function refreshMe(opts){
   return shared;
 }
 
-/* 401 from the backend → token is stale/invalid; force re-login. */
+/* 401 from the backend → verify before evicting. Owner 2026-07-21: repeated
+   "mass logouts" with 30-day tokens and a stable JWT_SECRET meant ONE stray
+   401 from any endpoint was purging every tab. Logout now requires PROOF:
+   /api/me is re-checked with the same token, and only a confirmed-dead token
+   (401/403 from /api/me itself) signs the doctor out. A stray or transient
+   401 is logged and survived. */
+var _h401Busy=false;
 function handle401(){
-  setBkToken(''); bkUser=null;
-  if(session){
-    toast('Your session expired — please log in again.','err');
-    logout(true);
-  }
+  if(_h401Busy) return;
+  var tok=''; try{ tok=bkToken(); }catch(e){}
+  if(!tok){ setBkToken(''); bkUser=null; if(session){ toast('Your session expired — please log in again.','err'); logout(true); } return; }
+  _h401Busy=true;
+  var evict=function(){ setBkToken(''); bkUser=null; if(session){ toast('Your session expired — please log in again.','err'); logout(true); } };
+  try{
+    fetch(bkBase()+'/api/me',{headers:{Authorization:'Bearer '+tok}}).then(function(r){
+      _h401Busy=false;
+      if(r.status===401||r.status===403) evict();
+      else { try{ console.warn('[MLS] Ignored a stray 401 — /api/me confirms this session is still valid.'); }catch(e){} }
+    },function(){ _h401Busy=false; /* network blip — keep the session */ });
+  }catch(e){ _h401Busy=false; }
 }
 
 /* Show/hide the Admin nav item and the no-access banner based on bkUser. */
@@ -7505,10 +7518,14 @@ async function loadPatientsFromServer(opts){
      shared progress store so the corner chip shows genuine background work.
      (The chip's previous boot content was the since-removed silent auto
      Athena read.) Fail-open when the store bundle hasn't loaded yet. */
-  let _hyJob=null;
-  const _hyStart=()=>{ if(_hyJob) return; try{ const l=window.__mlsLoadingCalm; if(l&&l.installed&&typeof l.start==='function') _hyJob=l.start({key:'patients:hydrate',kind:'patient_sync',label:'Syncing your charts',stages:['Downloading from MLS','Merging on this device'],timeoutMs:120000,replace:true,cancelable:false}); }catch(e){} };
+  let _hyJob=null,_hyDone=false,_hyTries=0;
+  const _hyStart=()=>{ if(_hyJob||_hyDone) return; try{
+    const l=window.__mlsLoadingCalm;
+    if(l&&l.installed&&typeof l.start==='function'){ _hyJob=l.start({key:'patients:hydrate',kind:'patient_sync',label:'Syncing your charts',stages:['Downloading from MLS','Merging on this device'],timeoutMs:120000,replace:true,cancelable:false}); }
+    else if(_hyTries++<12){ setTimeout(_hyStart,400); } /* the job-store bundle loads a beat after boot hydration starts */
+  }catch(e){} };
   const _hyStage=(s)=>{ try{ if(_hyJob&&typeof _hyJob.stage==='function') _hyJob.stage(s,{}); }catch(e){} };
-  const _hyEnd=(ok,msg)=>{ try{ if(!_hyJob) return; const j=_hyJob; _hyJob=null; if(ok) j.complete(msg||''); else if(typeof j.fail==='function') j.fail({message:msg||''}); }catch(e){} };
+  const _hyEnd=(ok,msg)=>{ _hyDone=true; try{ if(!_hyJob) return; const j=_hyJob; _hyJob=null; if(ok) j.complete(msg||''); else if(typeof j.fail==='function') j.fail({message:msg||''}); }catch(e){} };
   _hyStart();
   try{
     const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
@@ -23415,7 +23432,7 @@ function captureFromEMR(btn){
     tries++;
     if(ponged){ clearInterval(iv); return; }
     if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
-      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4700e'); return; }
+      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4710e'); return; }
     ping();
   }, 350);
   function proceed(){
@@ -26408,7 +26425,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b470"></script>
+<script src="public-preview-runtime.js?v=b471"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26679,7 +26696,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b470';
+  window.__MLS_AV='b471';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
