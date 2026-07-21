@@ -50,6 +50,13 @@ Workspace unlocked (gates configured + grants recorded ~8:05 PM). All interactio
 - **Signup registration is DOWN on live** (SIGNUP_MANIFEST_UNAVAILABLE): production manifest built + validated READY against the backend's own inspector; 3 env paste values in MLS_EVERYTHING/SIGNUP_MANIFEST_VALUES_2026-07-20.txt (terms/privacy sha256 of the deployed b459 files — regenerate if those files change).
 - Enterprise annual $200→$100: site b459 live; backend on PR #9 (awaiting owner merge + deploy).
 
+## Late-night additions (b461, sample workspace, ~10:05 PM EDT)
+- **Large-library loading**: seeded 300 synthetic templates → modal open 8ms, full workspace render 10ms/300 rows; search narrows 300→43 ("spine", 5ms) →1 (exact name, 2ms); selection from a filtered list renders the right editor; clear restores all 300 with selection preserved.
+- **Settings true-value round-trip**: theme light→dark through the real select + Save → stored under the account namespace AND applied to the page immediately.
+- **Sample reset honesty**: on reload the sample wiped the seeded store (300→3) and prefs — exactly what its "resets on reload" banner promises.
+- **Finding (polish)**: bulk import (`tplMultiFile`) is a SILENT no-op in the read-only sample — unlike Save, it shows no refusal banner. Real bulk-import progress/summary states remain LIVE-prior (b401/tpf era) + suite-pinned; hosted re-check queued behind the owner sign-in.
+- Apply-template-to-open-note requires backend AI (blocked in sample by design) — hosted re-check queued.
+
 ## Deferred to hosted-mode resume (blocked by the owner's clinical gates, not by the build)
 - Real-keystroke search/edit/save/revision-restore/delete-undo (sample workspace is read-only; write path is pinned by the contract tests).
 - Left-sidebar + collapsed rail interaction in the classic chrome (preview shell hides the classic nav by design; CSS mechanics pinned + structurally verified).
