@@ -1,5 +1,57 @@
 # MLS — Commercial-Readiness Handoff (written 2026-07-21, end of session; supersedes HANDOFF_2026-07-21.md)
 
+## ⬆ 2026-07-21 EVENING ADDENDUM (reliability goal session; builds b478→b480 LIVE; evidence: tests/live-e2e-artifacts/2026-07-21-reliability-acceptance.md)
+
+1. **Login "every ~10 minutes" ROOT CAUSE FOUND & FIXED (b478/b480 lgn-1.1.0).**
+   It was never a spurious 401: the inactivity auto-logoff (this account: 15
+   min) used a PER-TAB activity clock; a background MLS tab idled out and its
+   logout PURGED the shared `sf_u::<email>::` namespace + token seed under the
+   active tab (re-login + full re-hydrate = "loads forever"). Now: account-wide
+   activity ledger (`uns('idleLastActive')`); the timer fires only when the
+   WHOLE account idled the full window; live recording / phone-mic / an active
+   pull (fresh `__mlsPullBusyAt`) hold the timer; handle401 evicts only on a
+   confirmed **401** from /api/me (403 = gate state, never purge). LIVE-PROVEN:
+   forced idleLogout() on the signed-in doctor tab re-armed instead of evicting;
+   10 consecutive reloads stayed signed in; multi-hour session, zero logouts.
+   Suite: tests/session-idle-crosstab-contract.test.js.
+2. **Extension 3.0.1 RUNS IN CHROME.** Pinned folder Downloads\MLS_Assist_v1.65
+   updated with the 20 release files (per-file sha verified), mlsDevReload ack
+   `{ok:true,reloading:true}`, live pong `3.0.1+core-sha256:3125e592…`. ONE
+   panel in Athena, no dialogs, no focus stealing. Web Store upload still owner.
+3. **Acceptance pulls.** Notes OFF: **10 consecutive pulls PASSED** (receipts:
+   ledger all-done + day-complete on 2026-07-21 ×6 and 2026-07-22 ×4, patient
+   count stable — zero duplicates; the Jul-22 first round refused unsettled
+   grid rows fail-closed, the next round resolved all 18). Multi-tab: tab 2's
+   concurrent pull refused honestly (`pull-in-flight`); refresh storm 10/10.
+   Notes ON: schedule+history receipts stayed complete, but the BODIES sub-lane
+   fails closed on EVERY patient with `same-frame-name-mismatch` — even with
+   the Athena tab foregrounded — so ON acceptance is an honest FAIL pending an
+   extension fix (see the evidence log's diagnostic pointer;
+   background.js visitIdentityGate ~9388). The gate never saved a wrong-patient
+   body and the named retry lane works. This upgrades the old vague "bodies
+   are fragile" into a precise, reproducible defect for ext 3.0.2.
+4. **Provider identity systemic (b478 + backend 3862704).** practiceProfile now
+   names its provider_name source; the client refuses to seed providerName from
+   `account-fallback`; the setup wizard keeps a roster-contradicting typed name
+   as the ACCOUNT display name only. qolSignature corrected LIVE ("Michael
+   Schaeffer" → "Matthew Schaeffer, MD", value taken from the verified roster,
+   synced). Suite: tests/provider-identity-separation-contract.test.js.
+   Backend main NOT yet deployed by the owner (live rev d523e84).
+5. **Pull day button (b479).** "Pull today" only for the practice-tz today;
+   other days "Pull Wednesday the 22nd". b470's label had NEVER renamed for
+   non-today days (no `safe()` in the ds module scope — silent ReferenceError
+   into syncStrip's catch). LIVE-verified both labels + no pull on date nav.
+6. **Enterprise $40/provider/mo · $400/provider/yr.** Site LIVE (b478; stat
+   copy fixed from the stale $50; "below every solo tier" claim retired).
+   Backend PLANS on branch agent/enterprise-price-40-20260721 → **draft PR #10**
+   (owner merges + deploys). 3-seat minimum, other tiers, purchase-hold intact.
+7. **Explicit-click + relay pins extended** (startup-explicit-pull-contract):
+   relay executes only phone-queued jobs at-most-once; schedule imports are
+   request-scoped; the passive extension stash never imports or pulls.
+8. Suite count now **257**; b478/b479/b480 each shipped through the full gate.
+   OWNER actions outstanding: deploy backend main; merge+deploy PR #10; Web
+   Store 3.0.1; the §3.6 data items (unchanged).
+
 Read this first, whole. It is honest about what was TESTED vs what was merely SHIPPED. The owner (Michael, schaefferbusiness1@gmail.com, admin) is direct and wants results, not narration; his standing rule: **never say something works until you tested it and know it works.** Honor that.
 
 ## 1. System map
