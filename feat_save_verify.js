@@ -556,6 +556,17 @@
           var again = verifyPatientSaved(p);
           if (again.ok) { _prevVisitCount[key] = again.visitCount; return; }
         } catch (e) {}
+        /* Shorthand stubs ("John M." — appointment-style first name + last
+           initial) are deliberately folded into the existing full-name patient
+           by the dedupe guards (client skip + server match-before-create), so
+           a separate record SHOULD be absent. Say that calmly instead of
+           raising a false data-loss alarm (seen live 2026-07-20). */
+        if (/^[A-Za-z][A-Za-z'-]* [A-Za-z]\.?$/.test(String(res.name || '').trim())) {
+          banner('info', 'Schedule shorthand — no separate chart created',
+            ['"' + res.name + '" is a shorthand schedule name, so it was not stored as a separate patient record.',
+              'If this is a real new patient, add them from Patients with their full name.'], { ttl: 8000 });
+          return;
+        }
         banner('warn', '⚠ Save not confirmed',
           ['"' + (res.name || 'patient') + '" was not found in the saved store after saving.',
             'The save may not have persisted — please retry.']);
