@@ -32805,7 +32805,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b478';
+  window.__MLS_AV = window.__MLS_AV || 'b479';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33115,7 +33115,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-21-b478';
+  var MLS_APP_BUILD='2026-07-21-b479';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41945,11 +41945,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function dsPullVerb(day) {
     var k = String(day || DS.day || todayKey()).slice(0, 10);
     if (k === todayKey()) return 'Pull today';
-    var label = safe(function () {
+    /* No helper dependencies here: this module has no local safe(), so the
+       b470 version's safe(...) call threw ReferenceError into syncStrip's
+       catch and the button NEVER renamed for a non-today day (found live
+       2026-07-21 on the doctor's tab — label stayed "Pull today" on Jul 22). */
+    var label = '';
+    try {
       var d = new Date(k + 'T12:00:00');
-      var weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
-      return weekday + ' the ' + dsOrdinal(d.getDate());
-    }, '');
+      label = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' the ' + dsOrdinal(d.getDate());
+    } catch (e) { label = ''; }
     return 'Pull ' + (label || k);
   }
   function syncStrip() {

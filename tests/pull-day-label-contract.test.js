@@ -47,9 +47,12 @@ const fnEnd = ds.indexOf('function syncStrip()');
 assert(fnStart > 0 && fnEnd > fnStart, 'could not bound dsOrdinal/dsPullVerb');
 const labelFns = ds.slice(fnStart, fnEnd);
 
+/* Deliberately NO safe() stub: the ds module has no local safe(), so any
+   helper dependency reintroduced into these label functions must fail THIS
+   suite instead of silently throwing into syncStrip's catch at runtime
+   (exactly how the b470 label broke live). */
 const context = {
   String, Number, Date,
-  safe: (fn, fb) => { try { return fn(); } catch (e) { return fb; } },
   todayKey: () => '2026-07-21',
   DS: { day: '2026-07-22' }
 };
