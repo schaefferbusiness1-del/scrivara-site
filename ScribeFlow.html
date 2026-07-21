@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b468"></script>
+<script src="public-preview-policy.js?v=b469"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -7422,6 +7422,37 @@ function ptServerLabel(p){
   // Short, non-PHI label: prefer initials; never send the full name as the label.
   try{ return ptInitials(p&&p.name)||''; }catch(e){ return ''; }
 }
+/* Commercial hardening 2026-07-21: the mirror was single-attempt and silent.
+   Because the sign-out purge wipes local clinical state BY DESIGN, a save
+   whose mirror quietly failed existed NOWHERE after the session ended. Failed
+   mirrors now persist in a per-account pending set and re-push while the
+   session is alive (60s cadence + the browser's 'online' signal); the server
+   confirming the write is what removes the entry. */
+function _pendingSyncGet(){ try{ const raw=localStorage.getItem(uns('pendingPtSync')); const a=raw?JSON.parse(raw):[]; return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _pendingSyncSet(list){ try{ localStorage.setItem(uns('pendingPtSync'), JSON.stringify(Array.from(new Set(list)).slice(0,500))); }catch(e){} }
+function _pendingSyncAdd(id){ if(!id) return; const l=_pendingSyncGet(); if(l.indexOf(String(id))<0){ l.push(String(id)); _pendingSyncSet(l); } _armPendingSyncFlush(); }
+function _pendingSyncRemove(id){ const l=_pendingSyncGet(); const i=l.indexOf(String(id)); if(i>=0){ l.splice(i,1); _pendingSyncSet(l); } }
+let _pendingSyncTimer=0, _pendingSyncBusy=false;
+function _armPendingSyncFlush(){
+  if(_pendingSyncTimer) return;
+  _pendingSyncTimer=setInterval(function(){ _flushPendingSync(); },60000);
+  try{ window.addEventListener('online',function(){ _flushPendingSync(); }); }catch(e){}
+}
+async function _flushPendingSync(){
+  if(_pendingSyncBusy||!backendMode()||!bkToken()) return;
+  const ids=_pendingSyncGet();
+  if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } return; }
+  _pendingSyncBusy=true;
+  try{
+    const pts=getPatients()||[];
+    for(let i=0;i<ids.length&&i<25;i++){
+      const p=pts.find(x=>x&&String(x.id)===ids[i]);
+      if(!p){ _pendingSyncRemove(ids[i]); continue; }
+      await syncPatientToServer(p); /* success self-removes; failure re-queues */
+    }
+  }catch(e){} finally{ _pendingSyncBusy=false; }
+}
+try{ setTimeout(function(){ try{ if(_pendingSyncGet().length) _armPendingSyncFlush(); }catch(e){} },5000); }catch(e){}
 async function syncPatientToServer(patient){
   if(!backendMode()||!bkToken()||!patient||!patient.id) return;
   try{
@@ -7431,8 +7462,14 @@ async function syncPatientToServer(patient){
       body:JSON.stringify({ external_id:patient.id, label:ptServerLabel(patient), data:patient })
     });
     if(r.status===401){ handle401(); return; }
-    if(r.ok){ let d={}; try{ d=await r.json(); }catch(e){} if(d&&d.id) _serverPtIds[patient.id]=d.id; }
-  }catch(e){/* offline — local save already succeeded */}
+    if(r.ok){
+      let d={}; try{ d=await r.json(); }catch(e){}
+      if(d&&d.id) _serverPtIds[patient.id]=d.id;
+      _pendingSyncRemove(patient.id);
+    }else{
+      _pendingSyncAdd(patient.id);
+    }
+  }catch(e){ _pendingSyncAdd(patient.id); /* offline — re-pushed while the session lives */ }
 }
 async function deletePatientOnServer(externalId){
   if(!backendMode()||!bkToken()||!externalId) return;
@@ -7453,10 +7490,28 @@ async function loadPatientsFromServer(opts){
   if(!backendMode()||!bkToken()) return false;
   try{
     const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
-    const r=await fetch(bkBase()+'/api/patients',init);
+    /* Commercial hardening 2026-07-21: a single-attempt hydration meant one
+       transient blip on a fresh device showed the doctor ZERO patients with no
+       explanation. Retry briefly; on final failure with an empty local store,
+       say so honestly (once per session). 401 and aborts never retry. */
+    let r=null;
+    for(let _h=1;_h<=3;_h++){
+      try{ r=await fetch(bkBase()+'/api/patients',init); }catch(e){ r=null; if(opts.signal&&opts.signal.aborted) return false; }
+      if(r&&(r.ok||r.status===401)) break;
+      if(!sfStartupValid(opts)) return false;
+      if(_h<3) await new Promise(rs=>setTimeout(rs,_h===1?600:1500));
+    }
     if(!sfStartupValid(opts)) return false;
-    if(r.status===401){ handle401(); return false; }
-    if(!r.ok) return false;
+    if(r&&r.status===401){ handle401(); return false; }
+    if(!r||!r.ok){
+      try{
+        if(!window.__mlsHydrateFailNoticed && (getPatients()||[]).length===0){
+          window.__mlsHydrateFailNoticed=1;
+          toast('Could not load your patients from the MLS server just now — nothing is lost, they are safe on the server. Reload in a moment to try again.','err');
+        }
+      }catch(e){}
+      return false;
+    }
     let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
     if(!sfStartupValid(opts)) return false;
     const rows=Array.isArray(d)?d:(d&&d.patients)||[];
@@ -14846,14 +14901,32 @@ async function _importPulledSchedule(appts){
     }
   }catch(e){}
   // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name+day+time).
+  // Commercial hardening 2026-07-21: this read used to swallow failures and
+  // CONTINUE with an empty duplicate index — a transient blip could double-
+  // import a whole day. Now: retry briefly, and if the calendar still cannot
+  // be verified, refuse the import honestly (nothing written, safe to retry).
   var existingKeys={};
-  try{ var er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(er.ok){ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
+  var er=null;
+  for(var _try=1;_try<=3;_try++){
+    try{ er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); }catch(e){ er=null; }
+    if(er&&er.ok) break;
+    if(_try<3) await new Promise(function(rs){ setTimeout(rs,_try===1?600:1500); });
+  }
+  if(!er||!er.ok){
+    try{ toast('Your existing MLS calendar could not be read just now, so nothing was imported (this prevents duplicate appointments). Retry the pull in a moment.','err'); }catch(e){}
+    return;
+  }
+  try{ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
     // Compare in LOCAL clock time (start_at is stored UTC) so keys match the parsed times.
     var lt=''; try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){}
     var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at) ld=new Date(x.start_at).getFullYear()+'-'+('0'+(new Date(x.start_at).getMonth()+1)).slice(-2)+'-'+('0'+new Date(x.start_at).getDate()).slice(-2); }catch(_){} }
     existingKeys[_apptKey(x.name, ld, lt)]=1;
     existingKeys['D:'+String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+ld]=1; // also block same patient + same day (any time)
-  }); } }catch(e){}
+  }); }catch(e){
+    /* A malformed calendar response is as unverifiable as no response. */
+    try{ toast('Your existing MLS calendar could not be verified just now, so nothing was imported (this prevents duplicate appointments). Retry the pull in a moment.','err'); }catch(_){}
+    return;
+  }
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var created=0, skipped=0, days={};
   for(var i=0;i<appts.length;i++){
@@ -26285,7 +26358,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b468"></script>
+<script src="public-preview-runtime.js?v=b469"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26556,7 +26629,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b468';
+  window.__MLS_AV='b469';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

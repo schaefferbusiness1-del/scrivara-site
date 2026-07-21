@@ -978,15 +978,31 @@
     }
 
     return safe(function () {
-      return fetch(base + "/api/appointments", { headers: { Authorization: "Bearer " + token } })
-        .then(function (r) {
-          if (!r.ok) return { appointments: [], __mlsVerified: false, status: Number(r.status || 0) };
-          return Promise.resolve(r.json()).then(function (data) {
-            data = data && typeof data === "object" ? data : { appointments: [] };
-            data.__mlsVerified = true; return data;
-          });
-        })
-        .catch(function () { return { appointments: [], __mlsVerified: false }; });
+      /* The pre-reconcile calendar read stays fail-closed, but a SINGLE attempt
+         aborted whole pulls on transient blips (live 2026-07-21: a pull during
+         a backend restart hit one refusal and the day was refused with
+         "could not verify the existing MLS calendar"). Retry briefly with
+         backoff; a final failure still refuses the day exactly as before. */
+      var readCalendarOnce = function () {
+        return fetch(base + "/api/appointments", { headers: { Authorization: "Bearer " + token } })
+          .then(function (r) {
+            if (!r.ok) return { appointments: [], __mlsVerified: false, status: Number(r.status || 0) };
+            return Promise.resolve(r.json()).then(function (data) {
+              data = data && typeof data === "object" ? data : { appointments: [] };
+              data.__mlsVerified = true; return data;
+            });
+          })
+          .catch(function () { return { appointments: [], __mlsVerified: false }; });
+      };
+      var readCalendarAttempt = function (n) {
+        return readCalendarOnce().then(function (ed0) {
+          if (ed0 && ed0.__mlsVerified === true) return ed0;
+          if (n >= 3) return ed0;
+          return new Promise(function (res0) { setTimeout(res0, n === 1 ? 600 : 1500); })
+            .then(function () { return readCalendarAttempt(n + 1); });
+        });
+      };
+      return readCalendarAttempt(1);
     }, Promise.resolve({ appointments: [], __mlsVerified: false })).then(async function (ed) {
       if (!ed || ed.__mlsVerified !== true) {
         return { created: 0, repaired: 0, enrichedFields: 0, skipped: 0, failed: appts.length, attempted: appts.length,

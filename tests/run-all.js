@@ -43,6 +43,7 @@ const tests = [
   'athena-session-health-runtime.test.js',
   'athena-confirmed-billing-contract.test.js',
   'chartautofill-guard-active-patient-runtime.test.js',
+  'commercial-hardening-contract.test.js',
   'visit-draft-lifecycle-runtime.test.js',
   'history-raw-note-wrapper-runtime.test.js',
   'quick-find-lifecycle-runtime.test.js',
