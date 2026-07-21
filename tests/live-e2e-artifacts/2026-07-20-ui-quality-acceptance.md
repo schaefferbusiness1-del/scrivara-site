@@ -56,6 +56,9 @@ Workspace unlocked (gates configured + grants recorded ~8:05 PM). All interactio
 - **Sample reset honesty**: on reload the sample wiped the seeded store (300→3) and prefs — exactly what its "resets on reload" banner promises.
 - **Finding (polish)**: bulk import (`tplMultiFile`) is a SILENT no-op in the read-only sample — unlike Save, it shows no refusal banner. Real bulk-import progress/summary states remain LIVE-prior (b401/tpf era) + suite-pinned; hosted re-check queued behind the owner sign-in.
 - Apply-template-to-open-note requires backend AI (blocked in sample by design) — hosted re-check queued.
+- **Duplicate protection (10:15 PM)**: seeded 3 templates with 2 exact duplicates → the store itself served 2 (store-layer dedupe refuses duplicate rows before any UI is involved); the Remove-duplicates control then correctly had nothing to remove.
+- **Nav keyboard/accessibility end-to-end (b461 live)**: `.navtab` carries role=button, tabindex=0, aria-label "History" (emoji stripped); dispatched Enter keydown opened the History view and set `aria-current="page"`.
+- **Collapse-rail non-overlap, measured (b461 live)**: with `mls-nav-left mls-nav-collapsed` applied, `#appWrap` grid is exactly `52px 1fr`, rail `position:sticky`, and an intersection test of the rail rect against every content child found **zero overlaps** — the rail structurally cannot cover work. (Interactive visual pass in the classic chrome remains behind the owner sign-in.)
 
 ## Deferred to hosted-mode resume (blocked by the owner's clinical gates, not by the build)
 - Real-keystroke search/edit/save/revision-restore/delete-undo (sample workspace is read-only; write path is pinned by the contract tests).
