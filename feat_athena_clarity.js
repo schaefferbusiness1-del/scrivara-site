@@ -38,7 +38,7 @@
   // tag: 'remove'-> REMOVES DATA (red) : deletes from MLS (never from Athena)
   var CATALOG = [
     { ids: ['ptPullAthenaBtn', 'ezPull'], text: ['pull from athena', 'pull open athena patient'],
-      label: 'Pull from Athena', sub: 'Brings this patient’s name, DOB and past visits from the open Athena chart into MLS.', tag: 'read', icon: '📥', perPatient: true, pull: true },
+      label: 'Pull from Athena', sub: 'Opens this patient’s chart in your signed-in Athena tab (read-only) and brings their name, DOB and past visits into MLS.', tag: 'read', icon: '📥', perPatient: true, pull: true },
     { ids: ['ptLinkBtn'], text: ['pre-visit link'],
       label: 'Pre-visit link', sub: 'Makes a link to send this patient before the visit. Stays in MLS — nothing is sent to Athena.', tag: 'read', icon: '📤', perPatient: true },
     { ids: ['ptFollowupBtn'], text: ['visit follow-ups', 'visit followups'],

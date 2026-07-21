@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b471"></script>
+<script src="public-preview-policy.js?v=b472"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -1702,7 +1702,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <h2 style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" title="Missing a patient, or a chart came up empty? Pull them straight from Athena.">📥 Pull from Athena</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" title="Opens this patient’s chart in your signed-in Athena tab (read-only) and pulls their name, DOB and past visits into MLS.">📥 Pull from Athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, scheduling, and import cleanup">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" hidden disabled aria-disabled="true" style="display:none;font-size:14px;padding:9px 15px" title="Staff account provisioning is not released">👥 Receptionists unavailable</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -14555,6 +14555,16 @@ function _assistReadChart(patientRef, onStatus){
 /* Patients-tab "Pull from Athena": ask who, then pull that patient's chart straight from
    the open Athena tab — for when the schedule missed them or a chart came up empty. */
 function pullPatientFromAthenaPrompt(btn){
+  /* Owner 2026-07-21: this card button pulls THE OPEN PATIENT — no typing.
+     The engine below already opens their chart in the Athena tab itself
+     (read-only) and re-verifies identity before saving. The blocking
+     window.prompt flow (which also froze every same-origin MLS tab while
+     open) survives only as a fallback when no patient is active. */
+  var act=null; try{ act=(typeof activePatient==='function')?activePatient():null; }catch(e){}
+  if(act&&act.id){
+    try{ pullPatientChartViaAssist(btn,{}); }catch(e){ try{ toast('Couldn’t start the pull — make sure your signed-in Athena tab is open.','err'); }catch(_){} }
+    return;
+  }
   var nm=''; try{ nm=window.prompt('Pull a patient from Athena\n\nType the patient name exactly as it appears in Athena (and DOB helps if you have it). MLS Assist will open their chart in your Athena tab and pull it in.','')||''; }catch(e){}
   nm=String(nm).trim(); if(!nm) return;
   var dob=''; try{ dob=window.prompt('Date of birth for '+nm+' (optional — MM/DD/YYYY). Leave blank to skip.','')||''; }catch(e){}
@@ -23432,7 +23442,7 @@ function captureFromEMR(btn){
     tries++;
     if(ponged){ clearInterval(iv); return; }
     if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
-      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4710e'); return; }
+      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4720e'); return; }
     ping();
   }, 350);
   function proceed(){
@@ -26425,7 +26435,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b471"></script>
+<script src="public-preview-runtime.js?v=b472"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26696,7 +26706,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b471';
+  window.__MLS_AV='b472';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -32785,7 +32785,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b471';
+  window.__MLS_AV = window.__MLS_AV || 'b472';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33095,7 +33095,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-20-b471';
+  var MLS_APP_BUILD='2026-07-20-b472';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -36164,6 +36164,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var frozen=freezePatient();
     if(!frozen||!frozen.patientId||!frozen.name||!digits(frozen.dob)){PASSIVE.verifyError='Choose a patient with an immutable MLS ID, name, and DOB first.';refreshOpenPop();return Promise.resolve(false);}
     var visit=localVisitContext(frozen.patientId);
+    if(!visit||!visit.visitDate||!visit.provider||(!digits(visit.appointmentId)&&!(digits(visit.encounterId)&&trim(visit.encounterUrl)))){
+      /* Owner 2026-07-21: never demand a manual "open from the scheduled
+         visit" step when the calendar already proves EXACTLY ONE appointment
+         linked to this immutable patient ID (id-linked only — never a name
+         match). Prefer today's single row, else a single row overall; zero or
+         ambiguous candidates keep the fail-closed refusal unchanged. */
+      visit=safe(function(){
+        var rows=(Array.isArray(window._calAppts)?window._calAppts:[]).filter(function(a){
+          return trim(a&&(a.patient_external_id||a.patientId))===trim(frozen.patientId)&&digits(a.athena_appointment_id||a.appointmentId)&&trim(a.provider);
+        });
+        var dn=new Date(),todayK=dn.getFullYear()+'-'+('0'+(dn.getMonth()+1)).slice(-2)+'-'+('0'+dn.getDate()).slice(-2);
+        var todays=rows.filter(function(a){return dateKey(a.appt_date||a.start_at)===todayK;});
+        var pick=todays.length===1?todays[0]:(rows.length===1?rows[0]:null);
+        if(!pick)return null;
+        return {bindingId:'',visitDate:dateKey(pick.appt_date||pick.start_at),provider:normName(pick.provider),appointmentId:trim(pick.athena_appointment_id||pick.appointmentId),encounterId:'',encounterUrl:'',autoDerived:true};
+      },null);
+    }
     if(!visit||!visit.visitDate||!visit.provider||(!digits(visit.appointmentId)&&!(digits(visit.encounterId)&&trim(visit.encounterUrl)))){
       PASSIVE.verifyError='Open this patient from the exact scheduled visit before verifying. MLS needs the visit date, provider, and appointment or encounter identity.';refreshOpenPop();return Promise.resolve(false);
     }

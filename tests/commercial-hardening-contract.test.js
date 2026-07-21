@@ -46,4 +46,16 @@ assert(app.includes('_flushPendingSync'), 'pending-sync flush loop missing');
 assert(app.includes('_pendingBackupAdd(rec.id)') && app.includes('_retryPendingBackups(false)'),
   'note backup queue/retry regressed');
 
-console.log('PASS commercial hardening: retrying fail-closed calendar reads (exact + legacy), honest empty-device hydration, and persistent patient/note mirror queues');
+/* 6. Verify-now auto visit binding (owner 2026-07-21): exactly ONE id-linked
+   calendar row derives the visit identity so the doctor never has to reopen
+   the patient from the scheduled row; the fail-closed refusal must remain
+   for zero or ambiguous candidates, and matching is by immutable patient id
+   only (never name). */
+const connect = read('mls-connect.js');
+assert(connect.includes('autoDerived:true'), 'verify-now lost its single-row auto visit binding');
+assert(connect.includes('Open this patient from the exact scheduled visit'),
+  'the fail-closed refusal for zero/ambiguous visit bindings must remain');
+assert(connect.includes('patient_external_id||a.patientId))===trim(frozen.patientId)'),
+  'auto visit binding must match by immutable patient id only');
+
+console.log('PASS commercial hardening: retrying fail-closed calendar reads (exact + legacy), honest empty-device hydration, persistent patient/note mirror queues, and id-linked auto visit binding');
