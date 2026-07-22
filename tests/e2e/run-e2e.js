@@ -380,6 +380,57 @@ async function addPatient(page, name, dob) {
     assert(!out.sawPrompt, 'exit still uses native prompt()');
   });
 
+  await step('settings: cs-2.0.0 workspace — clean skin owns the modal, search filters, tabs switch, both themes readable', async () => {
+    await page.evaluate(() => openSettings());
+    /* the organizer boots with the post-auth module train — wait for it */
+    let clean = false;
+    for (let i = 0; i < 30; i++) {
+      clean = await page.evaluate(() =>
+        document.getElementById('settingsModal').classList.contains('mls-settings-clean') &&
+        !!document.querySelector('#settingsTabBar .mls-set-rail-head'));
+      if (clean) break;
+      await sleep(1000);
+    }
+    assert(clean, 'clean settings workspace never activated');
+    const out = await page.evaluate(async () => {
+      const modal = document.getElementById('settingsModal');
+      const bar = document.getElementById('settingsTabBar');
+      const doc = modal.querySelector('.modal');
+      const si = document.getElementById('settingsSearch');
+      si.value = 'password'; si.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 400));
+      const hits = [...modal.querySelectorAll('.set-section')].filter(s => s.style.display !== 'none' && !s.classList.contains('set-tab-hidden')).length;
+      si.value = ''; si.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 400));
+      const tab = bar.querySelector('[data-mls-settings-group="display"]');
+      if (tab) tab.click();
+      await new Promise(r => setTimeout(r, 300));
+      const stxGone = !document.getElementById('stxStyle');
+      const grid = getComputedStyle(doc).display === 'grid';
+      const railSticky = getComputedStyle(bar).position === 'sticky';
+      const iconTabs = bar.querySelectorAll('.set-tab .mls-set-ic').length;
+      // dark theme readability: heading ink must flip with the theme vars
+      const vis = () => [...modal.querySelectorAll('.set-section')].find(s => s.style.display !== 'none');
+      const lightHead = getComputedStyle(vis().querySelector('.set-head')).color;
+      document.body.classList.add('theme-dark');
+      await new Promise(r => setTimeout(r, 150));
+      const darkHead = getComputedStyle(vis().querySelector('.set-head')).color;
+      const darkBg = getComputedStyle(doc).backgroundColor;
+      document.body.classList.remove('theme-dark');
+      const noOverflow = doc.scrollWidth <= doc.clientWidth + 2;
+      const displayOn = tab ? tab.classList.contains('on') : false;
+      try { closeSettings(); } catch (e) {}
+      return { hits, stxGone, grid, railSticky, iconTabs, lightHead, darkHead, darkBg, noOverflow, displayOn };
+    });
+    assert(out.grid && out.railSticky, 'two-pane sticky-rail layout not applied: ' + JSON.stringify(out));
+    assert(out.iconTabs >= 5, 'icon rail tabs missing');
+    assert(out.stxGone, 'legacy stx skin still active alongside the clean workspace');
+    assert(out.hits >= 1 && out.hits <= 4, 'search did not filter sections: ' + out.hits);
+    assert(out.displayOn, 'tab switch did not activate the Display group');
+    assert(out.lightHead !== out.darkHead, 'section headings do not follow the theme (dark-mode readability regression)');
+    assert(out.noOverflow, 'settings content overflows horizontally');
+  });
+
   await step('responsive: no horizontal overflow at phone width on core views', async () => {
     await page.setViewport({ width: 375, height: 812 });
     await sleep(600);
