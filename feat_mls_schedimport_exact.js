@@ -1992,7 +1992,12 @@
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
-  async function runHistoryBatch(rows, unresolved, onStatus, sweepDepth) {
+  async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
+    /* si-1.9.1: sweeps inherit the OUTER frozen deadline (a sub-batch used to
+       mint its own budget, which could keep the pull alive past the frozen
+       deadline — never-immortal is the rule). Number form kept for callers. */
+    var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
+    var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
     var batchStartedAt = Date.now();
     var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
@@ -2001,6 +2006,7 @@
        reset by progress, navigation, parsing, or retries. */
     var batchBudgetMs = Math.max(15 * 60 * 1000, Math.min(75 * 60 * 1000, Math.max(1, rows.length) * 5 * 60 * 1000));
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
+    if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
     var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
@@ -2125,7 +2131,9 @@
         one.identityVerified = true;
         one.identityProof = target.mrn ? "mrn" : (target.dob ? "dob" : "");
         var patientRequestId = batchRequestId + "-p" + (i + 1);
-        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 7 * 60 * 1000);
+        /* si-1.9.1: sweep attempts get a tighter window — one glacial chart
+           must not eat the whole remaining sweep budget. */
+        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 5 : 7) * 60 * 1000);
         var patientReadStartedAt = Date.now();
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (i + 1) + " of " + rows.length + "...", "");
@@ -2186,7 +2194,7 @@
                 transientRunnerRecoveries++;
                 one.chartTransientRecovered = true;
                 one.chartRetried = true;
-                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
                 one.deadlineAt = patientDeadlineAt;
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
@@ -2194,7 +2202,7 @@
               stopAfterTimeout = true; receipt.timedOut = true; break;
             }
             if (chartAttempt < 2 && Date.now() + 300000 < batchDeadlineAt) {
-              patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+              patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
               one.deadlineAt = patientDeadlineAt;
               one.chartRetried = true;
               await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
@@ -2223,7 +2231,13 @@
             while (true) {
               visitsAttempt++;
               var visitsRequestId = patientRequestId + "-visits" + (visitsAttempt > 1 ? "-a" + visitsAttempt : "");
-              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
+              /* si-1.9.1 fail-fast: quiet charts complete their visits read in
+                 well under 2 minutes; a chart that cannot inside 110s is in an
+                 edit burst and belongs to the end-of-batch sweep (where the
+                 full 195s window applies). Grinding 195s per failure in the
+                 MAIN pass starved the sweep of budget (live 15:11: 10 failures
+                 burned ~40 min; only one sweep pass fit). */
+              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? 110000 : 195000));
               try {
                 vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
               } catch (vDeadlineErr) {
@@ -2235,7 +2249,7 @@
                 transientRunnerRecoveries++;
                 one.visitsTransientRecovered = true;
                 one.visitsChartReopened = true;
-                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
                 one.deadlineAt = patientDeadlineAt;
                 try {
                   var trReopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
@@ -2254,7 +2268,7 @@
                    a proven fresh chart; the per-patient window is re-budgeted
                    against the batch deadline so the second attempt fits.
                    Every identity gate runs again in full. */
-                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
                 one.deadlineAt = patientDeadlineAt;
                 one.visitsChartReopened = true;
                 try {
@@ -2321,7 +2335,7 @@
         var pEntry = pipelineParses[pf], pOne = pEntry.one;
         if (!pOne.organized && !/timeout|deadline/i.test(String(pOne.chartReason || "")) && Date.now() + 300000 < batchDeadlineAt) {
           pOne.chartRetried = true; pOne.parseDeferredRetried = true;
-          var pRetryDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+          var pRetryDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
           var pRetryReadStartedAt = Date.now();
           var __dChartT0 = Date.now(), __dParseT0 = 0;
           try {
@@ -2376,14 +2390,14 @@
     var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
     if (!sweepDepth) {
       receipt.sweepPasses = 0;
-      for (var sweepPass = 1; sweepPass <= 2 && !receipt.complete; sweepPass++) {
+      for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
         if (!sweepable.length) break;
         if (Date.now() + 300000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
         if (onStatus) onStatus("Re-checking " + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
         var swept = buildRetryRows(sweepable);
         var sub = null;
-        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, 1); } catch (eSweep) { break; }
+        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt }); } catch (eSweep) { break; }
         receipt.sweepPasses = sweepPass;
         if (!sub || !Array.isArray(sub.patients)) break;
         var recoveredIds = {};

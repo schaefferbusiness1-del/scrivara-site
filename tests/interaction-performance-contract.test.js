@@ -187,7 +187,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-21-b487' }, 'tiny version probe does not match b487');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-21-b488' }, 'tiny version probe does not match b488');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);

@@ -367,10 +367,14 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   {
     const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
     assert(src.includes('function buildRetryRows'), 'the shared retry-row builder must exist');
-    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, 1\)/.test(src), 'a sweep must run at depth 1 (a sweep never sweeps)');
-    assert(/sweepPass <= 2 && !receipt\.complete/.test(src), 'the sweep must be bounded to two passes and stop on completion');
+    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, \{ depth: 1, deadlineCapAt: batchDeadlineAt \}\)/.test(src),
+      'a sweep must run at depth 1 AND inherit the outer frozen deadline (never-immortal)');
+    assert(/batchDeadlineAt = Math\.min\(batchDeadlineAt, sweepDeadlineCapAt\)/.test(src), 'the sub-batch deadline must be capped by the outer deadline');
+    assert(/sweepPass <= 3 && !receipt\.complete/.test(src), 'the sweep must be bounded to three passes and stop on completion');
     assert(/Date\.now\(\) \+ 300000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
     assert(src.includes('var SWEEPABLE_REASON'), 'the sweep reason whitelist must exist');
+    assert(/visitsAttempt === 1 && !sweepDepth \? 110000 : 195000/.test(src),
+      'si-1.9.1 fail-fast: main-pass first visits attempt is 110s; sweep attempts keep the full 195s window');
   }
 
   /* si-1.8.1 static contract (live 2026-07-22, twice): a deadline failure may
