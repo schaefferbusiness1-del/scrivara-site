@@ -194,19 +194,27 @@
     return changed;
   }
 
-  /* b483: exact-clone index rows carry zero information beyond their first
-     copy. Racing ingest passes (stale patient clones + store visit union)
-     can file the same alias-less index shell twice; collapse those exact
-     clones, keeping the earliest row. NEVER touches: rows with a raw body,
-     bodyComplete/fullDetail rows, rows holding a stable Athena alias, or
-     rows whose trust state differs (verified binding is part of the sig). */
+  /* b483/b484: exact-clone index rows carry zero information beyond their
+     best copy. Live 2026-07-21/22 pairs came from the SAME history-card row
+     ingested through two trust paths ms apart (the base card save files a
+     VERIFIED shell; the visit-wire post-hook re-ingests it UNVERIFIED when
+     its saveRef proof gate fails) — _trustCompatible rightly refuses to merge
+     across the trust boundary, so both persisted. Collapse rule, per exact
+     CONTENT group (date/type/textHead/source/codes), alias-less bodyless
+     indexOnly rows only:
+       - verified rows present with ONE binding → drop unverified twins (the
+         identical untrusted copy adds nothing; nothing is ever upgraded) and
+         collapse the verified rows to the earliest;
+       - verified rows with CONFLICTING bindings → fail closed, touch nothing;
+       - only unverified rows → collapse to the earliest.
+     NEVER touches rows with a raw body, bodyComplete/fullDetail rows, or
+     rows holding a stable Athena alias. */
   function _exactIndexSig(v) {
     v = v || {};
     return [
       _svcToYMD(v.date) || trim(v.date), trim(v.type), trim(v.textHead), trim(v.source),
       (Array.isArray(v.cpt) ? v.cpt : []).join(','), (Array.isArray(v.icd10) ? v.icd10 : []).join(','),
-      (Array.isArray(v.meds) ? v.meds : []).join(','),
-      v.identityVerified === true ? ('iv|' + trim(v.identityBinding)) : 'unv'
+      (Array.isArray(v.meds) ? v.meds : []).join(',')
     ].join('|');
   }
   function _collapsibleIndexRow(v) {
@@ -215,18 +223,34 @@
   }
   function _collapseExactIndexDuplicates(p) {
     if (!p || !Array.isArray(p.visits)) return false;
-    var changed = false, seen = {};
-    for (var i = 0; i < p.visits.length; i++) {
-      var v = p.visits[i];
+    var groups = {}, sig, i, v;
+    for (i = 0; i < p.visits.length; i++) {
+      v = p.visits[i];
       if (!_collapsibleIndexRow(v)) continue;
-      var sig = _exactIndexSig(v);
-      var firstIdx = seen[sig];
-      if (firstIdx == null) { seen[sig] = i; continue; }
-      var keeper = p.visits[firstIdx];
-      if (!trim(keeper.aiSummary) && trim(v.aiSummary)) keeper.aiSummary = v.aiSummary;
-      p.visits.splice(i, 1); i--; changed = true;
+      sig = _exactIndexSig(v);
+      (groups[sig] = groups[sig] || []).push(v);
     }
-    return changed;
+    var drop = [];
+    Object.keys(groups).forEach(function (key) {
+      var rows = groups[key];
+      if (rows.length < 2) return;
+      var verified = rows.filter(function (r) { return r.identityVerified === true && trim(r.identityBinding); });
+      var bindings = {};
+      verified.forEach(function (r) { bindings[trim(r.identityBinding)] = 1; });
+      if (Object.keys(bindings).length > 1) return; /* conflicting proofs: fail closed */
+      var keepPool = verified.length ? verified : rows;
+      var keeper = keepPool[0];
+      rows.forEach(function (r) {
+        if (r === keeper) return;
+        if (!trim(keeper.aiSummary) && trim(r.aiSummary)) keeper.aiSummary = r.aiSummary;
+        drop.push(r);
+      });
+    });
+    if (!drop.length) return false;
+    for (i = p.visits.length - 1; i >= 0; i--) {
+      if (drop.indexOf(p.visits[i]) >= 0) p.visits.splice(i, 1);
+    }
+    return true;
   }
 
   function _normVisit(raw, source, opts) {

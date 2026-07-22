@@ -117,9 +117,10 @@ assert(/_getPatients\(\)\.find[\s\S]{0,260}window\.findPatient/.test(source.slic
       // alias'd index rows — alias machinery owns these, not the collapse
       Object.assign({}, base, { id: 's5', date: '2026-05-05', type: 'Follow up', textHead: 'fu', sourceVisitKey: 'rk-1' }),
       Object.assign({}, base, { id: 's6', date: '2026-05-05', type: 'Follow up', textHead: 'fu', sourceVisitKey: 'rk-2' }),
-      // trust states differ — never merge across the trust boundary
+      // verified twins with CONFLICTING bindings — fail closed, keep all three
       Object.assign({}, base, { id: 's7', date: '2026-04-04', type: 'Consult', textHead: 'c' }),
-      Object.assign({}, base, { id: 's8', date: '2026-04-04', type: 'Consult', textHead: 'c', identityVerified: true, identityBinding: pid })
+      Object.assign({}, base, { id: 's8', date: '2026-04-04', type: 'Consult', textHead: 'c', identityVerified: true, identityBinding: pid }),
+      Object.assign({}, base, { id: 's8b', date: '2026-04-04', type: 'Consult', textHead: 'c', identityVerified: true, identityBinding: 'someone-else' })
     ]
   };
   const before = safeP.visits.length;
@@ -137,10 +138,43 @@ assert(/_getPatients\(\)\.find[\s\S]{0,260}window\.findPatient/.test(source.slic
   assert.strictEqual(kept[0].aiSummary, 'kept summary', 'a later clone\'s aiSummary must carry onto the keeper');
 }
 
+// 6) THE LIVE PAIR SHAPE (2026-07-21/22): the same card row filed once
+//    VERIFIED (base card save) and once UNVERIFIED (visit-wire re-ingest with
+//    a failed proof gate) ms apart. The unverified twin is redundant — drop
+//    it, keep the verified row, never upgrade anything.
+{
+  const ctx = makeContext();
+  const M = ctx.__mlsVisitModel;
+  const pid = 'pt-twin-1';
+  const base = { raw: '', indexOnly: true, bodyComplete: false, fullDetail: false, encounterId: '', sourceVisitKey: '', source: 'athena-schedule-history', cpt: [], icd10: [], meds: [] };
+  const twinP = {
+    id: pid, name: 'Twin Case', dob: '05/06/1963', visits: [
+      Object.assign({}, base, { id: 'unv-1', date: '2026-07-22', type: 'C Spine, No Imaging', textHead: 'row head', identityVerified: false, identityBinding: '' }),
+      Object.assign({}, base, { id: 'ver-1', date: '2026-07-22', type: 'C Spine, No Imaging', textHead: 'row head', identityVerified: true, identityBinding: pid })
+    ]
+  };
+  assert.strictEqual(M._collapseExactIndexDuplicates(twinP), true, 'the trust-twin pair must collapse');
+  assert.strictEqual(twinP.visits.length, 1, 'exactly one row must remain');
+  assert.strictEqual(twinP.visits[0].id, 'ver-1', 'the VERIFIED row must be the survivor');
+  assert.strictEqual(twinP.visits[0].identityVerified, true, 'survivor keeps its verified trust');
+
+  // and through the live entry point: a later ingest for that patient heals it
+  ctx.store.arr = [{ id: pid, name: 'Twin Case', dob: '05/06/1963', visits: [
+    Object.assign({}, base, { id: 'unv-2', date: '2026-07-21', type: 'Lumbar/ ref', textHead: 'h', identityVerified: false, identityBinding: '' }),
+    Object.assign({}, base, { id: 'ver-2', date: '2026-07-21', type: 'Lumbar/ ref', textHead: 'h', identityVerified: true, identityBinding: pid })
+  ] }];
+  ctx.freeze();
+  M.ingestChart(pid, { visits: [R2] }, 'athena-schedule-history', {});
+  const healed = ctx.store.arr.find(x => x.id === pid);
+  const twins = (healed.visits || []).filter(v => v && v.type === 'Lumbar/ ref');
+  assert.strictEqual(twins.length, 1, 'ingest tail must heal the stranded trust-twin pair');
+  assert.strictEqual(twins[0].id, 'ver-2', 'the verified copy survives the heal');
+}
+
 // 5) loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260722vis7'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  assert(text.includes('feat_visits.js?v=20260722vis8'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
 }
 
 console.log('PASS visit index dupe collapse: batch-aware findPatient, racing ingest keeps each row once, union artifacts self-heal, bodies/aliases/trust boundaries untouched, loader pins bumped');
