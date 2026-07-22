@@ -504,19 +504,51 @@
       '.mls-account-action.danger{color:#9B3030;}',
       '.mls-password-standard{display:none;margin:-6px 0 14px;color:#66726A;font:500 12px/1.4 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}',
       '.mls-password-standard.is-visible{display:block;}',
-      '#settingsModal.mls-settings-clean .modal{padding:28px 32px 92px 258px!important;background:#FBFAF7!important;box-sizing:border-box!important;overflow-y:scroll!important;overflow-x:hidden!important;overflow-anchor:none!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;scrollbar-width:thin!important;scrollbar-color:#879A8E #ECEDE8!important;}',
-      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar{display:block!important;width:10px!important;height:10px!important;}',
-      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-track{background:#ECEDE8!important;border-radius:10px!important;}',
-      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-thumb{background:#879A8E!important;border:2px solid #ECEDE8!important;border-radius:10px!important;}',
-      '#settingsModal.mls-settings-clean #settingsTabBar{left:18px!important;right:auto!important;width:214px!important;padding:0 14px 0 0!important;border-left:0!important;border-right:1px solid #E7E5DD!important;background:transparent!important;}',
-      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab{border-radius:9px!important;padding:10px 12px!important;color:#55605A!important;font-weight:650!important;}',
-      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab:hover{background:#F4F2EC!important;color:#1A211C!important;}',
-      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab.on{background:#204034!important;color:#fff!important;box-shadow:none!important;}',
-      '#settingsModal.mls-settings-clean .set-section{background:#fff!important;border:1px solid #E7E5DD!important;border-radius:14px!important;padding:18px!important;margin:0 0 14px!important;}',
-      '#settingsModal.mls-settings-clean .set-section>.set-head{color:#204034!important;font-size:12.5px!important;margin-bottom:5px!important;}',
-      '#settingsModal.mls-settings-clean .set-section>.set-desc{color:#55605A!important;}',
-      '#settingsModal.mls-settings-clean .modal>.row{position:sticky;bottom:-92px;z-index:5;background:rgba(251,250,247,.96);border-top:1px solid #E7E5DD;margin:20px -32px -92px;padding:14px 32px 18px;backdrop-filter:blur(8px);}',
-      '#settingsModal.mls-settings-clean .mls-settings-moved{border-top:1px solid #EFEDE6;padding-top:14px;margin-top:14px;}',
+      /* ===== Settings workspace redesign cs-2.0.0 (2026-07-22) =====
+         Two-pane grid inside ONE native scroll container (.modal stays the
+         only scroller — the rail is position:sticky within it, so nothing
+         scrolls away and no scroll listeners exist). Every color comes from
+         the app theme vars, so dark mode / large text / compact all inherit
+         correctly instead of the old hardcoded light-only hex. */
+      '#settingsModal.mls-settings-clean{padding:16px!important;background:rgba(12,22,17,.58)!important;backdrop-filter:blur(4px)!important;}',
+      '#settingsModal.mls-settings-clean .modal{display:grid!important;grid-template-columns:238px minmax(0,1fr)!important;column-gap:32px!important;align-content:start!important;width:min(1120px,97vw)!important;max-width:none!important;height:min(920px,calc(100dvh - 32px))!important;max-height:none!important;padding:0 32px 0 0!important;border:1px solid var(--line)!important;border-radius:20px!important;background:var(--surface,#fff)!important;box-shadow:0 30px 90px rgba(0,0,0,.4)!important;box-sizing:border-box!important;overflow-y:scroll!important;overflow-x:hidden!important;overflow-anchor:none!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;scrollbar-width:thin!important;scrollbar-color:var(--line) transparent!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar{display:block!important;width:9px!important;height:9px!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-track{background:transparent!important;}',
+      '#settingsModal.mls-settings-clean .modal::-webkit-scrollbar-thumb{background:var(--line)!important;border-radius:10px!important;}',
+      '#settingsModal.mls-settings-clean .modal>*{grid-column:2;min-width:0;}',
+      /* left rail: sticky inside the one scroller, full sheet height */
+      '#settingsModal.mls-settings-clean #settingsTabBar{grid-column:1!important;grid-row:1/span 80!important;position:sticky!important;top:0!important;left:auto!important;right:auto!important;align-self:start!important;width:auto!important;height:min(920px,calc(100dvh - 32px))!important;max-height:none!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;gap:3px!important;margin:0!important;padding:16px 13px!important;border-left:0!important;border-right:1px solid var(--line)!important;border-radius:20px 0 0 20px!important;background:var(--soft,#F4F2EC)!important;overflow-y:auto!important;scrollbar-width:none!important;}',
+      '#settingsModal.mls-settings-clean .mls-set-rail-head{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16px;letter-spacing:-.2px;color:var(--ink,#1A211C);padding:10px 11px 16px;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab{display:flex!important;align-items:center!important;gap:11px!important;width:100%!important;box-sizing:border-box!important;border:0!important;border-radius:11px!important;padding:9px 11px!important;background:transparent!important;color:var(--muted,#55605A)!important;font-weight:650!important;font-size:13.5px!important;line-height:1.25!important;text-align:left!important;cursor:pointer!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab .mls-set-ic{width:28px;height:28px;flex:0 0 28px;border-radius:9px;display:grid;place-items:center;font-size:14px;background:var(--surface,#fff);border:1px solid var(--line);}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab:hover{background:var(--surface,#fff)!important;color:var(--ink,#1A211C)!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab.on{background:var(--brand,#2E6A4B)!important;color:#fff!important;box-shadow:0 2px 8px rgba(20,40,30,.25)!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab.on .mls-set-ic{background:rgba(255,255,255,.16);border-color:transparent;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab:focus-visible{outline:2px solid var(--brand,#2E6A4B)!important;outline-offset:2px!important;}',
+      /* content header: title, then a sticky pill search that stays reachable */
+      '#settingsModal.mls-settings-clean .modal-x{position:sticky!important;top:12px!important;grid-row:1!important;justify-self:end!important;z-index:9!important;margin:0 0 -46px!important;width:34px!important;height:34px!important;display:grid!important;place-items:center!important;border-radius:50%!important;background:var(--soft,#F4F2EC)!important;border:1px solid var(--line)!important;color:var(--muted)!important;font-size:17px!important;}',
+      '#settingsModal.mls-settings-clean .modal-x:hover{color:var(--ink)!important;background:var(--surface,#fff)!important;}',
+      '#settingsModal.mls-settings-clean .modal>h3{margin:22px 44px 2px 0!important;font-size:21px!important;letter-spacing:-.3px!important;}',
+      '#settingsModal.mls-settings-clean #settingsIntro{margin:0 0 8px!important;font-size:13.5px!important;}',
+      '#settingsModal.mls-settings-clean .mls-set-search-row{position:sticky!important;top:0!important;z-index:7!important;margin:0 0 14px!important;padding:14px 0 12px!important;background:linear-gradient(var(--surface,#fff) 74%,transparent)!important;}',
+      '#settingsModal.mls-settings-clean .mls-set-search-row input{width:100%!important;box-sizing:border-box!important;border-radius:999px!important;border:1.5px solid var(--line)!important;background:var(--soft,#F4F2EC)!important;padding:11px 18px!important;font-size:14px!important;color:var(--ink)!important;transition:border-color .15s,background .15s,box-shadow .15s!important;}',
+      '#settingsModal.mls-settings-clean .mls-set-search-row input:focus{outline:none!important;border-color:var(--brand,#2E6A4B)!important;background:var(--surface,#fff)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#2E6A4B) 18%,transparent)!important;}',
+      /* section cards */
+      '#settingsModal.mls-settings-clean .set-section{background:var(--card,var(--surface,#fff))!important;border:1px solid var(--line)!important;border-radius:16px!important;padding:20px 22px 16px!important;margin:0 0 16px!important;box-shadow:0 1px 2px rgba(15,25,20,.05)!important;}',
+      '#settingsModal.mls-settings-clean .set-section>.set-head{color:var(--ink,#1A211C)!important;font-size:15.5px!important;font-weight:750!important;letter-spacing:-.2px!important;text-transform:none!important;margin:0 0 3px!important;}',
+      '#settingsModal.mls-settings-clean .set-section>.set-head:after{display:none!important;}',
+      '#settingsModal.mls-settings-clean .set-section>.set-desc{color:var(--muted,#55605A)!important;font-size:13px!important;margin:0 0 12px!important;}',
+      /* fields: quiet separators, aligned labels, consistent controls */
+      '#settingsModal.mls-settings-clean .set-section .field{margin:0!important;padding:13px 0!important;border-top:0!important;}',
+      '#settingsModal.mls-settings-clean .set-section .field+.field{border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)!important;}',
+      '#settingsModal.mls-settings-clean .set-section .field>label{font-size:13.5px!important;font-weight:650!important;color:var(--ink,#1A211C)!important;}',
+      '#settingsModal.mls-settings-clean .set-section input[type=text],#settingsModal.mls-settings-clean .set-section input[type=password],#settingsModal.mls-settings-clean .set-section input[type=email],#settingsModal.mls-settings-clean .set-section input[type=number],#settingsModal.mls-settings-clean .set-section select,#settingsModal.mls-settings-clean .set-section textarea{border-radius:10px!important;border:1.5px solid var(--line)!important;background:var(--surface,#fff)!important;color:var(--ink)!important;padding:10px 12px!important;font-size:14px!important;transition:border-color .15s,box-shadow .15s!important;}',
+      '#settingsModal.mls-settings-clean .set-section input:focus,#settingsModal.mls-settings-clean .set-section select:focus,#settingsModal.mls-settings-clean .set-section textarea:focus{outline:none!important;border-color:var(--brand,#2E6A4B)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#2E6A4B) 16%,transparent)!important;}',
+      '#settingsModal.mls-settings-clean .set-section .note{font-size:12.5px!important;line-height:1.55!important;}',
+      '#settingsModal.mls-settings-clean .set-section input[type=checkbox]{width:17px!important;height:17px!important;accent-color:var(--brand,#2E6A4B)!important;}',
+      /* sticky save bar: in-flow, no negative-margin hacks */
+      '#settingsModal.mls-settings-clean .modal>.row{position:sticky;bottom:0;z-index:6;background:color-mix(in srgb,var(--surface,#fff) 90%,transparent);backdrop-filter:blur(8px);border-top:1px solid var(--line);margin:14px 0 0;padding:13px 0 15px;}',
+      '#settingsModal.mls-settings-clean .mls-settings-moved{border-top:1px solid var(--line)!important;padding-top:14px;margin-top:14px;}',
       /* Settings is a modal workspace. Keep the persistent bottom voice tools
          out of its scrolling surface and sticky footer, then restore them
          automatically when the modal closes. */
@@ -527,7 +559,8 @@
       '.mls-intake-remove{height:38px;border:1px solid #E3D6D3;border-radius:9px;background:#fff;color:#9B3030;font-size:17px;cursor:pointer;}',
       '.mls-intake-remove:hover{background:#FFF4F2;}',
       '.mls-intake-add{justify-self:start;margin-top:2px;}',
-      '@media(max-width:820px){#settingsModal.mls-settings-clean{padding:8px!important;align-items:flex-start!important;}#settingsModal.mls-settings-clean .modal{padding:24px 24px 88px!important;max-height:calc(100dvh - 16px)!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:static!important;width:auto!important;max-height:none!important;display:flex!important;flex-flow:row nowrap!important;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain!important;border-right:0!important;border-bottom:1px solid #E7E5DD!important;padding:0 0 10px!important;margin:10px 0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;}#settingsModal.mls-settings-clean .modal>.row{bottom:-88px;margin:18px -24px -88px;padding:13px 24px 17px;}}',
+      /* phone: full-height sheet, rail becomes a sticky horizontal chip row */
+      '@media(max-width:820px){#settingsModal.mls-settings-clean{padding:0!important;align-items:stretch!important;}#settingsModal.mls-settings-clean .modal{display:block!important;width:100vw!important;height:100dvh!important;max-height:none!important;border-radius:0!important;border:0!important;padding:0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:sticky!important;top:0!important;z-index:8!important;height:auto!important;width:auto!important;display:flex!important;flex-flow:row nowrap!important;gap:6px!important;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain!important;margin:0 -16px 12px!important;padding:10px 14px!important;border-right:0!important;border-radius:0!important;border-bottom:1px solid var(--line)!important;background:var(--surface,#fff)!important;scrollbar-width:none!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;padding:8px 12px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab .mls-set-ic{width:22px;height:22px;flex-basis:22px;font-size:12px;}#settingsModal.mls-settings-clean .mls-set-rail-head{display:none!important;}#settingsModal.mls-settings-clean .mls-set-search-row{position:static!important;padding:4px 0 10px!important;}#settingsModal.mls-settings-clean .modal-x{position:fixed!important;top:8px!important;right:10px!important;margin:0!important;z-index:10!important;}#settingsModal.mls-settings-clean .modal>h3{margin:14px 44px 2px 0!important;}#settingsModal.mls-settings-clean .modal>.row{margin:14px -16px 0!important;padding:12px 16px 14px!important;}}',
       '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
@@ -761,14 +794,14 @@
   }
 
   var SETTINGS_GROUPS = [
-    { key: 'account', label: 'Account & security' },
-    { key: 'practice', label: 'Practice & provider' },
-    { key: 'notes', label: 'Notes & AI' },
-    { key: 'display', label: 'Display' },
-    { key: 'features', label: 'Features & navigation' },
-    { key: 'legal', label: 'Legal profile' },
-    { key: 'integrations', label: 'Integrations' },
-    { key: 'advanced', label: 'Advanced' }
+    { key: 'account', label: 'Account & security', icon: '🔐' },
+    { key: 'practice', label: 'Practice & provider', icon: '🏥' },
+    { key: 'notes', label: 'Notes & AI', icon: '📝' },
+    { key: 'display', label: 'Display', icon: '🎨' },
+    { key: 'features', label: 'Features & navigation', icon: '🧩' },
+    { key: 'legal', label: 'Legal profile', icon: '⚖️' },
+    { key: 'integrations', label: 'Integrations', icon: '🔌' },
+    { key: 'advanced', label: 'Advanced', icon: '🛠️' }
   ];
 
   function settingsIsLawyer() {
@@ -1129,10 +1162,26 @@
     groups.forEach(function (group) {
       var btn = document.createElement('button');
       btn.type = 'button'; btn.className = 'set-tab'; btn.setAttribute('role', 'tab');
-      btn.setAttribute('data-mls-settings-group', group.key); btn.textContent = group.label;
+      btn.setAttribute('data-mls-settings-group', group.key);
+      /* cs-2.0.0: icon chip + label (both static constants; textContent keeps
+         them inert). Accessible name = the label text. */
+      var ic = document.createElement('span'); ic.className = 'mls-set-ic'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = group.icon || '•';
+      var lb = document.createElement('span'); lb.className = 'mls-set-lb'; lb.textContent = group.label;
+      btn.appendChild(ic); btn.appendChild(lb);
       btn.addEventListener('click', function () { selectSettingsGroup(group.key, false, true); });
       btn.addEventListener('keydown', settingsTabKeydown);
       bar.appendChild(btn);
+    });
+    /* rail brand header (desktop only; hidden by CSS on phones) */
+    var railHead = document.createElement('div');
+    railHead.className = 'mls-set-rail-head';
+    railHead.textContent = '⚙️ Settings';
+    bar.insertBefore(railHead, bar.firstChild);
+    /* the search row becomes the sticky content header */
+    safe(function () {
+      var sf = byId('settingsSearch');
+      var row = sf && sf.closest('.field');
+      if (row && !row.classList.contains('mls-set-search-row')) row.classList.add('mls-set-search-row');
     });
     bar.setAttribute('data-mls-settings-clean', '1');
     selectSettingsGroup(activeSettingsGroup, false, false);
@@ -1144,6 +1193,17 @@
        already-present class generated an endless observer -> reconcile ->
        class mutation cycle even while Settings was closed. */
     if (!modal.classList.contains('mls-settings-clean')) modal.classList.add('mls-settings-clean');
+    /* cs-2.0.0 single-owner: while this clean workspace owns Settings, the
+       legacy stx design layer (hardcoded light palette, competing grid) is
+       retired through its own documented revert. Guarded so a quiet state
+       performs no mutation (observer-safe); if this organizer is ever absent,
+       stx remains available as the fallback skin. */
+    safe(function () {
+      if (byId('stxStyle')) {
+        if (W.__mlsStx && W.__mlsStx.installed && typeof W.__mlsStx.revert === 'function') W.__mlsStx.revert();
+        var stxStyle = byId('stxStyle'); if (stxStyle) stxStyle.remove();
+      }
+    });
     var sections = directSettingsSections();
     if (!sections.length) return false;
     var open = modal.classList.contains('show');

@@ -373,8 +373,13 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
     assert(/sweepPass <= 3 && !receipt\.complete/.test(src), 'the sweep must be bounded to three passes and stop on completion');
     assert(/Date\.now\(\) \+ 240000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
     assert(src.includes('var SWEEPABLE_REASON'), 'the sweep reason whitelist must exist');
-    assert(/visitsAttempt === 1 && !sweepDepth \? 75000 : 120000/.test(src),
-      'si-1.9.2 fail-fast: main-pass first visits attempt is 75s; retry/sweep attempts get 120s');
+    assert(/adaptiveCeilingMs\('visits', 60000, 195000, 100000\)/.test(src),
+      'si-1.9.3 adaptive: main-pass visits ceiling tracks the batch median (60s floor, 195s cap)');
+    assert(/adaptiveCeilingMs\('chart', 45000, 180000, 90000\)/.test(src),
+      'si-1.9.3 adaptive: main-pass chart ceiling tracks the batch median (45s floor, 180s cap)');
+    assert(/median \* 2\.5/.test(src), 'the adaptive ceiling is 2.5x the median successful read');
+    assert(src.includes("recordReadMs('chart'") && src.includes("recordReadMs('visits'"),
+      'successful read durations must feed the adaptive median');
     assert(/Math\.min\(45 \* 60 \* 1000, Math\.max\(1, rows\.length\) \* 3 \* 60 \* 1000\)/.test(src),
       'si-1.9.2 speed: the whole batch is hard-capped at 45 minutes (3 min per row)');
   }

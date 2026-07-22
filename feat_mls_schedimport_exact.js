@@ -2005,6 +2005,22 @@
        can make the batch immortal. This timestamp is frozen once and is never
        reset by progress, navigation, parsing, or retries. */
     var batchBudgetMs = Math.max(12 * 60 * 1000, Math.min(45 * 60 * 1000, Math.max(1, rows.length) * 3 * 60 * 1000)); /* si-1.9.2 speed: owner directive 2026-07-22 evening - a day pull must never run an hour */
+    /* si-1.9.3 ADAPTIVE ceilings (live b491 lesson, same evening): fixed 75s
+       ceilings collapsed completeness on a slow-athena night (10/16 failed;
+       reads genuinely needed >75s) while fixed 195s ceilings had wasted 40
+       min on failures at midday. Deadlines only bite on SLOW/failing reads -
+       successful awaits resolve early - so the ceiling should track what
+       reads actually cost RIGHT NOW: 2.5x the batch's median successful
+       duration, clamped to a floor and cap. First reads use a neutral prior. */
+    var readStats = { chart: [], visits: [] };
+    function recordReadMs(kind, ms) { if (isFinite(ms) && ms > 0) { readStats[kind].push(ms); if (readStats[kind].length > 40) readStats[kind].shift(); } }
+    function adaptiveCeilingMs(kind, floorMs, capMs, priorMs) {
+      var a = readStats[kind];
+      if (!a.length) return Math.max(floorMs, Math.min(capMs, priorMs));
+      var s = a.slice().sort(function (x, y) { return x - y; });
+      var median = s[Math.floor(s.length / 2)];
+      return Math.max(floorMs, Math.min(capMs, Math.round(median * 2.5)));
+    }
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
     var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
@@ -2133,7 +2149,7 @@
         var patientRequestId = batchRequestId + "-p" + (i + 1);
         /* si-1.9.1: sweep attempts get a tighter window — one glacial chart
            must not eat the whole remaining sweep budget. */
-        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 5) * 60 * 1000);
+        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 5 : 6) * 60 * 1000);
         var patientReadStartedAt = Date.now();
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (i + 1) + " of " + rows.length + "...", "");
@@ -2162,9 +2178,10 @@
           try {
             var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
             var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
-            var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + ((chartAttempt === 1 && !sweepDepth) ? 70000 : 110000));
+            var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + ((chartAttempt === 1 && !sweepDepth) ? adaptiveCeilingMs('chart', 45000, 180000, 90000) : 180000));
             rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
+            recordReadMs('chart', Date.now() - __chartT0);
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
             var parseRequestId = patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
             if (!stopAfterTimeout && pullVisitBodies !== true) {
@@ -2230,6 +2247,7 @@
             var vr = null, visitsAttempt = 0;
             while (true) {
               visitsAttempt++;
+              var __vAttemptT0 = Date.now();
               var visitsRequestId = patientRequestId + "-visits" + (visitsAttempt > 1 ? "-a" + visitsAttempt : "");
               /* si-1.9.1 fail-fast: quiet charts complete their visits read in
                  well under 2 minutes; a chart that cannot inside 110s is in an
@@ -2237,7 +2255,7 @@
                  full 195s window applies). Grinding 195s per failure in the
                  MAIN pass starved the sweep of budget (live 15:11: 10 failures
                  burned ~40 min; only one sweep pass fit). */
-              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? 75000 : 120000));
+              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
                 vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
               } catch (vDeadlineErr) {
@@ -2258,7 +2276,7 @@
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
               }
-              if (vr && vr.ok) break;
+              if (vr && vr.ok) { recordReadMs('visits', Date.now() - __vAttemptT0); break; }
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
               if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {
                 /* Live 2026-07-16 (si-1.7.2): a bare visits re-read is NOT

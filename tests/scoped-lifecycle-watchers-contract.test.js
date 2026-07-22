@@ -77,7 +77,7 @@ assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled'
   'feat_mls_patientpick.js?v=20260716pick161',
   'feat_mls_simple_exact.js?v=20260719simx142'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
-assert(connect.includes("var A='feat_athena_tooltip_dedupe.js'") && connect.includes("A+'?v=20260722ui119'"), 'unified Settings owner cache key was not advanced');
+assert(connect.includes("var A='feat_athena_tooltip_dedupe.js'") && connect.includes("A+'?v=20260722ui121'"), 'unified Settings owner cache key was not advanced');
 assert(connect.includes('var A="feat_mls_settings_wb.js"') && connect.includes('A+"?v=20260722swb111"'), 'Settings writeback cache key was not advanced');
 
 console.log('PASS scoped lifecycle watchers: Visit, Patients, Studio, patient picker, and Settings no longer own page-wide recurring work');
