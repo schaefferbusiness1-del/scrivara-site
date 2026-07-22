@@ -169,12 +169,25 @@ assert(/_getPatients\(\)\.find[\s\S]{0,260}window\.findPatient/.test(source.slic
   const twins = (healed.visits || []).filter(v => v && v.type === 'Lumbar/ ref');
   assert.strictEqual(twins.length, 1, 'ingest tail must heal the stranded trust-twin pair');
   assert.strictEqual(twins[0].id, 'ver-2', 'the verified copy survives the heal');
+
+  // b485: a ZERO-ADD ingest (empty card list — live: a re-pull whose chart
+  // parse yields no rows) must STILL heal stranded pairs. This exact gap left
+  // 3 live pairs untouched through a full clean pull on b484.
+  ctx.store.arr = [{ id: pid, name: 'Twin Case', dob: '05/06/1963', visits: [
+    Object.assign({}, base, { id: 'unv-3', date: '2026-07-20', type: 'C Spine', textHead: 'h2', identityVerified: false, identityBinding: '' }),
+    Object.assign({}, base, { id: 'ver-3', date: '2026-07-20', type: 'C Spine', textHead: 'h2', identityVerified: true, identityBinding: pid })
+  ] }];
+  ctx.freeze();
+  M.ingestChart(pid, { visits: [] }, 'athena-schedule-history', {});
+  const healed2 = ctx.store.arr.find(x => x.id === pid);
+  assert.strictEqual((healed2.visits || []).length, 1, 'zero-add ingest must still heal the stranded pair');
+  assert.strictEqual(healed2.visits[0].id, 'ver-3', 'the verified copy survives the zero-add heal');
 }
 
 // 5) loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260722vis8'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  assert(text.includes('feat_visits.js?v=20260722vis9'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
 }
 
 console.log('PASS visit index dupe collapse: batch-aware findPatient, racing ingest keeps each row once, union artifacts self-heal, bodies/aliases/trust boundaries untouched, loader pins bumped');

@@ -534,16 +534,16 @@
       });
       if (v2) added.push(v2);
     }
-    /* b483: deterministic post-batch heal. Two ingest passes racing through
-       stale clones can each push the same index shell; by the time this batch
-       ends the freshest record holds the union, so collapse exact clones there
-       and persist the cleaned record. */
-    if (added.length) {
-      try {
-        var freshP = _findPatient(typeof patient === 'string' ? patient : p.id);
-        if (freshP && _collapseExactIndexDuplicates(freshP)) _upsert(freshP);
-      } catch (eDup) {}
-    }
+    /* b483/b485: deterministic post-batch heal. Two ingest layers write the
+       same card rows through different trust paths (sp F13a unverified first,
+       visit-wire verified second); collapsing on the FRESHEST record drops the
+       redundant twins. b485: run even when THIS batch added nothing — a
+       fully-merged re-pull is exactly when pairs stranded by an earlier
+       session get their only chance to heal. */
+    try {
+      var freshP = _findPatient(typeof patient === 'string' ? patient : p.id);
+      if (freshP && _collapseExactIndexDuplicates(freshP)) _upsert(freshP);
+    } catch (eDup) {}
     return added;
   }
 
