@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b490"></script>
+<script src="public-preview-policy.js?v=b491"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -719,7 +719,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4900a}
+  .sp-gap .sp-label{color:#b4910a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -7599,7 +7599,7 @@ function upsertPatient(p){
         if(__prev.athenaChartSummaryBlock!=null)p.athenaChartSummaryBlock=__prev.athenaChartSummaryBlock;
         if(__prev.athenaChartImportedAt!=null)p.athenaChartImportedAt=__prev.athenaChartImportedAt;
       }
-      /* b490: verified visit BODIES survive a degraded write-back. Live
+      /* b491: verified visit BODIES survive a degraded write-back. Live
          2026-07-22: two patients' visit arrays were replaced by 4-field
          {date,type,detail,source} husks (14 verified bodies vanished, then
          mirrored to the server). A husk copy is recognizable STRUCTURALLY:
@@ -7846,7 +7846,7 @@ async function loadPatientsFromServer(opts){
         // adopt server copy if it is strictly newer than the local copy
         const sUpd=row.data.updated||0, lUpd=local[i].updated||0;
         if(sUpd>lUpd){
-          /* b490: never let a server mirror REGRESS verified visit bodies.
+          /* b491: never let a server mirror REGRESS verified visit bodies.
              The mirror is a backup, not an authority over a body-carrying
              local record (live 2026-07-22: husk copies with fresher stamps
              on the server would re-strip local bodies on every boot). Adopt
@@ -27091,7 +27091,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b490"></script>
+<script src="public-preview-runtime.js?v=b491"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -27362,7 +27362,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b490';
+  window.__MLS_AV='b491';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

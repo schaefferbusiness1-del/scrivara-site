@@ -32907,7 +32907,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b490';
+  window.__MLS_AV = window.__MLS_AV || 'b491';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33217,7 +33217,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-21-b490';
+  var MLS_APP_BUILD='2026-07-21-b491';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -33228,7 +33228,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     banner.style.cssText='position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:99999;background:#204034;color:#eef4ff;border:1px solid #2E6A4B;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:12px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:92vw';
     var sp=document.createElement('span'); sp.textContent='\u2728 A newer version of MLS is ready.'; banner.appendChild(sp);
     var b=document.createElement('button'); b.textContent='Refresh'; b.style.cssText='cursor:pointer;background:#2E6A4B;color:#fff;border:none;border-radius:9px;padding:8px 14px;font-weight:700';
-    /* b490: a Refresh mid-pull killed two 75-minute pulls on 2026-07-22 (the
+    /* b491: a Refresh mid-pull killed two 75-minute pulls on 2026-07-22 (the
        clicker cannot know another tab is pulling). While any tab's managed
        pull stamp is fresh, hold the reload and finish it automatically. */
     var pullBusy=function(){ try{ if(window.__mlsPullBusyAt&&Date.now()-window.__mlsPullBusyAt<90000)return true; var k=(typeof window.uns==='function')?window.uns('mlsPullBusyXTabV1'):'mlsPullBusyXTabV1'; var t=Number(localStorage.getItem(k)||0); return t>0&&Date.now()-t<90000; }catch(e){ return false; } };

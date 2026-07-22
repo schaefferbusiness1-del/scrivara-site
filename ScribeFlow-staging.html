@@ -446,7 +446,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4900a}
+  .sp-gap .sp-label{color:#b4910a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -6189,7 +6189,7 @@ function upsertPatient(p){
         if(__prev.athenaChartSummaryBlock!=null)p.athenaChartSummaryBlock=__prev.athenaChartSummaryBlock;
         if(__prev.athenaChartImportedAt!=null)p.athenaChartImportedAt=__prev.athenaChartImportedAt;
       }
-      /* b490: verified visit BODIES survive a degraded write-back. Live
+      /* b491: verified visit BODIES survive a degraded write-back. Live
          2026-07-22: two patients' visit arrays were replaced by 4-field
          {date,type,detail,source} husks (14 verified bodies vanished, then
          mirrored to the server). A husk copy is recognizable STRUCTURALLY:
@@ -6319,7 +6319,7 @@ async function loadPatientsFromServer(){
         // adopt server copy if it is strictly newer than the local copy
         const sUpd=row.data.updated||0, lUpd=local[i].updated||0;
         if(sUpd>lUpd){
-          /* b490: never let a server mirror REGRESS verified visit bodies.
+          /* b491: never let a server mirror REGRESS verified visit bodies.
              The mirror is a backup, not an authority over a body-carrying
              local record (live 2026-07-22: husk copies with fresher stamps
              on the server would re-strip local bodies on every boot). Adopt
@@ -22874,6 +22874,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b490';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b491';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

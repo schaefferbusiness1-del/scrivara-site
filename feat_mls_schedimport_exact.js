@@ -2004,7 +2004,7 @@
     /* A normal 18-patient day has ample time, while no single stuck renderer
        can make the batch immortal. This timestamp is frozen once and is never
        reset by progress, navigation, parsing, or retries. */
-    var batchBudgetMs = Math.max(15 * 60 * 1000, Math.min(75 * 60 * 1000, Math.max(1, rows.length) * 5 * 60 * 1000));
+    var batchBudgetMs = Math.max(12 * 60 * 1000, Math.min(45 * 60 * 1000, Math.max(1, rows.length) * 3 * 60 * 1000)); /* si-1.9.2 speed: owner directive 2026-07-22 evening - a day pull must never run an hour */
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
     var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
@@ -2133,7 +2133,7 @@
         var patientRequestId = batchRequestId + "-p" + (i + 1);
         /* si-1.9.1: sweep attempts get a tighter window — one glacial chart
            must not eat the whole remaining sweep budget. */
-        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 5 : 7) * 60 * 1000);
+        var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 5) * 60 * 1000);
         var patientReadStartedAt = Date.now();
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (i + 1) + " of " + rows.length + "...", "");
@@ -2162,7 +2162,7 @@
           try {
             var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
             var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
-            var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 110000);
+            var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + ((chartAttempt === 1 && !sweepDepth) ? 70000 : 110000));
             rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
@@ -2237,7 +2237,7 @@
                  full 195s window applies). Grinding 195s per failure in the
                  MAIN pass starved the sweep of budget (live 15:11: 10 failures
                  burned ~40 min; only one sweep pass fit). */
-              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? 110000 : 195000));
+              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? 75000 : 120000));
               try {
                 vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
               } catch (vDeadlineErr) {
@@ -2272,7 +2272,7 @@
                 one.deadlineAt = patientDeadlineAt;
                 one.visitsChartReopened = true;
                 try {
-                  var reopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
+                  var reopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 80000);
                   await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
                 } catch (reopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
@@ -2393,7 +2393,7 @@
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
         if (!sweepable.length) break;
-        if (Date.now() + 300000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
+        if (Date.now() + 240000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
         if (onStatus) onStatus("Re-checking " + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
         var swept = buildRetryRows(sweepable);
         var sub = null;

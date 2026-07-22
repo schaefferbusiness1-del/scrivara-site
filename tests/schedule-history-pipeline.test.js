@@ -371,10 +371,12 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
       'a sweep must run at depth 1 AND inherit the outer frozen deadline (never-immortal)');
     assert(/batchDeadlineAt = Math\.min\(batchDeadlineAt, sweepDeadlineCapAt\)/.test(src), 'the sub-batch deadline must be capped by the outer deadline');
     assert(/sweepPass <= 3 && !receipt\.complete/.test(src), 'the sweep must be bounded to three passes and stop on completion');
-    assert(/Date\.now\(\) \+ 300000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
+    assert(/Date\.now\(\) \+ 240000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
     assert(src.includes('var SWEEPABLE_REASON'), 'the sweep reason whitelist must exist');
-    assert(/visitsAttempt === 1 && !sweepDepth \? 110000 : 195000/.test(src),
-      'si-1.9.1 fail-fast: main-pass first visits attempt is 110s; sweep attempts keep the full 195s window');
+    assert(/visitsAttempt === 1 && !sweepDepth \? 75000 : 120000/.test(src),
+      'si-1.9.2 fail-fast: main-pass first visits attempt is 75s; retry/sweep attempts get 120s');
+    assert(/Math\.min\(45 \* 60 \* 1000, Math\.max\(1, rows\.length\) \* 3 \* 60 \* 1000\)/.test(src),
+      'si-1.9.2 speed: the whole batch is hard-capped at 45 minutes (3 min per row)');
   }
 
   /* b490 static contract: pulls stamp a cross-tab busy key and the update
