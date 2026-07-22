@@ -1992,7 +1992,7 @@
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
-  async function runHistoryBatch(rows, unresolved, onStatus) {
+  async function runHistoryBatch(rows, unresolved, onStatus, sweepDepth) {
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
     var batchStartedAt = Date.now();
     var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
@@ -2353,13 +2353,66 @@
         }
       }
     } finally { historyBatchRunning = false; }
-    receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
-    /* An empty verified provider day has no patient history targets and is
-       vacuously exact; unresolved/name-only rows remain in retry and fail. */
-    if (receipt.requested === 0) receipt.exactIdentityVerified = true;
-    receipt.failures = receipt.retry.length;
-    receipt.complete = receipt.exactIdentityVerified && receipt.retry.length === 0 && receipt.processed === rows.length && receipt.patients.every(function (p) { return p && p.complete === true; });
-    receipt.reason = receipt.complete ? "complete" : "history-partial";
+    function finalizeVerdict() {
+      receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
+      /* An empty verified provider day has no patient history targets and is
+         vacuously exact; unresolved/name-only rows remain in retry and fail. */
+      if (receipt.requested === 0) receipt.exactIdentityVerified = true;
+      receipt.failures = receipt.retry.length;
+      receipt.complete = receipt.exactIdentityVerified && receipt.retry.length === 0 && receipt.processed === rows.length && receipt.patients.every(function (p) { return p && p.complete === true; });
+      receipt.reason = receipt.complete ? "complete" : "history-partial";
+    }
+    finalizeVerdict();
+    /* si-1.9.0 (owner directive 2026-07-22): pulls must COMPLETE during
+       active clinic use. A chart under live documentation refuses honestly
+       for the length of an edit burst (proven live: the same 1-encounter
+       chart failed twice mid-intake, then read expected-1/parsed-1 in 12s
+       once the burst passed). Re-sweep those patients automatically at the
+       END of the batch — by then the earliest failure is many minutes old.
+       Bounded: a sweep never sweeps (depth 1), max 2 passes, instability
+       reasons only, >=5 min of the FROZEN batch budget required, and every
+       attempt is a full fresh open+verify+read — no identity gate is
+       loosened, and a patient still refusing keeps an honest retry entry. */
+    var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
+    if (!sweepDepth) {
+      receipt.sweepPasses = 0;
+      for (var sweepPass = 1; sweepPass <= 2 && !receipt.complete; sweepPass++) {
+        var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
+        if (!sweepable.length) break;
+        if (Date.now() + 300000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
+        if (onStatus) onStatus("Re-checking " + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
+        var swept = buildRetryRows(sweepable);
+        var sub = null;
+        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, 1); } catch (eSweep) { break; }
+        receipt.sweepPasses = sweepPass;
+        if (!sub || !Array.isArray(sub.patients)) break;
+        var recoveredIds = {};
+        sub.patients.forEach(function (sp) {
+          if (!sp) return;
+          var pid = String(sp.patientId || "");
+          if (!pid) return;
+          if (sp.complete === true) { sp.sweepRecovered = sweepPass; recoveredIds[pid] = true; }
+          var replaced = false;
+          for (var ri = 0; ri < receipt.patients.length; ri++) {
+            if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) { receipt.patients[ri] = sp; replaced = true; break; }
+          }
+          /* deferred-after-timeout patients never entered receipt.patients in
+             the main loop; adopting their swept entry must also count them
+             processed so the verdict arithmetic stays honest. */
+          if (!replaced) { receipt.patients.push(sp); receipt.processed++; }
+        });
+        var sweptIds = {};
+        sweepable.forEach(function (entry) { sweptIds[String(entry && entry.patientId || "")] = true; });
+        var freshRetry = receipt.retry.filter(function (entry) { return !sweptIds[String(entry && entry.patientId || "")]; });
+        (Array.isArray(sub.retry) ? sub.retry : []).forEach(function (entry) {
+          var pid = String(entry && entry.patientId || "");
+          if (!pid || recoveredIds[pid]) return;
+          freshRetry.push(entry);
+        });
+        receipt.retry = freshRetry;
+        finalizeVerdict();
+      }
+    }
     safe(function () { if (isFn(window.renderHistory)) window.renderHistory(); });
     safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
     safe(function () { if (isFn(window.loadPatients)) window.loadPatients(); });
@@ -2446,11 +2499,14 @@
     });
   }
 
-  function retryFailedHistory(source, onStatus) {
-    var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
-    var retry = Array.isArray(history.retry) ? history.retry : [];
+  /* Rebuild verifiable history-target rows from frozen retry entries. Frozen
+     proofs (normDob/normMrn tokens) are re-checked against the CURRENT stored
+     patient; any drift refuses. Downstream gets the stored separator forms
+     (_athenaHistoryTargetSnapshot rejects bare tokens). Shared by the manual
+     retry button and the si-1.9.0 automatic end-of-batch re-sweep. */
+  function buildRetryRows(retryEntries) {
     var seen = {}, rows = [], unresolved = [];
-    retry.forEach(function (item) {
+    (Array.isArray(retryEntries) ? retryEntries : []).forEach(function (item) {
       var patientId = String(item && item.patientId || "");
       if (!patientId || seen[patientId]) return;
       seen[patientId] = true;
@@ -2486,6 +2542,14 @@
         athenaId: frozenMrn ? storedMrn : ""
       });
     });
+    return { rows: rows, unresolved: unresolved };
+  }
+
+  function retryFailedHistory(source, onStatus) {
+    var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
+    var retry = Array.isArray(history.retry) ? history.retry : [];
+    var built = buildRetryRows(retry);
+    var rows = built.rows, unresolved = built.unresolved;
     if (!retry.length) {
       var alreadyComplete = history && history.complete === true && history.exactIdentityVerified === true && Number(history.failures || 0) === 0;
       return Promise.resolve({

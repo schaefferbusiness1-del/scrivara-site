@@ -331,6 +331,48 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   assert.strictEqual(malformedEmpty.complete, false, 'an empty malformed partial receipt must not be reported complete');
   assert.strictEqual(malformedEmpty.reason, 'retry-receipt-invalid');
 
+  /* si-1.9.0 (owner directive 2026-07-22): a chart under live documentation
+     fails its FIRST visits read (visit-bodies-incomplete) and reads fine once
+     the edit burst passes — the batch must recover it automatically in the
+     end-of-batch re-sweep instead of surrendering to the manual button. */
+  {
+    patient.visits.length = 0;
+    let visitCalls = 0;
+    const basePost = context.postMessage;
+    context.postMessage = msg => {
+      if (!msg || msg.type !== 'mlsAppReadAllVisits') return basePost(msg);
+      visitCalls++;
+      if (visitCalls === 1) {
+        queueMicrotask(() => {
+          const failEvent = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id, requestId: msg.requestId, ok: false, reason: 'visit-bodies-incomplete', receipt: { complete: false, expected: 2, parsed: 0 } } };
+          Array.from(listeners).forEach(fn => fn(failEvent));
+        });
+        return;
+      }
+      return basePost(msg);
+    };
+    const sweepReceipt = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+    context.postMessage = basePost;
+    assert.strictEqual(sweepReceipt.complete, true, 'the automatic re-sweep must complete an actively-edited chart: ' + JSON.stringify({ reason: sweepReceipt.reason, failures: sweepReceipt.failures, sweepPasses: sweepReceipt.sweepPasses }));
+    assert.strictEqual(sweepReceipt.sweepPasses, 1, 'exactly one sweep pass must have recovered it');
+    assert.strictEqual(sweepReceipt.retry.length, 0, 'no retry entries may remain after sweep recovery');
+    const sweptEntry = sweepReceipt.patients.find(p => p && p.sweepRecovered === 1);
+    assert(sweptEntry && sweptEntry.complete === true, 'the recovered patient must be complete and flagged sweepRecovered');
+    assert(visitCalls >= 2, 'the sweep must have issued a fresh visits read');
+  }
+
+  /* si-1.9.0 static contract: the sweep is depth-guarded, pass-bounded,
+     budget-gated, and reason-whitelisted; a still-failing patient keeps an
+     honest retry entry. */
+  {
+    const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+    assert(src.includes('function buildRetryRows'), 'the shared retry-row builder must exist');
+    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, 1\)/.test(src), 'a sweep must run at depth 1 (a sweep never sweeps)');
+    assert(/sweepPass <= 2 && !receipt\.complete/.test(src), 'the sweep must be bounded to two passes and stop on completion');
+    assert(/Date\.now\(\) \+ 300000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
+    assert(src.includes('var SWEEPABLE_REASON'), 'the sweep reason whitelist must exist');
+  }
+
   /* si-1.8.1 static contract (live 2026-07-22, twice): a deadline failure may
      recover ONLY when a fast ping proves the runner restarted; recoveries are
      bounded per batch and per patient, and the honest stop-and-defer remains
