@@ -221,8 +221,10 @@
   }
 
   function startFindByName() {
-    var name = '';
-    try { name = window.prompt('Find a patient in athenaOne by name (e.g. "Last, First" or "First Last"):', ''); } catch (e) {}
+    var ask = (typeof window.mlsPrompt === 'function') ? window.mlsPrompt : function (m, d) { return Promise.resolve(window.prompt(m, d)); };
+    ask('Find a patient in athenaOne by name (e.g. "Last, First" or "First Last"):', '').then(function (name) { startFindByNameWith(name); });
+  }
+  function startFindByNameWith(name) {
     if (name == null) return;
     name = String(name).trim();
     if (!name) { toast('Type a patient name to search.'); return; }

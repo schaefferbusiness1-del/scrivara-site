@@ -170,10 +170,11 @@
         tplSet(cur, 'Added ' + n + ' starter template' + (n === 1 ? '' : 's') + '.');
         tplLog('Starter pack: +' + n);
       };
-      $('mlsP1DelAll').onclick = function () {
+      $('mlsP1DelAll').onclick = async function () {
         var cur = tplGet();
         if (!cur.length) { safeToast('No templates to delete.', ''); return; }
-        var typed = window.prompt('This deletes ALL ' + cur.length + ' saved templates (patients and notes are NOT touched).\nA backup is kept for one-click restore.\n\nType DELETE ALL to confirm:');
+        var ask = (typeof window.mlsPrompt === 'function') ? window.mlsPrompt : function (m) { return Promise.resolve(window.prompt(m)); };
+        var typed = await ask('This deletes ALL ' + cur.length + ' saved templates (patients and notes are NOT touched).\nA backup is kept for one-click restore.\n\nType DELETE ALL to confirm:');
         if (typed !== 'DELETE ALL') { safeToast('Delete cancelled.', ''); return; }
         try { localStorage.setItem('mlsP1TplBackup', JSON.stringify(cur)); } catch (e) {}
         tplSet([], 'Deleted ' + cur.length + ' templates. Backup saved.');

@@ -39,7 +39,9 @@ assert(/Discard unsaved edits to the current template\?/.test(html), 'switching 
 
 // 4. delete is confirmed and honestly undoable (control, not a dead toast)
 const del = html.slice(html.indexOf('function deleteTemplate(id)'), html.indexOf('function clearTplForm'));
-assert(/if\(!confirm\('Delete the template/.test(del), 'delete must confirm');
+/* pin updated 2026-07-22: same confirmed delete, now via the non-blocking
+   in-app dialog instead of thread-freezing native confirm() */
+assert(/if\(!await mlsConfirm\('Delete the template/.test(del), 'delete must confirm');
 assert(/_tplLastDeleted=t;/.test(del) && /tplUndoDelete\(\)/.test(del), 'delete must offer a real undo control');
 assert(html.includes('function tplUndoDelete()'), 'undo restore function missing');
 

@@ -458,27 +458,27 @@
       var n = wrap.querySelector('#mls-sg-newname').value.trim(); var g = API.createGroup(n);
       wrap.querySelector('#mls-sg-newname').value = ''; refreshGroups(wrap); wrap.querySelector('#mls-sg-group').value = g.id; refreshPatients(wrap);
     };
-    wrap.querySelector('#mls-sg-del').onclick = function () { var id = gid(); if (id && confirm('Delete this study group? (does not touch any patient chart)')) { API.deleteGroup(id); refreshGroups(wrap); } };
+    wrap.querySelector('#mls-sg-del').onclick = async function () { var id = gid(); if (id && await ((typeof window.mlsConfirm === 'function') ? window.mlsConfirm('Delete this study group? (does not touch any patient chart)') : Promise.resolve(confirm('Delete this study group? (does not touch any patient chart)')))) { API.deleteGroup(id); refreshGroups(wrap); } };
     wrap.querySelector('#mls-sg-group').onchange = function () { refreshPatients(wrap); };
     wrap.querySelector('#mls-sg-add').onclick = function () {
-      var id = gid(); if (!id) return alert('Create a group first.');
-      var name = wrap.querySelector('#mls-sg-pname').value.trim(); if (!name) return alert('Name required.');
+      var id = gid(); if (!id) return (window.toast||window.alert)('Create a group first.','err');
+      var name = wrap.querySelector('#mls-sg-pname').value.trim(); if (!name) return (window.toast||window.alert)('Name required.','err');
       API.addPatient(id, { name: name, dob: wrap.querySelector('#mls-sg-pdob').value.trim(), mrn: wrap.querySelector('#mls-sg-pmrn').value.trim() });
       wrap.querySelector('#mls-sg-pname').value = wrap.querySelector('#mls-sg-pdob').value = wrap.querySelector('#mls-sg-pmrn').value = '';
       refreshGroups(wrap);
     };
     wrap.querySelector('#mls-sg-importbtn').onclick = function () {
-      var id = gid(); if (!id) return alert('Create a group first.');
+      var id = gid(); if (!id) return (window.toast||window.alert)('Create a group first.','err');
       var txt = wrap.querySelector('#mls-sg-import').value.trim(); if (!txt) return;
       try {
         var r = (txt[0] === '{' || txt[0] === '[') ? API.importJSON(id, txt) : API.importCSV(id, txt);
         wrap.querySelector('#mls-sg-import').value = '';
-        alert('Imported ' + (r.patients || 0) + ' patient(s)' + (r.visits != null ? ', ' + r.visits + ' visit(s)' : '') + '.');
+        (window.toast||window.alert)('Imported ' + (r.patients || 0) + ' patient(s)' + (r.visits != null ? ', ' + r.visits + ' visit(s)' : '') + '.','ok');
         refreshGroups(wrap);
-      } catch (e) { alert('Import failed: ' + e.message); }
+      } catch (e) { (window.toast||window.alert)('Import failed: ' + e.message,'err'); }
     };
     wrap.querySelector('#mls-sg-run').onclick = function () {
-      var id = gid(); if (!id) return alert('Create/select a group first.');
+      var id = gid(); if (!id) return (window.toast||window.alert)('Create/select a group first.','err');
       var rs = wrap.querySelector('#mls-sg-runstatus'); rs.textContent = 'Running study…';
       var out = wrap.querySelector('#mls-sg-out');
       runStudy(id, {}).then(function (res) {

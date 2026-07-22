@@ -220,7 +220,7 @@
     /* events */
     el('cpApply').onclick = function () {
       var f = el('cpFrom').value, t = el('cpTo').value;
-      if (!f || !t) { alert('Pick both From and To dates.'); return; }
+      if (!f || !t) { (window.toast || window.alert)('Pick both From and To dates.', 'err'); return; }
       if (f > t) { var tmp = f; f = t; t = tmp; el('cpFrom').value = f; el('cpTo').value = t; }
       RANGE = { from: f, to: t }; VIEW = 'range'; rerender();
     };

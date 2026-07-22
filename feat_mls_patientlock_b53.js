@@ -117,8 +117,20 @@
   function blockWhileCapturing(lockedName) {
     safe(function () { var m = "Recording is in progress for " + (lockedName || "the current patient") + " - stop the recording before switching patients (switching now risks the transcript landing on the wrong patient)."; if (typeof window.toast === "function") window.toast(m, "err"); else window.alert(m); });
   }
-  function confirmAbandon(lockedName) {
-    return safe(function () { return window.confirm("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?"); }, true);
+  /* 2026-07-22 non-blocking rewrite: the switch is REFUSED immediately (fail
+   * closed), the in-app dialog asks, and a confirmed answer re-invokes the
+   * canonical setActivePtId with a short-lived one-shot token this guard
+   * honors. Net behavior is identical to the old blocking confirm, without
+   * freezing the tab. */
+  var pendingAbandon = null; /* {target, at} one-shot confirmed-switch token */
+  function confirmAbandon(lockedName, targetId) {
+    var ask = (typeof window.mlsConfirm === 'function') ? window.mlsConfirm : function (m) { return Promise.resolve(safe(function () { return window.confirm(m); }, true)); };
+    ask("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?").then(function (ok) {
+      if (!ok) return;
+      pendingAbandon = { target: String(targetId), at: Date.now() };
+      safe(function () { if (isFn(window.setActivePtId)) window.setActivePtId(targetId); });
+    });
+    return false;
   }
   function decideSwitch(targetId) {
     if (LOCK.capturing) { blockWhileCapturing(LOCK.snapshot && LOCK.snapshot.name); return false; }
@@ -127,8 +139,12 @@
       var stillOnLockedPatient = cur && cur.id === LOCK.snapshot.id;
       var sameTarget = targetId != null && String(targetId) === String(LOCK.snapshot.id);
       if (stillOnLockedPatient && !sameTarget) {
-        if (!confirmAbandon(LOCK.snapshot.name)) return false;
-        clearLock();
+        if (pendingAbandon && String(targetId) === String(pendingAbandon.target) && Date.now() - pendingAbandon.at < 15000) {
+          pendingAbandon = null;
+          clearLock();
+        } else {
+          return confirmAbandon(LOCK.snapshot.name, targetId);
+        }
       }
     }
     return true;
@@ -184,12 +200,13 @@
    * in case the primary gate (__mlsWbSafetyGate from feat_b18_qa.js) fails to load. Never
    * fires alongside the primary gate (it defers to it whenever present), so no double prompts. */
   function gateInstalled() { return !!window.__mlsWbSafetyGate; }
-  function fallbackConfirm(destLabel) {
-    if (gateInstalled()) return true; /* the primary gate owns confirmation; don't double-prompt */
+  var pendingFallbackSend = false; /* one-shot: async dialog already confirmed */
+  function fallbackConfirmAsk(destLabel) {
     var p = currentActive();
     var name = (p && p.name) || (LOCK.snapshot && LOCK.snapshot.name) || "(no active patient)";
     var dob = (p && p.dob) || (LOCK.snapshot && LOCK.snapshot.dob) || "(unknown DOB)";
-    return safe(function () { return window.confirm("Safety-check module did not load, so confirming manually before sending:\n\nPatient: " + name + "\nDOB: " + dob + "\nDestination: " + destLabel + "\n\nSend?"); }, false);
+    var ask = (typeof window.mlsConfirm === 'function') ? window.mlsConfirm : function (m) { return Promise.resolve(safe(function () { return window.confirm(m); }, false)); };
+    return ask("Safety-check module did not load, so confirming manually before sending:\n\nPatient: " + name + "\nDOB: " + dob + "\nDestination: " + destLabel + "\n\nSend?");
   }
   var WRITE_TARGETS = [["sendToEMRviaAssist", "athenaOne (paste/assist)"], ["copyForEMR", "clipboard for athenaOne"], ["pushEntireVisitToAthena", "athenaOne visit note"], ["pushToAthena", "athenaOne visit note"]];
   WRITE_TARGETS.forEach(function (pair) {
@@ -197,7 +214,17 @@
     if (!isFn(window[name])) return;
     var orig = window[name];
     window[name] = function () {
-      if (!fallbackConfirm(dest)) return;
+      if (!gateInstalled() && !pendingFallbackSend) {
+        /* fail closed now; a confirmed dialog re-invokes exactly once */
+        var self = this, args = arguments;
+        fallbackConfirmAsk(dest).then(function (ok) {
+          if (!ok) return;
+          pendingFallbackSend = true;
+          try { window[name].apply(self, args); } finally { pendingFallbackSend = false; }
+        });
+        return;
+      }
+      pendingFallbackSend = false;
       var r = orig.apply(this, arguments);
       clearLock();
       return r;

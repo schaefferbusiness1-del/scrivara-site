@@ -16,8 +16,8 @@ const bundle = read('mls-connect.js');
 const studyGroups = read('feat_mls_studygroups.js');
 const inventory = JSON.parse(read('pages-publication-inventory.json')).paths;
 
-const policyTag = '<script src="public-preview-policy.js?v=b489"></script>';
-const runtimeTag = '<script src="public-preview-runtime.js?v=b489"></script>';
+const policyTag = '<script src="public-preview-policy.js?v=b490"></script>';
+const runtimeTag = '<script src="public-preview-runtime.js?v=b490"></script>';
 const policyAt = app.indexOf(policyTag);
 const purgeAt = app.indexOf('<script src="clinical-state-purge.js');
 const appMainAt = app.indexOf('const _SF_DEMO = (function(){');
@@ -83,7 +83,7 @@ assert(runtime.includes("['ez3Chart2', 'ez3Prep2', 'ez3Portal', 'mlsPortalInvite
 assert((bundle.match(/skipped: 'public-synthetic-preview'/g) || []).length >= 2,
   'legacy import-chain copies do not skip their primitive patching in preview');
 assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'") &&
-  bundle.includes('feat_mls_studygroups.js') && bundle.includes('20260719sg1c5'),
+  bundle.includes('feat_mls_studygroups.js') && bundle.includes('20260722sg1c6'),
   'preview still boots the hidden Study Groups/AI Studio module');
 assert(bundle.includes("try { if (!oFetch.__r44) window.fetch = wrappedFetch; } catch (e) {}") &&
   bundle.includes("try { if (window.fetch === wrappedFetch) window.fetch = oFetch; } catch (e) {}"),
@@ -139,7 +139,7 @@ assert(loadingCalm.includes("visualOwner: 'mlsProgressStages'") &&
 for (const asset of ['public-preview-policy.js', 'public-preview-runtime.js']) {
   assert(config.includes(`- "${asset}"`), `${asset} is not explicitly reviewed in the Pages allowlist`);
   assert(inventory.includes(asset), `${asset} is missing from the exact Pages inventory`);
-  assert(sw.includes(`/${asset}?v=b489`), `${asset} is missing from the immutable app shell`);
+  assert(sw.includes(`/${asset}?v=b490`), `${asset} is missing from the immutable app shell`);
 }
 
 assert(app.includes('const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"'),

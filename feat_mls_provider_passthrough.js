@@ -106,7 +106,7 @@
     m.addEventListener('click', function (e) {
       var it = e.target.closest('.pv-it'); if (!it) return;
       var v = it.getAttribute('data-v');
-      if (v === '__other') { var t = window.prompt('Doctor name to tag pulled appointments with:'); if (t && t.trim()) setProvider(t.trim()); }
+      if (v === '__other') { ((typeof window.mlsPrompt === 'function') ? window.mlsPrompt('Doctor name to tag pulled appointments with:', '') : Promise.resolve(window.prompt('Doctor name to tag pulled appointments with:'))).then(function (t) { if (t && t.trim()) setProvider(t.trim()); }); }
       else setProvider(v);
       m.remove();
     });

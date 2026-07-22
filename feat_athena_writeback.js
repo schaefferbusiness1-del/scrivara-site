@@ -222,11 +222,13 @@
     var whoDob = mlsPt && trim(mlsPt.dob) ? (' (DOB ' + normDob(mlsPt.dob) + ')') : '';
     var row = actionRow();
     if (!row) {
-      var ok = safe(function () {
-        return window.confirm(reasonMsg + '\n\nWrite the note into the OPEN Athena chart anyway?\nOnly do this if YOU have confirmed the open chart is ' + who + whoDob + '.');
-      }, false);
-      if (ok) { step('Doctor confirmed the patient manually — proceeding.', 'note'); return doWrite(note, mlsPt, done); }
-      step('Cancelled — nothing was written.', 'note'); done && done(); return;
+      /* Non-blocking, still fail-closed: nothing writes until the doctor answers. */
+      var askOverride = (typeof window.mlsConfirm === 'function') ? window.mlsConfirm : function (m) { return Promise.resolve(safe(function () { return window.confirm(m); }, false)); };
+      askOverride(reasonMsg + '\n\nWrite the note into the OPEN Athena chart anyway?\nOnly do this if YOU have confirmed the open chart is ' + who + whoDob + '.').then(function (ok) {
+        if (ok) { step('Doctor confirmed the patient manually — proceeding.', 'note'); return doWrite(note, mlsPt, done); }
+        step('Cancelled — nothing was written.', 'note'); done && done();
+      });
+      return;
     }
     row.innerHTML = '';
     var lbl = document.createElement('div'); lbl.className = 'mlswb-note';

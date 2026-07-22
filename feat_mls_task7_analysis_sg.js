@@ -470,9 +470,9 @@
       var b = document.createElement("button");
       b.id = "t7SgRename"; b.type = "button"; b.title = "Rename selected group"; b.textContent = "✎ Rename";
       sel.parentElement.insertBefore(b, sel.nextSibling);
-      b.addEventListener("click", function(){
+      b.addEventListener("click", async function(){
         var g = sgCurrentGroup(); if (!g) return;
-        var nn = window.prompt("New name for “" + g.name + "”:", g.name);
+        var nn = await ((typeof window.mlsPrompt === "function") ? window.mlsPrompt("New name for “" + g.name + "”:", g.name) : Promise.resolve(window.prompt("New name for “" + g.name + "”:", g.name)));
         if (!nn || !nn.trim() || nn.trim() === g.name) return;
         try {
           sgApi().renameGroup(g.id, nn.trim());

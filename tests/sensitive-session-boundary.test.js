@@ -89,7 +89,11 @@ for (const [name, html] of [['production', prod], ['staging', staging]]) {
 }
 
 async function runLogout(html, name) {
-  const at = html.indexOf('function logout(force)');
+  /* 2026-07-22: production logout is async (its optional confirm became a
+     non-blocking in-app dialog) — keep the async prefix when present so the
+     extracted source still parses; staging remains sync. */
+  let at = html.indexOf('async function logout(force)');
+  if (at < 0) at = html.indexOf('function logout(force)');
   const end = html.indexOf('/* =========================================================', at);
   const source = html.slice(at, end);
   const calls = { fetch: [], purges: [], sessions: [], tokens: [], boundaries: [] };

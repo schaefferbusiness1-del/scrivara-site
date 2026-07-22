@@ -59,7 +59,9 @@ assert(scribe.includes("adminFetch('/api/admin/billing/overview')"), 'the panel 
 assert(scribe.includes("action:'grant'") && scribe.includes("action:'clear'"), 'grant and clear-override workflows must both exist');
 assert(scribe.includes('Access source'), 'the panel must show WHY each account has access');
 assert(scribe.includes("adminFetch('/api/admin/billing/webhooks')"), 'webhook diagnostics must be wired');
-assert(/confirm\('Grant plan/.test(scribe) && /confirm\('Remove the admin override/.test(scribe),
+/* pin updated 2026-07-22: same explicit confirmation, via the non-blocking
+   in-app dialog instead of thread-freezing native confirm() */
+assert(/mlsConfirm\('Grant plan/.test(scribe) && /mlsConfirm\('Remove the admin override/.test(scribe),
   'plan changes must be explicitly confirmed');
 assert(scribe.includes('returns the account to normal billing'), 'the clear action must explain the return-to-billing semantics');
 

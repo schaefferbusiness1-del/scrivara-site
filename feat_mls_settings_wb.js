@@ -82,7 +82,7 @@
       if (ev && ev.preventDefault) ev.preventDefault();
       var c = console61();
       if (!c) {
-        safe(function () { window.alert('The writeback destination panel is still loading - try again in a moment.'); });
+        safe(function () { (window.toast || window.alert)('The writeback destination panel is still loading - try again in a moment.', 'err'); });
         return;
       }
       safe(function () { c.open(); });

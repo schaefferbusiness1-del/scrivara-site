@@ -2477,13 +2477,21 @@
     if (foreignPullLease()) return Promise.resolve(busy("same-tab"));
     pullRunning = true;
     var operationStarted = false, leaseTouch = null;
+    /* b490: cross-tab pull-busy stamp. The update banner's Refresh killed a
+       75-minute pull twice on 2026-07-22 (the owner cannot know another tab
+       is mid-pull). Every tab can read this stamp and defer reload-shaped
+       actions while it is fresh (<90s). */
+    function xtabBusyKey() { return safe(function () { return isFn(window.uns) ? window.uns("mlsPullBusyXTabV1") : "mlsPullBusyXTabV1"; }, "mlsPullBusyXTabV1"); }
+    function xtabBusyStamp() { safe(function () { window.localStorage.setItem(xtabBusyKey(), String(Date.now())); }); }
+    function xtabBusyClear() { safe(function () { window.localStorage.removeItem(xtabBusyKey()); }); }
     function start() {
       operationStarted = true;
       safe(function () { window.__mlsPullBusyAt = Date.now(); });
+      xtabBusyStamp();
       claimSiLease();
       /* keep the page lease fresh for the whole run (history batches run for
          minutes; the engine treats >180s-old leases as stale) */
-      leaseTouch = setInterval(function () { safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) { l.at = Date.now(); window.__mlsPullBusyAt = l.at; } }); }, 25000);
+      leaseTouch = setInterval(function () { safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) { l.at = Date.now(); window.__mlsPullBusyAt = l.at; xtabBusyStamp(); } }); }, 25000);
       return Promise.resolve().then(task);
     }
     var operation;
@@ -2501,6 +2509,7 @@
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
       safe(function () { window.__mlsPullBusyAt = 0; });
+      if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       return value;
     }, function (error) {
@@ -2508,6 +2517,7 @@
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
       safe(function () { window.__mlsPullBusyAt = 0; });
+      if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       throw error;
     });

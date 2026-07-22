@@ -122,6 +122,8 @@ function harness() {
     dispatchEvent: ev => { events.push(ev); return true; },
     open(url, target, features) { opens.push({ url, target, features }); return {}; },
     confirm: () => confirmResult,
+    /* 2026-07-22: disconnect now uses the non-blocking in-app dialog */
+    mlsConfirm: () => Promise.resolve(confirmResult),
     loadCalendarCalls: 0,
     loadCalendarActive: 0,
     loadCalendarMaxActive: 0,

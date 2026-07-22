@@ -158,6 +158,9 @@ async function main() {
     noteDiagnosisText() { return { text: 'Lumbar pain', icd: ['M54.50'] }; },
     paSelectedService() { return service; },
     prompt() { return 'Cardiology'; },
+    /* 2026-07-22: artifact prompts are non-blocking in-app dialogs now */
+    mlsPrompt() { return Promise.resolve('Cardiology'); },
+    mlsConfirm() { return Promise.resolve(true); },
     currentNoteText() {
       const nb = elements.noteBox;
       if (nb && nb.style.display !== 'none') {
@@ -222,6 +225,9 @@ async function main() {
   patientContext = 'PATIENT CONTEXT A';
 
   run = context.generateReferral();
+  /* the referral flow awaits its non-blocking specialty dialog before the AI
+     request — flush microtasks so the delayed request is actually in flight */
+  await new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(pending.length, 1, 'referral did not reach its delayed request');
   providerName = 'Provider B';
   pending.shift()('REF NEW');
@@ -246,6 +252,8 @@ async function main() {
   context.currentVisitAthenaEpoch = 3;
   async function accept(fn, value) {
     const accepted = context[fn]();
+    /* generateReferral awaits its non-blocking specialty dialog first */
+    await new Promise(resolve => setImmediate(resolve));
     assert.strictEqual(pending.length, 1, `${fn} did not start its accepted-path request`);
     pending.shift()(value);
     await accepted;

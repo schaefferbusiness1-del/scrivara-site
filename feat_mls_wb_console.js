@@ -196,7 +196,7 @@
   }
 
   function open() {
-    if (!router()) { try { window.alert('The writeback router is still loading - reopen this in a moment.'); } catch (e) {} return; }
+    if (!router()) { try { (window.toast||window.alert)('The writeback router is still loading - reopen this in a moment.','err'); } catch (e) {} return; }
     ensureStyle();
     var existing = $(MODAL_ID); if (existing) existing.parentNode.removeChild(existing);
     var docId = safe(function () { var r = router(); return r && isFn(r.doctorId) ? r.doctorId() : ''; }, '');

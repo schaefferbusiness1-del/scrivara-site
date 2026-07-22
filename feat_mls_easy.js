@@ -460,7 +460,7 @@
       var e = $(ids[i]);
       if (e) { e.classList.add('warn'); e.innerHTML = '⚠️ <span>' + esc(msg) + '</span>'; return; }
     }
-    try { alert(msg); } catch (e2) {}
+    try { if (typeof window.toast === 'function') window.toast(msg, 'err'); else (window.toast || window.alert)(msg); } catch (e2) {}
   }
 
   // ---------- patient pull (real) ----------

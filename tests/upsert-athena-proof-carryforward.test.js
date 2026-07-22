@@ -151,6 +151,49 @@ function runBulkScenario(file) {
 runBulkScenario('ScribeFlow.html');
 runBulkScenario('ScribeFlow-staging.html');
 
+/* b490 husk carry-forward: live 2026-07-22, two patients' visit arrays were
+ * replaced by 4-field {date,type,detail,source} husks (14 verified bodies
+ * vanished and mirrored to the server). A structure-stripped zero-body copy
+ * over a body-carrying stored record must keep the stored visits. A
+ * STRUCTURED zero-body copy (reconcile output) must still be adopted. */
+function runHuskScenario(file) {
+  const { ctx, stored } = buildContext(file);
+  const bodies = [
+    { id: 'v1', date: '2026-07-01', type: 'Visit', raw: 'Full clinical body A', bodyComplete: true, indexOnly: false, fullDetail: true, source: 'athena-copy' },
+    { id: 'v2', date: '2026-07-08', type: 'Visit', raw: 'Full clinical body B', bodyComplete: true, indexOnly: false, fullDetail: true, source: 'athena-copy' }
+  ];
+  stored.push({ id: 'pH', name: 'Husk Case', visits: bodies.map(v => Object.assign({}, v)) });
+
+  // husk write-back: rows kept, all normalized fields stripped -> visits carried forward
+  ctx.upsertPatient({ id: 'pH', name: 'Husk Case', visits: [
+    { date: '2026-07-01', type: 'Visit', detail: '', source: 'athena-copy' },
+    { date: '2026-07-08', type: 'Visit', detail: '', source: 'athena-copy' }
+  ] });
+  let row = stored.find(x => x.id === 'pH');
+  assert.strictEqual(row.visits.filter(v => v.bodyComplete === true && String(v.raw || '').trim()).length, 2,
+    file + ': a husk write-back stripped the stored verified bodies');
+
+  // structured zero-body copy (e.g. legitimate reconcile outcome) is adopted
+  ctx.upsertPatient({ id: 'pH', name: 'Husk Case', visits: [
+    { id: 's1', date: '2026-07-01', type: 'Visit', raw: '', textHead: 'index', indexOnly: true, bodyComplete: false, fullDetail: false, source: 'athena-schedule-history' }
+  ] });
+  row = stored.find(x => x.id === 'pH');
+  assert.strictEqual(row.visits.length, 1, file + ': a structured zero-body copy must still be adopted');
+  assert.strictEqual(row.visits[0].indexOnly, true, file + ': adopted structured row lost its shape');
+}
+
+runHuskScenario('ScribeFlow.html');
+runHuskScenario('ScribeFlow-staging.html');
+
+/* b490 hydration guard: the server mirror must never regress verified bodies */
+for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
+  const src = fs.readFileSync(path.join(root, file), 'utf8');
+  assert(src.includes('never let a server mirror REGRESS verified visit bodies'),
+    file + ': hydration body-regression guard missing');
+  assert(/__bodies\(local\[i\]\.visits\)>0&&__bodies\(adopted\.visits\)===0/.test(src),
+    file + ': hydration guard condition missing');
+}
+
 /* savePatients must actually invoke the guard */
 for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
   const src = fs.readFileSync(path.join(root, file), 'utf8');

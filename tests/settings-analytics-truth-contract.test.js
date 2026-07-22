@@ -64,4 +64,17 @@ assert(actions.includes("if (resolved === 'templates')"), 'doNavigate lost its T
 assert(connect.includes('MLS Assistant vs Copilot Voice vs MLS Assist'), 'capability registry lost the three-surface distinction');
 assert(connect.includes('Drafts stay local in History — nothing reaches Athena until you explicitly review and confirm'), 'op-note prep entry no longer separates local drafting from Athena writeback');
 
-console.log('PASS settings/analytics/navigation truth: search fallback, display sync, extension-version honesty, label-anchored analytics, phone landing, honest tour, template routing');
+/* 2026-07-22 patient-count reconciliation: the Analytics baseline prefers the
+   server's authoritative distinct-patient total, discloses id-less records,
+   and documents the intentional Patients-tab difference — the old
+   "Σ new_patients labeled distinct charts" method is gone. */
+{
+  const baseline = app.slice(app.indexOf('async function loadAnalysisBaseline'), app.indexOf('function appendScheduleAnalytics'));
+  assert(baseline.includes('srvTotals.distinct_patients') && baseline.includes('const distinctTotal='), 'baseline no longer prefers the authoritative server distinct-patient total');
+  assert(baseline.includes("_anaCard('Total patients seen',distinctTotal,'distinct charts with a recorded visit'"), 'Total patients seen lost its honest source/label');
+  assert(!baseline.includes("_anaCard('Total patients seen',distinctPts,'distinct charts, all time')"), 'the mislabeled Σ new_patients card is back');
+  assert(baseline.includes('unassignedN') && baseline.includes('not linked to a chart'), 'id-less records are hidden instead of disclosed');
+  assert(baseline.includes('the Patients tab counts every chart on your panel'), 'the intentional Patients-tab difference is undocumented');
+}
+
+console.log('PASS settings/analytics/navigation truth: search fallback, display sync, extension-version honesty, label-anchored analytics, phone landing, honest tour, template routing, reconciled patient totals');

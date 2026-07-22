@@ -300,6 +300,45 @@ async function addPatient(page, name, dob) {
     assert.strictEqual(tick, 42, 'page event loop is wedged');
   });
 
+  await step('consent: encounter consent dialog gates recording — decline refuses, verbal confirm allows and logs', async () => {
+    const out = await page.evaluate(async () => {
+      const capOn = () => (typeof capturing !== 'undefined' ? !!capturing : false);
+      const before = { has: _mlsHasEncounterConsent(), capturing: capOn() };
+      const p = _mlsRequestEncounterConsent('recording');
+      await new Promise(r => setTimeout(r, 60));
+      const modal = document.getElementById('_mlsAskDialog');
+      if (!modal) return { noModal: true };
+      const radios = modal.querySelectorAll('input[name="_mlsConsentOpt"]').length;
+      const hasText = /Patient consent required/i.test(modal.textContent) && /decline or ask to stop/i.test(modal.textContent);
+      const midDialog = { capturing: capOn() };
+      modal.querySelector('input[value="declined"]').click();
+      modal.querySelector('#_mlsAskYes').click();
+      const declined = await p;
+      const afterDecline = { has: _mlsHasEncounterConsent(), capturing: capOn() };
+      const p2 = _mlsRequestEncounterConsent('recording');
+      await new Promise(r => setTimeout(r, 60));
+      const m2 = document.getElementById('_mlsAskDialog');
+      m2.querySelector('input[value="patient-verbal"]').click();
+      m2.querySelector('#_mlsAskYes').click();
+      const confirmed = await p2;
+      const log = JSON.parse(localStorage.getItem(uns('consentLog')) || '[]');
+      return {
+        before, radios, hasText, midDialog, declined, afterDecline, confirmed,
+        hasAfter: _mlsHasEncounterConsent(), logN: log.length, last: log[log.length - 1]
+      };
+    });
+    assert(!out.noModal, 'consent dialog did not render');
+    assert(!out.before.has && !out.before.capturing, 'consent/capture state dirty at start');
+    assert.strictEqual(out.radios, 3, 'three consent options required');
+    assert(out.hasText, 'consent wording missing');
+    assert(!out.midDialog.capturing, 'audio state flipped on while the consent dialog was open');
+    assert.strictEqual(out.declined, false, 'declining still allowed capture');
+    assert(!out.afterDecline.has && !out.afterDecline.capturing, 'decline left consent/capture state behind');
+    assert.strictEqual(out.confirmed, true, 'verbal consent did not confirm');
+    assert(out.hasAfter, 'confirmed consent not remembered for the encounter');
+    assert(out.logN >= 1 && out.last && out.last.consentType === 'patient-verbal' && out.last.patientId, 'consent audit record missing/incomplete');
+  });
+
   await step('op-note: unresolved placeholders save only as an explicit Draft (never a completed note)', async () => {
     const out = await page.evaluate(() => {
       const note = 'PROCEDURE: test\nNeedle: [[needle_gauge]]\nConsent: [not dictated]\nEBL: ___';

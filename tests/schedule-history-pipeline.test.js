@@ -377,6 +377,19 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
       'si-1.9.1 fail-fast: main-pass first visits attempt is 110s; sweep attempts keep the full 195s window');
   }
 
+  /* b490 static contract: pulls stamp a cross-tab busy key and the update
+     banner defers Refresh while it is fresh (two live 75-minute pulls were
+     killed by mid-pull refreshes on 2026-07-22). */
+  {
+    const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+    assert(src.includes('mlsPullBusyXTabV1'), 'cross-tab pull-busy stamp missing');
+    assert(/leaseTouch = setInterval[\s\S]{0,260}xtabBusyStamp\(\)/.test(src), 'stamp must refresh with the lease touch');
+    assert(src.includes('if (operationStarted) xtabBusyClear();'), 'stamp must clear when the operation ends');
+    const mc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+    assert(mc.includes("uns('mlsPullBusyXTabV1')"), 'update banner must read the cross-tab stamp');
+    assert(mc.includes('Waiting for the pull to finish'), 'update banner Refresh must defer while a pull is running');
+  }
+
   /* si-1.8.1 static contract (live 2026-07-22, twice): a deadline failure may
      recover ONLY when a fast ping proves the runner restarted; recoveries are
      bounded per batch and per patient, and the honest stop-and-defer remains

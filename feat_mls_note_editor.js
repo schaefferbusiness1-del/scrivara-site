@@ -615,12 +615,16 @@
     on("neRevs", function () { _revDropOpen = !_revDropOpen; renderBar(); });
     on("neCompare", openCompare); on("nePreview", openPreview);
     on("neDictAll", function () { if (dictating && !dictTarget) stopDictation(); else startDictation(null); });
-    on("neAddA", function () { var t = promptText("Add to Assessment (or use the mic on the Assessment row):"); if (t) addToAssessment(t); });
-    on("neAddP", function () { var t = promptText("Add to Plan (or use the mic on the Plan row):"); if (t) addToPlan(t); });
+    on("neAddA", function () { promptText("Add to Assessment (or use the mic on the Assessment row):").then(function (t) { if (t) addToAssessment(t); }); });
+    on("neAddP", function () { promptText("Add to Plan (or use the mic on the Plan row):").then(function (t) { if (t) addToPlan(t); }); });
     on("neReplace", function () {
-      var f = promptText("Find this text:"); if (!f) return;
-      var r = promptText("Replace with:"); if (r == null) return;
-      replaceText(f, r, false);
+      promptText("Find this text:").then(function (f) {
+        if (!f) return;
+        promptText("Replace with:").then(function (r) {
+          if (r == null) return;
+          replaceText(f, r, false);
+        });
+      });
     });
     on("neDelSent", function () { deleteLastSentence(null); });
     var locks = b.getElementsByClassName("ne-lock");
@@ -632,7 +636,7 @@
     var items = b.getElementsByClassName("ne-revitem");
     for (var n = 0; n < items.length; n++) (function (el) { el.onclick = function () { restoreRevision(parseInt(el.getAttribute("data-i"), 10)); _revDropOpen = false; renderBar(); }; })(items[n]);
   }
-  function promptText(msg) { return safe(function () { return window.prompt(msg, ""); }, null); }
+  function promptText(msg) { try { return (typeof window.mlsPrompt === 'function') ? window.mlsPrompt(msg, "") : Promise.resolve(safe(function () { return window.prompt(msg, ""); }, null)); } catch (e) { return Promise.resolve(null); } }
 
   /* =====================================================================
    * patient-switch guard: revisions are kept per-patient; on switch just

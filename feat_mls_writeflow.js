@@ -1777,9 +1777,9 @@
   }
   function oneClick() {
     var p = activePt();
-    if (!p || !p.name) { try { alert('Pick a patient first.'); } catch (e) {} return; }
+    if (!p || !p.name) { try { (window.toast||window.alert)('Pick a patient first.','err'); } catch (e) {} return; }
     if (!ensureNoteContent()) {
-      try { alert('Create or paste the current visit note first. MLS will not build an Athena draft from old chart history.'); } catch (e2) {}
+      try { (window.toast||window.alert)('Create or paste the current visit note first. MLS will not build an Athena draft from old chart history.','err'); } catch (e2) {}
       return;
     }
     STATE.oneClicks++;
