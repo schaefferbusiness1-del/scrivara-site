@@ -149,8 +149,14 @@ const CLINICAL_BODY =
 
 function buildChart(options = {}) {
   const rootEl = makeEl('#document-root');
+  /* 3.0.2: enumeration refuses an encounter index that is not inside the real
+     "Visits and Cases" panel (the chart landing pane clones the same row
+     markup and hydrates first). Mirror the real panel surface here. */
+  const panel = makeEl('div', { className: 'visits-panel' });
+  panel.appendChild(makeEl('div', { className: 'visits-panel-header', text: 'Visits and Cases' }));
+  rootEl.appendChild(panel);
   const ul = makeEl('ul', { className: 'encounter-list autostart' });
-  rootEl.appendChild(ul);
+  panel.appendChild(ul);
   const rows = [];
   const specs = options.rows || [
     { eid: 'enc-1001', header: '01/02/2026 Office visit established', bodyClass: 'clinical-summary-section', body: CLINICAL_BODY + ' Extra descendant-scoped documentation for encounter one.' },

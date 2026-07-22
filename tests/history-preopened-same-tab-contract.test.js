@@ -42,6 +42,11 @@ assert(chartHandler.includes('globalframeset\\.esp|globaliframe\\.esp|frameconte
 assert(allVisits.includes('pickEmrTab(frozenHint)'), 'AllVisits does not use its frozen identity to select the exact tab lease');
 assert(allVisits.includes('self.__mlsVerifiedReadTarget'), 'AllVisits ignores the verified chart tab lease');
 assert(allVisits.includes('Number(t.id) === Number(lease.tabId)'), 'AllVisits can silently switch to another Athena tab');
-assert(allVisits.includes('var gate = visitIdentityGate(frozenHint, identity)'), 'same-frame name+DOB/MRN gate was removed');
+/* 3.0.2: the gate now runs PER CANDIDATE FRAME (v26.3 FL keeps a cached
+   encounter iframe from the previous patient alive; the index frame must win
+   by selector score AND live same-frame identity). The refusal stays. */
+assert(allVisits.includes('visitIdentityGate(frozenHint, ecIdentity)'), 'same-frame name+DOB/MRN gate was removed from candidate selection');
+assert(allVisits.includes('if (!gate.ok)'), 'the no-matching-frame refusal was removed');
+assert(allVisits.includes('enumCandidates'), 'the identity-aware frame-candidate walk was removed');
 
 console.log('PASS history exact-open -> same-tab chart -> same-tab visits contract');

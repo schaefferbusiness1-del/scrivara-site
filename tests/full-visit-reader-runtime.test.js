@@ -22,8 +22,11 @@ const readerSource = background.slice(start, end + '\n})();'.length);
 
 for (const invariant of [
   'freezeVisitHint(hint)',
-  'visitIdentityGate(frozenHint, identity)',
-  "exec(emrId, [listFrame], ['identity', cfg])",
+  /* 3.0.2: the same-frame identity gate now runs PER CANDIDATE FRAME (v26.3
+     FL cached-iframe fix) — the gate and the same-frame identity read remain
+     mandatory, bound to each candidate. */
+  'visitIdentityGate(frozenHint, ecIdentity)',
+  "exec(emrId, [ecCand.frameId], ['identity', cfg])",
   "['click', cfg, i, expected]",
   "['openDetailFrame', cfg, i, expected]",
   "['detailFrame', detailCfg, i, expected]",
@@ -236,7 +239,10 @@ function makeReader(options = {}) {
   assert.strictEqual(empty.receipt.authoritativeEmpty, true);
   assert.strictEqual(empty.receipt.complete, true);
 
-  const wrong = makeReader({ identity: { name: 'Different Patient', dob: '01/02/1960', mrn: '1234', score: 50 } });
+  /* 3.0.2: a GENUINE wrong patient differs on the stable athena id. (The old
+     fixture kept mrn+dob identical and differed only on the name — that is
+     now the accepted stale-frame-name case below, per the owner directive.) */
+  const wrong = makeReader({ identity: { name: 'Different Patient', dob: '01/02/1960', mrn: '9999', score: 50 } });
   const blocked = await wrong.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
   assert.strictEqual(blocked.ok, false);
   assert.strictEqual(blocked.reason, 'no-athena-tab', 'wrong-patient Athena tabs must be rejected during exact-tab selection');
@@ -244,6 +250,14 @@ function makeReader(options = {}) {
   assert.notStrictEqual(blocked.receipt.indexComplete, true);
   assert.notStrictEqual(blocked.receipt.bodyComplete, true);
   assert.strictEqual(blocked.receipt.fullDetail, false);
+
+  /* 3.0.2: stale/reformatted frame NAME with a MATCHING stable id + DOB is
+     the SAME patient — the read must proceed and complete (the live v26.3 FL
+     failure mode: every body refused on the name while the id was right). */
+  const staleName = makeReader({ identity: { name: 'Different Patient', dob: '01/02/1960', mrn: '1234', score: 50 } });
+  const staleOk = await staleName.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
+  assert.strictEqual(staleOk.ok, true, 'a verified stable-id match must not be refused on a stale frame name');
+  assert.strictEqual(staleOk.receipt.complete, true);
 
   const thin = makeReader({ missingDetailIndex: 1 });
   const incomplete = await thin.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });

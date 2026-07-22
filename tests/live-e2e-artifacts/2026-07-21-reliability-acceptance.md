@@ -101,3 +101,64 @@ Diagnostic next step (for the extension 3.0.2 work): capture
 against the banner — the gate caller is background.js `visitIdentityGate`
 (~line 9388: identity is read from the SAME frame that supplied the encounter
 index, preferring `via === 'banner'`).
+
+## Extension 3.0.2 — Notes ON bodies FIX (late evening, owner goal)
+Root cause (two compounding defects, both proven live):
+1. athenaCollector v26.3 FL keeps a CACHED encounter iframe from the PREVIOUS
+   patient alive on the chart; it can outscore the still-hydrating fresh list
+   in the batch reader's frame selection, so the identity gate refused every
+   body (correctly — wrong frame). Fix: the index frame is now chosen by
+   selector score AND live same-frame identity (bounded best-first candidate
+   walk); no matching frame keeps the same honest refusal.
+2. Encounter frames can render a stale/reformatted patient label while the
+   stable athena patient id is correct. Fix: the id is now the PRIMARY
+   identity when both sides carry it (id mismatch still refuses; a
+   contradictory DOB still refuses; no-id charts keep the strict name+DOB
+   gate). Verified in Chrome: pong `3.0.2+core-sha256:194cc6f8…0fdb91`,
+   20 files hash-verified into the loaded folder. Suites: 259 incl.
+   visit-body-identity-302-contract + updated reader-harness fixtures
+   (genuine-mismatch refusal AND stale-name-with-matching-id acceptance).
+
+### 3.0.2 Notes ON acceptance rounds (Today, Athena fronted)
+| # | Duration | Schedule/history | Bodies |
+|---|----------|------------------|--------|
+| 1 | 313 s | 14/14 done, day complete, 1458 pts unchanged | ALL eligible bodies retrieved; the ONLY incomplete is Mary Murray Young (genuine athena-side DOB mismatch, the owner data item — correctly refused, named, retry lane armed). ZERO same-frame-name-mismatch refusals (vs 14/14 refused under 3.0.1 on the identical day). |
+
+### FINAL Notes ON verdict (2026-07-22 ~01:45 EDT): athenaOne shipped a UI
+### update MID-ACCEPTANCE and the 10-consecutive criterion could not be met.
+Round 1 above was the last round before athenaNet flipped the practice to a
+NEW chart briefing surface (observed live and screenshot-proven): the Visits
+panel became COLLAPSIBLE (rail tab keeps class "active" while the panel is
+closed), the chart landing pane now clones `li.encounter-list-item` markup
+for a 1-2 row "recent" list that hydrates FIRST, and the full panel renders
+progressively. Every post-flip round failed with honest refusals — never a
+wrong-patient save, never false success. Working through the failures produced
+FIVE further real fixes, each unit-tested and kept in the 3.0.2 SOURCE:
+1. Read-lease binds on banner-proved exact identity (was starved by cached
+   previous-patient iframes failing coverage binding on every consecutive pull).
+2. pickEmrTab exact-scan gates EVERY frame identity (one merged best could be
+   poisoned by a cached frame).
+3. Enumerate+identity-walk retries inside the read's own deadline (was
+   one-shot ~3.2 s after navigation).
+4. openVisits trusts the RENDERED panel, not the tab class, and is re-driven
+   on every rehydration retry.
+5. The encounter index must live inside the real "Visits and Cases" panel
+   (`visits-panel-not-open` refusal otherwise).
+Remaining blocker at stop time: the new panel's PROGRESSIVE render satisfies
+every completeness check with its first 1-2 rows (real panel, real identity,
+unique bindings, rendered==declared) before the rest stream in, so the reader
+binds a too-short index and per-row detail then fails. Fix direction (queued):
+require the rendered row count to be STABLE across two consecutive polls AND
+reconcile with the panel's "All Events (N)" total before accepting the index.
+Per the owner's release rule ("Do not publish an untested build"), 3.0.2 was
+NOT published: the live feed, get-extension.html, Settings links, sw.js
+passthrough, checker version, and every publication pin remain at the
+live-byte-verified 3.0.1 (sha 5c0d678a…78aa). The 3.0.2 fixes live in the
+repo SOURCE (background.js + manifest, unpublished by allowlist) with
+contract tests (visit-body-identity-302-contract) in the 259-suite gate, and
+the last local build's zip sha was 986d7fb45a0a8b471a8685906c56266531dc5ebf3eead23fc58e38601c9cf47d
+(kept OUT of git; rebuild with scripts/build-extension-zip.js).
+Notes OFF remains fully proven (10/10 rounds above); schedule+history lanes
+kept passing on the new surface all night. The single-read "Pull history"
+lane and the bodies batch lane must be re-validated against the new athena
+surface in daylight before any 3.0.2 release.

@@ -7405,7 +7405,15 @@ async function mlsSchedDomInline(doc, CFG){
             consideredFrames: eligibleFrames.length, textChars: chartTextStrict.length, truncated: chartTruncatedStrict,
             identityObserved: exactGlobalIdentity, identityVia: (ident && ident.via) || ''
           };
-          if (chartReceiptStrict.complete) {
+          /* 3.0.2: the read lease binds the tab-of-record for the immediately
+             following verified visits read. Its requirement is the banner-proved
+             exact patient identity, NOT full text coverage: athenaOne keeps
+             cached previous-patient encounter iframes alive, which fail coverage
+             binding (unboundClinicalFrames) on every consecutive pull and
+             silently starved the lease, collapsing batch bodies to no-athena-tab
+             refusals. The visits reader still re-verifies identity in the exact
+             frame before any encounter body is read. */
+          if (chartReceiptStrict.complete || exactGlobalIdentity) {
             try { self.__mlsVerifiedReadTarget = { tabId: tab.id, name: want, dob: wantDob, mrn: wantMrn, at: Date.now(), requestId: chartReceiptStrict.requestId }; } catch (eReadLease) {}
           }
           return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
@@ -8545,7 +8553,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e1) {}
       }
       if (!tab) return { ok: false, reason: 'visits-tab-not-found' };
-      if (/(^|\s)active(\s|$)/.test(String(tab.className || ''))) return { ok: true, active: true };
+      /* 3.0.2 (live 2026-07-21 late): v26.3 FL made the Visits panel
+         COLLAPSIBLE and the rail tab keeps class "active" while the panel is
+         CLOSED. Returning early on the class alone left charts with ZERO
+         encounter rows, so enumeration fell to junk groups. Trust the
+         RENDERED panel: only skip the click when encounter rows exist. */
+      var visitsSurfaceOpen = false;
+      try { visitsSurfaceOpen = !!document.querySelector('li.encounter-list-item'); } catch (eVsOpen) {}
+      if (/(^|\s)active(\s|$)/.test(String(tab.className || '')) && visitsSurfaceOpen) return { ok: true, active: true };
       if (!visitActionAllowed()) return visitDeadlineFailure();
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
     }
@@ -8560,6 +8575,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
       var g = bestGroup();
+      /* 3.0.2: the chart landing pane now shows 1-2 recent encounters with
+         the SAME row markup as the real Visits panel and hydrates first; a
+         race enumerated that tiny landing list as a "complete" index. The
+         authoritative encounter index must live inside the real "Visits and
+         Cases" panel; anything else refuses so the caller re-opens the tab. */
+      if (g && g.selector === 'li.encounter-list-item') {
+        var vcOk = false, vcScope = g.parent;
+        for (var va = 0; va < 8 && vcScope; va++) {
+          var vcT = '';
+          try { vcT = String(vcScope.textContent || '').slice(0, 6000); } catch (eVc) {}
+          if (/visits\s*and\s*cases/i.test(vcT)) { vcOk = true; break; }
+          vcScope = vcScope.parentElement;
+        }
+        if (!vcOk) return { ok: false, count: 0, score: 0, reason: 'visits-panel-not-open' };
+      }
       if (!g) {
         if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true };
         return { ok: false, count: 0, score: 0 };
@@ -9106,10 +9136,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                   if (Date.now() >= hardDeadline) { resolve(null); return; }
                   try {
                     var idResults = await exec(cand[ci0].id, null, ['identity', guardCfg(guard)]);
-                    var idBest = bestResult(idResults, function (r) {
-                      return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0);
-                    }).result || {};
-                    if (visitIdentityGate(frozenPick, idBest).ok) exactMatches.push(cand[ci0]);
+                    /* 3.0.2: gate EVERY frame identity, not one merged best. A cached
+                       previous-patient encounter iframe can outscore the live banner
+                       and poison a single-best pick; the tab qualifies when ANY frame
+                       proves the exact patient. The same-frame gate still re-verifies
+                       identity before any encounter body is read. */
+                    var idFrameHit = (idResults || []).some(function (fr) {
+                      return fr && fr.result && visitIdentityGate(frozenPick, fr.result).ok;
+                    });
+                    if (idFrameHit) exactMatches.push(cand[ci0]);
                   } catch (ePickIdentity) {}
                 }
                 if (exactMatches.length) { resolve(exactMatches[0]); return; }
@@ -9244,6 +9279,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     var hits = 0; wantName.forEach(function (w) { if (wantTokenOk(w)) hits++; });
     var nameOk = hits >= 2 && wantTokenOk(wantName[0]) && wantTokenOk(wantName[wantName.length - 1]);
+    /* 3.0.2 (owner directive): the stable athena patient id is the PRIMARY
+       identity when both sides carry it. Live 2026-07-21: v26.3 FL encounter
+       frames can render a stale or reformatted patient label while the id is
+       correct, and every batch body was refused on the name alone. An id
+       MATCH accepts (name recorded as secondary evidence, a contradictory
+       DOB still refuses); an id MISMATCH refuses exactly as before. No-id
+       charts keep the full name+DOB gate unchanged. */
+    if (wantMrn && haveMrn) {
+      if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
+      if (wantDob && haveDob && wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
+      return { ok: true, reason: 'mrn' + (wantDob && haveDob ? '+dob' : '') + (nameOk ? '+name' : '+stale-name') };
+    }
     if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
     /* DOB is preferred when frozen. MRN is the exact fallback for records that
        intentionally omit DOB. Never accept a name-only chart. */
@@ -9310,7 +9357,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          Two bounded re-picks after a short settle heal it; every identity gate
          still runs unchanged before any body is read. */
       var rePicks = 0;
-      while (!emr && rePicks < 2 && Date.now() + 2500 < readDeadline) {
+      while (!emr && rePicks < 5 && Date.now() + 2500 < readDeadline) {
         rePicks++;
         await sleep(2000);
         emr = await pickEmrTab(frozenHint);
@@ -9355,6 +9402,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var db = bestResult(dgRes, function (r) { return (r && r.groupCount) || 0; });
       diag = db.result || null; saveDiag(diag);
 
+      /* 3.0.2 slow-athena rehydration: enumerate+walk retries inside the
+         read's OWN remaining budget instead of refusing at first miss. Live
+         2026-07-21 evening: athena latency tripled and the fresh encounter
+         list regularly hydrates seconds AFTER the first walk, which had been
+         refusing every body while ~2 minutes of budget sat unused. Only
+         observation retries - every identity gate is unchanged. */
+      for (var ehPass = 0; ehPass < 48; ehPass++) {
       var enR = await exec(emrId, null, ['enumerate', cfg]);
       var eb = bestResult(enR, function (r) {
         if (!(r && r.ok)) return 0;
@@ -9363,11 +9417,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       enumRes = eb.result; listFrame = eb.frameId;
       var authoritativeEmptyIndex = !!(enumRes && enumRes.ok && enumRes.count === 0 && enumRes.indexComplete === true && enumRes.authoritativeEmpty === true);
       if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
+        if (ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
           ok: false, reason: 'encounter-index-incomplete', identity: {}, visits: [], diag: diag,
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
         };
+      }
+
+      /* 3.0.2 (live 2026-07-21): athenaCollector v26.3 FL keeps a CACHED
+         encounter iframe from the PREVIOUS patient alive on the chart, and it
+         can outscore the still-hydrating fresh list - so the identity gate
+         below refused every batch body read (three Notes ON rounds, every
+         patient same-frame-name-mismatch) while the single-read lane passed.
+         The index frame is now chosen by selector score AND live same-frame
+         identity: walk the candidates best-first and take the first whose OWN
+         frame identity matches the frozen patient. No match anywhere keeps
+         the same honest refusal, reporting the best frame's identity. */
+      var enumCandidates = [];
+      for (var ecJ = 0; ecJ < (enR || []).length; ecJ++) { var ecR = enR[ecJ]; if (ecR && ecR.result && ecR.result.ok) enumCandidates.push(ecR); }
+      enumCandidates.sort(function (a, b) {
+        function ecScore(x) { var r = x.result; return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0); }
+        return ecScore(b) - ecScore(a);
+      });
+      if (!enumCandidates.length) enumCandidates.push({ result: enumRes, frameId: listFrame });
+      var gate = null;
+      for (var ecI = 0; ecI < enumCandidates.length && ecI < 4; ecI++) {
+        var ecCand = enumCandidates[ecI];
+        var ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]);
+        var ecIdentity = bestResult(ecIds, function (r) {
+          if (!r) return 0;
+          return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
+        }).result || {};
+        var ecGate = visitIdentityGate(frozenHint, ecIdentity);
+        if (ecI === 0 || ecGate.ok) { identity = ecIdentity; gate = ecGate; }
+        if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
+        if (Date.now() >= readDeadline) break;
+        touchVisitLease();
+      }
+      if (gate && gate.ok) break;
+      if (ehPass >= 47 || Date.now() + 7000 >= readDeadline) break;
+      await exec(emrId, null, ['openVisits', cfg]);
+      await sleep(3500);
+      touchVisitLease();
       }
       var rows = enumRes.rows || [], total = rows.length;
       if (total > cfg.maxVisits) {
@@ -9378,14 +9470,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      /* Verify identity LIVE in the exact frame that supplied the encounter
-         index. A stale identity from another frame cannot authorize any body. */
-      var liveIds = await exec(emrId, [listFrame], ['identity', cfg]);
-      identity = bestResult(liveIds, function (r) {
-        if (!r) return 0;
-        return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
-      }).result || {};
-      var gate = visitIdentityGate(frozenHint, identity);
       if (!gate.ok) {
         return {
           ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
@@ -9393,6 +9477,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
         };
       }
+
 
       var detailWaitMs = Math.max(300, Math.min(2500, Number(cfg.waitMs || 1400)));
       /* A newly opened Athena briefing surface can spend several seconds
@@ -9404,7 +9489,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          FIRST slideout + iframe hydration on a cold chart takes ~5-8s, so a 4s
          retry ceiling still loses its only row. The retry stays bounded by
          readDeadline; only this ceiling changes. */
-      var coldRetryWaitMs = Math.max(detailWaitMs, Math.min(10000, Number(cfg.coldRetryWaitMs || Math.max(8000, detailWaitMs + 6600))));
+      var coldRetryWaitMs = Math.max(detailWaitMs, Math.min(24000, Number(cfg.coldRetryWaitMs || Math.max(8000, detailWaitMs + 6600))));
       var coldRetryPauseMs = Math.max(120, Math.min(500, Number(cfg.coldRetryPauseMs || 300)));
       var remainingReadBudgetMs = Math.max(0, readDeadline - Date.now());
       /* Admission reserves one full cold hydration retry in addition to the

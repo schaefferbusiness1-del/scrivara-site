@@ -96,6 +96,7 @@ const tests = [
   'history-duplicate-name-binding.test.js',
   'manual-history-exact-open-mrn-contract.test.js',
   'history-preopened-same-tab-contract.test.js',
+  'visit-body-identity-302-contract.test.js',
   'history-absolute-deadline-runtime.test.js',
   'background-final-patient-timeout-runtime.test.js',
   'appointment-id-bootstrap-contract.test.js',

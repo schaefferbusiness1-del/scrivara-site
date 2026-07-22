@@ -18304,6 +18304,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<small>Nothing for ' + esc(prov) + ' on ' + esc(dayLabel) + ' — ' + un + ' appointment' + (un === 1 ? '' : 's') +
              ' loaded for other providers</small></button>';
     }
+    /* Owner 2026-07-21 (screenshot): right after sign-in the calendar cache is
+       still hydrating, and this state falsely claimed "No appointments
+       imported" for a day whose rows exist on the MLS server. While the
+       account clearly has data but the calendar cache is still empty during
+       the boot window, say LOADING — the imported-day claim only renders once
+       the calendar has actually hydrated (or hydration has clearly settled). */
+    var calEmpty = false, hasData = false;
+    try { calEmpty = !window._calAppts || !window._calAppts.length; } catch (e) { calEmpty = false; }
+    try { hasData = ((typeof getPatients === 'function' ? (getPatients() || []) : []).length) > 0; } catch (e) { hasData = false; }
+    var bootMs = 0; try { bootMs = (window.performance && performance.now()) || 0; } catch (e) { bootMs = 0; }
+    if (calEmpty && hasData && bootMs > 0 && bootMs < 180000) {
+      return '<div class="ez3-empty" id="ez3DayEmpty" role="status" aria-busy="true"><b>Loading your calendar…</b><br>' +
+             'Your saved appointments for ' + esc(dayLabel) + ' are syncing from MLS.</div>';
+    }
     return (visitIsToday() && S.autoPull === 'failed' && S.autoPullNote ? '<div class="ez3-warnbar">⚠️ ' + esc(S.autoPullNote) + '</div>' : '') +
            '<div class="ez3-empty" id="ez3DayEmpty" role="status"><b>No appointments imported for ' + esc(dayLabel) + '.</b><br>' +
            'Use the <b>📥 Pull</b> button above to load the schedule and chart history from Athena.</div>';
@@ -32805,7 +32819,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b481';
+  window.__MLS_AV = window.__MLS_AV || 'b482';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33115,7 +33129,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-21-b481';
+  var MLS_APP_BUILD='2026-07-21-b482';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
