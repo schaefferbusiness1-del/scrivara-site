@@ -149,3 +149,30 @@ Five invocable skills capture every procedure that WORKED today, with the exact 
 7. New-customer E2E dry run (fresh account: signup → ceremony → first pull with full clinic Day view → note).
 
 Everything above is committed and pushed. The evidence log has per-round proof with timestamps. Be direct with the owner, verify before claiming, and when something breaks live: probe first, fix second, deploy third, verify fourth.
+
+## ADDENDUM 2026-07-22 ~02:00 EDT (b482, ext 3.0.2 HELD)
+
+13. **athenaOne UI UPDATE LANDED MID-ACCEPTANCE (~21:30 EDT Jul 21)** and is
+    now the #1 fact about the bodies lane. The chart briefing changed: the
+    Visits panel is COLLAPSIBLE (rail tab keeps class "active" while closed),
+    the landing pane clones `li.encounter-list-item` markup for a 1-2 row
+    recent list that hydrates FIRST, and the full "Visits and Cases" panel
+    renders progressively. One 3.0.2 round before the flip retrieved ALL 14
+    patients' bodies in 313 s; every round after failed with honest refusals.
+14. **Ext 3.0.2 is UNRELEASED (owner rule: never publish untested).** Live
+    channel remains 3.0.1 (sha 5c0d678a…78aa, re-byte-verified tonight). The
+    3.0.2 SOURCE in this repo carries six real, unit-tested reader fixes
+    (id-primary gate, identity-aware frame walk, identity-based lease,
+    per-frame tab scan, deadline-bounded re-enumeration + openVisits
+    re-drive, Visits-panel marker gate) + suite
+    tests/visit-body-identity-302-contract.test.js. Full failure/diagnosis
+    log: tests/live-e2e-artifacts/2026-07-21-reliability-acceptance.md.
+    NEXT concrete fix (queued): accept the encounter index only when the
+    rendered row count is stable across two polls AND reconciles with the
+    panel's "All Events (N)" total; then re-run the 10-consecutive-ON
+    acceptance IN DAYLIGHT and release 3.0.2 via the normal train.
+15. **b482 shipped:** post-hydration calendar loading state (the owner's
+    Jul-20 "no appointments but patients exist" report = false-empty during
+    boot; now shows "Loading your calendar…"). Live-verified on the doctor
+    tab (b482, tokened, correct namespace). Login fix survived ~15 reloads
+    across the whole night — zero unexpected logouts since b480.
