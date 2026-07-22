@@ -2017,6 +2017,20 @@
        stamp ages out 90s after the last touch (pull() still zeroes its own). */
     safe(function () { window.__mlsPullBusyAt = Date.now(); });
     var stopAfterTimeout = false;
+    /* si-1.8.1 (live 2026-07-22, twice in 35 min): a Chrome extension-host
+       restart kills the runner MID-REQUEST; the read dies at its absolute
+       deadline while Athena itself is healthy. That is indistinguishable
+       from a grinding chart UNLESS the runner is probed — so a deadline
+       failure may recover ONCE per patient (max 2 per batch) when a fast
+       ping proves the runner answers again. A probe failure, exhausted
+       budget, or a second deadline keeps the honest stop-and-defer. */
+    var transientRunnerRecoveries = 0;
+    async function runnerAnsweredProbe() {
+      try {
+        var pongR = await bridge("mlsPong", "mlsPing", 3500);
+        return !!(pongR && pongR.reason !== "bridge-deadline-exceeded");
+      } catch (ePongProbe) { return false; }
+    }
     /* User preference: pull the six-card chart history WITHOUT opening every
        encounter body (much faster day prep). Default ON (full visits). Read
        once per batch so one mid-batch toggle flip cannot split semantics. */
@@ -2166,7 +2180,19 @@
             if (__parseT0) { stageMs.parseSave += Date.now() - __parseT0; } else { stageMs.chart += Date.now() - __chartT0; }
             one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 120);
             if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes;
-            if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; break; }
+            if (/timeout|deadline/i.test(one.chartReason)) {
+              /* si-1.8.1: only a proven-alive runner earns a fresh attempt. */
+              if (chartAttempt < 2 && transientRunnerRecoveries < 2 && Date.now() + 300000 < batchDeadlineAt && (await runnerAnsweredProbe())) {
+                transientRunnerRecoveries++;
+                one.chartTransientRecovered = true;
+                one.chartRetried = true;
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                one.deadlineAt = patientDeadlineAt;
+                await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
+                continue;
+              }
+              stopAfterTimeout = true; receipt.timedOut = true; break;
+            }
             if (chartAttempt < 2 && Date.now() + 300000 < batchDeadlineAt) {
               patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
               one.deadlineAt = patientDeadlineAt;
@@ -2198,7 +2224,26 @@
               visitsAttempt++;
               var visitsRequestId = patientRequestId + "-visits" + (visitsAttempt > 1 ? "-a" + visitsAttempt : "");
               var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 195000);
-              vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+              try {
+                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+              } catch (vDeadlineErr) {
+                var vdMsg = String(vDeadlineErr && vDeadlineErr.message || vDeadlineErr || "");
+                /* si-1.8.1: same transient-runner-death recovery as the chart
+                   open — only a proven-alive runner earns ONE fresh, fully
+                   re-verified attempt; anything else keeps the honest throw. */
+                if (!(/timeout|deadline/i.test(vdMsg) && visitsAttempt < 2 && transientRunnerRecoveries < 2 && Date.now() + 300000 < batchDeadlineAt && (await runnerAnsweredProbe()))) throw vDeadlineErr;
+                transientRunnerRecoveries++;
+                one.visitsTransientRecovered = true;
+                one.visitsChartReopened = true;
+                patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 6 * 60 * 1000);
+                one.deadlineAt = patientDeadlineAt;
+                try {
+                  var trReopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
+                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-trreopen" + visitsAttempt, deadlineAt: trReopenDeadlineAt }), trReopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                } catch (trReopenErr) {}
+                await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
+                continue;
+              }
               if (vr && vr.ok) break;
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
               if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {

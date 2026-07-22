@@ -331,5 +331,23 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   assert.strictEqual(malformedEmpty.complete, false, 'an empty malformed partial receipt must not be reported complete');
   assert.strictEqual(malformedEmpty.reason, 'retry-receipt-invalid');
 
+  /* si-1.8.1 static contract (live 2026-07-22, twice): a deadline failure may
+     recover ONLY when a fast ping proves the runner restarted; recoveries are
+     bounded per batch and per patient, and the honest stop-and-defer remains
+     the fallback in BOTH the chart-open and visits lanes. */
+  {
+    const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+    assert(src.includes('var transientRunnerRecoveries = 0;'), 'batch-wide transient-recovery counter must exist');
+    assert(src.includes('async function runnerAnsweredProbe()'), 'the runner probe must exist');
+    assert(/chartAttempt < 2 && transientRunnerRecoveries < 2 && Date\.now\(\) \+ 300000 < batchDeadlineAt && \(await runnerAnsweredProbe\(\)\)/.test(src),
+      'chart-open deadline recovery must be probe-gated, attempt-bounded, and budget-bounded');
+    assert(/visitsAttempt < 2 && transientRunnerRecoveries < 2 && Date\.now\(\) \+ 300000 < batchDeadlineAt && \(await runnerAnsweredProbe\(\)\)/.test(src),
+      'visits-lane deadline recovery must be probe-gated, attempt-bounded, and budget-bounded');
+    assert(src.includes('stopAfterTimeout = true; receipt.timedOut = true; break;'),
+      'the honest stop-and-defer fallback must survive');
+    assert(src.includes('chartTransientRecovered') && src.includes('visitsTransientRecovered'),
+      'recoveries must be recorded on the receipt');
+  }
+
   console.log('PASS exact-patient awaited history and old-visits receipt pipeline');
 })().catch(err => { console.error(err); process.exit(1); });
