@@ -1014,11 +1014,29 @@
       var allowed = !!gk && allowedSettingsGroup(gk) && section.getAttribute('data-set-hidden') !== '1';
       var any = false;
       var headHit = allowed && settingsHeading(section).toLowerCase().indexOf(q) >= 0;
+      function openDetailsAround(node) {
+        try {
+          var d = node && node.closest ? node.closest('details') : null;
+          while (d) { d.open = true; d = d.parentElement && d.parentElement.closest ? d.parentElement.closest('details') : null; }
+        } catch (e) {}
+      }
       Array.prototype.slice.call(section.querySelectorAll('.field')).forEach(function (f) {
         var hit = allowed && (headHit || String(f.textContent || '').toLowerCase().indexOf(q) >= 0);
         if (f.classList.contains('mls-search-hidden') !== !hit) f.classList.toggle('mls-search-hidden', !hit);
-        if (hit) any = true;
+        if (hit) { any = true; openDetailsAround(f); }
       });
+      /* Controls that are not wrapped in .field (e.g. voice toggles inside the
+         Advanced <details> reveal) used to leave a matching section rendered as
+         a BLANK panel: the section text matched, no .field hit, so every field
+         got hidden. If the section itself matches, show it un-filtered and open
+         its collapsed reveals so the matching controls are actually visible. */
+      if (allowed && !any && String(section.textContent || '').toLowerCase().indexOf(q) >= 0) {
+        any = true;
+        Array.prototype.slice.call(section.querySelectorAll('.field.mls-search-hidden')).forEach(function (f) {
+          f.classList.remove('mls-search-hidden');
+        });
+        Array.prototype.slice.call(section.querySelectorAll('details')).forEach(function (d) { d.open = true; });
+      }
       var show = allowed && any;
       if (section.classList.contains('set-tab-hidden') !== !show) section.classList.toggle('set-tab-hidden', !show);
       var sectionDisplay = show ? '' : 'none';

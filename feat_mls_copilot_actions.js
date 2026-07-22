@@ -165,6 +165,9 @@
     recs: 'recs', recommendation: 'recs', recommendations: 'recs',
     history: 'history', notes: 'history',
     analysis: 'analysis', stats: 'analysis', statistics: 'analysis',
+    /* Templates is a real destination (Menu → Templates modal), distinct from
+       AI Studio — template requests used to fall through to 'studio'. */
+    templates: 'templates', template: 'templates',
     studio: 'studio', ai: 'studio', widgets: 'studio'
   };
   function resolveView(arg) {
@@ -173,6 +176,7 @@
     /* ca-2.0.1: loose AI args ("analysis top problems", "today's schedule")
        used to pass through raw and silently no-op in showView. Keyword-match
        to a real view instead. */
+    if (/template/.test(a)) return 'templates';
     if (/analy|problem|diagnos|condition|stat|outcome/.test(a)) return 'analysis';
     if (/schedul|calendar|today/.test(a)) return 'calendar';
     if (/patient|panel|candidate/.test(a)) return 'patients';
@@ -187,6 +191,15 @@
     var hint = String(view || '') + ' ' + String(label || '');
     var topPatients = /\btop\s+patients?\b|patients?.{0,24}visit count|visit count.{0,24}patients?/i.test(hint);
     var resolved = topPatients ? 'patients' : resolveView(view || label);
+    if (resolved === 'templates') {
+      /* Templates is a modal (Menu → Templates), not a showView route. */
+      if (isFn(window.openTemplates)) {
+        safe(function () { window.openTemplates(); });
+        toast('Templates opened — upload, edit, and activate note templates here.');
+        return true;
+      }
+      return false;
+    }
     if (!resolved || !isFn(window.showView)) return false;
     if (resolved === 'patients') {
       var sort = $('ptSort');
@@ -278,6 +291,7 @@
     var a = String(x || '').trim().toLowerCase();
     if (!a) return '';
     if (VIEW_ALIASES[a]) return VIEW_ALIASES[a];
+    if (/template/.test(a)) return 'templates';
     if (/analy|problem|diagnos|condition|stat|outcome/.test(a)) return 'analysis';
     if (/schedul|calendar|today/.test(a)) return 'calendar';
     if (/patient|panel|candidate/.test(a)) return 'patients';

@@ -112,7 +112,10 @@ const exactBinding = Object.freeze({
   visitContext: Object.freeze({ visitDate: '07/14/2026', provider: 'Example Doctor, MD', appointmentId: 'appt-7' })
 });
 const sendContext = {
-  currentOrders: [{ type: 'imaging', fields: { study: 'MRI' } }], aiSuggestedOrders: ['Consider referral'],
+  /* fixture updated 2026-07-22: imaging orders now require study+region+
+     indication — an incomplete order must never reach the EMR review at all
+     (asserted below), so the happy path uses a complete one. */
+  currentOrders: [{ type: 'imaging', fields: { study: 'MRI', region: 'Lumbar spine', indication: 'Persistent low back pain' } }], aiSuggestedOrders: ['Consider referral'],
   _athenaBoundVisitForAction() { return exactBinding; },
   _athenaOrderReviewBundle() {
     return {
@@ -134,6 +137,31 @@ assert(Object.isFrozen(capturedOptions.patient), 'Orders button patient snapshot
 assert.strictEqual(capturedOptions.plan[0].orderDrafts.length, 1, 'reviewed drafts were not carried to the unified review');
 assert.strictEqual(capturedOptions.plan[0].orderSuggestions.length, 1, 'suggestion-only rows were not carried to the unified review');
 assert(!/sendToEMRviaAssist|\{\s*text\s*:/.test(sendOrdersSource), 'Orders button still has a generic text writer route');
+
+/* 2026-07-22: incomplete orders must be refused at the EMR-review boundary
+   with a visible error, before any binding or manifest work. */
+assert(sendOrdersSource.includes("_ordersBlockedMsg('reviewing the EMR route')"), 'EMR review lost its incomplete-order guard');
+assert(scribeSource.includes('function orderMissingFields(type,fields)'), 'canonical required-field validator is missing');
+assert(scribeSource.includes("{key:'study', label:'Study', type:'select', req:1, opts:['','X-ray'"), 'imaging study select lost its blank required placeholder');
+{
+  const blockedCallsBefore = unifiedCalls;
+  const blockedToasts = [];
+  const blockedContext = {
+    currentOrders: [{ type: 'imaging', fields: { study: 'X-ray' } }], aiSuggestedOrders: [],
+    _ordersBlockedMsg(action) { return 'Complete or remove the incomplete order before ' + action + '.'; },
+    _athenaBoundVisitForAction() { throw new Error('binding must not be resolved for invalid drafts'); },
+    _athenaOrderReviewBundle() { throw new Error('review bundle must not be built for invalid drafts'); },
+    toast(message, type) { blockedToasts.push({ message, type }); },
+    console, Date, Math, Object, Array, String,
+    window: { __mlsWriteFlow: { openUnifiedConfirmation() { unifiedCalls++; return { manifestId: 'should-not-open' }; } } }
+  };
+  vm.createContext(blockedContext);
+  vm.runInContext(sendOrdersSource + '\nthis.sendOrdersToEMR = sendOrdersToEMR;', blockedContext);
+  const blockedResult = blockedContext.sendOrdersToEMR(null);
+  assert.strictEqual(blockedResult, null, 'invalid order draft still opened the EMR review');
+  assert.strictEqual(unifiedCalls, blockedCallsBefore, 'invalid order draft reached the unified confirmation');
+  assert(blockedToasts.length === 1 && /incomplete order/.test(blockedToasts[0].message) && blockedToasts[0].type === 'err', 'invalid order refusal was not a visible error');
+}
 
 assert(flowSource.includes('Orders proposed for Athena'), 'compact final-review Orders summary is missing');
 assert(flowSource.includes('Review complete proposed order'), 'order details are not expandable in the final review');

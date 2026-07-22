@@ -175,7 +175,11 @@ assert(stagingPushPlan.includes('typeof wf.openUnifiedConfirmation'), 'staging r
 assert(stagingPushPlan.includes('requireExpectedVisit:true'), 'staging review no longer requires the exact expected encounter at confirmation time');
 
 assert(owner.includes('exactActionReady: function (actionLabel)'), 'canonical API does not expose the exact scheduled action decision to engine sinks');
-assert(owner.includes("return !!S.appt && requireExactScheduledBinding(S.appt, actionLabel || 'this action');"), 'engine decision can pass without the selected scheduled appointment gate');
+/* pin updated 2026-07-22: the no-locked-visit refusal must now be VISIBLE
+   (toast + render) instead of a silent false — the gate itself is unchanged. */
+assert(owner.includes("if (!S.appt) {"), 'engine decision lost its explicit no-locked-visit branch');
+assert(owner.includes("S.lastWarn = 'MLS blocked ' + label + ' because no scheduled visit is locked"), 'no-locked-visit refusal is silent again (no visible warning)');
+assert(owner.includes('return requireExactScheduledBinding(S.appt, label);'), 'engine decision can pass without the selected scheduled appointment gate');
 
 function makeEngineHarness(blocks, gate) {
   const calls = { labels: [], toasts: [], dom: [], network: 0 };

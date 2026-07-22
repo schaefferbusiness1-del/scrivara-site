@@ -138,6 +138,11 @@
       later(function () { if (refreshBurstSeq[reason] === token) queueRefresh(document, reason, 0); }, ms);
     });
   }
+  /* Invalidate every pending timer of a burst (bumping the token makes them
+     no-ops). Lets a completed/failed generation stop its own refresh tail
+     instead of hammering the document for the full burst window. */
+  function cancelBurst(reason) { refreshBurstSeq[reason] = (refreshBurstSeq[reason] || 0) + 1; }
+  FP.cancelBurst = cancelBurst;
   function addStyle(id, css) {
     if ($(id)) return;
     var st = document.createElement('style'); st.id = id; st.textContent = css;
@@ -1059,7 +1064,11 @@
       if (!action) return;
       var label = String(action.textContent || '') + ' ' + String(action.id || '') + ' ' + String(action.className || '');
       if (/generate|draft|prep|op[ -]?note|procedure note|create note|one note|soap/i.test(label)) {
-        refreshBurst('action,generation,note', [80, 350, 900, 1800, 3500, 6000, 10000, 16000, 24000, 36000]);
+        /* Bounded tail: the old [ …16s, 24s, 36s ] tail kept whole-document
+           refresh passes running long after a generation finished or FAILED,
+           and stacked with chart-navigation bursts into visible freezes. The
+           burst now ends at 6s, and mls:generation-complete cancels it early. */
+        refreshBurst('action,generation,note', [80, 350, 900, 1800, 3500, 6000]);
       } else if (/settings|preferences/i.test(label)) {
         refreshBurst('action,settings', [60, 250, 700, 1500, 3000]);
       } else if (/patient|visit|record|switch/i.test(label)) {
@@ -1073,6 +1082,9 @@
       'mls:generation-complete', 'mls:schedule-updated', 'mls:calendar-updated'].forEach(function (name) {
       listen(window, name, function () { queueRefresh(document, name, 40); }, false);
     });
+    /* Generation settled (success OR failure): stop the generation burst —
+       one settle-refresh above is enough. */
+    listen(window, 'mls:generation-complete', function () { cancelBurst('action,generation,note'); }, false);
 
     try {
       var mo = new MutationObserver(function (records) {

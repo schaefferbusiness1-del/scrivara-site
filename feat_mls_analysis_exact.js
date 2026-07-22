@@ -45,7 +45,11 @@
 
   var KNOWN = {
     mlsProcReport:   { icon: "&#128202;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Procedure Report",            sub: "procedures by type",         color: "#1A211C", src: "mlsProcReport",    re: /([\d,]+)\s*procedure/i, fallback: "View" },
-    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", accent: "#e05252", title: "Key trends at a glance",      sub: "active patients, top dx",    color: "#1A211C", src: "anaKeyTrendsBody", re: /([\d,]+)\s*(?:active\s*)?patient/i, fallback: "View" },
+    /* Label-anchored: the old loose /N patient/ regex latched the FIRST "N
+       patients" in the body text, which is the Top-diagnosis cohort count (the
+       Active-patients value is followed by "visits recorded", not "patients")
+       — so 72 rendered under the Active-patients label. */
+    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", accent: "#e05252", title: "Key trends at a glance",      sub: "active patients, top dx",    color: "#1A211C", src: "anaKeyTrendsBody", re: /Active\s*patients\s*([\d,]+)/i, fallback: "View" },
     anaOutcomes:     { icon: "&#128227;", iconBg: "#fbf3e3", accent: "#e0a028", title: "Outcomes &amp; marketing",    sub: "patient satisfaction",       color: "#c2680f", src: "anaOutcomesBody",  re: /(\d{1,3}%)/, fallback: "View" },
     anaAsk:          { icon: "&#128270;", iconBg: "#f3eefb", accent: "#7A5CC0", title: "Ask your data",               sub: "volumes, trends, coding",    color: "#7A5CC0", label: "Query", premium: true },
     anaBaseline:     { icon: "&#128200;", iconBg: "#e7f5ee", accent: "#12915e", title: "Baseline metrics",            sub: "wRVU and visit counts",      color: "#1A211C", src: "anaBaselineBody",  re: /wRVU\s*\(approx\.\)\s*([\d,]+(?:\.\d+)?)/i, re2: /Office visits\s*([\d,]+)/i, fallback: "View" },

@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b488"></script>
+<script src="public-preview-policy.js?v=b489"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -719,7 +719,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4880a}
+  .sp-gap .sp-label{color:#b4890a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -3518,7 +3518,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="featTplUse" style="width:17px;height:17px;cursor:pointer">
           <span>📄 Templates <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
         </label>
-        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under 🛠 More tools → Templates.</p>
+        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under Menu → 📄 Templates.</p>
       </div>
 
       <!-- MLS additive — Custom widgets pointer (built/managed via the header button) -->
@@ -6515,6 +6515,10 @@ function mlsBuildSettingsTabs(){
 }
 function openSettings(){
   applyBackendModeUI();
+  /* Re-mirror the TRUE nav layout into the Display select at open time — the
+     boot-time sync can run before the shell restores its rail, leaving the
+     select saying "Top bar" while a left sidebar renders. */
+  try{ applyNavLayout(); }catch(e){}
   try{ var _cpw=document.getElementById('changePwField'); if(_cpw) _cpw.style.display=(typeof backendMode==='function'&&backendMode()&&bkToken())?'block':'none'; }catch(e){}
   document.getElementById('apiKey').value=getKey();
   document.getElementById('docName').value=getName();
@@ -12014,6 +12018,9 @@ function _renderProfAtGlance(p){
   var el=document.getElementById('profAtGlance');
   if(!el){ el=document.createElement('div'); el.id='profAtGlance'; el.style.cssText='display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:9px 0 2px'; host.parentNode.insertBefore(el, host.nextSibling); }
   var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
+  /* count COMPLETED visits only — drafts (e.g. op-note drafts) are not visits
+     and must not inflate this chip or disagree with the canonical counters */
+  notes=notes.filter(function(n){ return n&&!n.isDraft; });
   if(!notes.length){ el.innerHTML='<span style="font-size:12.5px;color:var(--muted)">✨ New patient — start their first visit to begin building their history.</span>'; return; }
   var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
   var last=dates[dates.length-1]||'';
@@ -12227,12 +12234,48 @@ function addDocToActive(name,text,kind){
   return d;
 }
 function addDocPaste(){
+  /* In-app dialog (was native prompt(): blocked/suppressed prompts made the
+     button fail with no visible outcome, and a native dialog freezes the tab
+     for automation and screen readers). */
   if(!activePatient()){ toast('Select a patient first.','err'); return; }
-  const text=prompt('Paste the document text (lab result, prior note, discharge summary, etc.):');
-  if(text===null || !text.trim()){ return; }
-  const name=prompt('Name this document:','Pasted document '+new Date().toLocaleDateString())||'Pasted document';
-  const d=addDocToActive(name.trim(),text.trim(),'text');
-  if(d){ toast('Document added. Open it to Analyze with AI.','ok'); openDoc(d.id); }
+  openDocPasteModal();
+}
+function openDocPasteModal(){
+  var old=document.getElementById('docPasteModal'); if(old) old.remove();
+  var boundPtId=getActivePtId();
+  var back=document.createElement('div'); back.id='docPasteModal';
+  back.style.cssText='position:fixed;inset:0;background:rgba(15,25,20,.45);z-index:9700;display:flex;align-items:center;justify-content:center;padding:16px;';
+  back.innerHTML='<div role="dialog" aria-modal="true" aria-labelledby="docPasteTitle" style="background:var(--card,#fff);color:var(--ink,#1A211C);border-radius:14px;max-width:560px;width:100%;padding:18px;box-shadow:0 18px 44px rgba(0,0,0,.28);">'
+    +'<h3 id="docPasteTitle" style="margin:0 0 10px;font-size:17px;">Paste a document</h3>'
+    +'<label for="docPasteName" style="display:block;font-weight:600;font-size:13px;margin-bottom:4px;">Document name</label>'
+    +'<input id="docPasteName" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#E7E5DD);border-radius:9px;padding:9px 10px;font:inherit;margin-bottom:10px;">'
+    +'<label for="docPasteText" style="display:block;font-weight:600;font-size:13px;margin-bottom:4px;">Document text</label>'
+    +'<textarea id="docPasteText" rows="9" placeholder="Paste the lab result, prior note, discharge summary, etc." style="width:100%;box-sizing:border-box;border:1px solid var(--line,#E7E5DD);border-radius:9px;padding:9px 10px;font:inherit;resize:vertical;"></textarea>'
+    +'<div id="docPasteErr" role="alert" style="color:#B23B3B;font-size:13px;min-height:18px;margin:6px 0 8px;"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +'<button type="button" id="docPasteCancel" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line,#D9D6CD);background:var(--surface,#fff);cursor:pointer;">Cancel</button>'
+    +'<button type="button" id="docPasteAdd" style="font:inherit;font-weight:600;padding:8px 14px;border-radius:9px;border:none;background:var(--brand,#2E6A4B);color:#fff;cursor:pointer;">Add document</button>'
+    +'</div></div>';
+  document.body.appendChild(back);
+  var nameEl=document.getElementById('docPasteName');
+  var textEl=document.getElementById('docPasteText');
+  var errEl=document.getElementById('docPasteErr');
+  nameEl.value='Pasted document '+new Date().toLocaleDateString();
+  function close(){ try{back.remove();}catch(e){} document.removeEventListener('keydown',onKey,true); }
+  function onKey(e){ if(e.key==='Escape'){ e.stopPropagation(); close(); } }
+  document.addEventListener('keydown',onKey,true);
+  back.addEventListener('mousedown',function(e){ if(e.target===back) close(); });
+  document.getElementById('docPasteCancel').onclick=close;
+  document.getElementById('docPasteAdd').onclick=function(){
+    var text=(textEl.value||'').trim();
+    if(String(getActivePtId()||'')!==String(boundPtId||'')){ errEl.textContent='The active patient changed while this dialog was open. Close it and paste again for the correct chart.'; return; }
+    if(!activePatient()){ errEl.textContent='No active patient — choose a patient first, then paste again.'; return; }
+    if(!text){ errEl.textContent='Paste the document text first.'; textEl.focus(); return; }
+    var d=addDocToActive((nameEl.value||'Pasted document').trim()||'Pasted document',text,'text');
+    if(d){ close(); toast('Document added. Open it to Analyze with AI.','ok'); openDoc(d.id); }
+    else{ errEl.textContent='The document could not be saved. Try again.'; }
+  };
+  textEl.focus();
 }
 function readFileAsDataUrl(file){
   return new Promise((resolve,reject)=>{
@@ -12689,14 +12732,37 @@ async function opPrepGenerateOne(i){
 }
 /* Save (or update) this op-note row as a DRAFT in History immediately, so it's never lost even
    if the doctor navigates away without clicking Save. Re-uses the same note id on re-draft. */
+/* ===== CANONICAL UNRESOLVED-PLACEHOLDER PARSER =====
+   ONE vocabulary and ONE count for every surface (banner, guided filler, save
+   gating, bundle counters). Recognizes all placeholder syntaxes this app has
+   ever emitted: [[snake_key]], [FILL:label], [not dictated], and ___ runs.
+   [[key]]/[FILL:] dedupe by key/label (repeats of the same field are one
+   unresolved field); anonymous blanks count individually. */
+function opNoteBlankTokens(text){
+  var s=String(text||''); var seen={}; var out=[]; var m;
+  function add(key,label){ var k=String(key||'').toLowerCase(); if(!k||seen[k]) return; seen[k]=1;
+    out.push({ key:k, label:label||k.replace(/_/g,' ').replace(/\b\w/g,function(c){ return c.toUpperCase(); }) }); }
+  var re1=/\[\[\s*([a-z0-9_]+)\s*\]\]/gi;
+  while((m=re1.exec(s))) add(m[1]);
+  var re2=/\[FILL:\s*([^\]]+?)\s*\]/gi;
+  while((m=re2.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
+  var nd=0, re3=/\[not dictated\]/gi;
+  while((m=re3.exec(s))){ nd++; add('not_dictated_'+nd, 'Not dictated #'+nd); }
+  var bl=0, re4=/(^|[^_])_{3,}(?!_)/g;
+  while((m=re4.exec(s))){ bl++; add('blank_line_'+bl, 'Blank #'+bl); }
+  return out;
+}
+function opNoteBlankCount(text){ return opNoteBlankTokens(text).length; }
+window.opNoteBlankTokens=opNoteBlankTokens;
+window.opNoteBlankCount=opNoteBlankCount;
 function opPrepAutosaveDraft(i){
   try{
     var row=(window._opPrep||[])[i]; if(!row||!row.note) return;
     var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
     if(!p){ try{ toast('Draft not saved: exact patient identity could not be verified.','err'); }catch(e){} return false; }
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
-    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
+    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){} return true;
   }catch(e){ return false; }
 }
@@ -12806,19 +12872,34 @@ function opPrepApply(i){
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
-  var leftover=(note.match(/\[\[[a-z0-9_]+\]\]/gi)||[]).length;
+  /* ONE canonical parser decides completeness. A note with ANY unresolved
+     placeholder can only be saved as an explicitly labeled DRAFT: it never
+     finalizes, and drafts never update completed-visit/last-visit state. */
+  var unresolved=opNoteBlankTokens(note);
+  var isComplete=unresolved.length===0;
   var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
   if(!p){ try{ toast('Op note not saved: exact patient identity could not be verified. Re-open it from that patient’s chart.','err'); }catch(e){} return; }
   try{
     var ns=getNotes();
-    var cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op note)';
+    var cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
     var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;   // finalize the SAME draft we auto-saved (no duplicate)
-    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=false; ex.updated=Date.now(); }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:false }; ns.unshift(n); row._noteId=n.id; }
+    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai'; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
     try{ if(typeof saveNoteToBackend==='function'){ var sv=ns.find(function(x){ return x.id===row._noteId; }); if(sv) saveNoteToBackend(sv); } }catch(e){}
   }catch(e){}
-  var msg=document.getElementById('opPrepMsg_'+i); if(msg){ msg.innerHTML='✓ Saved to '+esc(p.name)+'’s History'+(leftover?(' — '+leftover+' blank(s) still in the note'):'')+' · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#204034;font-weight:700">Open in History →</a>'; msg.style.color=leftover?'#b4231e':'#16924e'; }
+  var msg=document.getElementById('opPrepMsg_'+i);
+  if(msg){
+    if(isComplete){
+      msg.innerHTML='✓ Saved to '+esc(p.name)+'’s History · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#204034;font-weight:700">Open in History →</a>';
+      msg.style.color='#16924e';
+    } else {
+      var labels=unresolved.map(function(t){ return t.label; });
+      var shown=labels.slice(0,6).join(', ')+(labels.length>6?(' +'+(labels.length-6)+' more'):'');
+      msg.innerHTML='📝 Saved as a DRAFT — '+unresolved.length+' unresolved field'+(unresolved.length===1?'':'s')+': '+esc(shown)+'. Fill them in to save the completed note. · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#204034;font-weight:700">Open in History →</a>';
+      msg.style.color='#b4231e';
+    }
+  }
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){}
 }
 
@@ -13274,6 +13355,33 @@ function _tplFormHeaderCount(text){
 function _looksMultiForm(text){ return _tplFormHeaderCount(text)>=2 && String(text||'').length>4000; }
 /* NAME A TEMPLATE BY THE TYPE OF NOTE (the procedure), NOT the patient. Pulls the procedure /
    operation line and tidies it into a clean label (side · levels · type). Strips patient names. */
+/* Explicit template metadata: leading "Name:" / "Keywords:" lines are template
+   METADATA — they name the template and seed its match keywords, and must be
+   REMOVED from the clinical body (they used to stay in the body, leak into
+   generated notes, and lose the name to the filename). Only a leading block is
+   parsed, and a bare "Name: Lastname, Firstname" patient line is NOT treated
+   as a template name unless a Keywords: line confirms the metadata intent. */
+function _tplParseMeta(text){
+  var lines=String(text||'').replace(/\r\n?/g,'\n').split('\n');
+  var meta={name:'',keywords:[],body:String(text||'')};
+  var i=0, guard=0, name='', keywords=null;
+  while(i<lines.length && guard<6){
+    var t=lines[i].trim();
+    if(!t){ i++; continue; }
+    var m=t.match(/^(?:template\s+name|name|title)\s*:\s*(.+)$/i);
+    var k=t.match(/^(?:keywords?|tags)\s*:\s*(.+)$/i);
+    if(m && !name){ name=m[1].trim(); i++; guard++; continue; }
+    if(k && keywords===null){ keywords=k[1].split(/[,;]/).map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean); i++; guard++; continue; }
+    break;
+  }
+  var patientish=/^[A-Z][a-z]+,\s*[A-Z][a-z]+$/.test(name);
+  if(name && (keywords!==null || !patientish)){
+    meta.name=name.slice(0,120);
+    meta.keywords=(keywords||[]).slice(0,16);
+    meta.body=lines.slice(i).join('\n').replace(/^\n+/,'');
+  }
+  return meta;
+}
 function _tplTypeName(text, fallback){
   var s=String(text||''); var proc='';
   var m=s.match(/(?:OPERATIONS?\s+PERFORMED|PROCEDURES?\s+PERFORMED|OPERATIVE\s+PROCEDURE|PROCEDURE\s*\(S\)|NAME\s+OF\s+(?:PROCEDURE|OPERATION)|TITLE\s+OF\s+(?:PROCEDURE|OPERATION)|PROCEDURE|OPERATION)\s*[:\-–]\s*(.+)/i);
@@ -13309,15 +13417,32 @@ async function tplMultiFile(ev){
     _tplPendingSplit=[];
     for(var i=0;i<perFileText.length;i++){
       var p=perFileText[i];
-      if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name); }
+      var meta=_tplParseMeta(p.text);
+      if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
+      else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name); }
       else { _tplPendingSplit.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
     }
-    _tplPendingSplit.forEach(function(t){ t.name=_tplTypeName(t.text, t.name); });   // name everything by type
-    _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });   // name by type (explicit metadata names win)
+    var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
+    _tplPendingSplit=batchInfo.list;
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(batchInfo.dropped.length?(' · '+batchInfo.dropped.length+' duplicate'+(batchInfo.dropped.length===1?'':'s')+' skipped ('+batchInfo.dropped.slice(0,3).join(', ')+(batchInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
     _renderTplSplitPreview();
   } else {
-    await tplAiSplit(perFileText.map(function(p){ return p.text; }).join('\n\f\n'));
+    /* 1-2 files: process EVERY file separately so no file can silently vanish
+       into a joined blob — each file yields at least one reviewable row, and
+       duplicates are reported instead of dropped. */
+    if(!backendMode()||!bkToken()){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
+    _tplPendingSplit=[];
+    for(var j=0;j<perFileText.length;j++){
+      _tplMultiStatus('✨ Recognizing templates… file '+(j+1)+'/'+perFileText.length+' ('+_tplPendingSplit.length+' found so far)');
+      await _tplSplitOneInto(perFileText[j].text, perFileText[j].name);
+    }
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });
+    var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
+    _tplPendingSplit=pairInfo.list;
+    if(!_tplPendingSplit.length){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(pairInfo.dropped.length?(' · '+pairInfo.dropped.length+' duplicate'+(pairInfo.dropped.length===1?'':'s')+' skipped ('+pairInfo.dropped.slice(0,3).join(', ')+(pairInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
+    _renderTplSplitPreview();
   }
 }
 /* Break long text so the AI never drops templates from one giant blob. Splits on page
@@ -13331,13 +13456,22 @@ function _tplChunk(text, size){
   var out=[]; parts.forEach(function(p){ if(p.length<=size*1.5){ out.push(p); } else { for(var k=0;k<p.length;k+=size){ out.push(p.slice(k,k+size)); } } });
   return out;
 }
+/* Dedupe with ACCOUNTING: every selected file/template must end up either in
+   the list or in the reported "dropped" duplicates — never silently gone. */
+function _tplDedupeTemplatesInfo(arr){
+  var seen={}, out=[], dropped=[];
+  arr.forEach(function(t){ if(!t||!(t.text||'').trim()) return; var key=(String(t.name||'')+'|'+(t.text||'').slice(0,80)).toLowerCase().replace(/\s+/g,' '); if(!seen[key]){ seen[key]=1; out.push(t); } else { dropped.push(String(t.name||'Untitled')); } });
+  return { list:out, dropped:dropped };
+}
 function _tplDedupeTemplates(arr){
-  var seen={}, out=[];
-  arr.forEach(function(t){ if(!t||!(t.text||'').trim()) return; var key=(String(t.name||'')+'|'+(t.text||'').slice(0,80)).toLowerCase().replace(/\s+/g,' '); if(!seen[key]){ seen[key]=1; out.push(t); } });
-  return out;
+  return _tplDedupeTemplatesInfo(arr).list;
 }
 /* Split ONE document's text (chunked) and push results into _tplPendingSplit. */
 async function _tplSplitOneInto(text, fallbackName){
+  /* Explicit Name:/Keywords: metadata makes the file self-describing — one
+     template, named by its metadata, body cleaned; no AI round-trip needed. */
+  var meta=_tplParseMeta(text);
+  if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
   var chunks=_tplChunk(text, 6000);
   var before=_tplPendingSplit.length;
   for(var ci=0; ci<chunks.length; ci++){
@@ -13354,10 +13488,15 @@ async function _tplSplitOneInto(text, fallbackName){
 /* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
    (files were joined with \f) — never a dead end that demands a sign-in. */
 function _tplPerFileFallback(text){
-  _tplPendingSplit=String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){return { name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };});
-  _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
+  _tplPendingSplit=String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
+    var meta=_tplParseMeta(seg);
+    if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
+    return { name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
+  });
+  var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
+  _tplPendingSplit=fbInfo.list;
   if(!_tplPendingSplit.length){ _tplMultiStatus('No readable text found in those files.','#b4231e'); return; }
-  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' (one per file). Review and add:','#1c7a43');
+  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' (one per file)'+(fbInfo.dropped.length?(' · '+fbInfo.dropped.length+' duplicate'+(fbInfo.dropped.length===1?'':'s')+' skipped'):'')+'. Review and add:','#1c7a43');
   _renderTplSplitPreview();
 }
 async function tplAiSplit(text){
@@ -13373,10 +13512,11 @@ async function tplAiSplit(text){
       if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
     }catch(e){}
   }
-  _tplPendingSplit.forEach(function(t){ t.name=_tplTypeName(t.text, t.name); });   // name by note TYPE, not patient
-  _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
+  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });   // name by note TYPE, not patient (explicit metadata names win)
+  var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
+  _tplPendingSplit=aiInfo.list;
   if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
-  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+'. Review and add the ones you want:','#1c7a43');
+  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+(aiInfo.dropped.length?(' · '+aiInfo.dropped.length+' duplicate'+(aiInfo.dropped.length===1?'':'s')+' skipped'):'')+'. Review and add the ones you want:','#1c7a43');
   _renderTplSplitPreview();
 }
 function _renderTplSplitPreview(){
@@ -13394,7 +13534,7 @@ function tplAddSplit(){
   var keep=_tplPendingSplit.filter(function(t){return t.keep && (t.text||'').trim();});
   if(!keep.length){ toast('Select at least one template.','err'); return; }
   var list=getTemplates();
-  keep.forEach(function(t,ki){ list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:String(t.name||'Template').slice(0,120), keywords:[], text:t.text, created:Date.now() }); });
+  keep.forEach(function(t,ki){ list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:String(t.name||'Template').slice(0,120), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
   _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
@@ -13529,25 +13669,29 @@ async function analyzeDoc(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Analyzing…';
   try{
     const sys=`You are a clinical assistant reading a patient document (e.g. lab report, prior note, discharge summary, imaging report). Summarize and EXTRACT key clinical items. STRICT HONESTY: use ONLY what is actually present in the document. Do not infer, guess, or invent diagnoses, medications, or results. If something isn't stated, omit it.
+DATES MATTER: when the document states a date for a study, result, or event (e.g. an MRI date, lab collection date), KEEP that date with the item, e.g. "MRI lumbar spine (03/14/2026): disc protrusion L4-L5".
+EXPLICIT NEGATIVES MATTER: statements like "no procedure performed", "no refill given", "no fracture" are clinically meaningful — capture them verbatim or closely paraphrased in "negatives". Never silently drop them.
 Return ONLY valid JSON (no fences) with this shape:
 {
  "summary": "<a concise 3-6 sentence clinical summary of what this document contains>",
  "diagnoses": ["<problems/diagnoses explicitly stated>"],
  "medications": ["<medications with dose if stated>"],
- "results": ["<key labs/imaging/test results with values if stated>"],
+ "results": ["<key labs/imaging/test results with values AND their stated dates>"],
+ "negatives": ["<explicitly stated negative findings or decisions, e.g. 'no procedure performed', 'no refill given'>"],
  "history": ["<other relevant history items explicitly stated>"]
 }`;
     const raw=await aiCallRaw(sys,'PATIENT DOCUMENT:\n\n'+d.text.slice(0,12000),getKey(),{freeform:true});
-    let parsed; try{ parsed=JSON.parse(raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim()); }catch(e){ parsed={summary:raw,diagnoses:[],medications:[],results:[],history:[]}; }
+    let parsed; try{ parsed=JSON.parse(raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim()); }catch(e){ parsed={summary:raw,diagnoses:[],medications:[],results:[],negatives:[],history:[]}; }
     const lines=[];
     lines.push(parsed.summary||'(no summary)');
     const sec=(label,arr)=>{ if(Array.isArray(arr)&&arr.length){ lines.push('\n'+label+':'); arr.forEach(x=>lines.push('• '+x)); } };
     sec('Diagnoses / problems',parsed.diagnoses);
     sec('Medications',parsed.medications);
     sec('Results',parsed.results);
+    sec('Explicit negatives',parsed.negatives);
     sec('Relevant history',parsed.history);
     d.aiSummary=lines.join('\n');
-    d.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], history:parsed.history||[], summary:parsed.summary||'' };
+    d.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], negatives:parsed.negatives||[], history:parsed.history||[], summary:parsed.summary||'' };
     upsertPatient(p);
     document.getElementById('docAiWrap').style.display='block';
     document.getElementById('docAiBody').textContent=d.aiSummary;
@@ -13563,12 +13707,39 @@ function mergeListInto(existing,additions){
   (additions||[]).forEach(a=>{ const k=String(a).trim(); if(k && !have.has(k.toLowerCase())){ lines.push(k); have.add(k.toLowerCase()); } });
   return lines.join('\n');
 }
+/* Medication-aware merge: exact-string dedupe let "ibuprofen" and
+   "Ibuprofen 600 mg" pile up as duplicates. Dedupe by drug name + dose while
+   keeping genuinely distinct dose/instruction lines. */
+function _medNameKey(s){
+  s=String(s||'').trim().toLowerCase();
+  const m=s.match(/^[a-z][a-z\-\/]*(?:\s+[a-z][a-z\-\/]*)*?(?=\s+\d|\s+(?:mg|mcg|g|ml|units?|tabs?|caps?|po|bid|tid|qid|qhs|prn|daily)\b|$)/);
+  return (m?m[0]:s).trim();
+}
+function _medDoseKey(s){
+  const m=String(s||'').toLowerCase().replace(/\s+/g,'').match(/(\d+(?:\.\d+)?)(mg|mcg|g|ml|units?)/);
+  return m?(m[1]+m[2].replace(/s$/,'')):'';
+}
+function mergeMedListInto(existing,additions){
+  const lines=(existing||'').split(/\n/).map(s=>s.trim()).filter(Boolean);
+  const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,'');
+  (additions||[]).forEach(a=>{
+    const add=String(a).trim(); if(!add) return;
+    if(lines.some(l=>norm(l)===norm(add))) return;                      // same line, formatting aside
+    const key=_medNameKey(add), dose=_medDoseKey(add);
+    const idx=lines.findIndex(l=>_medNameKey(l)===key);
+    if(idx<0){ lines.push(add); return; }
+    const cur=lines[idx], curDose=_medDoseKey(cur);
+    if(dose&&curDose&&dose!==curDose){ lines.push(add); return; }       // genuinely different dose — keep both
+    if(add.length>cur.length){ lines[idx]=add; }                        // same drug/dose — keep the more detailed line
+  });
+  return lines.join('\n');
+}
 function mergeDocIntoProfile(){
   const p=activePatient(); if(!p) return;
   const d=(p.docs||[]).find(x=>x.id===viewingDocId); if(!d||!d.aiItems){ toast('Analyze the document first.','err'); return; }
   const it=d.aiItems;
   p.problems=mergeListInto(p.problems,it.diagnoses);
-  p.meds=mergeListInto(p.meds,it.medications);
+  p.meds=mergeMedListInto(p.meds,it.medications);
   if(it.summary){
     const stamp='[From document: '+d.name+' — '+new Date(d.date).toLocaleDateString()+']';
     p.summary=((p.summary||'').trim()+'\n\n'+stamp+'\n'+it.summary).trim();
@@ -13600,7 +13771,7 @@ function attachVisitToPatient(rec){
   }
   if(e.meds && e.meds!=='—'){
     const medItems=e.meds.split(/[;\n]/).map(s=>s.trim()).filter(Boolean);
-    p.meds=mergeListInto(p.meds,medItems);
+    p.meds=mergeMedListInto(p.meds,medItems);
   }
   // append a one-line visit summary to the running profile summary
   const when=new Date(rec.updated||Date.now()).toLocaleDateString();
@@ -15155,7 +15326,18 @@ async function _importPulledSchedule(appts){
 /* A patient counts as "seen" today once they have a real (non-draft) saved note dated today. */
 function _seenToday(name){
   try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false; var today=_acctTodayKey();
-    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && !n.isDraft && _acctDateKeyOf(new Date(n.updated||n.created||0))===today; });
+    /* Reconcile with the canonical patientId counters: when this name maps to
+       exactly ONE local patient, a note only counts if its patientId agrees
+       (a same-named different patient must not mark this one seen). Name-only
+       matching remains solely for ambiguous or id-less legacy notes. */
+    var matches=((typeof getPatients==='function'?getPatients():[])||[]).filter(function(p){ return String(p.name||'').trim().toLowerCase()===nm; });
+    var exact=matches.length===1?matches[0]:null;
+    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){
+      if(!n||n.isDraft) return false;
+      if(_acctDateKeyOf(new Date(n.updated||n.created||0))!==today) return false;
+      if(exact&&n.patientId) return String(n.patientId)===String(exact.id);
+      return String(n.patient||'').trim().toLowerCase()===nm;
+    });
   }catch(e){ return false; }
 }
 /* Tomorrow's appointments pulled from the calendar (so they file into a Tomorrow folder). */
@@ -16011,14 +16193,23 @@ async function generateNote(){
     } else {
       toast('Add your OpenAI API key in Settings to generate notes.','err');
       openSettings();
+      try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen1){}
       return false;
     }
+    try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen2){}
     return true;
   }
 
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
   try{
-    const result=await callOpenAI(transcript,key);
+    /* A hung generation request used to leave this button disabled forever —
+       every later click then failed with no visible outcome. Bound the wait so
+       the clinician always gets an actionable error and a live retry button. */
+    let genTimeoutId=null;
+    const result=await Promise.race([
+      callOpenAI(transcript,key),
+      new Promise((_,reject)=>{ genTimeoutId=setTimeout(()=>reject(new Error('generation-timeout')),90000); })
+    ]).finally(()=>{ if(genTimeoutId)clearTimeout(genTimeoutId); });
     if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)) return false;
     if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint){
       toast('The visit changed while the note was being generated, so MLS discarded that older result. Review the current visit and generate again. Nothing changed in Athena.','err');
@@ -16050,10 +16241,17 @@ async function generateNote(){
     try{ _markVisitDirty(); }catch(e){}
     return true;
   }catch(err){
-    toast(friendlyError(err),'err');
+    if(err&&/generation-timeout/.test(String(err.message||''))){
+      toast('Note generation timed out after 90 seconds. Your transcript is safe — check your connection and click Generate again.','err');
+    }else{
+      toast(friendlyError(err),'err');
+    }
     return false;
   }finally{
     gb.disabled=false; gb.innerHTML='✨ Generate Note';
+    /* Announce settlement (success OR failure) so overlay refresh bursts stop
+       instead of hammering the document for their full window. */
+    try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen){}
   }
 }
 
@@ -17293,6 +17491,14 @@ function offlineExampleRecommendations(){
 function signNote(){
   if(signed){ toast('Note is already signed.',''); return; }
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('signing this note')) return;
+  /* A note with ANY unresolved placeholder must never complete — signing is
+     completion. Same canonical parser as the op-note save/export gates. */
+  try{
+    if(typeof opNoteBlankTokens==='function'){
+      var _signUnresolved=opNoteBlankTokens(String(document.getElementById('noteBox').value||''));
+      if(_signUnresolved.length){ toast('This note still has '+_signUnresolved.length+' unresolved field'+(_signUnresolved.length===1?'':'s')+' ('+_signUnresolved.slice(0,5).map(function(x){return x.label||x.key;}).join(', ')+(_signUnresolved.length>5?'…':'')+'). Fill them in before signing.','err'); return; }
+    }
+  }catch(eSignPh){}
   setBadge(true);
   const name=getName()||'Clinician';
   const ts=new Date().toLocaleString();
@@ -17886,6 +18092,16 @@ function pushHistoryNoteToAthena(id){
   var ns=(typeof getNotes==='function'?getNotes():[])||[];
   var n=ns.find(function(x){ return x.id===id; }); if(!n){ try{ toast('That visit no longer exists.','err'); }catch(e){} return; }
   var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to review.','err'); }catch(e){} return; }
+  /* Fail-closed even when called directly: drafts and notes with unresolved
+     placeholders never open an Athena route (the History UI already hides the
+     button for drafts — this is the internal last line of defense). */
+  if(n.isDraft){ try{ toast('This is still a draft. Complete and save it before reviewing Athena actions. Nothing changed.','err'); }catch(eD){} return; }
+  try{
+    if(typeof opNoteBlankTokens==='function'){
+      var _phUnresolved=opNoteBlankTokens(bundle);
+      if(_phUnresolved.length){ try{ toast('This note still has '+_phUnresolved.length+' unresolved field'+(_phUnresolved.length===1?'':'s')+' ('+_phUnresolved.slice(0,5).map(function(x){return x.label||x.key;}).join(', ')+(_phUnresolved.length>5?'…':'')+'). Fill them in before any Athena review. Nothing changed.','err'); }catch(eP){} return; }
+    }
+  }catch(ePh){}
   var c=n.coding||null; var orders=Array.isArray(n.orders)?n.orders:[];
   var savedBinding=_athenaBindingForSavedRecord(n);
   if(savedBinding.routeBlocked){try{toast('This saved visit was quarantined because its patient binding was not safe. Recreate it as a New visit for the correct patient before any Athena action. Nothing changed.','err');}catch(e00){}return;}
@@ -18190,8 +18406,8 @@ let lastOutcomeEntryId = null;    // de-dup key for outcome saves before the not
    `opts` for selects, `quick` quick-pick chips, `ph` placeholder. */
 const ORDER_DEFS = {
   medication: { label:'Medication', icon:'💊', fields:[
-    {key:'drug',  label:'Drug name', ph:'e.g. Gabapentin'},
-    {key:'dose',  label:'Dose',      ph:'e.g. 300 mg'},
+    {key:'drug',  label:'Drug name', ph:'e.g. Gabapentin', req:1},
+    {key:'dose',  label:'Dose',      ph:'e.g. 300 mg', req:1},
     {key:'route', label:'Route', type:'select', opts:['PO','IM','IV','SQ','Topical','PR','SL','Inhaled']},
     {key:'freq',  label:'Frequency', ph:'e.g. TID'},
     {key:'qty',   label:'Quantity',  ph:'e.g. 90'},
@@ -18199,33 +18415,36 @@ const ORDER_DEFS = {
     {key:'notes', label:'Notes / instructions', type:'textarea', ph:'e.g. titrate as tolerated; take with food'}
   ]},
   pt: { label:'Physical Therapy', icon:'🏃', fields:[
-    {key:'dx',    label:'Associated diagnosis', ph:'e.g. Lumbar radiculopathy (M54.16)'},
-    {key:'freq',  label:'Frequency', ph:'e.g. 3x/week'},
+    {key:'dx',    label:'Associated diagnosis', ph:'e.g. Lumbar radiculopathy (M54.16)', req:1},
+    {key:'freq',  label:'Frequency', ph:'e.g. 3x/week', req:1},
     {key:'duration',label:'Duration', ph:'e.g. 4 weeks'},
     {key:'modalities',label:'Modalities / goals', type:'textarea', ph:'e.g. lumbar stabilization, core strengthening, McKenzie protocol; goal: reduce radicular pain, improve ADLs'},
     {key:'notes', label:'Notes', type:'textarea', ph:'e.g. precautions; no axial loading'}
   ]},
   dme: { label:'DME / Brace', icon:'🦿', fields:[
-    {key:'item',  label:'Item', ph:'e.g. TLSO brace', quick:['TLSO brace','Lumbar support (LSO)','Cervical collar','Knee brace','Wrist splint']},
-    {key:'dx',    label:'Indication / diagnosis', ph:'e.g. L1 compression fracture'},
+    {key:'item',  label:'Item', ph:'e.g. TLSO brace', req:1, quick:['TLSO brace','Lumbar support (LSO)','Cervical collar','Knee brace','Wrist splint']},
+    {key:'dx',    label:'Indication / diagnosis', ph:'e.g. L1 compression fracture', req:1},
     {key:'icd',   label:'ICD-10', ph:'e.g. S32.019A'},
     {key:'notes', label:'Notes', type:'textarea', ph:'e.g. fit and dispense; wear while upright x 8 weeks'}
   ]},
   imaging: { label:'Imaging', icon:'🩻', fields:[
-    {key:'study', label:'Study', type:'select', opts:['X-ray','MRI','CT','Ultrasound','DEXA','EMG/NCS']},
-    {key:'region',label:'Body region', ph:'e.g. Lumbar spine'},
-    {key:'indication',label:'Indication', ph:'e.g. r/o compression fracture; persistent low back pain'},
+    /* The study select used to default to its first real value (X-ray), so an
+       untouched form still "passed" primary-field validation and created an
+       incomplete order. A required select must start blank. */
+    {key:'study', label:'Study', type:'select', req:1, opts:['','X-ray','MRI','CT','Ultrasound','DEXA','EMG/NCS']},
+    {key:'region',label:'Body region', ph:'e.g. Lumbar spine', req:1},
+    {key:'indication',label:'Indication', ph:'e.g. r/o compression fracture; persistent low back pain', req:1},
     {key:'notes', label:'Notes', type:'textarea', ph:'e.g. with and without contrast; compare to prior'}
   ]},
   injection: { label:'Injection', icon:'💉', fields:[
-    {key:'inj',   label:'Injection type', ph:'e.g. Epidural steroid injection', quick:['Epidural steroid injection','Facet joint injection','Medial branch block','Trigger point injection','Sacroiliac joint injection']},
-    {key:'level', label:'Level / site', ph:'e.g. L4-L5'},
+    {key:'inj',   label:'Injection type', ph:'e.g. Epidural steroid injection', req:1, quick:['Epidural steroid injection','Facet joint injection','Medial branch block','Trigger point injection','Sacroiliac joint injection']},
+    {key:'level', label:'Level / site', ph:'e.g. L4-L5', req:1},
     {key:'laterality',label:'Laterality', type:'select', opts:['','Left','Right','Bilateral','Midline']},
     {key:'notes', label:'Notes', type:'textarea', ph:'e.g. under fluoroscopy; triamcinolone 80 mg'}
   ]},
   referral: { label:'Referral', icon:'✉️', fields:[
-    {key:'specialty',label:'Specialty / provider', ph:'e.g. Neurosurgery — Dr. Lee'},
-    {key:'reason',label:'Reason', type:'textarea', ph:'e.g. surgical evaluation of progressive radiculopathy'},
+    {key:'specialty',label:'Specialty / provider', ph:'e.g. Neurosurgery — Dr. Lee', req:1},
+    {key:'reason',label:'Reason', type:'textarea', ph:'e.g. surgical evaluation of progressive radiculopathy', req:1},
     {key:'notes', label:'Notes', type:'textarea', ph:'e.g. include MRI report; urgent'}
   ]}
 };
@@ -18570,7 +18789,7 @@ function renderOrderFields(){
     if(f.type==='textarea'){
       control='<textarea id="'+id+'" rows="2" placeholder="'+esc(f.ph||'')+'"></textarea>';
     } else if(f.type==='select'){
-      control='<select class="sf-select" id="'+id+'">'+f.opts.map(o=>'<option value="'+esc(o)+'">'+(o===''?'—':esc(o))+'</option>').join('')+'</select>';
+      control='<select class="sf-select" id="'+id+'">'+f.opts.map(o=>'<option value="'+esc(o)+'">'+(o===''?(f.req?'Choose…':'—'):esc(o))+'</option>').join('')+'</select>';
     } else {
       control='<input type="text" id="'+id+'" placeholder="'+esc(f.ph||'')+'">';
     }
@@ -18601,10 +18820,22 @@ function readOrderForm(type){
   def.fields.forEach(f=>{ const el=document.getElementById('ordf_'+f.key); fields[f.key]=el?el.value.trim():''; });
   return fields;
 }
+function orderMissingFields(type,fields){
+  // every field marked req:1 must be filled for the order to be valid
+  const def=ORDER_DEFS[type]; if(!def) return [];
+  return def.fields.filter(f=>f.req && !(fields&&fields[f.key]&&String(fields[f.key]).trim())).map(f=>f.label);
+}
 function orderFormHasContent(type,fields){
-  // require at least the first (primary) field to be filled
-  const primary=ORDER_DEFS[type].fields[0].key;
-  return !!(fields[primary] && fields[primary].trim());
+  return orderMissingFields(type,fields).length===0;
+}
+function invalidOrderInfos(){
+  return (currentOrders||[]).map(o=>({order:o,missing:orderMissingFields(o.type,o.fields)})).filter(x=>x.missing.length);
+}
+function _ordersBlockedMsg(action){
+  const bad=invalidOrderInfos();
+  if(!bad.length) return '';
+  const parts=bad.map(x=>((ORDER_DEFS[x.order.type]||{label:x.order.type}).label)+' (missing: '+x.missing.join(', ')+')');
+  return 'Complete or remove the incomplete order'+(bad.length===1?'':'s')+' before '+action+' — '+parts.join('; ')+'.';
 }
 function addOrderFromForm(){
   const type=document.getElementById('ordType').value;
@@ -18612,7 +18843,8 @@ function addOrderFromForm(){
   const fields=readOrderForm(type);
   const catalogCode=((document.getElementById('ordCatalogCode')||{}).value||'').trim();
   const catalogId=((document.getElementById('ordCatalogId')||{}).value||'').trim();
-  if(!orderFormHasContent(type,fields)){ toast('Fill in at least the '+ORDER_DEFS[type].fields[0].label.toLowerCase()+'.','err'); return; }
+  const missing=orderMissingFields(type,fields);
+  if(missing.length){ toast('This '+ORDER_DEFS[type].label.toLowerCase()+' order still needs: '+missing.join(', ')+'.','err'); return; }
   if(editingOrderId){
     const o=currentOrders.find(x=>x.id===editingOrderId);
     if(o){ o.type=type; o.fields=fields; o.catalogCode=catalogCode; o.catalogId=catalogId; o._reviewStatus='accepted'; if(!/^(provider-entered|ai-suggestion|rule-suggestion|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(String(o._source||'')))o._source='provider-entered'; try{delete o.complete;}catch(_e){} }
@@ -18683,16 +18915,29 @@ function renderOrderList(){
   empty.style.display='none'; actions.style.display='flex';
   list.innerHTML=currentOrders.map(o=>{
     const def=ORDER_DEFS[o.type]||{icon:'•',label:o.type};
-    return `<div class="hist-item" onclick="editOrder('${o.id}')" title="Click to edit">
+    const missing=orderMissingFields(o.type,o.fields);
+    const invalidNote=missing.length?`<div class="s" style="color:#B23B3B;font-weight:600">Incomplete draft — missing: ${esc(missing.join(', '))}</div>`:'';
+    return `<div class="hist-item" onclick="editOrder('${o.id}')" title="Click to edit"${missing.length?' style="border-color:#E0B4B4;background:#FDF7F5"':''}>
       <span class="ic">${def.icon}</span>
       <div class="hist-main">
-        <div class="t">${esc(def.label)}</div>
-        <div class="s">${esc(orderSummary(o))}</div>
+        <div class="t">${esc(def.label)}${missing.length?' <span style="font-size:11px;font-weight:700;color:#B23B3B;border:1px solid #E0B4B4;border-radius:999px;padding:1px 8px;vertical-align:middle">Invalid draft</span>':''}</div>
+        <div class="s">${esc(orderSummary(o))}</div>${invalidNote}
       </div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">${_athenaOrderPlacementControl(o)}</div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">${missing.length?'':_athenaOrderPlacementControl(o)}</div>
       <button class="del" title="Remove" onclick="event.stopPropagation();removeOrder('${o.id}')">🗑</button>
     </div>`;
   }).join('');
+  /* Downstream actions stay disabled while any order is an invalid draft. */
+  try{
+    const blocked=_ordersBlockedMsg('using order actions');
+    actions.querySelectorAll('button').forEach(b=>{
+      if(/Clear all/.test(b.textContent||'')) return;
+      b.disabled=!!blocked;
+      b.setAttribute('aria-disabled',blocked?'true':'false');
+      if(blocked){ b.setAttribute('data-blocked-title',b.title||''); b.title=blocked; }
+      else if(b.hasAttribute('data-blocked-title')){ b.title=b.getAttribute('data-blocked-title'); b.removeAttribute('data-blocked-title'); }
+    });
+  }catch(e){}
   populatePaServiceSelect();
 }
 
@@ -18735,6 +18980,8 @@ function savedOrdersText(orders){
 }
 function copyOrders(){
   if(!currentOrders.length){ toast('No orders to copy.','err'); return; }
+  const blockedCopy=(typeof _ordersBlockedMsg==='function')?_ordersBlockedMsg('copying'):'';
+  if(blockedCopy){ toast(blockedCopy,'err'); return; }
   navigator.clipboard.writeText(ordersAsText())
     .then(()=>toast('Orders copied.','ok'))
     .catch(()=>toast('Could not copy.','err'));
@@ -18768,6 +19015,8 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
 /* Keep the overview as a route/manual-review surface. */
 function sendOrdersToEMR(btn){
   if(!currentOrders.length){ toast('No orders to review.','err'); return null; }
+  const blockedEmr=(typeof _ordersBlockedMsg==='function')?_ordersBlockedMsg('reviewing the EMR route'):'';
+  if(blockedEmr){ toast(blockedEmr,'err'); return null; }
   var binding=(typeof _athenaBoundVisitForAction==='function')?_athenaBoundVisitForAction('reviewing orders',false):null;
   if(!binding)return null;
   var wf=window.__mlsWriteFlow;
@@ -18865,6 +19114,8 @@ function buildOrdersPrintHTML(){
 }
 function printOrders(){
   if(!currentOrders.length){ toast('Add at least one order first.','err'); return; }
+  const blockedPrint=(typeof _ordersBlockedMsg==='function')?_ordersBlockedMsg('printing'):'';
+  if(blockedPrint){ toast(blockedPrint,'err'); return; }
   const html=buildOrdersPrintHTML();
   let win=null;
   try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
@@ -18891,6 +19142,8 @@ function printOrders(){
 function saveOrdersToHistory(){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving these orders')) return false;
   if(!currentOrders.length){ toast('No orders to save.','err'); return; }
+  const blockedSave=(typeof _ordersBlockedMsg==='function')?_ordersBlockedMsg('saving with the visit'):'';
+  if(blockedSave){ toast(blockedSave,'err'); return; }
   // Keep editor note in sync, then persist the visit record (which now carries orders).
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -19487,6 +19740,22 @@ function clearIntakeFacePhoto(){
   const ff=document.getElementById('ikFaceFile'); if(ff) ff.value='';
 }
 
+function _intakeActive(){
+  const v=document.getElementById('intakeView');
+  return !!(v && v.style.display!=='none' && v.style.display!=='');
+}
+function _installIntakeBackTrap(){
+  if(window.__mlsIntakeBackTrap) return;
+  window.__mlsIntakeBackTrap=true;
+  window.addEventListener('popstate',function(){
+    /* The kiosk is in the patient's hands: Back must neither reach the
+       clinical app nor strand the tab on a blank document. Stay in intake and
+       point at the protected exit. */
+    if(!_intakeActive()) return;
+    try{ history.pushState({mlsIntake:1},'',location.href); }catch(e){}
+    try{ toast('Patient intake stays open — staff use “Staff: exit” (password) to leave.',''); }catch(e){}
+  });
+}
 function openIntake(){
   if(typeof isLawyerUser==='function' && isLawyerUser()) return; // never for lawyer accounts
   resetIntakeForm();
@@ -19495,27 +19764,59 @@ function openIntake(){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
   const v=document.getElementById('intakeView');
   if(v){ v.style.display='block'; v.scrollTop=0; }
+  _installIntakeBackTrap();
+  try{ history.pushState({mlsIntake:1},'',location.href); }catch(e){}
 }
-async function exitIntake(){
+function exitIntake(){
   // SECURITY: the iPad is in the patient's hands — exiting back to the clinical
   // app requires the logged-in clinician's PASSWORD (re-auth), not just a confirm.
-  const pw=prompt('Staff only — enter your account password to exit patient intake:');
-  if(pw===null) return; // cancelled
-  if(!pw){ toast('Password required to exit intake.','err'); return; }
-  try{
-    const r=await fetch(bkBase()+'/api/auth/login',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:(bkUser&&bkUser.email)||'', password:pw})
-    });
-    const d=await r.json().catch(()=>({}));
-    // Correct password = full login OR a 2FA challenge (password stage passed).
-    const ok = (r.ok && (d.token || d.twofa_required));
-    if(!ok){ toast('Incorrect password — staying in patient intake.','err'); return; }
-  }catch(e){ toast('Could not verify password (offline?). Staying in intake.','err'); return; }
-  const v=document.getElementById('intakeView'); if(v) v.style.display='none';
-  const app=document.getElementById('appScreen'); if(app) app.style.display='block';
-  resetIntakeForm(); // never leave a patient's answers on screen
-  try{ renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts(); }catch(e){}
+  // In-app dialog (was native prompt(): suppressed prompts made the exit button
+  // do nothing with no visible error).
+  const old=document.getElementById('ikExitModal'); if(old) old.remove();
+  const back=document.createElement('div'); back.id='ikExitModal';
+  back.style.cssText='position:fixed;inset:0;background:rgba(15,25,20,.55);z-index:9800;display:flex;align-items:center;justify-content:center;padding:16px;';
+  back.innerHTML='<div role="dialog" aria-modal="true" aria-labelledby="ikExitTitle" style="background:#fff;color:#1A211C;border-radius:14px;max-width:420px;width:100%;padding:18px;box-shadow:0 18px 44px rgba(0,0,0,.3);">'
+    +'<h3 id="ikExitTitle" style="margin:0 0 6px;font-size:17px;">Staff only — exit patient intake</h3>'
+    +'<p style="margin:0 0 10px;color:#55605A;font-size:13.5px;">Enter your account password to return to the clinical app.</p>'
+    +'<label for="ikExitPw" style="display:block;font-weight:600;font-size:13px;margin-bottom:4px;">Password</label>'
+    +'<input id="ikExitPw" type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;border:1px solid #E7E5DD;border-radius:9px;padding:9px 10px;font:inherit;">'
+    +'<div id="ikExitErr" role="alert" style="color:#B23B3B;font-size:13px;min-height:18px;margin:6px 0 8px;"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +'<button type="button" id="ikExitCancel" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid #D9D6CD;background:#fff;cursor:pointer;">Stay in intake</button>'
+    +'<button type="button" id="ikExitGo" style="font:inherit;font-weight:600;padding:8px 14px;border-radius:9px;border:none;background:#2E6A4B;color:#fff;cursor:pointer;">Verify &amp; exit</button>'
+    +'</div></div>';
+  document.body.appendChild(back);
+  const pwEl=document.getElementById('ikExitPw');
+  const errEl=document.getElementById('ikExitErr');
+  const goBtn=document.getElementById('ikExitGo');
+  function close(){ try{back.remove();}catch(e){} document.removeEventListener('keydown',onKey,true); }
+  function onKey(e){ if(e.key==='Escape'){ e.stopPropagation(); close(); } if(e.key==='Enter'&&document.activeElement===pwEl){ e.preventDefault(); goBtn.click(); } }
+  document.addEventListener('keydown',onKey,true);
+  document.getElementById('ikExitCancel').onclick=close;
+  goBtn.onclick=async function(){
+    const pw=pwEl.value;
+    if(!pw){ errEl.textContent='Password required to exit intake.'; pwEl.focus(); return; }
+    goBtn.disabled=true; goBtn.textContent='Verifying…'; errEl.textContent='';
+    let ok=false;
+    try{
+      const r=await fetch(bkBase()+'/api/auth/login',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:(bkUser&&bkUser.email)||'', password:pw})
+      });
+      const d=await r.json().catch(()=>({}));
+      // Correct password = full login OR a 2FA challenge (password stage passed).
+      ok=(r.ok && (d.token || d.twofa_required));
+      if(!ok){ errEl.textContent='Incorrect password — staying in patient intake.'; }
+    }catch(e){ errEl.textContent='Could not verify the password (offline?). Check the connection and try again.'; }
+    goBtn.disabled=false; goBtn.textContent='Verify & exit';
+    if(!ok){ pwEl.focus(); pwEl.select(); return; }
+    close();
+    const v=document.getElementById('intakeView'); if(v) v.style.display='none';
+    const app=document.getElementById('appScreen'); if(app) app.style.display='block';
+    resetIntakeForm(); // never leave a patient's answers on screen
+    try{ renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts(); }catch(e){}
+  };
+  pwEl.focus();
 }
 function intakeNextPatient(){
   if(!confirm('Staff only — clear this form and start a new intake for the next patient?')) return;
@@ -26542,7 +26843,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b488"></script>
+<script src="public-preview-runtime.js?v=b489"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -26813,7 +27114,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b488';
+  window.__MLS_AV='b489';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

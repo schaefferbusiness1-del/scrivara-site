@@ -159,7 +159,9 @@ assert.strictEqual(resolved.kind, 'template');
 assert.strictEqual(api._setDefault('diagnosis', 'UNSAFE DEFAULT'), false);
 resolved = api._resolveInitialField('diagnosis', rowSafe, {});
 assert.strictEqual(resolved.value, 'Verified lumbar radiculopathy');
-assert.strictEqual(resolved.kind, 'history');
+/* pin updated 2026-07-22: a diagnosis lifted from the problem list is an
+   unconfirmed SUGGESTION for this encounter, never a confirmed chart fill. */
+assert.strictEqual(resolved.kind, 'suggested');
 
 // One explicit pin applies to all open matching drafts, but not protected rows.
 api._clearDefault('equipment model');

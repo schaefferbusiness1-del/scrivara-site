@@ -245,9 +245,12 @@ assert(phoneStart.indexOf("_athenaAsyncBindingStillSafe(phoneBindingCandidate,'p
 const generation = between(app, 'async function generateNote()', 'function autoPopulateExtras(result)');
 assert(generation.indexOf("_athenaGuardBoundEditor('note generation')") < generation.indexOf('generationBinding='), 'note generation must refuse a patient/bound-visit mismatch');
 assert(generation.indexOf("_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)") < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed AI result must be discarded after any patient/visit change');
-assert(generation.indexOf('generationFingerprint=_athenaEditorFingerprint()') < generation.indexOf('await callOpenAI') && generation.indexOf('generationFormat=currentFormat') < generation.indexOf('await callOpenAI'), 'note generation did not capture the exact same-visit editor state before AI');
-assert(generation.indexOf('_athenaEditorFingerprint()!==generationFingerprint', generation.indexOf('await callOpenAI')) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite newer clinician edits in the same visit');
-assert(generation.indexOf('currentFormat!==generationFormat', generation.indexOf('await callOpenAI')) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite a newly selected note format');
+const generationAwait = generation.indexOf('callOpenAI(transcript,key)');
+assert(generationAwait >= 0, 'note generation no longer routes through callOpenAI');
+assert(generation.indexOf('generationFingerprint=_athenaEditorFingerprint()') < generationAwait && generation.indexOf('generationFormat=currentFormat') < generationAwait, 'note generation did not capture the exact same-visit editor state before AI');
+assert(generation.indexOf('_athenaEditorFingerprint()!==generationFingerprint', generationAwait) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite newer clinician edits in the same visit');
+assert(generation.indexOf('currentFormat!==generationFormat', generationAwait) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite a newly selected note format');
+assert(generation.indexOf('generation-timeout') >= 0 && generation.indexOf('Promise.race') >= 0 && generation.indexOf('Promise.race') < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'note generation must bound the AI wait so a hung request cannot silently disable Generate forever');
 
 const optimization = between(app, 'async function optimizeForPayout()', 'async function postChatRaw');
 const optimizationAwait = optimization.indexOf('await postChatRaw');

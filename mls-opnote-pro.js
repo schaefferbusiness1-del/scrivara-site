@@ -285,15 +285,41 @@
   /* The core PART-1 transform: raw op-note text -> full professional op note
      (plain text, real newlines, headings, [not dictated] placeholders).
      LOSSLESS: every source line ends up somewhere; missing => placeholder. */
+  /* A "Name:"/"Patient:" line whose value reads like a procedure or template
+     title (e.g. "Name: QA Bilateral Lumbar Facet Injection") is template
+     metadata, never a patient identity. */
+  function looksLikeProcedureTitle(s) {
+    return /injection|block|ablation|epidural|facet|rhizotomy|stimulator|kyphoplasty|vertebroplasty|discography|denervation|procedure note|op note|template/i.test(String(s || ''));
+  }
   function normalize(text, meta) {
     meta = meta || {};
     var p = parseNote(text);
     var H = p.header;
 
-    // Resolve demographics, preferring what was in the note, then app meta.
-    var patient = H.patient || meta.patient || '';
-    var dob = H.dob || meta.dob || '';
-    var mrn = H.mrn || meta.mrn || '';
+    // Late demographic lines: the header zone ends at the first non-header
+    // line (e.g. a leaked template metadata line), which used to leave
+    // Patient:/DOB: lines in the body AND a second demographics block on top
+    // — duplicated, contradictory headers. Lift them out of the preamble so
+    // identity renders exactly once.
+    if (p.sec.__pre) {
+      p.sec.__pre = p.sec.__pre.filter(function (line) {
+        var mm = line.trim().match(/^([A-Za-z][A-Za-z0-9 /&()'.\-]{0,48}?)\s*:\s*(.*)$/);
+        if (!mm) return true;
+        var hk = HEADER_KEYS[mm[1].trim().toLowerCase()];
+        if (!hk) return true;
+        if (!H[hk]) H[hk] = mm[2].trim();
+        return false;
+      });
+    }
+    if (H.patient && looksLikeProcedureTitle(H.patient)) H.patient = '';
+
+    // Resolve demographics. PATIENT IDENTITY comes from the app's verified
+    // active-patient chart first — a note/template header can fill gaps but
+    // never override the bound chart. Procedure date and provider prefer the
+    // note (they are note-specific facts).
+    var patient = meta.patient || H.patient || '';
+    var dob = meta.dob || H.dob || '';
+    var mrn = meta.mrn || H.mrn || '';
     var dop = H.dop || meta.dop || '';
     var provider = H.provider || meta.provider || '';
     if (provider && meta.spec && provider.indexOf(meta.spec) < 0) provider = provider; // keep as-is
@@ -585,6 +611,20 @@
   window.__mlsOpNotePdf = function (getText, patient) {
     var t = (typeof getText === 'function') ? getText() : getText;
     if (!t || !String(t).trim()) { safe(function () { toast('Generate the op note first.', 'err'); }); return; }
+    /* Fail-closed export gate: a note with ANY unresolved placeholder is a
+       DRAFT — it can be reviewed on screen but never leaves the app as a
+       finished PDF. One canonical parser decides (same as save/routing). */
+    try {
+      if (typeof window.opNoteBlankTokens === 'function') {
+        var unresolved = window.opNoteBlankTokens(String(t));
+        if (unresolved.length) {
+          var labels = unresolved.map(function (x) { return x.label || x.key; });
+          var shown = labels.slice(0, 6).join(', ') + (labels.length > 6 ? (' +' + (labels.length - 6) + ' more') : '');
+          safe(function () { toast('This op note is still a draft — ' + unresolved.length + ' unresolved field' + (unresolved.length === 1 ? '' : 's') + ' (' + shown + '). Fill them in before exporting a PDF.', 'err'); });
+          return;
+        }
+      }
+    } catch (eGuard) {}
     exportPdf(String(t), { patient: patient });
   };
 
@@ -642,7 +682,8 @@
     host.appendChild(btn);
     // show/hide depending on whether the open note is an operative note
     function refresh() {
-      var isOp = /operative note/i.test(meta.textContent || '');
+      /* completed op notes only — a "(draft)" viewer never offers PDF export */
+      var isOp = /operative note/i.test(meta.textContent || '') && !/\(draft\)/i.test(meta.textContent || '');
       btn.style.display = (modal.classList.contains('show') && isOp) ? 'inline-flex' : 'none';
     }
     safe(function () {

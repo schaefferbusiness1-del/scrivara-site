@@ -158,7 +158,9 @@
       for (var i = 0; i < op.length; i++) {
         var r = op[i];
         if (!r || !S(r.note).trim()) { skipped++; continue; }
-        blanksLeft += (S(r.note).match(/\[FILL:[^\]]*\]|\[\[[a-z0-9_]+\]\]/gi) || []).length;
+        /* one canonical count (deduped per field, all syntaxes) — matches the
+           save gate and every other surface */
+        blanksLeft += (isFn(window.opNoteBlankCount) ? window.opNoteBlankCount(S(r.note)) : (S(r.note).match(/\[FILL:[^\]]*\]|\[\[[a-z0-9_]+\]\]/gi) || []).length);
         safe(function (j) { return function () { if (isFn(window.opPrepSave)) window.opPrepSave(j); }; }(i)());
         saved++;
       }
@@ -583,6 +585,14 @@
     /* anything else dose/level/count-like stays blank - patient-specific,
        never invented. */
     if (/\b(dose|dosage|volume|amount|\bmg\b|\bml\b|\bcc\b|mcg|units|concentration|levels?|which level|how many|number of|count)\b/.test(l)) return '';
+    /* Explicit guidance stated in the procedure/dictation context is
+       recognized directly; only then fall back to the common default. */
+    if (/imaging( guidance| modality)?|\bguidance\b/.test(l)) {
+      if (/fluoro/.test(ctx)) return 'Fluoroscopy';
+      if (/ultrasound|\bus[- ]guided\b/.test(ctx)) return 'Ultrasound';
+      if (/\bct[- ]guided\b|\bct guidance\b/.test(ctx)) return 'CT guidance';
+      return 'Fluoroscopy';
+    }
     var CD = [
       [/type of anesthesia|anesthesia type/, 'Local anesthesia'],
       [/local anesthetic|anesthetic( agent| used| type)?$|lidocaine/, '1% lidocaine'],
@@ -590,11 +600,11 @@
       [/needle( gauge| size)?/, '22-gauge'],
       [/patient position|positioning/, 'Prone'],
       [/skin prep|antisep|prep solution|sterile prep/, 'Chlorhexidine'],
-      [/imaging( guidance| modality)?|\bguidance\b/, 'Fluoroscopy'],
       [/contrast( agent| type)?/, 'Iodinated contrast'],
-      [/estimated blood loss|\bebl\b/, 'Minimal'],
-      [/complications?/, 'None'],
-      [/consent/, 'Informed consent obtained']
+      [/estimated blood loss|\bebl\b/, 'Minimal']
+      /* consent and complications are deliberately ABSENT: attesting consent
+         or "no complications" from nothing invents a clinical fact — those
+         fields stay blank until dictated or explicitly confirmed. */
     ];
     for (var c = 0; c < CD.length; c++) { if (CD[c][0].test(l)) return CD[c][1]; }
     return '';
@@ -912,17 +922,37 @@
     if (bmi >= 30) return ['22-gauge, 3.5-inch', '22-gauge, 5-inch', '25-gauge, 3.5-inch'];
     return ['25-gauge, 1.5-inch', '22-gauge, 3.5-inch', '27-gauge, 1.25-inch'];
   }
+  /* onf-2.6.0 field-schema separation: a GAUGE field offers gauges (never
+     lengths), a steroid NAME field offers names (never doses — a separate dose
+     field exists), a contrast AGENT field offers agents (never volumes), and a
+     DISPOSITION field can never be served patient POSITIONS (the old bare
+     /position/ regex matched "disposition"). More-specific patterns first. */
+  function needleGauges(row) {
+    var seen = {}, out = [];
+    needleOpts(row).forEach(function (c) { var g = (c.split(',')[0] || '').trim(); if (g && !seen[g]) { seen[g] = 1; out.push(g); } });
+    return out;
+  }
+  function needleLengths(row) {
+    var seen = {}, out = [];
+    needleOpts(row).forEach(function (c) { var g = (c.split(',')[1] || '').trim(); if (g && !seen[g]) { seen[g] = 1; out.push(g); } });
+    return out;
+  }
   function altGuesses(label, row) {
     var l = S(label).toLowerCase();
     var A = [
       [/local anesthetic/, ['1% lidocaine, 3 mL', '2% lidocaine, 2 mL', '0.25% bupivacaine, 2 mL']],
-      [/steroid/, ['Dexamethasone 10 mg', 'Triamcinolone (Kenalog) 40 mg', 'Methylprednisolone (Depo-Medrol) 40 mg']],
+      [/steroid.*dose|dose.*steroid/, ['40 mg', '80 mg', '20 mg', '10 mg']],
+      [/steroid/, ['Dexamethasone', 'Triamcinolone (Kenalog)', 'Methylprednisolone (Depo-Medrol)', 'Betamethasone']],
       [/agent.*volume|volume.*agent|injectate|per point|per level|anesthetic.*volume/, ['0.25% bupivacaine + dexamethasone, 1 mL per point', '1% lidocaine, 1 mL per point', '0.25% bupivacaine, 1 mL', '0.5% bupivacaine, 0.5 mL per point']],
-      [/needle|gauge/, needleOpts(row)],
-      [/contrast/, ['1 mL', '2 mL', '0.5 mL']],
+      [/gauge/, needleGauges(row)],
+      [/needle.*length|length.*needle|\blength\b/, needleLengths(row)],
+      [/needle/, needleOpts(row)],
+      [/contrast.*(volume|amount|ml)|(volume|amount).*contrast/, ['1 mL', '2 mL', '0.5 mL']],
+      [/contrast/, ['Iohexol (Omnipaque)', 'Iopamidol (Isovue)', 'None — no contrast used']],
       [/fluoro/, ['< 1 minute', '~1 minute', '~2 minutes']],
       [/\bnumber\b|\bcount\b|how many|points|levels/, ['2', '3', '4', '1', '5', '6']],
       [/interval|follow.?up/, ['6 weeks', '2 weeks', '3 months']],
+      [/disposition/, ['Discharged home in stable condition', 'Observed in recovery, then discharged home', 'Transferred for further evaluation']],
       [/position/, ['Prone', 'Supine', 'Lateral decubitus']],
       [/sedation/, ['None - local anesthesia only', 'MAC sedation', 'Oral anxiolysis']],
       [/imaging|guidance/, ['Fluoroscopy', 'Ultrasound', 'CT guidance']],
@@ -988,7 +1018,13 @@
     value = historyMed(label, row);
     if (value) { saveFillMemValue(row, S(label).toLowerCase(), value); return { value: value, kind: 'history' }; }
     value = chartValue(label, row);
-    if (value) return { value: value, kind: 'history' };
+    if (value) {
+      /* A diagnosis/indication lifted from the problem list is a SUGGESTION
+         until the clinician confirms it for THIS encounter — it must never
+         render as a confirmed chart fill. */
+      if (/diagnosis|indication/.test(S(label).toLowerCase())) return { value: value, kind: 'suggested' };
+      return { value: value, kind: 'history' };
+    }
     value = templateDefault(label, row);
     if (value) return { value: value, kind: 'template' };
     value = patientMem && patientMem[S(label).toLowerCase()];

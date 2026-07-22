@@ -446,7 +446,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4880a}
+  .sp-gap .sp-label{color:#b4890a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -3107,7 +3107,7 @@
           <input type="checkbox" id="featTplUse" style="width:17px;height:17px;cursor:pointer">
           <span>📄 Templates <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
         </label>
-        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under 🛠 More tools → Templates.</p>
+        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under Menu → 📄 Templates.</p>
       </div>
 
       <!-- MLS additive — Custom widgets pointer (built/managed via the header button) -->
@@ -15789,16 +15789,29 @@ function renderOrderList(){
   empty.style.display='none'; actions.style.display='flex';
   list.innerHTML=currentOrders.map(o=>{
     const def=ORDER_DEFS[o.type]||{icon:'•',label:o.type};
-    return `<div class="hist-item" onclick="editOrder('${o.id}')" title="Click to edit">
+    const missing=orderMissingFields(o.type,o.fields);
+    const invalidNote=missing.length?`<div class="s" style="color:#B23B3B;font-weight:600">Incomplete draft — missing: ${esc(missing.join(', '))}</div>`:'';
+    return `<div class="hist-item" onclick="editOrder('${o.id}')" title="Click to edit"${missing.length?' style="border-color:#E0B4B4;background:#FDF7F5"':''}>
       <span class="ic">${def.icon}</span>
       <div class="hist-main">
-        <div class="t">${esc(def.label)}</div>
-        <div class="s">${esc(orderSummary(o))}</div>
+        <div class="t">${esc(def.label)}${missing.length?' <span style="font-size:11px;font-weight:700;color:#B23B3B;border:1px solid #E0B4B4;border-radius:999px;padding:1px 8px;vertical-align:middle">Invalid draft</span>':''}</div>
+        <div class="s">${esc(orderSummary(o))}</div>${invalidNote}
       </div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">${_athenaOrderPlacementControl(o)}</div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">${missing.length?'':_athenaOrderPlacementControl(o)}</div>
       <button class="del" title="Remove" onclick="event.stopPropagation();removeOrder('${o.id}')">🗑</button>
     </div>`;
   }).join('');
+  /* Downstream actions stay disabled while any order is an invalid draft. */
+  try{
+    const blocked=_ordersBlockedMsg('using order actions');
+    actions.querySelectorAll('button').forEach(b=>{
+      if(/Clear all/.test(b.textContent||'')) return;
+      b.disabled=!!blocked;
+      b.setAttribute('aria-disabled',blocked?'true':'false');
+      if(blocked){ b.setAttribute('data-blocked-title',b.title||''); b.title=blocked; }
+      else if(b.hasAttribute('data-blocked-title')){ b.title=b.getAttribute('data-blocked-title'); b.removeAttribute('data-blocked-title'); }
+    });
+  }catch(e){}
   populatePaServiceSelect();
 }
 
@@ -15874,6 +15887,8 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
 /* Keep the overview as a route/manual-review surface. */
 function sendOrdersToEMR(btn){
   if(!currentOrders.length){ toast('No orders to review.','err'); return null; }
+  const blockedEmr=(typeof _ordersBlockedMsg==='function')?_ordersBlockedMsg('reviewing the EMR route'):'';
+  if(blockedEmr){ toast(blockedEmr,'err'); return null; }
   var binding=(typeof _athenaBoundVisitForAction==='function')?_athenaBoundVisitForAction('reviewing orders',false):null;
   if(!binding)return null;
   var wf=window.__mlsWriteFlow;
@@ -22829,6 +22844,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b488';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b489';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

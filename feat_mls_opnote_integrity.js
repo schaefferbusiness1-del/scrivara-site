@@ -83,8 +83,19 @@
     ['generic_esi', /\besi\b|\bepidural\b[\s\S]{0,35}\b(injection|steroid)\b/]
   ];
 
+  /* NEGATION: "no procedure performed", "without injection", "denies epidural"
+     is not procedure evidence — the old matchers scored "performed" and the
+     procedure noun as POSITIVE signal. Remove the negated clause (to the next
+     punctuation) before classification/scoring. */
+  function stripNegated(text) {
+    return String(text == null ? '' : text).replace(
+      /\b(?:no|not|without|denies|denied|negative for|none)\b[^.;\n]{0,80}?\b(?:procedures?|injections?|blocks?|ablation|rfa|esi|tfesi|epidural|surgery|stimulator|kyphoplasty|vertebroplasty|discogra\w+|performed)\b[^.;\n]*/gi, ' ');
+  }
+  function statesNoProcedure(text) {
+    return /\bno\s+procedures?\s+(?:was\s+|were\s+)?performed\b|\bprocedures?\s+(?:was\s+|were\s+)?not\s+performed\b|\bno\s+procedure\s+today\b/i.test(String(text == null ? '' : text));
+  }
   function procClass(text) {
-    var n = normText(text);
+    var n = normText(stripNegated(text));
     for (var i = 0; i < CLASSES.length; i++) if (CLASSES[i][1].test(n)) return CLASSES[i][0];
     return '';
   }
@@ -229,7 +240,7 @@
     return normText(text).split(/\s+/).filter(function (w) { return w.length > 1 && !stop[w]; });
   }
   function rank(procedure) {
-    var proc = normText(procedure), pc = procClass(proc), pf=procedureFacts(procedure), pt = tokens(proc), list = templates();
+    var proc = normText(stripNegated(procedure)), pc = procClass(procedure), pf=procedureFacts(procedure), pt = tokens(stripNegated(procedure)), list = templates();
     return list.map(function (t, index) {
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
       var body = normText(S(t.text).slice(0, 1800));
@@ -250,6 +261,9 @@
     }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
   function best(procedure) {
+    /* An explicit "no procedure performed" statement is a REAL no-match — it
+       must never resolve to a procedure template, not even on a tie. */
+    if (statesNoProcedure(procedure)) return { tpl:null, confident:false, reason:'text states no procedure was performed', score:0, noProcedure:true };
     var r = rank(procedure), top = r[0], second = r[1], list = templates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
     if(!top.compatible)return {tpl:null,candidate:top.tpl,confident:false,reason:'template conflicts with requested procedure',score:top.score,conflicts:top.conflicts,ranked:r};
@@ -336,10 +350,20 @@
   }
   function bestFor(name, reason, dob, patientId) {
     var direct = best(reason);
+    if (direct.noProcedure) return { tplId:'', source:'no-procedure', score:0, reason:'The visit text states no procedure was performed' };
     if (direct.confident) return { tplId:direct.tpl.id, source:'reason', score:direct.score, reason:direct.reason };
     var p = exactPatient(name, dob, patientId), hs = historySignal(p), fromHistory = best(hs);
     if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason };
     return { tplId:'', source:'unmatched', score:0, reason:'No unambiguous procedure signal' };
+  }
+  /* ONE matcher for every surface: preview, prep, note formatting, and safety
+     checks all resolve through this canonical entry (negation-aware,
+     class-gated, confidence/margin thresholds, honest no-match). */
+  function matchVisitText(visitText) {
+    var r = best(visitText);
+    if (r.noProcedure) return { tplId:'', noMatch:true, score:0, reason:r.reason };
+    if (r.confident && r.tpl) return { tplId:r.tpl.id, noMatch:false, score:r.score, reason:r.reason };
+    return { tplId:'', noMatch:true, score:r.score || 0, reason:r.reason || 'ambiguous' };
   }
 
   function newRow(name, reason, dob, dateStr, patientId) {
@@ -902,6 +926,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

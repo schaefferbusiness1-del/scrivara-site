@@ -25,9 +25,11 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__mlsRecentPts && window.__mlsRecentPts.__booted) return;
 
+  var VERSION='rp-2.0.0'; /* layout-stable: chip never unmounts while its bar is visible */
   var WRAP_ID='mlsRecentPts', MENU_ID='mlsRecentPtsMenu', STYLE_ID='mlsRecentPts-style';
   var WRAP_STYLE_ID='mls-ctxbar-wrap-style', LS_KEY='mls_recent_pts_v1', MAX=6;
   var pollTimer=null, backTimer=null, origRenderBar=null, lastSeenId=null, obs=null, obsTarget=null;
+  var lastCommitted=null;
 
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function lsKey(){try{if(typeof window.uns==='function')return window.uns('recent_pts');}catch(e){}return LS_KEY;}
@@ -74,11 +76,13 @@
     if(document.getElementById(STYLE_ID))return;
     try{var s=document.createElement('style');s.id=STYLE_ID;
       s.textContent=
-        '#'+WRAP_ID+'{display:inline-flex;align-items:center;margin-left:8px;vertical-align:middle;}'+
+        '#'+WRAP_ID+'{display:inline-flex;align-items:center;margin-left:8px;vertical-align:middle;min-width:118px;justify-content:flex-end;}'+
         '#'+WRAP_ID+' .mrp-btn{cursor:pointer;border:1px solid rgba(31,122,224,.34);background:rgba(31,122,224,.10);'+
         'color:#2E6A4B;font:inherit;font-size:12px;font-weight:600;padding:3px 11px;border-radius:999px;'+
-        'display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}'+
-        '#'+WRAP_ID+' .mrp-btn:hover{background:rgba(31,122,224,.20);}'+
+        'display:inline-flex;align-items:center;gap:5px;white-space:nowrap;min-width:112px;justify-content:center;'+
+        'font-variant-numeric:tabular-nums;}'+
+        '#'+WRAP_ID+' .mrp-btn:hover:not([disabled]){background:rgba(31,122,224,.20);}'+
+        '#'+WRAP_ID+' .mrp-btn[disabled]{opacity:.55;cursor:default;}'+
         '#'+MENU_ID+'{position:fixed;z-index:9600;min-width:200px;max-width:260px;background:#13283d;color:#fff;'+
         'border-radius:11px;padding:7px;box-shadow:0 12px 30px rgba(0,0,0,.36);}'+
         '#'+MENU_ID+' .mrp-item{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;'+
@@ -103,19 +107,33 @@
     try{
       var loc=visibleBar();
       var existing=document.getElementById(WRAP_ID);
-      var cur=activeId();
-      var others=loadIds().filter(function(id){return String(id)!==String(cur)&&ptById(id);});
-      if(!loc||!others.length){if(existing)existing.remove();detachObs();return;}
+      if(!loc){if(existing)existing.remove();detachObs();lastCommitted=null;return;}
       ensureWrapStyle();
       if(!existing){existing=document.createElement('span');existing.id=WRAP_ID;}
       if(existing.parentNode!==loc.bar){
         if(loc.anchor&&loc.anchor.parentNode===loc.bar) loc.bar.insertBefore(existing,loc.anchor);
         else loc.bar.appendChild(existing);
       }
-      var html='<button type="button" class="mrp-btn" title="Jump back to a recent chart">↻ Recent ('+others.length+') ▾</button>';
+      var cur=activeId();
+      var ids=loadIds().filter(function(id){return String(id)!==String(cur);});
+      var hydrated=patients().length>0;
+      var state;
+      if(!hydrated&&ids.length){
+        /* Patient store still hydrating: hold the last committed label so the
+           chip never flashes through empty/partial counts mid-refresh. */
+        state=lastCommitted||{n:0,ready:false};
+      }else{
+        var others=ids.filter(function(id){return !!ptById(id);});
+        state={n:others.length,ready:others.length>0};
+        lastCommitted=state;
+      }
+      var html=state.ready
+        ?'<button type="button" class="mrp-btn" title="Jump back to a recent chart">↻ Recent ('+state.n+') ▾</button>'
+        :'<button type="button" class="mrp-btn" disabled aria-disabled="true" title="Recent charts appear here once you open a few patients">↻ Recent ▾</button>';
       if(existing.innerHTML!==html) existing.innerHTML=html;
       var btn=existing.querySelector('.mrp-btn');
       if(btn&&!btn.__mlsRecentBound){btn.__mlsRecentBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
+        if(btn.disabled)return;
         if(document.getElementById(MENU_ID)){closeMenu();}else{openMenu(existing);}});}
       attachObs(loc.bar);
     }catch(e){}
