@@ -162,3 +162,28 @@ Notes OFF remains fully proven (10/10 rounds above); schedule+history lanes
 kept passing on the new surface all night. The single-read "Pull history"
 lane and the bodies batch lane must be re-validated against the new athena
 surface in daylight before any 3.0.2 release.
+
+## FINAL UI + truth check on live b482 (2026-07-22 ~02:15 EDT)
+- No-auto-pull: both MLS tabs probed — zero runner/timer remnants, Notes OFF
+  default restored (pullVisitBodies=0), Pull button idle. Every pull tonight
+  was a real click of mlsDsPullBtn (acceptance harness, now removed); nothing
+  in the app schedules a pull without a click (b478 audit + pinned tests).
+- History truth: ledger 2026-07-21 = 14 rows / 14 done / 14 real
+  appointment-ids; day marked complete; 1458 patients (stable all night,
+  zero duplicates). Spot checks (James B Fortune, Mary Ward, Doris A Green):
+  stable ids + DOBs, 14/15/21 saved visits with 8/7/18 rich clinical bodies —
+  store matches every banner/receipt claim. (Jul-22 day-complete marker was
+  pruned client-side; harmless — re-pull is proven idempotent.)
+- Mobile (375x812, live): index, get-extension, assist, ScribeFlow?demo=1,
+  terms, privacy — zero horizontal overflow, viewport metas, no broken
+  images, CTAs visible; get-extension offers ONLY 3.0.1 + sha 5c0d678a;
+  demo serves b482; pricing shows $30/$44/$60 + Enterprise $40/mo $400/yr;
+  HIPAA-compliant posture with no certification claims; NO purchase controls
+  anywhere (purchasing held).
+- Desktop app (owner tab, live b482): correct "Pull today" label for the new
+  practice-tz day, 0 save-not-confirmed cards, 0 error banners, 15 nav tabs,
+  no overflow, session intact (~15 reloads tonight, zero logouts).
+- Owner directive noted 02:05 EDT: correctness over speed for the extension —
+  matches the held-3.0.2 posture and the deadline-bounded verification
+  retries; speed work resumes only after the bodies lane passes on the new
+  athena surface.
