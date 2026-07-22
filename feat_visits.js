@@ -22,8 +22,15 @@
 
   function _getPatients() { try { return isFn(window.getPatients) ? (window.getPatients() || []) : []; } catch (e) { return []; } }
   function _findPatient(id) {
+    /* b483: getPatients() serves the OPEN write batch first, so it is the
+       freshest read during a pull. window.findPatient can return a pre-batch
+       clone (live 2026-07-22: identical schedule-history index rows filed
+       ~46ms apart because the second addVisit fetched a stale clone that
+       lacked the first row, and the store's visit union then kept both). */
+    var fromStore = _getPatients().find(function (p) { return p && p.id === id; }) || null;
+    if (fromStore) return fromStore;
     try { if (isFn(window.findPatient)) return window.findPatient(id); } catch (e) {}
-    return _getPatients().find(function (p) { return p && p.id === id; }) || null;
+    return null;
   }
   function _upsert(p) {
     try { if (isFn(window.upsertPatient)) { window.upsertPatient(p); return true; } } catch (e) {}
@@ -183,6 +190,41 @@
         if (!trim(preferred.sourceVisitKey || preferred.rowKey) && trim(q.sourceVisitKey || q.rowKey)) preferred.sourceVisitKey = trim(q.sourceVisitKey || q.rowKey);
         p.visits.splice(i, 1); changed = true; again = true;
       }
+    }
+    return changed;
+  }
+
+  /* b483: exact-clone index rows carry zero information beyond their first
+     copy. Racing ingest passes (stale patient clones + store visit union)
+     can file the same alias-less index shell twice; collapse those exact
+     clones, keeping the earliest row. NEVER touches: rows with a raw body,
+     bodyComplete/fullDetail rows, rows holding a stable Athena alias, or
+     rows whose trust state differs (verified binding is part of the sig). */
+  function _exactIndexSig(v) {
+    v = v || {};
+    return [
+      _svcToYMD(v.date) || trim(v.date), trim(v.type), trim(v.textHead), trim(v.source),
+      (Array.isArray(v.cpt) ? v.cpt : []).join(','), (Array.isArray(v.icd10) ? v.icd10 : []).join(','),
+      (Array.isArray(v.meds) ? v.meds : []).join(','),
+      v.identityVerified === true ? ('iv|' + trim(v.identityBinding)) : 'unv'
+    ].join('|');
+  }
+  function _collapsibleIndexRow(v) {
+    return !!(v && v.indexOnly === true && !trim(v.raw) && v.bodyComplete !== true &&
+      v.fullDetail !== true && !_stableVisitKeys(v).length);
+  }
+  function _collapseExactIndexDuplicates(p) {
+    if (!p || !Array.isArray(p.visits)) return false;
+    var changed = false, seen = {};
+    for (var i = 0; i < p.visits.length; i++) {
+      var v = p.visits[i];
+      if (!_collapsibleIndexRow(v)) continue;
+      var sig = _exactIndexSig(v);
+      var firstIdx = seen[sig];
+      if (firstIdx == null) { seen[sig] = i; continue; }
+      var keeper = p.visits[firstIdx];
+      if (!trim(keeper.aiSummary) && trim(v.aiSummary)) keeper.aiSummary = v.aiSummary;
+      p.visits.splice(i, 1); i--; changed = true;
     }
     return changed;
   }
@@ -351,6 +393,13 @@
     }
     _compactHydratedPlaceholders(p);
     _collapseVerifiedStableDuplicates(p, v);
+    /* b483: self-heal exact-clone index rows that an earlier stale-clone race
+       union-merged into this record. The row just added can only be spliced
+       when an identical earlier clone existed, so re-resolve v to the keeper. */
+    if (_collapseExactIndexDuplicates(p) && p.visits.indexOf(v) < 0 && _collapsibleIndexRow(v)) {
+      var keptSig = _exactIndexSig(v);
+      v = p.visits.find(function (x) { return _collapsibleIndexRow(x) && _exactIndexSig(x) === keptSig; }) || v;
+    }
     if (opts.persist !== false) _upsert(p);
     return v;
   }
@@ -460,6 +509,16 @@
         identityBinding: opts && opts.identityBinding
       });
       if (v2) added.push(v2);
+    }
+    /* b483: deterministic post-batch heal. Two ingest passes racing through
+       stale clones can each push the same index shell; by the time this batch
+       ends the freshest record holds the union, so collapse exact clones there
+       and persist the cleaned record. */
+    if (added.length) {
+      try {
+        var freshP = _findPatient(typeof patient === 'string' ? patient : p.id);
+        if (freshP && _collapseExactIndexDuplicates(freshP)) _upsert(freshP);
+      } catch (eDup) {}
     }
     return added;
   }
@@ -967,6 +1026,7 @@
     summarizeAll: summarizeAll,
     organizePatientHistory: organizePatientHistory,
     usableVisits: _usableVisits,
+    _collapseExactIndexDuplicates: _collapseExactIndexDuplicates,
     _normVisit: _normVisit,
     _visitKey: _visitKey,
     _normDob: _normDob,

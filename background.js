@@ -8589,6 +8589,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           vcScope = vcScope.parentElement;
         }
         if (!vcOk) return { ok: false, count: 0, score: 0, reason: 'visits-panel-not-open' };
+        /* Progressive render (owner goal 2026-07-22): when the SHOW control
+           itself declares "All Events (N)", the index is complete only when
+           the list really renders N items. A filtered SHOW selection has a
+           different label and skips this rule. */
+        var evTotal = 0;
+        try {
+          var evScope = g.parent, evT, evM;
+          for (var vb = 0; vb < 8 && evScope; vb++) {
+            evT = String(evScope.textContent || '').slice(0, 6000);
+            evM = evT.match(/All\s*Events\s*\(\s*(\d{1,4})\s*\)/i);
+            if (evM) { evTotal = Number(evM[1]); break; }
+            evScope = evScope.parentElement;
+          }
+        } catch (eEvTot) {}
+        var listKids = 0;
+        try { listKids = (g.parent.children || []).length; } catch (eKids) {}
+        /* The SHOW total is MANDATORY for the batch index: a glacial chart
+           renders the panel header late, and without the declared total a
+           short stalled list could pass the stability check. Wait for it. */
+        if (evTotal <= 0) {
+          return { ok: false, count: 0, score: 0, reason: 'visits-total-not-readable' };
+        }
+        if (listKids < evTotal) {
+          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering', declaredEvents: evTotal, renderedListItems: listKids };
+        }
       }
       if (!g) {
         if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true };
@@ -8784,6 +8809,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (directKids[ck0].tagName === 'SPAN' && /(^|\s)close(\s|$)/.test(String(directKids[ck0].className || ''))) { closeControl = directKids[ck0]; break; }
         }
       } catch (eCloseChild) {}
+      /* 3.0.2 (new athena surface): the close affordance is no longer a
+         direct-child span.close. Accept any INERT close control inside the
+         open read-only slideout: class or aria-label carrying "close" (an
+         icon/X), never anything whose visible label reads like a mutation. */
+      if (!closeControl) {
+        try {
+          var closeCands = openSlideout.querySelectorAll('[class*="close" i],[aria-label*="close" i],[title*="close" i]');
+          for (var cc0 = 0; cc0 < closeCands.length && cc0 < 30; cc0++) {
+            var ccEl = closeCands[cc0];
+            var ccTag = String(ccEl.tagName || '').toUpperCase();
+            if (ccTag === 'INPUT' || ccTag === 'SELECT' || ccTag === 'TEXTAREA' || ccTag === 'FORM') continue;
+            var ccTxt = String(ccEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (ccTxt.length > 12) continue;
+            if (/sign|save|bill|order|delete|submit|send|create|approve/.test(ccTxt)) continue;
+            var ccRect = null;
+            try { ccRect = ccEl.getBoundingClientRect(); } catch (eCcRect) {}
+            if (ccRect && (ccRect.width < 1 || ccRect.height < 1)) continue;
+            closeControl = ccEl; break;
+          }
+        } catch (eCloseWide) {}
+      }
       if (!closeControl) return { ok: false, closed: false, reason: 'detail-close-control-missing' };
       if (!visitActionAllowed()) return visitDeadlineFailure();
       try { closeControl.click(); } catch (eCloseClick) { return { ok: false, closed: false, reason: 'detail-close-click-failed' }; }
@@ -9408,6 +9454,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          list regularly hydrates seconds AFTER the first walk, which had been
          refusing every body while ~2 minutes of budget sat unused. Only
          observation retries - every identity gate is unchanged. */
+      var ehStableCount = -1;
       for (var ehPass = 0; ehPass < 48; ehPass++) {
       var enR = await exec(emrId, null, ['enumerate', cfg]);
       var eb = bestResult(enR, function (r) {
@@ -9455,7 +9502,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (Date.now() >= readDeadline) break;
         touchVisitLease();
       }
-      if (gate && gate.ok) break;
+      if (gate && gate.ok) {
+        /* Accept only a STABLE index: the same rendered row count on two
+           consecutive passes (the progressive panel grows between polls). */
+        if (ehStableCount === enumRes.count) break;
+        ehStableCount = enumRes.count;
+        if (Date.now() + 7000 >= readDeadline) break;
+        await sleep(2500);
+        touchVisitLease();
+        continue;
+      }
       if (ehPass >= 47 || Date.now() + 7000 >= readDeadline) break;
       await exec(emrId, null, ['openVisits', cfg]);
       await sleep(3500);
@@ -9701,7 +9757,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         var attempt = await runBoundAttempt(detailWaitMs);
         var retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
+        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
         /* 2026-07-15 live: one cold reopen was not enough for encounter-frame-not-refreshed on slow charts (one stale body failed the whole day batch). Allow a SECOND bounded reopen for the same retryable reasons while the read deadline permits. */
         var coldTries = 0;
         while (coldRetryable && coldTries < 2 && Date.now() + 1000 < readDeadline) {
@@ -9710,7 +9766,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await sleepWithinReadDeadline(coldRetryPauseMs);
           attempt = await runBoundAttempt(coldRetryWaitMs);
           retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
+          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
         }
         if (attempt.failure) {
           failures.push({ index: i, reason: attempt.failure.reason || 'detail-read-failed', d2: attempt.failure.d2 || null });

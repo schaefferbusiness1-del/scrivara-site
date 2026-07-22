@@ -47,7 +47,7 @@ function extractBlock(src, file) {
     assert(earlier.includes('Capture one-time auth handoffs'), file + ': token scrubber must precede compat');
     assert(earlier.includes('If the reviewed preview policy is missing'), file + ': preview fail-closed fallback must precede compat');
     const external = Array.from(earlier.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi), match => match[1]);
-    assert.deepStrictEqual(external, ['public-preview-policy.js?v=b482'], file + ': only the exact preview policy may load before compat');
+    assert.deepStrictEqual(external, ['public-preview-policy.js?v=b483'], file + ': only the exact preview policy may load before compat');
     const policy = fs.readFileSync(path.join(root, 'public-preview-policy.js'), 'utf8');
     const earlyInline = Array.from(earlier.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi), match => match[1]);
     assert.strictEqual(earlyInline.length, 2, file + ': unexpected inline code runs before compat');

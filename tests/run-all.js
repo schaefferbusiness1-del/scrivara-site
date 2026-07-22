@@ -140,6 +140,7 @@ const tests = [
   'patient-store-batch-runtime.test.js',
   'patient-store-sync-rollback-runtime.test.js',
   'visit-shell-merge-alias-survival.test.js',
+  'visit-index-dupe-collapse.test.js',
   'visit-pull-toggle-contract.test.js',
   'visit-wire-identity-guard-runtime.test.js',
   'unified-write-surface-contract.test.js',

@@ -59,7 +59,7 @@ assert.strictEqual(prov({ source: 'mls-visit-editor', indexOnly: false }), null,
 // 5. loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260720vis6'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  assert(text.includes('feat_visits.js?v=20260722vis7'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
 }
 
 console.log('PASS visit-history provenance: index shells and copied excerpts are honestly marked with a remedy; verified bodies and clinician-authored visits stay unmarked; loader pins bumped');

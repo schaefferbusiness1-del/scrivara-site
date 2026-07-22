@@ -93,9 +93,15 @@ assert(!/var idBest = bestResult\(idResults/.test(bg),
   'the poisonable merged-best identity pick must stay retired');
 assert(bg.includes('for (var ehPass = 0; ehPass < 48; ehPass++)'),
   'slow-athena rehydration: enumerate+walk must retry within the read deadline');
-assert(bg.includes('if (gate && gate.ok) break;'),
-  'rehydration loop must stop on a gate-proved frame');
+assert(bg.includes('if (gate && gate.ok) {'),
+  'rehydration loop must stop only on a gate-proved, row-count-stable frame');
 
+assert(bg.includes('visits-total-not-readable'),
+  'the batch index must wait for the panel to declare its All Events total');
+assert(bg.includes('visits-list-still-rendering'),
+  'a progressively-rendering panel must refuse until All Events (N) is fully rendered');
+assert(bg.includes('ehStableCount === enumRes.count'),
+  'the index must be row-count STABLE across two consecutive passes before any body is read');
 assert(bg.includes('visits-panel-not-open'),
   'enumeration must refuse an index outside the real Visits and Cases panel');
 assert(bg.includes('visitsSurfaceOpen'),

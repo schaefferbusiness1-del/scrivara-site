@@ -11,7 +11,7 @@ const visitsSource = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 const productionLoader = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const stagingLoader = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 
-const visitCacheKey = 'feat_visits.js?v=20260720vis6';
+const visitCacheKey = 'feat_visits.js?v=20260722vis7';
 assert(productionLoader.includes(visitCacheKey), 'production must load the r7 visit model cache key');
 assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r7 visit model cache key');
 

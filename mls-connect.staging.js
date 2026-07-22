@@ -4312,7 +4312,7 @@
 ;/* === RVU feature loader (loads mls-rvu.staging.js) === */
 (function(){try{if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.staging.js?v=20260617a';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260720vis6';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260722vis7';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 
 /* STAGING parity: one reviewed write workflow for note, billing and supervised order placement. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeflow.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_writeflow.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();

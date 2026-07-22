@@ -154,6 +154,7 @@ function buildChart(options = {}) {
      markup and hydrates first). Mirror the real panel surface here. */
   const panel = makeEl('div', { className: 'visits-panel' });
   panel.appendChild(makeEl('div', { className: 'visits-panel-header', text: 'Visits and Cases' }));
+  panel.appendChild(makeEl('div', { className: 'visits-panel-show', text: 'SHOW: All Events (' + (options.rows ? options.rows.length : 3) + ')' }));
   rootEl.appendChild(panel);
   const ul = makeEl('ul', { className: 'encounter-list autostart' });
   panel.appendChild(ul);
