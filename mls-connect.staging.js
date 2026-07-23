@@ -759,15 +759,40 @@ try{
     }
     var expectedVisit={visitDate:visit.visitDate,provider:visit.provider,appointmentId:trim(visit.appointmentId),encounterId:digits(visit.encounterId),encounterUrl:trim(visit.encounterUrl)};
     PASSIVE.verifying=true;PASSIVE.verifyError='';refreshOpenPop();
-    return bridgeOnce('mlsPing',{},'mlsPong',3000,'').then(function(pong){
-      if(!pong||pong.__timeout||pong.ok===false)throw new Error('MLS Assist did not answer the read-only presence check.');
-      PASSIVE.pongAt=Date.now();PASSIVE.version=trim(pong.version||pong.extVersion||window.__mlsExtReportedVersion);
+    function probeOnce(){
       var requestId='sync-verify-'+Date.now()+'-'+Math.random().toString(36).slice(2), previewHash='sync-readonly-'+frozen.patientId+'-'+Date.now();
       return bridgeOnce('mlsAppAthenaActionV2',{
         mode:'probe',action:'write_note',previewHash:previewHash,
         patient:frozen,expectedPatient:frozen,expectedContext:expectedVisit,
         noteText:'MLS read-only active-patient verification probe. Nothing may be written.',notePolicy:'empty_only',sections:[]
       },'mlsAppAthenaActionV2Result',15000,requestId);
+    }
+    return bridgeOnce('mlsPing',{},'mlsPong',3000,'').then(function(pong){
+      if(!pong||pong.__timeout||pong.ok===false)throw new Error('MLS Assist did not answer the read-only presence check.');
+      PASSIVE.pongAt=Date.now();PASSIVE.version=trim(pong.version||pong.extVersion||window.__mlsExtReportedVersion);
+      return probeOnce();
+    }).then(function(resp){
+      /* av-1.1.0 (owner 2026-07-23): verification must not require the chart
+         to already be open in Athena. When the probe refuses only because the
+         destination is not open, drive the extension's identity-frozen
+         SearchOpen (result-row name/DOB/MRN verified BEFORE the chart opens;
+         read-only navigation) and re-probe exactly once. Identity mismatches
+         and every other refusal stay fail-closed and untouched. */
+      var rzn=trim(resp&&resp.reason);
+      if((!resp||resp.ok!==true)&&/^(context-unverified|context-mismatch)$/.test(rzn)){
+        PASSIVE.verifyError='';refreshOpenPop();
+        var openId='sync-open-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+        return bridgeOnce('mlsAppSearchOpenPatient',{
+          name:frozen.name,dob:frozen.dob,mrn:frozen.mrn,
+          appointmentId:trim(expectedVisit.appointmentId),scheduleDate:dateKey(expectedVisit.visitDate),
+          deadlineAt:Date.now()+75000
+        },'mlsAppSearchOpenResult',80000,openId).then(function(open){
+          var o=(open&&open.resp&&typeof open.resp==='object')?open.resp:open;
+          if(!o||o.__timeout||o.ok!==true||o.opened!==true)throw new Error('MLS could not open '+frozen.name+' in Athena automatically'+((o&&trim(o.error||o.reason))?(': '+trim(o.error||o.reason)):'')+'. Open the chart in athenaOne, then Verify again. Nothing was changed.');
+          return probeOnce();
+        });
+      }
+      return resp;
     }).then(function(resp){
       var current=activePatientSnapshot(), ctx=resp&&resp.context;
       if(!current||current.patientId!==frozen.patientId)throw new Error('The active patient changed; the old verification result was discarded.');
@@ -806,7 +831,7 @@ try{
       +'</div>';
     body+='<div class="mls-sp-stat"><span>'+ps.sends.verified+' verified</span><span>'+ps.sends.pending+' pending</span><span>'+ps.sends.failed+' failed</span><span>'+ps.sends.uncertain+' uncertain</span></div>';
     body+='<button type="button" id="mlsSyncVerifyNow" class="mls-sp-verify"'+(PASSIVE.verifying?' disabled':'')+'>'+(PASSIVE.verifying?'Verifying exact patient…':'Verify active patient now — read-only')+'</button>';
-    body+='<div class="mls-sp-safe">Checks only the one already-open Athena encounter for this exact MLS ID/name/DOB/MRN. It never pulls a day, changes a chart, navigates, reloads, focuses a tab, or writes.</div>';
+    body+='<div class="mls-sp-safe">Checks the exact Athena encounter for this MLS ID/name/DOB/MRN. If the chart is not open yet, MLS finds and opens it first — identity is verified before it opens, read-only. It never pulls a day, changes a chart, or writes.</div>';
     body+='<div class="mls-sp-list">'+rows+'</div><div class="mls-sp-note">Send counts are receipt-based for this immutable patient. Old click-only “sent” entries are shown as uncertain, never as confirmed.</div>';
     pop.innerHTML=body;var b=pop.querySelector&&pop.querySelector('#mlsSyncVerifyNow');if(b)b.onclick=verifyNow;
   }
@@ -4332,7 +4357,7 @@ try{
 (function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.staging.js?v=20260718stglib1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260723opnp170';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260723onf280';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260723oni2100';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260723oni2110';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260722tl112';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */

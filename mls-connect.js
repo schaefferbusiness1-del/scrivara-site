@@ -32907,7 +32907,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b500';
+  window.__MLS_AV = window.__MLS_AV || 'b501';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33217,7 +33217,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-23-b500';
+  var MLS_APP_BUILD='2026-07-23-b501';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -36331,15 +36331,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     var expectedVisit={visitDate:visit.visitDate,provider:visit.provider,appointmentId:trim(visit.appointmentId),encounterId:digits(visit.encounterId),encounterUrl:trim(visit.encounterUrl)};
     PASSIVE.verifying=true;PASSIVE.verifyError='';refreshOpenPop();
-    return bridgeOnce('mlsPing',{},'mlsPong',3000,'').then(function(pong){
-      if(!pong||pong.__timeout||pong.ok===false)throw new Error('MLS Assist did not answer the read-only presence check.');
-      PASSIVE.pongAt=Date.now();PASSIVE.version=trim(pong.version||pong.extVersion||window.__mlsExtReportedVersion);
+    function probeOnce(){
       var requestId='sync-verify-'+Date.now()+'-'+Math.random().toString(36).slice(2), previewHash='sync-readonly-'+frozen.patientId+'-'+Date.now();
       return bridgeOnce('mlsAppAthenaActionV2',{
         mode:'probe',action:'write_note',previewHash:previewHash,
         patient:frozen,expectedPatient:frozen,expectedContext:expectedVisit,
         noteText:'MLS read-only active-patient verification probe. Nothing may be written.',notePolicy:'empty_only',sections:[]
       },'mlsAppAthenaActionV2Result',15000,requestId);
+    }
+    return bridgeOnce('mlsPing',{},'mlsPong',3000,'').then(function(pong){
+      if(!pong||pong.__timeout||pong.ok===false)throw new Error('MLS Assist did not answer the read-only presence check.');
+      PASSIVE.pongAt=Date.now();PASSIVE.version=trim(pong.version||pong.extVersion||window.__mlsExtReportedVersion);
+      return probeOnce();
+    }).then(function(resp){
+      /* av-1.1.0 (owner 2026-07-23): verification must not require the chart
+         to already be open in Athena. When the probe refuses only because the
+         destination is not open, drive the extension's identity-frozen
+         SearchOpen (result-row name/DOB/MRN verified BEFORE the chart opens;
+         read-only navigation) and re-probe exactly once. Identity mismatches
+         and every other refusal stay fail-closed and untouched. */
+      var rzn=trim(resp&&resp.reason);
+      if((!resp||resp.ok!==true)&&/^(context-unverified|context-mismatch)$/.test(rzn)){
+        PASSIVE.verifyError='';refreshOpenPop();
+        var openId='sync-open-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+        return bridgeOnce('mlsAppSearchOpenPatient',{
+          name:frozen.name,dob:frozen.dob,mrn:frozen.mrn,
+          appointmentId:trim(expectedVisit.appointmentId),scheduleDate:dateKey(expectedVisit.visitDate),
+          deadlineAt:Date.now()+75000
+        },'mlsAppSearchOpenResult',80000,openId).then(function(open){
+          var o=(open&&open.resp&&typeof open.resp==='object')?open.resp:open;
+          if(!o||o.__timeout||o.ok!==true||o.opened!==true)throw new Error('MLS could not open '+frozen.name+' in Athena automatically'+((o&&trim(o.error||o.reason))?(': '+trim(o.error||o.reason)):'')+'. Open the chart in athenaOne, then Verify again. Nothing was changed.');
+          return probeOnce();
+        });
+      }
+      return resp;
     }).then(function(resp){
       var current=activePatientSnapshot(), ctx=resp&&resp.context;
       if(!current||current.patientId!==frozen.patientId)throw new Error('The active patient changed; the old verification result was discarded.');
@@ -36378,7 +36403,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'</div>';
     body+='<div class="mls-sp-stat"><span>'+ps.sends.verified+' verified</span><span>'+ps.sends.pending+' pending</span><span>'+ps.sends.failed+' failed</span><span>'+ps.sends.uncertain+' uncertain</span></div>';
     body+='<button type="button" id="mlsSyncVerifyNow" class="mls-sp-verify"'+(PASSIVE.verifying?' disabled':'')+'>'+(PASSIVE.verifying?'Verifying exact patient…':'Verify active patient now — read-only')+'</button>';
-    body+='<div class="mls-sp-safe">Checks only the one already-open Athena encounter for this exact MLS ID/name/DOB/MRN. It never pulls a day, changes a chart, navigates, reloads, focuses a tab, or writes.</div>';
+    body+='<div class="mls-sp-safe">Checks the exact Athena encounter for this MLS ID/name/DOB/MRN. If the chart is not open yet, MLS finds and opens it first — identity is verified before it opens, read-only. It never pulls a day, changes a chart, or writes.</div>';
     body+='<div class="mls-sp-list">'+rows+'</div><div class="mls-sp-note">Send counts are receipt-based for this immutable patient. Old click-only “sent” entries are shown as uncertain, never as confirmed.</div>';
     pop.innerHTML=body;var b=pop.querySelector&&pop.querySelector('#mlsSyncVerifyNow');if(b)b.onclick=verifyNow;
   }
@@ -41599,7 +41624,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260723oni2100';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: classified matching, custom-heading/fixed-wording fidelity, prior-name scrubbing, verified exact-patient history */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_integrity.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_integrity.js?v=20260723oni2110';s.async=false;s.setAttribute('data-mls-asset','feat_mls_opnote_integrity.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* final op-note owner: classified matching, custom-heading/fixed-wording fidelity, prior-name scrubbing, verified exact-patient history */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_label.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_label.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_label.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE canonical provider-name resolver (window.__mlsProviderLabel) + normalizes _calProviders so every dropdown shows real names instead of "Provider undefined"/"[object Object]"/"Provider N" (plbl-1.0.0; revert()) */

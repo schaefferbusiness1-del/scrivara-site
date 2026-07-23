@@ -1,6 +1,6 @@
 'use strict';
 
-/* b500 op-note workflow hardening (oni-2.10.0 / opnp-1.7.0 / onf-2.8.0):
+/* b501 op-note workflow hardening (oni-2.11.0 / opnp-1.7.0 / onf-2.8.0):
  *  1. oni newRow carries the appointment's provider/facility scope (the base
  *     _opNewRow's 6th param) instead of silently dropping it.
  *  2. A drafted row remembers the template that produced it (_genTplId) and
@@ -65,7 +65,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(oniSource, context, { filename: 'feat_mls_opnote_integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.installed && api.version === 'oni-2.10.0', 'integrity owner did not install at oni-2.10.0');
+  assert(api && api.installed && api.version === 'oni-2.11.0', 'integrity owner did not install at oni-2.11.0');
 
   // 1. newRow must carry appointment provider/facility scope like the base _opNewRow.
   const row = context._opNewRow('Current Patient', 'Lumbar ESI', '1980-01-02', 'July 24', 'p-safe',
@@ -119,6 +119,60 @@ async function main() {
   assert(threw, 'network failure did not reject');
   assert(String(context.__mlsLastOpFidelityError).includes('Failed to fetch'),
     'the real failure reason is not surfaced on the shared error channel: ' + context.__mlsLastOpFidelityError);
+
+  /* ---------------- oni-2.11.0 matcher truth: word-over-code, historical strip,
+     multi-procedure refusal, ESI hierarchy, junction regions, sibling guard ---------------- */
+  const MLIB = [
+    { id: 'tfesi', name: 'Lumbar Transforaminal ESI', text: 'PROCEDURE: Transforaminal epidural steroid injection under fluoroscopy. 64483.' },
+    { id: 'ilesi', name: 'Lumbar Interlaminar ESI', text: 'PROCEDURE: Interlaminar epidural steroid injection, loss of resistance. 62323.' },
+    { id: 'cesi', name: 'Cervical Interlaminar ESI', text: 'PROCEDURE: Cervical interlaminar epidural steroid injection. C7-T1 approach. 62321.' },
+    { id: 'caudal', name: 'Caudal ESI', text: 'PROCEDURE: Caudal epidural steroid injection via the sacral hiatus. 62323.' },
+    { id: 'lmbb', name: 'Lumbar Medial Branch Block', text: 'PROCEDURE: Lumbar medial branch blocks under fluoroscopy. 64493.' },
+    { id: 'lrfa', name: 'Lumbar Medial Branch RFA', text: 'PROCEDURE: Radiofrequency ablation of the lumbar medial branch nerves. 64635.' },
+    { id: 'crfa', name: 'Cervical Medial Branch RFA', text: 'PROCEDURE: Cervical medial branch radiofrequency ablation. 64633.' },
+    { id: 'si', name: 'SI Joint Injection', text: 'PROCEDURE: Sacroiliac joint injection under fluoroscopic guidance. 27096.' },
+    { id: 'scstrial', name: 'SCS Trial', text: 'PROCEDURE: Spinal cord stimulator trial lead placement. 63650.' }
+  ];
+  const mctx = {
+    console, Promise, Date, Math, JSON, Object, String, Number, Array, RegExp, Error, setTimeout, clearTimeout,
+    document: { readyState: 'complete', addEventListener() {}, getElementById() { return null; }, querySelector() { return null; } },
+    getTemplates() { return MLIB; },
+    getTemplateById(id) { return MLIB.find(t => t.id === id) || null; },
+    getPatients() { return []; }, getKey() { return ''; },
+    async opPrepGenerateOne() {}, opPrepRender() {}, toast() {}, async aiCallRaw() { return '{}'; }
+  };
+  mctx.window = mctx;
+  vm.runInNewContext(oniSource, mctx, { filename: 'feat_mls_opnote_integrity.js' });
+  const matcher = mctx.__mlsOpNoteIntegrity;
+  function matched(reason) { const m = matcher.bestFor('P', reason, '1970-01-01', ''); return m.tplId || 'NOMATCH'; }
+  // word evidence outranks a shared CPT inside the template body:
+  assert.strictEqual(matched('Caudal epidural steroid injection'), 'caudal', 'caudal template lost to its own shared 62323 code');
+  assert.strictEqual(matched('SCS trial'), 'scstrial', 'SCS trial template classified as an implant via 63650');
+  // code-only reasons classify (with lumbar CPT region evidence):
+  assert.strictEqual(matched('64493, 64494 bilateral'), 'lmbb', 'MBB CPT-only reason did not classify');
+  assert.strictEqual(matched('27096 left'), 'si', 'SI CPT-only reason did not classify');
+  assert.strictEqual(matched('64635 64636'), 'lrfa', 'lumbar RFA codes drifted (or refused) against the cervical RFA template');
+  // historical mentions never steal the class from the primary procedure:
+  assert.strictEqual(matched('Left L5-S1 TFESI (prior right L4-L5 MBB with relief)'), 'tfesi', 'a PRIOR MBB mention outranked the scheduled TFESI');
+  // undecided rows refuse instead of guessing:
+  assert.strictEqual(matched('TFESI vs MBB — decide at visit'), 'NOMATCH', 'an undecided two-procedure row auto-matched');
+  assert.strictEqual(matched('Bilateral MBB L4-L5 with possible RFA to follow'), 'lmbb', 'a conditional future RFA stole the class from today\'s MBB');
+  // RFA-of-the-medial-branches shorthand is ONE procedure:
+  assert.strictEqual(matched('RFA B/L L4MB L5 DRB'), 'lrfa', 'RFA-of-MBB shorthand tripped the multi-procedure rule');
+  // ESI hierarchy: a lone cervical ESI request may use the practice's cervical template…
+  assert.strictEqual(matched('Cervical ESI'), 'cesi', 'generic cervical ESI could not use the only cervical ESI template');
+  // …but a generic lumbar ESI with several lumbar candidates must refuse:
+  assert.strictEqual(matched('Lumbar ESI'), 'NOMATCH', 'ambiguous generic lumbar ESI picked a specific approach');
+  // junction levels span regions without a false conflict:
+  assert.strictEqual(matched('Cervical interlaminar ESI C7-T1'), 'cesi', 'C7-T1 junction levels false-conflicted the cervical template');
+  // typos/shorthand normalize; a typo can never flip block into RFA:
+  assert.strictEqual(matched('Lumbar medial branch blcok bilateral L4-L5'), 'lmbb', 'a block typo crossed to the RFA template');
+  assert.strictEqual(matched('B/L SI inj'), 'si', 'SI shorthand did not classify');
+  assert.strictEqual(matched('ESI-TF R L4/5'), 'tfesi', 'ESI-TF shorthand did not classify');
+  assert.strictEqual(matched('Right L5-S1 transforminal epidural steroid injection'), 'tfesi', 'transforaminal typo did not classify');
+  // negation + honesty stay intact:
+  assert.strictEqual(matched('No procedure performed today.'), 'NOMATCH');
+  assert.strictEqual(matched('Follow-up appointment'), 'NOMATCH');
 
   /* ---------------- opnp runtime: attest export + draft resume ---------------- */
   const notes = [

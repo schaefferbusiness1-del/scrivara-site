@@ -32,8 +32,21 @@ for (const [name, src] of [['production', prod], ['staging', staging]]) {
   assert(!src.includes('document.body.innerText'), `${name} can confuse a patient/body email with the signed-in sync-log owner`);
   for (const forbidden of [
     'mlsAppPullSchedule', 'mlsAppGotoDate', 'mlsAppReadChart', 'mlsAppReadVisits',
-    'mlsAppSearchOpenPatient', 'mlsAppFocusMlsTab', 'location.reload', '.focus()'
+    'mlsAppFocusMlsTab', 'location.reload', '.focus()'
   ]) assert(!src.includes(forbidden), `${name} status module contains forbidden automatic action ${forbidden}`);
+  /* av-1.1.0 (owner 2026-07-23): the EXPLICIT Verify-now click may open the
+     identity-frozen chart when it is not already open (read-only navigation)
+     — but ONLY there. SearchOpen must appear exactly once, inside verifyNow's
+     bounded not-open branch, and never on any passive/timer path. */
+  {
+    const hits = src.split('mlsAppSearchOpenPatient').length - 1;
+    assert.strictEqual(hits, 1, `${name} must reference SearchOpen exactly once (explicit verify only)`);
+    const vnStart = src.indexOf('function verifyNow()');
+    const vnEnd = src.indexOf('function masked(', vnStart);
+    const vn = src.slice(vnStart, vnEnd > vnStart ? vnEnd : vnStart + 6000);
+    assert(vn.includes('mlsAppSearchOpenPatient'), `${name} SearchOpen escaped the explicit verifyNow click path`);
+    assert(/\/\^\(context-unverified\|context-mismatch\)\$\//.test(vn), `${name} verify auto-open is not whitelist-bounded`);
+  }
 }
 
 function runtime(source) {
@@ -44,6 +57,8 @@ function runtime(source) {
   let slotWrites = 0;
   let intervalCalls = 0;
   let probeIdentity = 'Exact Patient';
+  let probeFailOnceReason = null;
+  let searchOpenReply = null;
   const patient = {
     id: 'patient-exact-7', name: 'Exact Patient', dob: '01/02/1980', mrn: 'MRN-7788',
     athenaProfileCoverage: {
@@ -101,6 +116,14 @@ function runtime(source) {
       if (message.type === 'mlsPing') {
         setTimeout(() => emit({ source: 'mls-ext', type: 'mlsPong', version: '2.9.22' }), 0);
       } else if (message.type === 'mlsAppAthenaActionV2') {
+        if (probeFailOnceReason) {
+          const reason = probeFailOnceReason; probeFailOnceReason = null;
+          setTimeout(() => emit({
+            source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: message.requestId,
+            resp: { ok: false, blocked: true, reason, error: 'The exact patient/encounter is not open in Athena.' }
+          }), 0);
+          return;
+        }
         const context = {
           patientName: probeIdentity, dob: '1/2/1980', mrn: '7788', encounterId: '44001',
           encounterUrl: 'https://athenanet.athenahealth.com/encounter/44001', visitDate: '7/14/2026',
@@ -110,6 +133,10 @@ function runtime(source) {
           source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: message.requestId,
           resp: { ok: true, mode: 'probe', action: 'write_note', readOnly: true, noAutomaticChaining: 'no-automatic-chaining', context }
         }), 0);
+      } else if (message.type === 'mlsAppSearchOpenPatient') {
+        setTimeout(() => emit(Object.assign({
+          source: 'mls-ext', type: 'mlsAppSearchOpenResult', requestId: message.requestId
+        }, searchOpenReply || { ok: false, reason: 'no-athena-tab' })), 0);
       }
     }
   };
@@ -125,6 +152,8 @@ function runtime(source) {
   return {
     api: window.__mlsSync, patient, binding, posted, storage, emit, context,
     setProbeIdentity(v) { probeIdentity = v; },
+    setProbeFailOnce(reason) { probeFailOnceReason = reason; },
+    setSearchOpenReply(v) { searchOpenReply = v; },
     get slotWrites() { return slotWrites; },
     get intervalCalls() { return intervalCalls; },
     get messageListeners() { return (listeners.message || []).length; },
@@ -169,6 +198,31 @@ function runtime(source) {
   assert.strictEqual(status.verify.readOnly, true, 'probe receipt was not marked read-only');
   assert(!('actionToken' in status.verify), 'one-use mutation token leaked into passive status storage');
 
+  /* av-1.1.0 (owner 2026-07-23): verification must work without the chart
+     already open — a not-open probe refusal auto-opens the identity-frozen
+     chart (SearchOpen) and re-probes exactly once. Failed opens stay honest;
+     identity mismatches never auto-open. */
+  {
+    const opensBefore = rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length;
+    rt.setProbeFailOnce('context-unverified');
+    rt.setSearchOpenReply({ ok: true, opened: true, via: 'findpatient' });
+    assert.strictEqual(await rt.api.verifyNow(), true, 'not-open verify did not auto-open and re-probe to success');
+    const opens = rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient');
+    assert.strictEqual(opens.length, opensBefore + 1, 'auto-open did not dispatch exactly one SearchOpen');
+    assert(opens[opens.length - 1].name && opens[opens.length - 1].dob, 'SearchOpen was not identity-frozen');
+
+    rt.setProbeFailOnce('context-unverified');
+    rt.setSearchOpenReply({ ok: false, reason: 'no-athena-tab' });
+    assert.strictEqual(await rt.api.verifyNow(), false, 'a failed auto-open must fail the verify');
+
+    rt.setProbeFailOnce('patient-mismatch');
+    const opensBeforeMismatch = rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length;
+    rt.setSearchOpenReply({ ok: true, opened: true });
+    assert.strictEqual(await rt.api.verifyNow(), false, 'an identity-mismatch refusal must fail closed');
+    assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, opensBeforeMismatch, 'identity mismatch must NEVER auto-open');
+    rt.setSearchOpenReply(null);
+  }
+
   const probe = rt.posted.find(m => m.type === 'mlsAppAthenaActionV2');
   assert(probe, 'Verify now did not send the typed probe');
   assert.deepStrictEqual(
@@ -184,7 +238,11 @@ function runtime(source) {
     },
     'Verify now did not bind the read-only probe to the exact local visit'
   );
-  assert(rt.posted.every(m => !['mlsAppPullSchedule','mlsAppGotoDate','mlsAppReadChart','mlsAppReadVisits','mlsAppSearchOpenPatient','mlsAppFocusMlsTab'].includes(m.type)), 'Verify now performed navigation, a pull, or focus action');
+  /* av-1.1.0: SearchOpen is permitted ONLY for the explicit not-open verify
+     cases above (their exact dispatch counts are asserted in that block);
+     every other navigation/pull/focus verb stays forbidden outright. */
+  assert(rt.posted.every(m => !['mlsAppPullSchedule','mlsAppGotoDate','mlsAppReadChart','mlsAppReadVisits','mlsAppFocusMlsTab'].includes(m.type)), 'Verify now performed navigation, a pull, or focus action');
+  assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 2, 'SearchOpen appeared outside the two explicit auto-open verify cases');
 
   const staleReceipt = Object.assign({}, status.verify, { verifiedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() });
   const staleState = rt.api._verifyFreshness(status.patient, staleReceipt);
