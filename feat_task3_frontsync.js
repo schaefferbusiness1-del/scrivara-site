@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.6';
+  var VERSION = 't3-1.0.7';
   var wrapped = [], trackedTimeouts = [], destroyed = false;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -173,7 +173,10 @@
 
   /* ==================== 2. CANONICAL STORE (window.MLSCal) ================ */
   var SUFFIX = /^(jr|sr|ii|iii|iv|v|md|do|np|pa|pac|c|rn|phd|esq|dr|drs|mr|mrs|ms|prof|aprn|fnp|dnp|dpm|dds|dmd|cnm|crna|od|lpc|lcsw|pt|dpt|ot)$/;
-  function cleanProv(p) { var s = String(p == null ? '' : p); s = s.replace(/\s*Close\s*$/, '').replace(/[\u00d7\u2715\u2716\u2717\u2718xX]\s*$/, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim(); return s; }
+  /* A leading "PROVIDER " label on an imported row ("Provider MATTHEW SCHAEFFER, MD")
+     is chrome, not a name \u2014 without stripping it the row earns its OWN roster chip
+     next to the real provider's. */
+  function cleanProv(p) { var s = String(p == null ? '' : p); s = s.replace(/\s*Close\s*$/, '').replace(/[\u00d7\u2715\u2716\u2717\u2718xX]\s*$/, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim(); s = s.replace(/^provider\s+(?=\S)/i, ''); return s; }
   function tokens(raw) { return cleanProv(raw).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(function (t) { return t && t.length > 1 && !SUFFIX.test(t); }); }
   function provKey(raw) { var t = tokens(raw); return t.slice().sort().join(' '); }
   function surnameOf(raw) { var t = tokens(raw); if (!t.length) return ''; return t.slice().sort(function (a, b) { return b.length - a.length; })[0]; }
@@ -295,7 +298,7 @@
       });
       for (i = 0; i < a.length; i++) {
         x = a[i]; if (!x || !x.__t3pk || !x.appt_date) continue;
-        if (!provIdx[x.__t3pk]) provIdx[x.__t3pk] = { pk: x.__t3pk, label: x.provider, total: 0, byDate: {} };
+        if (!provIdx[x.__t3pk]) provIdx[x.__t3pk] = { pk: x.__t3pk, label: humanize(x.provider), total: 0, byDate: {} };
         provIdx[x.__t3pk].total++;
         provIdx[x.__t3pk].byDate[x.appt_date] = (provIdx[x.__t3pk].byDate[x.appt_date] || 0) + 1;
       }

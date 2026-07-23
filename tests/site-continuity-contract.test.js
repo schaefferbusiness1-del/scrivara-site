@@ -31,6 +31,12 @@ assert(!app.includes("new Date(date+'T'+time).toISOString()"), 'calendar creatio
 assert(!app.includes("new Date(_boardDay()+'T'+time).toISOString()"), 'front desk must not use the browser timezone');
 assert(patientPick.includes('window._acctTodayKey()') && patientPick.includes('window._acctNowMinutes()'), 'guided patient cards must use the practice clock');
 assert(upNow.includes('window._acctNowMinutes()'), 'realtime up-now correction must use the practice clock');
+// unr-1.1.0: a late-running clinic must not be told "No more patients today"
+// while unseen patients remain — the banner reconciles with the agenda strip.
+assert(upNow.includes('function unseenPastCount()'), 'end-of-day banner must count unseen patients');
+assert(upNow.includes('not marked seen yet'), 'end-of-day banner must surface still-unseen patients honestly');
+assert(upNow.includes('No more patients today.'), 'the clean all-seen end-of-day banner must remain');
+assert(upNow.includes('__mlsStaffMark'), 'unseen count must exclude owner-marked staff like the agenda strip does');
 assert(connect.includes("typeof window._acctTodayKey === 'function'"), 'guided visit home must use the practice day');
 assert(connect.includes("typeof window._acctNowParts === 'function'"), 'guided visit clock must use the practice timezone');
 assert(connect.includes("typeof window._acctWallToUtcIso === 'function'"), 'guided fallback times must be interpreted in the practice timezone');

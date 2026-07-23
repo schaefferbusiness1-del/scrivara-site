@@ -36,7 +36,7 @@
   "use strict";
   try { if (window.__mlsUpNowRealtime && window.__mlsUpNowRealtime.installed) return; } catch (e) { return; }
 
-  var VERSION = "unr-1.0.0";
+  var VERSION = "unr-1.1.0";
   var BANNER = "heroPullStatus";
   var HERO = "heroToday";
   var NOMORE = "No more patients today.";
@@ -77,11 +77,34 @@
     return safe(function () { return getComputedStyle(h).display !== "none"; }, false);
   }
 
+  /* unr-1.1.0: "No more patients today." was time-only truth — with a clinic
+     running late it contradicted the agenda strip ("1 remaining") while an
+     unseen patient was still waiting. When appointment times have all passed
+     but unseen patients remain on the list, say THAT instead. */
+  function unseenPastCount() {
+    return safe(function () {
+      if (typeof window._seenToday !== "function") return 0;
+      var list = window._heroTodayList || [], n = 0;
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i] || {};
+        if (!a.name) continue;
+        if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff && window.__mlsStaffMark.isStaff(a.name)) continue;
+        if (!window._seenToday(a.name)) n++;
+      }
+      return n;
+    }, 0) || 0;
+  }
+  function bannerText() {
+    var n = unseenPastCount();
+    if (n > 0) return "All appointment times have passed — " + n + (n === 1 ? " patient on today's list is" : " patients on today's list are") + " not marked seen yet.";
+    return NOMORE;
+  }
   function setNoMoreBanner() {
     var el = $(BANNER); if (!el) return;
     safe(function () {
-      if (el.textContent === NOMORE && el.style.display === "block") return;
-      el.textContent = NOMORE;
+      var want = bannerText();
+      if (el.textContent === want && el.style.display === "block") return;
+      el.textContent = want;
       el.style.color = "rgba(255,255,255,.95)";
       el.style.display = "block";
     });
