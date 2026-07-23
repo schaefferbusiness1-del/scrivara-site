@@ -1,5 +1,5 @@
 {
-  "version": "3.0.3",
+  "version": "3.0.4",
   "url": "https://mlsscribe.com/get-extension.html",
   "notes": "Published stable channel. Newer candidate bytes remain isolated and are not offered until their exact package and SHA-256 digest pass the complete release gate."
 }

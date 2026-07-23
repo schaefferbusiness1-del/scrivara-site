@@ -1,6 +1,6 @@
 'use strict';
 
-/* b504 op-note workflow hardening (oni-2.11.0 / opnp-1.7.0 / onf-2.8.0):
+/* b505 op-note workflow hardening (oni-2.12.0 / opnp-1.7.0 / onf-2.8.0):
  *  1. oni newRow carries the appointment's provider/facility scope (the base
  *     _opNewRow's 6th param) instead of silently dropping it.
  *  2. A drafted row remembers the template that produced it (_genTplId) and
@@ -65,7 +65,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(oniSource, context, { filename: 'feat_mls_opnote_integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.installed && api.version === 'oni-2.11.0', 'integrity owner did not install at oni-2.11.0');
+  assert(api && api.installed && api.version === 'oni-2.12.0', 'integrity owner did not install at oni-2.12.0');
 
   // 1. newRow must carry appointment provider/facility scope like the base _opNewRow.
   const row = context._opNewRow('Current Patient', 'Lumbar ESI', '1980-01-02', 'July 24', 'p-safe',
@@ -120,10 +120,10 @@ async function main() {
   assert(String(context.__mlsLastOpFidelityError).includes('Failed to fetch'),
     'the real failure reason is not surfaced on the shared error channel: ' + context.__mlsLastOpFidelityError);
 
-  /* ---------------- oni-2.11.0 matcher truth: word-over-code, historical strip,
+  /* ---------------- oni-2.12.0 matcher truth: word-over-code, historical strip,
      multi-procedure refusal, ESI hierarchy, junction regions, sibling guard ---------------- */
   const MLIB = [
-    { id: 'tfesi', name: 'Lumbar Transforaminal ESI', text: 'PROCEDURE: Transforaminal epidural steroid injection under fluoroscopy. 64483.' },
+    { id: 'tfesi', name: 'Lumbar/Sacral Transforaminal ESI', text: 'PROCEDURE: Transforaminal epidural steroid injection under fluoroscopic guidance, lumbar/sacral. 64483.' },
     { id: 'ilesi', name: 'Lumbar Interlaminar ESI', text: 'PROCEDURE: Interlaminar epidural steroid injection, loss of resistance. 62323.' },
     { id: 'cesi', name: 'Cervical Interlaminar ESI', text: 'PROCEDURE: Cervical interlaminar epidural steroid injection. C7-T1 approach. 62321.' },
     { id: 'caudal', name: 'Caudal ESI', text: 'PROCEDURE: Caudal epidural steroid injection via the sacral hiatus. 62323.' },
@@ -170,7 +170,7 @@ async function main() {
   assert.strictEqual(matched('B/L SI inj'), 'si', 'SI shorthand did not classify');
   assert.strictEqual(matched('ESI-TF R L4/5'), 'tfesi', 'ESI-TF shorthand did not classify');
   assert.strictEqual(matched('Right L5-S1 transforminal epidural steroid injection'), 'tfesi', 'transforaminal typo did not classify');
-  // negation + honesty stay intact:
+  // sided S1 ESIs are transforaminal, never caudal (caudal is midline); explicit caudal still wins:\n  assert.strictEqual(matched('B/L S1 ESI P'), 'tfesi', 'bilateral S1 ESI routed to the midline caudal template');\n  assert.strictEqual(matched('R S1 ESI/MET P'), 'tfesi', 'sided S1 ESI routed to the midline caudal template');\n  assert.strictEqual(matched('Caudal epidural steroid injection'), 'caudal', 'explicit caudal request lost its template');\n  // negation + honesty stay intact:
   assert.strictEqual(matched('No procedure performed today.'), 'NOMATCH');
   assert.strictEqual(matched('Follow-up appointment'), 'NOMATCH');
 
@@ -218,7 +218,7 @@ async function main() {
   assert(opnpSource.includes('blockUnsavedSwitch'), 'day/mode switch has no unsaved-content guard');
 
   /* ---------------- onf source pins: edit flag, history gates, needle depth ---------------- */
-  assert(onfSource.includes("var VERSION = 'onf-2.8.0'"), 'onf version did not move');
+  assert(onfSource.includes("var VERSION = 'onf-2.9.0'"), 'onf version did not move');
   assert(/wasEdited = row \? !!row\.edited : false;[\s\S]{0,400}row\.edited = wasEdited;/.test(onfSource),
     'writeRendered no longer restores the clinician edit flag around machine renders');
   assert(onfSource.includes('if (val && defaultEligible(label) && scopedKey'), 'account dropdown-history write is not allowlist-gated');

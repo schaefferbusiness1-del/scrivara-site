@@ -657,10 +657,16 @@
           name: S(patient.name), dob: S(patient.dob), mrn: S(patient.mrn),
           appointmentId: S(expectedContext && expectedContext.appointmentId || ''),
           scheduleDate: wfDayKey(expectedContext && expectedContext.visitDate),
-          requestId: requestId, deadlineAt: Date.now() + 75000
+          /* wf2-2.2.1 (live 2026-07-23): findpatient opens the CHART, but the
+             write/verify probe needs the ENCOUNTER frame — when we hold the
+             exact appointment id + schedule date, open via the appointment
+             ROW (bootstrap route: navigation-proven, lands on the encounter
+             surface). Without them the chart-open fallback stands. */
+          bootstrapIdentity: !!(S(expectedContext && expectedContext.appointmentId || '').trim() && wfDayKey(expectedContext && expectedContext.visitDate)),
+          requestId: requestId, deadlineAt: Date.now() + 150000
         }, window.location.origin);
       } catch (e) { fin({ ok: false, error: String((e && e.message) || e) }); }
-      setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 76000);
+      setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 155000);
     });
   }
   function startAthenaAction(action, opts) {
