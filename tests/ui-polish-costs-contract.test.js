@@ -39,7 +39,7 @@ assert(fixpack.includes("return 'gpt-5-mini';"), 'default note model must be gpt
 assert(fixpack.includes("var MIG = 'mlsFpModelMig2';"), 'stored-model migration missing');
 assert(/curM === 'gpt-5o' \|\| curM === 'gpt-5'/.test(fixpack), 'migration must retire both the fake and the expensive stored choices');
 assert(/o\.value === 'gpt-5' \|\| o\.value === 'gpt-5o'/.test(fixpack), 'hot-upgraded selects must strip retired options');
-assert(fixpack.includes("'Best — GPT-5 mini (newest, recommended)'"), 'the honest Best label is missing');
+assert(fixpack.includes("'GPT-5 mini — newest, best quality (recommended)'"), 'the honest model-name label is missing');
 assert(!fixpack.includes("'GPT-5 — full power'"), 'the full-power option label survives');
 
 /* ---- 2. sign-in prompt triggers ---- */

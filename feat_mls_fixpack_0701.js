@@ -427,7 +427,7 @@
       });
       var have = {};
       Array.prototype.forEach.call(sel.options, function (o) { have[o.value] = 1; });
-      [['gpt-5-mini', 'Best — GPT-5 mini (newest, recommended)']].reverse().forEach(function (pair) {
+      [['gpt-5-mini', 'GPT-5 mini — newest, best quality (recommended)']].reverse().forEach(function (pair) {
         if (have[pair[0]]) return;
         var o = document.createElement('option'); o.value = pair[0]; o.textContent = pair[1];
         sel.insertBefore(o, sel.firstChild);
