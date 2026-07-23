@@ -65,4 +65,20 @@ assert(legalMatch.includes('nameScore') && legalMatch.includes('dobScore'), 'leg
 assert(legalMatch.includes('tied=true') && legalMatch.includes('!tied'), 'equal legal chart matches must not pick the first patient');
 assert(legalMatch.includes('nameScore>=1 && dobScore>0'), 'DOB alone must never attach a legal request to a chart');
 
-console.log(`PASS site continuity: ${inlineBlocks} inline scripts, practice time, guided highlight, exact op-note history, and legal matching`);
+// Patient-bar stability (owner 2026-07-23): the Athena status chip must never
+// re-flow the wrapped bar and shift the seen-strip. The slot is a RESERVED
+// fixed-width box, the chip is width-capped, and a keep-alive ping stops the
+// ready/verify state flap that changed the chip width every two minutes.
+const stagingApp = read('ScribeFlow-staging.html');
+const stagingConnect = read('mls-connect.staging.js');
+for (const [label, html] of [['production', app], ['staging', stagingApp]]) {
+  assert(html.includes(".mlsctx-slot{flex:0 0 auto;min-width:220px;min-height:26px;display:flex;align-items:center;justify-content:flex-end;}"), label + ': patient-bar chip slot must reserve fixed space');
+  assert(html.includes(".mlsctx-slot .mls-sync{max-width:236px;overflow:hidden;}"), label + ': status chip must be width-capped inside the reserved slot');
+  assert(!html.includes(".mlsctx-slot:empty{display:none;}"), label + ': collapsing the empty chip slot re-flows the bar and shifts the seen-strip');
+}
+for (const [label, js] of [['production', connect], ['staging', stagingConnect]]) {
+  assert(js.includes("PASSIVE.pongAt<5*60*1000){cls='idle';txt='Athena · extension ready';}"), label + ': extension-ready freshness must tolerate a missed keep-alive (5 min)');
+  assert(js.includes("if(Date.now()-lastPingAt>60000){lastPingAt=Date.now();safe(function(){window.postMessage({source:'mls-app',type:'mlsPing'},location.origin);});}"), label + ': render-tick keep-alive ping must hold the chip state steady (single-interval contract)');
+}
+
+console.log(`PASS site continuity: ${inlineBlocks} inline scripts, practice time, guided highlight, exact op-note history, legal matching, and stable patient-bar chip slot`);
