@@ -20,7 +20,7 @@ assert(importer.includes('one.visitsSkipped = true'), 'a skipped visits stage mu
 const skipStart = importer.indexOf('one.visitsSkipped = true');
 const skipBlock = importer.slice(skipStart - 300, skipStart + 300);
 assert(!/parsedVisits|visitCount|persistedVisits/.test(skipBlock), 'the skip path must never fabricate visit evidence');
-assert(importer.includes('one.visitsSkipped!==true&&one.organized'), 'clinical-field coverage check must not misfire on skipped visits');
+assert(importer.includes('one.visitsSkipped!==true&&one.visitsVerifiedCarry!==true&&one.organized'), 'clinical-field coverage check must not misfire on skipped or carried visits (si-2.0.0)');
 
 assert(connect.includes("id=\"mlsDsVisitBodies\""), 'day-pull card must expose the Full visit notes toggle');
 assert(connect.includes("window.uns('pullVisitBodies')"), 'toggle must persist through the namespaced preference');

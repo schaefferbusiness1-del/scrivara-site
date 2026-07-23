@@ -603,7 +603,7 @@ try{
   function setLog(l){ var k=key(); if(!k) return; safe(function(){ localStorage.setItem(k, JSON.stringify(l.slice(-50))); }); }
   function activeName(){ return safe(function(){ var id=window.getActivePtId&&window.getActivePtId(); var p=id&&window.findPatient&&window.findPatient(id); return p?(p.name||''):''; }, ''); }
   function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
-  var PASSIVE={ pongAt:0, version:'', pending:{}, schedule:null, verifying:false, verifyError:'', verifyReceipts:{} }, lastChipHtml='', renderTimer=null;
+  var PASSIVE={ pongAt:0, version:'', pending:{}, schedule:null, verifying:false, verifyError:'', verifyReceipts:{} }, lastChipHtml='', renderTimer=null, lastPingAt=0;
   function trim(v){ return String(v==null?'':v).trim(); }
   function normName(v){ return trim(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
   function digits(v){ return trim(v).replace(/\D/g,''); }
@@ -720,13 +720,18 @@ try{
     else if(ps.sends.pending){cls='idle';txt='Athena · '+ps.sends.pending+' pending';}
     else if(receipt&&ps.verifyFresh&&receipt.verifiedAt){cls='ok';txt='Athena · patient verified '+timeAgo(timeValue(receipt.verifiedAt));}
     else if(ps.chart&&ps.chart.verified){cls='ok';txt='Athena · chart '+timeAgo(ps.chart.capturedAt);}
-    else if(PASSIVE.pongAt&&Date.now()-PASSIVE.pongAt<2*60*1000){cls='idle';txt='Athena · extension ready';}
+    else if(PASSIVE.pongAt&&Date.now()-PASSIVE.pongAt<5*60*1000){cls='idle';txt='Athena · extension ready';}
     else {cls='idle';txt='Athena · verify patient';}
     return '<span class="mls-sync mls-sync-'+cls+'" data-tip="Athena sync status — click for details">'
       +'<span class="mls-sync-dot"></span>'+esc(txt)+'</span>';
   }
   function render(){
     if(!window.__mlsCard || typeof window.__mlsCard.setSyncSlot!=='function') return;
+    /* keep-alive: piggyback a 60s liveness ping on the existing render tick so
+       the pong stays fresh and the chip cannot flap ready<->verify (the flap
+       re-wrapped the patient bar and shifted the seen-strip). ONE interval only
+       -- the passive-interval contract counts installers. */
+    if(Date.now()-lastPingAt>60000){lastPingAt=Date.now();safe(function(){window.postMessage({source:'mls-app',type:'mlsPing'},location.origin);});}
     safe(function(){
       var html=chipHtml(), present=document.querySelector('#mlsCardSlot .mls-sync');
       if(present&&html===lastChipHtml){bindChip();return;}

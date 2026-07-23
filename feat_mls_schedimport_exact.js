@@ -2005,6 +2005,76 @@
        (base + i of the original total) — the bar only ever moves forward. */
     var sweepProgressBase = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressBase || 0)));
     var sweepProgressTotal = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressTotal || 0)));
+    /* si-2.0.0 INCREMENTAL VERIFIED HISTORY (owner 2026-07-23: "43 minutes for
+       a pull is way too slow"). The expensive stage is re-reading every
+       encounter BODY for patients whose bodies this engine already read,
+       verified, and identity-bound on a previous pull. Every completed body
+       pass now stamps the patient (athenaVisitsProof: when + an index
+       signature + the verified-body count; the stamp mirrors to the server
+       with the record). A later pull still does the FRESH chart read and
+       six-card organize — which refreshes the visit INDEX — and when that
+       fresh index signature matches the stamp, the bodies are provably
+       unchanged and the per-encounter re-read is skipped, recorded honestly
+       as visitsVerifiedCarry on the receipt. Any new/changed index row, any
+       missing verified body, or a stamp older than 72h forces the full
+       re-read (which re-stamps). Evidence-based each pull — never a bare
+       "pulled before" marker. */
+    function visitIndexSig(p) {
+      var rows = (Array.isArray(p && p.visits) ? p.visits : []).map(function (v) {
+        return [String(v && v.date || ""), String(v && v.type || ""), String(v && v.encounterId || ""), String(v && v.sourceVisitKey || "")].join("|");
+      }).sort();
+      var s = rows.join("~"), h = 5381;
+      for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+      return rows.length + ":" + (h >>> 0).toString(36);
+    }
+    function countVerifiedBodiesFor(p) {
+      var n = 0;
+      (Array.isArray(p && p.visits) ? p.visits : []).forEach(function (v) {
+        if (v && v.bodyComplete === true && String(v.raw || "").trim() && v.identityVerified === true && String(v.identityBinding || "") === String(p.id)) n++;
+      });
+      return n;
+    }
+    function findStorePatient(patientId) {
+      return safe(function () {
+        var arr = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+        for (var i = 0; i < arr.length; i++) if (arr[i] && String(arr[i].id) === String(patientId)) return arr[i];
+        return null;
+      }, null);
+    }
+    function stampVisitsProof(patientId, savedVisits) {
+      safe(function () {
+        var arr = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+        for (var i = 0; i < arr.length; i++) if (arr[i] && String(arr[i].id) === String(patientId)) {
+          /* mutate IN PLACE (callers hold live references mid-batch) and let
+             the pending-sync queue mirror the stamped record to the server. */
+          arr[i].athenaVisitsProof = {
+            completeAt: Date.now(), indexSig: visitIndexSig(arr[i]), bodies: countVerifiedBodiesFor(arr[i]),
+            organizationOk: !!(savedVisits && savedVisits.organization && savedVisits.organization.ok === true),
+            expectedVisits: Number(savedVisits && savedVisits.expectedVisits || 0),
+            parsedVisits: Number(savedVisits && savedVisits.parsedVisits || 0),
+            visitCount: Number(savedVisits && savedVisits.visitCount || 0),
+            persistedVisits: Number(savedVisits && savedVisits.persistedVisits || 0),
+            readerVersion: String(savedVisits && savedVisits.readerVersion || ""),
+            authoritativeEmpty: savedVisits && savedVisits.authoritativeEmpty === true
+          };
+          if (isFn(window.savePatients)) window.savePatients(arr);
+          safe(function () { if (isFn(window._pendingSyncAdd)) window._pendingSyncAdd(String(patientId)); });
+          return;
+        }
+      });
+    }
+    function visitsProofCarry(patientId) {
+      return safe(function () {
+        var p = findStorePatient(patientId);
+        if (!p || !p.athenaVisitsProof) return null;
+        var proof = p.athenaVisitsProof;
+        if (!(Number(proof.completeAt) > 0) || Date.now() - Number(proof.completeAt) > 72 * 3600 * 1000) return null;
+        if (String(proof.indexSig || "") !== visitIndexSig(p)) return null;
+        var bodies = countVerifiedBodiesFor(p);
+        if (!(bodies >= Number(proof.bodies || 0))) return null;
+        return proof;
+      }, null);
+    }
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
     var batchStartedAt = Date.now();
     var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
@@ -2146,7 +2216,7 @@
           for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
           break;
         }
-        var row = rows[i] || {}, target = exactHistoryTarget(row), one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
+        var row = rows[i] || {}, target = exactHistoryTarget(row), carryProof = null, one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
         if (!target) {
           one.reason = "identity-target-unresolved"; receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
         }
@@ -2243,6 +2313,44 @@
           one.visitsComplete = true;
           one.visitsSkipped = true;
           if (one.parsePipelined !== true) one.organizationComplete = one.organized;
+        } else if (!stopAfterTimeout && (carryProof = visitsProofCarry(target.patientId))) {
+          /* si-2.0.0: the fresh chart read just refreshed this patient's index
+             and it matches the stamped verified-bodies pass — nothing new to
+             read. Recorded honestly; the bodies remain identity-bound proof
+             from a completed pass, re-attested against TODAY's index. The
+             overlapped chart parse still lands on the receipt first — a carry
+             must never mask a failed six-card save. */
+          if (overlapParse) { try { await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); } catch (eCarryParse) {} overlapParse = null; }
+          one.visitsComplete = true;
+          one.visitsVerifiedCarry = true;
+          receipt.bodiesCarried = (receipt.bodiesCarried || 0) + 1;
+          one.organizationComplete = carryProof.organizationOk === true;
+          one.visitsCoverageComplete = true;
+          one.expectedVisits = Number(carryProof.expectedVisits || 0);
+          one.parsedVisits = Number(carryProof.parsedVisits || 0);
+          one.visitCount = Number(carryProof.visitCount || 0);
+          one.persistedVisits = Number(carryProof.persistedVisits || 0);
+          one.visitsReaderVersion = String(carryProof.readerVersion || "");
+          one.authoritativeEmpty = carryProof.authoritativeEmpty === true;
+          /* the ON lane's six-card freshness verdicts still apply under carry:
+             carried bodies never mask a stale or unproven CURRENT chart. */
+          (function () {
+            var cov = safe(function () { var p = findStorePatient(target.patientId); return p && p.athenaProfileCoverage; }, null);
+            if (!(cov && cov.complete === true && cov.exactIdentityVerified === true)) return;
+            var capRaw = cov.capturedAt, capAt = Number(capRaw || 0);
+            if (!isFinite(capAt) || capAt <= 0) capAt = Date.parse(String(capRaw || "")) || 0;
+            var freshNow = capAt >= patientReadStartedAt && capAt <= Date.now() + 5000;
+            one.profileCoverageFresh = freshNow;
+            if (freshNow && one.organized) {
+              one.profileCoverage = cov;
+              one.clinicalFieldCount = safe(function () {
+                var rc = isFn(window._patientHistoryCardCoverage) ? window._patientHistoryCardCoverage(target.patientId) : null;
+                return ["problems", "meds", "allergies", "vitals", "history"].reduce(function (n, k) { return n + (rc && rc.cards && rc.cards[k] && rc.cards[k].populated ? 1 : 0); }, 0);
+              }, Number(one.clinicalFieldCount || 0));
+            } else if (!one.organized) {
+              one.visitsReason = one.visitsReason || (freshNow ? "six-card-current-chart-unproven" : "six-card-profile-freshness-unproven");
+            }
+          })();
         } else if (!stopAfterTimeout) {
           var __visitsT0 = Date.now();
           try {
@@ -2310,6 +2418,8 @@
             var savedVisits = saveVerifiedVisits(target, vr);
             stageMs.visitSave = Date.now() - __visitSaveT0;
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
+            /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
+            if (savedVisits.visitsCoverageComplete === true) stampVisitsProof(target.patientId, savedVisits);
             if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
               var profileCapturedRaw=savedVisits.profileCoverage.capturedAt;
               var profileCapturedAt=Number(profileCapturedRaw||0);
@@ -2335,7 +2445,7 @@
           if (overlapParse) { try { await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); } catch (eOverlapLate) {} overlapParse = null; }
           stageMs.visits = Date.now() - __visitsT0;
         }
-        if(one.visitsSkipped!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
+        if(one.visitsSkipped!==true&&one.visitsVerifiedCarry!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
         one.stageMs = { chartMs: stageMs.chart, parseSaveMs: stageMs.parseSave, visitsMs: stageMs.visits, visitSaveMs: stageMs.visitSave, totalMs: Date.now() - patientReadStartedAt };
         if (one.parsePipelined !== true) {
           one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);

@@ -257,6 +257,9 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   assert.strictEqual(staleProfileRefused.patients[0].chartReason, 'chart-profile-route-failed');
   assert.strictEqual(staleProfileRefused.patients[0].visitsReason, 'six-card-profile-freshness-unproven');
 
+  /* si-2.0.0: this case's guarantee is about the READ path — clear the carry
+     stamp so the visits read (and its reconcile) actually runs. */
+  delete patient.athenaVisitsProof;
   const originalReconcile = context.__mlsVisitModel.reconcileVerifiedAthenaVisits;
   context.__mlsVisitModel.reconcileVerifiedAthenaVisits = () => ({ complete: false, reason: 'stable-key-collision' });
   const refusedReconcile = await context.__mlsSI._runHistoryBatch([row], [], () => {});
@@ -364,6 +367,30 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
     const sweptEntry = sweepReceipt.patients.find(p => p && p.sweepRecovered === 1);
     assert(sweptEntry && sweptEntry.complete === true, 'the recovered patient must be complete and flagged sweepRecovered');
     assert(visitCalls >= 2, 'the sweep must have issued a fresh visits read');
+  }
+
+  /* si-2.0.0 (owner 2026-07-23: "43 minutes for a pull is way too slow"): a
+     COMPLETED body pass stamps the patient; the next pull's fresh index that
+     matches the stamp carries the verified bodies WITHOUT re-reading every
+     encounter. Any index change forces the full re-read. */
+  {
+    const stamped = (context.getPatients ? context.getPatients() : [patient]).find(p => p && String(p.id) === String(patient.id));
+    assert(stamped && stamped.athenaVisitsProof && stamped.athenaVisitsProof.indexSig,
+      'a completed body pass must stamp athenaVisitsProof: ' + JSON.stringify(stamped && stamped.athenaVisitsProof));
+    let carryVisitCalls = 0;
+    const basePost2 = context.postMessage;
+    context.postMessage = msg => { if (msg && msg.type === 'mlsAppReadAllVisits') carryVisitCalls++; return basePost2(msg); };
+    const carryReceipt = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+    assert.strictEqual(carryReceipt.complete, true, 'carry pull must complete: ' + JSON.stringify({ reason: carryReceipt.reason, failures: carryReceipt.failures }));
+    assert.strictEqual(carryVisitCalls, 0, 'an unchanged stamped patient must NOT re-read encounter bodies');
+    const carried = carryReceipt.patients.find(p => p && p.visitsVerifiedCarry === true);
+    assert(carried && carried.complete === true, 'the carried patient must be complete and flagged visitsVerifiedCarry');
+    assert.strictEqual(carryReceipt.bodiesCarried, 1, 'the receipt must count carried patients');
+    /* a NEW index row (new encounter) must force the full body read */
+    stamped.visits.push({ date: '2026-07-23', type: 'encounter', indexOnly: true, source: 'athena-visits' });
+    await context.__mlsSI._runHistoryBatch([row], [], () => {});
+    assert(carryVisitCalls >= 1, 'a changed index must force a fresh body read');
+    context.postMessage = basePost2;
   }
 
   /* si-1.9.0 static contract: the sweep is depth-guarded, pass-bounded,
