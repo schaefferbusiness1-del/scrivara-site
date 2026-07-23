@@ -149,6 +149,7 @@ const tests = [
   'schedule-packaged-reader-regression.test.js',
   'schedule-dom-text-echo-regression.test.js',
   'extension-schedule-support-diagnostic.test.js',
+  'schedule-empty-day-proof-contract.test.js',
   'schedule-history-pipeline.test.js',
   'schedule-identity-adversarial-runtime.test.js',
   'schedule-row-demographics-adversarial.test.js',

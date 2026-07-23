@@ -102,8 +102,10 @@ assert.strictEqual(mergedIds.appts[0].providerId, 'provider-live-7');
 assert.strictEqual(mergedIds.appts[0].reason, 'Follow-up');
 
 // A verified frame is not enough: non-empty completion requires at least one
-// parsed row, while zero rows need explicit empty-state proof.
-assert(background.includes('var __authoritativeEmpty = __parsedCount === 0'));
+// parsed row, while zero rows need explicit empty-state proof (a verified
+// empty probe, or the 3.0.4 narrow all-slot-day proof for block-only days).
+assert(background.includes('var __authoritativeEmpty = (__parsedCount === 0'));
+assert(background.includes('|| __allSlotDay;'));
 assert(background.includes('__parsedCount > 0 && __parsedCount >= __expectedCount'));
 assert(background.includes("countStrategy: __countStrategy"), 'schedule receipt lost exact count provenance');
 assert(background.includes('declaredCountAuthoritative: __declaredCountAuthoritative'), 'schedule receipt does not distinguish authoritative declarations');

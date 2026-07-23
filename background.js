@@ -6644,7 +6644,8 @@ async function mlsSchedDomInline(doc, CFG){
           ? 'single-provider-surface-total'
           : (__legacyExactCount ? 'legacy-header-may-include-capacity' : (__providerCount > 1 && __declaredCount > 0 ? 'multi-provider-column-count-not-total' : 'no-authoritative-declared-total'));
         var __expectedCount = __legacyExactCount ? __candidateCount : Math.max(__candidateCount, __declaredCountAuthoritative ? __declaredCount : 0);
-        var __authoritativeEmpty = __parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; });
+        var __allSlotDay = __legacyExactCount && __parsedCount === 0 && __candidateCount === 0 && Number(__dd.slotRowsRemoved || 0) > 0; /* 3.0.4: block-only day (every rendered row classified as a slot: frozen/blocked/hold/...) - the legacy grid is non-virtualized, so zero candidates with removed slot rows proves a no-appointments day; the verified-empty probe never fires here because the grid is not visually empty. */
+        var __authoritativeEmpty = (__parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; })) || __allSlotDay;
         var __viewportCoverage = __dd.viewportCoverage || null;
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
         var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
