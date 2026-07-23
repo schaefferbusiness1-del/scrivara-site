@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_opnote_prep.js  ->  window.__mlsOpNotePrep   (opnp-1.3.0)
+ * feat_mls_opnote_prep.js  ->  window.__mlsOpNotePrep   (opnp-1.7.0)
  * -----------------------------------------------------------------------------
  * TASK 12 — OP-NOTE DRAFTING (schedule-prep flow). Hardens the LIVE
  * "Prep op notes" surface in ScribeFlow.html (openOpPrep / openOpPrepForPatient
@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.6.0';
+  var VERSION = 'opnp-1.7.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -212,11 +212,14 @@
     // template
     var tplOk = false; try { tplOk = !!(row && row.tplId && isFn(window.getTemplateById) && window.getTemplateById(row.tplId)); } catch (e) {}
     add('template', 'Operative-note template', tplOk, 'error');
-    // provider
-    add('provider', 'Operating provider name', !!pf.provider, 'warn');
+    // provider — the appointment's scoped provider counts (it outranks Settings
+    // in generation), not just the account-level configuration.
+    var apptProv = trim(appt.providerName || appt.provider_name || appt.provider || '');
+    add('provider', 'Operating provider name', !!(apptProv || pf.provider), 'warn');
     add('npi', 'Provider NPI', !!pf.npi, 'warn');
-    // facility
-    add('facility', 'Facility', !!pf.facility, 'warn');
+    // facility — same rule: the schedule's facility satisfies the checklist.
+    var apptFac = trim(appt.facilityName || appt.facility_name || appt.facility || appt.location || appt.department || appt.dept || '');
+    add('facility', 'Facility', !!(apptFac || pf.facility), 'warn');
 
     var ok = true, blockingSave = false;
     for (var i = 0; i < items.length; i++) {
@@ -297,6 +300,89 @@
     note = S(note);
     if (note.indexOf(ATTEST_MARK) >= 0) return note; // already present (re-draft) — don't duplicate
     return note + attestBlock(pf);
+  }
+  /* opnp-1.7.0: ctx-aware attestation entry for the integrity owner (oni). The
+     enriched generation ctx (appointment provider/facility outranking Settings)
+     drives the footer, mirroring the retired _genOpNote wrapper's mapping. */
+  function attestForCtx(note, ctx) {
+    ctx = ctx || {};
+    var pf = providerFacilityCtx();
+    if (trim(ctx.provider || ctx.providerName)) { pf.provider = trim(ctx.provider || ctx.providerName); pf.cred = ''; }
+    if (trim(ctx.providerNpi)) pf.npi = trim(ctx.providerNpi);
+    if (trim(ctx.practice)) pf.practice = trim(ctx.practice);
+    if (trim(ctx.practiceAddress)) pf.practiceAddress = trim(ctx.practiceAddress);
+    if (trim(ctx.facility || ctx.facilityName)) {
+      var fac = trim(ctx.facility || ctx.facilityName);
+      if (fac !== pf.facility) { pf.facility = fac; pf.facilityAddress = ''; }
+      if (trim(ctx.facilityAddress)) pf.facilityAddress = trim(ctx.facilityAddress);
+    }
+    return ensureProviderFacilityBlock(note, pf);
+  }
+
+  /* =========================================================================
+   * opnp-1.7.0 — SAFE SAVE-AND-RESUME. Reopening op-prep for a patient who
+   * already has an autosaved op-note draft for the SAME procedure adopts that
+   * draft (same note id + text) instead of starting blank — so re-drafting or
+   * autosaving can never mint a duplicate draft note in History.
+   * Adoption requires an unambiguous patient resolution and a procedure match;
+   * anything uncertain leaves the row blank (fail-open to the safe old shape).
+   * ======================================================================= */
+  function adoptExistingDraft(row) {
+    try {
+      if (!row || row._noteId || !isFn(window.getNotes)) return false;
+      var p = isFn(window._opResolvePatient) ? window._opResolvePatient(row.appt && row.appt.name, row.appt && row.appt.dob, row.patientId) : null;
+      if (!p || !trim(p.id)) return false;
+      var proc = trim(row.proc || (row.appt && row.appt.reason));
+      var ns = window.getNotes() || [], best = null;
+      for (var i = 0; i < ns.length; i++) {
+        var n = ns[i];
+        if (!n || S(n.patientId) !== S(p.id) || !n.isDraft || S(n.kind) !== 'opnote') continue;
+        if (proc && S(n.cc).indexOf(proc) < 0) continue;   // different procedure = different note
+        if (!best || (+n.updated || 0) > (+best.updated || 0)) best = n;
+      }
+      if (!best) return false;
+      row._noteId = best.id;
+      if (!trim(row.note)) {
+        row.note = S(best.text); row.gen = true;
+        row._genNote = row.note; row.edited = false;
+        row._resumedDraft = true;
+      }
+      STATE.resumedDrafts++;
+      return true;
+    } catch (e) { return false; }
+  }
+  function adoptAllExistingDrafts() {
+    var rows = window._opPrep || [], any = false;
+    for (var i = 0; i < rows.length; i++) { if (adoptExistingDraft(rows[i])) any = true; }
+    if (any && isFn(window.opPrepRender)) { try { window.opPrepRender(); } catch (e) {} }
+    return any;
+  }
+
+  /* opnp-1.7.0: switching day/mode rebuilds every row. Drafted notes are safe
+     (autosaved to History), but a typed-but-never-drafted procedure line would
+     vanish silently. Non-blocking two-step confirm (no native dialogs): the
+     first switch warns and arms an 8s window; repeating the SAME switch inside
+     it proceeds. A fresh open (modal closed) never warns. */
+  var switchArm = null;
+  function blockUnsavedSwitch(fnName, args) {
+    try {
+      var modal = document.getElementById('opPrepModal');
+      if (!modal || !modal.classList || !modal.classList.contains('show')) return false;
+      var rows = window._opPrep || [], loseable = [];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i]; if (!r || r.gen) continue;
+        var typed = trim(r.proc), fromAppt = trim(r.appt && r.appt.reason);
+        if (typed && typed !== fromAppt) loseable.push(trim(r.appt && r.appt.name) || 'row ' + (i + 1));
+      }
+      if (!loseable.length) return false;
+      var sig = fnName + '::' + Array.prototype.join.call(args || [], ',');
+      if (switchArm && switchArm.sig === sig && (Date.now() - switchArm.at) < 8000) { switchArm = null; return false; }
+      switchArm = { sig: sig, at: Date.now() };
+      STATE.blockedSwitches++;
+      try { if (isFn(window.toast)) window.toast('Typed procedure text for ' + loseable.slice(0, 2).join(', ') + (loseable.length > 2 ? ' +' + (loseable.length - 2) + ' more' : '') + ' hasn’t been drafted and will be cleared — click the same switch again to continue.', 'err'); } catch (e0) {}
+      try { var st = document.getElementById('opPrepStatus'); if (st) st.textContent = '⚠ Un-drafted procedure text would be lost — click again to switch anyway.'; } catch (e1) {}
+      return true;
+    } catch (e) { return false; }
   }
 
   /* =========================================================================
@@ -466,7 +552,9 @@
     // (4) fix single-patient date bug: use the SCHEDULED procedure date.
     wrap('openOpPrepForPatient', function (orig) {
       return function (pid) {
+        if (blockUnsavedSwitch('openOpPrepForPatient', arguments)) return;
         var r = orig.apply(this, arguments);
+        try { adoptAllExistingDrafts(); } catch (eA) {}
         try {
           var rows = window._opPrep || [];
           if (rows.length === 1 && rows[0] && rows[0].appt) {
@@ -497,10 +585,12 @@
     // (A) POSITIONAL id/location carry onto each built row's appt.
     wrap('openOpPrep', function (orig) {
       return function (dayKey) {
+        if (blockUnsavedSwitch('openOpPrep', arguments)) return;
         if (!dayKey) {
           try { dayKey = nextProcedureDay(dayKeyOf(new Date())); } catch (e) {}
         }
         var r = orig.call(this, dayKey);
+        try { adoptAllExistingDrafts(); } catch (eA) {}
         try {
           var raw = rawApptsForKey(dayKey), rows = window._opPrep || [];
           if (raw.length === rows.length) {
@@ -533,8 +623,61 @@
               return;   // hard stop: never write to a guessed chart.
             }
           }
+          /* opnp-1.7.0: review-before-final gates (non-blocking two-step, 10s):
+             (a) the visible draft came from a DIFFERENT template than the one
+                 now selected — saving would mislabel the note;
+             (b) machine-suggested (amber) values are still untouched and the
+                 note would finalize — "Looks right"/"Save all drafted" count
+                 as review; the bare per-row save asks once. */
+          if (row) {
+            var reasons = [];
+            if (row.gen && row._genTplId && S(row.tplId) !== S(row._genTplId)) {
+              var wasT = null; try { wasT = isFn(window.getTemplateById) ? window.getTemplateById(row._genTplId) : null; } catch (eT) {}
+              reasons.push('this draft was made from “' + ((wasT && wasT.name) || 'a different template') + '” but another template is now selected (Re-draft to apply it, or save to keep the drafted note)');
+            }
+            var pend = row._onfSuggestedPending || {}, pendLabels = [];
+            for (var pk in pend) { if (pend.hasOwnProperty(pk) && pend[pk]) pendLabels.push(S(pend[pk])); }
+            var unresolvedNow = 0;
+            try { unresolvedNow = isFn(window.opNoteBlankCount) ? window.opNoteBlankCount(row.note || '') : 0; } catch (eU) {}
+            if (pendLabels.length && !row._onfReviewed && unresolvedNow === 0) {
+              reasons.push(pendLabels.length + ' auto-suggested standard value' + (pendLabels.length === 1 ? '' : 's') + ' (' + pendLabels.slice(0, 4).join(', ') + (pendLabels.length > 4 ? ', …' : '') + ') will be saved as final — review the amber fields above');
+            }
+            if (reasons.length) {
+              if (!row._opnpSaveArm || (Date.now() - row._opnpSaveArm) > 10000) {
+                row._opnpSaveArm = Date.now();
+                var warn = '⚠ Check before saving: ' + reasons.join('; ') + '. Click Save again to confirm.';
+                var msg2 = document.getElementById('opPrepMsg_' + i);
+                if (msg2) { msg2.style.color = '#b4231e'; msg2.innerHTML = esc(warn); }
+                try { if (isFn(window.toast)) window.toast(warn, 'err'); } catch (e2) {}
+                return;
+              }
+              row._opnpSaveArm = null;
+            }
+          }
         } catch (e) {}
-        var r = orig.apply(this, arguments);
+        /* opnp-1.7.0: observe this save's backend sync (saveNoteToBackend now
+           returns its status promise) and say what actually happened. */
+        var origSync = window.saveNoteToBackend, self = this, args = arguments;
+        var runOrig = function () { return orig.apply(self, args); };
+        var r;
+        if (isFn(origSync)) {
+          window.saveNoteToBackend = function (rec) {
+            var out; try { out = origSync.apply(this, arguments); } catch (eS) { out = null; }
+            try {
+              if (out && isFn(out.then)) {
+                out.then(function (statusWord) {
+                  var el = document.getElementById('opPrepMsg_' + i);
+                  if (!el || !el.innerHTML || el.innerHTML.indexOf('☁') >= 0) return;
+                  el.innerHTML += statusWord === 'synced'
+                    ? ' · <span style="color:#127a55">☁ synced</span>'
+                    : ' · <span style="color:#9a7b2a">☁ offline — kept on this device, will retry</span>';
+                }, function () {});
+              }
+            } catch (eV) {}
+            return out;
+          };
+          try { r = runOrig(); } finally { window.saveNoteToBackend = origSync; }
+        } else { r = runOrig(); }
         // tag the just-saved note as an explicit, never-submitted draft.
         try {
           var row2 = (window._opPrep || [])[i];
@@ -608,6 +751,9 @@
         body += '<div style="margin-top:5px;color:#b4231e;font-size:11.5px">🔒 ' + esc(rd.identity.warnings[0]) + '</div>';
       } else if (rd.identity && (rd.identity.status === 'id-match' || rd.identity.status === 'name-dob-match')) {
         body += '<div style="margin-top:5px;color:#16924e;font-size:11.5px">🔒 Identity confirmed (' + (rd.identity.status === 'id-match' ? 'by athena ID' : 'by name + DOB') + ').</div>';
+      }
+      if (rows[i] && rows[i]._resumedDraft) {
+        body += '<div style="margin-top:5px;color:#2456d3;font-size:11.5px">↩ Resumed your earlier draft from History — edits keep updating that same draft (no duplicate).</div>';
       }
       strip.innerHTML = body;
       host.insertBefore(strip, prev.nextSibling);
@@ -726,7 +872,7 @@
   }
 
   /* ------------------------------- public -------------------------------- */
-  var STATE = { refusedSaves: 0, savedDrafts: 0 };
+  var STATE = { refusedSaves: 0, savedDrafts: 0, resumedDrafts: 0, blockedSwitches: 0 };
   var ensureIv = null, ticks = 0;
 
   function revert() {
@@ -752,6 +898,7 @@
     resolvePatient: resolvePatient, providerFacilityCtx: providerFacilityCtx,
     readiness: readiness, enrichCtx: enrichCtx,
     ensureProviderFacilityBlock: ensureProviderFacilityBlock, attestBlock: attestBlock,
+    attest: attestForCtx, adoptExistingDraft: adoptExistingDraft,
     nextProcedureDay: nextProcedureDay, nextWeekday: nextWeekday,
     rawApptsForKey: rawApptsForKey,
     selfTest: selfTest, revert: revert,

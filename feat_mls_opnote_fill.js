@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.7.0';
+  var VERSION = 'onf-2.8.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -161,6 +161,7 @@
         /* one canonical count (deduped per field, all syntaxes) — matches the
            save gate and every other surface */
         blanksLeft += (isFn(window.opNoteBlankCount) ? window.opNoteBlankCount(S(r.note)) : (S(r.note).match(/\[FILL:[^\]]*\]|\[\[[a-z0-9_]+\]\]/gi) || []).length);
+        r._onfReviewed = true;   /* onf-2.8.0: "Save all drafted" is the explicit accept */
         safe(function (j) { return function () { if (isFn(window.opPrepSave)) window.opPrepSave(j); }; }(i)());
         saved++;
       }
@@ -824,8 +825,15 @@
     if (row) row._onfWriting = true;
     try {
       if ((ta.value || '') !== value) {
+        /* onf-2.8.0: a machine render is NOT a clinician edit. The input event
+           below trips the app's inline edited-flag (value !== _genNote), which
+           used to mis-arm the "discard my edits?" guard and make "Draft all"
+           skip untouched rows. Snapshot and restore the flag; real hand-typing
+           still flows through the textarea's own input path and marks edits. */
+        var wasEdited = row ? !!row.edited : false;
         ta.value = value;
         safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
+        if (row) row.edited = wasEdited;
       }
       if (row) row._onfLastRender = value;
     } finally { if (row) row._onfWriting = false; }
@@ -920,6 +928,15 @@
     var bmi = patientBmi(row);
     if (bmi >= 35) return ['22-gauge, 5-inch', '25-gauge, 5-inch', '22-gauge, 3.5-inch'];
     if (bmi >= 30) return ['22-gauge, 3.5-inch', '22-gauge, 5-inch', '25-gauge, 3.5-inch'];
+    /* onf-2.8.0: at normal BMI the FIRST option depends on target depth. A
+       spinal/deep target (epidural, facet, MBB/RFA, SI, kypho, discogram,
+       stim) takes the standard 3.5-inch spinal needle — matching the app's
+       BMI rule (_predictNeedleSize) instead of contradicting it; the short
+       1.5-inch leads only for superficial targets (trigger point, bursa,
+       peripheral joints/nerves). */
+    var procTxt = (S(row && row.proc) + ' ' + S(row && row.appt && row.appt.reason)).toLowerCase();
+    var deep = /epidural|transforaminal|interlaminar|caudal|facet|medial branch|rhizotomy|ablation|\brfa\b|sacroiliac|\bsi joint\b|kyphoplasty|vertebroplasty|discogram|stimulator|\bscs\b|intracept|basivertebral|\bmild\b/.test(procTxt);
+    if (deep) return ['25-gauge, 3.5-inch', '22-gauge, 3.5-inch', '25-gauge, 1.5-inch'];
     return ['25-gauge, 1.5-inch', '22-gauge, 3.5-inch', '27-gauge, 1.25-inch'];
   }
   /* onf-2.6.0 field-schema separation: a GAUGE field offers gauges (never
@@ -990,6 +1007,10 @@
     return '';
   }
   function priorValues(label) {
+    /* onf-2.8.0: the shared history store may have learned clinical values
+       before the write-side gate existed — stop READING them for clinical
+       fields too, so nothing patient-specific ever crosses charts. */
+    if (!defaultEligible(label)) return [];
     if (!scopedKey('opFieldVals')) return [];
     var key = S(label).toLowerCase();
     /* history was written under the space form by this box and under the
@@ -1060,6 +1081,13 @@
         var resolved = resolveInitialField(lab, row, pmem);
         vals[key] = resolved.value; meta[key] = resolved.kind;
         if (resolved.kind === 'default') { row._onfDefaultKeys = row._onfDefaultKeys || {}; row._onfDefaultKeys[key] = true; }
+        /* onf-2.8.0: machine-suggested (amber) values are tracked until the
+           clinician touches or explicitly accepts them — the save path uses
+           this to ask for one confirming look before a note finalizes. */
+        if (row && resolved.kind === 'suggested' && resolved.value && !(row._onfTouched && row._onfTouched[key])) {
+          row._onfSuggestedPending = row._onfSuggestedPending || {};
+          row._onfSuggestedPending[key] = lab;
+        }
       } else meta[key] = vals[key] ? ((row && row._onfDefaultKeys && row._onfDefaultKeys[key]) ? 'default' : 'set') : 'blank';
     }
     if (row) row._onfVals = vals;
@@ -1125,7 +1153,12 @@
     if (!existing || ta.previousElementSibling !== box) ta.parentNode.insertBefore(box, ta);
     var acc = box.querySelector('[data-onf-accept]');
     if (acc) acc.addEventListener('click', function () {
-      safe(function () { if (isFn(window.opPrepSave)) window.opPrepSave(+acc.getAttribute('data-onf-accept')); });
+      safe(function () {
+        /* "Looks right" IS the explicit review of the amber suggestions. */
+        var rIdx = +acc.getAttribute('data-onf-accept'), rr = (window._opPrep || [])[rIdx];
+        if (rr) rr._onfReviewed = true;
+        if (isFn(window.opPrepSave)) window.opPrepSave(rIdx);
+      });
     });
     var ctrls = box.querySelectorAll('[data-onf-label]');
     for (var i = 0; i < ctrls.length; i++) {
@@ -1139,7 +1172,15 @@
           if (pinnedNow && pinnedNow.value === val) row._onfDefaultKeys[label.toLowerCase()] = true;
           else delete row._onfDefaultKeys[label.toLowerCase()];
           saveFillMemValue(row, label.toLowerCase(), val);   /* per-patient memory (onf-1.7.0) */
-          safe(function () { if (val && scopedKey('opFieldVals') && typeof window.addOpFieldVal === 'function') window.addOpFieldVal(label.toLowerCase(), val); });  /* account-scoped dropdown history */
+          /* onf-2.8.0: the clinician touched this field — it is no longer an
+             unreviewed machine suggestion. */
+          row._onfTouched = row._onfTouched || {}; row._onfTouched[label.toLowerCase()] = 1;
+          if (row._onfSuggestedPending) delete row._onfSuggestedPending[label.toLowerCase()];
+          /* onf-2.8.0: the ACCOUNT-scoped dropdown history may only learn
+             non-clinical, cross-patient-safe fields (same allowlist as pinned
+             defaults). A diagnosis/history/med value from patient A must never
+             surface as a suggestion while prepping patient B. */
+          safe(function () { if (val && defaultEligible(label) && scopedKey('opFieldVals') && typeof window.addOpFieldVal === 'function') window.addOpFieldVal(label.toLowerCase(), val); });
           var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
           writeRendered(ta, row, out);
           if (prep) {

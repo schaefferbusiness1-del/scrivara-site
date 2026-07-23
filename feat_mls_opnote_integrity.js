@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.8.0
+ * MLS op-note integrity  oni-2.10.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.9.0';
+  var VERSION = 'oni-2.10.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -391,9 +391,13 @@
     return { tplId:'', noMatch:true, score:r.score || 0, reason:r.reason || 'ambiguous' };
   }
 
-  function newRow(name, reason, dob, dateStr, patientId) {
+  function newRow(name, reason, dob, dateStr, patientId, scope) {
     var m = bestFor(name, reason, dob, patientId);
-    return { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId)}, proc:reason||'', dateStr:dateStr||'', tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
+    /* oni-2.10.0: the base _opNewRow gained a 6th `scope` param carrying the
+       appointment's provider/facility identity — this owner must carry it too,
+       or every prep row silently loses the scheduled provider and facility. */
+    scope = scope || {};
+    return { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId), providerId:S(scope.providerId||scope.provider_id||''), providerName:S(scope.providerName||scope.provider_name||scope.provider||''), facilityId:S(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:S(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:reason||'', dateStr:dateStr||'', tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
   }
   newRow.__omb = true;
 
@@ -419,6 +423,13 @@
 
   function statusText(row) {
     if (!row || !row.tplId) return { text:'(choose a template)', color:'#b4231e' };
+    /* oni-2.10.0: a drafted note remembers the template that produced it. If the
+       selection has since changed, say so loudly — the visible draft is STALE
+       relative to the dropdown, and saving it would mislabel the note. */
+    if (row.gen && row._genTplId && S(row.tplId) !== S(row._genTplId)) {
+      var wasTpl = null; try { wasTpl = isFn(window.getTemplateById) ? window.getTemplateById(row._genTplId) : null; } catch (e) {}
+      return { text:'(⚠ draft below is from “'+((wasTpl&&wasTpl.name)||'the previous template')+'” — Re-draft to apply this template)', color:'#b4231e' };
+    }
     if (row.tplManual || row.tplMatchSource === 'manual') return { text:'(your selection)', color:'#2456d3' };
     if (row.tplMatchSource === 'history') return { text:"(matched from this patient's history)", color:'#127a55' };
     if (row.tplMatchSource === 'reason') return { text:'(matched from procedure)', color:'#127a55' };
@@ -749,7 +760,24 @@
     if (!p) return S(note);
     var probList = chartProblems(p, procedure);
     var problems = probList.slice(0, 3).join('; ');
-    var diag = S(probList[0] || '').slice(0, 140);
+    /* oni-2.10.0: the top-ranked problem may only become the DIAGNOSIS when it
+       plausibly relates to the requested procedure — token overlap with the
+       procedure, or pain/MSK vocabulary (this is a pain/spine practice tool;
+       "Lumbar spondylosis" legitimately drives a Caudal ESI despite sharing no
+       tokens). An unrelated comorbidity (e.g. "Hypertension") must never be
+       stamped as the pre-op diagnosis — that slot stays visible instead. */
+    var PAIN_DX_RX = /pain|spondyl|radicul|facet|stenos|\bdisc\b|\bdisk\b|sacroiliac|si joint|\bjoint\b|spine|spinal|lumbar|cervical|thoracic|neuralg|neuropath|arthropath|myelopath|herniat|scoliosis|sciatica|tendinop|bursitis|arthritis|zygapophys|dorsal ramus|medial branch|vertebr|coccy|occipital/i;
+    var diag = '';
+    if (probList.length) {
+      var relevant = true;
+      if (S(procedure).trim()) {
+        var pToks = normText(procedure).split(/\s+/).filter(function (w) { return w.length >= 3; });
+        var topNorm = normText(probList[0]), overlap = 0;
+        pToks.forEach(function (w) { if (topNorm.indexOf(w) >= 0) overlap += w.length; });
+        relevant = overlap > 0 || PAIN_DX_RX.test(S(probList[0]));
+      }
+      if (relevant) diag = S(probList[0]).slice(0, 140);
+    }
     var age = 0;
     try { var d = new Date(S(p.dob)); if (!isNaN(d.getTime())) { var now = new Date(); age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; if (age <= 0 || age >= 130) age = 0; } } catch (e) {}
     var sex = S((ctx && ctx.sex) || p.sex || p.gender).trim();
@@ -845,7 +873,7 @@
     var check=fidelity(first.note,tplText), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
-    if(check.pass&&clinical.pass){first.note=airSections(first.note);first.templateFidelity=check;first.clinicalConsistency=clinical;return first;}
+    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.clinicalConsistency=clinical;return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */
@@ -867,7 +895,20 @@
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
     if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});var detail=clinical2.errors.slice(0,2).map(function(x){return x.message;}).join(' ');window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). '+detail+' Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
-    repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
+    repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
+  }
+
+  /* oni-2.10.0: the deterministic provider/facility attestation footer is owned
+     by the prep module (opnp); since this owner replaced _genOpNote outright,
+     opnp's wrapper never runs — so the pipeline invites it back explicitly.
+     Validation (fidelity + clinical) always runs BEFORE the footer is added,
+     and the footer emits [[blanks]] for anything unknown rather than inventing. */
+  function attestNote(note, ctx) {
+    try {
+      var prep = window.__mlsOpNotePrep;
+      if (prep && prep.installed && isFn(prep.attest)) return S(prep.attest(note, ctx)) || S(note);
+    } catch (e) {}
+    return S(note);
   }
 
   function copyCtx(ctx){var out={};ctx=ctx||{};for(var k in ctx)if(Object.prototype.hasOwnProperty.call(ctx,k)&&k!=='__mlsProgressHandle')out[k]=ctx[k];return out;}
@@ -899,7 +940,14 @@
       if(entry.progress)entry.progress.complete('Operative note ready.');
       return result;
     }).catch(function(err){
-      if(!(err&&(err.code==='MLS_OPNOTE_STALE'||err.code==='MLS_OPNOTE_CANCELED'))&&entry.progress)entry.progress.fail(err);
+      if(!(err&&(err.code==='MLS_OPNOTE_STALE'||err.code==='MLS_OPNOTE_CANCELED'))){
+        if(entry.progress)entry.progress.fail(err);
+        /* oni-2.10.0: every real failure (identity, template conflict, empty
+           template, network/server) surfaces its actionable reason on the same
+           channel the fidelity failures already use, so the UI never has to
+           fall back to a generic "try again". */
+        try{ if(!window.__mlsLastOpFidelityError) window.__mlsLastOpFidelityError=S(err&&err.message||'').trim()||'Op-note generation failed.'; }catch(e2){}
+      }
       throw err;
     }).then(function(result){entry.settled=true;if(generationByKey[gkey]===entry)delete generationByKey[gkey];if(generationByPatient[pkey]===entry)delete generationByPatient[pkey];return result;},function(err){entry.settled=true;if(generationByKey[gkey]===entry)delete generationByKey[gkey];if(generationByPatient[pkey]===entry)delete generationByPatient[pkey];throw err;});
     return entry.promise;
@@ -946,7 +994,21 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, approach, provider, or facility.';toast(window.__mlsLastOpFidelityError,'err');return false;}}await one(i);var ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, approach, provider, or facility.';toast(window.__mlsLastOpFidelityError,'err');var stc=document.getElementById('opPrepStatus');if(stc)stc.textContent=window.__mlsLastOpFidelityError;return false;}}
+      /* oni-2.10.0: visible in-flight state — the clicked Draft button disables
+         with an honest label while this row generates (single-flight already
+         dedupes; this makes it VISIBLE). */
+      var busyBtn=null;try{busyBtn=document.querySelector('#opPrepList button[onclick="opPrepGenerateOne('+i+')"]');if(busyBtn){busyBtn.disabled=true;busyBtn.dataset.mlsBusyLabel=busyBtn.textContent;busyBtn.textContent='⏳ Drafting…';}}catch(eB){}
+      var ok=false;
+      try{
+        await one(i);
+        ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);
+      } finally {
+        try{if(busyBtn){busyBtn.disabled=false;if(busyBtn.dataset.mlsBusyLabel){busyBtn.textContent=busyBtn.dataset.mlsBusyLabel;delete busyBtn.dataset.mlsBusyLabel;}}}catch(eB2){}
+      }
+      /* remember WHICH template produced this draft, for the staleness guard */
+      if(ok&&row){row._genTplId=S(row.tplId);syncTplStatus(i);}
+      if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
     var all=window.opPrepGenerateAll;
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }

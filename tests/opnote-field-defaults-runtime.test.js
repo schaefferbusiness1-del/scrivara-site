@@ -75,7 +75,7 @@ vm.runInNewContext(source, context, { filename: 'feat_mls_opnote_fill.js' });
 
 const api = context.__mlsOpNoteFill;
 assert(api && api.installed, 'op-note fill module did not install');
-assert.strictEqual(api.version, 'onf-2.7.0');
+assert.strictEqual(api.version, 'onf-2.8.0');
 
 const rowSafe = {
   patientId: 'p-safe', tplId: '', proc: 'Left L5 TFESI', dateStr: 'July 17, 2026',

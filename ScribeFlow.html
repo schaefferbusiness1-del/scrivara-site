@@ -3871,9 +3871,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- PROCEDURE-DAY OP NOTES — auto-draft tomorrow's operative reports from the doctor's uploaded op-note templates. -->
-<div class="modal-bg" id="opPrepModal">
+<div class="modal-bg" id="opPrepModal" role="dialog" aria-modal="true" aria-labelledby="opPrepHdr">
   <div class="modal" style="max-width:920px">
-    <button class="modal-x" onclick="closeOpPrep()">×</button>
+    <button class="modal-x" onclick="closeOpPrep()" aria-label="Close op-note prep">×</button>
     <h3 id="opPrepHdr">💉 Prep op notes</h3>
     <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. Known Settings and saved defaults fill first; every remaining case-specific item (needle size, doses…) appears together in one <b>Fields</b> box above the note. Each draft auto-saves to History; press 💾 to finalize.</p>
     <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
@@ -3881,10 +3881,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
     </div>
     <div id="opPrepDayRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px">
-      <span class="mini" style="color:var(--muted)">Procedures for:</span>
+      <label class="mini" for="opPrepDayInput" style="color:var(--muted)">Procedures for:</label>
       <button onclick="opPrepSetDayToday()" style="font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer">Today</button>
       <button onclick="opPrepSetDayTomorrow()" style="font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer">Tomorrow</button>
-      <input type="date" id="opPrepDayInput" onchange="opPrepSetDay(this.value)" style="font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:8px">
+      <input type="date" id="opPrepDayInput" onchange="opPrepSetDay(this.value)" aria-label="Pick a schedule day to prep" style="font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:8px">
       <span id="opPrepDayLbl" class="mini" style="color:var(--brand-dk);font-weight:700"></span>
     </div>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
@@ -12926,6 +12926,21 @@ function openOpPrepForPatient(pid){
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
+/* b500 a11y: ESC closes op-prep and Tab stays inside it while open (same
+   pattern as the patient modal). Drafts are safe to close over — every draft
+   autosaves to History and reopening resumes it. */
+document.addEventListener('keydown',function(e){
+  try{
+    var m=document.getElementById('opPrepModal');
+    if(!m||!m.classList.contains('show')) return;
+    if(e.key==='Escape'||e.key==='Esc'){ e.preventDefault(); e.stopImmediatePropagation(); closeOpPrep(); return; }
+    if(e.key!=='Tab') return;
+    var rows=(typeof _patientModalFocusables==='function')?_patientModalFocusables(m):[]; if(!rows.length) return;
+    var first=rows[0],last=rows[rows.length-1],cur=document.activeElement;
+    if(e.shiftKey&&(cur===first||!m.contains(cur))){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&(cur===last||!m.contains(cur))){ e.preventDefault(); first.focus(); }
+  }catch(_){}
+},true);
 /* Smart entry: a patient is selected → prep THAT patient's op note; otherwise prep all scheduled procedures. */
 function openOpPrepSmart(){
   var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
@@ -13027,8 +13042,8 @@ function opPrepRender(){
     var a=row.appt;
     var h='<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
     h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
-    h+='<label class="mini" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
+    h+='<label class="mini" for="opPrepProc_'+i+'" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">(auto-matched)</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
     if(row.gen){
@@ -13078,6 +13093,9 @@ async function opPrepGenerateOne(i){
      edits. Edited drafts now need a second, explicit click to discard. */
   if(row.edited && !row._confirmRedraft){
     row._confirmRedraft=true;
+    /* b500: guard paths also OWN the status line — a stale "Drafted <other
+       patient>…" message must never survive an intercepted click. */
+    try{ var stg=document.getElementById('opPrepStatus'); if(stg) stg.textContent=row.appt.name+'’s draft has your manual edits — click "↻ Discard my edits & re-draft?" again to replace them.'; }catch(e){}
     try{ toast('This draft has your manual edits. Click "↻ Discard my edits & re-draft?" again to replace them with a fresh draft.','err'); }catch(e){}
     try{ opPrepRender(); }catch(e){}
     setTimeout(function(){ try{ if(row._confirmRedraft){ row._confirmRedraft=false; opPrepRender(); } }catch(e){} },10000);
@@ -13085,7 +13103,7 @@ async function opPrepGenerateOne(i){
   }
   row._confirmRedraft=false;
   var tpl=getTemplateById(row.tplId);
-  if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
+  if(!tpl){ try{ var stt=document.getElementById('opPrepStatus'); if(stt) stt.textContent='Pick a template for '+row.appt.name+' first (or tap 🔎 Match template).'; }catch(e){} try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
     var ctx=_opPatientCtx(row.appt.name,row.appt.dob,row.patientId),appt=row.appt||{};
@@ -13106,7 +13124,12 @@ async function opPrepGenerateOne(i){
     opPrepRender();
     var nblank=(row.missing||[]).length;
     if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?(' — '+nblank+' blank'+(nblank===1?'':'s')+' to confirm'):'')+' · saved as a draft to History.';
-  }catch(e){ if(st) st.textContent='Couldn’t draft that one — try again.'; }
+  }catch(e){
+    /* b500: show the ACTUAL reason (identity, template conflict, network,
+       server error) — a generic "try again" hid every diagnosable failure. */
+    var why=String((window.__mlsLastOpFidelityError||'')||(e&&e.message)||'').replace(/^Error:\s*/,'').trim();
+    if(st) st.textContent='Couldn’t draft '+row.appt.name+'’s op note'+(why?(' — '+why.slice(0,160)):' — try again.');
+  }
 }
 /* Save (or update) this op-note row as a DRAFT in History immediately, so it's never lost even
    if the doctor navigates away without clicking Save. Re-uses the same note id on re-draft. */
@@ -14404,7 +14427,10 @@ try{ setInterval(function(){ try{ _renderBackupBadge(); _retryPendingBackups(fal
 function saveNoteToBackend(rec){
   if(!backendMode() || !bkToken()) return;
   try{
-    fetch(bkBase()+'/api/records',{
+    /* b500: returns a status promise ('synced' | 'queued') so save surfaces can
+       SHOW the sync outcome. Behavior is unchanged — every existing caller
+       ignores the return; the retry queue still owns failure recovery. */
+    return fetch(bkBase()+'/api/records',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({
@@ -14414,10 +14440,10 @@ function saveNoteToBackend(rec){
         meta: recordMeta(rec)                    // non-PHI plaintext meta for analytics
       })
     }).then(r=>{
-      if(r.status===401){ handle401(); return; }
-      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); }
-      else { _pendingBackupAdd(rec.id); }       // server rejected — queue for retry
-    }).catch(()=>{ _pendingBackupAdd(rec.id); }); // offline — queue for retry
+      if(r.status===401){ handle401(); return 'queued'; }
+      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); return 'synced'; }
+      _pendingBackupAdd(rec.id); return 'queued';   // server rejected — queue for retry
+    }).catch(()=>{ _pendingBackupAdd(rec.id); return 'queued'; }); // offline — queue for retry
   }catch(e){ _pendingBackupAdd(rec.id); }
 }
 /* Best-effort server-side (soft) delete so a deleted visit doesn't resurrect
@@ -27568,7 +27594,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b499';
+  window.__MLS_AV='b500';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
