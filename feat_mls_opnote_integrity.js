@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.8.0';
+  var VERSION = 'oni-2.9.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -104,11 +104,18 @@
      its own field so a common template can never silently turn Left L2 into
      bilateral S1, change region, or swap an approach. */
   function procedureEvidence(text) {
+    /* oni-2.9.0 (live 2026-07-23): the heading list was too narrow — a valid
+       draft expressing its levels under "LEVEL(S) TREATED:", "TARGET LEVELS:",
+       "SITE:", "OPERATION PERFORMED:" etc. read as levels:[] and the final
+       consistency check failed an honest note with "levels, levelCount".
+       Recognize every procedure-DESCRIBING heading (history/indication
+       headings stay excluded so prior-surgery levels never leak in). */
     var raw=S(text), lines=raw.split(/\r?\n/), picked=[];
+    var HEAD=/^(?:(?:operative\s+)?procedure(?:s)?(?:\s+performed)?|operation(?:s)?(?:\s+performed)?|(?:name|title)\s+of\s+(?:procedure|operation)|laterality(?:\s+and\s+levels?)?|side|levels?(?:\s+(?:treated|injected|addressed|targeted))?|target(?:\s+levels?)?|sites?(?:\s+and\s+levels?)?|interspaces?|approach)\s*:/i;
     for(var i=0;i<lines.length;i++){
       var line=S(lines[i]).trim(); if(!line)continue;
       if(i<2&&/\b(?:operative|procedure|injection|block|ablation|tfesi|esi|rfa|stimulator|intracept)\b/i.test(line))picked.push(line);
-      else if(/^(?:operative\s+)?procedure(?:s)?(?:\s+performed)?\s*:|^laterality(?:\s+and\s+levels)?\s*:|^levels?\s*:|^approach\s*:/i.test(line))picked.push(line);
+      else if(HEAD.test(line))picked.push(line);
     }
     return (picked.length?picked.join(' '):raw.slice(0,1600)).slice(0,3000);
   }
@@ -121,9 +128,11 @@
     return left?'left':(right?'right':'');
   }
   function levelsOf(text) {
+    /* oni-2.9.0: slash notation ("L4/5", "L4/L5") is a routine clinical short
+       form and must parse exactly like the hyphen range. */
     var raw=S(text).toUpperCase().replace(/[–—]/g,'-'), seen={}, out=[];
     function add(prefix,num){num=Number(num);if(!/^[CLTS]$/.test(prefix)||num<1||num>12)return;var level=prefix+num;if(!seen[level]){seen[level]=1;out.push(level);}}
-    var range=/\b([CLTS])\s*(\d{1,2})\s*-\s*(?:([CLTS])\s*)?(\d{1,2})\b/g,m;
+    var range=/\b([CLTS])\s*(\d{1,2})\s*[-\/]\s*(?:([CLTS])\s*)?(\d{1,2})\b/g,m;
     while((m=range.exec(raw))){var p1=m[1],p2=m[3]||p1,a=Number(m[2]),b=Number(m[4]);if(p1===p2&&a<=b&&b-a<=6){for(var x=a;x<=b;x++)add(p1,x);}else{add(p1,a);add(p2,b);}}
     var one=/\b([CLTS])\s*(\d{1,2})\b/g;
     while((m=one.exec(raw)))add(m[1],m[2]);
@@ -164,7 +173,8 @@
   function sameLevels(a,b){a=(a||[]).slice().sort();b=(b||[]).slice().sort();return a.length===b.length&&a.every(function(v,i){return v===b[i];});}
   function compareFacts(requested,actual,requirePresent,fields) {
     fields=fields||['procedureType','region','side','levels','levelCount','approach'];var errors=[];
-    function check(field,label,eq){var want=requested[field],got=actual[field],has=Array.isArray(want)?want.length:!!want;if(!has)return;if(requirePresent&&!(Array.isArray(got)?got.length:got)){errors.push({field:field,code:'missing_'+field,message:'Draft did not clearly preserve requested '+label+'.'});return;}if((Array.isArray(got)?got.length:got)&&!eq(want,got))errors.push({field:field,code:'mismatch_'+field,message:'Requested '+label+' conflicts with draft/template '+label+'.'});}
+    function show(v){return Array.isArray(v)?(v.join(', ')||'none'):S(v||'none');}
+    function check(field,label,eq){var want=requested[field],got=actual[field],has=Array.isArray(want)?want.length:!!want;if(!has)return;if(requirePresent&&!(Array.isArray(got)?got.length:got)){errors.push({field:field,code:'missing_'+field,message:'Draft did not clearly preserve requested '+label+' (requested: '+show(want)+'; found none in the procedure section).'});return;}if((Array.isArray(got)?got.length:got)&&!eq(want,got))errors.push({field:field,code:'mismatch_'+field,message:'Requested '+label+' conflicts with the draft ('+show(want)+' vs '+show(got)+').'});}
     if(fields.indexOf('procedureType')>=0)check('procedureType','procedure type',function(a,b){return a===b;});
     if(fields.indexOf('region')>=0)check('region','anatomical region',sameRegion);
     if(fields.indexOf('side')>=0)check('side','side',function(a,b){return a===b;});
@@ -229,7 +239,22 @@
   function clinicalConsistency(note,procedure,tpl,ctx) {
     var requested=procedureFacts(procedure), actual=procedureFacts(procedureEvidence(note));
     var errors=compareFacts(requested,actual,true).concat(templateFields(note,tpl||{})).concat(templateScopeErrors(tpl,ctx));
-    return {pass:!errors.length,errors:errors,requested:requested,actual:actual};
+    /* oni-2.9.0 containment fallback: when the strict procedure-section scan
+       found NO levels but every requested level IS written somewhere in the
+       draft, the fact was preserved — the extractor just could not attribute
+       it to a heading. Only the MISSING case is forgiven; a draft whose
+       procedure section states DIFFERENT levels still fails as a genuine
+       clinical conflict. */
+    var levelsVia='';
+    if(requested.levels.length&&!actual.levels.length){
+      var whole=levelsOf(S(note));
+      var allPresent=requested.levels.every(function(l){return whole.indexOf(l)>=0;});
+      if(allPresent){
+        errors=errors.filter(function(e){return e.field!=='levels'&&e.field!=='levelCount';});
+        levelsVia='full-note';
+      }
+    }
+    return {pass:!errors.length,errors:errors,requested:requested,actual:actual,levelsVia:levelsVia};
   }
   function templateClass(t) {
     var trusted = S(t && t.name) + ' ' + ((t && t.keywords) || []).join(' ');
@@ -841,7 +866,7 @@
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
-    if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
+    if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});var detail=clinical2.errors.slice(0,2).map(function(x){return x.message;}).join(' ');window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). '+detail+' Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
     repaired.note=airSections(repaired.note);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
   }
 

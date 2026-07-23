@@ -41,7 +41,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(source, context, { filename: 'opnote-integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.version === 'oni-2.8.0', 'clinical consistency owner did not install');
+  assert(api && api.version === 'oni-2.9.0', 'clinical consistency owner did not install');
 
   const factCases = [
     ['Left L2 TFESI', { procedureType: 'tfesi', region: 'lumbar', side: 'left', levels: ['L2'], levelCount: 1, approach: 'transforaminal' }],
@@ -134,7 +134,40 @@ async function main() {
   assert.strictEqual(calls, 2, 'a clinical mismatch did not receive exactly one repair before failing closed');
   assert.strictEqual(context.__mlsLastOpFidelityPass, false, 'a failed clinical draft was marked ready');
 
-  console.log('PASS op-note clinical consistency: independent fact parsing, scope guards, required/prohibited fields, deterministic metadata, and fail-closed repair');
+  /* ---- oni-2.9.0 (live failure 2026-07-23, "levels, levelCount" at 9/10) ----
+     A correct draft whose levels live under an unrecognized heading or in
+     prose must PASS; a draft whose procedure section states different levels
+     must still FAIL with an actionable message. */
+  const cc = (note, procedure) => api.clinicalConsistency(note, procedure, { text: 'PROCEDURE:\nDESCRIPTION OF PROCEDURE:' }, {});
+
+  // 1. levels under a previously-unrecognized heading
+  const headed = 'PROCEDURE: Left lumbar transforaminal epidural steroid injection\nLEVELS TREATED: L4, L5\nAPPROACH: transforaminal\nDESCRIPTION OF PROCEDURE: standard.';
+  const r1 = cc(headed, 'Left L4-L5 TFESI');
+  assert(r1.pass, 'LEVELS TREATED heading still fails the consistency check: ' + JSON.stringify(r1.errors));
+
+  // 2. levels only in prose -> containment fallback passes and says how
+  const prose = 'PATIENT: Jordan Lee\nDATE OF PROCEDURE: 2026-07-23\nPROCEDURE: Left lumbar transforaminal epidural steroid injection\nAPPROACH: transforaminal\nDESCRIPTION: Needle advanced to the left L4 and L5 neural foramina under fluoroscopy without incident.';
+  const r2 = cc(prose, 'Left L4-L5 TFESI');
+  assert(r2.pass, 'prose-only levels still fail: ' + JSON.stringify(r2.errors));
+  assert.strictEqual(r2.levelsVia, 'full-note', 'containment fallback did not disclose itself');
+
+  // 3. slash notation parses as a range
+  assert.deepStrictEqual(Array.from(api.parseProcedureFacts('Left L4/5 TFESI').levels), ['L4', 'L5'], 'slash level notation not parsed');
+
+  // 4. genuinely wrong levels in the procedure section still fail, with an
+  //    actionable requested-vs-found message
+  const wrongLv = 'PROCEDURE: Left lumbar transforaminal epidural steroid injection\nLEVELS: L2, L3\nDESCRIPTION OF PROCEDURE: standard.';
+  const r4 = cc(wrongLv, 'Left L4-L5 TFESI');
+  assert(!r4.pass, 'a draft stating DIFFERENT levels must still fail');
+  assert(r4.errors.some(e => /L4, L5/.test(e.message) && /L2, L3/.test(e.message)), 'level mismatch message is not actionable: ' + JSON.stringify(r4.errors));
+
+  // 5. total omission (levels nowhere in the note) still fails and names the request
+  const omitted = 'PROCEDURE: Left lumbar transforaminal epidural steroid injection\nDESCRIPTION OF PROCEDURE: standard technique performed without incident.';
+  const r5 = cc(omitted, 'Left L4-L5 TFESI');
+  assert(!r5.pass, 'a draft omitting the levels entirely must still fail');
+  assert(r5.errors.some(e => /requested: L4, L5/.test(e.message)), 'omission message does not name the requested levels');
+
+  console.log('PASS op-note clinical consistency: independent fact parsing, scope guards, required/prohibited fields, deterministic metadata, fail-closed repair, and oni-2.9.0 level-extraction truth (headed/prose/slash pass, wrong/omitted fail actionably)');
 }
 
 main().catch(err => {

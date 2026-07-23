@@ -218,9 +218,14 @@ function submitBooking(ev){
     .then(function(res){
       if(res.ok && res.j && res.j.ok){ show('done'); }
       else {
-        try{ if(res.j&&res.j.error) console.warn('[booking] request declined:',res.j.error); }catch(e){}
-        errBox.textContent = 'We could not send your request. Check the details and try again, or call the office.';
+        /* 2026-07-23: the server's actionable reason ("That time was just
+           booked. Please pick another open time.") used to be swallowed into
+           a generic message — patients kept retrying a dead slot. Show the
+           server's own words when it explains itself. */
+        var serverMsg = (res.j && typeof res.j.error === 'string' && res.j.error.trim()) ? res.j.error.trim() : '';
+        errBox.textContent = serverMsg || 'We could not send your request. Check the details and try again, or call the office.';
         errBox.classList.remove('hide');
+        try{ if(serverMsg && /just booked|open hours/i.test(serverMsg) && typeof loadSlots==='function'){ loadSlots(); } }catch(e){}
         btn.disabled = false; btn.textContent = 'Request appointment';
       }
     })

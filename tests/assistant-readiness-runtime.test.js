@@ -59,6 +59,7 @@ function makeVoiceHarness() {
   let visitEpoch = 1;
   let recordCalls = 0;
   const toasts = [];
+  const timers = [];
   const FakeDate = function (...args) { return new Date(...args); };
   FakeDate.now = () => now;
   FakeDate.prototype = Date.prototype;
@@ -83,7 +84,7 @@ function makeVoiceHarness() {
     getPatients() { return []; },
     startCapture() { recordCalls++; },
     toast(message) { toasts.push(String(message)); },
-    setTimeout() { return 1; }, clearTimeout() {},
+    setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
     setInterval() { return 1; }, clearInterval() {},
     _athenaAsyncBindingStillSafe(candidate, action, epoch) {
       return candidate === context.currentVisitAthenaBinding &&
@@ -97,6 +98,7 @@ function makeVoiceHarness() {
     context,
     api: context.__mlsCopilotVoiceV2,
     toasts,
+    timers,
     advance(ms) { now += ms; },
     recordCalls() { return recordCalls; },
     setPatient(id) { activeId = id; },
@@ -221,6 +223,49 @@ function testRegistrationFailureCannotDuplicateLocalAction() {
   assert.strictEqual(chatCalls, 0, 'the same voice action also went to chat and could execute twice');
 }
 
+function testDeterministicCommandsStayLocalAndVerifyHonestly() {
+  /* A healthy assistant bridge must NOT receive deterministic visit commands:
+     routing them into chat popped the panel open and let the Copilot AI reply
+     "started recording" without starting anything (cv2-1.2.0 regression). */
+  const h = makeVoiceHarness();
+  const delivered = [];
+  h.context.__mlsAsstFix = bridge(delivered);
+  h.api._testHandle('start recording');
+  assert.strictEqual(h.recordCalls(), 1, 'local record leg did not run with a healthy bridge');
+  assert.deepStrictEqual(delivered, [], 'deterministic voice command leaked into the assistant chat');
+  assert(!h.toasts.some(t => /Recording for/i.test(t)), 'voice claimed recording before verifying capture state');
+
+  /* Capture never actually started (no `capturing`, no button) -> the deferred
+     check must admit failure instead of celebrating. */
+  h.timers.splice(0).forEach(fn => fn());
+  assert(h.toasts.some(t => /did not start/i.test(t)), 'voice never admitted that recording failed to start');
+
+  /* Consent gate open -> the deferred check points at the consent step. */
+  const consented = makeVoiceHarness();
+  consented.context.__mlsAsstFix = bridge([]);
+  consented.context.document.getElementById = id =>
+    id === '_mlsAskDialog' ? { textContent: 'Confirm consent and start capture' } : null;
+  consented.api._testHandle('start recording');
+  consented.timers.splice(0).forEach(fn => fn());
+  assert(consented.toasts.some(t => /consent/i.test(t)), 'voice did not point at the pending consent step');
+  assert(!consented.toasts.some(t => /Recording for/i.test(t)), 'voice claimed recording while consent was still pending');
+
+  /* Capture genuinely running -> the success line is allowed. */
+  const live = makeVoiceHarness();
+  live.context.__mlsAsstFix = bridge([]);
+  live.context.capturing = true;
+  live.api._testHandle('start recording');
+  live.timers.splice(0).forEach(fn => fn());
+  assert(live.toasts.some(t => /Recording for Patient A/i.test(t)), 'verified recording start was not announced');
+
+  /* Unknown text is still a real chat question and still reaches the bridge. */
+  const chat = makeVoiceHarness();
+  const chatDelivered = [];
+  chat.context.__mlsAsstFix = bridge(chatDelivered);
+  chat.api._testHandle('summarize this visit');
+  assert.deepStrictEqual(chatDelivered, ['summarize this visit'], 'non-deterministic question no longer reaches the assistant');
+}
+
 testIncompleteAssistantMarkerSelfHeals();
 testProductionAssistantActuallyInstalls();
 testQueueFlushesExactlyOnce();
@@ -228,4 +273,5 @@ testQueueBoundExpiryAndOwnership();
 testFailedDispatchIsNeverDuplicated();
 testIntentRegistrationRollsBackAndRetries();
 testRegistrationFailureCannotDuplicateLocalAction();
+testDeterministicCommandsStayLocalAndVerifyHonestly();
 console.log('PASS assistant readiness: incomplete markers self-heal; queued voice commands are bounded, owner-frozen, exact-once, cancellable, and retry-safe');

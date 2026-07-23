@@ -86,7 +86,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'cv2-1.1.6';
+  var VERSION = 'cv2-1.2.0';
   var previous = null;
   try { previous = window.__mlsCopilotVoiceV2; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -237,15 +237,30 @@
   }
   /* Returns sent / not-ready / failed. A failed call is never retried because
      the receiver may have started an action before throwing. */
+  function chainParts(text) {
+    var s = S(text).trim();
+    if (refusalShaped(s)) return null;
+    var parts = s.split(/\s+(?:and\s+then|then|and)\s+/i).map(function (p) { return p.trim(); }).filter(Boolean);
+    if (parts.length < 2 || parts.length > 3) return null;
+    var probe = parts[0];
+    var understood = refusalShaped(probe) ||
+      /^(?:please\s+)?(?:open|pull up|bring up|switch to|select|show me|show|load|record|start|begin|stop|end|finish|generate|write|create|make|go to|navigate to|read|play)\b/i.test(probe);
+    return understood ? parts : null;
+  }
   function dispatchAssistantText(text) {
     var fx = assistantBridge();
     if (!fx) return 'not-ready';
-    /* If voice-specific intent registration had a transient failure, handle a
-       deterministic visit command locally and do not also send it to chat. */
-    if (!registerIntents()) {
-      var local = runLeg(text);
-      if (local !== 'unknown') return 'sent';
-    }
+    registerIntents();
+    /* cv2-1.2.0: deterministic visit commands run LOCALLY and never enter the
+       chat path. Routing them through the assistant meant the panel popped
+       open on every spoken command, and any intent-registry reset dropped the
+       words into the Copilot AI, which would REPLY "started recording"
+       without starting anything. Only text no local leg understands is a real
+       chat question, and only that still opens the assistant panel. */
+    var parts = chainParts(text);
+    if (parts) { runVoiceChain(parts); return 'sent'; }
+    var local = runLeg(text);
+    if (local !== 'unknown') return 'sent';
     try {
       var p = $('mlsAsstPanel');
       if (!p || getComputedStyle(p).display === 'none') { var fab = $('mlsAsstFab'); if (fab) fab.click(); }
@@ -690,14 +705,31 @@
     speakToast('Opened ' + r.match.name + (r.match.dob ? (', date of birth ' + r.match.dob) : '') + '.');
     return 'ok';
   }
+  function consentGatePending() {
+    return safe(function () {
+      var d = document.getElementById('_mlsAskDialog');
+      return !!(d && /consent/i.test(d.textContent || ''));
+    }, false);
+  }
+  /* cv2-1.2.0: never claim "recording" without looking. startCapture() fails
+     closed into the consent dialog (and the scheduled-appointment gates) and
+     returns without capturing; the old unconditional success line told the
+     user recording had started when nothing was running. */
+  function startCaptureVerified(apName) {
+    safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
+    setTimeout(function () {
+      if (visitRecordingNow()) { speakToast('Recording for ' + apName + '. Say "stop recording" when done.'); return; }
+      if (consentGatePending()) { speakToast('One step first: confirm the on-screen consent for ' + apName + ', then recording will start.'); return; }
+      speakToast('Recording did not start for ' + apName + '. Check the on-screen message, then use the Record button.');
+    }, 900);
+    return 'ok';
+  }
   function legRecordNow(q) {
     if (!/^(?:please\s+)?(?:record|start\s+recording|begin\s+recording|(?:start|begin)\s+(?:a\s+|the\s+)?(?:visit|capture|recording)|record\s+(?:the\s+)?visit)$/i.test(S(q).trim())) return false;
     var ap = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
     if (!ap || !ap.name) { speakToast('No patient is open yet -- say "open" and the patient\'s name first.'); return 'fail'; }
     safe(function () { if (isFn(window.showView)) window.showView('visit'); });
-    safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
-    speakToast('Recording for ' + ap.name + '. Say "stop recording" when done.');
-    return 'ok';
+    return startCaptureVerified(ap.name);
   }
   function legStop(q) {
     if (!/^(?:please\s+)?(?:stop|end|finish)(?:\s+the)?\s+(?:recording|capture|visit)$/i.test(S(q).trim())) return false;
@@ -798,9 +830,11 @@
         var how = openPatientVerified(r.match);
         if (how !== 'verified' && how !== 'opened') { speakToast('I could not switch to ' + r.match.name + ' -- tap their card, then say "record".'); return true; }
       }
-      safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
-      toast('🎙️ Visit started -- recording. Say "stop recording" when done.');
-      speak('Visit started. Recording.');
+      var apName = safe(function () {
+        var ap = isFn(window.activePatient) ? window.activePatient() : null;
+        return (ap && ap.name) ? S(ap.name) : '';
+      }, '') || (m[1] ? S(m[1]).trim() : 'this visit');
+      startCaptureVerified(apName);
       return true;
     }, true));
 

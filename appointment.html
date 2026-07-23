@@ -124,12 +124,23 @@ function confirmAppt(){
     .catch(function(){ showErr("We couldn't reach the office. Check your connection and try again."); btn.disabled=false; btn.textContent="Confirm I'll be there"; });
 }
 
+/* 2026-07-23: non-blocking two-tap confirm (native confirm() froze the page
+   and offered no protection against double-submits). The second tap within
+   6 seconds confirms; the request locks while in flight, and a repeat cancel
+   of an already-cancelled appointment is a clean no-op server-side. */
+var _cancelArmedAt = 0, _cancelBusy = false;
 function cancelAppt(){
-  if(!confirm('Cancel this appointment? The office will be notified.')) return;
+  if(_cancelBusy) return;
+  if(Date.now() - _cancelArmedAt > 6000){
+    _cancelArmedAt = Date.now();
+    showErr('Tap "Cancel" once more within 6 seconds to confirm — the office will be notified.');
+    return;
+  }
+  _cancelArmedAt = 0; _cancelBusy = true;
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
     .then(function(r){ return r.json(); })
-    .then(function(j){ if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please call the office.'); } })
-    .catch(function(){ showErr("We couldn't reach the office. Check your connection and try again, or call the office."); });
+    .then(function(j){ _cancelBusy = false; if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please call the office.'); } })
+    .catch(function(){ _cancelBusy = false; showErr("We couldn't reach the office. Check your connection and try again, or call the office."); });
 }
 
 function showErr(t){ var e=document.getElementById('apptErr'); e.textContent=t; e.classList.remove('hide'); }

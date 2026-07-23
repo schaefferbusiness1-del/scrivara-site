@@ -9639,7 +9639,7 @@ async function calCreateAppt(btn){
   if(time){ try{ startIso=_acctWallToUtcIso(date,time); if(startIso&&dur){ endIso=new Date(new Date(startIso).getTime()+dur*60000).toISOString(); } }catch(e){} }
   if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Scheduling…'; }
   try{
-    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,phone:phone,room:room,doctor_user_id:doc||null,patient_external_id:ext||null,appt_date:date,start_at:startIso,end_at:endIso})});
+    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,phone:phone,room:room,doctor_user_id:doc||null,patient_external_id:ext||null,appt_date:date,start_at:startIso,end_at:endIso,dedupe:true})});
     if(btn) btn.disabled=false;
     if(!r.ok){ var e={}; try{ e=await r.json(); }catch(_){} if(msg){ msg.style.color='#c0392b'; msg.textContent=(e.error||'Could not schedule.'); } return; }
     try{ toast('Appointment scheduled.','ok'); }catch(e){}
@@ -9684,7 +9684,7 @@ async function calAddAppt(key, btn){
   var startIso=null; if(time){ try{ startIso=_acctWallToUtcIso(key,time); }catch(e){} }
   if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Adding…'; }
   try{
-    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:key,start_at:startIso})});
+    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:key,start_at:startIso,dedupe:true})});
     if(btn) btn.disabled=false;
     if(!r.ok){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Could not add the appointment.'; } return; }
     try{ toast('Appointment added.','ok'); }catch(e){}
@@ -9797,8 +9797,18 @@ async function _renderWaitingRoom(){
   var bar=document.getElementById('waitingRoomBar'); if(!bar) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ bar.style.display='none'; return; }
   var today=_acctTodayKey();
-  var appts=[];
+  /* ck-1.1.0: a transient fetch failure used to blank a POPULATED waiting
+     room (checked-in patients visually vanished until the next good poll).
+     Keep the last confirmed rows on failure; only a confirmed-empty response
+     clears the bar. */
+  var appts=null;
   try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
+  if(appts===null){
+    if(window.__mlsWaitingLastGood&&window.__mlsWaitingLastGood.day===today){ appts=window.__mlsWaitingLastGood.appts; }
+    else return; /* nothing confirmed yet — leave the bar as it is */
+  } else {
+    window.__mlsWaitingLastGood={day:today,appts:appts};
+  }
   var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   if(!waiting.length){ bar.style.display='none'; bar.innerHTML=''; return; }
   try{ _calAppts=appts; }catch(e){}
@@ -9876,7 +9886,14 @@ async function calCheckIn(id){
 async function calCancelAppt(id){
   if(!await mlsConfirm('Cancel this appointment? It will be marked cancelled and the slot frees up.')) return;
   var day=((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
-  try{ await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'cancelled'})}); try{ toast('Appointment cancelled.','ok'); }catch(e){} }catch(e){}
+  /* ck-1.1.0: this used to toast "cancelled" WITHOUT checking the response —
+     a 4xx/5xx showed success while the calendar re-rendered the appointment
+     still active. Only a confirmed 2xx reports success. */
+  try{
+    var r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'cancelled'})});
+    if(r.ok){ try{ toast('Appointment cancelled.','ok'); }catch(e){} }
+    else { try{ toast('Could not cancel the appointment — it is still active.','err'); }catch(e){} }
+  }catch(e){ try{ toast('Could not cancel the appointment — check the connection. It is still active.','err'); }catch(e2){} }
   await loadCalendar(); if(day) calOpenDay(day);
 }
 // Drag an appointment chip onto another day to reschedule it (keeps the time).
@@ -10544,12 +10561,27 @@ async function loadBoard(showToast){
     if(!_boardDate)_boardDate=_todayStr();
     const r=await fetch(bkBase()+'/api/appointments?date='+_boardDay(),{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(showToast) toast('The schedule is for practice staff accounts.','err'); return; }
-    if(!r.ok){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } return; }
+    if(!r.ok){ _boardStaleNote(showToast,box); return; }
     const d=await r.json().catch(function(){return {appointments:[],doctors:[]};});
     _boardDoctors=d.doctors||[];
+    _boardRemoveStaleNote();
     renderBoard(d.appointments||[]);
-  }catch(e){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } }
+  }catch(e){ _boardStaleNote(showToast,box); }
 }
+/* ck-1.1.0: a FAILED background refresh (after check-in/room/cancel actions)
+   used to return silently — the board kept painting the pre-action state with
+   no hint anything was off. Keep the rows, but say the view may be stale. */
+function _boardStaleNote(showToast,box){
+  if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; return; }
+  try{
+    if(document.getElementById('_boardStaleNote')) return;
+    var n=document.createElement('div'); n.id='_boardStaleNote'; n.setAttribute('role','status');
+    n.style.cssText='background:#FFF6E8;border:1px solid #EDD9B0;color:#8A5A00;border-radius:9px;padding:7px 11px;margin:0 0 8px;font-size:12.5px;display:flex;align-items:center;gap:8px';
+    n.innerHTML='⚠️ The board could not refresh just now — this view may be out of date. <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="loadBoard(true)">↻ Refresh</button>';
+    box.insertBefore(n,box.firstChild);
+  }catch(e){}
+}
+function _boardRemoveStaleNote(){ try{ var n=document.getElementById('_boardStaleNote'); if(n) n.remove(); }catch(e){} }
 function _docName(id){ const x=_boardDoctors.find(function(d){return Number(d.id)===Number(id);}); return x?(x.name||('Provider #'+id)):'Unassigned'; }
 function renderBoard(appts){
   const box=document.getElementById('boardBox'); if(!box) return;
@@ -10580,10 +10612,10 @@ function renderBoard(appts){
     h+='</div>';
     h+='<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc(_docName(a.doctor_user_id))+(a.reason?(' · '+esc(a.reason)):'')+(a.phone?(' · '+esc(a.phone)):'')+'</div>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">';
-    if(a.status!=='checked_in'&&a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'checked_in\'})">✔ Check in</button>';
+    if(a.status!=='checked_in'&&a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'checked_in\'},this)">✔ Check in</button>';
     if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptRoom('+a.id+')">🚪 Room</button>';
-    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'completed\'})">✅ Done</button>';
-    if(a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px;color:#c0392b" onclick="apptUpdate('+a.id+',{status:\'cancelled\'})">✕ Cancel</button>';
+    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'completed\'},this)">✅ Done</button>';
+    if(a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px;color:#c0392b" onclick="apptUpdate('+a.id+',{status:\'cancelled\'},this)">✕ Cancel</button>';
     h+='</div></div>';
   });
   h+='<div style="border-top:1px dashed #cfe2f8;margin-top:10px;padding-top:10px">';
@@ -10593,7 +10625,7 @@ function renderBoard(appts){
   h+='<input id="bAddTime" type="time" style="border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">';
   h+='<select id="bAddDoc" style="border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">'+docOpts+'</select>';
   h+='<input id="bAddReason" placeholder="Reason (optional)" style="flex:1;min-width:120px;border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">';
-  h+='<button class="btn-primary" style="font-size:13px;padding:7px 13px" onclick="addApptFromBoard()">Add</button>';
+  h+='<button class="btn-primary" id="bAddBtn" style="font-size:13px;padding:7px 13px" onclick="addApptFromBoard()">Add</button>';
   h+='</div></div>';
   box.innerHTML=h;
 }
@@ -10601,14 +10633,20 @@ async function apptRoom(id){
   const room=await mlsPrompt('Room number / name?'); if(room===null) return;
   apptUpdate(id,{status:'roomed',room:room});
 }
-async function apptUpdate(id,patch){
-  /* dlc-1.0.0: hosted signed-out blocks; local/demo goes to the local shim */
-  if(typeof backendMode==='function'&&backendMode()&&!bkToken()) return;
+async function apptUpdate(id,patch,btn){
+  /* dlc-1.0.0: hosted signed-out blocks; local/demo goes to the local shim.
+     ck-1.1.0: the expired-token case is VISIBLE now (it used to be a silent
+     no-op tap), and the tapped button locks while the update is in flight. */
+  if(typeof backendMode==='function'&&backendMode()&&!bkToken()){ toast('Your sign-in expired — reload MLS and sign in again to update the board.','err'); return; }
+  if(btn&&btn.disabled) return;
+  if(btn){ btn.disabled=true; btn.setAttribute('data-busy-label',btn.textContent); btn.textContent='…'; }
+  function unlock(){ if(btn){ btn.disabled=false; var l=btn.getAttribute('data-busy-label'); if(l!=null){ btn.textContent=l; btn.removeAttribute('data-busy-label'); } } }
   try{
     const r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(patch||{})});
-    if(!r.ok){ toast('Could not update the appointment.','err'); return; }
+    unlock();
+    if(!r.ok){ toast('Could not update the appointment.','err'); loadBoard(false); return; }
     loadBoard(false);
-  }catch(e){ toast('Could not update the appointment.','err'); }
+  }catch(e){ unlock(); toast('Could not update the appointment — check the connection. The board may be out of date.','err'); loadBoard(false); }
 }
 async function addApptFromBoard(){
   const name=((document.getElementById('bAddName')||{}).value||'').trim();
@@ -10618,12 +10656,18 @@ async function addApptFromBoard(){
   const reason=(document.getElementById('bAddReason')||{}).value||'';
   let startIso=null;
   if(time){ try{ startIso=_acctWallToUtcIso(_boardDay(),time); }catch(e){} }
+  /* ck-1.1.0: server-side dedupe + double-click lock — a double tap or a
+     retry after a slow response used to create two identical rows. */
+  var addBtn=document.getElementById('bAddBtn');
+  if(addBtn){ if(addBtn.disabled) return; addBtn.disabled=true; }
   try{
-    const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_boardDay(),start_at:startIso})});
+    const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_boardDay(),start_at:startIso,dedupe:true})});
+    if(addBtn) addBtn.disabled=false;
     if(!r.ok){ toast('Could not add the appointment.','err'); return; }
-    toast('Appointment added.','ok');
+    const dd=await r.json().catch(function(){return {};});
+    toast(dd&&dd.deduped?'That appointment already exists — no duplicate was added.':'Appointment added.','ok');
     loadBoard(false);
-  }catch(e){ toast('Could not add the appointment.','err'); }
+  }catch(e){ if(addBtn) addBtn.disabled=false; toast('Could not add the appointment.','err'); }
 }
 
 /* ===== Receptionist accounts (feature #3): a clinician provisions front-desk
@@ -12018,6 +12062,18 @@ function _intakeSummary(x){
   return lines.join('\n');
 }
 async function attachIntake(id, patientId){
+  /* ck-1.1.0 re-attach guard: if this intake was already merged in this
+     session (e.g. its resolve call failed and it reappeared), never merge it
+     a second time — just retry the resolve. */
+  try{
+    var merged=(window.__mlsIntakeMerged||{})[id];
+    if(merged){
+      var rr0=await fetch(bkBase()+'/api/intake/pending/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'processed'})}).catch(function(){return null;});
+      toast(rr0&&rr0.ok?'That intake was already attached — it is now marked processed.':'That intake was already attached to a chart. It could not be marked processed yet; try Dismiss.', rr0&&rr0.ok?'ok':'err');
+      loadPendingIntakes(false);
+      return;
+    }
+  }catch(eG){}
   try{
     const r=await fetch(bkBase()+'/api/intake/pending',{headers:{Authorization:'Bearer '+bkToken()}});
     const d=await r.json().catch(function(){return {items:[]};});
@@ -12037,15 +12093,31 @@ async function attachIntake(id, patientId){
     if((x.pain!=null||x.odi!=null) && typeof getOutcomes==='function' && typeof saveOutcomesArr==='function'){
       try{ const arr=getOutcomes(p.id); arr.push({id:'o'+Date.now(),noteId:'',pain:(x.pain!=null?x.pain:null),func:null,odi:(x.odi!=null?x.odi:null),note:'Pre-visit intake',date:Date.now()}); saveOutcomesArr(p.id,arr); }catch(e){}
     }
-    await fetch(bkBase()+'/api/intake/pending/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'processed'})});
-    toast('Attached to '+(p.name||'chart')+(x.photo?' — photo added to their card.':'.'),'ok');
+    /* ck-1.1.0: remember the merge locally BEFORE resolving, so a failed
+       resolve can never lead to the same intake being double-merged into the
+       chart when it reappears in the pending list. */
+    try{ (window.__mlsIntakeMerged=window.__mlsIntakeMerged||{})[id]=String(p.id); }catch(eM){}
+    var resolved=false;
+    try{
+      var rr=await fetch(bkBase()+'/api/intake/pending/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'processed'})});
+      resolved=!!(rr&&rr.ok);
+    }catch(eR){}
+    if(resolved){ toast('Attached to '+(p.name||'chart')+(x.photo?' — photo added to their card.':'.'),'ok'); }
+    else { toast('Attached to '+(p.name||'chart')+', but it could not be marked processed on the server — it may reappear in Pending. Do NOT attach it again; use Dismiss to clear it.','err'); }
     if(typeof renderPatients==='function') renderPatients();
     if(typeof renderProfile==='function') renderProfile();
     loadPendingIntakes(false);
   }catch(e){ toast('Could not attach the intake — try again.','err'); }
 }
 async function dismissIntake(id){
-  try{ await fetch(bkBase()+'/api/intake/pending/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'dismissed'})}); toast('Intake dismissed.','ok'); loadPendingIntakes(false); }catch(e){ toast('Could not dismiss.','err'); }
+  /* ck-1.1.0: only a confirmed 2xx reports success — a 4xx used to toast
+     "dismissed" while the intake stayed pending. */
+  try{
+    var r=await fetch(bkBase()+'/api/intake/pending/'+id+'/resolve',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'dismissed'})});
+    if(r.ok){ toast('Intake dismissed.','ok'); }
+    else { toast('Could not dismiss the intake — it is still pending.','err'); }
+    loadPendingIntakes(false);
+  }catch(e){ toast('Could not dismiss.','err'); }
 }
 function renderPatients(){
   updateNavCounts();
@@ -20397,7 +20469,16 @@ function submitIntake(){
   }
 
   if(ikFacePhoto) p.photo=ikFacePhoto;   // attach the intake face photo to the chart
-  upsertPatient(p); // local save + best-effort server sync (hosted mode)
+  /* ck-1.1.0: the core save used to be unguarded — an upsert throw (e.g. the
+     signed-in account changed under the kiosk) aborted the submit AFTER the
+     patient finished the form, with no message and no thank-you screen. Fail
+     VISIBLY and keep the form so nothing is lost. */
+  try{
+    upsertPatient(p); // local save + best-effort server sync (hosted mode)
+  }catch(eSave){
+    try{ toast('This intake could not be saved — please tell the front desk before leaving. Your answers are still on screen.','err'); }catch(eT){}
+    return;
+  }
 
   // ---- outcomes: one intake record with pain + ODI + satisfaction (renderOutcomes shows "ODI x%" / "Sat x/5")
   if(pain!=null || odi!=null || sat!=null || recommend!=null){
@@ -27487,7 +27568,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b497';
+  window.__MLS_AV='b498';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
