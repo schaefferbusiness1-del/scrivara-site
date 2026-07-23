@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.8.0';
+  var VERSION = 'onf-2.9.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -72,6 +72,13 @@
       '.onf-fillbox .onf-field-actions button{cursor:pointer;border:1px solid #c9d6e5;border-radius:999px;padding:3px 8px;background:#fff;color:#204034;font:700 10px/1.2 system-ui;max-width:100%;white-space:normal;text-align:left;}',
       '.onf-fillbox .onf-field-actions button:hover{background:#eef4fb;}',
       '.onf-fillbox .onf-field-actions button.onf-stop{color:#8a2a2a;border-color:#e8c6c6;}',
+      '.onf-fillbox .onf-mic{font-size:12px;padding:2px 7px;}',
+      '.onf-dict{margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:8px;}',
+      '.onf-dict textarea{width:100%;min-height:52px;font:12.5px system-ui;border:1px solid #c9d6e5;border-radius:7px;padding:6px 8px;margin:6px 0 4px;}',
+      '.onf-dict .onf-dict-status{font:600 11px system-ui;color:#7a5310;margin-left:8px;}',
+      '.onf-dict button{cursor:pointer;border:1px solid #c9d6e5;border-radius:7px;background:#fff;font:600 11.5px system-ui;padding:4px 10px;margin-right:6px;}',
+      '.onf-dict button.onf-dict-go{background:#204034;color:#fff;border-color:#204034;}',
+      '.onf-dict button[data-onf-corr]{background:#fff7e6;border-color:#e0b877;color:#7a5310;display:block;margin-top:4px;}',
       '.onf-fillbox .onf-recent{color:#5a4a24!important;border-color:#dcc78d!important;background:#fffaf0!important;}',
       '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
       '.onf-fillbox .onf-accept{cursor:pointer;border:0;border-radius:8px;padding:8px 15px;font:700 12.5px system-ui;background:#2E6A4B;color:#fff;}',
@@ -1126,6 +1133,8 @@
         : kind === 'template' ? ' <span class="onf-hist">from template</span>'
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
       var acts = [], recent = priorValues(label)[0] || '', def = fieldDefault(label);
+      /* onf-2.9.0: per-field dictation (capture = pinned Dictate-Anywhere engine) */
+      acts.push('<button type="button" class="onf-mic" data-onf-mic="' + esc(fid) + '" title="Dictate this field — spoken value is normalized by AI">🎙</button>');
       var reusableSurface = kind !== 'known' && kind !== 'history' && kind !== 'template';
       if (reusableSurface && recent && S(recent).toLowerCase() !== S(cur).toLowerCase()) {
         acts.push('<button type="button" class="onf-recent" data-onf-recent-control="' + esc(fid) + '" data-onf-recent-value="' + esc(recent) + '">Last used: ' + esc(recent) + ' — use</button>');
@@ -1147,9 +1156,15 @@
     var saveBtn = prep ? ('<div style="margin-top:9px;display:flex;align-items:center;gap:9px;">' +
       '<button type="button" class="onf-accept" data-onf-accept="' + idx + '">✓ Looks right — save to History' + (blanks ? (' (' + blanks + ' blank' + (blanks === 1 ? '' : 's') + ' left)') : '') + '</button>' +
       '<span style="font:600 10.5px system-ui;color:#7a5310;">saves to this patient’s History only — never sent to Athena</span></div>') : '';
+    var dictHtml = '<div class="onf-dict">' +
+      '<button type="button" id="mlsOnfDictBtn_' + idx + '" title="Dictate all remaining details in one go">🎙 Dictate to fill</button>' +
+      '<button type="button" class="onf-dict-go" id="mlsOnfDictGo_' + idx + '" title="AI places each dictated detail into the right field — already-confirmed fields are never overwritten">✨ Fill from dictation</button>' +
+      '<span class="onf-dict-status" id="mlsOnfDictStatus_' + idx + '"></span>' +
+      '<textarea id="mlsOnfDictPad_' + idx + '" style="display:none" placeholder="Speak naturally — e.g. “22 gauge three and a half inch needle, half percent bupivacaine with 10 of dex per level, fluoro time 40 seconds” — or type here."></textarea>' +
+      '</div>';
     box.innerHTML = '<div class="onf-h">✏️ Fields (' + tokens.length + ') — known facts and your saved defaults fill first' + (blanks ? ' · <b>' + blanks + '</b> still need a value' : '') + '</div>' +
       '<div class="onf-grid">' + rowsHtml + '</div>' +
-      '<div class="onf-note">Anything uncertain stays editable. “Use every time” applies only after you choose it, and changing a field updates this draft instantly.</div>' + saveBtn;
+      '<div class="onf-note">Anything uncertain stays editable. “Use every time” applies only after you choose it, and changing a field updates this draft instantly.</div>' + dictHtml + saveBtn;
     if (!existing || ta.previousElementSibling !== box) ta.parentNode.insertBefore(box, ta);
     var acc = box.querySelector('[data-onf-accept]');
     if (acc) acc.addEventListener('click', function () {
@@ -1189,6 +1204,13 @@
             safe(function () { if (typeof window.opPrepAutosaveDraft === 'function') window.opPrepAutosaveDraft(+idx); });
           }
           var lbl = el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
+          /* onf-2.9.0: a value that arrived via the field mic gets one async AI
+             normalization pass (spoken numbers -> digits, med terms, units);
+             failure keeps the spoken text untouched. */
+          if (val && el.getAttribute && el.getAttribute('data-onf-dictated') === '1') {
+            el.removeAttribute('data-onf-dictated');
+            safe(function () { normalizeDictatedField(el, label, row); });
+          }
         }
         var handler = function () {
           /* "Other (type custom)…" swaps the dropdown for a focused text input
@@ -1237,6 +1259,8 @@
       applyDefaultToOpen(label, val);
       toast('Saved — this answer will fill the same field in future op notes.', 'ok');
     });
+    /* onf-2.9.0: per-field mics + the dictate-and-fill pad */
+    safe(function () { wireDictation(box, ta, row, idx, prep); });
   }
 
   /* ================= PART C: repair dead "Upload templates" buttons =================
@@ -1326,6 +1350,158 @@
       })(ta);
     }
   }
+  /* =========================================================================
+   * onf-2.9.0 — DICTATE & FILL. The physician dictates naturally (capture is
+   * the pinned Dictate-Anywhere engine, untouched); the AI maps the dictation
+   * onto the note's fill fields, normalizing medical terminology, units, and
+   * formatting while preserving meaning. HARD RULES: only fields the dictation
+   * clearly addresses are filled; a field the clinician already set is NEVER
+   * overwritten silently — an explicit "correction" becomes a tap-to-apply
+   * offer; a failed AI call loses nothing (the transcript stays in the pad).
+   * Pure planning/parsing functions are exported for the offline test harness.
+   * ======================================================================= */
+  function dictApi() { var d = window.__mlsDictateAnywhere; return (d && d.installed && isFn(d.toggleFor)) ? d : null; }
+  function stripFences(s) { return S(s).replace(/^```\w*\s*/,'').replace(/```\s*$/,'').trim(); }
+  function buildRoutePrompt(fields, noteText, transcript) {
+    var sys = 'You fill operative-note fields from a pain physician’s dictation. Map the dictation onto the listed fields only. '
+      + 'NORMALIZE medical terminology, drug names, doses, units, laterality, and formatting (e.g. "twenty two gauge three and a half inch" -> "22-gauge, 3.5-inch"; "point five percent bupivacaine" -> "0.5% bupivacaine") while preserving the physician’s meaning exactly. '
+      + 'Include ONLY fields the dictation clearly addresses — never guess, never fill a field from general context alone. '
+      + 'A field marked ALREADY-SET may be included ONLY when the dictation explicitly states a different value for it; then set "correction":true. '
+      + 'Each value is the final field text — concise, professional, no commentary. '
+      + 'Return ONLY JSON: {"fills":[{"field":"<field label exactly as listed>","value":"...","correction":false}]}';
+    var user = 'FIELDS:\n' + fields.map(function (f) {
+      return '- ' + f.label + (f.value ? (' [ALREADY-SET: ' + S(f.value).slice(0, 120) + ']') : ' [blank]');
+    }).join('\n')
+      + '\n\nOPERATIVE NOTE (context):\n' + S(noteText).slice(0, 3500)
+      + '\n\nDICTATION:\n' + S(transcript).slice(0, 4000);
+    return { sys: sys, user: user };
+  }
+  function parseRouteResult(raw) {
+    var s = stripFences(raw), obj = null;
+    try { obj = JSON.parse(s); } catch (e) { var m = s.match(/\{[\s\S]*\}/); if (m) { try { obj = JSON.parse(m[0]); } catch (e2) {} } }
+    var fills = (obj && Array.isArray(obj.fills)) ? obj.fills : [];
+    return fills.filter(function (f) { return f && S(f.field).trim() && S(f.value).trim(); })
+      .map(function (f) { return { field: S(f.field).trim(), value: S(f.value).trim().slice(0, 400), correction: f.correction === true }; });
+  }
+  /* Pure plan: which fills apply now, which become explicit-tap corrections,
+     which are ignored. fieldState: [{label, value, touched}]. */
+  function planRoutedFills(fills, fieldState) {
+    var byLabel = {}, plan = { apply: [], corrections: [], ignored: [] };
+    fieldState.forEach(function (f) { byLabel[S(f.label).toLowerCase()] = f; });
+    fills.forEach(function (f) {
+      var st = byLabel[S(f.field).toLowerCase()];
+      if (!st) { plan.ignored.push({ field: f.field, why: 'unknown-field' }); return; }
+      var already = !!(st.touched && S(st.value).trim());
+      if (!already) { plan.apply.push({ label: st.label, value: f.value }); return; }
+      if (f.correction && S(f.value).trim().toLowerCase() !== S(st.value).trim().toLowerCase()) {
+        plan.corrections.push({ label: st.label, value: f.value, was: st.value });
+      } else plan.ignored.push({ field: f.field, why: 'already-set' });
+    });
+    return plan;
+  }
+  function fidFor(idx, label) { return 'onfF_' + idx + '_' + S(label).toLowerCase().replace(/[^a-z0-9]+/g, '_'); }
+  function setFieldValue(idx, label, value) {
+    var el = $(fidFor(idx, label)); if (!el) return false;
+    if (el.tagName === 'SELECT') {
+      var has = Array.prototype.some.call(el.options || [], function (o) { return S(o.value) === value; });
+      if (!has) { var opt = document.createElement('option'); opt.value = value; opt.textContent = value; el.appendChild(opt); }
+    }
+    el.value = value;
+    safe(function () { el.dispatchEvent(new Event('change', { bubbles: true })); });
+    return true;
+  }
+  async function routeDictation(idx, ta, row, transcript, statusEl) {
+    var raw = S(row && row._onfRaw != null ? row._onfRaw : (ta && ta.value || ''));
+    var labels = fillTokens(raw);
+    var vals = (row && row._onfVals) || {};
+    var fieldState = labels.map(function (label) {
+      var key = label.toLowerCase();
+      return { label: label, value: S(vals[key] || ''), touched: !!(row && row._onfTouched && row._onfTouched[key]) };
+    });
+    if (!fieldState.length) { if (statusEl) statusEl.textContent = 'No fill fields in this note.'; return null; }
+    var p = buildRoutePrompt(fieldState, ta ? ta.value : '', transcript);
+    if (statusEl) statusEl.textContent = '… routing dictation into fields';
+    var out;
+    try { out = await window.aiCallRaw(p.sys, p.user, (isFn(window.getKey) ? window.getKey() : ''), { freeform: true }); }
+    catch (e) {
+      if (statusEl) statusEl.textContent = '⚠ Couldn’t reach the AI — your dictation is kept below, nothing was changed. (' + S(e && e.message).slice(0, 80) + ')';
+      return null;
+    }
+    var plan = planRoutedFills(parseRouteResult(out), fieldState);
+    var applied = 0;
+    plan.apply.forEach(function (a) { if (setFieldValue(idx, a.label, a.value)) applied++; });
+    if (statusEl) {
+      var bits = [];
+      bits.push(applied ? ('✓ filled ' + applied + ' field' + (applied === 1 ? '' : 's')) : 'no blank fields matched the dictation');
+      if (plan.corrections.length) bits.push(plan.corrections.length + ' change' + (plan.corrections.length === 1 ? '' : 's') + ' to confirm below');
+      if (plan.ignored.length) bits.push(plan.ignored.length + ' already set (kept)');
+      statusEl.textContent = bits.join(' · ');
+      var host = statusEl.parentNode;
+      safe(function () { Array.prototype.forEach.call(host.querySelectorAll('[data-onf-corr]'), function (n) { n.remove(); }); });
+      plan.corrections.forEach(function (c) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('data-onf-corr', '1');
+        b.textContent = 'Update ' + c.label + ': “' + c.value + '” (was “' + S(c.was).slice(0, 60) + '”)';
+        b.addEventListener('click', function () { if (setFieldValue(idx, c.label, c.value)) b.remove(); });
+        host.appendChild(b);
+      });
+    }
+    return plan;
+  }
+  async function normalizeDictatedField(el, label, row) {
+    if (!el || el.__onfNormBusy) return;
+    var val = S(el.value).trim(); if (!val) return;
+    var elId = S(el.id);   /* the fill box re-renders on its 1s tick — re-resolve by stable id */
+    el.__onfNormBusy = true;
+    try {
+      var sys = 'Normalize ONE dictated value for the operative-note field named "' + S(label).slice(0, 80) + '". '
+        + 'Fix medical terminology, units, drug names, capitalization, and formatting (spoken numbers become digits) while preserving the meaning exactly. '
+        + 'Return ONLY the corrected value text — no quotes, no commentary. If it is already correct, return it unchanged.';
+      var out = await window.aiCallRaw(sys, val, (isFn(window.getKey) ? window.getKey() : ''), { freeform: true });
+      var clean = stripFences(out);
+      var cur = elId ? ($(elId) || el) : el;
+      /* apply only when the field STILL holds the exact spoken text — a
+         clinician edit in the meantime always wins over the AI cleanup */
+      if (clean && clean.length <= 400 && clean !== val && S(cur.value).trim() === val) {
+        cur.value = clean;
+        safe(function () { cur.dispatchEvent(new Event('change', { bubbles: true })); });
+      }
+    } catch (e) { /* keep the spoken text — never lose dictation */ }
+    finally { el.__onfNormBusy = false; }
+  }
+  function wireDictation(box, ta, row, idx, prep) {
+    var mics = box.querySelectorAll('[data-onf-mic]');
+    for (var i = 0; i < mics.length; i++) (function (btn) {
+      if (btn.__onfWired) return; btn.__onfWired = true;
+      btn.addEventListener('click', function () {
+        var d = dictApi(); if (!d) { toast('Dictation isn’t available in this browser.', 'err'); return; }
+        var el = $(btn.getAttribute('data-onf-mic')); if (!el) return;
+        if (el.tagName === 'SELECT') {
+          el.value = OTHER;
+          safe(function () { el.dispatchEvent(new Event('change', { bubbles: true })); });
+          el = $(btn.getAttribute('data-onf-mic')); if (!el || el.tagName === 'SELECT') return;
+        }
+        el.setAttribute('data-onf-dictated', '1');
+        d.toggleFor(el);
+      });
+    })(mics[i]);
+    var mic = $('mlsOnfDictBtn_' + idx), pad = $('mlsOnfDictPad_' + idx), go = $('mlsOnfDictGo_' + idx), st = $('mlsOnfDictStatus_' + idx);
+    if (mic && !mic.__onfWired) { mic.__onfWired = true; mic.addEventListener('click', function () {
+      var d = dictApi(); if (!d) { toast('Dictation isn’t available in this browser.', 'err'); return; }
+      if (pad) { pad.style.display = 'block'; pad.focus(); }
+      d.toggleFor(pad);
+      if (st) st.textContent = d.isListening && d.isListening() ? '🎙 listening — speak the details, then press Fill' : 'tap the mic chip to talk, then press Fill';
+    }); }
+    if (go && !go.__onfWired) { go.__onfWired = true; go.addEventListener('click', function () {
+      var d = dictApi(); if (d && d.isListening && d.isListening()) { try { d.stop(); } catch (e) {} }
+      var t = S(pad && pad.value).trim();
+      if (!t) { if (st) st.textContent = 'Nothing dictated yet — press 🎙 and speak, or type here.'; return; }
+      routeDictation(idx, ta, row, t, st).then(function (plan) {
+        if (plan && pad && (plan.apply.length || plan.corrections.length)) pad.value = '';
+      });
+    }); }
+  }
+
   function boot() { css(); safe(seedProfile); tick(); iv = setInterval(function () { safe(tick); }, 1000); }
   function revert() {
     if (iv) { clearInterval(iv); iv = null; }
@@ -1348,7 +1524,9 @@
     _knownValue: knownValue, _buildOptions: buildOptions, _resolveInitialField: resolveInitialField, _buildFillBox: buildFillBox, _ensureHeader: ensureHeader,
     _chartPatient: chartPatient, _chartValue: chartValue, _patientHistText: patientHistText,
     _verifiedHistoryVisits: verifiedHistoryVisits, _profile: provProfile,
-    wireUploadButtons: wireUploadButtons, tick: tick, revert: revert
+    wireUploadButtons: wireUploadButtons, tick: tick, revert: revert,
+    /* onf-2.9.0 dictate-and-fill — pure parts exported for the offline harness */
+    _dictation: { buildRoutePrompt: buildRoutePrompt, parseRouteResult: parseRouteResult, planRoutedFills: planRoutedFills, routeDictation: routeDictation, normalizeDictatedField: normalizeDictatedField, fidFor: fidFor }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

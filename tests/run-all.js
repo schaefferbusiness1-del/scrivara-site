@@ -245,6 +245,7 @@ const tests = [
   'opnote-staging-parity-runtime.test.js',
   'opnote-template-integrity-runtime.test.js',
   'opnote-workflow-hardening-runtime.test.js',
+  'opnote-dictate-fill-runtime.test.js',
   'patient-bar-stability-contract.test.js',
   'patient-bar-recent-chip-stability-runtime.test.js',
   'recording-ai-visibility-contract.test.js',

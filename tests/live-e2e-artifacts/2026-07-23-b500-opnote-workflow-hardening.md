@@ -200,6 +200,48 @@ to the interlaminar template by code order — refusing may be preferable but
 either candidate is defensible; no general fuzzy-typo matching (only the
 curated list); thoracic-specific CPT region hints intentionally omitted.
 
+## Final production pass addendum — dictate-and-fill (onf-2.9.0) + oni-2.12.0 + real Thursday validation
+
+**Dictate & fill (owner: "doctor wants to transcribe — make sure it can do that"):**
+raw dictation into the op-note textarea and every fill-box text input ALREADY
+worked via the pinned Dictate-Anywhere engine (focus-driven, da-1.1.1 —
+op-note fields are deliberately outside the encounter-consent scope per the
+recording-consent contract). onf-2.9.0 adds what was missing: a 🎙 per-field mic
+(select fields auto-swap to their custom input), a "🎙 Dictate to fill" pad +
+"✨ Fill from dictation" that AI-routes a NATURAL dictation onto the correct
+fields with medical normalization ("twenty two gauge three and a half" →
+"22-gauge, 3.5-inch"), and one async normalization pass for single-field mic
+input. HARD RULES (pinned in tests/opnote-dictate-fill-runtime, registered):
+only fields the dictation clearly addresses; a clinician-set field is NEVER
+silently overwritten — even a hostile fills-response is ignored ("kept"),
+and an explicit correction becomes a tap-to-confirm offer showing old→new;
+a failed AI call keeps the transcript in the pad (nothing lost); all writes
+go through the existing applyVal path (touched-tracking, autosave, save-review
+gate stay coherent). Verified live in the sandbox end-to-end including the
+re-render race fix (normalization re-resolves its field by stable id).
+oni-2.12.0: sided S1 ESI rows prefer transforaminal over midline caudal
+(eval 67/67), placeholder keys/labels/examples must be specific + clinical.
+
+**Real Thursday validation (live account, read-only + one self-deleted draft):**
+64 real Thursday rows audited through the live matcher: TF ESI and MBB/DR rows
+classify to the correct family; "B/L S1 ESI" → caudal mis-route reproduced
+(fixed by oni-2.12.0 + a lumbar/sacral TF template); 19 refusals are template-
+LIBRARY gaps, not matcher errors. One real generation ("L L3 TF ESI P", July 9)
+via the owner's backend: patient/DOB/MRN/provider stamped correctly, procedure
+expanded to "Left L3 lumbar transforaminal epidural steroid injection", pre-op
+diagnosis pulled from the real chart; the QA-debris template caused 17 hollow
+blanks + "SYNTHETIC QA" branding — the library, not the pipeline, is the
+usability blocker. Test draft deleted via the app's own confirm flow; account
+left as found (a cloud-import preview I opened was cancelled — NOTE: hosted
+form-save routes into preview→Commit, a discoverability risk worth an owner
+decision). Owner deliverable: OP_NOTE_TEMPLATE_PACK_2026-07-23.md (4 paste-ready
+templates + QA-debris cleanup list + the commit-step instructions).
+
+**Token burns (release-train hazard, now 3 incidents):** b505's sweep committed
+my b506 tokens (oni2120/onf290) against OLD satellite bytes and pushed — both
+burned; this lane ships 20260723oni2121/onf291. Verified: all 7 op-note suites +
+dictate suite green; full gate 275/275 + E2E 17/17 on the pre-token-move tree.
+
 ## Live-release handoff
 
 Per the goal, this session does NOT deploy. The lane is committed on the shared
