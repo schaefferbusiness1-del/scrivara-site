@@ -36351,7 +36351,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          read-only navigation) and re-probe exactly once. Identity mismatches
          and every other refusal stay fail-closed and untouched. */
       var rzn=trim(resp&&resp.reason);
-      if((!resp||resp.ok!==true)&&/^(context-unverified|context-mismatch)$/.test(rzn)){
+      if((!resp||resp.ok!==true)&&/^(context-unverified|context-mismatch|patient-mismatch)$/.test(rzn)){
         PASSIVE.verifyError='';refreshOpenPop();
         var openId='sync-open-'+Date.now()+'-'+Math.random().toString(36).slice(2);
         return bridgeOnce('mlsAppSearchOpenPatient',{
