@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.10.0
+ * MLS op-note integrity  oni-2.11.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.10.0';
+  var VERSION = 'oni-2.11.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -37,6 +37,13 @@
   function templates() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
   function normText(x) {
     return S(x).toLowerCase()
+      /* oni-2.11.0: frequent clinic TYPOS normalize before anything else — a
+         one-letter slip must not flip a block into an RFA via keyword scoring. */
+      .replace(/\b(transforminal|tranforaminal|transformainal|transforaminel)\b/g, ' transforaminal ')
+      .replace(/\bsacro[\s-]?ill?iac\b|\bsacroliac\b/g, ' sacroiliac ')
+      .replace(/\b(epidral|epdural|epidurral)\b/g, ' epidural ')
+      .replace(/\b(blcok|bolck|blok)\b/g, ' block ')
+      .replace(/\b(injecton|injectoin|injektion)\b/g, ' injection ')
       /* oni-2.6.2: Athena schedule-reason ABBREVIATIONS — "L SI joint inj P"
          must classify as an SI injection, "B/L L3, L4MB & L5 DR B" as MBBs.
          Expanded BEFORE phrase mapping so the class guard can fire and a
@@ -45,12 +52,23 @@
       .replace(/\binjs?\b/g, ' injection ')
       .replace(/\b([lcts]\d{1,2})\s*mbs?\b/g, ' $1 medial branch block ')
       .replace(/\bmbs\b/g, ' medial branch blocks ')
+      .replace(/\bmbbs\b/g, ' mbb ')
+      .replace(/\btfesis\b/g, ' tfesi ')
+      .replace(/\besis\b/g, ' esi ')
+      .replace(/\brfas\b/g, ' rfa ')
       .replace(/\bdr\s*b\b/g, ' dorsal ramus block ')
+      .replace(/\bdrb\b/g, ' dorsal ramus block ')
+      /* oni-2.11.0: "ESI-TF" / "TF ESI" shorthand */
+      .replace(/\btf[\s-]*esi\b|\besi[\s-]*tf\b/g, ' tfesi ')
       .replace(/\btransforaminal epidural steroid injection\b/g, ' tfesi ')
       .replace(/\bepidural steroid injection\b/g, ' esi ')
       .replace(/\bmedial branch blocks?\b/g, ' mbb ')
       .replace(/\bradiofrequency (?:neurotomy|ablation)\b/g, ' rfa ')
       .replace(/\bsacroiliac joint\b/g, ' si joint ')
+      /* oni-2.11.0: bare "SI" directly before a procedure word means the SI
+         joint ("B/L SI inj", "SI RFA") — schedule shorthand, safe in this
+         domain. Runs AFTER inj->injection so both spellings land here. */
+      .replace(/\bsi\s+(injection|block|rfa)\b/g, ' si joint $1 ')
       .replace(/\bspinal cord stimulator\b/g, ' scs ')
       .replace(/\bbasivertebral nerve\b/g, ' bvn ')
       .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -59,12 +77,12 @@
   /* Ordered from most specific to broadest. A specific class mismatch is a
      hard rejection, so a shared L5/S1 or "injection" token cannot cross types. */
   var CLASSES = [
-    ['genicular_rfa', /\bgenicular\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\bgenicular\b/],
-    ['genicular_block', /\bgenicular\b[\s\S]{0,50}\b(block|injection|64454)\b/],
-    ['facet_rfa', /\b(facet|medial branch|mbb|rhizotomy)\b[\s\S]{0,60}\b(rfa|radiofrequency|ablation|6463[3-6])\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,60}\b(facet|medial branch|mbb)\b/],
-    ['facet_mbb', /\bmbb\b|\b(facet|medial branch)\b[\s\S]{0,60}\b(block|injection|6449[0-3])\b/],
-    ['si_rfa', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\b(si joint|sacroiliac)\b/],
-    ['si_injection', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(injection|block|27096)\b/],
+    ['genicular_rfa', /\bgenicular\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\bgenicular\b|\b64624\b/],
+    ['genicular_block', /\bgenicular\b[\s\S]{0,50}\b(block|injection|64454)\b|\b64454\b/],
+    ['facet_rfa', /\b(facet|medial branch|mbb|rhizotomy)\b[\s\S]{0,60}\b(rfa|radiofrequency|ablation|6463[3-6])\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,60}\b(facet|medial branch|mbb)\b|\b6463[3-6]\b|\brhizotomy\b|\b(cervical|thoracic|lumbar)\b[\s\S]{0,30}\brfa\b|\brfa\b[\s\S]{0,30}\b(cervical|thoracic|lumbar)\b/],
+    ['facet_mbb', /\bmbb\b|\b(facet|medial branch)\b[\s\S]{0,60}\b(block|injection|6449[0-5])\b|\b6449[0-5]\b/],
+    ['si_rfa', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\b(si joint|sacroiliac)\b|\b64625\b/],
+    ['si_injection', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(injection|block|27096)\b|\b27096\b/],
     ['tfesi', /\b(tfesi|transforaminal|64479|64483|64484)\b/],
     ['interlaminar_esi', /\b(interlaminar|62321|62323)\b/],
     ['caudal_esi', /\bcaudal\b[\s\S]{0,40}\b(esi|epidural|injection)\b/],
@@ -94,10 +112,49 @@
   function statesNoProcedure(text) {
     return /\bno\s+procedures?\s+(?:was\s+|were\s+)?performed\b|\bprocedures?\s+(?:was\s+|were\s+)?not\s+performed\b|\bno\s+procedure\s+today\b/i.test(String(text == null ? '' : text));
   }
+  /* oni-2.11.0: HISTORICAL mentions are not today's procedure. "Left L5-S1
+     TFESI (prior right L4-L5 MBB with relief)" used to classify as an MBB
+     because the class list is order-checked, not primacy-checked. Remove
+     prior/previous/s-p clauses and parentheticals before classification. */
+  function stripHistorical(text) {
+    return String(text == null ? '' : text)
+      .replace(/\([^)]*\b(prior|previous|h\/o|hx|history|s\/p|status[\s-]?post|relief|last\s+(?:visit|time))\b[^)]*\)/gi, ' ')
+      .replace(/\b(prior|previous|h\/o|hx\s+of|history\s+of|s\/p|status[\s-]?post)\b[^.;\n)]{0,70}/gi, ' ')
+      .replace(/\bpost[\s-]?op(?:erative)?\s+(?:check|visit|follow[\s-]?up)\b[^.;\n]*/gi, ' ');
+  }
+  var ESI_FAMILY = { tfesi: 1, interlaminar_esi: 1, caudal_esi: 1, generic_esi: 1 };
+  function stripCodes(n) { return S(n).replace(/\b\d{4,5}\b|\b0275t\b/g, ' '); }
+  function classesIn(n) {
+    var out = [];
+    for (var i = 0; i < CLASSES.length; i++) if (CLASSES[i][1].test(n)) out.push(CLASSES[i][0]);
+    /* a specific ESI approach subsumes the broad generic_esi signal */
+    if (out.indexOf('generic_esi') >= 0 && out.some(function (k) { return k !== 'generic_esi' && ESI_FAMILY[k]; })) {
+      out = out.filter(function (k) { return k !== 'generic_esi'; });
+    }
+    /* "RFA of the medial branches / SI / genicular nerves" names ONE
+       procedure: the ablation. The block class fires on the shared target
+       words, so the RFA class subsumes its same-target block sibling. */
+    [['facet_rfa', 'facet_mbb'], ['si_rfa', 'si_injection'], ['genicular_rfa', 'genicular_block']].forEach(function (pair) {
+      if (out.indexOf(pair[0]) >= 0 && out.indexOf(pair[1]) >= 0) out = out.filter(function (k) { return k !== pair[1]; });
+    });
+    return out;
+  }
+  /* oni-2.11.0 two-pass classification: WORD evidence outranks CPT codes.
+     Shared codes (62323 caudal-or-interlaminar, 63650 trial-or-permanent)
+     made a Caudal template classify as interlaminar and an SCS-trial
+     template classify as an implant — every such template was unmatched
+     AND undraftable. Codes decide only when the text has no word signal. */
+  function procClassSet(text) {
+    /* conditional/future mentions ("with possible RFA to follow") are not
+       today's procedure either — drop them before classification. */
+    var cleaned = String(text == null ? '' : text).replace(/\b(possible|possibly|potential(?:ly)?|maybe|likely|consider(?:ing)?|candidate for)\b[^.;\n]{0,60}/gi, ' ');
+    var n = normText(stripNegated(stripHistorical(cleaned)));
+    var byWords = classesIn(stripCodes(n));
+    return byWords.length ? byWords : classesIn(n);
+  }
   function procClass(text) {
-    var n = normText(stripNegated(text));
-    for (var i = 0; i < CLASSES.length; i++) if (CLASSES[i][1].test(n)) return CLASSES[i][0];
-    return '';
+    var set = procClassSet(text);
+    return set.length ? set[0] : '';
   }
 
   /* Clinical identity is not one fuzzy string. Parse each requested fact into
@@ -142,6 +199,9 @@
   }
   function regionOf(text,levels) {
     var n=normText(text), flags={}; levels=levels||levelsOf(text);
+    /* oni-2.11.0: unambiguous lumbar CPTs count as region evidence, so a
+       code-only reason ("64635 64636") cannot drift to a cervical template. */
+    if(/\b(64483|64484|64493|64494|64495|64635|64636)\b/.test(n))flags.lumbar=1;
     if(/\bcervical\b/.test(n))flags.cervical=1;
     if(/\bthoracic\b/.test(n))flags.thoracic=1;
     if(/\b(lumbar|lumbo sacral|lumbosacral)\b/.test(n))flags.lumbar=1;
@@ -166,8 +226,12 @@
   function sameRegion(a,b){
     if(!a||!b)return true;
     if(a===b)return true;
-    if(a==='lumbosacral'&&(b==='lumbar'||b==='sacral'))return true;
-    if(b==='lumbosacral'&&(a==='lumbar'||a==='sacral'))return true;
+    /* oni-2.11.0: junction procedures span regions ("C7-T1" reads as
+       cervical+thoracic). Regions are compatible when they SHARE any
+       component; fully disjoint regions still conflict. */
+    function toSet(r){var s={};S(r).split('+').forEach(function(k){if(k==='lumbosacral'){s.lumbar=1;s.sacral=1;}else if(k)s[k]=1;});return s;}
+    var sa=toSet(a),sb=toSet(b);
+    for(var k in sa)if(sa[k]&&sb[k])return true;
     return false;
   }
   function sameLevels(a,b){a=(a||[]).slice().sort();b=(b||[]).slice().sort();return a.length===b.length&&a.every(function(v,i){return v===b[i];});}
@@ -201,6 +265,16 @@
   }
   function templateCompatibility(procedure,tpl,ctx) {
     var requested=procedureFacts(procedure), templateText=S(tpl&&tpl.name)+' '+((tpl&&tpl.keywords)||[]).join(' ')+' '+S(tpl&&tpl.text).slice(0,2400), actual=procedureFacts(templateText);
+    /* oni-2.11.0 ESI hierarchy: a generic "ESI" request may use the practice's
+       specific-approach ESI template (and vice versa) — the generic side has
+       no approach to conflict; region/side/level checks still apply, and the
+       ranker still prefers an exact-approach template when several exist. */
+    if(requested.procedureType!==actual.procedureType&&ESI_FAMILY[requested.procedureType]&&ESI_FAMILY[actual.procedureType]&&(requested.procedureType==='generic_esi'||actual.procedureType==='generic_esi')){
+      var relaxed={};for(var rk in actual)if(Object.prototype.hasOwnProperty.call(actual,rk))relaxed[rk]=actual[rk];
+      relaxed.procedureType=requested.procedureType;
+      if(requested.procedureType==='generic_esi'||!requested.approach)relaxed.approach=requested.approach;
+      actual=relaxed;
+    }
     var fields=['procedureType','region','approach'];
     if(tpl&&tpl.validatedFacts===true)fields=['procedureType','region','side','levels','levelCount','approach'];
     var errors=compareFacts(requested,actual,false,fields).concat(templateScopeErrors(tpl,ctx));
@@ -270,7 +344,13 @@
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
       var body = normText(S(t.text).slice(0, 1800));
       var tc = templateClass(t), score = 0, compat=templateCompatibility(procedure,t);
-      if (pc && tc) score += pc === tc ? 120 : -120;
+      if (pc && tc) {
+        if (pc === tc) score += 120;
+        /* ESI-family generic<->specific is a REAL but weaker match: it must
+           beat unrelated templates yet always lose to an exact class. */
+        else if (ESI_FAMILY[pc] && ESI_FAMILY[tc] && (pc === 'generic_esi' || tc === 'generic_esi')) score += 45;
+        else score -= 120;
+      }
       else if (pc && !tc) score -= 25;
       if(!compat.pass)score-=240;
       else if(pc){var tf=compat.template;if(pf.region&&tf.region&&sameRegion(pf.region,tf.region))score+=12;if(pf.approach&&tf.approach&&pf.approach===tf.approach)score+=18;}
@@ -289,6 +369,11 @@
     /* An explicit "no procedure performed" statement is a REAL no-match — it
        must never resolve to a procedure template, not even on a tie. */
     if (statesNoProcedure(procedure)) return { tpl:null, confident:false, reason:'text states no procedure was performed', score:0, noProcedure:true };
+    /* oni-2.11.0: a row naming TWO different procedures ("TFESI vs MBB —
+       decide at visit", "MBB with possible RFA to follow") is genuinely
+       undecided — auto-matching either template risks the wrong note. */
+    var classSet = procClassSet(procedure);
+    if (classSet.length > 1) return { tpl:null, confident:false, reason:'names more than one procedure ('+classSet.join(', ')+') — choose the template manually', score:0, multi:classSet };
     var r = rank(procedure), top = r[0], second = r[1], list = templates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
     if(!top.compatible)return {tpl:null,candidate:top.tpl,confident:false,reason:'template conflicts with requested procedure',score:top.score,conflicts:top.conflicts,ranked:r};
@@ -303,7 +388,12 @@
       return { tpl:null, candidate:top.tpl, confident:false, reason:'no classified procedure signal', score:top.score, ranked:r };
     }
     var margin = top.score - (second ? second.score : 0);
-    var confident = classExact || (top.score >= 10 && margin >= 4);
+    /* oni-2.11.0: keyword-margin confidence may not cross procedure classes.
+       With NO classified procedure signal, a small keyword margin between two
+       DIFFERENT-class templates (block vs RFA) is not clinical evidence —
+       require a decisive margin before trusting it. */
+    var siblingSafe = !second || !second.tpl || !top.tplClass || !second.tplClass || top.tplClass === second.tplClass || margin >= 12;
+    var confident = classExact || (top.score >= 10 && margin >= 4 && siblingSafe);
     return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:classExact?'procedure class':(confident?'keyword margin':'ambiguous'), score:top.score, margin:margin, ranked:r };
   }
 

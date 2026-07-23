@@ -1,6 +1,6 @@
 'use strict';
 
-/* b501 op-note workflow hardening (oni-2.11.0 / opnp-1.7.0 / onf-2.8.0):
+/* b502 op-note workflow hardening (oni-2.11.0 / opnp-1.7.0 / onf-2.8.0):
  *  1. oni newRow carries the appointment's provider/facility scope (the base
  *     _opNewRow's 6th param) instead of silently dropping it.
  *  2. A drafted row remembers the template that produced it (_genTplId) and

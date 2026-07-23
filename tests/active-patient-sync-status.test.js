@@ -45,7 +45,7 @@ for (const [name, src] of [['production', prod], ['staging', staging]]) {
     const vnEnd = src.indexOf('function masked(', vnStart);
     const vn = src.slice(vnStart, vnEnd > vnStart ? vnEnd : vnStart + 6000);
     assert(vn.includes('mlsAppSearchOpenPatient'), `${name} SearchOpen escaped the explicit verifyNow click path`);
-    assert(/\/\^\(context-unverified\|context-mismatch\)\$\//.test(vn), `${name} verify auto-open is not whitelist-bounded`);
+    assert(/\/\^\(context-unverified\|context-mismatch\|patient-mismatch\)\$\//.test(vn), `${name} verify auto-open is not whitelist-bounded (context-unverified|context-mismatch|patient-mismatch only)`);
   }
 }
 
@@ -215,11 +215,22 @@ function runtime(source) {
     rt.setSearchOpenReply({ ok: false, reason: 'no-athena-tab' });
     assert.strictEqual(await rt.api.verifyNow(), false, 'a failed auto-open must fail the verify');
 
+    /* patient-mismatch = another chart is open in Athena — the NORMAL daytime
+       state (live 2026-07-23 13:54: verifying Ed Speer while a different
+       patient was being charted). The explicit Verify click expresses intent
+       for THIS patient, the open is read-only and identity-verified before it
+       happens, and the re-probe re-verifies — so mismatch DOES auto-open. */
     rt.setProbeFailOnce('patient-mismatch');
     const opensBeforeMismatch = rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length;
-    rt.setSearchOpenReply({ ok: true, opened: true });
-    assert.strictEqual(await rt.api.verifyNow(), false, 'an identity-mismatch refusal must fail closed');
-    assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, opensBeforeMismatch, 'identity mismatch must NEVER auto-open');
+    rt.setSearchOpenReply({ ok: true, opened: true, via: 'findpatient' });
+    assert.strictEqual(await rt.api.verifyNow(), true, 'another-chart-open must auto-open this patient and verify');
+    assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, opensBeforeMismatch + 1, 'mismatch verify did not dispatch exactly one SearchOpen');
+
+    /* non-whitelisted refusals must NEVER auto-open */
+    rt.setProbeFailOnce('write-safety-final-action-blocked');
+    const opensBeforeBlocked = rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length;
+    assert.strictEqual(await rt.api.verifyNow(), false, 'a non-whitelisted refusal must fail closed');
+    assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, opensBeforeBlocked, 'a non-whitelisted refusal must NEVER auto-open');
     rt.setSearchOpenReply(null);
   }
 
@@ -242,7 +253,7 @@ function runtime(source) {
      cases above (their exact dispatch counts are asserted in that block);
      every other navigation/pull/focus verb stays forbidden outright. */
   assert(rt.posted.every(m => !['mlsAppPullSchedule','mlsAppGotoDate','mlsAppReadChart','mlsAppReadVisits','mlsAppFocusMlsTab'].includes(m.type)), 'Verify now performed navigation, a pull, or focus action');
-  assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 2, 'SearchOpen appeared outside the two explicit auto-open verify cases');
+  assert.strictEqual(rt.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 3, 'SearchOpen appeared outside the three explicit auto-open verify cases');
 
   const staleReceipt = Object.assign({}, status.verify, { verifiedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() });
   const staleState = rt.api._verifyFreshness(status.patient, staleReceipt);

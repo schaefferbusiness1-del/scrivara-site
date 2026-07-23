@@ -153,6 +153,53 @@ Versions: oni-2.9.0 → **oni-2.10.0**, opnp-1.6.0 → **opnp-1.7.0**, onf-2.7.0
   coordination file); their `schedule-empty-day-proof-contract` suite passes in
   the shared tree.
 
+## b501 addendum — template-matcher hardening (oni-2.11.0, same day)
+
+Owner follow-up: "make sure the template matching is really good." Built a
+65-case adversarial evaluation (16-template realistic library; clean forms,
+Athena shorthand, CPT-only reasons, plurals/typos, generic-vs-specific,
+cross-class traps, historical/negation/undecided rows, combined procedures).
+Baseline: **48/65**. After oni-2.11.0: **65/65**, with every previously-passing
+suite still green.
+
+Matcher defects found → fixed:
+1. **Word-over-code two-pass classification** — shared CPTs inside a template's
+   own body mis-classed it and made it permanently unmatchable AND undraftable
+   (Caudal template's 62323 → "interlaminar"; SCS-trial's 63650 → "implant").
+   Words now decide first; codes only when no word signal exists.
+2. **CPT-only reasons classify** (64490-95, 64633-36, 27096, 64625, 64454,
+   64624 standalone) with unambiguous lumbar codes counting as region evidence
+   so "64635 64636" cannot drift to a cervical RFA template.
+3. **Historical/conditional mentions can no longer steal the class** — "Left
+   L5-S1 TFESI (prior right L4-L5 MBB with relief)" matched the MBB template
+   (class-list order beat primacy); prior/s-p/parenthetical-history and
+   "possible … to follow" clauses are stripped before classification.
+4. **Undecided rows refuse honestly** — "TFESI vs MBB — decide at visit" now
+   returns no-match ("names more than one procedure") instead of confidently
+   picking MBB; RFA-of-the-medial-branches shorthand ("RFA B/L L4MB L5 DRB")
+   is recognized as ONE procedure via rfa-subsumes-block pairs.
+5. **Sibling-class margin guard** — with no classified signal, a small keyword
+   margin can no longer cross block↔RFA templates (the "blcok" typo previously
+   picked the RFA template; typo now also normalizes).
+6. **ESI hierarchy** — a generic "Cervical ESI" request may use the practice's
+   single cervical (interlaminar) template (+45 family score, exact class still
+   wins at +120); a generic "Lumbar ESI" against several lumbar ESI templates
+   still refuses as ambiguous. Junction levels ("C7-T1") no longer false-
+   conflict region (region compatibility = shared component, not equality).
+7. **Shorthand/typos normalize**: B/L SI inj, SI RFA, ESI-TF/TF-ESI, TFESIs/
+   ESIs/MBBs/RFAs plurals, DRB, transforminal, sacroilliac, epidral, blcok.
+
+Pinned: 18 new matcher-contract assertions added to
+`tests/opnote-workflow-hardening-runtime.test.js`; the pre-existing 12-case
+classification map in `opnote-template-integrity-runtime` passes unchanged.
+Versions: oni-2.11.0, token 20260723oni2111 (both loaders), build b502 / mls-v88. (b501 was taken mid-lane by the av-1.1.0 push, which also swept this suite's 2.11.0 asserts from the shared worktree WITHOUT the oni source — main's gate was red until this commit; the once-live oni2110 token was burned and skipped.)
+Eval harness kept in the session scratchpad (matcher-eval.js, 65 cases).
+
+Residual matcher limitations: bare shared-code reasons ("62323" alone) resolve
+to the interlaminar template by code order — refusing may be preferable but
+either candidate is defensible; no general fuzzy-typo matching (only the
+curated list); thoracic-specific CPT region hints intentionally omitted.
+
 ## Live-release handoff
 
 Per the goal, this session does NOT deploy. The lane is committed on the shared
