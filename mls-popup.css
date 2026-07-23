@@ -38,6 +38,7 @@
   user-select: none;
 }
 #mls-popup-root .mlsp-pill:hover { box-shadow: 0 8px 28px rgba(20, 33, 28, 0.2); }
+#mls-popup-root .mlsp-pill.mlsp-dragging { cursor: grabbing; }
 
 /* ---- expanded card ---- */
 #mls-popup-root .mlsp-card {

@@ -1,5 +1,5 @@
 /* =========================================================================
-   MLS Seamless Athena Pop-up  —  content-script overlay  (v1.60)
+   MLS Seamless Athena Pop-up  —  content-script overlay  (v1.61)
    Injected by MLS Assist on athenaOne pages. Clean, dead-simple control
    surface that sits OVER Athena. Presentation only: it sends intents to
    background.js (chrome.runtime) and renders honest, real progress.
@@ -17,7 +17,7 @@
   'use strict';
   if (typeof window !== 'undefined' && window.__mlsPopup && window.__mlsPopup.installed) return;
 
-  var VERSION = '1.60';
+  var VERSION = '1.61';
   var DISPLAY_VERSION = VERSION;
   try {
     var manifestVersion = String(chrome.runtime.getManifest().version || '').trim();
@@ -303,6 +303,7 @@
     var collapsed = true;
     var pos = null;
     var disposed = false, statusTimer = 0, offRuntime = function () {}, clearDrag = function () {};
+    var dragMoved = false; /* v1.61: true only between a real drag's mouseup and the click it spawns */
 
     // restore persisted position / collapsed state
     try {
@@ -381,7 +382,13 @@
       var dot = el('span', 'mlsp-dot ' + core.connColor());
       pill.appendChild(dot);
       pill.appendChild(el('span', null, '🩺 MLS'));
-      pill.addEventListener('click', openSurface);
+      /* v1.61: the collapsed pill is draggable too — a real drag moves it
+         (and never pops the card open); a plain click still opens it. */
+      pill.addEventListener('click', function () {
+        if (dragMoved) { dragMoved = false; return; }
+        openSurface();
+      });
+      enableDrag(pill);
       return pill;
     }
 
@@ -578,21 +585,34 @@
     }
 
     function enableDrag(handle) {
-      var sx, sy, ox, oy, dragging = false;
+      var sx, sy, ox, oy, dragging = false, moved = false;
       clearDrag();
       function onDown(e) {
-        dragging = true; handle.classList.add('mlsp-dragging');
+        dragging = true; moved = false; dragMoved = false; handle.classList.add('mlsp-dragging');
         var r = root.getBoundingClientRect();
         sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
         e.preventDefault();
       }
       function onMove(e) {
         if (!dragging) return;
+        /* v1.61: 4px threshold — a shaky click is a click, not a drag */
+        if (!moved && Math.abs(e.clientX - sx) < 4 && Math.abs(e.clientY - sy) < 4) return;
+        moved = true;
         pos = clampPos({ left: ox + (e.clientX - sx), top: oy + (e.clientY - sy) });
         applyPos();
       }
       function onUp() {
-        if (!dragging) return; dragging = false; handle.classList.remove('mlsp-dragging'); savePos();
+        if (!dragging) return; dragging = false; handle.classList.remove('mlsp-dragging');
+        if (!moved) return;
+        savePos();
+        /* v1.61: the click that follows a real drag must not activate the
+           handle (pill click = expand). dragMoved covers the handle's own
+           listeners; the capture-phase swallow covers descendants
+           (same proven pattern as feat_fab_layout.js). */
+        dragMoved = true;
+        var swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); handle.removeEventListener('click', swallow, true); };
+        handle.addEventListener('click', swallow, true);
+        setTimeout(function () { try { handle.removeEventListener('click', swallow, true); dragMoved = false; } catch (e) {} }, 60);
       }
       handle.addEventListener('mousedown', onDown);
       document.addEventListener('mousemove', onMove);
