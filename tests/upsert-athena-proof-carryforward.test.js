@@ -190,8 +190,21 @@ for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
   const src = fs.readFileSync(path.join(root, file), 'utf8');
   assert(src.includes('never let a server mirror REGRESS verified visit bodies'),
     file + ': hydration body-regression guard missing');
-  assert(/__bodies\(local\[i\]\.visits\)>0&&__bodies\(adopted\.visits\)===0/.test(src),
-    file + ': hydration guard condition missing');
+  assert(/__bodies\(local\[i\]\.visits\)>__bodies\(adopted\.visits\)/.test(src),
+    file + ': hydration body-parity guard condition missing (b497 deficit form)');
+}
+
+/* b497: when the hydrate guard keeps local bodies against a husked server
+   copy, it must ALSO queue a re-mirror — otherwise the server backup stays a
+   husk forever (adopting the server stamp means no later sync fires), and a
+   lost local store would restore the husk as permanent body loss. */
+for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
+  const src = fs.readFileSync(path.join(root, file), 'utf8');
+  const guardAt = src.indexOf("via:'hydrate'");
+  assert(guardAt > 0, file + ': hydrate guard log marker missing');
+  const guardSlice = src.slice(guardAt, guardAt + 700);
+  assert(guardSlice.includes('_pendingSyncAdd(row.external_id)'),
+    file + ': hydrate husk-heal does not queue a server re-mirror of the healed record');
 }
 
 /* savePatients must actually invoke the guard */

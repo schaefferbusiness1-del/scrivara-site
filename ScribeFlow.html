@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b496"></script>
+<script src="public-preview-policy.js?v=b497"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -7918,9 +7918,18 @@ async function loadPatientsFromServer(opts){
              carries rows yet ZERO verified bodies while local has some. */
           const __bodies=a=>{let n=0;(Array.isArray(a)?a:[]).forEach(v=>{if(v&&v.bodyComplete===true&&String(v.raw||'').trim())n++;});return n;};
           const adopted=Object.assign({},row.data,{id:row.external_id});
-          if(__bodies(local[i].visits)>0&&__bodies(adopted.visits)===0){
+          /* b497: MIRROR BODY PARITY. Reconcile never deletes verified bodies,
+             so a server copy carrying FEWER bodies than local is always mirror
+             staleness (failed push, husk overwrite, VPN-era loss) — never a
+             legitimate newer state. Keep the local body-carrying visits AND
+             queue a re-push: healing locally alone is not enough, because
+             adopting the server stamp means no later sync ever fires, and the
+             2026-07-23 sign-out purge proved the cost (local store rebuilt
+             from a mirror holding 39 of 128 verified bodies). */
+          if(__bodies(local[i].visits)>__bodies(adopted.visits)){
             adopted.visits=local[i].visits;
             try{ (globalThis.__mlsVisitHuskGuardLog=globalThis.__mlsVisitHuskGuardLog||[]).push({id:String(row.external_id).slice(0,24),via:'hydrate',at:Date.now()}); }catch(e){}
+            try{ _pendingSyncAdd(row.external_id); }catch(e){}
           }
           local[i]=adopted; changed=true;
         }
@@ -27207,7 +27216,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b496"></script>
+<script src="public-preview-runtime.js?v=b497"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -27478,7 +27487,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b496';
+  window.__MLS_AV='b497';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

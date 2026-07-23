@@ -6413,9 +6413,18 @@ async function loadPatientsFromServer(){
              carries rows yet ZERO verified bodies while local has some. */
           const __bodies=a=>{let n=0;(Array.isArray(a)?a:[]).forEach(v=>{if(v&&v.bodyComplete===true&&String(v.raw||'').trim())n++;});return n;};
           const adopted=Object.assign({},row.data,{id:row.external_id});
-          if(__bodies(local[i].visits)>0&&__bodies(adopted.visits)===0){
+          /* b497: MIRROR BODY PARITY. Reconcile never deletes verified bodies,
+             so a server copy carrying FEWER bodies than local is always mirror
+             staleness (failed push, husk overwrite, VPN-era loss) — never a
+             legitimate newer state. Keep the local body-carrying visits AND
+             queue a re-push: healing locally alone is not enough, because
+             adopting the server stamp means no later sync ever fires, and the
+             2026-07-23 sign-out purge proved the cost (local store rebuilt
+             from a mirror holding 39 of 128 verified bodies). */
+          if(__bodies(local[i].visits)>__bodies(adopted.visits)){
             adopted.visits=local[i].visits;
             try{ (globalThis.__mlsVisitHuskGuardLog=globalThis.__mlsVisitHuskGuardLog||[]).push({id:String(row.external_id).slice(0,24),via:'hydrate',at:Date.now()}); }catch(e){}
+            try{ _pendingSyncAdd(row.external_id); }catch(e){}
           }
           local[i]=adopted; changed=true;
         }
@@ -23002,6 +23011,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b496';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b497';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
