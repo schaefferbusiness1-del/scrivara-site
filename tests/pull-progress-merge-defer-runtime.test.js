@@ -24,6 +24,11 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const pmSource = fs.readFileSync(path.join(root, 'feat_mls_patient_merge.js'), 'utf8');
+
+/* pm-1.0.2 (owner 2026-07-23): the boot sweep merges QUIETLY — regenerating
+   dupes made the "N duplicate patients merged" toast fire on every launch. */
+assert(pmSource.includes('run({ silent: true }); }); }, 12000)'), 'boot-time duplicate merge must run silent (owner: no merge toast on every boot)');
+assert(!pmSource.includes('run({ silent: false }); }); }, 12000)'), 'boot-time duplicate merge is announcing again');
 const siSource = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 new Function(pmSource); // syntax gate

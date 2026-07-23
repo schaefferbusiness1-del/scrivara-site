@@ -148,13 +148,37 @@ async function main() {
   await betaPromise;
   await alphaRejected;
 
-  // The real prep wrapper must include current provider/facility scope before
-  // calling the underlying UI generator.
+  // oni-2.14.0 (owner 2026-07-23): a cross-scope template WARNS but still goes
+  // through — the wrapper no longer refuses; the underlying generator runs.
   templates = [scopedA];
   context._opPrep = [{ patientId: patient.id, appt: { name: patient.name, dob: patient.dob, reason: 'Lumbar ESI' }, proc: 'Lumbar ESI', tplId: scopedA.id, tplManual: true }];
   const blocked = await context.opPrepGenerateOne(0);
-  assert.strictEqual(blocked, false, 'real UI wrapper ignored provider/facility template scope');
-  assert.strictEqual(uiCalls, 0, 'real UI generator ran after a provider/facility scope mismatch');
+  assert.strictEqual(blocked, false, 'stub generation produced no note yet reported success');
+  assert.strictEqual(uiCalls, 1, 'cross-scope template must warn and proceed to the generator (owner directive), not refuse');
+
+  // Cross-PROCEDURE template: generation itself must adapt instead of throwing,
+  // and the requested-fact safety net must still be the gate that passed.
+  templates = [scopedA, scopedB];
+  responder = () => JSON.stringify({
+    note: [
+      'PROCEDURE NOTE',
+      'PATIENT: Current Patient',
+      'DOB: 1980-01-02',
+      'MRN: SAFE-22',
+      'AGE: 46',
+      'PROCEDURE: Left L4 medial branch block',
+      'DESCRIPTION OF PROCEDURE: Left L4 medial branch block performed under fluoroscopic guidance.',
+      'COMPLICATIONS: None.'
+    ].join('\n'),
+    missing: []
+  });
+  const adapted = await api.generate(patient.name, '2026-07-19', 'Left L4 medial branch block', sharedText, {
+    patientId: patient.id, dob: patient.dob, provider: 'Beta Doctor', facility: 'Beta Center', templateId: scopedB.id
+  });
+  assert(adapted && adapted.clinicalConsistency && adapted.clinicalConsistency.adapted === true, 'cross-procedure draft did not run in adapted mode');
+  assert(adapted.clinicalConsistency.pass === true, 'adapted draft failed the requested-fact safety net');
+  assert(/medial branch/i.test(adapted.note), 'cross-procedure draft lost the requested procedure');
+  assert(context.__mlsOpNoteTplAdapted && context.__mlsOpNoteTplAdapted.hard === true, 'cross-procedure adaptation was not recorded for the UI');
   assert(scribeFlow.includes("ctx.templateId=String(row.tplId||'')"), 'production UI does not pass selected template identity into generation');
   assert(/ctx\.providerId=String\(appt\.providerId\)/.test(scribeFlow) && /ctx\.facilityId=String\(appt\.facilityId\)/.test(scribeFlow), 'production UI does not pass appointment provider/facility scope into generation');
   assert(scribeFlow.includes('every remaining case-specific item') && scribeFlow.includes('one <b>Fields</b> box'), 'op-note intro still describes the retired one-at-a-time blank workflow');

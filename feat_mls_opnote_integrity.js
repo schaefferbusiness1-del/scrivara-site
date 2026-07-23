@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.13.0';
+  var VERSION = 'oni-2.14.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -369,6 +369,14 @@
       }
     }
     return {pass:!errors.length,errors:errors,requested:requested,actual:actual,levelsVia:levelsVia};
+  }
+  /* cross-procedure adapted mode keeps ONLY the requested-fact safety net —
+     the wrong-procedure template's fixed wording and field lists no longer
+     apply, but the finished note must still state the REQUESTED facts. */
+  var ADAPT_FACT_FIELDS={procedureType:1,region:1,side:1,levels:1,levelCount:1,approach:1};
+  function adaptedClinical(clinical){
+    var kept=((clinical&&clinical.errors)||[]).filter(function(e){return ADAPT_FACT_FIELDS[e.field];});
+    return {pass:!kept.length,errors:kept,requested:clinical&&clinical.requested,actual:clinical&&clinical.actual,levelsVia:clinical&&clinical.levelsVia,adapted:true};
   }
   function templateClass(t) {
     var trusted = S(t && t.name) + ' ' + ((t && t.keywords) || []).join(' ');
@@ -966,14 +974,21 @@
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
     var selectedResolution=resolveSelectedTemplate(procedure,tplText,ctx),selectedTpl=selectedResolution.tpl;
     if(!selectedTpl){var tie=new Error(selectedResolution.error||'The selected template identity could not be verified.');tie.code=selectedResolution.code||'MLS_OPNOTE_TEMPLATE_IDENTITY';throw tie;}
-    var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx);
+    var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx),crossAdapt=false;
     if(!tplCheck.pass){
       var tplAdapt=closeCallAdaptation(tplCheck,selectedTpl||{},ctx);
       if(tplAdapt.adapt){
         window.__mlsOpNoteTplAdapted={reasons:tplAdapt.reasons.slice(),at:Date.now()};
         generationStage(ctx,'Loading validated template','Close-call template differences ('+tplAdapt.reasons.join(', ')+') — adapting; the requested procedure facts stay authoritative.');
       } else {
-        var tce=new Error('Draft stopped: the selected template conflicts with the requested procedure type, region, or approach. Choose a compatible validated template.');tce.code='MLS_OPNOTE_TEMPLATE_CONFLICT';tce.details=tplCheck;throw tce;
+        /* oni-2.14.0 owner directive (2026-07-23): a genuine conflict WARNS but
+           still goes through — the draft adapts the template to the REQUESTED
+           procedure, and the requested-fact consistency check still gates the
+           result. Nothing compatibility-related refuses to draft anymore. */
+        crossAdapt=true;
+        window.__mlsOpNoteTplAdapted={reasons:[tplAdapt.hard||'procedure'],hard:true,at:Date.now()};
+        generationStage(ctx,'Loading validated template','Warning: the selected template is for a different '+(tplAdapt.hard||'procedure')+' — drafting anyway; the requested procedure is authoritative.');
+        toast('⚠ The selected template is for a different '+(tplAdapt.hard||'procedure')+'. Drafting anyway — adapting it to the requested procedure. Review carefully.','');
       }
     }
     /* a past-note "template" becomes structured + prior-patient-free before
@@ -983,6 +998,7 @@
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);if(ctx.age==null)ctx.age=patientAge(ctx.dob);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Every placeholder must be SPECIFIC and clinician-friendly: the key names the exact clinical datum (e.g. lesion_temperature_and_time, injectate_per_level, fluoroscopy_time — never value/details/info), the label is what a physician would call it, and the example is a realistic clinical value for THIS procedure. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
+    if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
     generationStage(ctx,'Applying facility defaults','Applying only the current facility identity and validated facility scope.');
     var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
     /* When the verified-history owner is ready it is the sole history source;
@@ -1014,6 +1030,7 @@
     }
     generationStage(ctx,'Checking side and level','Comparing procedure type, region, side, exact levels, level count, and approach.');
     var check=fidelity(first.note,tplText), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
+    if(crossAdapt){check={pass:true,adapted:true,details:check};clinical=adaptedClinical(clinical);}
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
     if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.clinicalConsistency=clinical;return first;}
@@ -1024,18 +1041,25 @@
     if(histApi&&histApi.installed&&(!histBinding||S(histBinding.patientId)!==S(p.id))){var he=new Error('Op-note repair stopped because verified patient history was not bound to the draft.');he.code='MLS_OPNOTE_IDENTITY';throw he;}
     var stillExact=exactPatient(name,ctx.dob,ctx.patientId);
     if(!stillExact||S(stillExact.id)!==S(p.id)){var pe=new Error('Op-note repair stopped because the patient changed during generation.');pe.code='MLS_OPNOTE_IDENTITY';throw pe;}
-    var repairSys='Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.';
+    var repairSys=crossAdapt
+      ?('Repair the draft so it preserves every requested clinical fact for the REQUESTED procedure. Output the same JSON shape only. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach; correct the draft wherever it conflicts with the requested procedure. Keep the current heading structure and formatting. Do not invent clinical facts.')
+      :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.');
     var frozenHistory=histBinding&&S(histBinding.context);
     var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
     repaired.note=fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure);
     generationStage(ctx,'Checking side and level','Rechecking the repaired procedure facts.');
-    var check2=fidelity(repaired.note,tplText);
-    if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplText,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
-    if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
+    var check2;
+    if(crossAdapt){check2={pass:true,adapted:true};}
+    else{
+      check2=fidelity(repaired.note,tplText);
+      if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplText,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
+      if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
+    }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
+    if(crossAdapt)clinical2=adaptedClinical(clinical2);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
     if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});var detail=clinical2.errors.slice(0,2).map(function(x){return x.message;}).join(' ');window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). '+detail+' Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
     repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
@@ -1137,7 +1161,25 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{window.__mlsLastOpFidelityError='Draft stopped: the selected template is for a different '+(rowAdapt.hard||'procedure')+'. Choose a compatible validated template.';toast(window.__mlsLastOpFidelityError,'err');var stc=document.getElementById('opPrepStatus');if(stc)stc.textContent=window.__mlsLastOpFidelityError;return false;}}}
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
+        /* oni-2.14.0 owner directive: warn but still go through. Auto-matched
+           rows first try a reroute to a genuinely compatible template ("its
+           best fix"); manual picks are respected and adapted in place. */
+        var warnWhat='the selected template is for a different '+(rowAdapt.hard||'procedure');
+        var switched=false;
+        if(!row.tplManual){
+          var altBest=best(row.proc||row.appt.reason);
+          var altId=altBest&&altBest.tpl?S(altBest.tpl.id||altBest.tpl.templateId):'';
+          if(altId&&altId!==S(row.tplId)){
+            var altCompat=templateCompatibility(row.proc||row.appt.reason,altBest.tpl,rowGenerationCtx(row));
+            if(altCompat.pass||closeCallAdaptation(altCompat,altBest.tpl,rowGenerationCtx(row)).adapt){
+              row.tplId=altId;row.tplMatchSource='auto-reroute';row.tplMatchReason='Rerouted: previous match was for a different procedure';syncTplStatus(i);switched=true;
+              toast('Switched to compatible template "'+S(altBest.tpl.name).slice(0,60)+'" — '+warnWhat+'.','');
+            }
+          }
+        }
+        if(!switched){toast('⚠ Warning: '+warnWhat+' — drafting anyway and adapting it to the requested procedure. Review carefully.','');var stc=document.getElementById('opPrepStatus');if(stc)stc.textContent='⚠ '+warnWhat+' — drafting anyway.';}
+      }}}
       /* oni-2.10.0: visible in-flight state — the clicked Draft button disables
          with an honest label while this row generates (single-flight already
          dedupes; this makes it VISIBLE). */

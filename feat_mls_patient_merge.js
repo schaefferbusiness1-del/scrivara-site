@@ -163,7 +163,10 @@
 
   var bootT = null, jobHandler = null;
   function boot() {
-    bootT = setTimeout(function () { bootT = null; safe(function () { run({ silent: false }); }); }, 12000);
+    /* pm-1.0.2 (owner 2026-07-23): the boot-time sweep merges QUIETLY — dupes
+       that regenerate between boots made this toast fire on every launch.
+       Post-pull and on-demand merges still announce their result. */
+    bootT = setTimeout(function () { bootT = null; safe(function () { run({ silent: true }); }); }, 12000);
     jobHandler = function (ev) {
       var j = ev && ev.detail;
       if (!j || j.kind !== 'schedule_pull') return;
