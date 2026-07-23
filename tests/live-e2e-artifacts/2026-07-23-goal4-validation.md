@@ -68,3 +68,13 @@ deferred-after-batch-deadline from throttled sweep, 2 same-frame-name-mismatch, 
 receipt captured cleanly. Bodies stable 66, parity local==server holds, 0 pairs, 0 badBinding. Observation:
 foreground clinic use throttles the background MLS tab (bursty statuses, inflated waits) - ON x2 completion
 scheduled for a quieter window; not a reader defect.
+
+## 1b. PROVIDER SELECTION - live picker harvest (12:38, read-only DOM)
+No provider-level picker exists on any frame of this account's athena session. The statusbar frame carries a
+DEPARTMENTID select with 216 options (PHSC CL CC ... - the whole Premier Ortho practice). Conclusion: provider
+discovery is DEPARTMENT-SCOPED by athena's own UI; the current department (121 POSM CL West Chester) has exactly
+one provider (Matthew Schaeffer, MD), so the dropdown showing "All providers + Matthew Schaeffer, MD" with the
+intended provider defaulted is CORRECT and complete. OWNER DECISION (not a defect): if multi-department provider
+enumeration is wanted, the 3.0.4 candidate can harvest the DEPARTMENTID option list and/or read other departments
+schedules - a scope and performance change requiring explicit approval. Verified behaviors: default selection,
+persistence, apply-without-pull, honest empty state, fail-closed stale/duplicate roster receipts.
