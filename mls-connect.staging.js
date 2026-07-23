@@ -785,8 +785,8 @@ try{
         return bridgeOnce('mlsAppSearchOpenPatient',{
           name:frozen.name,dob:frozen.dob,mrn:frozen.mrn,
           appointmentId:trim(expectedVisit.appointmentId),scheduleDate:dateKey(expectedVisit.visitDate),
-          deadlineAt:Date.now()+75000
-        },'mlsAppSearchOpenResult',80000,openId).then(function(open){
+          deadlineAt:Date.now()+150000
+        },'mlsAppSearchOpenResult',160000,openId).then(function(open){
           var o=(open&&open.resp&&typeof open.resp==='object')?open.resp:open;
           if(!o||o.__timeout||o.ok!==true||o.opened!==true)throw new Error('MLS could not open '+frozen.name+' in Athena automatically'+((o&&trim(o.error||o.reason))?(': '+trim(o.error||o.reason)):'')+'. Open the chart in athenaOne, then Verify again. Nothing was changed.');
           return probeOnce();

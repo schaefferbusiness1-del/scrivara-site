@@ -32907,7 +32907,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b503';
+  window.__MLS_AV = window.__MLS_AV || 'b504';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33217,7 +33217,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-23-b503';
+  var MLS_APP_BUILD='2026-07-23-b504';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -36357,8 +36357,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return bridgeOnce('mlsAppSearchOpenPatient',{
           name:frozen.name,dob:frozen.dob,mrn:frozen.mrn,
           appointmentId:trim(expectedVisit.appointmentId),scheduleDate:dateKey(expectedVisit.visitDate),
-          deadlineAt:Date.now()+75000
-        },'mlsAppSearchOpenResult',80000,openId).then(function(open){
+          deadlineAt:Date.now()+150000
+        },'mlsAppSearchOpenResult',160000,openId).then(function(open){
           var o=(open&&open.resp&&typeof open.resp==='object')?open.resp:open;
           if(!o||o.__timeout||o.ok!==true||o.opened!==true)throw new Error('MLS could not open '+frozen.name+' in Athena automatically'+((o&&trim(o.error||o.reason))?(': '+trim(o.error||o.reason)):'')+'. Open the chart in athenaOne, then Verify again. Nothing was changed.');
           return probeOnce();
