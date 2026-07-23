@@ -4781,11 +4781,11 @@ function startSession(email){
   }
 }
 
-function logout(force){
+async function logout(force){
   // QoL: optional confirmation before logging out (off by default). The
   // inactivity safeguard passes force=true so it never blocks on a prompt.
   if(force!==true && typeof getQolConfirmLogout==='function' && getQolConfirmLogout()){
-    if(!confirm('Log out of MLS now?')) return;
+    if(!await mlsConfirm('Log out of MLS now?')) return;
   }
   const _logoutEmail=(session&&session.email)||getSessionEmail()||'';
   const _logoutHosted=backendMode();
@@ -5037,7 +5037,7 @@ async function adminSetPremium(id,on){
 }
 /* Owner-only fallback: set a new password for a user directly (works before email is configured). */
 async function adminResetPassword(id,email){
-  const pw=prompt('Set a new password for '+(email||'this user')+' (min 6 characters):','');
+  const pw=await mlsPrompt('Set a new password for '+(email||'this user')+' (min 6 characters):','');
   if(pw===null) return;
   if(!pw || pw.length<6){ toast('Password must be at least 6 characters.','err'); return; }
   try{
@@ -5045,8 +5045,8 @@ async function adminResetPassword(id,email){
     toast('Password reset for '+(email||'user')+'.','ok');
   }catch(e){ toast('Reset failed: '+e.message,'err'); }
 }
-function adminSetTrial(id){
-  const v=prompt('Trial length in days:','30');
+async function adminSetTrial(id){
+  const v=await mlsPrompt('Trial length in days:','30');
   if(v===null) return;
   const days=parseInt(v,10);
   if(!days||days<1){ toast('Enter a valid number of days.','err'); return; }
@@ -5264,7 +5264,7 @@ async function loadAdminCodes(){
 }
 
 async function adminRevokeCode(id){
-  if(!confirm('Revoke this code? It can no longer be redeemed.')) return;
+  if(!await mlsConfirm('Revoke this code? It can no longer be redeemed.')) return;
   try{
     await adminFetch('/api/admin/codes/'+id+'/revoke',{method:'POST'});
     toast('Code revoked.','ok');
@@ -5778,9 +5778,9 @@ function closeSettings(){document.getElementById('settingsModal').classList.remo
    Scoped strictly to this app's per-user namespace produced by uns():
    'sf_u::<email>::*'. Never touches the session, other accounts, or any
    server data — it only removes localStorage keys under this prefix, then reloads. */
-function clearDeviceData(){
+async function clearDeviceData(){
   const prefix=uns('');  // 'sf_u::<email>::'
-  if(!confirm('Clear all MLS data saved for this account in this browser?\n\nThis removes your settings, preferences, patients and notes stored on THIS device only. It cannot be undone and does NOT delete anything on a server.')) return;
+  if(!await mlsConfirm('Clear all MLS data saved for this account in this browser?\n\nThis removes your settings, preferences, patients and notes stored on THIS device only. It cannot be undone and does NOT delete anything on a server.')) return;
   try{
     const keys=[];
     for(let i=0;i<localStorage.length;i++){
@@ -5973,7 +5973,7 @@ async function twofaEnable(){
   }catch(e){ toast('Could not turn on 2FA: '+e.message,'err'); }
 }
 async function twofaDisable(){
-  const code=prompt('Enter a current 2FA code (or a recovery code) to turn off two-factor authentication:','');
+  const code=await mlsPrompt('Enter a current 2FA code (or a recovery code) to turn off two-factor authentication:','');
   if(code===null) return;
   if(!code.trim()){ toast('A current code is required to disable 2FA.','err'); return; }
   try{
@@ -6132,6 +6132,92 @@ function _infoDialog(title, text){
 })();
 
 /* =========================================================
+   NON-BLOCKING DIALOGS (2026-07-22) — in-app replacements for native
+   confirm()/prompt(). Native dialogs freeze the UI thread (and are
+   suppressed entirely in some automation/kiosk contexts, leaving buttons
+   that do nothing). These return Promises, keep the exact wording of the
+   old dialogs, trap Enter/Escape, restore focus, and never block.
+   ========================================================= */
+var _mlsAskActive=null; /* the one open ask-dialog: {finish, cancelValue} */
+function _mlsDialogBase(build){
+  return new Promise(function(resolve){
+    try{
+      /* A new dialog RESOLVES the one it replaces (as cancelled) instead of
+         orphaning it: a bare DOM removal left the old promise pending forever
+         (deadlocking single-flight callers like the consent gate) and leaked
+         its capture-phase keydown listener, so one Enter could fire BOTH a
+         stale and the visible confirm. */
+      if(_mlsAskActive){ var prevActive=_mlsAskActive; _mlsAskActive=null; try{ prevActive.finish(prevActive.cancelValue); }catch(ePrev){} }
+      var prev=document.getElementById('_mlsAskDialog'); if(prev) prev.remove();
+      var prevFocus=document.activeElement;
+      var ov=document.createElement('div'); ov.id='_mlsAskDialog';
+      ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(18,32,48,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+      var card=document.createElement('div');
+      card.setAttribute('role','dialog'); card.setAttribute('aria-modal','true'); card.setAttribute('aria-labelledby','_mlsAskMsg');
+      card.style.cssText='background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,33,28,.35);overflow:hidden';
+      var done=false;
+      function finish(val){
+        if(done) return; done=true;
+        if(_mlsAskActive&&_mlsAskActive.finish===finish) _mlsAskActive=null;
+        try{ ov.remove(); }catch(e){}
+        document.removeEventListener('keydown',onKey,true);
+        try{ if(prevFocus&&prevFocus.focus) prevFocus.focus(); }catch(e){}
+        resolve(val);
+      }
+      var api=build(card,finish);
+      _mlsAskActive={ finish:finish, cancelValue:api.cancelValue };
+      function onKey(e){
+        if(e.key==='Escape'){ e.stopPropagation(); finish(api.cancelValue); }
+        else if(e.key==='Enter'&&api.onEnter&&(!api.enterTarget||document.activeElement===api.enterTarget)){ e.preventDefault(); api.onEnter(); }
+      }
+      document.addEventListener('keydown',onKey,true);
+      ov.addEventListener('mousedown',function(e){ if(e.target===ov) finish(api.cancelValue); });
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      try{ if(api.focusEl) api.focusEl.focus(); }catch(e){}
+    }catch(e){ resolve(arguments.length?undefined:null); }
+  });
+}
+/* mlsConfirm(message, {okLabel, cancelLabel, danger}) -> Promise<boolean> */
+function mlsConfirm(msg,opts){
+  opts=opts||{};
+  return _mlsDialogBase(function(card,finish){
+    var okLabel=opts.okLabel||'OK', cancelLabel=opts.cancelLabel||'Cancel';
+    card.innerHTML=
+      '<div id="_mlsAskMsg" style="padding:18px 18px 6px;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#1a2b3c">'+esc(String(msg||''))+'</div>'+
+      '<div style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button type="button" id="_mlsAskNo" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid #D9D6CD;background:#fff;cursor:pointer">'+esc(cancelLabel)+'</button>'+
+      '<button type="button" id="_mlsAskYes" style="font:inherit;font-weight:600;padding:8px 14px;border-radius:9px;border:none;background:'+(opts.danger?'#B23B3B':'#2E6A4B')+';color:#fff;cursor:pointer">'+esc(okLabel)+'</button>'+
+      '</div>';
+    card.querySelector('#_mlsAskNo').onclick=function(){ finish(false); };
+    var yes=card.querySelector('#_mlsAskYes');
+    yes.onclick=function(){ finish(true); };
+    return { cancelValue:false, focusEl:yes, onEnter:function(){ finish(true); } };
+  });
+}
+/* mlsPrompt(message, defaultValue, {okLabel, password, placeholder}) -> Promise<string|null>
+   (null = cancelled, exactly like native prompt) */
+function mlsPrompt(msg,def,opts){
+  opts=opts||{};
+  return _mlsDialogBase(function(card,finish){
+    card.innerHTML=
+      '<div id="_mlsAskMsg" style="padding:18px 18px 6px;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#1a2b3c">'+esc(String(msg||''))+'</div>'+
+      '<div style="padding:0 18px"><input id="_mlsAskInput" type="'+(opts.password?'password':'text')+'" style="width:100%;box-sizing:border-box;border:1px solid #D9D6CD;border-radius:9px;padding:9px 10px;font:inherit" placeholder="'+esc(opts.placeholder||'')+'"></div>'+
+      '<div style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button type="button" id="_mlsAskNo" style="font:inherit;padding:8px 14px;border-radius:9px;border:1px solid #D9D6CD;background:#fff;cursor:pointer">Cancel</button>'+
+      '<button type="button" id="_mlsAskYes" style="font:inherit;font-weight:600;padding:8px 14px;border-radius:9px;border:none;background:#2E6A4B;color:#fff;cursor:pointer">'+esc(opts.okLabel||'OK')+'</button>'+
+      '</div>';
+    var input=card.querySelector('#_mlsAskInput');
+    input.value=def==null?'':String(def);
+    try{ input.select(); }catch(e){}
+    card.querySelector('#_mlsAskNo').onclick=function(){ finish(null); };
+    card.querySelector('#_mlsAskYes').onclick=function(){ finish(input.value); };
+    return { cancelValue:null, focusEl:input, enterTarget:input, onEnter:function(){ finish(input.value); } };
+  });
+}
+window.mlsConfirm=mlsConfirm; window.mlsPrompt=mlsPrompt;
+
+/* =========================================================
    PATIENTS  (per-user list; each patient has profile + docs)
    - patients list:  uns('patients')  -> [{id,name,dob,sex,mrn,
        problems,meds,allergies,summary,docs:[],created,updated}]
@@ -6219,7 +6305,7 @@ async function purgeAthenaImportedPatients(){
   var local=(typeof getPatients==='function'?getPatients():[])||[];
   var athena=local.filter(function(p){ return p && p.source==='athena-schedule'; });
   if(!athena.length){ try{ toast('No Athena-imported patients are stored — nothing to remove.','ok'); }catch(e){} return 0; }
-  if(!window.confirm('Remove all '+athena.length+' patients MLS imported from Athena (their records, imported history, and today’s pulled appointments) from this device AND your account?\n\nPatients you created yourself are kept. This cannot be undone.')) return 0;
+  if(!await mlsConfirm('Remove all '+athena.length+' patients MLS imported from Athena (their records, imported history, and today’s pulled appointments) from this device AND your account?\n\nPatients you created yourself are kept. This cannot be undone.')) return 0;
   var athIds={}; athena.forEach(function(p){ athIds[p.id]=1; });
   var removed=0;
   if(typeof backendMode==='function' && backendMode() && bkToken()){
@@ -7942,7 +8028,7 @@ async function calWorkingHours(){
 function avCloseEditor(el){ var b=(el&&el.closest)?el.closest('[data-availbox]'):null; if(!b) b=document.getElementById('availBox'); if(!b) b=document.getElementById('calAvailBox'); if(b) b.style.display='none'; }
 // ---- Permanently delete an appointment ----
 async function calDeleteAppt(id){
-  if(!confirm('Permanently delete this appointment? This cannot be undone.')) return;
+  if(!await mlsConfirm('Permanently delete this appointment? This cannot be undone.')) return;
   var day=((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
   try{
     var r=await fetch(bkBase()+'/api/appointments/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
@@ -8125,7 +8211,7 @@ async function calCheckIn(id){
   try{ if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }catch(e){}
 }
 async function calCancelAppt(id){
-  if(!confirm('Cancel this appointment? It will be marked cancelled and the slot frees up.')) return;
+  if(!await mlsConfirm('Cancel this appointment? It will be marked cancelled and the slot frees up.')) return;
   var day=((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
   try{ await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'cancelled'})}); try{ toast('Appointment cancelled.','ok'); }catch(e){} }catch(e){}
   await loadCalendar(); if(day) calOpenDay(day);
@@ -8747,8 +8833,8 @@ function renderBoard(appts){
   h+='</div></div>';
   box.innerHTML=h;
 }
-function apptRoom(id){
-  const room=prompt('Room number / name?'); if(room===null) return;
+async function apptRoom(id){
+  const room=await mlsPrompt('Room number / name?'); if(room===null) return;
   apptUpdate(id,{status:'roomed',room:room});
 }
 async function apptUpdate(id,patch){
@@ -8847,7 +8933,7 @@ async function addReceptionist(){
   }catch(e){ if(btn) btn.disabled=false; toast('Could not create the receptionist.','err'); }
 }
 async function removeReceptionist(id){
-  if(!confirm('Remove this receptionist? Their login will stop working.')) return;
+  if(!await mlsConfirm('Remove this receptionist? Their login will stop working.')) return;
   try{
     const r=await fetch(bkBase()+'/api/team/receptionists/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
     if(!r.ok){ toast('Could not remove the receptionist.','err'); return; }
@@ -8892,8 +8978,8 @@ function lawyerInviteMessage(creds){
 function copyLawyerLink(){
   if(!_lastLawyerCreds) return;
   var link=lawyerInviteLink(_lastLawyerCreds);
-  if(navigator.clipboard){ navigator.clipboard.writeText(link).then(function(){toast('One-click portal link copied.','ok');}).catch(function(){ window.prompt('Copy the attorney’s portal link:', link); }); }
-  else { window.prompt('Copy the attorney’s portal link:', link); }
+  if(navigator.clipboard){ navigator.clipboard.writeText(link).then(function(){toast('One-click portal link copied.','ok');}).catch(function(){ mlsPrompt('Copy the attorney’s portal link:', link); }); }
+  else { mlsPrompt('Copy the attorney’s portal link:', link); }
 }
 /* ===== Attorney side: consume the already-scrubbed one-time token. ===== */
 function _cleanInviteUrl(){}
@@ -8920,7 +9006,7 @@ async function acceptLawyerInvite(tok){
   }
 }
 async function promptSetLawyerPassword(){
-  var pw=window.prompt('Welcome to your secure portal! Set a password (at least 8 characters) so you can sign back in later. You can change it anytime in Settings.');
+  var pw=await mlsPrompt('Welcome to your secure portal! Set a password (at least 8 characters) so you can sign back in later. You can change it anytime in Settings.');
   if(pw===null) return; // they can set it later from Settings
   pw=(pw||'').trim();
   if(pw.length<8){ toast('Password needs at least 8 characters — you can set one anytime from Settings.','err'); return; }
@@ -8933,8 +9019,8 @@ async function promptSetLawyerPassword(){
 function copyLawyerInvite(){
   if(!_lastLawyerCreds) return;
   var msg=lawyerInviteMessage(_lastLawyerCreds);
-  if(navigator.clipboard){ navigator.clipboard.writeText(msg).then(function(){toast('Invite copied — paste it into an email or text to the attorney.','ok');}).catch(function(){ window.prompt('Copy the invite to send to the attorney:', msg); }); }
-  else { window.prompt('Copy the invite to send to the attorney:', msg); }
+  if(navigator.clipboard){ navigator.clipboard.writeText(msg).then(function(){toast('Invite copied — paste it into an email or text to the attorney.','ok');}).catch(function(){ mlsPrompt('Copy the invite to send to the attorney:', msg); }); }
+  else { mlsPrompt('Copy the invite to send to the attorney:', msg); }
 }
 function emailLawyerInvite(){
   if(!_lastLawyerCreds) return;
@@ -9067,7 +9153,7 @@ async function toggleAutoFollowups(on){
   }catch(e){ toast('Could not save the setting.','err'); }
 }
 async function sendFollowups(){
-  if(!confirm('Send a privacy-safe check-in email to the eligible patients now?')) return;
+  if(!await mlsConfirm('Send a privacy-safe check-in email to the eligible patients now?')) return;
   var btn=document.getElementById('fuSendBtn'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
   try{
     var r=await fetch(bkBase()+'/api/followups/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({days:_fuDays})});
@@ -9127,7 +9213,7 @@ async function addDoctorSeat(){
   finally{ if(btn){ btn.disabled=false; btn.textContent='Add doctor'; } }
 }
 async function removeDoctorSeat(id){
-  if(!confirm('Remove this doctor? Their login stops working and the monthly seat is cancelled.')) return;
+  if(!await mlsConfirm('Remove this doctor? Their login stops working and the monthly seat is cancelled.')) return;
   try{
     const r=await fetch(bkBase()+'/api/team/doctors/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
     if(!r.ok){ const d=await r.json().catch(function(){return{};}); toast(d.error||'Could not remove.','err'); return; }
@@ -9200,7 +9286,7 @@ async function addLawyer(){
   }catch(e){ if(btn) btn.disabled=false; toast('Could not create the lawyer.','err'); }
 }
 async function removeLawyer(id){
-  if(!confirm('Remove this lawyer? Their login will stop working.')) return;
+  if(!await mlsConfirm('Remove this lawyer? Their login will stop working.')) return;
   try{
     const r=await fetch(bkBase()+'/api/team/lawyers/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
     if(!r.ok){ toast('Could not remove the lawyer.','err'); return; }
@@ -9217,12 +9303,12 @@ async function generatePatientLegalReport(){
   const p=activePatient();
   if(!p){ toast('Open a patient first.','err'); return; }
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate legal reports.','err'); return; }
-  const pick=prompt('Generate which legal report for '+(p.name||'this patient')+'?\n\n  1 = Narrative medical report\n  2 = IME (Independent Medical Exam)\n  3 = Utilization Review\n\nEnter 1, 2, or 3:','1');
+  const pick=await mlsPrompt('Generate which legal report for '+(p.name||'this patient')+'?\n\n  1 = Narrative medical report\n  2 = IME (Independent Medical Exam)\n  3 = Utilization Review\n\nEnter 1, 2, or 3:','1');
   if(pick===null) return;
   const types={ '1':'narrative','2':'ime','3':'utilization_review' };
   const type=types[String(pick).trim()];
   if(!type){ toast('Enter 1, 2, or 3.','err'); return; }
-  const focus=prompt('Optional — what is the attorney / requesting party focused on?\n(e.g. causation of the lumbar injury, work capacity, necessity of the injections)\nLeave blank to skip:','')||'';
+  const focus=await mlsPrompt('Optional — what is the attorney / requesting party focused on?\n(e.g. causation of the lumbar injury, work capacity, necessity of the injections)\nLeave blank to skip:','')||'';
   let context='';
   try{ if(typeof compilePatientRecord==='function') context=compilePatientRecord(p)||''; }catch(e){}
   try{ if(typeof emrReadyText==='function' && typeof currentSoap!=='undefined' && currentSoap){ context+='\n\n===== MOST RECENT VISIT =====\n'+emrReadyText(); } }catch(e){}
@@ -9424,14 +9510,14 @@ async function _studioHandleRpc(req, source){
     if(m==='email'){
       var to=String(a.to||''), subj=String(a.subject||'(no subject)');
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return reply(false,null,'Invalid recipient.');
-      if(!window.confirm('This widget wants to send an email:\n\nTo: '+to+'\nSubject: '+subj+'\n\nSend it?')) return reply(false,null,'Cancelled.');
+      if(!await mlsConfirm('This widget wants to send an email:\n\nTo: '+to+'\nSubject: '+subj+'\n\nSend it?')) return reply(false,null,'Cancelled.');
       var r2=await fetch(bkBase()+'/api/copilot/email',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({to:to,subject:subj,body:String(a.body||'')})});
       var d2=await r2.json().catch(function(){return {};});
       if(!r2.ok) return reply(false,null,d2.error||'Send failed'); try{ toast('Email sent.','ok'); }catch(e){} return reply(true,{sent:true});
     }
     if(m==='createAppointment'){
       var name=String(a.name||'').trim(); if(!name) return reply(false,null,'Appointment needs a patient name.');
-      if(!window.confirm('Book an appointment for '+name+(a.appt_date?(' on '+a.appt_date):'')+'?')) return reply(false,null,'Cancelled.');
+      if(!await mlsConfirm('Book an appointment for '+name+(a.appt_date?(' on '+a.appt_date):'')+'?')) return reply(false,null,'Cancelled.');
       var body={name:name, dob:a.dob||'', phone:a.phone||'', email:a.email||'', reason:a.reason||'', appt_date:a.appt_date||'', start_at:a.start_at||'', status:a.status||'booked'};
       var r3=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)});
       var d3=await r3.json().catch(function(){return {};});
@@ -10146,8 +10232,8 @@ function goNewUnassignedVisit(){
   showView('visit');
   newVisit();
 }
-function deletePatient(id){
-  if(!confirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
+async function deletePatient(id){
+  if(!await mlsConfirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
   savePatients(getPatients().filter(p=>p.id!==id));
   // hosted mode: best-effort server delete (owner-only; skips silently if no server id known)
   if(backendMode() && bkToken()){ try{ deletePatientOnServer(id); }catch(e){} }
@@ -10461,11 +10547,11 @@ function addDocToActive(name,text,kind){
   renderProfile();
   return d;
 }
-function addDocPaste(){
+async function addDocPaste(){
   if(!activePatient()){ toast('Select a patient first.','err'); return; }
-  const text=prompt('Paste the document text (lab result, prior note, discharge summary, etc.):');
+  const text=await mlsPrompt('Paste the document text (lab result, prior note, discharge summary, etc.):');
   if(text===null || !text.trim()){ return; }
-  const name=prompt('Name this document:','Pasted document '+new Date().toLocaleDateString())||'Pasted document';
+  const name=await mlsPrompt('Name this document:','Pasted document '+new Date().toLocaleDateString())||'Pasted document';
   const d=addDocToActive(name.trim(),text.trim(),'text');
   if(d){ toast('Document added. Open it to Analyze with AI.','ok'); openDoc(d.id); }
 }
@@ -11041,7 +11127,7 @@ async function useTemplateNow(id){
   toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
   try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||''); }catch(e){ toast('Couldn’t apply that template.','err'); }
 }
-function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ alert('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
+function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ mlsPrompt('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
 function editTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ document.getElementById('tplName').value=t.name||''; document.getElementById('tplKeywords').value=(t.keywords||[]).join(', '); document.getElementById('tplText').value=t.text||''; document.getElementById('tplName').scrollIntoView({behavior:'smooth',block:'center'}); toast('Loaded into the form — edit and Save (it adds a copy; delete the old one if replacing).',''); }catch(e){} }
 function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); list.unshift({ id:'tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }); setTemplates(list); renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated.','ok'); }
 function deleteTemplate(id){
@@ -11319,12 +11405,12 @@ function tplAddSplit(){
 }
 /* Retroactively rename ALREADY-saved templates from patient-name to NOTE TYPE (the procedure).
    For the doctor who already uploaded op notes named "Operative Report - Lastname, First". */
-function fixTemplateNames(){
+async function fixTemplateNames(){
   var list=getTemplates(); if(!list.length){ try{ toast('No templates to rename yet.',''); }catch(e){} return; }
   var renamed=0, changes=[];
   list.forEach(function(t){ var nn=_tplTypeName(t.text, t.name); if(nn && nn!==t.name){ changes.push((t.name||'?')+'  →  '+nn); t.name=nn; renamed++; } });
   if(!renamed){ try{ toast('Template names already look like note types — nothing to fix.','ok'); }catch(e){} return; }
-  if(!window.confirm('Rename '+renamed+' template'+(renamed===1?'':'s')+' by NOTE TYPE (procedure) instead of patient name?\n\n'+changes.slice(0,12).join('\n')+(changes.length>12?('\n…and '+(changes.length-12)+' more'):'')+'\n\nProceed?')) return;
+  if(!await mlsConfirm('Rename '+renamed+' template'+(renamed===1?'':'s')+' by NOTE TYPE (procedure) instead of patient name?\n\n'+changes.slice(0,12).join('\n')+(changes.length>12?('\n…and '+(changes.length-12)+' more'):'')+'\n\nProceed?')) return;
   setTemplates(list); renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Renamed '+renamed+' template'+(renamed===1?'':'s')+' by note type.','ok'); }catch(e){}
@@ -11405,8 +11491,8 @@ function openDoc(id){
   document.getElementById('docModal').classList.add('show');
 }
 function closeDocModal(){ document.getElementById('docModal').classList.remove('show'); }
-function deleteDoc(id){
-  if(!confirm('Delete this document from the patient?')) return;
+async function deleteDoc(id){
+  if(!await mlsConfirm('Delete this document from the patient?')) return;
   const p=activePatient(); if(!p) return;
   p.docs=(p.docs||[]).filter(x=>x.id!==id);
   upsertPatient(p); renderProfile();
@@ -11897,17 +11983,17 @@ function _dupNoteList(){
 }
 /* Collapse duplicate notes — same patient, same note title, same day — keeping the most
    complete/most-recent one. Cleans up over-saves (e.g. an op note saved several times). */
-function cleanupDuplicateNotes(btn){
+async function cleanupDuplicateNotes(btn){
   var remove=_dupNoteList();
   if(!remove.length){ try{ toast('No duplicate notes found — your history is clean.','ok'); }catch(e){} return; }
-  if(!confirm('Found '+remove.length+' duplicate note'+(remove.length===1?'':'s')+' (same patient, same note, same day). Keep one of each and remove the extras? This cannot be undone.')) return;
+  if(!await mlsConfirm('Found '+remove.length+' duplicate note'+(remove.length===1?'':'s')+' (same patient, same note, same day). Keep one of each and remove the extras? This cannot be undone.')) return;
   var ids={}; remove.forEach(function(n){ ids[n.id]=1; try{ deleteNoteOnServer(n.id); }catch(e){} });
   saveNotes(getNotes().filter(function(n){ return !ids[n.id]; }));
   try{ renderHistory(); }catch(e){} try{ updateNavCounts(); }catch(e){}
   try{ toast('Removed '+remove.length+' duplicate note'+(remove.length===1?'':'s')+'. Kept one of each.','ok'); }catch(e){}
 }
-function deleteNote(id){
-  if(!confirm('Delete this saved visit from this device? This cannot be undone.')) return;
+async function deleteNote(id){
+  if(!await mlsConfirm('Delete this saved visit from this device? This cannot be undone.')) return;
   saveNotes(getNotes().filter(n=>n.id!==id));
   try{ deleteNoteOnServer(id); }catch(e){} // hosted: hide it server-side too (soft delete)
   if(currentNoteId===id){ currentNoteId=null; }
@@ -12346,10 +12432,10 @@ function _assistReadChart(patientRef, onStatus){
    The doctor opens the patient's chart in Athena, then taps this. ===== */
 /* Patients-tab "Pull from Athena": ask who, then pull that patient's chart straight from
    the open Athena tab — for when the schedule missed them or a chart came up empty. */
-function pullPatientFromAthenaPrompt(btn){
-  var nm=''; try{ nm=window.prompt('Pull a patient from Athena\n\nType the patient name exactly as it appears in Athena (and DOB helps if you have it). MLS Assist will open their chart in your Athena tab and pull it in.','')||''; }catch(e){}
+async function pullPatientFromAthenaPrompt(btn){
+  var nm=''; try{ nm=await mlsPrompt('Pull a patient from Athena\n\nType the patient name exactly as it appears in Athena (and DOB helps if you have it). MLS Assist will open their chart in your Athena tab and pull it in.','')||''; }catch(e){}
   nm=String(nm).trim(); if(!nm) return;
-  var dob=''; try{ dob=window.prompt('Date of birth for '+nm+' (optional — MM/DD/YYYY). Leave blank to skip.','')||''; }catch(e){}
+  var dob=''; try{ dob=await mlsPrompt('Date of birth for '+nm+' (optional — MM/DD/YYYY). Leave blank to skip.','')||''; }catch(e){}
   try{ pullPatientChartViaAssist(btn,{name:nm, dob:String(dob||'').trim()}); }catch(e){ try{ toast('Couldn’t start the pull — make sure your Athena tab is open.','err'); }catch(_){} }
 }
 async function pullPatientChartViaAssist(btn, opts){
@@ -12729,7 +12815,7 @@ async function cleanupDuplicateAppointments(btn){
     if(seen[k]){ dupes.push(x); } else { seen[k]=1; }
   });
   if(!dupes.length){ try{ toast('No duplicate appointments found — your calendar is clean.','ok'); }catch(e){} return; }
-  if(!window.confirm('Found '+dupes.length+' duplicate appointment'+(dupes.length===1?'':'s')+' (same patient appearing more than once on the same day). Remove the extras and keep one per patient per day? This cannot be undone.')) return;
+  if(!await mlsConfirm('Found '+dupes.length+' duplicate appointment'+(dupes.length===1?'':'s')+' (same patient appearing more than once on the same day). Remove the extras and keep one per patient per day? This cannot be undone.')) return;
   var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… cleaning'; }
   var removed=0;
   for(var i=0;i<dupes.length;i++){
@@ -12751,7 +12837,7 @@ async function _importPulledSchedule(appts){
     var worst=Object.keys(dayTally).reduce(function(m,k){ return dayTally[k]>(dayTally[m]||0)?k:m; },Object.keys(dayTally)[0]||'');
     if(worst && dayTally[worst]>40){
       var dlbl=''; try{ dlbl=new Date(worst+'T12:00').toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'}); }catch(_){ dlbl=worst; }
-      if(!window.confirm('Heads up: '+dayTally[worst]+' appointments would land on '+dlbl+' — that usually means Athena was showing a whole-clinic or multi-day view, not one provider’s day.\n\nTip: in Athena, open ONE provider’s single-day schedule, then pull again.\n\nImport all '+dayTally[worst]+' onto '+dlbl+' anyway?')) { try{ toast('Import cancelled — open one provider’s single day in Athena and pull again.',''); }catch(e){} return; }
+      if(!await mlsConfirm('Heads up: '+dayTally[worst]+' appointments would land on '+dlbl+' — that usually means Athena was showing a whole-clinic or multi-day view, not one provider’s day.\n\nTip: in Athena, open ONE provider’s single-day schedule, then pull again.\n\nImport all '+dayTally[worst]+' onto '+dlbl+' anyway?')) { try{ toast('Import cancelled — open one provider’s single day in Athena and pull again.',''); }catch(e){} return; }
     }
   }catch(e){}
   // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name+day+time).
@@ -15012,18 +15098,18 @@ function _athenaShowReceipt(who, results, partial){
   }catch(e){ try{ toast('Sent to Athena — review & sign there.','ok'); }catch(_){} }
 }
 /* Push ONLY the superbill / charges (E/M + CPT + ICD) into Athena billing. */
-function pushSuperbillToAthena(){
+async function pushSuperbillToAthena(){
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to push yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null; var who=p?p.name:'this patient';
   var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx (attach)  '+x); });
-  var ok=false; try{ ok=window.confirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nSEND TO: '+ATHENA_SECTIONS.billing.dest+'\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
+  var ok=false; try{ ok=await mlsConfirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nSEND TO: '+ATHENA_SECTIONS.billing.dest+'\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
   if(!ok) return;
   var body='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these ICD-10 diagnoses to the charges: '+c.icd.join('; ')):'')+(p&&p.name?('\n\nPatient: '+p.name):'');
   _athenaPushPlan([{kind:'billing', body:body}], who);
 }
 /* Push a SAVED history note (its text + stored codes + orders) into Athena, right from History. */
-function pushHistoryNoteToAthena(id){
+async function pushHistoryNoteToAthena(id){
   var ns=(typeof getNotes==='function'?getNotes():[])||[];
   var n=ns.find(function(x){ return x.id===id; }); if(!n){ try{ toast('That visit no longer exists.','err'); }catch(e){} return; }
   var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to push.','err'); }catch(e){} return; }
@@ -15033,7 +15119,7 @@ function pushHistoryNoteToAthena(id){
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
-  var ok=false; try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist enters each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
+  var ok=false; try{ ok=await mlsConfirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist enters each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
   if(!ok) return;
   if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who); else { try{ toast('Update MLS to the latest version to push from History.','err'); }catch(e){} }
 }
@@ -15152,7 +15238,7 @@ async function generatePatientLetter(){
     toast('Offline summary letter shown. Add your key for AI drafting.','');
     return;
   }
-  const to=prompt('Send letter to (specialty / consultant):','Specialist');
+  const to=await mlsPrompt('Send letter to (specialty / consultant):','Specialist');
   toast('Drafting letter…','');
   try{
     const sys='You are drafting a concise professional referral/summary letter from one physician to another about a patient. Standard letter format: date, "Dear [recipient]:", reason, brief relevant history (problems, meds, allergies), recent visit summary, and the request. Use ONLY the facts provided — do not invent. Close with a signature block. Under ~280 words.';
@@ -15824,9 +15910,9 @@ function removeOrder(id){
   updateNavCounts();
   toast('Order removed.','');
 }
-function clearAllOrders(){
+async function clearAllOrders(){
   if(!currentOrders.length) return;
-  if(!confirm('Remove all orders for this visit?')) return;
+  if(!await mlsConfirm('Remove all orders for this visit?')) return;
   currentOrders=[]; editingOrderId=null;
   renderOrderList(); updateNavCounts();
   toast('All orders cleared.','');
@@ -16652,7 +16738,7 @@ function openIntake(){
 async function exitIntake(){
   // SECURITY: the iPad is in the patient's hands — exiting back to the clinical
   // app requires the logged-in clinician's PASSWORD (re-auth), not just a confirm.
-  const pw=prompt('Staff only — enter your account password to exit patient intake:');
+  const pw=await mlsPrompt('Staff only — enter your account password to exit patient intake:');
   if(pw===null) return; // cancelled
   if(!pw){ toast('Password required to exit intake.','err'); return; }
   try{
@@ -16670,8 +16756,8 @@ async function exitIntake(){
   resetIntakeForm(); // never leave a patient's answers on screen
   try{ renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts(); }catch(e){}
 }
-function intakeNextPatient(){
-  if(!confirm('Staff only — clear this form and start a new intake for the next patient?')) return;
+async function intakeNextPatient(){
+  if(!await mlsConfirm('Staff only — clear this form and start a new intake for the next patient?')) return;
   resetIntakeForm();
   const v=document.getElementById('intakeView'); if(v) v.scrollTop=0;
 }
@@ -16977,10 +17063,10 @@ function insertDot(i){
   ta.focus(); ta.selectionStart=ta.selectionEnd=(before+ins).length;
   toast('Inserted .'+d.name,'ok');
 }
-function addDotPhrase(){
-  const name=prompt('Macro name (short, no spaces) — e.g. normal-heart');
+async function addDotPhrase(){
+  const name=await mlsPrompt('Macro name (short, no spaces) — e.g. normal-heart');
   if(!name) return;
-  const text=prompt('Quick-text for ".'+name.trim()+'":');
+  const text=await mlsPrompt('Quick-text for ".'+name.trim()+'":');
   if(!text) return;
   const dots=getDots();
   const clean=name.trim().replace(/\s+/g,'-');
@@ -16988,11 +17074,11 @@ function addDotPhrase(){
   if(ex>=0) dots[ex].text=text.trim(); else dots.push({name:clean,text:text.trim()});
   saveDots(dots); renderDots(); toast('Macro .'+clean+' saved.','ok');
 }
-function manageDotPhrases(){
+async function manageDotPhrases(){
   const dots=getDots();
   if(!dots.length){ toast('No macros to manage. Press Add.',''); return; }
   const list=dots.map((d,i)=>(i+1)+'. .'+d.name).join('\n');
-  const pick=prompt('Your macros:\n'+list+'\n\nType a number to DELETE it, or Cancel.');
+  const pick=await mlsPrompt('Your macros:\n'+list+'\n\nType a number to DELETE it, or Cancel.');
   if(!pick) return;
   const n=parseInt(pick,10);
   if(n>=1 && n<=dots.length){
@@ -17086,7 +17172,7 @@ async function generateReferral(){
     toast('Offline example referral shown.','');
     return;
   }
-  const to=prompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)','Specialist');
+  const to=await mlsPrompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)','Specialist');
   if(to===null){ return; } // user cancelled
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
@@ -17165,8 +17251,12 @@ function showTeachSuggestions(rules){
   const body=document.getElementById('teachBody');
   if(!card||!body){
     // Fallback: simple confirm if the panel isn't present for some reason.
-    const pick=rules.filter(r=>confirm('Add this preference to MLS?\n\n'+r));
-    pick.forEach(addDocPref);
+    (async function(){
+      const pick=[];
+      for(const r of rules){ if(await mlsConfirm('Add this preference to MLS?\n\n'+r)) pick.push(r); }
+      pick.forEach(addDocPref);
+    })();
+    if(0) [].forEach(addDocPref);
     if(pick.length) toast('Added '+pick.length+' preference'+(pick.length>1?'s':'')+'.','ok');
     return;
   }
@@ -17976,7 +18066,7 @@ function showSuperbill(){
    copay, clamped by the out-of-pocket remaining. Output is a Good Faith
    Estimate the patient can take home (Copy / Print via printExtra).
    ========================================================= */
-function showCostEstimate(){
+async function showCostEstimate(){
   const ap=activePatient();
   if(!ap){ toast('Open a patient first to estimate their cost.','err'); return; }
   const ins=ap.insurance||null;
@@ -17990,7 +18080,7 @@ function showCostEstimate(){
   // Default the procedure CPT(s) from the current coding; let staff edit them.
   const c=currentCoding||{};
   const defCpt=((c.cpt&&c.cpt.length)?c.cpt:[]).map(x=>String(x).trim().split(/[\s—\-:]/)[0]).filter(Boolean).join(', ');
-  let cptStr=prompt('Procedure CPT code(s) being ordered (comma-separated):', defCpt||'');
+  let cptStr=await mlsPrompt('Procedure CPT code(s) being ordered (comma-separated):', defCpt||'');
   if(cptStr===null) return;
   const codes=String(cptStr).split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);
   if(!codes.length){ toast('Enter at least one CPT code to estimate.','err'); return; }
@@ -18002,7 +18092,7 @@ function showCostEstimate(){
     else noFee.push(code);
   });
   if(noFee.length){
-    const ask=prompt('No ballpark allowed amount on file for: '+noFee.join(', ')+
+    const ask=await mlsPrompt('No ballpark allowed amount on file for: '+noFee.join(', ')+
       '.\nEnter a total allowed amount ($) for these code(s), or leave blank to skip them:', '');
     if(ask===null) return;
     const extra=insNum(ask);
@@ -18387,9 +18477,9 @@ async function generateExpertReportSections(ctx){
 
 /* Rebuild the report from scratch using the CURRENT request fields + the patient the
    doctor selected. Lets them re-run after picking "my patient" or editing anything. */
-function regenerateLegalReport(){
+async function regenerateLegalReport(){
   var body=document.getElementById('legalBody');
-  if(body && body.value.trim() && !confirm('Regenerate this report from scratch? This replaces the current draft. Your fee and the patient you selected are kept.')){ return; }
+  if(body && body.value.trim() && !await mlsConfirm('Regenerate this report from scratch? This replaces the current draft. Your fee and the patient you selected are kept.')){ return; }
   var pn=(legalAttachedPatientId && typeof getPatients==='function') ? ((getPatients()||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);})||{}).name : '';
   toast(pn?('Regenerating on the latest model — including '+pn+'’s chart…'):'Regenerating on the latest model…','');
   var rb=document.getElementById('legalRegenBtn'); if(rb){ rb.disabled=true; rb.textContent='🔄 Regenerating…'; }
@@ -18510,7 +18600,7 @@ function legalSetSignedBadge(on){
 }
 /* E-sign: append a signature block sourced from the Practice/Provider settings.
    Idempotent — strips a prior block first. Marks the card as signed. */
-function signLegalReport(){
+async function signLegalReport(){
   toast('Signing is unavailable until a counsel-approved server-side signature ceremony verifies the exact report and signer.','err');
   return false;
   if(!legalEnabled()) return;
@@ -18525,7 +18615,7 @@ function signLegalReport(){
     if(sig){ name=sig.split('\n')[0].trim(); }
   }
   if(!name){
-    const entered=prompt('Enter the signing physician’s name (set Provider name in Settings to skip this):','');
+    const entered=await mlsPrompt('Enter the signing physician’s name (set Provider name in Settings to skip this):','');
     if(entered===null || !entered.trim()){ toast('Signing cancelled — no provider name.','err'); return; }
     name=entered.trim();
   }
@@ -19766,7 +19856,7 @@ async function loadApiKeys(){
   }catch(e){}
 }
 async function revokeApiKey(id){
-  if(!confirm('Revoke this key? Anything using it (including MLS Assist) will stop working.')) return;
+  if(!await mlsConfirm('Revoke this key? Anything using it (including MLS Assist) will stop working.')) return;
   try{ await fetch(BACKEND_URL+'/api/fhir/keys/'+id,{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}}); loadApiKeys(); }catch(e){}
 }
 function copyApiKey(){ const i=document.getElementById('newApiKey'); if(i&&i.value){ navigator.clipboard.writeText(i.value).then(function(){toast('Copied.','ok');},function(){}); } }
@@ -20307,7 +20397,7 @@ async function uploadDoctorAttachment(id){
 /* Lawyer portal: show a returned signed report in the viewer card. */
 /* Attorney requests the physician's deposition / trial testimony — emails the physician. */
 async function lawRequestAppearance(id){
-  var note=window.prompt('Request the physician’s testimony / court appearance.\n\nAdd proposed date(s), whether it\'s a deposition or trial, location or video link, and any details. This is emailed to the physician to confirm dates and fee:','');
+  var note=await mlsPrompt('Request the physician’s testimony / court appearance.\n\nAdd proposed date(s), whether it\'s a deposition or trial, location or video link, and any details. This is emailed to the physician to confirm dates and fee:','');
   if(note===null) return;
   try{
     var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/appearance',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({note:note})});
@@ -20322,7 +20412,7 @@ async function lawPayReport(id, feeCents){
   return false;
   if(typeof backendMode!=='function'||!backendMode()){ toast('Billing is not available right now.','err'); return; }
   var dollars=Math.round((feeCents||0)/100);
-  if(!confirm('Pay $'+dollars.toLocaleString()+' to unlock the full signed report and engage the physician for testimony? You will be taken to a secure checkout.')) return;
+  if(!await mlsConfirm('Pay $'+dollars.toLocaleString()+' to unlock the full signed report and engage the physician for testimony? You will be taken to a secure checkout.')) return;
   try{
     var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/pay',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()}});
     var d={}; try{ d=await r.json(); }catch(e){}
@@ -20359,7 +20449,7 @@ let _legalInboxById={}; // requestId -> full request object (for prefill)
    (e.g. after the lawyer pays); the lawyer's self-serve Stripe payment will trigger
    the same /unlock once billing is wired. */
 async function deleteLegalRequest(id){
-  if(!confirm('Delete this request from your inbox? This permanently removes it and any uploaded files — use it to clear out test entries before going live.')) return;
+  if(!await mlsConfirm('Delete this request from your inbox? This permanently removes it and any uploaded files — use it to clear out test entries before going live.')) return;
   try{
     var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
@@ -20371,7 +20461,7 @@ async function releaseLegalReport(id){
   toast('Report release is unavailable. Nothing was released.','err');
   return false;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in first.','err'); return; }
-  if(!confirm('Release the FULL report to the attorney? They will be able to read the complete document.')) return;
+  if(!await mlsConfirm('Release the FULL report to the attorney? They will be able to read the complete document.')) return;
   try{
     const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/unlock',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
@@ -21806,11 +21896,11 @@ function deleteCustomWidget(id){
   const i=getCustomWidgets().findIndex(x=>x.id===id);
   deleteCustomWidgetAt(i);
 }
-function deleteCustomWidgetAt(index){
+async function deleteCustomWidgetAt(index){
   const list=getCustomWidgets();
   const w=list[index];
   if(!w) return;
-  if(!confirm('Delete the widget "'+w.title+'"? This removes the card and its saved prompt.')) return;
+  if(!await mlsConfirm('Delete the widget "'+w.title+'"? This removes the card and its saved prompt.')) return;
   list.splice(index,1);
   if(!list.some(x=>x.id===w.id)){
     delete _cwLatest[w.id];
@@ -22912,6 +23002,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b494';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b495';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

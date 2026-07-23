@@ -20,8 +20,7 @@
     return 'https://scrivara-backend.onrender.com';
   }
   function say(msg) {
-    try { if (typeof window.toast === 'function') { window.toast(msg, 'err'); return; } } catch (e) {}
-    try { alert(msg); } catch (e) {}
+    try { (window.toast || window.alert)(msg, 'err'); } catch (e) {}
   }
   var BANNER_ID = 'mlsLegalPayBanner';
   var MOUNT_IDS = ['legalCard', 'legalReqView'];     // top of the legal section

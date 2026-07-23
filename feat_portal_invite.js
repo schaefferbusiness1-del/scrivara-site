@@ -74,7 +74,7 @@
     b.style.cssText='margin:6px 8px 2px 0;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#204034;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
     b.addEventListener('mouseenter',function(){ b.style.background='#e2edfa'; });
     b.addEventListener('mouseleave',function(){ b.style.background='#eef4fc'; });
-    b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var ap=active(); if(!ap){ alert('Select a patient first.'); return; } openModal(ap); });
+    b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var ap=active(); if(!ap){ (window.toast||window.alert)('Select a patient first.'); return; } openModal(ap); });
     return b;
   }
 

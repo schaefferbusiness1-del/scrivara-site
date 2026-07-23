@@ -164,8 +164,20 @@ assert(connect.includes('No appointments imported for ') &&
   'the empty-day guidance no longer distinguishes schedule state or points to the canonical pull action');
 for (const [label, source] of [['production', app], ['staging', stagingApp]]) {
   const calendarLoader = between(source, 'async function loadCalendar(options){', 'function _calFilterVal', `${label} calendar loader`);
-  assert(/typeof _SF_DEMO[^\n]+_SF_DEMO[\s\S]{0,100}\? ''/.test(calendarLoader),
-    `${label} demo calendar can still paint a false sign-in prompt beneath an active synthetic session`);
+  /* pin updated 2026-07-22 (dlc-1.0.0): production demo sessions now LOAD a
+     real local calendar instead of painting an empty state — only a HOSTED
+     signed-out session may bail, so the sign-in message can never appear
+     beneath an active synthetic session. Staging keeps the older empty-state
+     mechanism. */
+  if (label === 'production') {
+    assert(/backendMode\(\)&&!_calToken/.test(calendarLoader),
+      'production calendar no longer restricts its sign-in bail to hosted signed-out sessions');
+    assert(!/_SF_DEMO[\s\S]{0,200}Sign in to see the calendar/.test(calendarLoader),
+      'production demo calendar can paint a false sign-in prompt beneath an active synthetic session');
+  } else {
+    assert(/typeof _SF_DEMO[^\n]+_SF_DEMO[\s\S]{0,100}\? ''/.test(calendarLoader),
+      `${label} demo calendar can still paint a false sign-in prompt beneath an active synthetic session`);
+  }
   assert(!source.includes('Encrypted and synced to your MLS account — your visit history follows you'),
     `${label} history still makes an unconditional sync/backup claim`);
   assert(source.includes('Local demo: synthetic visit history stays in this browser on this device. It is not synced or backed up.'),

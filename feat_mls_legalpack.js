@@ -1,3 +1,8 @@
+/* Non-blocking dialog helpers: fall back to native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 /* ============================================================================
    MLS — feat_mls_legalpack.js — __mlsLegalPack lp-1.0.0
    Task 13: Legal Request / Full-History Workflow (patient search, "Pull
@@ -708,12 +713,12 @@
 
   function currentNarrative() { var o = $('mlsLpNarrOut'); return o ? o.value : state.narrative; }
 
-  function sendToLegalTool() {
+  async function sendToLegalTool() {
     var txt = currentNarrative();
     if (!txt.trim()) { say('Generate the narrative first.', 'err'); return; }
     var body = $('legalBody'), card = $('legalCard');
     if (!body || !card) { say('The Legal tool’s report card is not available in this build — use Copy / Download instead.', 'err'); return; }
-    if (body.value.trim() && !confirm('The Legal tool already holds a draft. Replace it with this narrative?')) return;
+    if (body.value.trim() && !await mlsConfirm('The Legal tool already holds a draft. Replace it with this narrative?')) return;
     body.value = txt;
     try { if (typeof window.currentLegal !== 'undefined') window.currentLegal = txt; } catch (e) {}
     try { if (isFn(window.legalSetSignedBadge)) window.legalSetSignedBadge(false); } catch (e) {}

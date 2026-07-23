@@ -563,6 +563,37 @@ async function addPatient(page, name, dob) {
     } finally { page.off('pageerror', onPageError); }
   });
 
+  await step('demo local calendar: book through the real form, appears via loadCalendar, check-in stamps, cancel sticks, per-account persistence', async () => {
+    const out = await page.evaluate(async () => {
+      const R = {}; const sleep = ms => new Promise(r => setTimeout(r, ms));
+      showView('calendar');
+      const l1 = await loadCalendar();
+      R.loadApplied = !!(l1 && l1.applied);
+      const today = _acctTodayKey();
+      const ensure = (id, v) => { let el = document.getElementById(id); if (!el) { el = document.createElement('input'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); } el.value = v; };
+      ensure('calNewName', 'E2E Booked Patient'); ensure('calNewDate', today); ensure('calNewTime', '15:15');
+      ensure('calNewDoc', ''); ensure('calNewPhone', ''); ensure('calNewReason', 'New consult'); ensure('calNewRoom', '');
+      await calCreateAppt(null);
+      await sleep(400);
+      const row = (window._calAppts || []).find(a => /E2E Booked/.test(a.name || ''));
+      R.booked = !!row && row.appt_date === today;
+      if (row) { await apptUpdate(row.id, { status: 'checked_in' }); await loadCalendar(); }
+      const after = (window._calAppts || []).find(a => /E2E Booked/.test(a.name || ''));
+      R.checkedIn = !!(after && after.status === 'checked_in' && after.checked_in_at);
+      if (after) { await fetch('/api/appointments/' + after.id + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); await loadCalendar(); }
+      const fin = (window._calAppts || []).find(a => /E2E Booked/.test(a.name || ''));
+      R.cancelled = !!(fin && fin.status === 'cancelled');
+      R.persisted = JSON.parse(localStorage.getItem(uns('localApptsV1')) || '[]').some(a => /E2E Booked/.test(a.name || ''));
+      showView('visit');
+      return R;
+    });
+    assert(out.loadApplied, 'demo loadCalendar did not apply');
+    assert(out.booked, 'real booking form did not create the local appointment');
+    assert(out.checkedIn, 'check-in did not stamp through the local adapter');
+    assert(out.cancelled, 'cancel did not stick');
+    assert(out.persisted, 'appointment not persisted in the per-account local store');
+  });
+
   await step('switching + isolation + resume: lock guard fail-closed with confirmed retry, no cross-record leakage, draft resumes after reload', async () => {
     const out = await page.evaluate(async (idAlice, idBob) => {
       const R = {}; const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -593,6 +624,14 @@ async function addPatient(page, name, dob) {
       if (dlg) { dlg.querySelector('#_mlsAskNo').click(); await sleep(300); }
       R.stillAliceAfterNo = String(getActivePtId()) === String(idAlice);
       R.stAfterNo = lock && lock._debugState ? lock._debugState() : null;
+      /* ambient shell timers can settle the lock between phases — re-arm so
+         the confirmed-retry phase always tests what it claims */
+      if (!(R.stAfterNo && R.stAfterNo.hasPendingWork)) {
+        try { startCapture(); } catch (e) {}
+        await sleep(300);
+        try { stopCapture(); } catch (e) {}
+        await sleep(200);
+      }
       /* confirmed abandon re-invokes the switch exactly once */
       setActivePtId(idBob); await sleep(300);
       const dlg2 = document.getElementById('_mlsAskDialog');

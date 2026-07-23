@@ -52,7 +52,7 @@
     var eng = engine();
     var n = notes().filter(function (x) { return x.id === noteId; })[0];
     var txt = n && n.text;
-    if (!txt) { alert('No op-note content found for this entry.'); return; }
+    if (!txt) { (window.toast||window.alert)('No op-note content found for this entry.'); return; }
     var opts = { patient: patient || (n && n.patient) || '', title: 'Operative Report' };
     if (n && n.created) opts.date = new Date(n.created);
     try {
@@ -66,10 +66,10 @@
         eng.exportPdf(txt, opts);
         return;
       }
-      alert('Op-note PDF engine is not available yet. Please retry in a moment.');
+      (window.toast||window.alert)('Op-note PDF engine is not available yet. Please retry in a moment.');
     } catch (e) {
       console.error(TAG, 'export failed', e);
-      alert('Could not generate the PDF: ' + (e && e.message ? e.message : e));
+      (window.toast||window.alert)('Could not generate the PDF: ' + (e && e.message ? e.message : e));
     }
   }
 

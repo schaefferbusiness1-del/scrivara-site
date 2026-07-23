@@ -1,3 +1,8 @@
+/* Non-blocking dialog helpers: fall back to native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 /* feat_agent_actions3 — MLS Agent one-tap actions (item #3, 2026-07-03). Supersedes v2:
    use a bounded late-mount retry without layout reads, permanent polling, or a document-wide
    observer. Runs first + sets the shared guard so the older v2 below no-ops. */
@@ -19,7 +24,7 @@
   var ACTIONS=[
     { label:'📧 Send portal login', run:function(){
         var b=document.getElementById('mlsPortalInviteBtn');
-        if(b){ b.click(); } else { alert('Select a patient first, then tap “Send portal login”.'); }
+        if(b){ b.click(); } else { (window.toast||window.alert)('Select a patient first, then tap “Send portal login”.'); }
     }},
     { label:'🗓️ Prep tomorrow’s op notes', run:function(){ agentSend('Prep all of tomorrow’s op notes'); } },
     { label:'📥 Pull today’s patients', run:function(){ agentSend('Run the Athena pull for today'); } }

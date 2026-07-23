@@ -100,7 +100,10 @@
     return null;
   }
 
-  function send() {
+  /* non-blocking dialog helpers (native only when the in-app modals are absent) */
+  function askPrompt(msg) { try { return (typeof window.mlsPrompt === 'function') ? window.mlsPrompt(msg, '') : Promise.resolve(safe(function () { return window.prompt(msg); }, null)); } catch (e) { return Promise.resolve(null); } }
+  function askConfirm(msg) { try { return (typeof window.mlsConfirm === 'function') ? window.mlsConfirm(msg) : Promise.resolve(safe(function () { return window.confirm(msg); }, false)); } catch (e) { return Promise.resolve(false); } }
+  async function send() {
     if (busy) return;
     var p = activePt();
     var ext = activeId();
@@ -108,15 +111,13 @@
 
     var email = ptEmail(p);
     if (!email) {
-      var typed = safe(function () { return window.prompt('No email on file for ' + ptName(p) + '. Enter the patient’s email to send their portal login:'); }, null);
+      var typed = await askPrompt('No email on file for ' + ptName(p) + '. Enter the patient’s email to send their portal login:');
       if (typed == null) return;                 // cancelled
       email = String(typed).trim();
       if (!email || email.indexOf('@') < 0) { toast('That doesn’t look like a valid email.', 'err'); return; }
     }
 
-    var ok = safe(function () {
-      return window.confirm('Email a secure patient-portal login link to:\n\n' + email + '\n\n(' + ptName(p) + ')\n\nThe email contains no medical details — just a single-use sign-in link.');
-    }, false);
+    var ok = await askConfirm('Email a secure patient-portal login link to:\n\n' + email + '\n\n(' + ptName(p) + ')\n\nThe email contains no medical details — just a single-use sign-in link.');
     if (!ok) return;
 
     var base = apiBase(), tok = apiTok();
@@ -132,7 +133,7 @@
       }).then(function (r) {
         return r.json().then(function (j) { return { status: r.status, body: j || {} }; })
                        .catch(function () { return { status: r.status, body: {} }; });
-      }).then(function (res) {
+      }).then(async function (res) {
         busy = false; setBtnState();
         var b = res.body || {};
         if (res.status === 200 && b.ok) {
@@ -140,7 +141,7 @@
           else toast('Link created, but email isn’t configured on the server yet — nothing was sent. Ask your admin to finish email setup.', 'err');
         } else if (res.status === 422 || b.error === 'no_email') {
           // backend says no usable email — re-prompt once.
-          var typed = safe(function () { return window.prompt('The server has no email on file. Enter the patient’s email:'); }, null);
+          var typed = await askPrompt('The server has no email on file. Enter the patient’s email:');
           if (typed && typed.indexOf('@') > -1) { var p2 = activePt(); if (p2) { p2.email = String(typed).trim(); } send(); }
         } else if (res.status === 401 || res.status === 403) {
           toast('Not authorized to send portal invites.', 'err');

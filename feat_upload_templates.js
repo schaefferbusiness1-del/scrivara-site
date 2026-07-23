@@ -8,7 +8,7 @@
   function trigger(){
     var i=document.getElementById('tplMultiFileInput')||document.getElementById('tplFileInput');
     if(i){ try{ i.click(); }catch(e){} }
-    else { alert('Open the Templates section to upload your templates.'); }
+    else { (window.toast||window.alert)('Open the Templates section to upload your templates.'); }
   }
 
   function makeBtn(){

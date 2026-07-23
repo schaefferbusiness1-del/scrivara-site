@@ -20,6 +20,11 @@
  *
  *  Namespace: window.__mlsRVU         Manager: __mlsRVU.open()
  */
+/* Non-blocking dialog helpers: native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 (function () {
   'use strict';
   if (window.__mlsRVU && window.__mlsRVU.__installed) return;
@@ -488,15 +493,15 @@
       else { var v = e.target.value.trim(); r[f] = (v === '' ? null : parseFloat(v)); if (isNaN(r[f])) r[f] = null; if (r.w != null) r.verify = 0; }
       save(STATE);
     });
-    document.getElementById('mlsRvuBody').addEventListener('click', function (e) {
+    document.getElementById('mlsRvuBody').addEventListener('click', async function (e) {
       var c = e.target.getAttribute && e.target.getAttribute('data-del'); if (!c) return;
-      if (confirm('Remove ' + c + ' from your RVU table?')) { delete STATE.table[c]; save(STATE); openManager(); refreshAll(); }
+      if (await window.mlsConfirm('Remove ' + c + ' from your RVU table?')) { delete STATE.table[c]; save(STATE); openManager(); refreshAll(); }
     });
-    document.getElementById('mlsRvuAdd').onclick = function () {
-      var c = (prompt('CPT / HCPCS code (5 chars):') || '').trim().toUpperCase(); if (!c) return;
-      if (!/^[0-9A-Z]{5}$/.test(c)) { alert('That doesn’t look like a 5-character code.'); return; }
-      var w = prompt('Work RVU for ' + c + ' (leave blank if unknown):'); var t = prompt('Total non-facility RVU for ' + c + ' (optional):');
-      STATE.table[c] = { w: (w && !isNaN(parseFloat(w))) ? parseFloat(w) : null, t: (t && !isNaN(parseFloat(t))) ? parseFloat(t) : null, kind: /^99[02]/.test(c) ? 'em' : 'cpt', desc: prompt('Short description (optional):') || '' };
+    document.getElementById('mlsRvuAdd').onclick = async function () {
+      var c = (await window.mlsPrompt('CPT / HCPCS code (5 chars):') || '').trim().toUpperCase(); if (!c) return;
+      if (!/^[0-9A-Z]{5}$/.test(c)) { (window.toast||window.alert)('That doesn’t look like a 5-character code.'); return; }
+      var w = await window.mlsPrompt('Work RVU for ' + c + ' (leave blank if unknown):'); var t = await window.mlsPrompt('Total non-facility RVU for ' + c + ' (optional):');
+      STATE.table[c] = { w: (w && !isNaN(parseFloat(w))) ? parseFloat(w) : null, t: (t && !isNaN(parseFloat(t))) ? parseFloat(t) : null, kind: /^99[02]/.test(c) ? 'em' : 'cpt', desc: (await window.mlsPrompt('Short description (optional):')) || '' };
       save(STATE); openManager(); refreshAll();
     };
     document.getElementById('mlsRvuExport').onclick = function () {
@@ -504,7 +509,7 @@
         var blob = new Blob([JSON.stringify(STATE, null, 2)], { type: 'application/json' });
         var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mls-rvu-table.json'; a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      } catch (e) { alert('Export failed: ' + e.message); }
+      } catch (e) { (window.toast||window.alert)('Export failed: ' + e.message); }
     };
     document.getElementById('mlsRvuImport').onclick = function () { document.getElementById('mlsRvuFile').click(); };
     document.getElementById('mlsRvuFile').onchange = function () {
@@ -515,12 +520,12 @@
           var tbl = j.table || j; if (!tbl || typeof tbl !== 'object') throw new Error('no table');
           STATE.table = tbl; if (typeof j.cf === 'number' && j.cf > 0) STATE.cf = j.cf; if (typeof j.compPerWrvu === 'number') STATE.compPerWrvu = j.compPerWrvu;
           save(STATE); openManager(); refreshAll();
-        } catch (e) { alert('Import failed: ' + e.message); }
+        } catch (e) { (window.toast||window.alert)('Import failed: ' + e.message); }
       };
       rd.readAsText(f);
     };
-    document.getElementById('mlsRvuReset').onclick = function () {
-      if (confirm('Reset the RVU table to the seeded values? Your edits will be lost.')) { STATE = defaultState(); save(STATE); openManager(); refreshAll(); }
+    document.getElementById('mlsRvuReset').onclick = async function () {
+      if (await window.mlsConfirm('Reset the RVU table to the seeded values? Your edits will be lost.')) { STATE = defaultState(); save(STATE); openManager(); refreshAll(); }
     };
   }
   function closeManager() { var o = document.getElementById('mlsRvuOv'); if (o) o.remove(); }

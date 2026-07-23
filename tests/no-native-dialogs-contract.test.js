@@ -48,11 +48,29 @@ function scan(name, source) {
     }
   });
 }
-for (const f of [...loaded].sort()) {
+/* 2026-07-22 extension: not just the loader graph — EVERY feat_ and mls-
+   module file in the repo plus both shells stays native-dialog-free, so a
+   dormant module can never re-introduce a thread-freezing dialog later. */
+const everyModule = fs.readdirSync(root).filter(f => /^feat_.*\.js$|^mls-.*\.js$/.test(f));
+const scanSet = new Set([...loaded, ...everyModule, 'ScribeFlow-staging.html']);
+for (const f of [...scanSet].sort()) {
   let s;
   try { s = fs.readFileSync(path.join(root, f), 'utf8'); } catch (e) { continue; }
   scan(f, s);
 }
+/* async array predicates are the conversion's known failure mode: an async
+   find/filter/some predicate is always-truthy and silently matches the wrong
+   row — none may exist anywhere */
+for (const f of [...scanSet].sort()) {
+  let s;
+  try { s = fs.readFileSync(path.join(root, f), 'utf8'); } catch (e) { continue; }
+  const m = s.match(/\.(?:find|findIndex|filter|some|every)\(\s*async\s/g);
+  assert(!m, f + ': async array predicate introduced (always-truthy match): ' + (m && m.length));
+}
+/* staging shell carries its own copy of the promise helpers */
+const stagingShell = fs.readFileSync(path.join(root, 'ScribeFlow-staging.html'), 'utf8');
+assert(stagingShell.includes('function mlsConfirm(msg,opts){') && stagingShell.includes('function mlsPrompt(msg,def,opts){'),
+  'staging shell lost its non-blocking dialog helpers');
 /* the app shell itself (inline scripts) */
 const inlineRe = /<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/gi;
 let block, bi = 0;

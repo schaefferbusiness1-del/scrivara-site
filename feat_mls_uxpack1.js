@@ -18,6 +18,11 @@
  *
  * No athenaOne writes. No PHI leaves the page. Every failure path try/catch no-ops.
  */
+/* Non-blocking dialog helpers: native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 (function () {
   "use strict";
   if (window.__mlsUxPack1 && window.__mlsUxPack1.installed) return;
@@ -240,12 +245,12 @@
     });
     inp.click();
   }
-  function deleteAll() {
+  async function deleteAll() {
     var n = tGet().length;
     if (!n) { toast("No templates to delete.", ""); return; }
-    var ok1 = safe(function () { return window.confirm("Delete ALL " + n + " templates? This cannot be undone."); }, false);
+    var ok1 = (await window.mlsConfirm("Delete ALL " + n + " templates? This cannot be undone."));
     if (!ok1) return;
-    var ok2 = safe(function () { return window.confirm("Are you sure? Every template (" + n + ") will be permanently removed."); }, false);
+    var ok2 = (await window.mlsConfirm("Are you sure? Every template (" + n + ") will be permanently removed."));
     if (!ok2) return;
     if (tSet([])) toast("Deleted all " + n + " templates.", "ok");
   }

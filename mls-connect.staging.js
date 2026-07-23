@@ -1,3 +1,8 @@
+/* Non-blocking dialog helpers: fall back to native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 (function(){
   if(window.__mlsEmrSections) return;
   window.__mlsEmrSections=true;
@@ -69,7 +74,7 @@
     var NARR={history:1,exam:1,assessment:1,plan:1,followup:1};
     host.querySelector('#emrSubmit').onclick=function(){
       var sections=[]; S.forEach(function(s){ if(!conf[s.k]) return; var ta=host.querySelector('textarea[data-t="'+s.k+'"]'); var v=ta?ta.value.trim():''; if(!v) return; sections.push({key:s.k,label:s.label,text:v,kind:NARR[s.k]?'narrative':'action'}); });
-      if(!sections.length){ alert('Confirm at least one section (with text) first.'); return; }
+      if(!sections.length){ (window.toast||window.alert)('Confirm at least one section (with text) first.'); return; }
       var payload={type:'mlsAppEmrSubmit',v:1,stageOnly:true,sections:sections,ts:Date.now()};
       window.__mlsEmrLastPayload=payload;
       try{ window.postMessage(payload,'*'); }catch(e){}
@@ -80,7 +85,7 @@
     };
     host.querySelector('#emrIns').onclick=function(){
       var parts=[]; S.forEach(function(s){ if(!conf[s.k]) return; var ta=host.querySelector('textarea[data-t="'+s.k+'"]'); var v=ta?ta.value.trim():''; parts.push(s.label.toUpperCase()+':\n'+(v||'(none)')); });
-      if(!parts.length){ alert('Confirm at least one section first.'); return; }
+      if(!parts.length){ (window.toast||window.alert)('Confirm at least one section first.'); return; }
       var out=parts.join('\n\n'), note=document.getElementById('mls-note');
       if(note){ if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out; }
       var b=host.querySelector('#emrIns'); b.textContent='Inserted'; setTimeout(function(){ b.textContent='Insert confirmed into note'; },1400);
@@ -1577,12 +1582,12 @@
         else if(a==='cosign'){
           var team=b.getAttribute('data-team')==='1';
           var item=team ? teamQueue().filter(function(x){return x.id===id;})[0] : null;
-          if(confirmCosign()){ cosign(id, team?{teamOwned:true, note:item&&item.record}:{}); render(); refreshAll(); }
+          confirmCosign().then(function(ok){ if(ok){ cosign(id, team?{teamOwned:true, note:item&&item.record}:{}); render(); refreshAll(); } });
         }
       });
     });
   }
-  function confirmCosign(){ return safe(function(){ return window.confirm('Cosign this note? You are attesting you reviewed it as the supervising physician.'); }, true); }
+  function confirmCosign(){ try{ return Promise.resolve(window.mlsConfirm('Cosign this note? You are attesting you reviewed it as the supervising physician.')); }catch(e){ return Promise.resolve(true); } }
   function openNote(id){
     safe(function(){
       var n=findNote(id);
@@ -2186,7 +2191,7 @@
     document.getElementById('mlsCsAdd').addEventListener('click', addCodePrompt);
     document.getElementById('mlsCsExport').addEventListener('click', exportSheet);
     document.getElementById('mlsCsImport').addEventListener('click', importSheet);
-    document.getElementById('mlsCsReset').addEventListener('click', function(){ if(confirm('Reset the code sheet to the practice defaults? Your edits will be replaced.')){ state=seed(); save(state); renderManager(''); toast('Reset to defaults'); } });
+    document.getElementById('mlsCsReset').addEventListener('click', async function(){ if(await window.mlsConfirm('Reset the code sheet to the practice defaults? Your edits will be replaced.')){ state=seed(); save(state); renderManager(''); toast('Reset to defaults'); } });
     document.getElementById('mlsCsConstrain').addEventListener('change', function(e){ state.constrainAI=!!e.target.checked; save(state); toast(state.constrainAI?'AI codes will be validated':'Validation off'); });
     document.getElementById('mlsCsPickFromMgr').addEventListener('click', pick);
   }
@@ -2224,22 +2229,22 @@
   function bindManagerRows(){
     var body=document.getElementById('mlsCsBody'); if(!body) return;
     body.querySelectorAll('.mlscs-mini').forEach(function(btn){
-      btn.addEventListener('click', function(){
+      btn.addEventListener('click', async function(){
         var row=btn.closest('.mlscs-row'); var kind=row.getAttribute('data-kind'), code=row.getAttribute('data-code');
         var arr=state[kind]; var idx=arr.findIndex(function(x){ return String(x.code)===code; });
         if(idx<0) return;
-        if(btn.getAttribute('data-act')==='del'){ if(confirm('Remove '+code+'?')){ arr.splice(idx,1); save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
-        else { var nd=prompt('Edit description for '+code+':', arr[idx].desc||''); if(nd!=null){ arr[idx].desc=nd; save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
+        if(btn.getAttribute('data-act')==='del'){ if(await window.mlsConfirm('Remove '+code+'?')){ arr.splice(idx,1); save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
+        else { var nd=await mlsPrompt('Edit description for '+code+':', arr[idx].desc||''); if(nd!=null){ arr[idx].desc=nd; save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
       });
     });
   }
-  function addCodePrompt(){
-    var kind=prompt('Add to which list? Type: cpt, icd, or em','cpt'); if(!kind) return; kind=kind.toLowerCase().trim();
+  async function addCodePrompt(){
+    var kind=await mlsPrompt('Add to which list? Type: cpt, icd, or em','cpt'); if(!kind) return; kind=kind.toLowerCase().trim();
     if(['cpt','icd','em'].indexOf(kind)<0){ toast('Use cpt, icd, or em'); return; }
-    var code=prompt('Code (e.g. 64483 or M54.51):',''); if(!code) return; code=code.trim();
+    var code=await mlsPrompt('Code (e.g. 64483 or M54.51):',''); if(!code) return; code=code.trim();
     if(state[kind].some(function(x){ return norm(x.code)===norm(code); })){ toast('Already on the sheet'); return; }
-    var desc=prompt('Description:','')||'';
-    var rec={code:code,desc:desc}; if(kind!=='em') rec.group=(prompt('Group/category (optional):','')||'Other');
+    var desc=await mlsPrompt('Description:','')||'';
+    var rec={code:code,desc:desc}; if(kind!=='em') rec.group=(await window.mlsPrompt('Group/category (optional):',''))||'Other';
     state[kind].push(rec); save(state); renderManager(''); toast('Added '+code);
   }
   function exportSheet(){

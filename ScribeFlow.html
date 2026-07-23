@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b494"></script>
+<script src="public-preview-policy.js?v=b495"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -4328,6 +4328,54 @@ const _SF_DEMO = (function(){
 const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
 function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
 function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
+/* =========================================================
+   DEMO LOCAL CALENDAR (2026-07-22, dlc-1.0.0)
+   When NO backend exists (demo/local evaluation), /api/appointments* is
+   served from a per-account localStorage store so booking, rescheduling,
+   check-in, cancel, and the waiting room all work fully offline with
+   synthetic data. Mounted ONLY when backendMode() is false — a hosted
+   session never touches this path, and only the appointments routes are
+   intercepted; every other request passes straight through untouched.
+   ========================================================= */
+if(!backendMode()){ (function(){
+  var _origFetch=window.fetch.bind(window);
+  function _laStore(){ try{ return JSON.parse(localStorage.getItem(uns('localApptsV1'))||'[]')||[]; }catch(e){ return []; } }
+  function _laSave(list){ try{ localStorage.setItem(uns('localApptsV1'),JSON.stringify(list.slice(0,2000))); }catch(e){} }
+  var _laSeq=Date.now()%1000000;
+  function _laJson(body,status){ return Promise.resolve(new Response(JSON.stringify(body),{status:status||200,headers:{'Content-Type':'application/json'}})); }
+  window.fetch=function(url,opts){
+    try{
+      var u=String(url||'');
+      var m=u.match(/^\/?api\/appointments(?:\/([^\/?]+))?(?:\/(update))?(?:\?([^#]*))?$/);
+      if(m){
+        opts=opts||{};
+        var method=String(opts.method||'GET').toUpperCase();
+        var list=_laStore(), body={};
+        try{ if(opts.body) body=JSON.parse(opts.body); }catch(eB){}
+        if(method==='GET'){
+          var q=new URLSearchParams(m[3]||''), date=q.get('date');
+          return _laJson({appointments:date?list.filter(function(r){return r.appt_date===date;}):list});
+        }
+        if(method==='POST'&&m[1]&&m[2]==='update'){
+          var row=list.find(function(r){ return String(r.id)===String(m[1]); });
+          if(!row) return _laJson({error:'Appointment not found.'},404);
+          Object.keys(body).forEach(function(k){ row[k]=body[k]; });
+          if(body.status==='checked_in'&&!row.checked_in_at) row.checked_in_at=new Date().toISOString();
+          _laSave(list); return _laJson({ok:true,id:row.id});
+        }
+        if(method==='POST'&&!m[1]){
+          body.id=++_laSeq; body.status=body.status||'booked'; body.created_at=new Date().toISOString();
+          list.push(body); _laSave(list); return _laJson({ok:true,id:body.id});
+        }
+        if(method==='DELETE'&&m[1]){
+          _laSave(list.filter(function(r){ return String(r.id)!==String(m[1]); }));
+          return _laJson({ok:true});
+        }
+      }
+    }catch(eLa){}
+    return _origFetch(url,opts);
+  };
+})(); }
 /* Generate sensitive QR codes entirely on this device. 2FA secrets and phone
    pairing codes must never be placed in a third-party image-service URL. */
 function mlsSetLocalQrImage(imageId,text,size){
@@ -9164,12 +9212,11 @@ async function loadCalendar(options){
     return {applied:!!applied,authoritative:!!authoritative,seq:_calSeq,epoch:_calEpoch,count:Array.isArray(_calAppts)?_calAppts.length:0,error:error||'',discarded:discarded||''};
   };
   var grid=document.getElementById('calGrid');
-  if(typeof backendMode!=='function'||!backendMode()||!_calToken){
-    /* Demo/local sessions are already active and use the synthetic calendar
-       owner. Do not append a contradictory "Sign in" message beneath it. */
-    if(grid) grid.innerHTML=(typeof _SF_DEMO!=='undefined'&&_SF_DEMO)
-      ? ''
-      : '<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>';
+  /* dlc-1.0.0: only a HOSTED signed-out session bails. A local/demo session
+     (no backend at all) proceeds — its /api/appointments* calls are served by
+     the local per-account calendar shim, so booking works fully offline. */
+  if(typeof backendMode==='function'&&backendMode()&&!_calToken){
+    if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>';
     return _calResult(false,false,'calendar_unavailable','');
   }
   /* Paint immediately from the last known rows so the calendar is never a
@@ -10480,7 +10527,8 @@ function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:0
 function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
 async function loadBoard(showToast){
   const box=document.getElementById('boardBox'); if(!box) return;
-  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
+  /* dlc-1.0.0: hosted signed-out blocks; local/demo uses the local shim */
+  if(typeof backendMode==='function'&&backendMode()&&!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
   if(showToast){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading the board…</div>'; }
   try{
     try{ await syncProfileName(); }catch(e){}
@@ -10545,7 +10593,8 @@ async function apptRoom(id){
   apptUpdate(id,{status:'roomed',room:room});
 }
 async function apptUpdate(id,patch){
-  if(!bkToken()) return;
+  /* dlc-1.0.0: hosted signed-out blocks; local/demo goes to the local shim */
+  if(typeof backendMode==='function'&&backendMode()&&!bkToken()) return;
   try{
     const r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(patch||{})});
     if(!r.ok){ toast('Could not update the appointment.','err'); return; }
@@ -27158,7 +27207,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b494"></script>
+<script src="public-preview-runtime.js?v=b495"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -27429,7 +27478,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b494';
+  window.__MLS_AV='b495';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

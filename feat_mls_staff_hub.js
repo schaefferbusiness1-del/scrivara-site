@@ -1,3 +1,8 @@
+/* Non-blocking dialog helpers: fall back to native only when the in-app modals are absent. */
+try{
+  if(typeof window.mlsConfirm!=='function'){ window.mlsConfirm=function(m){ return Promise.resolve(window.confirm(m)); }; }
+  if(typeof window.mlsPrompt!=='function'){ window.mlsPrompt=function(m,d){ return Promise.resolve(window.prompt(m,d==null?'':d)); }; }
+}catch(e){}
 /* =============================================================================
  * __mlsStaffHub  sh-1.0.0   (2026-07-13, owner work order: ONE cohesive
  * staff-account system instead of scattered fragments)
@@ -136,8 +141,8 @@
       .then(function (d) { lastNurseCreds = { name: name, email: email, tempPassword: d.tempPassword }; nurseBox().style.display = 'none'; loadNurses(); toast('Nursing login created.', 'ok'); })
       .catch(function (e) { toast(e.message || 'Could not create nursing login.', 'err'); });
   }
-  function removeNurse(id) {
-    if (!window.confirm('Remove this nursing login? Their access will stop immediately.')) return;
+  async function removeNurse(id) {
+    if (!await mlsConfirm('Remove this nursing login? Their access will stop immediately.')) return;
     fetch(bkBase() + '/api/team/nurses/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders(false) })
       .then(function (r) { if (!r.ok) throw new Error('Could not remove nursing login.'); lastNurseCreds = null; nurseBox().style.display = 'none'; loadNurses(); })
       .catch(function (e) { toast(e.message, 'err'); });
