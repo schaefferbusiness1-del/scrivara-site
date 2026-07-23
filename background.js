@@ -6237,7 +6237,7 @@ async function mlsSchedDomInline(doc, CFG){
         }
         function _legacySlotL(raw){
           var tail=cl(String(raw||'').replace(RTG,' '));
-          return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|hold|unavailable|lunch|closed|administrative|admin|reserved|no\b[\s,]*(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?|patients?|add[\s-]?ons?)|(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?)\s*,\s*no)(?:\b|\s|$)/i.test(tail);
+          return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|frozen|freeze|hold|unavailable|lunch|closed|administrative|admin|reserved|no\b[\s,]*(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?|patients?|add[\s-]?ons?)|(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?)\s*,\s*no)(?:\b|\s|$)/i.test(tail);
         }
         _legacyGridListsL.forEach(function(list){
           var rows=[];try{rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));}catch(_eLRs){}
