@@ -1998,6 +1998,13 @@
        deadline — never-immortal is the rule). Number form kept for callers. */
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
     var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
+    /* si-1.9.4 (owner 2026-07-22): "when the bar resets it makes it seem like
+       nothing was done". The pull bar parses "N of M" from these statuses, so
+       a sweep sub-batch reporting "1 of 2" visually threw away 14 finished
+       charts. Sweeps now report their position INSIDE the whole pull
+       (base + i of the original total) — the bar only ever moves forward. */
+    var sweepProgressBase = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressBase || 0)));
+    var sweepProgressTotal = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressTotal || 0)));
     rows = Array.isArray(rows) ? rows : []; unresolved = Array.isArray(unresolved) ? unresolved : [];
     var batchStartedAt = Date.now();
     var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
@@ -2152,7 +2159,7 @@
         var patientDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 5 : 6) * 60 * 1000);
         var patientReadStartedAt = Date.now();
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
-        if (onStatus) onStatus("Reading verified history " + (i + 1) + " of " + rows.length + "...", "");
+        if (onStatus) onStatus("Reading verified history " + (sweepProgressBase + i + 1) + " of " + (sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length) + (sweepDepth ? " (automatic re-check)" : "") + "...", "");
         /* An explicit pull always performs a fresh chart read. A legacy
            "Pulled from Athena" marker is not a coverage receipt and may be
            stale or partial, so it can never short-circuit this batch. */
@@ -2412,10 +2419,13 @@
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
         if (!sweepable.length) break;
         if (Date.now() + 240000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
-        if (onStatus) onStatus("Re-checking " + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
+        /* si-1.9.4: lead with the held progress ("14 of 16") so the bar keeps
+           its place; with zero finished there is no progress to hold, so the
+           count-free wording leaves the bar untouched. */
+        if (onStatus) onStatus((rows.length > sweepable.length ? (rows.length - sweepable.length) + " of " + rows.length + " charts finished — re-checking " : "Re-checking ") + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
         var swept = buildRetryRows(sweepable);
         var sub = null;
-        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt }); } catch (eSweep) { break; }
+        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math.max(0, rows.length - swept.rows.length), progressTotal: rows.length }); } catch (eSweep) { break; }
         receipt.sweepPasses = sweepPass;
         if (!sub || !Array.isArray(sub.patients)) break;
         var recoveredIds = {};

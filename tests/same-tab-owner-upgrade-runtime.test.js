@@ -324,7 +324,7 @@ function exerciseLoader({ asset, version, token, globalName, speech }) {
   { asset: 'feat_mls_voice_ai.js', version: '1.1.2', token: '20260719vaihot112', globalName: '__mlsVoiceAI', speech: true },
   { asset: 'feat_mls_dictate_anywhere.js', version: 'da-1.1.1', token: '20260719da111h1', globalName: '__mlsDictateAnywhere', speech: true },
   { asset: 'feat_mls_loading_calm.js', version: 'lb-2.1.0', token: '20260719lb204', globalName: '__mlsLoadingCalm', speech: false },
-  { asset: 'feat_mls_progress_stages.js', version: 'ps-1.3.0', token: '20260722ps130', globalName: '__mlsProgressStages', speech: false }
+  { asset: 'feat_mls_progress_stages.js', version: 'ps-1.3.0', token: '20260722ps131', globalName: '__mlsProgressStages', speech: false }
 ].forEach(exerciseLoader);
 
 /* Each voice satellite also owns a version-aware self-guard, so a direct or

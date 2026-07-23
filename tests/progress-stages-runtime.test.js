@@ -289,7 +289,7 @@ const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'u
 const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
 const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.3.0'")) || '';
 assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
-assert(psLoader.includes("s.src=A+'?v=20260722ps130'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260722ps131'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
 assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
 assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
 const lbAt = connect.indexOf(lbLoader);
@@ -324,9 +324,17 @@ context.localStorage.setItem('mlsPullBusyXTabV1', String(Date.now() + 10));
 ps._pullTick();
 pullJob = lb.active('si:pull');
 assert(pullJob && /another MLS tab/.test(JSON.stringify(pullJob)), 'a cross-tab stamp did not disclose the other-tab pull');
+/* ps-1.3.1: an AGED stamp (background-tab throttling slows the 25s touch) must
+   NOT flap to a false "Pull finished." — the job stays alive with an honest
+   slow-heartbeat note; only stamp REMOVAL (or a 6-minute silence) finishes. */
+context.localStorage.setItem('mlsPullBusyXTabV1', String(Date.now() - 120000));
+ps._pullTick();
+pullJob = lb.active('si:pull');
+assert(pullJob, 'a 2-minute-aged stamp prematurely finished the pull job (background-tab flap)');
+assert(/background tab slows the heartbeat/.test(JSON.stringify(pullJob)), 'aged stamp did not render the honest slow-heartbeat note');
 context.localStorage.removeItem('mlsPullBusyXTabV1');
 ps._pullTick();
-assert(!lb.active('si:pull'), 'a stale stamp did not finish the pull job');
+assert(!lb.active('si:pull'), 'a removed stamp did not finish the pull job');
 /* the watcher interval must be torn down by revert (no leaked timers) */
 assert(psSource.includes('if (pullWatch.iv) clearInterval(pullWatch.iv)'), 'revert leaks the pull-stamp watcher interval');
 

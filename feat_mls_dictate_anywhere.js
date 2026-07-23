@@ -251,6 +251,13 @@
       try { if (typeof window.toast === 'function') window.toast('Open the correct patient visit before dictating into this field.', 'err'); } catch (e00) {}
       return;
     }
+    /* cg-1.0.0: dictating into a VISIT field is clinical documentation of the
+       encounter — same consent gate as the visit recorder. Fail closed; a
+       confirmed dialog re-invokes once. Non-visit fields stay ungated. */
+    if (isVisitField(target) && typeof window._mlsHasEncounterConsent === 'function' && !window._mlsHasEncounterConsent()) {
+      try { window._mlsRequestEncounterConsent('dictation').then(function (ok) { if (ok && !listening) start(); }); } catch (eC) {}
+      return;
+    }
     var h = registerSpeech();
     var lease = h ? h.claim('dictate') : { ok: true, previous: null };
     if (!lease || lease.ok === false) {

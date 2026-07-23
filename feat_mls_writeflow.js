@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.7.0)
+ * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-2.2.0)
  * wf2-1.7.0 (2026-07-16): the exact-visit context prefers the REAL Athena
  *   appointment id resolved from the day's schedule-import index (keyed
  *   appointment-id:<id> -> {backendAppointmentId, patientId, appt_date}).
@@ -74,9 +74,9 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-2.0.0';
+  var VERSION = 'wf2-2.2.0';
   var S = function (x) { return x == null ? '' : String(x); };
-  var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
+  var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0, orderAccepts: 0 };
   var stopped = false;
   function syntheticLocalRuntime() {
     try {
@@ -1212,11 +1212,37 @@
     }, 'mlsAppAthenaActionV2Result', 90000).then(function (probe) {
       if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
       if (!probe || !probe.ok) {
+        var probeReason = S(probe && probe.reason);
+        /* wf2-2.2.0 (owner 2026-07-22, seamless write): when the destination is
+           simply not open, the review no longer tells the doctor to go open the
+           chart — MLS opens the exact identity-verified chart itself (the same
+           proven SearchOpen verb the one-click lane uses since wf2-2.0.0) and
+           re-probes once. One auto-open per review; identity/token/tab
+           failures never auto-open; the single human Confirm & write click is
+           unchanged. */
+        if (AUTO_OPEN_REASONS[probeReason] === 1 && !state.autoOpened) {
+          state.autoOpened = true;
+          unifiedStatus(state, S(state.manifest.patient.name) + ' is not open in Athena. MLS is finding and opening the exact chart now — identity is verified before it opens, and nothing is written without your Confirm & write click...', '');
+          searchOpenTarget(state.manifest.patient, state.manifest.visit).then(function (openRes) {
+            if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+            if (!openRes || openRes.ok !== true) {
+              unifiedStatus(state, 'MLS could not open ' + S(state.manifest.patient.name) + ' in Athena on its own' + ((openRes && (openRes.error || openRes.reason)) ? ': ' + S(openRes.error || openRes.reason) : '') + '. Open the chart in athenaOne, then press Check Athena again. Nothing was changed.', 'err');
+              unifiedRecheckButton(state, row.id);
+              return;
+            }
+            unifiedStatus(state, S(state.manifest.patient.name) + ' is open in Athena (via ' + S(openRes.via || 'patient search') + '). Re-checking the exact destination...', '');
+            setTimeout(function () {
+              if (state.closed || unifiedAthenaState !== state) return;
+              probeUnifiedRow(state, row.id);
+            }, 1500);
+          });
+          return;
+        }
         /* wf2-1.9.0 QoL: a refused read-only probe is almost always fixable by
            the doctor. Say HOW, and offer one explicit re-check instead of
            making them reopen the whole review. */
         var probeErr = S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.';
-        if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + S(probe && probe.reason))) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + probeReason)) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
         unifiedStatus(state, probeErr, 'err');
         unifiedRecheckButton(state, row.id);
         return;
@@ -1329,6 +1355,18 @@
     var items = orderRows.map(function (row) {
       var payload = row.payload || {}, blocked = row.capability === 'blocked';
       var statusColor = blocked ? '#8b2525' : '#7a5a16';
+      /* oa-1.0.0 (owner 2026-07-22): a proposed order stuck at "Suggestion
+         only" had no accept control anywhere on this card — the clinician
+         had accepted it mentally and the UI kept re-asking. Suggestion rows
+         now carry an explicit review-and-accept button; acceptance is
+         recorded app-side immediately and the row becomes a reviewed draft.
+         Accepting never executes anything — placement stays human, in Athena. */
+      var acceptable = blocked && S(payload.reviewStatus).indexOf('suggestion only') === 0 && typeof window._athenaAcceptProposedOrder === 'function';
+      var acceptHtml = acceptable
+        ? '<div style="margin-top:7px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<button type="button" data-mls-accept-order="' + esc(row.id) + '" style="border:0;background:#205c43;color:#fff;border-radius:9px;padding:8px 13px;font-weight:800;font-size:12px;cursor:pointer">Accept this proposed order</button>' +
+          '<span style="font-size:11px;color:#52675c">Records your acceptance now — it becomes a reviewed draft and will not be asked again. Nothing is placed or executed.</span></div>'
+        : '';
       return '<div data-manifest-row="' + esc(row.id) + '" style="padding:9px 0;border-top:1px solid #e3ebe6">' +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:#203b2e">' + esc(payload.orderTypeLabel || row.label) + '</b>' +
         '<span style="font-size:10px;font-weight:850;color:' + statusColor + ';border:1px solid currentColor;border-radius:999px;padding:1px 6px">' + esc(row.capability === 'manual' ? 'COMPLETE IN ATHENA' : 'REVIEW REQUIRED') + '</span></div>' +
@@ -1337,11 +1375,60 @@
         '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#204034">Review complete proposed order</summary>' +
         '<div style="font-size:10.5px;color:#52675c;margin:4px 0">Payload ' + esc(row.payloadHash) + ' | Row ' + esc(row.rowHash) + '</div>' +
         '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow:auto;margin:0;padding:8px;border:1px solid #dbe7e0;border-radius:8px;background:#fff;color:#1f3027;font:11.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>' +
-        '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px">' + esc(row.reason) + '</div>' + teachingHtml(manifest, row) + '</div>';
+        '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px">' + esc(row.reason) + '</div>' + acceptHtml + teachingHtml(manifest, row) + '</div>';
     }).join('');
     return '<section data-mls-orders-summary="1" style="border:1px solid #cfded5;border-radius:11px;padding:10px 12px;margin-top:9px;background:#f7fbf9">' +
       '<div style="display:flex;gap:8px;align-items:center"><b style="font-size:14px;color:#204034">Orders proposed for Athena</b><span style="margin-left:auto;font-size:11px;color:#52675c">' + orderRows.length + ' item' + (orderRows.length === 1 ? '' : 's') + '</span></div>' +
       '<div style="font-size:11.5px;color:#52675c;margin:3px 0 5px">Review each frozen proposal here, then complete the exact order in Athena. MLS never selects a catalog item, places an order, prescribes, or submits anything.</div>' + items + '</section>';
+  }
+  /* oa-1.0.0: record acceptance of one suggestion row, then rebuild the review
+     from a plan where that item is an accepted reviewed draft. The app hook is
+     the durable source of truth (persisted with the visit record); the reopen
+     recomputes every hash honestly. Fail closed: if acceptance cannot be
+     recorded, the row stays a suggestion and says so. */
+  function acceptUnifiedSuggestion(state, rowId, btn) {
+    if (!state || state.closed || unifiedAthenaState !== state) return;
+    if (state.running) { unifiedStatus(state, 'Wait for the running Athena check to finish, then accept the order.', 'err'); return; }
+    var row = null;
+    for (var i = 0; i < state.manifest.rows.length; i++) { if (state.manifest.rows[i] && state.manifest.rows[i].id === rowId) { row = state.manifest.rows[i]; break; } }
+    if (!row || !row.payload) return;
+    var hook = window._athenaAcceptProposedOrder;
+    if (typeof hook !== 'function') { unifiedStatus(state, 'This page cannot record order acceptance — accept it in the Orders workspace instead. Nothing changed.', 'err'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Recording acceptance...'; }
+    var res = null;
+    try { res = hook(stableClone(row.payload)); } catch (eHook) { res = { ok: false, error: String(eHook && eHook.message || eHook) }; }
+    if (!res || res.ok !== true) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Accept this proposed order'; }
+      unifiedStatus(state, 'Acceptance was NOT recorded' + (res && res.error ? ' — ' + String(res.error) : '') + '. The order remains a suggestion.', 'err');
+      return;
+    }
+    STATE.orderAccepts++;
+    var opts = state.sourceOpts || {};
+    var plan = stableClone(Array.isArray(opts.plan) ? opts.plan : []);
+    var wantText = S(row.payload.originalText || row.payload.summary).trim().toLowerCase();
+    plan.forEach(function (sec) {
+      if (!sec || planKind(sec.kind) !== 'orders') return;
+      var sugg = Array.isArray(sec.orderSuggestions) ? sec.orderSuggestions : [], keep = [], moved = null;
+      sugg.forEach(function (item) {
+        var t = S(item && (item.originalText || item.summary)).trim().toLowerCase();
+        if (!moved && t && t === wantText) { moved = item; } else { keep.push(item); }
+      });
+      if (!moved) return;
+      sec.orderSuggestions = keep;
+      var draft = stableClone(moved);
+      draft.source = /^rule/.test(S(draft.source)) ? 'rule-suggestion-accepted' : 'ai-suggestion-accepted';
+      var drafts = Array.isArray(sec.orderDrafts) ? sec.orderDrafts : (Array.isArray(sec.orders) ? sec.orders : []);
+      sec.orderDrafts = drafts.concat([draft]);
+    });
+    var next = {};
+    for (var k in opts) next[k] = opts[k];
+    next.plan = plan;
+    next.previewHash = '';                                   /* content changed — recompute */
+    next.receiptSessionId = S(state.manifest.receiptSessionId);
+    openUnifiedConfirmation(next);                           /* closes this review itself */
+    if (unifiedAthenaState && unifiedAthenaState !== state) {
+      unifiedStatus(unifiedAthenaState, 'Acceptance recorded — "' + S(row.payload.summary).slice(0, 90) + '" is now an accepted reviewed draft and will not be asked again. Placement still happens in Athena, by you.', 'ok');
+    }
   }
   function renderUnifiedConfirmation(state) {
     closeActionConfirm();
@@ -1389,6 +1476,8 @@
     go.addEventListener('click', function () { executeUnifiedSelection(state); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
     for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
+    var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
+    for (var abi = 0; abi < acceptBtns.length; abi++) acceptBtns[abi].addEventListener('click', function () { acceptUnifiedSuggestion(state, this.getAttribute('data-mls-accept-order'), this); });
     state.a11yKeyHandler = function (ev) {
       if (state.closed || unifiedAthenaState !== state) return;
       if (ev.key === 'Escape' || ev.key === 'Esc') {
@@ -1425,7 +1514,7 @@
     } catch (e0) {}
     if (unifiedAthenaState) closeUnifiedConfirmation();
     var manifest = buildUnifiedManifest(opts);
-    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null };
+    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);

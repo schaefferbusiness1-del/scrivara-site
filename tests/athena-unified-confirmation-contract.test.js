@@ -55,4 +55,21 @@ const superbill = between(app, 'function pushSuperbillToAthena()', '/* Preview a
 assert(superbill.includes('openUnifiedConfirmation'), 'Superbill must enter the same unified confirmation page');
 assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill must not retain an executable billing fallback');
 
-console.log('PASS unified Athena confirmation: one page/button for note lanes, exact manual final-action rows, trusted hash binding, and no Sign/billing execution offer');
+/* wf2-2.2.0 (owner 2026-07-22, seamless write): when the probe refuses only
+   because the destination is not open, the unified review opens the exact
+   identity-verified chart itself (SearchOpen) and re-probes once — no more
+   "go open the chart first". Bounded and fail-closed: whitelisted not-open
+   reasons only, one auto-open per review, and the single human Confirm &
+   write click is unchanged. */
+{
+  const probeFn = between(unified, 'function probeUnifiedRow(state, rowId)', 'function receiptStateForRow(state, row)');
+  assert(/AUTO_OPEN_REASONS\[probeReason\] === 1 && !state\.autoOpened/.test(probeFn), 'unified probe must auto-open only on whitelisted not-open reasons, once per review');
+  assert(probeFn.includes('state.autoOpened = true;'), 'the auto-open once-flag must be consumed before dispatch');
+  assert(probeFn.includes('searchOpenTarget(state.manifest.patient, state.manifest.visit)'), 'auto-open must use the proven identity-frozen SearchOpen helper with the manifest patient and visit');
+  assert(/probeUnifiedRow\(state, row\.id\);/.test(probeFn), 'a successful auto-open must re-probe the same row');
+  assert(probeFn.includes('press Check Athena again. Nothing was changed.'), 'a failed auto-open must fail closed with the manual instruction');
+  assert(!/executeUnifiedSelection/.test(between(probeFn, 'AUTO_OPEN_REASONS[probeReason]', 'wf2-1.9.0')), 'auto-open must never chain into an execute');
+  assert(unified.includes('autoOpened: false'), 'the unified state must initialize the once-per-review auto-open flag');
+}
+
+console.log('PASS unified Athena confirmation: one page/button for note lanes, exact manual final-action rows, trusted hash binding, seamless bounded auto-open, and no Sign/billing execution offer');

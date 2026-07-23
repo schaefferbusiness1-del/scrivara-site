@@ -561,7 +561,28 @@
       '.mls-intake-add{justify-self:start;margin-top:2px;}',
       /* phone: full-height sheet, rail becomes a sticky horizontal chip row */
       '@media(max-width:820px){#settingsModal.mls-settings-clean{padding:0!important;align-items:stretch!important;}#settingsModal.mls-settings-clean .modal{display:block!important;width:100vw!important;height:100dvh!important;max-height:none!important;border-radius:0!important;border:0!important;padding:0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:sticky!important;top:0!important;z-index:8!important;height:auto!important;width:auto!important;display:flex!important;flex-flow:row nowrap!important;gap:6px!important;overflow-x:auto!important;overflow-y:visible!important;overscroll-behavior-x:contain!important;margin:0 -16px 12px!important;padding:10px 14px!important;border-right:0!important;border-radius:0!important;border-bottom:1px solid var(--line)!important;background:var(--surface,#fff)!important;scrollbar-width:none!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;padding:8px 12px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab .mls-set-ic{width:22px;height:22px;flex-basis:22px;font-size:12px;}#settingsModal.mls-settings-clean .mls-set-rail-head{display:none!important;}#settingsModal.mls-settings-clean .mls-set-search-row{position:static!important;padding:4px 0 10px!important;}#settingsModal.mls-settings-clean .modal-x{position:fixed!important;top:8px!important;right:10px!important;margin:0!important;z-index:10!important;}#settingsModal.mls-settings-clean .modal>h3{margin:14px 44px 2px 0!important;}#settingsModal.mls-settings-clean .modal>.row{margin:14px -16px 0!important;padding:12px 16px 14px!important;}}',
-      '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}'
+      '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}',
+      /* ===== dark-theme equalizer (2026-07-22) =====
+         Several satellite skins hardcode a light palette with !important and
+         no body.theme-dark branch, so they render white cards + dark text in
+         dark mode. body.theme-dark adds specificity, so these win over the
+         later-loaded plain selectors regardless of stylesheet order. */
+      'body.theme-dark #mlsAccountMenuBtn{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsAccountMenuBtn:hover,body.theme-dark #mlsAccountMenuBtn[aria-expanded="true"]{background:var(--soft,#1F2721)!important;}',
+      'body.theme-dark .mls-account-pop{background:var(--card,#1C231E)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark .mls-account-id{color:var(--muted,#9CA89E)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark .mls-account-action{color:var(--ink,#EAEFEA)!important;}',
+      'body.theme-dark .mls-account-action:hover{background:var(--soft,#1F2721)!important;}',
+      'body.theme-dark #mlsTbMenuBtn{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsTbMenuPanel{background:var(--card,#1C231E)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsTbMenuPanel button,body.theme-dark #mlsTbMenuPanel a,body.theme-dark #mlsTbMenuPanel div{color:var(--ink,#EAEFEA);}',
+      'body.theme-dark #copilotCard,body.theme-dark .sx-right>.card,body.theme-dark #studioResultCard,body.theme-dark #mls-sg-root .mls-sg-card{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsAsstPanel{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsPsChip{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsPsPanel{background:var(--card,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #mlsPsPanel .ps-hd{background:var(--soft,#1F2721)!important;color:var(--muted,#9CA89E)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark .pt-item,body.theme-dark .hist-item,body.theme-dark .rec-item,body.theme-dark .doc-item{background:var(--soft2,var(--soft,#1F2721))!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}',
+      'body.theme-dark #patientsView input[type=text],body.theme-dark #copilotCard textarea,body.theme-dark .sx-right>.card input,body.theme-dark .sx-right>.card textarea,body.theme-dark .sx-right>.card select{background:var(--surface,#1C231E)!important;color:var(--ink,#EAEFEA)!important;border-color:var(--line,#2B342D)!important;}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -1188,7 +1209,18 @@
   }
 
   function reconcileSettings() {
-    var modal = byId('settingsModal'); if (!modal) return false;
+    var modal = byId('settingsModal');
+    if (!modal) {
+      /* never strand the settings-open class (it hides the voice docks) */
+      safe(function () { if (document.body && document.body.classList.contains('mls-settings-open')) document.body.classList.remove('mls-settings-open'); });
+      return false;
+    }
+    /* keep the dock-visibility class truthful even on the zero-section
+       early-return below (mid-rerender the class used to freeze stale) */
+    safe(function () {
+      var openNow = modal.classList.contains('show');
+      if (document.body && document.body.classList.contains('mls-settings-open') !== openNow) document.body.classList.toggle('mls-settings-open', openNow);
+    });
     /* The modal's class is itself observed for open/close. Re-adding an
        already-present class generated an endless observer -> reconcile ->
        class mutation cycle even while Settings was closed. */

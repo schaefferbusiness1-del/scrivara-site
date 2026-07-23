@@ -173,4 +173,46 @@ assert(scribeSource.includes('orderDrafts:orderReview.drafts,orderSuggestions:or
 assert(flowSource.includes('function bridgePatient(p)'), 'patient binding bridge helper is missing');
 assert(/patientId:\s*S\(p\.patientId/.test(flowSource), 'local patient audit ID does not cross the supervised bridge');
 
-console.log('PASS Orders final review: immutable exact-patient payloads, every reviewed order manual, and incomplete/suggestion rows blocked');
+/* oa-1.0.0 (owner 2026-07-22): a suggestion row must carry a review-and-accept
+   control; acceptance is recorded app-side immediately, the review reopens
+   with the item as an accepted draft, and it is never re-asked. Acceptance is
+   a recorded decision only — placement stays human, in Athena. */
+assert(flowSource.includes('data-mls-accept-order='), 'suggestion rows lost their review-and-accept button');
+assert(flowSource.includes('function acceptUnifiedSuggestion(state, rowId, btn)'), 'the unified accept handler is missing');
+assert(/typeof window\._athenaAcceptProposedOrder === 'function'/.test(flowSource), 'the accept button must exist only when the app can record acceptance');
+assert(flowSource.includes("unifiedStatus(state, 'Acceptance was NOT recorded'"), 'a failed acceptance must fail closed with a visible refusal');
+assert(/next\.previewHash = ''/.test(flowSource), 'the reopened review must recompute its preview hash after acceptance');
+assert(!/acceptUnifiedSuggestion[\s\S]{0,2400}(executeUnifiedSelection|mlsAppAthenaActionV2|place_order)/.test(flowSource.slice(flowSource.indexOf('function acceptUnifiedSuggestion'), flowSource.indexOf('function acceptUnifiedSuggestion') + 3200)), 'acceptance must never trigger an Athena action');
+for (const [label, source] of [['ScribeFlow', scribeSource], ['ScribeFlow-staging', fs.readFileSync(path.join(root, 'ScribeFlow-staging.html'), 'utf8')]]) {
+  assert(source.includes('function _athenaAcceptProposedOrder(desc)'), label + ' is missing the acceptance recorder');
+  assert(source.includes('window._athenaAcceptProposedOrder=_athenaAcceptProposedOrder'), label + ' does not expose the acceptance recorder to the unified review');
+  assert(/already-accepted/.test(source), label + ' acceptance recorder is not idempotent');
+}
+{
+  /* runtime: the recorder must accept a type-less suggestion (no ORDER_DEFS
+     entry), be idempotent, and stamp a legacy un-reviewed order in place. */
+  const recCtx = {
+    currentOrders: [{ id: 'oLegacy', type: 'imaging', fields: {}, _src: 'MRI right knee', _ai: true }],
+    ORDER_DEFS: { imaging: { fields: [{ key: 'study' }] } },
+    parseSuggestedOrder(text) { return /MRI/.test(text) ? { type: 'imaging', fields: { study: 'MRI' } } : { type: 'mystery_modality', fields: { anything: 'x' } }; },
+    renderOrderList() {}, updateNavCounts() {},
+    window: {}, console, Date, Math, Object, Array, String
+  };
+  vm.createContext(recCtx);
+  const recSource = extractFunction(scribeSource, '_athenaAcceptProposedOrder');
+  vm.runInContext(recSource + '\nthis._athenaAcceptProposedOrder = _athenaAcceptProposedOrder;', recCtx);
+  const legacy = recCtx._athenaAcceptProposedOrder({ originalText: 'MRI right knee' });
+  assert(legacy.ok === true && legacy.mode === 'legacy-accepted', 'legacy _ai order was not stamped accepted in place: ' + JSON.stringify(legacy));
+  assert.strictEqual(recCtx.currentOrders[0]._reviewStatus, 'accepted', 'legacy order reviewStatus not recorded');
+  const again = recCtx._athenaAcceptProposedOrder({ originalText: 'MRI right knee' });
+  assert(again.ok === true && again.mode === 'already-accepted', 'second acceptance must be a no-op acknowledgement');
+  assert.strictEqual(recCtx.currentOrders.length, 1, 'idempotent acceptance duplicated the order');
+  const typeless = recCtx._athenaAcceptProposedOrder({ originalText: 'Custom bracing protocol', source: 'ai-suggestion' });
+  assert(typeless.ok === true && typeless.mode === 'accepted', 'a suggestion without a builder form must still be acceptable: ' + JSON.stringify(typeless));
+  assert.strictEqual(recCtx.currentOrders.length, 2, 'accepted suggestion was not recorded');
+  assert.strictEqual(recCtx.currentOrders[1]._reviewStatus, 'accepted', 'accepted suggestion is missing its review status');
+  const empty = recCtx._athenaAcceptProposedOrder({});
+  assert(empty.ok === false, 'an empty descriptor must be refused');
+}
+
+console.log('PASS Orders final review: immutable exact-patient payloads, every reviewed order manual, incomplete/suggestion rows blocked, and acceptance recorded once');

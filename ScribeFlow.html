@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b493"></script>
+<script src="public-preview-policy.js?v=b494"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -6938,9 +6938,16 @@ function _infoDialog(title, text){
    that do nothing). These return Promises, keep the exact wording of the
    old dialogs, trap Enter/Escape, restore focus, and never block.
    ========================================================= */
+var _mlsAskActive=null; /* the one open ask-dialog: {finish, cancelValue} */
 function _mlsDialogBase(build){
   return new Promise(function(resolve){
     try{
+      /* A new dialog RESOLVES the one it replaces (as cancelled) instead of
+         orphaning it: a bare DOM removal left the old promise pending forever
+         (deadlocking single-flight callers like the consent gate) and leaked
+         its capture-phase keydown listener, so one Enter could fire BOTH a
+         stale and the visible confirm. */
+      if(_mlsAskActive){ var prevActive=_mlsAskActive; _mlsAskActive=null; try{ prevActive.finish(prevActive.cancelValue); }catch(ePrev){} }
       var prev=document.getElementById('_mlsAskDialog'); if(prev) prev.remove();
       var prevFocus=document.activeElement;
       var ov=document.createElement('div'); ov.id='_mlsAskDialog';
@@ -6951,12 +6958,14 @@ function _mlsDialogBase(build){
       var done=false;
       function finish(val){
         if(done) return; done=true;
+        if(_mlsAskActive&&_mlsAskActive.finish===finish) _mlsAskActive=null;
         try{ ov.remove(); }catch(e){}
         document.removeEventListener('keydown',onKey,true);
         try{ if(prevFocus&&prevFocus.focus) prevFocus.focus(); }catch(e){}
         resolve(val);
       }
       var api=build(card,finish);
+      _mlsAskActive={ finish:finish, cancelValue:api.cancelValue };
       function onKey(e){
         if(e.key==='Escape'){ e.stopPropagation(); finish(api.cancelValue); }
         else if(e.key==='Enter'&&api.onEnter&&(!api.enterTarget||document.activeElement===api.enterTarget)){ e.preventDefault(); api.onEnter(); }
@@ -7047,6 +7056,7 @@ function mlsReconfirmConsent(){
 }
 window.mlsReconfirmConsent=mlsReconfirmConsent;
 window._mlsHasEncounterConsent=_mlsHasEncounterConsent;
+window._mlsRequestEncounterConsent=_mlsRequestEncounterConsent;
 /* Append-only audit log in the account namespace. Returns false when the
    record could not be durably written — the caller must then REFUSE to start
    an untracked recording. */
@@ -7091,6 +7101,12 @@ function _mlsRequestEncounterConsent(actionLabel){
     try{ Array.prototype.forEach.call(card.querySelectorAll('input[name="_mlsConsentOpt"]'),function(r){ r.addEventListener('change',syncLabel); }); }catch(e){}
     function decide(){
       var type=picked();
+      /* the patient/encounter can change while this dialog is open — never
+         write a consent record for an encounter that will not record */
+      if(_mlsConsentKey()!==key){
+        try{ toast('The selected patient changed while the consent dialog was open, so nothing was recorded or logged. Reopen the patient and start again.','err'); }catch(e){}
+        finish(false); return;
+      }
       if(type==='declined'){
         try{ toast('Recording not started — the patient declined. The visit continues normally without audio capture.',''); }catch(e){}
         finish(false); return;
@@ -14020,6 +14036,10 @@ let currentNoteId=null; // id of the history record being edited (null = brand n
 function newVisit(opts){
   opts=opts||{};
   try{var _vh=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(_vh&&_vh.current&&_vh.current()){_vh.claim('visit-reset');_vh.release('visit-reset');}}catch(eSpeech){}
+  /* a NEW encounter always requires fresh recording consent — without this,
+     an unbound walk-in's day-keyed consent silently spanned every same-day
+     "New Visit" for that patient */
+  try{ _mlsConsentCurrent=null; }catch(eConsent){}
   if(capturing) stopCapture();
   try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode&&typeof stopPhoneMic==='function') stopPhoneMic(); }catch(e0){}
   try{ if(typeof _resetAiVisitOutputs==='function') _resetAiVisitOutputs(); }catch(eAi){}
@@ -19019,6 +19039,44 @@ function acceptSuggestion(i){
   toast('Added: '+def.label+' — '+(s.label||'')+'. Edit in the list if needed.','ok');
 }
 
+/* oa-1.0.0 (owner 2026-07-22): record acceptance of a proposed order coming
+   from the unified Athena review card. Idempotent by suggestion text, and it
+   accepts even when the parsed type has no builder form — acceptAiSuggestion
+   silently refused those, which left "Suggestion only" stuck after the
+   clinician had decided to accept. Acceptance is a recorded review decision
+   only; nothing is placed, prescribed, or submitted. */
+function _athenaAcceptProposedOrder(desc){
+  try{
+    desc=(desc&&typeof desc==='object')?desc:{};
+    var text=String(desc.originalText||desc.summary||'').trim();
+    if(!text)return{ok:false,error:'missing-suggestion-text'};
+    var lower=text.toLowerCase();
+    if(typeof currentOrders==='undefined'||!Array.isArray(currentOrders))currentOrders=[];
+    for(var i=0;i<currentOrders.length;i++){
+      var o=currentOrders[i]; if(!o)continue;
+      if(String(o._src||'').trim().toLowerCase()!==lower)continue;
+      if(o._reviewStatus==='accepted')return{ok:true,mode:'already-accepted',orderId:String(o.id||'')};
+      o._reviewStatus='accepted';
+      if(!/^(provider-entered|ai-suggestion|rule-suggestion|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(String(o._source||'')))o._source='ai-suggestion';
+      try{renderOrderList();}catch(e1){} try{updateNavCounts();}catch(e2){}
+      return{ok:true,mode:'legacy-accepted',orderId:String(o.id||'')};
+    }
+    var parsed={type:'',fields:{}};
+    try{parsed=parseSuggestedOrder(text)||parsed;}catch(e3){}
+    var fields={};
+    try{
+      var def=ORDER_DEFS[parsed.type];
+      if(def)def.fields.forEach(function(f){fields[f.key]=(parsed.fields&&parsed.fields[f.key])||'';});
+      else fields=Object.assign({},parsed.fields||{});
+    }catch(e4){fields=Object.assign({},parsed.fields||{});}
+    var order={id:'o'+Date.now()+Math.random().toString(36).slice(2,5),type:String(parsed.type||''),fields:fields,_src:text,_source:String(desc.source||'').indexOf('rule')===0?'rule-suggestion':'ai-suggestion',_reviewStatus:'accepted'};
+    currentOrders.push(order);
+    try{renderOrderList();}catch(e5){} try{updateNavCounts();}catch(e6){}
+    return{ok:true,mode:'accepted',orderId:order.id};
+  }catch(err){return{ok:false,error:String((err&&err.message)||err||'accept-failed')}}
+}
+window._athenaAcceptProposedOrder=_athenaAcceptProposedOrder;
+
 /* ---- builder form ---- */
 function renderOrderFields(){
   const type=document.getElementById('ordType').value;
@@ -19129,7 +19187,16 @@ function removeOrder(id){
 }
 async function clearAllOrders(){
   if(!currentOrders.length) return;
+  /* capture the exact order set being confirmed — the global is reassigned
+     whenever another visit loads, and a background load during the open
+     dialog must never make this wipe a DIFFERENT visit's drafts */
+  var confirmedOrders=currentOrders;
+  var confirmedEpoch=(typeof currentVisitAthenaEpoch!=='undefined')?currentVisitAthenaEpoch:null;
   if(!await mlsConfirm('Remove all orders for this visit?')) return;
+  if(currentOrders!==confirmedOrders||((typeof currentVisitAthenaEpoch!=='undefined')&&currentVisitAthenaEpoch!==confirmedEpoch)){
+    toast('The visit changed while the confirmation was open, so nothing was cleared. Review the current orders and try again.','err');
+    return;
+  }
   currentOrders=[]; editingOrderId=null;
   renderOrderList(); updateNavCounts();
   toast('All orders cleared.','');
@@ -27091,7 +27158,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b493"></script>
+<script src="public-preview-runtime.js?v=b494"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -27362,7 +27429,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b493';
+  window.__MLS_AV='b494';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

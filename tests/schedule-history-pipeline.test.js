@@ -351,9 +351,14 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
       }
       return basePost(msg);
     };
-    const sweepReceipt = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+    const sweepStatuses = [];
+    const sweepReceipt = await context.__mlsSI._runHistoryBatch([row], [], m => sweepStatuses.push(String(m || '')));
     context.postMessage = basePost;
     assert.strictEqual(sweepReceipt.complete, true, 'the automatic re-sweep must complete an actively-edited chart: ' + JSON.stringify({ reason: sweepReceipt.reason, failures: sweepReceipt.failures, sweepPasses: sweepReceipt.sweepPasses }));
+    /* si-1.9.4: the sweep's counter must be marked as a re-check continuing the
+       same pull, never a bare restart that repaints the bar back to zero. */
+    assert(sweepStatuses.some(s => /Reading verified history 1 of 1 \(automatic re-check\)/.test(s)),
+      'sweep sub-batch statuses must carry the cumulative re-check counter: ' + JSON.stringify(sweepStatuses));
     assert.strictEqual(sweepReceipt.sweepPasses, 1, 'exactly one sweep pass must have recovered it');
     assert.strictEqual(sweepReceipt.retry.length, 0, 'no retry entries may remain after sweep recovery');
     const sweptEntry = sweepReceipt.patients.find(p => p && p.sweepRecovered === 1);
@@ -367,8 +372,13 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   {
     const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
     assert(src.includes('function buildRetryRows'), 'the shared retry-row builder must exist');
-    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, \{ depth: 1, deadlineCapAt: batchDeadlineAt \}\)/.test(src),
-      'a sweep must run at depth 1 AND inherit the outer frozen deadline (never-immortal)');
+    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, \{ depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math\.max\(0, rows\.length - swept\.rows\.length\), progressTotal: rows\.length \}\)/.test(src),
+      'a sweep must run at depth 1 AND inherit the outer frozen deadline (never-immortal) AND report cumulative pull-wide progress (si-1.9.4)');
+    /* si-1.9.4 (owner 2026-07-22): the pull bar parses "N of M" — a sweep
+       reporting "1 of 2" made 14 finished charts look thrown away. */
+    assert(/sweepProgressBase \+ i \+ 1/.test(src), 'si-1.9.4: sweep counters must continue from the whole-pull base, never restart at 1');
+    assert(/sweepProgressTotal > rows\.length \? sweepProgressTotal : rows\.length/.test(src), 'si-1.9.4: sweep counters must keep the original pull total');
+    assert(src.includes('charts finished — re-checking'), 'si-1.9.4: the sweep announcement must lead with the held progress');
     assert(/batchDeadlineAt = Math\.min\(batchDeadlineAt, sweepDeadlineCapAt\)/.test(src), 'the sub-batch deadline must be capped by the outer deadline');
     assert(/sweepPass <= 3 && !receipt\.complete/.test(src), 'the sweep must be bounded to three passes and stop on completion');
     assert(/Date\.now\(\) \+ 240000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');

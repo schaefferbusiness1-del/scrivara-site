@@ -125,7 +125,7 @@
     if (!anchor) return;
     var chip = document.createElement('span');
     chip.id = 'mlsProvChip';
-    if (fixed) chip.style.cssText = 'position:fixed;left:18px;bottom:18px;z-index:99995;background:linear-gradient(135deg,#204034,#2E6A4B);border:0';
+    if (fixed) chip.style.cssText = 'position:fixed;left:18px;bottom:76px;z-index:99995;background:linear-gradient(135deg,#204034,#2E6A4B);border:0';
     chip.addEventListener('click', function (e) { e.stopPropagation(); buildMenu(chip); });
     if (fixed) anchor.appendChild(chip); else anchor.insertAdjacentElement('afterend', chip);
     remember(chip);

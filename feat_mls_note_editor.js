@@ -417,6 +417,14 @@
     if (!SR) { toast("Voice editing is not supported in this browser - you can type instead (Chrome/Edge support the mic).", "err"); return false; }
     if (dictating) { stopDictation(); return false; }
     if (key && isLocked(key)) { toast(secByKey(key).name + " is locked. Unlock it to dictate.", "err"); return false; }
+    /* cg-1.0.0: note dictation transcribes the room into clinical
+       documentation — same encounter-consent gate as the visit recorder.
+       Fail closed now; a confirmed dialog re-invokes this entry once.
+       (typeof-guarded only for isolated harnesses.) */
+    if (typeof window._mlsHasEncounterConsent === 'function' && !window._mlsHasEncounterConsent()) {
+      try { window._mlsRequestEncounterConsent('note dictation').then(function (ok) { if (ok && !dictating) startDictation(key); }); } catch (e) {}
+      return false;
+    }
     var visitToken = captureVisitToken("starting note dictation");
     if (!visitToken) return false;
     var lease = claimNoteSpeech();

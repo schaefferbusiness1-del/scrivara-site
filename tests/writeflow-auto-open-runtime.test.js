@@ -64,7 +64,7 @@ function makeHarness() {
   });
   vm.runInContext(src, context, { filename: 'feat_mls_writeflow.js' });
   const wf = context.window.__mlsWriteFlow;
-  assert(wf && wf.installed && wf.version === 'wf2-2.0.0', 'writeflow failed to install as wf2-2.0.0');
+  assert(wf && wf.installed && wf.version === 'wf2-2.2.0', 'writeflow failed to install as wf2-2.2.0');
   const tick = () => new Promise(r => setImmediate(r));
   async function settle(n) { for (let i = 0; i < (n || 6); i++) await tick(); }
   function deliver(data) { listeners.slice().forEach(fn => { try { fn({ data }); } catch (e) {} }); }

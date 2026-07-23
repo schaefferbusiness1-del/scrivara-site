@@ -123,13 +123,26 @@
    * honors. Net behavior is identical to the old blocking confirm, without
    * freezing the tab. */
   var pendingAbandon = null; /* {target, at} one-shot confirmed-switch token */
+  var abandonAsk = null;     /* single-flight: one abandon dialog at a time — a
+                                rapid second switch attempt must not replace the
+                                open dialog (that orphaned its promise and let
+                                the answer race the next attempt) */
   function confirmAbandon(lockedName, targetId) {
+    if (abandonAsk) return false; /* still asking — stay locked, fail closed */
     var ask = (typeof window.mlsConfirm === 'function') ? window.mlsConfirm : function (m) { return Promise.resolve(safe(function () { return window.confirm(m); }, true)); };
-    ask("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?").then(function (ok) {
+    abandonAsk = ask("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?").then(function (ok) {
+      abandonAsk = null;
       if (!ok) return;
       pendingAbandon = { target: String(targetId), at: Date.now() };
-      safe(function () { if (isFn(window.setActivePtId)) window.setActivePtId(targetId); });
-    });
+      safe(function () {
+        /* re-run BOTH wrapped entries (Easy v2's choosePatientRow pattern):
+           setActivePtId consumes the one-shot token and records the primary
+           decision; the synchronous selectPatient call reuses that decision,
+           so its row-highlight/panel side-effects land too. */
+        if (isFn(window.setActivePtId)) window.setActivePtId(targetId);
+        if (isFn(window.selectPatient)) window.selectPatient(targetId);
+      });
+    }, function () { abandonAsk = null; });
     return false;
   }
   function decideSwitch(targetId) {

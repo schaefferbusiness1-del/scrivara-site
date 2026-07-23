@@ -192,8 +192,11 @@ async function addPatient(page, name, dob) {
     await page.evaluate(id => setActivePtId(id), idA);
     /* the chip mounts on the module's 1.5s tick — poll rather than race it */
     async function chipGeom() {
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 24; i++) {
         const g = await page.evaluate(() => {
+          /* nudge the bar render — the chip module wraps renderPatientBar, so
+             this triggers its mount as soon as the module train is up */
+          try { if (typeof renderPatientBar === 'function') renderPatientBar(); } catch (e) {}
           const w = document.getElementById('mlsRecentPts');
           if (!w) return null;
           const r = w.getBoundingClientRect();
@@ -429,6 +432,218 @@ async function addPatient(page, name, dob) {
     assert(out.displayOn, 'tab switch did not activate the Display group');
     assert(out.lightHead !== out.darkHead, 'section headings do not follow the theme (dark-mode readability regression)');
     assert(out.noOverflow, 'settings content overflows horizontally');
+  });
+
+  await step('workday walkthrough: a real person adds a template, runs a visit end-to-end, preps an op note, and crawls every view — with zero uncaught errors', async () => {
+    const pageErrors = [];
+    const onPageError = e => pageErrors.push(String(e && e.message || e).slice(0, 200));
+    page.on('pageerror', onPageError);
+    try {
+      const out = await page.evaluate(async () => {
+        const R = { errors: [] };
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        try {
+          /* --- 1. TEMPLATES: add via the real form, find it, set default --- */
+          openTemplates();
+          await sleep(300);
+          document.getElementById('tplName').value = 'E2E TFESI Right L5-S1';
+          document.getElementById('tplText').value = 'Name: E2E TFESI Right L5-S1\nPROCEDURE: Transforaminal epidural steroid injection (TFESI), right L5-S1. 64483.\nNeedle: [[needle_gauge]]\nLevels: right L5-S1.';
+          saveTemplateFromForm();
+          await sleep(300);
+          const tpl = getTemplates().find(t => /E2E TFESI/.test(t.name));
+          R.tplSaved = !!tpl;
+          const si = document.getElementById('tplSearch');
+          if (si) { si.value = 'tfesi'; si.dispatchEvent(new Event('input', { bubbles: true })); await sleep(200); }
+          R.tplFound = !![...document.querySelectorAll('#tplList [role="option"]')].find(o => /E2E TFESI/.test(o.textContent));
+          if (si) { si.value = ''; si.dispatchEvent(new Event('input', { bubbles: true })); }
+          try { document.querySelector('#templatesModal .modal-x, #tplModal .modal-x')?.click(); } catch (e) {}
+
+          /* --- 2. the op-note matcher must route TFESI text to MY template --- */
+          const m = window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.matchVisitText('Right L5-S1 TFESI under fluoroscopy');
+          R.matcher = m && tpl && m.tplId === tpl.id;
+          const neg = window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.matchVisitText('No procedure performed today.');
+          R.negation = !!(neg && neg.noMatch);
+
+          /* --- 3. VISIT end-to-end: consent -> offline generate -> sign -> history ---
+             The exact-scheduled-visit gate refuses actions until a visit is
+             locked, so do what a real person does for a walk-in: find the
+             patient in the Easy search and Start the visit from the row. */
+          /* seed a synthetic imported day — one appointment for the synthetic
+             patient with a provider (equivalent to a previously imported
+             schedule day), then Start the visit from the REAL day row so the
+             exact-scheduled-visit gate is satisfied the same way it is for a
+             real clinic day. All data stays in this synthetic account. */
+          localStorage.setItem(uns('docname'), 'E2E Provider MD');
+          const todayKey = _acctTodayKey();
+          window._calAppts = [{
+            id: 'appt-e2e-1', name: activePatient().name, dob: activePatient().dob,
+            appt_date: todayKey, start_at: todayKey + 'T10:00:00',
+            provider: 'E2E Provider MD', status: 'booked',
+            patient_external_id: getActivePtId(), reason: 'Follow-up'
+          }];
+          showView('visit');
+          const eng = window.__mlsEasyV32 && window.__mlsEasyV32.remote;
+          try { window.dispatchEvent(new CustomEvent('mls:schedule-updated')); } catch (e) {}
+          if (eng && eng.setVisitDay) eng.setVisitDay(todayKey); /* real re-render trigger */
+          await sleep(1200);
+          /* the shell now offers "Choose patient — 1 on today's schedule";
+             open it and pick the row exactly like a person would */
+          let choose = document.getElementById('ez3Choose');
+          for (let w = 0; w < 10 && !choose; w++) {
+            if (eng && eng.setVisitDay) eng.setVisitDay(todayKey);
+            await sleep(600);
+            choose = document.getElementById('ez3Choose');
+          }
+          if (choose) { choose.click(); await sleep(800); }
+          const rowSel = '#visitView [data-hd], #mlsEz3 [data-hd], #visitView [data-q], #mlsEz3 [data-q]';
+          let quick = document.querySelector(rowSel);
+          for (let w = 0; w < 6 && !quick; w++) { await sleep(500); quick = document.querySelector(rowSel); }
+          R.dayRow = !!quick;
+          if (quick) { quick.click(); await sleep(1200); }
+          R.visitLocked = !!(eng && eng.snapshot && eng.snapshot().active);
+          R.dayDebug = quick ? null : (() => {
+            const s = eng && eng.snapshot ? eng.snapshot() : null;
+            const wrap = document.getElementById('ez3Wrap');
+            return {
+              day: s && s.day, rows: s && s.rows && s.rows.length, active: s && s.active,
+              provider: s && s.provider,
+              wrapHtml: wrap ? wrap.innerHTML.replace(/\s+/g, ' ').slice(0, 380) : 'no-wrap'
+            };
+          })();
+          if (typeof _mlsHasEncounterConsent === 'function' && !_mlsHasEncounterConsent()) {
+            const p = _mlsRequestEncounterConsent('recording');
+            await sleep(120);
+            const modal = document.getElementById('_mlsAskDialog');
+            if (modal) { modal.querySelector('input[value="patient-verbal"]').click(); modal.querySelector('#_mlsAskYes').click(); }
+            R.consent = (await p) === true;
+          } else R.consent = true;
+          const tx = document.getElementById('transcript');
+          tx.value = EXAMPLE; tx.dispatchEvent(new Event('input', { bubbles: true }));
+          const histBefore = getNotes().length;
+          R.generated = (await generateNote()) === true;
+          R.noteShown = !!(document.getElementById('noteBox') && document.getElementById('noteBox').value.trim());
+          signNote();
+          await sleep(200);
+          const signedRec = getNotes().length > histBefore ? getNotes()[0] : null;
+          R.signedSaved = !!signedRec;
+          R.signedPatient = signedRec ? String(signedRec.patientId || '') : '';
+
+          /* --- 4. OP-NOTE PREP row against the added template --- */
+          window._opPrep = [{ appt: { name: activePatient().name, dob: activePatient().dob, reason: 'Right L5-S1 TFESI' }, patientId: getActivePtId(), note: 'PROCEDURE: TFESI right L5-S1\nNeedle: [[needle_gauge]]', proc: 'TFESI right L5-S1' }];
+          opPrepSave(0);
+          const draft = getNotes().find(n => n.id === window._opPrep[0]._noteId);
+          R.opDraft = !!(draft && draft.isDraft);
+
+          /* --- 5. crawl every view like a person clicking through --- */
+          R.crawl = [];
+          for (const v of ['patients', 'visit', 'calendar', 'orders', 'recs', 'history', 'analysis', 'studio']) {
+            try { showView(v); await sleep(250); const doc = document.documentElement; R.crawl.push(v + ':' + (doc.scrollWidth <= doc.clientWidth + 2 ? 'ok' : 'OVERFLOW')); }
+            catch (e) { R.crawl.push(v + ':THREW ' + String(e && e.message).slice(0, 60)); }
+          }
+          showView('visit');
+        } catch (e) { R.errors.push('walkthrough: ' + String(e && e.message || e).slice(0, 200)); }
+        return R;
+      });
+      assert.strictEqual(out.errors.length, 0, 'walkthrough threw: ' + JSON.stringify(out.errors));
+      assert(out.tplSaved, 'template did not save via the real form');
+      assert(out.tplFound, 'saved template not findable via workspace search');
+      assert(out.matcher, 'op-note matcher did not route TFESI text to the user template');
+      assert(out.negation, '"no procedure performed" matched a template');
+      assert(out.dayRow, 'seeded synthetic appointment did not render as a day row — ' + JSON.stringify(out.dayDebug));
+      assert(out.visitLocked, 'starting the visit from the day row did not lock a visit in the engine');
+      assert(out.consent, 'consent flow failed in the real visit');
+      assert(out.generated && out.noteShown, 'offline visit generation failed');
+      assert(out.signedSaved, 'signing did not save the visit to History');
+      assert.strictEqual(out.signedPatient, await page.evaluate(() => String(getActivePtId())), 'signed note bound to the wrong patient');
+      assert(out.opDraft, 'op-note prep did not save an explicit draft');
+      const badViews = out.crawl.filter(x => !/:ok$/.test(x));
+      assert.strictEqual(badViews.length, 0, 'view crawl problems: ' + badViews.join(', '));
+      const realPageErrors = pageErrors.filter(x => !/favicon|manifest|ServiceWorker|chrome-extension/i.test(x));
+      assert.strictEqual(realPageErrors.length, 0, 'uncaught page errors during the workday: ' + JSON.stringify(realPageErrors));
+    } finally { page.off('pageerror', onPageError); }
+  });
+
+  await step('switching + isolation + resume: lock guard fail-closed with confirmed retry, no cross-record leakage, draft resumes after reload', async () => {
+    const out = await page.evaluate(async (idAlice, idBob) => {
+      const R = {}; const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const notesOf = id => getNotes().filter(n => String(n.patientId) === String(id)).length;
+      setActivePtId(idAlice); await sleep(250);
+      const d0 = document.getElementById('_mlsAskDialog'); if (d0) { d0.querySelector('#_mlsAskYes').click(); await sleep(500); }
+      R.bobBefore = notesOf(idBob);
+      showView('visit');
+      /* consent for this encounter, then arm the patient lock through the
+         REAL capture wrapper (record then stop = pending unsaved work) */
+      if (typeof _mlsHasEncounterConsent === 'function' && !_mlsHasEncounterConsent()) {
+        const pc = _mlsRequestEncounterConsent('recording'); await sleep(150);
+        const cm = document.getElementById('_mlsAskDialog');
+        if (cm) { cm.querySelector('input[value="patient-verbal"]').click(); cm.querySelector('#_mlsAskYes').click(); }
+        await pc;
+      }
+      const lock = window.__mlsPatientLock; R.lockInstalled = !!(lock && lock.installed);
+      try { startCapture(); } catch (e) {}
+      await sleep(400);
+      try { stopCapture(); } catch (e) {}
+      await sleep(200);
+      const st = lock && lock._debugState ? lock._debugState() : {};
+      R.armed = !!(st && st.hasPendingWork);
+      /* fail-closed: the switch is refused NOW, the dialog asks */
+      setActivePtId(idBob); await sleep(300);
+      R.refused = String(getActivePtId()) === String(idAlice);
+      const dlg = document.getElementById('_mlsAskDialog'); R.asked = !!dlg;
+      if (dlg) { dlg.querySelector('#_mlsAskNo').click(); await sleep(300); }
+      R.stillAliceAfterNo = String(getActivePtId()) === String(idAlice);
+      R.stAfterNo = lock && lock._debugState ? lock._debugState() : null;
+      /* confirmed abandon re-invokes the switch exactly once */
+      setActivePtId(idBob); await sleep(300);
+      const dlg2 = document.getElementById('_mlsAskDialog');
+      R.asked2 = !!dlg2;
+      if (dlg2) { dlg2.querySelector('#_mlsAskYes').click(); await sleep(800); }
+      R.switched = String(getActivePtId()) === String(idBob);
+      R.bobAfterSwitch = notesOf(idBob);
+      /* back to Alice; leave unsaved work for the resume test */
+      setActivePtId(idAlice); await sleep(400);
+      const d3 = document.getElementById('_mlsAskDialog'); if (d3) { d3.querySelector('#_mlsAskYes').click(); await sleep(600); }
+      R.backToAlice = String(getActivePtId()) === String(idAlice);
+      const tx = document.getElementById('transcript');
+      tx.value = 'RESUME-MARKER unsaved dictation for Alice';
+      tx.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(1500); /* _markVisitDirty debounce (800ms) -> _saveVisitDraft */
+      R.draftSaved = !!sessionStorage.getItem(_visitDraftKey());
+      return R;
+    }, idA, idB);
+    assert(out.lockInstalled, 'patient-lock module missing');
+    assert(out.armed, 'record-then-stop did not arm pending work');
+    assert(out.refused && out.asked, 'switch away from unsaved work was not refused-with-dialog: ' + JSON.stringify(out));
+    assert(out.stillAliceAfterNo, 'declining the abandon dialog still switched patients');
+    assert(out.asked2 && out.switched, 'confirmed abandon did not complete the switch: ' + JSON.stringify(out));
+    assert.strictEqual(out.bobAfterSwitch, out.bobBefore, 'work leaked onto the other synthetic record');
+    assert(out.backToAlice, 'could not return to the original record');
+    assert(out.draftSaved, 'unsaved work did not reach the draft slot');
+    /* resume after reload — the dirty transcript raises the app's beforeunload
+       guard (working as designed); accept it for this deliberate reload */
+    page.removeAllListeners('dialog');
+    page.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    page.removeAllListeners('dialog');
+    page.on('dialog', async d => { try { await d.dismiss(); } catch (e) {} });
+    await sleep(2500);
+    const res = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (let i = 0; i < 12 && !document.getElementById('_visitRestoreBar'); i++) {
+        try { showView('visit'); _maybeRestoreVisitDraft(); } catch (e) {}
+        await sleep(500);
+      }
+      const bar = document.getElementById('_visitRestoreBar');
+      const R = { bar: !!bar, barText: bar ? bar.textContent.slice(0, 120) : '' };
+      if (bar) {
+        const btn = [...bar.querySelectorAll('button')].find(b => /Restore it/.test(b.textContent));
+        if (btn) { btn.click(); await sleep(600); }
+      }
+      R.restored = /RESUME-MARKER/.test((document.getElementById('transcript') || {}).value || '');
+      return R;
+    });
+    assert(res.bar, 'restore bar missing after reload');
+    assert(res.restored, 'draft did not restore into the transcript: ' + res.barText);
   });
 
   await step('responsive: no horizontal overflow at phone width on core views', async () => {

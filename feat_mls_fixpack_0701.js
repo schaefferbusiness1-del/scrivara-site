@@ -391,15 +391,20 @@
    * NOTE MODEL -> 5-SERIES WITH HONEST FALLBACK CASCADE
    * ------------------------------------------------------------------ */
   try {
-    var MODELS = ['gpt-5o', 'gpt-5', 'gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];
+    /* Owner directive 2026-07-22: gpt-5 (full power) is NEVER offered or sent —
+       too expensive — and the old 'gpt-5o' id was never real (the server
+       silently downgraded it, so 'Best' was not what it claimed). Best is the
+       real, allowed, affordable gpt-5-mini with the honest 4o cascade below. */
+    var MODELS = ['gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];
     function modelKey() { try { return (typeof uns === 'function') ? uns('noteModel') : 'noteModel'; } catch (e) { return 'noteModel'; } }
     /* one-time migration: stored legacy 4-series defaults move to gpt-5o (Michael's ask);
        runs once, so a deliberate later choice in Settings is respected forever after. */
     try {
-      var MIG = 'mlsFpModelMig1';
+      var MIG = 'mlsFpModelMig2';
       if (!localStorage.getItem(MIG)) {
         var curM = localStorage.getItem(modelKey());
-        if (!curM || curM === 'gpt-4o' || curM === 'gpt-4o-mini') localStorage.setItem(modelKey(), 'gpt-5o');
+        /* retire the fake gpt-5o and the expensive gpt-5 in one pass */
+        if (!curM || curM === 'gpt-5o' || curM === 'gpt-5') localStorage.setItem(modelKey(), 'gpt-5-mini');
         localStorage.setItem(MIG, '1');
       }
     } catch (e) {}
@@ -407,7 +412,7 @@
       FP._orig.getNoteModel = window.getNoteModel;
       var gnm = function () {
         try { var v = localStorage.getItem(modelKey()); if (MODELS.indexOf(v) >= 0) return v; } catch (e) {}
-        return 'gpt-5o';
+        return 'gpt-5-mini';
       };
       gnm.__fpWrap = true;
       window.getNoteModel = gnm;
@@ -416,9 +421,13 @@
     function extendModelSel() {
       var sel = $('noteModelSel'); if (!sel || sel.__fpExtended) return;
       sel.__fpExtended = true;
+      /* strip retired/never-allowed options a hot-upgraded page may still hold */
+      Array.prototype.slice.call(sel.options).forEach(function (o) {
+        if (o.value === 'gpt-5' || o.value === 'gpt-5o') o.remove();
+      });
       var have = {};
       Array.prototype.forEach.call(sel.options, function (o) { have[o.value] = 1; });
-      [['gpt-5o', 'Best — GPT-5o (newest, recommended)'], ['gpt-5', 'GPT-5 — full power'], ['gpt-5-mini', 'GPT-5 mini — fast + smart']].reverse().forEach(function (pair) {
+      [['gpt-5-mini', 'Best — GPT-5 mini (newest, recommended)']].reverse().forEach(function (pair) {
         if (have[pair[0]]) return;
         var o = document.createElement('option'); o.value = pair[0]; o.textContent = pair[1];
         sel.insertBefore(o, sel.firstChild);

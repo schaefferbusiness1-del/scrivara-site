@@ -122,7 +122,9 @@ function domStub() {
   };
   return doc;
 }
-const helperSrc = app.slice(app.indexOf('function _mlsDialogBase'), app.indexOf('window.mlsConfirm=mlsConfirm; window.mlsPrompt=mlsPrompt;'));
+const helperStart = app.indexOf('var _mlsAskActive=null');
+assert(helperStart >= 0, 'active-dialog registry declaration missing');
+const helperSrc = app.slice(helperStart, app.indexOf('window.mlsConfirm=mlsConfirm; window.mlsPrompt=mlsPrompt;'));
 const ctx = { console, Promise, Object, Array, String, JSON, Date, Math, document: domStub(), esc: s => String(s == null ? '' : s), window: {} };
 vm.createContext(ctx);
 vm.runInContext(helperSrc + '\nthis.mlsConfirm=mlsConfirm; this.mlsPrompt=mlsPrompt;', ctx, { filename: 'dialog-helpers.js' });
@@ -154,6 +156,19 @@ vm.runInContext(helperSrc + '\nthis.mlsConfirm=mlsConfirm; this.mlsPrompt=mlsPro
   input4.value = 'typed value';
   card4.querySelector('#_mlsAskYes').onclick();
   assert.strictEqual(await p4, 'typed value', 'prompt OK did not resolve the typed value');
+
+  /* 2026-07-22 hardening: a NEW dialog must RESOLVE the one it replaces (as
+     cancelled) — a bare removal orphaned the old promise forever (deadlocking
+     single-flight callers like the consent gate) and leaked its keydown
+     listener so one Enter could fire two confirms. */
+  const pOld = ctx.mlsConfirm('First?');
+  const pNew = ctx.mlsConfirm('Second?');
+  const settledOld = await Promise.race([pOld, new Promise(r => setImmediate(() => r('PENDING')))]);
+  assert.strictEqual(settledOld, false, 'a replaced dialog did not resolve as cancelled: ' + settledOld);
+  const cardNew = ctx.document.body.children[0].children[0];
+  cardNew.querySelector('#_mlsAskYes').onclick();
+  assert.strictEqual(await pNew, true, 'the replacing dialog broke');
+  assert(helperSrc.includes('_mlsAskActive'), 'active-dialog registry missing from source');
 
   console.log('PASS no-native-dialogs: ' + loaded.size + ' production scripts clean, promise helpers keyboard/focus/ARIA-complete with native prompt parity');
 })().catch(e => { console.error(e); process.exit(1); });

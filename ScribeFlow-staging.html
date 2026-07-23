@@ -15691,6 +15691,44 @@ function acceptSuggestion(i){
   toast('Added: '+def.label+' — '+(s.label||'')+'. Edit in the list if needed.','ok');
 }
 
+/* oa-1.0.0 (owner 2026-07-22): record acceptance of a proposed order coming
+   from the unified Athena review card. Idempotent by suggestion text, and it
+   accepts even when the parsed type has no builder form — acceptAiSuggestion
+   silently refused those, which left "Suggestion only" stuck after the
+   clinician had decided to accept. Acceptance is a recorded review decision
+   only; nothing is placed, prescribed, or submitted. */
+function _athenaAcceptProposedOrder(desc){
+  try{
+    desc=(desc&&typeof desc==='object')?desc:{};
+    var text=String(desc.originalText||desc.summary||'').trim();
+    if(!text)return{ok:false,error:'missing-suggestion-text'};
+    var lower=text.toLowerCase();
+    if(typeof currentOrders==='undefined'||!Array.isArray(currentOrders))currentOrders=[];
+    for(var i=0;i<currentOrders.length;i++){
+      var o=currentOrders[i]; if(!o)continue;
+      if(String(o._src||'').trim().toLowerCase()!==lower)continue;
+      if(o._reviewStatus==='accepted')return{ok:true,mode:'already-accepted',orderId:String(o.id||'')};
+      o._reviewStatus='accepted';
+      if(!/^(provider-entered|ai-suggestion|rule-suggestion|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(String(o._source||'')))o._source='ai-suggestion';
+      try{renderOrderList();}catch(e1){} try{updateNavCounts();}catch(e2){}
+      return{ok:true,mode:'legacy-accepted',orderId:String(o.id||'')};
+    }
+    var parsed={type:'',fields:{}};
+    try{parsed=parseSuggestedOrder(text)||parsed;}catch(e3){}
+    var fields={};
+    try{
+      var def=ORDER_DEFS[parsed.type];
+      if(def)def.fields.forEach(function(f){fields[f.key]=(parsed.fields&&parsed.fields[f.key])||'';});
+      else fields=Object.assign({},parsed.fields||{});
+    }catch(e4){fields=Object.assign({},parsed.fields||{});}
+    var order={id:'o'+Date.now()+Math.random().toString(36).slice(2,5),type:String(parsed.type||''),fields:fields,_src:text,_source:String(desc.source||'').indexOf('rule')===0?'rule-suggestion':'ai-suggestion',_reviewStatus:'accepted'};
+    currentOrders.push(order);
+    try{renderOrderList();}catch(e5){} try{updateNavCounts();}catch(e6){}
+    return{ok:true,mode:'accepted',orderId:order.id};
+  }catch(err){return{ok:false,error:String((err&&err.message)||err||'accept-failed')}}
+}
+window._athenaAcceptProposedOrder=_athenaAcceptProposedOrder;
+
 /* ---- builder form ---- */
 function renderOrderFields(){
   const type=document.getElementById('ordType').value;
@@ -22874,6 +22912,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b493';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b494';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

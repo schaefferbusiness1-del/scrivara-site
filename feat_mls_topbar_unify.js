@@ -218,7 +218,11 @@
          .on dark-fill styling inside the white panel */
       "#" + PANEL_ID + " .navtab{color:#1A211C !important;background:transparent !important;}" +
       "#" + PANEL_ID + " .navtab:hover{background:#F0EEE7 !important;}" +
-      "#" + PANEL_ID + " .navtab.on{color:#1A211C !important;background:transparent !important;box-shadow:none !important;}";
+      "#" + PANEL_ID + " .navtab.on{color:#1A211C !important;background:transparent !important;box-shadow:none !important;}" +
+      /* 2026-07-22: narrow screens — collapse to an icon-only pill (the
+         account menu already does this at 720px; without it the two top-bar
+         pills wrapped/overlapped) and keep the panel on-screen. */
+      "@media(max-width:720px){#" + BTN_ID + "{padding:8px 9px;}#" + BTN_ID + " .mlsTbBtnLabel{display:none;}#" + PANEL_ID + "{position:fixed;right:12px;top:64px;min-width:0;width:min(280px,calc(100vw - 24px));}}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
     (document.head || document.documentElement).appendChild(st);
@@ -283,7 +287,7 @@
 
     var btn = document.createElement("button");
     btn.id = BTN_ID; btn.type = "button";
-    btn.innerHTML = "☰ <span>Menu</span>";
+    btn.innerHTML = "☰ <span class=\"mlsTbBtnLabel\">Menu</span>";
     btn.setAttribute("aria-haspopup", "true");
     btn.setAttribute("aria-expanded", "false");
 

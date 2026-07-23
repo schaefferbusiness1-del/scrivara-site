@@ -255,6 +255,7 @@ const tests = [
   'no-native-dialogs-contract.test.js',
   'provider-simultaneous-safety-contract.test.js',
   'recording-consent-gate-runtime.test.js',
+  'ui-polish-costs-contract.test.js',
   'patientpick-canonical-identity-runtime.test.js',
   'patient-reach-v2-runtime.test.js',
   'public-button-wiring-contract.test.js',

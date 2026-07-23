@@ -196,5 +196,27 @@ function drive(ctx, choice, opts) {
   ctx.__pt = null;
   assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), false, 'consent dialog opened with no patient');
 
+  /* 2026-07-22 hardening pins */
+  /* a mid-dialog patient switch must refuse AND log nothing (the audit trail
+     must never claim consent for an encounter that will not record) */
+  assert(consentSrc.includes('_mlsConsentKey()!==key'), 'decide() lost its mid-dialog patient-switch recheck');
+  /* every NEW encounter re-asks — newVisit clears the consent memory */
+  const nvAt = app.indexOf('function newVisit(opts){');
+  assert(nvAt >= 0, 'newVisit missing');
+  assert(app.slice(nvAt, nvAt + 1200).includes('_mlsConsentCurrent=null'), 'newVisit no longer clears encounter consent (same-day walk-in reuse bug)');
+  /* the request entry is exported for the satellite dictation gates */
+  assert(app.includes('window._mlsRequestEncounterConsent=_mlsRequestEncounterConsent;'), 'consent request is not exported for satellites');
+  assert(!app.includes('window._mlsRequestEncounterConsent=function'), 'self-referential export wrapper is back (infinite recursion)');
+  /* dictation surfaces are gated: note-editor always, dictate-anywhere for visit fields */
+  const ne = fs.readFileSync(path.join(root, 'feat_mls_note_editor.js'), 'utf8');
+  const da = fs.readFileSync(path.join(root, 'feat_mls_dictate_anywhere.js'), 'utf8');
+  const neStart = ne.indexOf('function startDictation(key) {');
+  const neBody = ne.slice(neStart, neStart + 2400);
+  const neGate = neBody.indexOf('_mlsHasEncounterConsent');
+  assert(neGate >= 0 && neGate < neBody.indexOf('claimNoteSpeech()'), 'note dictation reaches the mic without the consent gate');
+  const daGate = da.indexOf('_mlsHasEncounterConsent');
+  assert(daGate >= 0 && daGate < da.indexOf("h.claim('dictate')"), 'dictate-anywhere reaches the mic without the consent gate on visit fields');
+  assert(da.includes('isVisitField(target) && typeof window._mlsHasEncounterConsent'), 'dictate-anywhere gate must scope to visit fields');
+
   console.log('PASS recording consent gate: capture blocked before consent on both mic paths, verbal/representative allow, declined/cancel/Escape refuse, per-encounter memory with patient+encounter invalidation and reconfirm, exact audit record, fail-closed logging, no audio stored');
 })().catch(e => { console.error(e); process.exit(1); });

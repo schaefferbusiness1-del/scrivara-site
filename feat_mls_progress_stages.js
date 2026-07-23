@@ -469,13 +469,13 @@
     if (document.getElementById(CSS_ID)) return;
     var st = document.createElement('style'); st.id = CSS_ID;
     st.textContent = [
-      '#' + CHIP_ID + '{position:fixed;right:16px;bottom:76px;z-index:99969;display:none;align-items:center;gap:7px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;padding:7px 12px;font:700 12px "Public Sans",system-ui,sans-serif;color:#234334;box-shadow:0 1px 2px rgba(20,33,28,.06),0 8px 24px rgba(20,33,28,.12);cursor:pointer}',
+      '#' + CHIP_ID + '{position:fixed;right:84px;bottom:18px;z-index:2147483200;display:none;align-items:center;gap:7px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;padding:7px 12px;font:700 12px "Public Sans",system-ui,sans-serif;color:#234334;box-shadow:0 1px 2px rgba(20,33,28,.06),0 8px 24px rgba(20,33,28,.12);cursor:pointer}',
       '#' + CHIP_ID + '.on{display:inline-flex}',
       '#' + CHIP_ID + ' .ps-dot{width:8px;height:8px;border-radius:50%;background:#2E6A4B;animation:mlsPsPulse 1.2s ease infinite}',
       '#' + CHIP_ID + '.idle .ps-dot{animation:none;background:#8A9590}',
       '#' + CHIP_ID + '.attention .ps-dot{animation:none;background:#B42318}',
       '@keyframes mlsPsPulse{50%{opacity:.35}}',
-      '#' + PANEL_ID + '{position:fixed;right:16px;bottom:118px;z-index:99968;width:min(400px,calc(100vw - 28px));max-height:min(520px,calc(100vh - 150px));overflow-y:auto;background:#FDFCF9;border:1px solid #E7E5DD;border-radius:16px;box-shadow:0 2px 4px rgba(20,33,28,.08),0 18px 48px rgba(20,33,28,.18);font:500 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;display:none}',
+      '#' + PANEL_ID + '{position:fixed;right:16px;bottom:64px;z-index:2147483199;width:min(400px,calc(100vw - 28px));max-height:min(520px,calc(100vh - 150px));overflow-y:auto;background:#FDFCF9;border:1px solid #E7E5DD;border-radius:16px;box-shadow:0 2px 4px rgba(20,33,28,.08),0 18px 48px rgba(20,33,28,.18);font:500 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;display:none}',
       '#' + PANEL_ID + '.on{display:block}',
       '#' + PANEL_ID + ' .ps-hd{position:sticky;top:0;background:#F6F3EC;border-bottom:1px solid #E7E5DD;padding:10px 14px;font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#4B564F;display:flex;justify-content:space-between;align-items:center}',
       '#' + PANEL_ID + ' .ps-hd button{border:none;background:none;font:700 14px inherit;color:#66716A;cursor:pointer;padding:0 2px}',
@@ -654,22 +654,35 @@
       var localAt = Number(window.__mlsPullBusyAt) || 0;
       var xtabAt = Number(safe(function () { return window.localStorage.getItem(pullStampKey()); }, 0)) || 0;
       var freshest = Math.max(localAt, xtabAt);
-      var fresh = freshest > 0 && (now() - freshest) < 90000;
       var cur = activeFlow('pull');
-      if (fresh) {
-        var otherTab = !(localAt && (now() - localAt) < 90000);
+      /* ps-1.3.1: the engine's 25s touch runs on the throttled MAIN thread, so
+         a hidden tab can legitimately let the stamp age well past 90s while a
+         pull is still alive. Stamp REMOVAL (the engine clears it on every
+         completion path) is the strong finish signal; age alone only finishes
+         after a long 6-minute grace, and 90s-6min renders an honest slow-
+         heartbeat note instead of a false "Pull finished." flap. */
+      var fresh = freshest > 0 && (now() - freshest) < 90000;
+      var aged = freshest > 0 && !fresh && (now() - freshest) < 360000;
+      if (fresh || aged) {
+        var otherTab = !(localAt && (now() - localAt) < 360000);
         if (!cur) cur = ensure('pull', {});
-        if (cur && freshest !== pullWatch.lastStamp) {
+        if (cur && fresh && freshest !== pullWatch.lastStamp) {
           pullWatch.lastStamp = freshest;
           cur.handle.stage('Working through the schedule and charts', {
             operation: otherTab
               ? 'Running in another MLS tab — leave that tab open.'
               : 'The pull engine is working — per-chart details appear as each read lands.'
           });
+        } else if (cur && aged && pullWatch.lastNote !== 'aged') {
+          pullWatch.lastNote = 'aged';
+          cur.handle.stage('Working through the schedule and charts', {
+            operation: 'No stamp update for a while — a background tab slows the heartbeat; the pull is likely still running.'
+          });
         }
+        if (fresh) pullWatch.lastNote = '';
       } else if (cur) {
         finish('pull', 'complete', 'Pull finished.');
-        pullWatch.lastStamp = 0;
+        pullWatch.lastStamp = 0; pullWatch.lastNote = '';
       }
     });
   }

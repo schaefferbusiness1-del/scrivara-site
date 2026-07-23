@@ -71,7 +71,7 @@
     if (window.__mlsAthenaSignInPrompt && window.__mlsAthenaSignInPrompt.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.2.3';
+  var VERSION = '1.3.0'; /* live-trigger repair 2026-07-22 */
   var ASSET = 'feat_athena_signin_prompt.js';
 
   // The standard athenaOne login URL. The extension/app identifies athenaOne by
@@ -91,7 +91,14 @@
   // Athena-requiring triggers. The four centerpiece pull buttons live in
   // .mlscp-pulls; #ezPull is the stock pull button; the data-attribute lets
   // future pull entry points opt in explicitly.
-  var TRIGGER_SEL = '.mlscp-pulls button, #ezPull, [data-mls-athena-trigger]';
+  /* v1.2.0 (2026-07-22): the original selectors matched only RETIRED buttons
+     (.mlscp-pulls / #ezPull), so the sign-in prompt never fired on any pull
+     button the current UI actually shows — the owner's "it doesn't prompt".
+     Now covers every live Athena-requiring entry: the Visit tab's
+     "Pull today's patients" (#ez3PullNow), Staff Prep month/day pulls
+     (#ez3PullStart / #ez3sPullToday / #ez3PullRetry), the per-patient chart
+     pull (#ez3HistPull), plus the legacy ids and the explicit opt-in hook. */
+  var TRIGGER_SEL = '#ez3PullNow, #ez3PullStart, #ez3sPullToday, #ez3PullRetry, #ez3HistPull, .mlscp-pulls button, #ezPull, [data-mls-athena-trigger]';
 
   var DEBOUNCE_MS = 20000;   // reuse a freshly-opened athena tab within this window
   var PROMPT_MS = 15000;     // auto-dismiss the prompt after this (it is non-modal)
