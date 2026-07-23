@@ -70,7 +70,7 @@
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
-<script src="public-preview-policy.js?v=b492"></script>
+<script src="public-preview-policy.js?v=b493"></script>
 <script>
 /* If the reviewed preview policy is missing, unsupported, or fails its
    memory-isolation self-test, replace the document before any account,
@@ -719,7 +719,7 @@
   .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
   .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
   .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
-  .sp-gap .sp-label{color:#b4920a}
+  .sp-gap .sp-label{color:#b4930a}
   .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
   .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
   .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
@@ -3672,7 +3672,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <b>Already installed it before?</b> Update to the latest version: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still can't read your EMR, remove it and <b>Load unpacked</b> the freshly-downloaded <code>mls-assist-extension</code> folder.
         </div>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.1.zip" download="MLS_Assist_v3.0.1.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:9px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.1 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.2.zip" download="MLS_Assist_v3.0.2.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:9px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.2 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options</a> · ZIP SHA-256 <code style="font-size:11px">54ae7951…b503</code> (exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -7599,7 +7599,7 @@ function upsertPatient(p){
         if(__prev.athenaChartSummaryBlock!=null)p.athenaChartSummaryBlock=__prev.athenaChartSummaryBlock;
         if(__prev.athenaChartImportedAt!=null)p.athenaChartImportedAt=__prev.athenaChartImportedAt;
       }
-      /* b492: verified visit BODIES survive a degraded write-back. Live
+      /* b493: verified visit BODIES survive a degraded write-back. Live
          2026-07-22: two patients' visit arrays were replaced by 4-field
          {date,type,detail,source} husks (14 verified bodies vanished, then
          mirrored to the server). A husk copy is recognizable STRUCTURALLY:
@@ -7846,7 +7846,7 @@ async function loadPatientsFromServer(opts){
         // adopt server copy if it is strictly newer than the local copy
         const sUpd=row.data.updated||0, lUpd=local[i].updated||0;
         if(sUpd>lUpd){
-          /* b492: never let a server mirror REGRESS verified visit bodies.
+          /* b493: never let a server mirror REGRESS verified visit bodies.
              The mirror is a backup, not an authority over a body-carrying
              local record (live 2026-07-22: husk copies with fresher stamps
              on the server would re-strip local bodies on every boot). Adopt
@@ -27091,7 +27091,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=b492"></script>
+<script src="public-preview-runtime.js?v=b493"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -27362,7 +27362,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b492';
+  window.__MLS_AV='b493';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

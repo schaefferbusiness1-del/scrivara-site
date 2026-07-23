@@ -42,16 +42,16 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.1\.zip/.test(download) &&
-  /5c0d678a1a8e265122e93340063d3010c4a5f2c200c4f21d681f8bf9b47178aa/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.2\.zip/.test(download) &&
+  /b3012cb8da74788b29be9f52d7fdb28d8a2871f9a002f8cfd84b41d29cb2dbc2/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 const feed = JSON.parse(read('extension-version.json'));
-/* 3.0.1 released 2026-07-21 (label-only delta on the 3.0.0 core): accepted 2.9.43 core (identical core digest,
+/* 3.0.2 released 2026-07-21 (label-only delta on the 3.0.0 core): accepted 2.9.43 core (identical core digest,
    816d57a6…) + version bump + the narrow backend host permission that fixes
    worker version reporting. Loaded and live-verified before this pin moved. */
-assert.strictEqual(feed.version, '3.0.1', 'public feed must state the released stable channel exactly');
+assert.strictEqual(feed.version, '3.0.2', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

@@ -18,7 +18,7 @@ const assets = [
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260719asst143', '20260717asst142'],
   ['feat_mls_b121_pack.js', '20260719p2c3', '20260719p2c2'],
-  ['feat_mls_checker.js', '20260721chk301r1', '20260719chk2922r2'],
+  ['feat_mls_checker.js', '20260722chk302r1', '20260719chk2922r2'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
   ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
@@ -34,7 +34,7 @@ const assets = [
   ['feat_mls_copilot_voice_v2.js', '20260719cvhot116', '20260719cv2116'],
   ['feat_mls_voice_ai.js', '20260719vaihot112', '20260719vai112'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
-  ['feat_mls_progress_stages.js', '20260720ps121', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
+  ['feat_mls_progress_stages.js', '20260722ps130', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_task3_frontsync.js', '20260719t3107', '20260716t3106']
 ];
 
@@ -48,7 +48,7 @@ for (const [asset, token, retired] of assets) {
   assert(!connect.includes(retired), `${asset} still exposes retired cache token ${retired}`);
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260721chk301r1'),
+assert(staging.includes('feat_mls_checker.js?v=20260722chk302r1'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');

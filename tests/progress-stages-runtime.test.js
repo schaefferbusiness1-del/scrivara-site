@@ -88,7 +88,7 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed && lb.version === 'lb-2.1.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.2.1', 'progress-stages module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.3.0', 'progress-stages module missing');
 assert.strictEqual(lb.visualOwner, 'mlsProgressStages', 'the headless store does not identify its presentation owner');
 assert.strictEqual(ps.surfaceId, 'mlsPsChip', 'named stages do not identify the single automatic surface');
 assert(messageListeners.length >= 1, 'observer did not attach a message listener');
@@ -287,13 +287,47 @@ assert.strictEqual(j.status, 'timed_out', 'abandoned schedule pull did not time 
 /* ---------------- 8. loader line + registration wiring ------------------- */
 const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
 const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
-const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.2.1'")) || '';
+const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.3.0'")) || '';
 assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
-assert(psLoader.includes("s.src=A+'?v=20260720ps121'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260722ps130'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
 assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
 assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
 const lbAt = connect.indexOf(lbLoader);
 const psAt = connect.indexOf(psLoader);
 assert(lbAt >= 0 && psAt > lbAt, 'ps loader must come after the lb loader');
 
-console.log('PASS progress stages: connect/reconnect, schedule counts + stale rejection + partial honesty, history N-of-M without fake percents, staging probe->confirm->write->verify, review counts, teach, deadlines everywhere, loader wiring');
+/* ---- ps-1.3.0: the chip must survive the WHOLE modern pull ---- */
+/* 1. hidden-tab bodies lane keeps the history job alive (the longest phase
+      of an si pull used to render no progress at all) */
+ps._observe({ data: { source: 'mls-app', type: 'mlsAppReadAllVisits', name: 'Body Patient' } });
+let bodiesJob = lb.active('history:pull');
+assert(bodiesJob, 'bodies-lane read did not keep a history job alive');
+assert(/Reading full visit bodies/.test(JSON.stringify(bodiesJob)), 'bodies-lane read is not named honestly');
+ps._observe({ data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult', resp: {} } });
+bodiesJob = lb.active('history:pull');
+assert(bodiesJob && /Visit bodies received/.test(JSON.stringify(bodiesJob)), 'bodies-lane result did not advance the job');
+ps._observe({ data: { source: 'mls-app', type: 'mlsAppGotoDate', date: '2026-07-22' } });
+assert(/Opening the schedule day/.test(JSON.stringify(lb.active('history:pull'))), 'day navigation did not surface in the running job');
+
+/* 2. pull-stamp watcher: one whole-arc job from the engine's own stamps,
+      visible cross-tab, honest completion when the stamp goes stale */
+context.localStorage = context.localStorage || (function () {
+  const s = {}; return { getItem: k => (k in s ? s[k] : null), setItem: (k, v) => { s[k] = String(v); }, removeItem: k => { delete s[k]; } };
+})();
+context.window.__mlsPullBusyAt = Date.now();
+ps._pullTick();
+let pullJob = lb.active('si:pull');
+assert(pullJob && /Schedule & history pull/.test(pullJob.label || ''), 'a fresh local pull stamp did not create the whole-pull job');
+assert(pullJob.timeoutMs === undefined || pullJob.timeoutMs > 0, 'pull job must carry a deadline');
+context.window.__mlsPullBusyAt = 0;
+context.localStorage.setItem('mlsPullBusyXTabV1', String(Date.now() + 10));
+ps._pullTick();
+pullJob = lb.active('si:pull');
+assert(pullJob && /another MLS tab/.test(JSON.stringify(pullJob)), 'a cross-tab stamp did not disclose the other-tab pull');
+context.localStorage.removeItem('mlsPullBusyXTabV1');
+ps._pullTick();
+assert(!lb.active('si:pull'), 'a stale stamp did not finish the pull job');
+/* the watcher interval must be torn down by revert (no leaked timers) */
+assert(psSource.includes('if (pullWatch.iv) clearInterval(pullWatch.iv)'), 'revert leaks the pull-stamp watcher interval');
+
+console.log('PASS progress stages: connect/reconnect, schedule counts + stale rejection + partial honesty, history N-of-M without fake percents (incl. bodies lane), whole-pull stamp watcher with cross-tab disclosure, staging probe->confirm->write->verify, review counts, teach, deadlines everywhere, loader wiring');

@@ -194,9 +194,9 @@ const extensionRelease = JSON.parse(read('extension-version.json'));
 assert(/^\d+(?:\.\d+){1,3}$/.test(String(extensionRelease.version || '')), 'published extension feed must contain a valid version');
 
 const vendorTraversalIncludes = ['vendor', ...PUBLIC_VENDOR_ASSETS.map((rel) => path.posix.basename(rel))];
-/* Owner directive 2026-07-20: the exact stamped 3.0.1 release ships publicly;
+/* Owner directive 2026-07-20: the exact stamped 3.0.2 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
-const RELEASED_PACKAGE = 'MLS_Assist_v3.0.1.zip';
+const RELEASED_PACKAGE = 'MLS_Assist_v3.0.2.zip';
 const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, 'CNAME'];
 assert.deepStrictEqual(sorted(includes), sorted(expectedIncludes), 'Jekyll include allowlist must exactly match reviewed public HTML/assets, the digest-pinned released package, and CNAME');
 
@@ -281,13 +281,13 @@ for (const page of RETIRED_HTML) {
 
 const zipFiles = fs.readdirSync(root).filter((name) => /\.zip$/i.test(name));
 assert(zipFiles.length > 1, 'fixture must exercise historical archive exclusion');
-/* Owner directive 2026-07-20: EXACTLY the stamped 3.0.1 release is public.
+/* Owner directive 2026-07-20: EXACTLY the stamped 3.0.2 release is public.
  * Its published bytes must equal the release digest — any drift fails. */
-assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.1.zip'],
-  'exactly the released 3.0.1 package may be published — nothing else, and never a candidate');
-const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.1.zip'))).digest('hex');
-assert.strictEqual(releasedZipSha, '5c0d678a1a8e265122e93340063d3010c4a5f2c200c4f21d681f8bf9b47178aa',
-  'published package bytes must be the exact stamped 3.0.1 release');
+assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.2.zip'],
+  'exactly the released 3.0.2 package may be published — nothing else, and never a candidate');
+const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.2.zip'))).digest('hex');
+assert.strictEqual(releasedZipSha, 'b3012cb8da74788b29be9f52d7fdb28d8a2871f9a002f8cfd84b41d29cb2dbc2',
+  'published package bytes must be the exact stamped 3.0.2 release');
 
 const stagingJs = fs.readdirSync(root).filter((name) => /\.staging\.js$/i.test(name));
 assert(stagingJs.length >= 5, 'fixture must exercise staging JavaScript exclusion');
@@ -357,8 +357,8 @@ if (/\bMKT_URL\s*=\s*['"]mls-marketing\.html['"]/.test(read('mls_reviews_scrape_
  * browser. The page may expose only the separately published store channel. */
 const extensionPage = read('get-extension.html');
 assert(!/\bJSZip\b|var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(extensionPage), 'download page must not assemble loose extension source');
-assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.1\.zip["']/i.test(extensionPage) &&
-  /5c0d678a1a8e265122e93340063d3010c4a5f2c200c4f21d681f8bf9b47178aa/.test(extensionPage) &&
+assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.2\.zip["']/i.test(extensionPage) &&
+  /b3012cb8da74788b29be9f52d7fdb28d8a2871f9a002f8cfd84b41d29cb2dbc2/.test(extensionPage) &&
   !/candidate package withheld/i.test(extensionPage),
   'manual download must offer exactly the released package with its displayed digest');
 
@@ -532,11 +532,11 @@ async function verifyServiceWorkerRuntime() {
   const candidateArchive = await runFetch(`${origin}/MLS_Assist_v2.9.43.zip`);
   assert.strictEqual(candidateArchive.status, 410, 'unstamped candidate ZIP must fail closed');
   assert.strictEqual(fetchCalls.length, callsBeforeCandidate, 'candidate extension bytes must not reach the network');
-  /* The exact released 3.0.1 package passes through to the network (never 410,
+  /* The exact released 3.0.2 package passes through to the network (never 410,
    * never cached — the cached-keys assertion below covers every ZIP). */
-  const releasedArchive = await runFetch(`${origin}/MLS_Assist_v3.0.1.zip`);
+  const releasedArchive = await runFetch(`${origin}/MLS_Assist_v3.0.2.zip`);
   assert.notStrictEqual(releasedArchive.status, 410, 'the exact released package must pass through the service worker');
-  assert(fetchCalls.includes(`${origin}/MLS_Assist_v3.0.1.zip`), 'the released package download must reach the network');
+  assert(fetchCalls.includes(`${origin}/MLS_Assist_v3.0.2.zip`), 'the released package download must reach the network');
 
   /* A genuine basic 200 is cacheable only when its URL is an exact static
    * allowlist member. Query strings that can carry tokens/codes never become
@@ -583,7 +583,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v79'], 'activation must remove every superseded MLS cache');
+  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v80'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [

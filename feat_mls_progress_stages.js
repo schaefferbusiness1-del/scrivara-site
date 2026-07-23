@@ -40,7 +40,7 @@
  * ========================================================================== */
 (function () {
   'use strict';
-  var VERSION = 'ps-1.2.1';
+  var VERSION = 'ps-1.3.0';
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -114,6 +114,15 @@
       key: 'teach:destination', kind: 'teach_destination', label: 'Teaching a destination',
       stages: ['Arming the read-only Athena watcher', 'Waiting for your teaching click in Athena', 'Validating the destination'],
       timeoutMs: 90000
+    },
+    /* ps-1.3.0: the WHOLE si pull arc, driven by the engine's own busy
+       stamps rather than per-message rhythm — so the chip stays alive
+       through the long visit-body batches, and OTHER MLS tabs (via the
+       b490 cross-tab stamp) can see that a pull is running elsewhere. */
+    pull: {
+      key: 'si:pull', kind: 'schedule_history_pull', label: 'Schedule & history pull',
+      stages: ['Working through the schedule and charts'],
+      timeoutMs: 100 * 60000
     }
   };
 
@@ -415,6 +424,11 @@
         else if (d.type === 'mlsAppPullSchedule' || d.type === 'mlsAppPullMonth') onScheduleRequest(d);
         else if (d.type === 'mlsAppReadChart') { if (chartReadHasIdentity(d)) historyTouch(1, '', chartPatient(d)); }
         else if (d.type === 'mlsAppReadVisits') historyTouch(0, 'Reading the visits list', chartPatient(d));
+        /* ps-1.3.0: the hidden-tab bodies lane and day navigation are part of
+           the same history pull — without these the chip died for the longest
+           phase of a modern pull. */
+        else if (d.type === 'mlsAppReadAllVisits') historyTouch(0, 'Reading full visit bodies', chartPatient(d));
+        else if (d.type === 'mlsAppGotoDate') { if (activeFlow('history')) historyTouch(0, 'Opening the schedule day in Athena'); }
         else if (d.type === 'mlsAppGoHome') { if (activeFlow('history')) historyTouch(0, 'Returning to the schedule'); }
         else if (d.type === 'mlsAppAthenaActionV2') onActionRequest(d);
         else if (d.type === 'mlsAppReviewScreen') onReviewOpen(d);
@@ -433,6 +447,13 @@
           if (cur && (resp.error || resp.blocked)) cur.meta.fail++;
           if (cur) historyTouch(0, resp.error ? 'A chart read failed — continuing' : 'Chart received');
         }
+        else if (d.type === 'mlsAppAllVisitsResult') {
+          var vResp = d.resp || d;
+          var vCur = activeFlow('history');
+          if (vCur && (vResp.error || vResp.blocked)) vCur.meta.fail++;
+          if (vCur) historyTouch(0, vResp.error ? 'A visit-body read failed — continuing' : 'Visit bodies received');
+        }
+        else if (d.type === 'mlsAppGotoDateResult') { if (activeFlow('history')) historyTouch(0, 'Schedule day opened'); }
         else if (d.type === 'mlsAppAthenaActionV2Result') onActionResult(d);
         else if (d.type === 'mlsAppReviewScreenResult') onReviewResult(d);
         else if (d.type === 'mlsAppTeachProgress') onTeachProgress(d);
@@ -613,6 +634,47 @@
   var onJobEvent = function () { safe(render); };
   window.addEventListener('mls:job-progress', onJobEvent, false);
 
+  /* ------------------------------------------------------------------ *
+   * ps-1.3.0 pull-stamp watcher. The si engine stamps __mlsPullBusyAt   *
+   * in its own tab and (b490) a cross-tab localStorage stamp every 25s  *
+   * while a pull runs. Poll both: a fresh stamp keeps one honest        *
+   * "Schedule & history pull" job alive for the WHOLE arc (the chip     *
+   * used to die during the long visit-body batches), and a fresh        *
+   * cross-tab stamp with no local one shows other tabs that a pull is   *
+   * running elsewhere — so nobody refreshes it to death. The job is     *
+   * only touched when the observed stamp VALUE advances (real evidence, *
+   * never invented progress), so lb's stale-heartbeat stays honest.     *
+   * ------------------------------------------------------------------ */
+  var pullWatch = { iv: 0, lastStamp: 0 };
+  function pullStampKey() {
+    return safe(function () { return typeof window.uns === 'function' ? window.uns('mlsPullBusyXTabV1') : 'mlsPullBusyXTabV1'; }, 'mlsPullBusyXTabV1');
+  }
+  function pullTick() {
+    safe(function () {
+      var localAt = Number(window.__mlsPullBusyAt) || 0;
+      var xtabAt = Number(safe(function () { return window.localStorage.getItem(pullStampKey()); }, 0)) || 0;
+      var freshest = Math.max(localAt, xtabAt);
+      var fresh = freshest > 0 && (now() - freshest) < 90000;
+      var cur = activeFlow('pull');
+      if (fresh) {
+        var otherTab = !(localAt && (now() - localAt) < 90000);
+        if (!cur) cur = ensure('pull', {});
+        if (cur && freshest !== pullWatch.lastStamp) {
+          pullWatch.lastStamp = freshest;
+          cur.handle.stage('Working through the schedule and charts', {
+            operation: otherTab
+              ? 'Running in another MLS tab — leave that tab open.'
+              : 'The pull engine is working — per-chart details appear as each read lands.'
+          });
+        }
+      } else if (cur) {
+        finish('pull', 'complete', 'Pull finished.');
+        pullWatch.lastStamp = 0;
+      }
+    });
+  }
+  pullWatch.iv = setInterval(pullTick, 3000);
+
   var api = {
     version: VERSION,
     installed: true,
@@ -640,10 +702,12 @@
     },
     panel: { open: function () { setPanel(true); }, close: function () { setPanel(false); }, toggle: function () { setPanel(!panelOpen); } },
     _observe: onMessage, /* exposed for tests: feed synthetic bridge messages */
+    _pullTick: pullTick, /* exposed for tests: drive the pull-stamp watcher deterministically */
     revert: function () {
       safe(function () { window.removeEventListener('message', onMessage, false); });
       safe(function () { window.removeEventListener('mls:job-progress', onJobEvent, false); });
       safe(function () { if (tickIv) clearInterval(tickIv); tickIv = 0; });
+      safe(function () { if (pullWatch.iv) clearInterval(pullWatch.iv); pullWatch.iv = 0; });
       safe(function () { if (hist.quietTimer) clearTimeout(hist.quietTimer); });
       safe(function () { if (sched.graceTimer) clearTimeout(sched.graceTimer); });
       safe(function () { if (conn.pingTimer) clearTimeout(conn.pingTimer); });
