@@ -40,3 +40,31 @@ unsupported-conclusion guards in analysis-clarity module; letters/legal/handout 
 payloads (task 16/17 display-only pins). Switching records: REPLACE-never-merge (task 6), patientlock b53
 confirmAbandon single-flight (b494), E2E step 16 proves fail-closed lock guard + confirmed retry + NO cross-record
 leakage + draft resume after reload; cross-patient combine refused (task 7/8 pins).
+
+## 1. PROVIDER SELECTION - root cause + behavior verification (2026-07-23 midday)
+WHY ONE PROVIDER: the roster mechanism is CORRECT and proves completeness. Roster receipt (live):
+{complete:true, expectedCount:1, observedCount:1, reachedEnd:true, source backend:9 "Matthew Schaeffer, MD"}.
+Every schedule surface this signed-in account has ever read (Day/Week, dept 121) renders exactly ONE provider
+column - the account sees its own schedule. Backend /api/providers (accumulated from all pulls) agrees: one
+provider. Inbox names (assignees) are not schedule providers. The dropdown therefore honestly lists
+"All providers" + the one real provider, with the intended provider selected by default.
+BEHAVIOR CHECKS (suite + code): provider-day-pull-contract (92 asserts) green - default provider, exact history
+binding, schedule-only opt-out, frozen provider through the whole batch (selection APPLIED); roster-provenance
+green - stale/mismatched/replayed/missing roster receipts fail closed (duplicate/unavailable handling);
+All-providers mode carries empty requested identity (never a leftover provider). Selection persistence:
+uns("pullProvider") localStorage + SCOPE persistence via saveScope(); b445 pin: "Pulling as" = pull identity,
+never a view filter; selection change NEVER triggers a pull (explicit-click contract). Empty state: honest
+"No provider names found yet - pull patients or sign visits first."
+UNRESOLVED (documented): whether athena offers MORE providers on this account's schedule PICKER lists is
+empirically unanswered - the harvest needs the schedule surface displayed and the owner is actively charting
+(current tab = patient briefing; only chart widgets present). If the picker lists more, the planned 3.0.4
+option-harvest (schedule read returns providerOptions; roster ingests as authoritative practice source) loads
+them; if not, single-provider is the true complete roster. Inactive-provider display: no athena surface read
+so far exposes an active/inactive flag - documented limitation; duplicates are collapsed by stableKey.
+
+## E5/E6 recovery status (context for goal-3 acceptance)
+E6 (peak clinic, background-throttled tab): honest partial at cap - 16/16 processed, 9 failures (6
+deferred-after-batch-deadline from throttled sweep, 2 same-frame-name-mismatch, 1 visit-bodies-incomplete);
+receipt captured cleanly. Bodies stable 66, parity local==server holds, 0 pairs, 0 badBinding. Observation:
+foreground clinic use throttles the background MLS tab (bursty statuses, inflated waits) - ON x2 completion
+scheduled for a quieter window; not a reader defect.
