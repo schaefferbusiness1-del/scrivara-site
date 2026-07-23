@@ -78,3 +78,9 @@ intended provider defaulted is CORRECT and complete. OWNER DECISION (not a defec
 enumeration is wanted, the 3.0.4 candidate can harvest the DEPARTMENTID option list and/or read other departments
 schedules - a scope and performance change requiring explicit approval. Verified behaviors: default selection,
 persistence, apply-without-pull, honest empty state, fail-closed stale/duplicate roster receipts.
+
+## av-1.1.x: Verify without an open chart (owner directive, 13:4x-14:4x)
+- b501 av-1.1.0: explicit Verify auto-opens the identity-frozen chart on context-unverified/context-mismatch, re-probes once; forbidden-verb guard amended on principle (SearchOpen exactly once, verifyNow only, passive paths never navigate); 3 runtime cases.
+- LIVE TRACE FINDING: mid-clinic the probe returns patient-mismatch (ANOTHER chart open - the normal daytime state); b502/b503 av-1.1.1 adds patient-mismatch to the whitelist (read-only + identity verified before open + re-probe re-verifies; non-whitelisted reasons still never navigate). NOTE: shared-worktree commit races made 1a94be3 ship without the whitelist lines; 776fe19 healed them and b503 re-tokened the connector (SW serves ?v= cache-first). Etiquette now: explicit-path staging only.
+- b504 av-1.1.2: open budget 75s -> 150s after two live open-deadline-exceeded failures (contended tab + freeze-guard reloads).
+- FINAL LIVE PROOF PENDING: at 14:3x the Athena TAB renderer froze, and after recovery reloads + a fresh tab, athena serves a BLANK frameset = SESSION EXPIRED (second time today). The verify mechanism is live-proven through: whitelist fire -> SearchOpen dispatch -> streamed progress; the completed receipt needs a signed-in session. First item after the owner signs in.
