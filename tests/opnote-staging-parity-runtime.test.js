@@ -144,7 +144,7 @@ function testPrepIdentityAndAddressScope() {
 
 async function main() {
   const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260723opnp170');
-  const integrityAt = connector.indexOf('feat_mls_opnote_integrity.js?v=20260723oni2121');
+  const integrityAt = connector.indexOf('feat_mls_opnote_integrity.js?v=20260723oni2130');
   const fillAt = connector.indexOf('feat_mls_opnote_fill.js?v=20260723onf291');
   assert(prepAt >= 0 && prepAt < fillAt && fillAt < integrityAt, 'staging op-note assets are not loaded prep → canonical fill → final integrity owner');
   assert(connector.includes('window.__mlsCanonicalOpNoteFillRequested'), 'legacy fill fallback is not suppressed when canonical Fields is requested');

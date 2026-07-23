@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.12.0';
+  var VERSION = 'oni-2.13.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -279,6 +279,46 @@
     if(tpl&&tpl.validatedFacts===true)fields=['procedureType','region','side','levels','levelCount','approach'];
     var errors=compareFacts(requested,actual,false,fields).concat(templateScopeErrors(tpl,ctx));
     return {pass:!errors.length,errors:errors,requested:requested,template:actual};
+  }
+  /* oni-2.13.0 close-call adaptation (owner directive 2026-07-23): a template
+     that differs only in FORMATTING or in facts the pipeline re-imposes anyway
+     must ADAPT instead of refusing. Requested facts stay authoritative — the
+     prompt, forceFacts, and the post-draft clinicalConsistency check all
+     enforce the REQUESTED side/levels/approach, so adapting these fields can
+     never put another procedure's facts in the note. Hard stops remain for a
+     different procedure TYPE, a disjoint REGION, and a genuinely DIFFERENT
+     provider/facility (no shared identifying token). */
+  function scopeBlob(src,kind){
+    var keys=kind==='provider'?['providerId','provider_id','providerName','provider']:['facilityId','facility_id','facilityName','facility'];
+    var parts=[];for(var i=0;i<keys.length;i++){var v=scopeValue(src&&src[keys[i]]);if(v)parts.push(v);}
+    return normText(parts.join(' '));
+  }
+  function scopeTokensOverlap(tpl,ctx,kind){
+    var a=scopeBlob(tpl,kind),b=scopeBlob(ctx,kind);
+    if(!a||!b)return false;
+    var stop={md:1,'do':1,dr:1,pa:1,np:1,provider:1,doctor:1,physician:1,the:1,of:1,at:1,and:1,center:1,clinic:1,llc:1,pllc:1,pc:1,inc:1,medical:1,health:1,surgery:1,pain:1};
+    function toks(s){return s.split(/[^a-z0-9]+/).filter(function(w){return w.length>2&&!stop[w];});}
+    var ta=toks(a),tb=toks(b);
+    for(var i=0;i<ta.length;i++)if(tb.indexOf(ta[i])>=0)return true;
+    return false;
+  }
+  /* mismatch_approach is NOT adaptable: after the 2.11 generic↔specific ESI
+     relaxation, a surviving approach conflict means BOTH sides are specific
+     (TFESI vs interlaminar) — the template narrative describes a different
+     technique that forceFacts cannot rewrite. */
+  var ADAPTABLE_CONFLICTS={mismatch_side:1,mismatch_levels:1,mismatch_levelCount:1,missing_provider_scope:1,missing_facility_scope:1,mismatch_provider:1,mismatch_facility:1};
+  function closeCallAdaptation(compat,tpl,ctx){
+    var errs=(compat&&compat.errors)||[];
+    if(!errs.length)return {adapt:false,reasons:[]};
+    var reasons=[];
+    for(var i=0;i<errs.length;i++){
+      var c=S(errs[i].code),f=S(errs[i].field);
+      if(!ADAPTABLE_CONFLICTS[c])return {adapt:false,hard:f||c,reasons:[]};
+      if(c==='mismatch_provider'&&!scopeTokensOverlap(tpl,ctx,'provider'))return {adapt:false,hard:'provider',reasons:[]};
+      if(c==='mismatch_facility'&&!scopeTokensOverlap(tpl,ctx,'facility'))return {adapt:false,hard:'facility',reasons:[]};
+      if(reasons.indexOf(f)<0)reasons.push(f);
+    }
+    return {adapt:true,reasons:reasons};
   }
   function resolveSelectedTemplate(procedure,tplText,ctx){
     var all=templates(),wanted=requestedTemplateId(ctx),matches=[],i,t;
@@ -927,7 +967,15 @@
     var selectedResolution=resolveSelectedTemplate(procedure,tplText,ctx),selectedTpl=selectedResolution.tpl;
     if(!selectedTpl){var tie=new Error(selectedResolution.error||'The selected template identity could not be verified.');tie.code=selectedResolution.code||'MLS_OPNOTE_TEMPLATE_IDENTITY';throw tie;}
     var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx);
-    if(!tplCheck.pass){var tce=new Error('Draft stopped: the selected template conflicts with the requested procedure type, region, or approach. Choose a compatible validated template.');tce.code='MLS_OPNOTE_TEMPLATE_CONFLICT';tce.details=tplCheck;throw tce;}
+    if(!tplCheck.pass){
+      var tplAdapt=closeCallAdaptation(tplCheck,selectedTpl||{},ctx);
+      if(tplAdapt.adapt){
+        window.__mlsOpNoteTplAdapted={reasons:tplAdapt.reasons.slice(),at:Date.now()};
+        generationStage(ctx,'Loading validated template','Close-call template differences ('+tplAdapt.reasons.join(', ')+') — adapting; the requested procedure facts stay authoritative.');
+      } else {
+        var tce=new Error('Draft stopped: the selected template conflicts with the requested procedure type, region, or approach. Choose a compatible validated template.');tce.code='MLS_OPNOTE_TEMPLATE_CONFLICT';tce.details=tplCheck;throw tce;
+      }
+    }
     /* a past-note "template" becomes structured + prior-patient-free before
        anything downstream (prompt, fidelity, reanchor, airing) sees it */
     tplText=sanitizeTemplate(tplText);
@@ -1089,17 +1137,33 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){window.__mlsLastOpFidelityError='Draft stopped: the selected template conflicts with the requested procedure type, region, approach, provider, or facility.';toast(window.__mlsLastOpFidelityError,'err');var stc=document.getElementById('opPrepStatus');if(stc)stc.textContent=window.__mlsLastOpFidelityError;return false;}}
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{window.__mlsLastOpFidelityError='Draft stopped: the selected template is for a different '+(rowAdapt.hard||'procedure')+'. Choose a compatible validated template.';toast(window.__mlsLastOpFidelityError,'err');var stc=document.getElementById('opPrepStatus');if(stc)stc.textContent=window.__mlsLastOpFidelityError;return false;}}}
       /* oni-2.10.0: visible in-flight state — the clicked Draft button disables
          with an honest label while this row generates (single-flight already
          dedupes; this makes it VISIBLE). */
       var busyBtn=null;try{busyBtn=document.querySelector('#opPrepList button[onclick="opPrepGenerateOne('+i+')"]');if(busyBtn){busyBtn.disabled=true;busyBtn.dataset.mlsBusyLabel=busyBtn.textContent;busyBtn.textContent='⏳ Drafting…';}}catch(eB){}
+      /* oni-2.13.0 loading screen: a visible drafting overlay for the whole
+         generation. pointer-events:none — purely visual, so a hung generation
+         can never wedge the UI behind it. */
+      var loadEl=null;try{
+        var prior=document.getElementById('mlsOpDraftLoading');if(prior&&prior.parentNode)prior.parentNode.removeChild(prior);
+        var calmUi=window.__mlsLoadingCalm;
+        if(!(calmUi&&calmUi.installed)){
+        loadEl=document.createElement('div');loadEl.id='mlsOpDraftLoading';
+        loadEl.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.28);pointer-events:none;';
+        loadEl.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;padding:22px 30px;box-shadow:0 18px 50px rgba(2,6,23,.35);font:500 15px/1.5 system-ui,sans-serif;text-align:center;max-width:340px;"><div style="width:26px;height:26px;margin:0 auto 12px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:mlsOpSpin .8s linear infinite;"></div><div>Drafting op note…</div><div id="mlsOpDraftLoadingSub" style="margin-top:6px;font-size:12.5px;color:#64748b;"></div></div><style>@keyframes mlsOpSpin{to{transform:rotate(360deg)}}</style>';
+        var subEl=loadEl.querySelector('#mlsOpDraftLoadingSub');
+        if(subEl)subEl.textContent=(S(row&&row.appt&&row.appt.name)||'This patient')+' — verifying template, history, and procedure facts';
+        (document.body||document.documentElement).appendChild(loadEl);
+        }
+      }catch(eL){}
       var ok=false;
       try{
         await one(i);
         ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);
       } finally {
         try{if(busyBtn){busyBtn.disabled=false;if(busyBtn.dataset.mlsBusyLabel){busyBtn.textContent=busyBtn.dataset.mlsBusyLabel;delete busyBtn.dataset.mlsBusyLabel;}}}catch(eB2){}
+        try{if(loadEl&&loadEl.parentNode)loadEl.parentNode.removeChild(loadEl);}catch(eL2){}
       }
       /* remember WHICH template produced this draft, for the staleness guard */
       if(ok&&row){row._genTplId=S(row.tplId);syncTplStatus(i);}
@@ -1108,6 +1172,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

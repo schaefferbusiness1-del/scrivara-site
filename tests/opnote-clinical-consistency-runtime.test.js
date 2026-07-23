@@ -41,7 +41,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(source, context, { filename: 'opnote-integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.version === 'oni-2.12.0', 'clinical consistency owner did not install');
+  assert(api && api.version === 'oni-2.13.0', 'clinical consistency owner did not install');
 
   const factCases = [
     ['Left L2 TFESI', { procedureType: 'tfesi', region: 'lumbar', side: 'left', levels: ['L2'], levelCount: 1, approach: 'transforaminal' }],
@@ -85,6 +85,24 @@ async function main() {
   assert.strictEqual(scopeConflict.pass, false, 'provider/facility-specific template crossed scopes');
   assert(scopeConflict.errors.some(e => e.field === 'provider'), 'provider conflict was not reported separately');
   assert(scopeConflict.errors.some(e => e.field === 'facility'), 'facility conflict was not reported separately');
+
+  /* oni-2.13.0 close-call adaptation: formatting-level scope differences and
+     facts the pipeline re-imposes downstream ADAPT instead of refusing; a
+     different procedure type, region, or genuinely different person/place
+     still hard-stops. */
+  const sameDocFormatted = api.templateCompatibility('Left L2 TFESI', scoped, {
+    provider: 'PROVIDER JANE SMITH', facility: 'North Procedure Center'
+  });
+  assert.strictEqual(sameDocFormatted.pass, false, 'formatted-differently provider unexpectedly passed strict scope');
+  assert.strictEqual(api._closeCallAdaptation(sameDocFormatted, scoped, { provider: 'PROVIDER JANE SMITH', facility: 'North Procedure Center' }).adapt, true, 'same provider formatted differently did not adapt');
+  assert.strictEqual(api._closeCallAdaptation(scopeConflict, scoped, { provider: 'Alex Jones, DO', facility: 'South Procedure Center' }).adapt, false, 'a genuinely different provider/facility was adapted over');
+  assert.strictEqual(api._closeCallAdaptation(levelConflict, validated, {}).adapt, true, 'validated level close-call did not adapt (requested facts are re-imposed downstream)');
+  const typeConflict = api.templateCompatibility('Right C6-7 interlaminar epidural steroid injection', { name: 'Lumbar TFESI', text: templateText });
+  assert.strictEqual(typeConflict.pass, false, 'cross-type template unexpectedly passed compatibility');
+  assert.strictEqual(api._closeCallAdaptation(typeConflict, {}, {}).adapt, false, 'a different procedure type/region was adapted over');
+  const integritySource = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_opnote_integrity.js'), 'utf8');
+  assert(integritySource.includes("loadEl.id='mlsOpDraftLoading'"), 'drafting loading screen is missing');
+  assert(integritySource.includes('pointer-events:none') , 'drafting loading screen must be non-blocking (pointer-events:none)');
 
   const medicationTemplate = {
     requiredFields: ['dexamethasone'], prohibitedFields: ['particulate steroid'], text: templateText
