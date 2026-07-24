@@ -71,7 +71,15 @@ assert.strictEqual(gate({ name: 'James' }, { name: 'James B Fortune', dob: '11/0
 // ---- frame-candidate walk shape ---------------------------------------------
 const walk = bg.slice(bg.indexOf('var enumCandidates = ['), bg.indexOf('var rows = enumRes.rows'));
 assert(walk.includes('ecScore(b) - ecScore(a)'), 'candidates must be walked best-first');
-assert(walk.includes('ecI < 4'), 'the candidate walk must stay bounded');
+/* 3.0.6: the walk must STAY BOUNDED — that contract is unchanged — but the
+   bound was 4, and athena v26.7 keeps cached previous-patient encounter iframes
+   alive (see background.js above the verified-read lease). Once five or more
+   stale frames outscored the still-hydrating fresh one, the fresh frame was
+   never identity-checked at all and every body read was refused
+   same-frame-name-mismatch. 16 clears real-world frame counts while the
+   in-loop readDeadline break still caps the time. */
+assert(walk.includes('ecI < 16'), 'the candidate walk must stay bounded');
+assert(walk.includes('if (Date.now() >= readDeadline) break;'), 'the walk must also be time-bounded, not just count-bounded');
 assert(walk.includes('if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }'),
   'a matching frame must take over enumeration');
 const refusal = bg.slice(bg.indexOf('var rows = enumRes.rows'), bg.indexOf('var detailWaitMs'));

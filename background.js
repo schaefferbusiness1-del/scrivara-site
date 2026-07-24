@@ -9533,7 +9533,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       if (!enumCandidates.length) enumCandidates.push({ result: enumRes, frameId: listFrame });
       var gate = null;
-      for (var ecI = 0; ecI < enumCandidates.length && ecI < 4; ecI++) {
+      for (var ecI = 0; ecI < enumCandidates.length && ecI < 16; ecI++) {
         var ecCand = enumCandidates[ecI];
         var ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]);
         var ecIdentity = bestResult(ecIds, function (r) {
