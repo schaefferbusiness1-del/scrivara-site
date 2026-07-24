@@ -92,6 +92,10 @@
     /* The other rail layout: an #appWrap grid whose first column exists only to
        hold .mainnav. With the rail hidden that column is dead space. */
     'html body.mls-calm.mls-nav-left #appWrap{display:block!important}',
+    /* A 24px full-width strip that renders nothing. :empty is deliberate — the
+       moment any module puts content in it the selector stops matching and it
+       comes back, so this can never hide something real. */
+    'html body.mls-calm #mlsEz3Head:empty{display:none!important}',
     'body.mls-calm #appHeader .tools .btn-white{display:none!important}',
     'body.mls-calm #appHeader .tools .btn-white.mls-calm-keep{display:inline-flex!important}',
     'body.mls-calm{padding-bottom:96px}',
@@ -101,8 +105,14 @@
     'display:flex;align-items:center;gap:4px;padding:6px;border-radius:22px;',
     'background:rgba(255,255,255,.72);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);',
     'border:1px solid rgba(0,0,0,.06);box-shadow:0 12px 34px rgba(20,35,28,.16),0 2px 6px rgba(20,35,28,.08);',
-    'opacity:0;animation:mlsDockIn var(--mls-slow) var(--mls-spring) forwards}',
-    '@keyframes mlsDockIn{from{opacity:0;transform:translateX(-50%) translateY(18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
+    /* The resting transform lives HERE, never in the animation. Two @keyframes
+       once shared the name mlsDockIn (one per breakpoint); flipping the media
+       query re-resolved them, the entrance animation restarted and never
+       settled, and the dock sat frozen mid-slide 10px below the screen edge on
+       mobile. Distinct names per breakpoint, and the resting position holds even
+       if the animation never runs at all. */
+    'opacity:0;animation:mlsDockInD var(--mls-slow) var(--mls-spring) forwards}',
+    '@keyframes mlsDockInD{from{opacity:0;transform:translateX(-50%) translateY(18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#EAF1EE;',
     'transition:transform var(--mls-base) var(--mls-spring),width var(--mls-base) var(--mls-spring);pointer-events:none;z-index:0}',
     '#mlsDock button{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:2px;',
@@ -225,11 +235,14 @@
     '#mlsBusy i{animation-duration:2s!important}',
     '*{transition-duration:1ms!important}}',
 
+    '@keyframes mlsDockInM{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}',
     '@media (max-width:760px){',
-    '#mlsDock{left:8px;right:8px;bottom:8px;transform:none;width:auto}',
-    '@keyframes mlsDockIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}',
+    '#mlsDock{left:8px;right:8px;bottom:8px;transform:none;width:auto;animation-name:mlsDockInM}',
     '#mlsDock button{min-width:0;flex:1;padding:8px 4px 7px;font-size:10.5px}',
-    '#mlsDockAsk,#mlsDockAsk:focus{width:110px}',
+    /* Scoped by the dock id so it cannot lose a specificity tie to the base rule. */
+    '#mlsDock #mlsDockAsk,#mlsDock #mlsDockAsk:focus{width:96px;flex:1 1 auto}',
+    '#mlsDock #mlsDockAskWrap{flex:1 1 auto;min-width:0}',
+    '#mlsDock #mlsDockClassic{padding:7px 8px;font-size:10.5px}',
     '#mlsAskResults{width:min(340px,86vw)}}'
   ].join('');
 
