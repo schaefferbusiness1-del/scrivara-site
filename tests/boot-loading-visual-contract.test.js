@@ -126,6 +126,6 @@ assert(!bootDriver.includes('setInterval('), 'a second progress interval can fig
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
 assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b520'"), 'shared asset version was not bumped to b520');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-23-b520'"), 'app build was not bumped to b520');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-24-b520'"), 'app build was not bumped to b520');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');
