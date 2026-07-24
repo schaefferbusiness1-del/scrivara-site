@@ -17925,10 +17925,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function requireExactScheduledBinding(a, actionLabel) {
     if (exactScheduledBindingMatches(a)) return true;
-    S.lastWarn = 'MLS blocked ' + (actionLabel || 'this action') + ' because it could not prove the exact scheduled Athena appointment, patient, date, and provider. Re-pull this day and choose the appointment again.';
+    /* Owner 2026-07-24 ("blocking is BS", same ruling as oni-2.14.0): the
+       doctor's core action is never refused outright. A failed SCHEDULE proof
+       demotes the visit to explicitly-UNSCHEDULED and proceeds with a visible
+       warning — the note stays unbound, so it can never auto-file to an
+       unproven schedule row. Only a PROVEN cross-patient conflict still
+       blocks: the active chart naming a different person than the picked row
+       is exactly the wrong-chart save this gate exists to stop. */
+    var active = safe(function () { return typeof window.activePatient === 'function' ? window.activePatient() : null; }, null);
+    var conflict = false;
+    try {
+      if (active && a) {
+        if (a.name && active.name && !nameMatch(active.name, a.name)) conflict = true;
+        var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(active.dob || '').replace(/\D/g, '');
+        if (ad && pd && ad !== pd) conflict = true;
+      }
+    } catch (e) {}
+    if (conflict) {
+      S.lastWarn = 'MLS blocked ' + (actionLabel || 'this action') + ' — the selected appointment is for a DIFFERENT patient than the active chart. Switch to the right patient first.';
+      toast(S.lastWarn);
+      render();
+      return false;
+    }
+    safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); else window.currentVisitAthenaBinding = null; });
+    S.lastWarn = '⚠️ Proceeding as an UNSCHEDULED visit — MLS could not verify the exact Athena appointment for ' + (actionLabel || 'this action') + '. The note will not auto-file to a schedule row; assign it afterward.';
     toast(S.lastWarn);
     render();
-    return false;
+    return true;
   }
   function lockAndStart(a, opts) {
     opts = opts || {};
