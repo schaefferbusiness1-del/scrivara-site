@@ -324,6 +324,63 @@ string replace rewrote *prose* — the b533 references in this document and in t
 module's own comments, which describe what b533 shipped and are historical
 facts. Bump scripts must target pins, not every occurrence of a build number.
 
+## b537 — 14 defects from an adversarial review of the shipped module
+
+Before b533 went out unattended, the module was put through a read-only
+adversarial review: four independent lenses (DOM lifecycle, clinical safety,
+performance, accessibility), and every claim then handed to a separate agent
+whose job was to REFUTE it. 24 claims, 10 refuted, 14 survived. All 14 fixed
+here. Two of them were patient-safety defects that were live.
+
+**Clinical**
+- **Ask could act on the wrong patient.** It indexed controls in hidden views, so
+  typing "record" could click the Record button of whichever patient happened to
+  be first in the list — silently switching the active chart. Ask now indexes
+  ONLY visible controls, and a label matching several controls is shown and
+  highlighted, never fired. The shell cannot know which row was meant, and
+  guessing is how you act on the wrong chart.
+- **Ask could destroy a transcript.** Typing "clear" on the Orders screen fired
+  the visit view's Clear button — a 20-minute recording gone, no confirmation.
+  `clear|discard|reset|erase|wipe|end visit|new visit` are now destructive and
+  route through the app's own `mlsConfirm`. Anything that can lose captured work
+  is destructive, not just anything that writes to Athena.
+- **The escape hatch was invisible.** The promised "Classic layout" header button
+  sits in `.tools`, which is itself hidden on some surfaces. A muted but always
+  visible "Classic" control now lives in the dock. For a default-ON shell
+  deployed unattended, the way out must be on screen.
+- **The Review destination never lit up.** View state was read from
+  `.mainnav .navtab.on`, but modules relocate individual tabs out of the rail.
+  Tabs are now asked directly by id, wherever they have been moved to.
+
+**Freeze risk** (this repo has a freeze history, so these matter)
+- `wake()` ran two full `#visitView` scans plus a `localStorage` read on EVERY
+  mousemove and EVERY keystroke — forced layout at up to 125 Hz while a
+  transcript streams. Now throttled to ~3 Hz, with heads-down restore still
+  instant because that path is a single class read.
+- The activity bar's sweep animation was `infinite` and only ever made
+  transparent, so it ran at 60 fps for the rest of the clinic day after one
+  Generate. It now runs only while the bar is on.
+
+**Lifecycle**
+- Deferred renders fired after `teardown()`, grafting unstyled debris into the
+  classic layout with the stylesheet gone, and could throw on a nulled dock. A
+  liveness flag is now set before the first render and checked by every deferred
+  entry point.
+- Heads-down could never engage: the observer counted the app's own transcript
+  churn as user activity and re-armed the countdown from zero forever. Mutations
+  may now start a countdown but never cancel one — only real input does.
+- The Record stage was never detected at all, because `/^(stop|end)/i` does not
+  match the live control's label "Recording… Stop Visit".
+
+**Accessibility**
+- `Ctrl/Cmd+1–5` navigated away regardless of focus — including from inside the
+  note editor, and on European layouts where `AltGr+digit` reports `ctrlKey`.
+  Now ignored while typing.
+- Rebuilding the right-now bar dropped keyboard focus to `<body>`. Focus is
+  captured and restored across re-renders.
+- The Tools menu could not be toggled shut (the away-handler compared identity,
+  not containment, so the same click closed and reopened it) and had no Escape.
+
 ## FOR THE SESSIONS PICKING THIS UP
 
 - Repo: `dispatch-work/claude-commercial-20260717` (site + app).

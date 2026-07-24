@@ -119,6 +119,9 @@
     '#mlsAskResults .r small{margin-left:auto;color:#8C978F;font-size:11.5px}',
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
+    '#mlsDock #mlsDockClassic{position:relative;z-index:1;min-width:0;margin-left:6px;padding:7px 11px;',
+    'border-radius:12px;font:400 11.5px/1.1 inherit;color:#8C978F;flex-direction:row}',
+    '#mlsDock #mlsDockClassic:hover{color:#204034;background:rgba(0,0,0,.045)}',
 
     /* tools menu */
     '#mlsToolsMenu{position:fixed;z-index:930;min-width:224px;padding:6px;border-radius:16px;',
@@ -168,8 +171,12 @@
     '#mlsBusy{position:fixed;top:0;left:0;right:0;height:2.5px;z-index:960;pointer-events:none;opacity:0;',
     'transition:opacity var(--mls-base) linear}',
     '#mlsBusy.on{opacity:1}',
+    /* The sweep runs ONLY while the bar is on. Leaving an infinite animation on a
+       transparent element keeps the compositor awake for the whole clinic day and
+       stops a laptop ever reaching an idle frame rate. */
     '#mlsBusy i{display:block;height:100%;width:38%;border-radius:0 2px 2px 0;',
-    'background:linear-gradient(90deg,rgba(46,106,75,0),#2E6A4B 45%,#5FAF87);animation:mlsSweep 1.15s var(--mls-spring) infinite}',
+    'background:linear-gradient(90deg,rgba(46,106,75,0),#2E6A4B 45%,#5FAF87)}',
+    '#mlsBusy.on i{animation:mlsSweep 1.15s var(--mls-spring) infinite}',
     '@keyframes mlsSweep{0%{transform:translateX(-100%)}100%{transform:translateX(365%)}}',
 
     /* heads-down */
@@ -295,6 +302,22 @@
       '<div id="mlsAskResults" role="listbox" aria-label="Results"></div>';
     nav.appendChild(askWrap);
 
+    /* The way out has to be VISIBLE, not buried. classicSwitch() adds a header
+       button, but the header's .tools container is itself hidden on some
+       surfaces, so the escape hatch promised in the release notes was not on
+       screen at all. For a default-ON shell deployed unattended, one muted but
+       always-present control beats a tidier dock. */
+    var esc = D.createElement('button');
+    esc.id = 'mlsDockClassic';
+    esc.type = 'button';
+    esc.title = 'Switch back to the classic layout — takes effect immediately, no reload';
+    esc.textContent = 'Classic';
+    esc.addEventListener('click', function () {
+      safe(function () { localStorage.setItem(STORE_KEY, '0'); });
+      teardown();
+    });
+    nav.appendChild(esc);
+
     (D.body || D.documentElement).appendChild(nav);
     dockEl = nav;
     wireAsk();
@@ -349,9 +372,14 @@
     return out;
   }
 
+  var toolsClose = null;
+
   function openTools(anchorBtn) {
+    if (toolsClose) { toolsClose(); return; }
     var existing = qs('#mlsToolsMenu');
-    if (existing) { existing.parentNode.removeChild(existing); return; }
+    if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); return; }
+    var anchor = anchorBtn || qs('#mlsDock button[data-dest="tools"]') || dockEl;
+    if (!anchor) return;
     var menu = D.createElement('div');
     menu.id = 'mlsToolsMenu';
     menu.setAttribute('role', 'menu');
@@ -364,13 +392,24 @@
       '<div class="r classic" role="menuitem" tabindex="0" data-classic="1">Classic layout</div>';
     (D.body || D.documentElement).appendChild(menu);
 
-    var rect = (anchorBtn || dockEl).getBoundingClientRect();
+    var rect = anchor.getBoundingClientRect();
     menu.style.left = Math.max(10, Math.min(rect.left - 40, W.innerWidth - menu.offsetWidth - 10)) + 'px';
     menu.style.bottom = (W.innerHeight - rect.top + 10) + 'px';
 
-    function close() { if (menu.parentNode) menu.parentNode.removeChild(menu); D.removeEventListener('click', away, true); }
-    function away(e) { if (!menu.contains(e.target) && e.target !== anchorBtn) close(); }
+    function close() {
+      if (menu.parentNode) menu.parentNode.removeChild(menu);
+      D.removeEventListener('click', away, true);
+      toolsClose = null;
+    }
+    toolsClose = close;
+    /* contains(), not identity: the click lands on the icon or the label inside
+       the button, so `e.target !== anchorBtn` closed the menu and the same click
+       then reopened it — the Tools button could never toggle itself shut. */
+    function away(e) { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); }
+    function esc(e) { if (e.key === 'Escape') { close(); safe(function () { anchor.focus(); }); } }
     setTimeout(function () { D.addEventListener('click', away, true); }, 0);
+    menu.addEventListener('keydown', esc);
+    safe(function () { var first = qs('.r', menu); if (first) first.focus(); });
 
     qsa('.r', menu).forEach(function (row) {
       row.addEventListener('click', function () {
@@ -411,9 +450,24 @@
     safe(renderStages);
   }
 
+  /* Every rail tab, by id. Scoping the "which view am I on" read to
+     `.mainnav .navtab.on` was wrong: modules relocate individual tabs out of the
+     rail (b521 folded History out; #nav_orders lives elsewhere), so the dock lit
+     nothing and the right-now bar reported "Nothing to do here yet" on a screen
+     full of actions. Ask the tabs directly, wherever they have been moved to. */
+  var ALL_NAV_IDS = ['nav_calendar', 'nav_patients', 'nav_visit', 'nav_orders', 'nav_recs',
+    'nav_history', 'nav_studio', 'nav_analysis', 'nav_team', 'nav_admin', 'nav_legalreq',
+    'nav_help', 'nav_staffpull'];
+
   function currentTabId() {
-    var on = qs('.mainnav .navtab.on');
-    return on ? on.id : '';
+    var found = '';
+    ALL_NAV_IDS.some(function (id) {
+      var el = D.getElementById(id);
+      if (el && el.classList && el.classList.contains('on')) { found = id; return true; }
+      return false;
+    });
+    if (!found) { var on = qs('.navtab.on'); found = on ? on.id : ''; }
+    return found;
   }
 
   function currentDest() {
@@ -487,7 +541,7 @@
     ],
     visit: [
       { label: /^(start|record|begin)/i, within: '#visitView', primary: true },
-      { label: /^(stop|end)/i, within: '#visitView', primary: true },
+      { label: /\bstop\b/i, within: '#visitView', primary: true },
       { label: /^(pause|resume)/i, within: '#visitView' },
       { label: /^generate/i, within: '#visitView', primary: true },
       { label: /^(sign|save to athena|send to athena)/i, within: '#visitView', primary: true }
@@ -537,6 +591,7 @@
   var lastRnSig = '';
 
   function renderRightNow() {
+    if (!W.__mlsCalmShell.active) return;
     var bar = ensureRightNow();
     if (!bar) return;
     var dest = currentDest() || 'patient';
@@ -563,6 +618,11 @@
       picked.map(function (p) { return textOf(p.el) + (p.primary ? '!' : ''); }).join(',');
     if (sig === lastRnSig && bar.childNodes.length) return;
     lastRnSig = sig;
+
+    /* Rebuilding the bar destroys whatever the keyboard was on and drops focus
+       to <body>. A keyboard user who presses Enter on "Start recording" would
+       lose their place the moment the label set changes. Remember and restore. */
+    var hadFocus = (D.activeElement && bar.contains(D.activeElement)) ? textOf(D.activeElement) : null;
 
     bar.innerHTML = '';
 
@@ -617,8 +677,16 @@
     tools.type = 'button';
     tools.className = 'tools';
     tools.textContent = 'Tools';
-    tools.addEventListener('click', function () { go('tools'); });
+    tools.addEventListener('click', function (e) { openTools(e.currentTarget); });
     bar.appendChild(tools);
+
+    if (hadFocus) {
+      qsa('button', bar).some(function (b) {
+        if (textOf(b) !== hadFocus) return false;
+        safe(function () { b.focus(); });
+        return true;
+      });
+    }
   }
 
   /* ----------------------------------------------------------------- stages */
@@ -631,7 +699,10 @@
   function stageNow() {
     var visit = qs('#visitView');
     if (!visit || !visible(visit)) return -1;
-    var stopping = findControl({ label: /^(stop|end)/i, within: '#visitView' });
+    /* Not anchored: the live control reads "Recording… Stop Visit", so `^stop`
+       never matched and the Record stage — and with it heads-down — could never
+       be detected at all. */
+    var stopping = findControl({ label: /\bstop\b/i, within: '#visitView' });
     if (stopping) return 1;
     var signable = findControl({ label: /^(sign|save to athena|send to athena)/i, within: '#visitView' });
     var noteText = '';
@@ -661,6 +732,7 @@
   var lastStage = -2;
 
   function renderStages() {
+    if (!W.__mlsCalmShell.active) return;
     var visit = qs('#visitView');
     var el = qs('#mlsStages');
     if (!visit || !visible(visit)) { if (el) el.style.display = 'none'; return; }
@@ -701,10 +773,43 @@
 
   function wake() {
     if (D.body.classList.contains('mls-headsdown')) D.body.classList.remove('mls-headsdown');
-    if (idleTimer) clearTimeout(idleTimer);
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (!headsDownOn()) return;
     if (stageNow() !== 1) return;
     idleTimer = setTimeout(function () {
+      idleTimer = null;
+      if (stageNow() === 1) { ensureHint(); D.body.classList.add('mls-headsdown'); }
+    }, 3000);
+  }
+
+  /* wake() runs stageNow(), which scans the visit view and reads its note text.
+     Bound to raw mousemove and keydown that is a forced layout read per candidate
+     button on EVERY event — 60-125 times a second while a transcript streams, on
+     top of the per-frame work. That is the exact layout-thrash profile behind
+     this app's earlier freeze incidents. Restoring the chrome stays instant (a
+     single classList read); only the expensive re-arm is throttled, and 300ms is
+     invisible against the 3s idle window. */
+  var lastWakeScan = 0;
+
+  function onMove() {
+    if (D.body.classList.contains('mls-headsdown')) { lastWakeScan = Date.now(); wake(); return; }
+    var t = Date.now();
+    if (t - lastWakeScan < 300) return;
+    lastWakeScan = t;
+    wake();
+  }
+
+  /* The observer must never count as user activity. #visitView churns on every
+     transcript chunk, so routing mutations into wake() re-armed the countdown
+     from zero forever and heads-down could never engage in the one flow it was
+     written for. Mutations may START a countdown; only real input cancels one. */
+  function arm() {
+    if (idleTimer) return;
+    if (D.body.classList.contains('mls-headsdown')) return;
+    if (!headsDownOn()) return;
+    if (stageNow() !== 1) return;
+    idleTimer = setTimeout(function () {
+      idleTimer = null;
       if (stageNow() === 1) { ensureHint(); D.body.classList.add('mls-headsdown'); }
     }, 3000);
   }
@@ -744,16 +849,26 @@
 
   /* Ask indexes the LIVE DOM rather than a build-time list, so it cannot go
      stale: whatever control is on screen is what Ask can reach. */
+  /* Two rules here are patient-safety rules, not tidiness:
+     1. ONLY VISIBLE CONTROLS. Indexing hidden views meant typing "record" could
+        click a Record button belonging to whichever patient happened to be first
+        in the patient list — silently switching the active chart and opening a
+        visit on the wrong patient.
+     2. AMBIGUOUS LABELS ARE NEVER CLICKED. A label that matches several controls
+        (per-row buttons in a list) is shown and highlighted, never fired, because
+        the shell cannot know which row the doctor meant. */
   function indexControls() {
     var out = [];
-    var seen = [];
+    var byLabel = {};
     qsa('button,.navtab,[onclick]').forEach(function (el) {
-      if (el.closest && el.closest('#mlsDock,#mlsRightNow,#mlsAskResults')) return;
+      if (el.closest && el.closest('#mlsDock,#mlsRightNow,#mlsAskResults,#mlsToolsMenu')) return;
+      if (!visible(el)) return;
       var label = textOf(el);
       if (!label || label.length > 70) return;
-      if (seen.indexOf(label.toLowerCase()) !== -1) return;
-      seen.push(label.toLowerCase());
-      out.push({ el: el, label: label, hidden: !visible(el) });
+      var key = label.toLowerCase();
+      if (byLabel[key]) { byLabel[key].count++; return; }
+      byLabel[key] = { el: el, label: label, count: 1 };
+      out.push(byLabel[key]);
     });
     return out;
   }
@@ -768,7 +883,11 @@
     return hit ? 20 + hit * 8 : 0;
   }
 
-  var DESTRUCTIVE = /remove|delete|purge|discharge|sign|send to athena|place order|log out/i;
+  /* "clear" belongs here: a doctor on the Orders screen typing "clear" to empty a
+     form would otherwise have Ask fire the visit view's Clear button and destroy
+     a 20-minute transcript with no confirmation and no undo. Anything that can
+     lose captured work is destructive, not just anything that writes to Athena. */
+  var DESTRUCTIVE = /remove|delete|purge|discharge|sign|send to athena|place order|log out|clear|discard|reset|erase|wipe|end visit|new visit/i;
 
   function wireAsk() {
     var input = qs('#mlsDockAsk');
@@ -797,7 +916,7 @@
       panel.innerHTML = results.map(function (r, i) {
         var danger = DESTRUCTIVE.test(r.label);
         return '<div class="r' + (i === 0 ? ' sel' : '') + (danger ? ' danger' : '') + '" role="option" data-i="' + i + '">' +
-          r.label.replace(/[<>&]/g, '') + (r.hidden ? '<small>hidden here</small>' : '') + '</div>';
+          r.label.replace(/[<>&]/g, '') + (r.count > 1 ? '<small>several — show me</small>' : '') + '</div>';
       }).join('');
       panel.style.display = 'block';
       qsa('.r', panel).forEach(function (row) {
@@ -811,9 +930,23 @@
       close();
       input.value = '';
       input.blur();
+      var spotlight = function () {
+        safe(function () { r.el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        safe(function () {
+          var prev = r.el.style.boxShadow;
+          r.el.style.boxShadow = '0 0 0 3px rgba(46,106,75,.55)';
+          setTimeout(function () { r.el.style.boxShadow = prev; }, 2200);
+        });
+      };
+
+      /* Several controls carry this label — typically one per row in a list. The
+         shell cannot know which row the doctor meant, so it shows the first
+         instead of guessing. Guessing here is how you act on the wrong patient. */
+      if (r.count > 1) { spotlight(); return; }
+
       var proceed = function () {
         busyMaybe(r.label);
-        safe(function () { r.el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        spotlight();
         r.el.click();
         setTimeout(function () { safe(syncDock); safe(renderRightNow); safe(renderStages); }, 300);
       };
@@ -872,7 +1005,7 @@
     });
     if (observer) safe(function () { observer.disconnect(); });
     if (idleTimer) clearTimeout(idleTimer);
-    D.removeEventListener('mousemove', wake, true);
+    D.removeEventListener('mousemove', onMove, true);
     D.removeEventListener('keydown', onKey, true);
     D.removeEventListener('click', schedule, true);
     var css = qs('#mlsCalmShellCss');
@@ -884,13 +1017,23 @@
     W.__mlsCalmShell.active = false;
   }
 
+  function typingTarget() {
+    var el = D.activeElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    return /^(input|textarea|select)$/i.test(el.tagName || '');
+  }
+
   function onKey(e) {
-    wake();
+    onMove();
     if (e.key === 'Escape' && D.body.classList.contains('mls-headsdown')) {
       D.body.classList.remove('mls-headsdown');
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && /^[1-5]$/.test(e.key)) {
+    /* Never swallow a key from someone writing a note. Ctrl+1 is heading muscle
+       memory in editors, and on several European layouts AltGr+digit reports
+       ctrlKey=true — navigating away mid-sentence would be indefensible. */
+    if ((e.metaKey || e.ctrlKey) && /^[1-5]$/.test(e.key) && !e.altKey && !typingTarget()) {
       var d = DEST[parseInt(e.key, 10) - 1];
       if (d) { e.preventDefault(); go(d.id); }
     }
@@ -910,14 +1053,16 @@
      the rail (view state) and the visit view (stage state). Coalesced into a
      single rAF so a busy render cannot turn into a feedback loop. */
   function schedule() {
+    if (!W.__mlsCalmShell.active) return;
     if (pending) return;
     pending = true;
     requestAnimationFrame(function () {
       pending = false;
+      if (!W.__mlsCalmShell.active) return;
       safe(syncDock);
       safe(renderRightNow);
       safe(renderStages);
-      safe(wake);
+      safe(arm);
     });
   }
 
@@ -928,8 +1073,13 @@
     var visit = qs('#visitView');
     /* class -> which view is active; style -> navFeatOn un-gating a tab mid
        session, which has to make its dock destination appear. The shell never
-       writes to the rail, so watching it cannot feed back into itself. */
+       writes to the rail, so watching it cannot feed back into itself. Tabs are
+       observed individually as well, because some no longer live in the rail. */
     if (rail) observer.observe(rail, { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
+    ALL_NAV_IDS.forEach(function (id) {
+      var el = D.getElementById(id);
+      if (el) observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    });
     if (visit) observer.observe(visit, { childList: true, subtree: true });
   }
 
@@ -943,10 +1093,16 @@
       injectCss();
       buildDock();
       classicSwitch();
+      /* Set BEFORE the first render, not after: every deferred path below
+         (the two boot timers, the queued rAF, Ask's 300ms follow-up) checks
+         this flag, so a teardown that lands in between must make them no-ops.
+         Without it, "Classic layout" left unstyled debris grafted into the
+         classic UI with the stylesheet already gone. */
+      W.__mlsCalmShell.active = true;
       renderRightNow();
       renderStages();
       watch();
-      D.addEventListener('mousemove', wake, true);
+      D.addEventListener('mousemove', onMove, true);
       D.addEventListener('keydown', onKey, true);
       /* The first render can land before the rail has marked a tab .on or before
          a view has filled in, and on a quiet screen NOTHING mutates afterwards —
@@ -957,7 +1113,6 @@
       setTimeout(schedule, 350);
       setTimeout(schedule, 1200);
       D.addEventListener('click', schedule, true);
-      W.__mlsCalmShell.active = true;
       return true;
     } catch (e) {
       safe(function () { W.__mlsCalmShell.error = String((e && e.message) || e); });
