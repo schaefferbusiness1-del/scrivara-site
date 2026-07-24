@@ -6629,10 +6629,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           mkq('&#128203; Paste a transcript', 'Type or paste the conversation in the transcript box above', function () {
             try { var top = $('ez3flTranscript'); if (top) { top.scrollIntoView({ block: 'center', behavior: 'smooth' }); top.focus(); } } catch (e) {}
           });
-          mkq('&#128241; Record on phone', 'Use your phone as the microphone - a QR code pairs it to this visit', function () {
+          /* phn-1.0.1: this chip was DEAD. startPhoneMicFromEasy (and
+             startPhoneMic beneath it) refuse anything whose clickEvent is not
+             isTrusted — a deliberate guard so no script can start a recording.
+             The chip called it with NO event, so it returned instantly and the
+             fallback pm.click() was a synthetic click that the same guard also
+             refused: tapping "Record on phone" did nothing, silently, forever.
+             Forward the chip's own trusted event; if it is somehow absent, say
+             so instead of failing quietly. */
+          mkq('&#128241; Record on phone', 'Use your phone as the microphone - a QR code pairs it to this visit', function (ev) {
             openWorkspace(false);
-            setTimeout(function () { try { if (typeof window.__mlsStartPhoneMicFromEasy === 'function') { window.__mlsStartPhoneMicFromEasy(); } else { var pm = $('phoneMicBtn'); if (pm) pm.click(); } } catch (e) {} }, 800);
+            setTimeout(function () {
+              try {
+                if (ev && ev.isTrusted === true && typeof window.__mlsStartPhoneMicFromEasy === 'function') { window.__mlsStartPhoneMicFromEasy(ev); return; }
+                toast('Phone recording needs a direct tap on this button. Tap "Record on phone" again.');
+              } catch (e) {}
+            }, 800);
           });
+
           var avsQuick = mkq('&#128196; After-visit summary', 'A patient-friendly summary of this visit - preview first, nothing sends by itself', function () {
             openWorkspace(false);
             setTimeout(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} }, 800);
@@ -18673,10 +18687,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!transcript) { toast('Open the transcript step before pasting.'); return; }
       try { transcript.scrollIntoView({ block: 'center', behavior: 'smooth' }); transcript.focus(); } catch (e) {}
     });
-    on('ez3QPhone', function () {
-      if (isFn(window.__mlsStartPhoneMicFromEasy)) { window.__mlsStartPhoneMicFromEasy(); return; }
-      withAdvancedWorkspace(function () { clickCanonicalControl('phoneMicBtn', 'Phone recording is still loading.'); });
+    /* phn-1.0.1: same dead-chip bug as the flow-lane chip. The click dispatcher
+       hands every handler (btn, ev) — this one dropped both, so it called
+       startPhoneMicFromEasy with no event and the isTrusted guard refused it
+       instantly. The canonical fallback then fired a synthetic .click(), which
+       the same guard also refuses. Net effect: the chip did nothing, silently.
+       Forward the real event; never fall back to a synthetic click for a
+       control that is deliberately trusted-gesture-gated. */
+    on('ez3QPhone', function (btn, ev) {
+      if (ev && ev.isTrusted === true && isFn(window.__mlsStartPhoneMicFromEasy)) { window.__mlsStartPhoneMicFromEasy(ev); return; }
+      toast('Phone recording needs a direct tap on this button. Tap "Record on phone" again.');
     });
+
     on('ez3QAvs', function () {
       withAdvancedWorkspace(function () { clickCanonicalControl('mlsavsBtn', 'After-visit summary is not available on this build.'); });
     });
@@ -33007,7 +33029,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b533';
+  window.__MLS_AV = window.__MLS_AV || 'b534';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33317,7 +33339,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b533';
+  var MLS_APP_BUILD='2026-07-24-b534';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

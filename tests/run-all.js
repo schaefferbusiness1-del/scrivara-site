@@ -121,6 +121,7 @@ const tests = [
   'patient-row-loss-guard.test.js',
   'save-truth-contract.test.js',
   'pull-resume-contract.test.js',
+  'phone-chip-trusted-gesture.test.js',
   'athena-pull-toast-lifecycle.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
