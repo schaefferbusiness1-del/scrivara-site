@@ -437,3 +437,56 @@ visits probe (without a preceding chart read) cannot be used as a test harness: 
 3. Port the chart reader's proven identity extraction into the visits reader rather than patching
    selectors blind. Keep `visitIdentityGate` exactly as it is — it has been correct at every step and is
    the only reason no wrong-patient body was ever stored.
+
+---
+
+## ✅✅ THE BUG, FOUND AND VISIBLE — the identity extractor cannot read athena's banner format
+
+`background.js`, the per-frame `op === 'identity'` extractor used by the visits reader (~line 8575):
+
+```js
+var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
+if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name,[class*="patientname" i]'); if (h) name = txt(h).slice(0, 60); }
+```
+
+It matches ONLY `Firstname Lastname` in **title case**, preceded by the literal word "Patient".
+
+**athena renders the banner as `Last, FIRST`** — surname first, comma, given name in CAPITALS. That is
+exactly what we captured live: `identity.name: "Monterosso, ROSEMARY"`. The regex cannot match
+`Holliday, JOAN`:
+- `[A-Z][a-z]+` requires title case, but `JOAN` is all-caps;
+- there is a comma between the tokens;
+- the literal "Patient" prefix is not adjacent in the v26.7 banner.
+
+So `nm` fails, and the code falls through to a **generic `h1,h2` grab**, which returns whatever heading
+happens to exist in that frame — including a heading left over from a previously-opened chart. That is
+precisely the observed behaviour: a name is returned, it belongs to a different patient, and
+`visitIdentityGate` refuses. **The gate was right every single time.**
+
+### Why this is the answer and the earlier three were not
+
+- The chart reader uses a DIFFERENT, updated identity path — which is why `mlsAppReadChart` returns the
+  correct name AND DOB for the same patient, seconds apart.
+- Raising the candidate cap (3.0.6) could not help: every frame was being read by the same broken
+  extractor, so no frame could ever match.
+- It is unrelated to tabs or to the opener, both of which were tested and retracted.
+- It predates v26.7 in principle but only became total when athena moved fully to the `Last, FIRST`
+  caps banner.
+
+### The fix (small, and the gate needs NO change)
+
+Teach the extractor athena's banner shape, e.g. accept `LAST, FIRST [M]` / `Last, FIRST` and normalise
+to tokens. **`visitIdentityGate` already tokenises, lowercases and matches order-independently** — feed
+it `"Holliday, JOAN"` for wanted `"Joan Holliday"` and it produces `['holliday','joan']` vs
+`['joan','holliday']`: both tokens present, first and last both satisfied, `nameOk === true`. So simply
+extracting the banner correctly makes the gate pass, with **zero loosening of the identity contract**.
+
+Recommended shape:
+1. add a `Last, FIRST` branch to the name match (allow all-caps given names, optional middle initial);
+2. prefer an explicit banner container over the generic `h1,h2` fallback, and if only the fallback
+   matched, mark the identity `weak:true` so the gate can refuse rather than trust a stray heading;
+3. keep DOB/MRN extraction as-is (they already work — the chart reader proves the data is present).
+
+Ship as 3.0.7, hand-load, then run a bodies-ON day and expect coverage-complete. **Verify before
+believing it** — three theories died tonight; this one is the best-evidenced but is not proven until a
+day completes.
