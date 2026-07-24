@@ -348,3 +348,51 @@ Ships as ext 3.0.6 via the normal pin train, then re-run a bodies-ON day and exp
 **Verify before believing it:** instrument first (step 2), run one ON pull, and confirm from the diag
 that the fresh frame really was beyond index 3. If `candidatesTotal` is ≤4 on a failing patient, this
 theory is wrong too — and it should be retracted as loudly as the previous two.
+
+---
+
+## ⛔ RETRACTION #3 — the 4-candidate cap was NOT the cause either. 3.0.6 is live and ON still fails.
+
+Tested rather than assumed. ext 3.0.6 (frame walk 4 -> 16) hand-loaded and pong-verified running
+(`3.0.6+core-sha256:eabb1221…`), then a bodies-ON pull of the same 5-patient day:
+
+```
+schedule 5/5 · history 5/5 · coverageComplete 0 · same-frame-name-mismatch x5 · 836s
+```
+
+Identical to 3.0.4 and 3.0.5. Raising the cap changed nothing, so the fresh frame was never the
+problem: **with up to 16 candidates examined, NOT ONE frame in the chart reported an identity matching
+the expected patient.**
+
+(The 3.0.6 change is harmless and worth keeping — a count bound of 4 was arbitrary and the walk is now
+time-bounded too — but it is not the fix.)
+
+### What that leaves — and it is now well constrained
+
+The chart reader and the visits reader use DIFFERENT identity paths, and only one of them works:
+
+- `mlsAppReadChart` on the same patient minutes earlier returned
+  `{ok:true, chartName:"Joan Holliday", chartDob:"05/27/1946", receipt.complete:true}` — **identity
+  extraction succeeds** in the chart reader.
+- The visits reader probes each candidate frame with `exec(emrId, [frameId], ['identity', cfg])` and
+  feeds that into `visitIdentityGate`. Across 5 patients x up to 16 frames, it never produced a match,
+  and when it did report a name it was a DIFFERENT patient ("Monterosso, ROSEMARY").
+
+**Next hypothesis (untested): the per-frame `identity` extractor used by the visits reader is stale on
+athena v26.7** — it reads a banner/selector that has moved, so it returns either nothing or whatever
+the outer/previous chrome still shows, and the gate refuses correctly. The chart reader's identity path
+was evidently updated for v26.7 (or never depended on that selector) and still works.
+
+### The next step is instrumentation, not another guess
+
+Three theories have now died in a row (broken opener; multiple tabs; candidate cap), each killed by the
+experiment that could disprove it. Stop guessing and make the reader show its work:
+
+- emit, per candidate frame: `frameId`, the raw identity object returned, and the gate's reason;
+- run ONE bodies-ON patient and read that list.
+
+If every frame returns an empty/garbage identity → the extractor is stale; port the chart reader's
+working identity path into the visits reader. If one frame returns the RIGHT identity but the gate
+still refuses → the bug is in `visitIdentityGate` normalization, not the extractor.
+
+**Do not ship a fourth theory without that data.**
