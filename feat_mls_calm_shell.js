@@ -80,6 +80,18 @@
     'html body.mls-calm #mlsRdNav .mainnav,',
     'html body.mls-calm #appHeader .mainnav,',
     'html body.mls-calm #appWrap .mainnav{display:none!important}',
+
+    /* Hiding the rail left its CONTAINER behind: #mlsRdNav is a fixed 236px
+       column (logo, the now-hidden rail, a Settings/Sign out footer) and
+       `body.mls-rd-shell{padding-left:var(--rail-w)}` indents the whole app to
+       clear it. So the app sat pushed right by a near-empty sidebar. Take the
+       column out and give the width back. Nothing is lost: Settings and Sign out
+       are in the Tools menu, which the coverage suite enforces. */
+    'html body.mls-calm #mlsRdNav{display:none!important}',
+    'html body.mls-calm.mls-redesign.mls-rd-shell{padding-left:0!important}',
+    /* The other rail layout: an #appWrap grid whose first column exists only to
+       hold .mainnav. With the rail hidden that column is dead space. */
+    'html body.mls-calm.mls-nav-left #appWrap{display:block!important}',
     'body.mls-calm #appHeader .tools .btn-white{display:none!important}',
     'body.mls-calm #appHeader .tools .btn-white.mls-calm-keep{display:inline-flex!important}',
     'body.mls-calm{padding-bottom:96px}',
