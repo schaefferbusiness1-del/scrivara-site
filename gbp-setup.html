@@ -59,6 +59,8 @@ textarea{min-height:84px}
 .btn.link{background:#fff;border:1px solid var(--line);color:var(--ink)}
 .copybox{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#fbfcff;position:relative;font-size:13.5px;white-space:pre-wrap;word-break:break-word}
 .copybox .cb{position:absolute;top:6px;right:6px}
+.copybox-empty{background:transparent;border-style:dashed}
+.copybox-empty .cb-none{color:var(--sub);font-size:13px}
 .cb{cursor:pointer;border:0;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700;background:#e8effc;color:#1c4fa0}
 .check{display:flex;gap:8px;align-items:flex-start;margin:7px 0;font-size:13.5px}
 .check input{margin-top:3px}
@@ -141,8 +143,17 @@ a{color:var(--blue)}
   }
   window.__gbpCopy = function (id, btn) { var el = $(id); if (el) copyText(el.getAttribute('data-raw') || el.textContent || '', btn); };
 
+  /* An empty value used to render a labelled but blank box with a Copy button
+     that copied nothing - it looked like the wizard had produced something and
+     lost it. Say it is not set, and do not offer a Copy control with nothing
+     behind it. */
   function copybox(id, text) {
-    return '<div class="copybox" id="' + id + '" data-raw="' + esc(text) + '">' + esc(text) +
+    var v = (text == null ? '' : String(text)).trim();
+    if (!v) {
+      return '<div class="copybox copybox-empty" id="' + id + '" data-raw="">' +
+             '<span class="cb-none">Not set yet — add it in step 1 and it will appear here.</span></div>';
+    }
+    return '<div class="copybox" id="' + id + '" data-raw="' + esc(v) + '">' + esc(v) +
            '<button class="cb" onclick="__gbpCopy(\'' + id + '\', this)">Copy</button></div>';
   }
   function checkRow(key, label) {

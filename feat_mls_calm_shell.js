@@ -952,6 +952,12 @@
       b.classList.add('mls-moved');
     });
 
+    wireFolds();
+
+    /* Re-assert the click target on blocks already folded, in case they
+       re-rendered their heading since the last pass. */
+    qsa('.mls-fold', card).forEach(markFoldHead);
+
     qsa(':scope > div, :scope > section', card).forEach(function (block) {
       if (block.id === 'mlsPrepRows') return;
       if (PT_KEEP_OPEN.indexOf(block.id) !== -1) return;
@@ -962,20 +968,45 @@
       if (!title) return;
 
       block.classList.add('mls-fold');
-      var head = block.children[0];
-      head.classList.add('mls-fold-hd');
-      head.setAttribute('role', 'button');
-      head.setAttribute('tabindex', '0');
-      head.setAttribute('aria-expanded', 'false');
-      head.addEventListener('click', function (e) {
-        /* Let the block's own controls work normally when it is already open. */
-        if (e.target.closest && e.target.closest('button,a,input,select,textarea')) return;
-        var open = block.classList.toggle('mls-open');
-        head.setAttribute('aria-expanded', open ? 'true' : 'false');
-      });
-      head.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); head.click(); }
-      });
+      markFoldHead(block);
+    });
+  }
+
+  /* Re-applied every pass, because blocks like Visit history and the trend chart
+     re-render themselves and REPLACE their heading. The class alone is not the
+     problem - the CSS keeps hiding the body either way - the danger is losing
+     the click target, which would leave a block collapsed and un-openable. */
+  function markFoldHead(block) {
+    var head = block.children[0];
+    if (!head || head.classList.contains('mls-fold-hd')) return;
+    head.classList.add('mls-fold-hd');
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    head.setAttribute('aria-expanded', block.classList.contains('mls-open') ? 'true' : 'false');
+  }
+
+  /* ONE delegated listener on the card, not one per heading, so a re-rendered
+     heading is still clickable without re-binding anything. */
+  function wireFolds() {
+    var card = qs('#profileCard');
+    if (!card || card.__mlsFoldWired) return;
+    card.__mlsFoldWired = true;
+    card.addEventListener('click', function (e) {
+      var head = e.target.closest && e.target.closest('.mls-fold-hd');
+      if (!head) return;
+      var block = head.parentElement;
+      if (!block || !block.classList.contains('mls-fold')) return;
+      /* The block's own controls keep working normally. */
+      if (e.target.closest('button,a,input,select,textarea')) return;
+      var open = block.classList.toggle('mls-open');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    card.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var head = e.target.closest && e.target.closest('.mls-fold-hd');
+      if (!head) return;
+      e.preventDefault();
+      head.click();
     });
   }
 
