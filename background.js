@@ -5399,6 +5399,13 @@ var mlsProv = (function () {
             if (va) {
               try { if (self.__mlsQpEnsure) await __gotoSettle(self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id), Math.min(9000, __gotoLeft()), 'the strip re-render'); } catch (eVaQp) {}
               if (!(await __gotoWait(1500, 'the selected-day re-render'))) { __gotoDeadline('the selected-day re-render'); return; }
+              /* 3.0.5: post-midnight/stale-strip state - verification saw NO
+                 selected day at all (vs a wrong one). A visibility jiggle plus
+                 re-click cannot heal a strip whose frameset went stale (live
+                 2026-07-24 E12: healed only by a fresh frameset). Run the same
+                 Home ladder the click-recovery uses, once per round, then let
+                 the existing re-click and settle proceed unchanged. */
+              if (!shown) { try { await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [__gotoGuard], func: mlsGoHomeDriverFn }, Math.min(9000, __gotoLeft()), 'the Home reset'); if (!(await __gotoWait(5200, 'the schedule frameset settle'))) { __gotoDeadline('the schedule frameset settle'); return; } } catch (eVaHome) {} }
               const regx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(20000, __gotoLeft()), 'date re-click');
               const rehits = ((regx && regx.r) || []).map((r) => r && r.result).filter(Boolean);
               const refound = rehits.find((h) => h.found) || null;
@@ -9434,6 +9441,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         qpOwnedByThisRead = !qpWasActive && !!(self.__mlsQp && self.__mlsQp.active && self.__mlsQp.athenaTabId === emrId);
       } catch (e) {}
+
+      /* 3.0.5 swap-settle pre-gate (live 2026-07-24 E11/E12): during batch
+         pulls the just-opened chart's frames can keep rendering the PREVIOUS
+         patient for minutes; the enumerate loop then burned its whole budget
+         re-clicking Visits on the WRONG chart and refused same-frame-name-
+         mismatch after ~4 minutes per patient (11 of 16 at 01:30 with zero
+         clinic contention, while a single-lane pre-read on the same patient
+         correctly recognized the leftover chart - identity reads are fine,
+         the swap is what never settles). Prove the tab shows the EXPECTED
+         patient BEFORE Visits navigation: poll the same identity probe the
+         candidate walk uses (bounded ~45s); a persistent different-patient
+         state returns FAST with its own distinct reason so the caller's
+         sweep re-opens the chart instead of retrying reads against the
+         wrong one. Incomplete hints and deadline pressure keep the legacy
+         path - every downstream identity gate is unchanged. */
+      var preGateOk = false, preGateSeen = null, preGateWhy = '';
+      for (var pgTry = 0; pgTry < 14; pgTry++) {
+        if (Date.now() + 2500 >= readDeadline) break;
+        var pgIds = await exec(emrId, null, ['identity', cfg]);
+        var pgIdentity = bestResult(pgIds, function (r) {
+          if (!r) return 0;
+          return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
+        }).result || {};
+        preGateSeen = pgIdentity;
+        var pgGate = visitIdentityGate(frozenHint, pgIdentity);
+        preGateWhy = pgGate.reason || '';
+        if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') { preGateOk = true; break; }
+        await sleep(3000);
+        touchVisitLease();
+      }
+      if (preGateSeen === null) preGateOk = true; /* deadline pressure before any probe: legacy path */
+      if (!preGateOk) {
+        return { ok: false, reason: 'chart-swap-never-settled', identity: preGateSeen || {}, visits: [], diag: diag,
+          receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
+          error: 'athenaOne is still showing a different patient than this read expects - the chart never switched. Re-open the patient and retry; nothing was read from the wrong chart.' };
+      }
 
       emit(appTabId, frozenRequestId, 'Reading every encounter from athenaOne… (read-only)');
       await exec(emrId, null, ['openVisits', cfg]);

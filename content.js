@@ -1981,11 +1981,19 @@
     function chip() {
       try {
         if (document.getElementById('mlsTabPickerChip') || !document.body) return;
+        /* 3.0.5 (owner one-pill corner): when the app's Copilot Voice pill is
+           mounted, the always-on chip folds away - the picker panel remains
+           fully reachable via the mlsShowTabPicker message (command palette
+           entry app-side) and renders itself on demand. Legacy pages without
+           the voice pill keep the chip so the picker is never stranded. */
+        if (document.getElementById('mlsCopVoiceBtn')) return;
         var c = el('button', 'position:fixed;right:184px;bottom:14px;z-index:2147482999;border:1px solid rgba(120,140,220,.4);background:#0b1020;color:#cfd9ff;border-radius:999px;padding:7px 12px;font:600 12px system-ui;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)', '🔗 Athena tab');
         c.id = 'mlsTabPickerChip';
         c.title = 'Pick which open athenaOne tab MLS Assist should use (and keep signed in)';
         c.onclick = function () { if (document.getElementById(PANEL_ID)) closePanel(); else render(); };
         document.body.appendChild(c);
+        /* late fold: the voice pill's satellite can mount after this chip. */
+        setTimeout(function () { try { if (document.getElementById('mlsCopVoiceBtn')) { var cLate = document.getElementById('mlsTabPickerChip'); if (cLate && cLate.remove) cLate.remove(); } } catch (eLate) {} }, 8000);
       } catch (e) {}
     }
     window.addEventListener('message', function (ev) {
