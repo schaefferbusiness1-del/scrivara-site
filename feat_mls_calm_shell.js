@@ -141,9 +141,6 @@
     '#mlsAskResults .r small{margin-left:auto;color:#8C978F;font-size:11.5px}',
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
-    '#mlsDock #mlsDockClassic{position:relative;z-index:1;min-width:0;margin-left:6px;padding:7px 11px;',
-    'border-radius:12px;font:400 11.5px/1.1 inherit;color:#8C978F;flex-direction:row}',
-    '#mlsDock #mlsDockClassic:hover{color:#204034;background:rgba(0,0,0,.045)}',
 
     /* tools menu */
     '#mlsToolsMenu{position:fixed;z-index:930;min-width:224px;padding:6px;border-radius:16px;',
@@ -333,21 +330,11 @@
       '<div id="mlsAskResults" role="listbox" aria-label="Results"></div>';
     nav.appendChild(askWrap);
 
-    /* The way out has to be VISIBLE, not buried. classicSwitch() adds a header
-       button, but the header's .tools container is itself hidden on some
-       surfaces, so the escape hatch promised in the release notes was not on
-       screen at all. For a default-ON shell deployed unattended, one muted but
-       always-present control beats a tidier dock. */
-    var esc = D.createElement('button');
-    esc.id = 'mlsDockClassic';
-    esc.type = 'button';
-    esc.title = 'Switch back to the classic layout — takes effect immediately, no reload';
-    esc.textContent = 'Classic';
-    esc.addEventListener('click', function () {
-      safe(function () { localStorage.setItem(STORE_KEY, '0'); });
-      teardown();
-    });
-    nav.appendChild(esc);
+    /* No Classic control in the dock: this is the UI now, not a preview sitting
+       next to the old one, and a permanent "go back" button is exactly the kind
+       of button this shell exists to remove. The way out still exists for
+       recovery - ?ui=classic, and the Classic layout entry at the bottom of the
+       Tools menu - it just does not occupy the dock. */
 
     (D.body || D.documentElement).appendChild(nav);
     dockEl = nav;

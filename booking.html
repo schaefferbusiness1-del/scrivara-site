@@ -11,13 +11,16 @@
 <title>Book an appointment · MLS</title>
 <!-- build: booking-v1 2026-06-09 -->
 <style>
-  :root{--ink:#16324f;--muted:#5f7186;--line:#e2e9f1;--brand:#1f7ae0;--brand-dk:#155fb3;--bg:#f4f7fb;--soft:#eef4fc}
+  /* Same palette as the app. A patient who books here and then sees MLS should
+     not feel they used two different products. Only the tokens change - every
+     rule below already reads them - so layout and behaviour are untouched. */
+  :root{--ink:#1A211C;--muted:#68736B;--line:#E7E5DD;--brand:#2E6A4B;--brand-dk:#204034;--bg:#FBFAF7;--soft:#EAF1EE}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
   .wrap{max-width:560px;margin:0 auto;padding:24px 18px 56px}
-  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(31,122,224,.08);padding:22px 20px;margin-top:18px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(20,35,28,.07);padding:22px 20px;margin-top:18px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px}
-  .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1f9ad6,#127a7d);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3B7C5A,#2E6A4B);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
   h1{font-size:23px;margin:14px 0 4px}
   p.sub{color:var(--muted);margin:0 0 6px}
   label{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}
