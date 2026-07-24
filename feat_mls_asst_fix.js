@@ -486,7 +486,11 @@
     if (/are (we|you) connected|is athena (connected|up|working)|\bconnection status\b|\bdisconnected?\b/.test(s) ||
         (/\bstatus\b/.test(s) && /athena/.test(s)) || (/\bconnected\b/.test(s) && /athena/.test(s))) return { type: "status" };
     if ((/\bpull\b|\bimport\b|\bload\b|\bfetch\b/.test(s)) &&
-        (/patient|schedule|today|tomorrow|appointment|chart|athena|\bdr\b|doctor/.test(s))) {
+        (/patient|schedule|today|tomorrow|appointment|chart|athena|\bdr\b|doctor|\bmonth\b/.test(s))) {
+      /* Owner 2026-07-23: "pull my last month" must just work. Month scope
+         wins before day parsing; routed to the month engine, not the day one. */
+      var mScope = s.match(/\b(last|past|previous|this)\s+month\b/);
+      if (mScope) return { type: "pullMonth", scope: (mScope[1] === "this" ? "this" : "last"), raw: q };
       var day = null;
       if (/tomorrow/.test(s)) day = "tomorrow";
       else if (/today|this morning|right now/.test(s)) day = "today";
@@ -536,6 +540,34 @@
     if (d.status === "connected") addAi("MLS Assist is ready. " + (d.detail || "An Athena tab was detected; no patient or encounter has been verified yet.") + " You can start an explicit schedule pull when needed.");
     else addAi("Not ready. " + (d.detail || d.label) + " Tap \"Open athenaOne in new tab\" above before a clinical action.");
     safe(function () { if (c && isFn(c.check)) c.check(); });
+  }
+  function monthKeyFor(scope) {
+    var d = new Date();
+    if (scope === "last") d.setMonth(d.getMonth() - 1);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2);
+  }
+  function runPullMonth(intent) {
+    var c = CT(), si = SI();
+    var connected = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
+    if (!connected) {
+      var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
+      addAi("I can't pull yet -- " + ((d && (d.detail || d.label)) || "no usable Athena product tab was detected.") + " Tap \"Open athenaOne in new tab\" above, sign in and open your Day schedule, then ask again.");
+      safe(function () { if (c && isFn(c.check)) c.check(); });
+      return;
+    }
+    if (!(si && isFn(si.pullMonth))) { addAi("The month pull isn't available right now. Open the Calendar's \"Pull a month from Athena\" card instead."); return; }
+    var mk = monthKeyFor(intent.scope);
+    addAi("On it -- pulling your " + (intent.scope === "this" ? "current" : "last") + " month (" + mk + ") from athenaOne now, read-only. Already-saved appointments are skipped, never doubled; the month card shows live day-by-day progress.");
+    safe(function () {
+      si.pullMonth({ month: mk, onStatus: function () {} })
+        .then(function (res) {
+          addAi(res && res.complete === false
+            ? "The month pull finished with some days still retryable -- the month card lists them with a Retry button."
+            : "Month pull finished -- " + mk + " is on your calendar.");
+        }, function (e) {
+          addAi("The month pull did not finish -- " + ((e && e.message) || "check the Athena tab") + ". Nothing was marked complete; it is safe to retry.");
+        });
+    });
   }
   function runPull(intent) {
     var a = ASST(), c = CT(), si = SI();
@@ -704,6 +736,10 @@
     registerIntent("pull-schedule", function (q) {
       var it = parseIntent(q); if (!it || it.type !== "pull") return false;
       runPull(it); return true;
+    });
+    registerIntent("pull-month", function (q) {
+      var it = parseIntent(q); if (!it || it.type !== "pullMonth") return false;
+      runPullMonth(it); return true;
     });
     registerIntent("select-patient", function (q) {
       var it = parseIntent(q); if (!it || it.type !== "select") return false;
