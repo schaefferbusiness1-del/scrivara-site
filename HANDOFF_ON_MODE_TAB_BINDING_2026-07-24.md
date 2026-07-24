@@ -490,3 +490,227 @@ Recommended shape:
 Ship as 3.0.7, hand-load, then run a bodies-ON day and expect coverage-complete. **Verify before
 believing it** — three theories died tonight; this one is the best-evidenced but is not proven until a
 day completes.
+
+---
+
+## STATE AS OF 3.0.7 (keep this section current — owner asked that any AI can take over cold)
+
+**Extension versions tonight:** 3.0.5 (swap-settle; -25% wall clock, did not fix reads) -> 3.0.6
+(frame-walk cap 4->16; did NOT fix reads, retained because the bound is now time-based too) -> **3.0.7
+(banner-aware identity extractor — the fix aimed at the bug I could actually see in the code).**
+
+**3.0.7 contents:** in `background.js` `op === 'identity'`, the name match now also accepts athena's real
+banner shape `Last, FIRST [M]` (all-caps given names, comma separator), tries explicit patient-name
+containers before any generic heading, and when a name came ONLY from a bare `h1,h2` it returns
+`weakName: true` so a stray heading can never be trusted as identity proof. `visitIdentityGate` is
+untouched — it tokenises and lowercases, so "Holliday, JOAN" satisfies wanted "Joan Holliday" without
+any loosening.
+- built from a CLEAN worktree at origin/main (NEVER the shared clone — its background.js carries ~254
+  insertions of another session's WIP)
+- digest `3.0.7+core-sha256:b52623dfd2cc9b0478f83f7e2309df6ee479e67ae0b49d2dcb476fab1ffe9b63`
+- zip sha `3463e1b07d85d082e82b8ed2740b5a8e113d1dabfa5867f9e6da4896f79a0377`
+- hand-loaded into `C:\Users\Micha\Downloads\MLS_Assist_v1.65` and **pong-verified running 3.0.7**
+- **NOT yet published** (no pin train run for 3.0.7) and **NOT yet proven** — a bodies-ON day must reach
+  coverage-complete first. If it does: run the pin train, publish, then ON x2. If it does NOT: retract
+  as loudly as the previous three and go to per-frame instrumentation.
+
+**Scripts to reuse (scratchpad, this session):** `fix-identity-banner.js` (the 3.0.7 edit, latin1 +
+CR-census guarded), `bump307.js`, `stage-306b.js` (full pin train + build bump, mine-only from HEAD),
+`stage-next.js` (generic bump stager that SCANS for pins instead of trusting the stale build-ship list).
+
+**Build ledger (neither session may reuse a number):** UI session b533/535/537/539/540/541/542/543/544/
+548/549; me b534/538/546/547. **b536 and b545 are RETIRED** (abandoned mid-flight). Live is b549; the UI
+session takes b550 next.
+
+**Backend facts I was handed and have NOT independently verified — ask the backend, not the repo files:**
+- `/api/health` reports every capability true including communications; `/api/billing/health` reports
+  mode LIVE with checkout ready and webhooks configured. The old "live keys but TEST webhook secret"
+  note is STALE.
+- Twilio credentials are already in Render. The ONLY remaining action is pointing the number's Voice
+  webhook at `https://scrivara-backend.onrender.com/api/voice/<booking-token>` where the token is the
+  practice's existing booking-link token from `schedule_tokens`. `POST /api/voice/:token` is written and
+  books real open slots (weekdays 9-5, 30-min, next ~3 weeks, minus booked).
+- Repo files claiming things are unconfigured (e.g. privacy.html listing Twilio as "Planned") are stale.
+
+**Files that will refuse edits, by design:** the attorney intake form is a test-pinned refusal surface,
+not dead UI; `privacy.html` / `terms.html` have their SHA-256 pinned into the signup assent manifest, so
+even a colour change perturbs a legal audit trail. Expect those suites to stop you.
+
+**Owner asks still open:** remove the MLS popup that appears on the athenaOne page (content-script
+change, next extension build); per-card capture receipts (read | empty-confirmed | not-found) so an
+empty Medications card cannot be confused with an unread one; Adam writeback x2 (BLOCKED — only the
+owner can create the encounter); ON x2 + month x2 acceptance.
+
+## 3.0.7 RESULT — PARTIAL. The identity fix works for 3 of 5; the failure moved downstream.
+
+Same 5-patient day, bodies ON, ext 3.0.7 pong-verified running:
+
+```
+schedule 5/5 · history 5/5 · coverageComplete 0 · 933s
+fails: visit-bodies-incomplete x3 · same-frame-name-mismatch x2
+```
+
+**The failure mix changed for the first time in four builds** (3.0.4/3.0.5/3.0.6 were all
+same-frame-name-mismatch x5). Three patients now CLEAR the identity gate and fail later at
+`visit-bodies-incomplete`. So the banner-aware extractor is doing real work — the "Last, FIRST" branch
+resolves identity where the title-case-only regex never could — but it is not sufficient.
+
+**Interpretation, stated carefully:** identity extraction was A cause, not THE only cause. Two patients
+still mismatch (their banners presumably differ again — possibly hyphenated or single-token surnames,
+or a frame whose banner is genuinely absent so the weakName fallback fires and is correctly distrusted).
+Three now get far enough to attempt bodies and cannot finish them, which is a DIFFERENT problem in the
+two-stage reader's body-collection phase.
+
+### Next, in order
+
+1. **Instrument, do not guess** (this is now the fourth iteration): emit per candidate frame the raw
+   identity object + gate reason, AND for `visit-bodies-incomplete` emit expected vs parsed counts and
+   which encounter rows failed. One patient of each failure class is enough.
+2. For the 2 remaining mismatches: log the actual banner text seen. The fix is likely one more branch
+   (hyphenated/single-token surnames) — but confirm from the string, do not infer.
+3. For the 3 bodies-incomplete: that is the 2.9.22-era two-stage body reader, which has never been
+   updated for the v26.3 progressive/collapsible Visits panel. Expect the row-expansion step to be the
+   next thing to have gone stale.
+
+**Keep 3.0.7.** It is a strict improvement (3 patients further along, no regressions, no loosened gate)
+and it is hand-loaded and pong-verified. It is NOT published — run the pin train only once a day
+actually completes.
+
+### CORRECTION to the "next step": the body-failure instrumentation ALREADY EXISTS. Do not build it.
+
+`background.js` (~9868) already returns, on `visit-bodies-incomplete`:
+
+```js
+receipt: { expected: clinicalTotal, parsed: visits.length, administrativeRows, indexTotal: total,
+           attempted: attemptedCount, failures: failures.length, stableKeysComplete, minimalBodies,
+           identityVerified: gate.ok && finalGate.ok, ... },
+failedIndexes: failures,          // [{index, reason}, ...]
+error: 'Athena exposed N encounters, but only M had full clinical detail bound to the exact encounter row.'
+```
+
+So the next diagnosis needs **no new build at all** — just capture `r.receipt` and `r.failedIndexes`
+from ONE failing `mlsAppAllVisitsResult` (do a `mlsAppReadChart` for that patient immediately before,
+or the reader correctly refuses with `no-athena-tab`). That single object says whether the bodies stage
+is failing because:
+
+- `expected` (clinicalTotal) is wrong — the index over-counts, e.g. administrative rows misclassified;
+- `parsed` < `expected` with reasons in `failedIndexes` — specific rows would not expand/bind, which is
+  the v26.3 progressive/collapsible Visits panel suspicion;
+- `stableKeysComplete: false` — duplicate/absent `sourceVisitKey`, an index problem not a body problem;
+- `identityVerified: false` — the FINAL gate refused even though the first one passed.
+
+Each of those four points at a different fix. **Read the receipt before writing any more code** — this
+is the fifth iteration, and every theory that was measured has held while every theory that was
+reasoned-about has died.
+
+---
+
+## 🎯 THE RECEIPT NAMED IT — the encounter index is being read from `stm.esp` (the coordinator/inbox frame)
+
+Captured live from one failing `mlsAppAllVisitsResult` (chart proved as Joan Holliday immediately before):
+
+```json
+{ "ok": false, "reason": "same-frame-name-mismatch",
+  "identity": { "name": "Monterosso, ROSEMARY", "dob": "6-23-1942", "via": "lastfirst",
+                "score": -6.8,
+                "url": "https://athenanet.athenahealth.com/22724/6/coordinator/enterprise/stm.esp?..." },
+  "receipt": { "indexComplete": true, "expected": 38, "parsed": 0, "attempted": 0,
+               "identityVerified": false, "readerVersion": "2.9.22-visits-r4-two-stage" },
+  "failedIndexes": [] }
+```
+
+**Two conclusions, both firm:**
+
+1. **The 3.0.7 identity fix WORKS.** `via: "lastfirst"` is the branch I added — it parsed athena's
+   `Last, FIRST` banner correctly. The extractor is no longer the problem.
+2. **The frame it parsed is the WRONG FRAME.** That URL is
+   `coordinator/enterprise/stm.esp` — the enterprise coordinator / inbox surface, NOT the patient chart.
+   background.js already classifies it as noise:
+   `if (/stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(href)) score -= 4;`
+   and `NOISE_FRAME_RE` lists it. Its score here is **-6.8** — penalised, and it STILL won candidate
+   selection, because the penalty is a soft ranking nudge rather than an exclusion.
+
+That frame legitimately displays a different patient (someone in the doctor's inbox/worklist), so the
+identity gate refused — **correctly, again**. And `expected: 38, parsed: 0` means the enumerate step
+counted 38 "encounters" out of the coordinator surface, which is why the counts never made sense.
+
+### The fix (precise, small, and it tightens rather than loosens safety)
+
+**Exclude noise frames from `enumCandidates` outright** instead of merely penalising them. A frame whose
+URL matches `NOISE_FRAME_RE` (`stm.esp`, `globalnav`, `statusbar`, `inbox`, `messag`, `findpatient.esp`,
+`globalframeset`, `globaliframe`, `framecontent`) can never be a patient's encounter index, so it must
+not be a candidate at any score. Belt-and-braces: refuse when the winning candidate's score is negative.
+
+This is the first hypothesis of the night that is READ OFF THE DATA rather than reasoned toward, and it
+explains the whole arc: every earlier fix improved the ranking or the parsing of a frame that should
+never have been in the running.
+
+**Still verify.** Ship as 3.0.8, hand-load, run a bodies-ON day, and expect the enumerate step to bind
+to the real Visits panel. If `expected` stops being 38-from-nowhere and `parsed` starts matching it,
+that is the proof.
+
+---
+
+## CORRECTION: "3 of 5 charts finished" was NOT 3 completions
+
+I reported that line as the night's first ON-mode success. It was not. The
+progress string counts charts the walk has *finished attempting*, not charts
+that produced verified history. The receipt for that same run:
+
+```
+{ complete: false, secs: 601, coverageComplete: 0,
+  fails: { "no-chart-frame-candidate": 3, "visit-bodies-incomplete": 2 } }
+```
+
+coverageComplete 0. Nothing completed. Anyone reading only my progress
+commentary would have believed ON mode was nearly working; it was not, and the
+receipt is the only thing that should ever be quoted as a result. The pattern
+that produced this mistake is the same one that produced the three retracted
+diagnoses above: I reported a hopeful intermediate signal before the run ended.
+
+## What the failure counts actually named
+
+`no-chart-frame-candidate` is MY refusal string, added in 3.0.9. Its presence
+for 3 of 5 charts means the 3.0.8 exclusion rules skipped EVERY candidate, so
+the real chart frame was discarded along with the inbox. Both of my rules were
+plausible and one of them was too broad:
+
+| rule (3.0.8) | verdict |
+|---|---|
+| exclude `stm.esp|globalnav|statusbar|inbox|messag|findpatient.esp` | correct - these are proven to show a different patient's banner |
+| exclude `globalframeset|globaliframe|framecontent` | too broad - these are CONTAINERS; a real chart can live inside one |
+| refuse any candidate scoring < 0 | too broad - the whole candidate set can score negative on a slow-rendering chart |
+
+Ranking alone was too loose (stm.esp won at -6.8 despite a -4 penalty, because a
+penalty only reorders). Blanket exclusion was too tight. The answer was not to
+pick one but to tier them by how much each rule is worth.
+
+## 3.0.10 - two-pass candidate walk
+
+* HARD rules (inbox/worklist/nav surfaces) apply in every pass. A surface that
+  demonstrably reports another patient is never an encounter index.
+* SOFT rules (container frames, negative scores) apply on the strict pass only.
+  If the strict pass finds nothing, a relaxed pass reconsiders them.
+* The identity gate decides in both passes, so relaxing CANNOT admit the wrong
+  patient - it can only give the right one a chance to be seen. The safety
+  property is unchanged; only the willingness to look is.
+* Identities are cached per frame, so the relaxed pass costs no extra round
+  trips - it re-reads nothing.
+* Refusals now carry the candidate table (url, score, name, drop reason). The
+  next receipt will NAME the frame that was dropped and which rule dropped it.
+
+That last point is the real lesson of the night. Every one of my four theories
+died to the experiment that could disprove it, and the one fix that worked came
+from a receipt that named its own frame. The diagnostic table exists so the next
+person does not have to guess four times to find out what the code already knew.
+
+## Status, stated plainly
+
+* ON mode (full visit bodies): NOT working. Not shipped. Not published.
+* OFF mode: working and fast - 5/5 schedule, 5/5 history, 0 failures, 56s for
+  5 patients (~9.8s each), against the owner's 10s target.
+* Live extension remains 3.0.5. 3.0.6 through 3.0.10 are branch-only
+  (`agent/ext-3.0.10-on-mode`), hand-loaded for testing, never published.
+* Extension source cannot land on main without a rebuilt zip: the
+  extension-package gate byte-verifies the root files against the published
+  package. That is why these fixes are on a branch and not in main.
