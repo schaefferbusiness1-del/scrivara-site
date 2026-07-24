@@ -3154,7 +3154,26 @@
             var scheduleSummary = calendarReceipt.accounted + "/" + calendarReceipt.attempted;
             var historySummary = historyReceipt.processed + "/" + historyReceipt.requested;
             var historyFailures = Number(historyReceipt.failures != null ? historyReceipt.failures : (historyReceipt.retry || []).length);
-            if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete.", "err");
+            /* tabhint-1.0.0 (2026-07-24, proven live): a run whose failures are
+               mostly same-frame-name-mismatch is almost always MULTIPLE OPEN
+               athenaOne TABS, not a reader problem. Evidence: a chart read
+               proved "Joan Holliday" while the athenaOne tab in view showed a
+               different chart entirely, and the following visits read resolved
+               yet another tab parked on a third patient — so MLS opened the
+               right chart in one tab and read a stale one in another. The
+               identity gate refused correctly every time, which is exactly why
+               no wrong-patient body was ever stored. The doctor cannot guess
+               any of that from "same-frame-name-mismatch", so say the one thing
+               that actually fixes it. */
+            var __mismatch = 0;
+            try {
+              (historyReceipt.patients || []).forEach(function (p) {
+                if (p && /same-frame-name-mismatch/.test(String(p.visitsReason || p.chartReason || p.reason || ""))) __mismatch++;
+              });
+            } catch (eMm) {}
+            res.multiTabSuspected = __mismatch >= 2;
+            if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
+              (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : ""), "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested.", "ok");
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0.", "ok");
             return res;

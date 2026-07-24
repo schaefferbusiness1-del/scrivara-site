@@ -123,6 +123,7 @@ const tests = [
   'pull-resume-contract.test.js',
   'phone-chip-trusted-gesture.test.js',
   'intake-attach-single-flight.test.js',
+  'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
