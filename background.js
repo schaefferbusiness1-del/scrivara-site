@@ -8573,12 +8573,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
     }
     if (op === 'identity') {
-      var body = txt(document.body), dob = '', name = '', mrn = '';
+      var body = txt(document.body), dob = '', name = '', mrn = '', weakName = false;
       var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
       var mm = body.match(/\b(?:MRN|Medical Record(?: Number| No\.?| ID)?|Patient ID)\s*[:#\-]?\s*([A-Z0-9\-]{4,})/i); if (mm) mrn = mm[1];
       var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
-      if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name,[class*="patientname" i]'); if (h) name = txt(h).slice(0, 60); }
-      return { name: name, dob: dob, mrn: mrn };
+      if (!name) { var bn = body.match(/([A-Z][A-Za-z'\-]{1,})\s*,\s*([A-Z][A-Za-z'\-]{1,}(?:\s+[A-Z]\.?)?)/); if (bn) name = bn[1] + ' ' + bn[2]; }
+      if (!name) { var hx = document.querySelector('[data-patient-name],.patient-name,[class*="patientname" i]'); if (hx) name = txt(hx).slice(0, 60); }
+      if (!name) { var h = document.querySelector('h1,h2'); if (h) { name = txt(h).slice(0, 60); weakName = true; } }
+      return { name: name, dob: dob, mrn: mrn, weakName: weakName };
     }
     if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
@@ -9532,20 +9534,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return ecScore(b) - ecScore(a);
       });
       if (!enumCandidates.length) enumCandidates.push({ result: enumRes, frameId: listFrame });
-      var gate = null;
+      /* 3.0.9: seeded with a refusal, never null. 3.0.8 added `continue` for
+         noise frames and negative scores; when every candidate is skipped the
+         walk assigns nothing, and the post-loop gate.ok deref threw "Cannot
+         read properties of null". A chart with no usable frame must REPORT
+         that, not crash the patient's read. */
+      var gate = { ok: false, reason: 'no-chart-frame-candidate' };
+      var ecSeen = [], ecPicked = false, ecRelaxed = false, ecIdCache = {};
+      for (var ecPass = 0; ecPass < 2; ecPass++) {
+        ecRelaxed = (ecPass === 1);
+        if (ecRelaxed && (ecPicked || (gate && gate.ok) || Date.now() >= readDeadline)) break;
       for (var ecI = 0; ecI < enumCandidates.length && ecI < 16; ecI++) {
         var ecCand = enumCandidates[ecI];
-        var ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]);
+        var ecIds = ecIdCache[ecCand.frameId];
+        if (!ecIds) { ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]); ecIdCache[ecCand.frameId] = ecIds; }
         var ecIdentity = bestResult(ecIds, function (r) {
           if (!r) return 0;
           return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
         }).result || {};
+        /* 3.0.8: never accept an encounter index from a NON-CHART surface.
+           Live 2026-07-24: the index was being read from
+           coordinator/enterprise/stm.esp - the enterprise inbox/worklist - which
+           reported a DIFFERENT patient's banner (a name from the doctor's
+           worklist) and 38 pseudo-encounters, so every body read was refused
+           same-frame-name-mismatch. That frame was already penalised (-4) and
+           still won at score -6.8, because a penalty only reorders candidates.
+           Exclusion, not ranking: a noise surface can never be a patient's
+           encounter index, and a candidate that only wins on a negative score
+           has not earned trust either. This TIGHTENS the safety contract. */
+        var ecUrl = String((ecIdentity && ecIdentity.url) || '');
+        var ecScoreN = Number((ecIdentity && ecIdentity.score) || 0);
+        var ecDrop = '';
+        if (/stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(ecUrl)) ecDrop = 'noise-surface';
+        else if (!ecRelaxed && /globalframeset|globaliframe|framecontent/i.test(ecUrl)) ecDrop = 'container-frame';
+        else if (!ecRelaxed && ecScoreN < 0) ecDrop = 'negative-score';
+        if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || 'kept' });
+        if (ecDrop) continue;
         var ecGate = visitIdentityGate(frozenHint, ecIdentity);
-        if (ecI === 0 || ecGate.ok) { identity = ecIdentity; gate = ecGate; }
+        if (!ecPicked || ecGate.ok) { identity = ecIdentity; gate = ecGate; ecPicked = true; }
         if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
         if (Date.now() >= readDeadline) break;
         touchVisitLease();
       }
+      }
+      if (!(gate && gate.ok) && ecSeen.length) { try { gate.frames = ecSeen.slice(0, 8); } catch (e) {} }
       if (gate && gate.ok) {
         /* Accept only a STABLE index: the same rendered row count on two
            consecutive passes (the progressive panel grows between polls). */
