@@ -369,11 +369,16 @@ footer{background:var(--alt);border-color:var(--line)}
 <h2>Public physician profiles</h2>
 <p>Only profiles explicitly approved for public release can appear here. Profile statements are physician supplied and should be independently verified; this directory does not match or accept cases.</p>
 </div>
-<div class="dir-controls">
+<!-- Hidden until released profiles actually exist. Search and filter controls
+     above a permanently empty directory are dead UI: they flash in on load, do
+     nothing, and make the page look broken. Revealed at the one point reached
+     with ALL_EXPERTS.length > 0; the held path and the catch path inherit this
+     hidden default and need no change. -->
+<div class="dir-controls" style="display:none">
 <input id="dirSearch" type="search" placeholder="Search by name, specialty, jurisdiction…" aria-label="Search experts">
 <select id="dirSpec" aria-label="Filter by specialty"><option value="">All specialties</option></select>
 </div>
-<div id="dirStateBar" class="dir-statebar">
+<div id="dirStateBar" class="dir-statebar" style="display:none">
 <label for="dirState">📍 Your state:</label>
 <select id="dirState" aria-label="Your state"><option value="">All states</option></select>
 <span id="dirStateNote"></span>
@@ -676,6 +681,11 @@ async function loadExperts(){
       showDirectoryHeld();
       return;
     }
+    /* Only now do we know there is something to search. */
+    try{
+      var dc=document.querySelector('.dir-controls'); if(dc) dc.style.display='flex';
+      var sb=document.getElementById('dirStateBar'); if(sb) sb.style.display='flex';
+    }catch(e){}
     populateSpecialties();
     applyFilters();
   }catch(e){
