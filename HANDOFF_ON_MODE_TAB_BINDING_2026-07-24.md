@@ -300,3 +300,51 @@ read succeed.
 **Lesson worth keeping:** two of my three conclusions tonight were wrong, and each was caught only by
 running the experiment that could disprove it. Do not ship a diagnosis that has not survived an
 attempt to break it.
+
+---
+
+## ✅ THE ACTUAL BUG (highest confidence yet) — the identity walk gives up after 4 frames
+
+`background.js:9608`:
+
+```js
+for (var ecI = 0; ecI < enumCandidates.length && ecI < 4; ecI++) {
+```
+
+This is the 3.0.2 same-frame identity walk: score every enumerate-capable frame, then walk them
+best-first and take the FIRST whose own frame identity matches the frozen patient. It is the right
+design. But it **stops after 4 candidates**.
+
+Athena keeps cached encounter iframes from PREVIOUS patients alive (documented in this same file above
+line 7490). Those cached frames enumerate successfully, so they land in `enumCandidates` and are
+scored. As a batch progresses, more of them accumulate. The moment **five or more** stale frames
+outrank the still-hydrating fresh one, the fresh frame is never identity-checked at all — the walk
+exits having only examined stale frames, `gate` holds the best stale frame's failure, and the read is
+refused with `same-frame-name-mismatch`.
+
+### Why this explains EVERY observation, where the earlier theories did not
+
+- **Refusals rise as the batch progresses** — cached frames accumulate per patient opened.
+- **OFF mode is completely unaffected** — it never runs the enumerate/visits walk at all.
+- **Settle-polling (3.0.5) changed timing but not outcome** — waiting does not reorder the candidates.
+- **The single-patient lane behaved differently** — a fresh tab has few cached frames.
+- **It worked on v26.3 and regressed on v26.7** — the newer UI renders more frames per chart, so the
+  fresh frame slips past position 4 far more often.
+- **The identity gate was always right** — it never saw the correct frame to accept.
+
+### The fix
+
+1. Raise or remove the cap: walk **all** enum-capable candidates (they are already sorted best-first,
+   and each check is one cheap `identity` exec). Bound it by `readDeadline`, which the loop already
+   checks (`if (Date.now() >= readDeadline) break;`), not by an arbitrary count.
+2. Record `candidatesExamined`, `candidatesTotal` and each candidate's identity verdict in the
+   receipt `diag`. The whole decision is invisible today, which is why this took a full day.
+3. Keep the refusal semantics exactly as they are. This change lets the gate SEE the right frame; it
+   must never be allowed to accept a wrong one.
+
+**Risk: very low.** One loop bound, no identity logic touched, no new plumbing, no page-side change.
+Ships as ext 3.0.6 via the normal pin train, then re-run a bodies-ON day and expect coverage-complete.
+
+**Verify before believing it:** instrument first (step 2), run one ON pull, and confirm from the diag
+that the fresh frame really was beyond index 3. If `candidatesTotal` is ≤4 on a failing patient, this
+theory is wrong too — and it should be retracted as loudly as the previous two.
