@@ -202,3 +202,49 @@ only path by which a wrong-chart body could ever be attributed to a patient.
 
 **Owner-side workaround to try first (10 seconds, no code):** close every athenaOne tab except one,
 then run an ON-mode pull. If candidate (A) is correct, that alone should make ON mode complete.
+
+---
+
+## CONFIRMED: THERE ARE MULTIPLE ATHENA TABS. Candidate (A) is the cause.
+
+Final discriminator, no code change:
+
+1. `mlsAppReadChart{Joan Holliday}` → `{ok:true, chartName:"Joan Holliday"}` — the extension proved
+   Joan's chart and wrote the lease.
+2. Immediately read the DOM of the Athena tab this session can see (`tabId 256594376`) → its banner
+   shows **"RTKR, Dr"**, NOT Joan Holliday.
+
+So the chart the extension proved is **not in the Athena tab visible to this session**. The extension
+is driving a DIFFERENT athenaOne tab. Combined with the earlier goto diagnostic reporting
+`tabId 256594014` while this session's group held `256594376`, and with the visits read returning
+`identity.name:"Monterosso, ROSEMARY"`, the picture is consistent and complete:
+
+**≥3 athenaOne tab states are in play. The chart is proven in one tab, and the visits read resolves a
+different one, which is parked on a stale patient. The identity gate then refuses — correctly.**
+
+This is candidate (A) from the previous section, and it explains every observation of the day:
+- why ON mode fails on most patients but not all (it depends which tab happens to be picked);
+- why OFF mode is unaffected (it never does the second, separate visits read — the six-card chart data
+  comes back with the chart read itself);
+- why 3.0.5's settle-polling improved wall-clock but fixed nothing (waiting cannot change which tab);
+- why the single-patient lane refused with *"athenaOne has a DIFFERENT patient open"*.
+
+### Actions, in order
+
+1. **OWNER, ZERO CODE, DO THIS FIRST:** close every athenaOne tab except one, then run an ON-mode pull.
+   On this evidence that alone should let ON mode complete.
+2. **Extension 3.0.6 — make it impossible to hit again.** For `initiator:'schedule-batch'`, if the
+   lease tab is not among the candidates, or the resolved tab's identity does not match the expected
+   patient, **refuse with `chart-tab-unproven`** and let the batch re-open. Never fall through to a
+   generic tab pick. `pickEmrTab`'s `resolve(exact || null)` currently degrades silently and the
+   caller's re-pick loop then chooses another tab — that silent degrade is the defect.
+3. **Tell the doctor.** The app should detect >1 athenaOne tab and say so before a pull starts
+   ("MLS found 3 athenaOne tabs — keep one open so charts cannot be mixed"). Project memory already
+   carries "athenaTabs must be 1" for the write lane; the read lane needs the same honesty.
+
+### Note on the experiment's own limits (do not over-read it)
+
+These probes were raw bridge calls, so they did NOT hold the pull lease or the cross-tab busy stamp
+that a real `pull()` holds. That does not weaken the conclusion — the tab the extension proved was
+already not the tab this session can see — but a real batch run holds those leases, so reproduce
+inside a real pull before declaring 3.0.6 fixed.
