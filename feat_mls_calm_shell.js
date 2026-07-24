@@ -142,6 +142,20 @@
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
+    /* Three floating pills - MLS Copilot Voice, MLS Assistant, Dictate - stacked
+       over the bottom of every screen and all led to the same assistant. One
+       Copilot button in the dock replaces them; the mic lives inside the Copilot
+       card, which is where a mic belongs. */
+    'body.mls-calm #mlsCopVoiceBtn,body.mls-calm #mlsAsstFab,',
+    'body.mls-calm #mlsDaDock{display:none!important}',
+    '#mlsDock #mlsDockCopilot{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;',
+    'gap:2px;min-width:64px;padding:8px 12px 7px;border:0;background:transparent;border-radius:16px;cursor:pointer;',
+    'font:500 11.5px/1.1 inherit;color:#5B6B62;',
+    'transition:color var(--mls-fast) var(--mls-spring),transform var(--mls-fast) var(--mls-spring)}',
+    '#mlsDock #mlsDockCopilot svg{width:20px;height:20px;fill:currentColor;stroke:none}',
+    '#mlsDock #mlsDockCopilot:hover{color:#2E6A4B}',
+    '#mlsDock #mlsDockCopilot:active{transform:scale(.93)}',
+
     /* The patient context bar: keep its controls, make them read as one row.
        Consistent gaps, wrapping instead of overflow, and a shared baseline so a
        tall chip cannot shove its neighbours out of line. */
@@ -382,6 +396,21 @@
       nav.appendChild(b);
     });
 
+    /* ONE Copilot button, replacing three floating pills (MLS Copilot Voice,
+       MLS Assistant, Dictate) that stacked over the bottom of every screen.
+       Nothing is lost: this opens the SAME Copilot those pills led to, and that
+       card already contains its own mic (#copilotMicBtn), so voice and dictation
+       live inside it rather than as two more things hovering over the app. */
+    var cop = D.createElement('button');
+    cop.id = 'mlsDockCopilot';
+    cop.type = 'button';
+    cop.title = 'MLS Copilot — ask anything, or use the mic inside';
+    cop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M12 3.6l1.9 4.7 4.7 1.9-4.7 1.9L12 16.8l-1.9-4.7L5.4 10.2l4.7-1.9z"/>' +
+      '<path d="M18.4 15.6l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg><span>Copilot</span>';
+    cop.addEventListener('click', openCopilot);
+    nav.appendChild(cop);
+
     var askWrap = D.createElement('div');
     askWrap.id = 'mlsDockAskWrap';
     askWrap.innerHTML = '<input id="mlsDockAsk" type="text" autocomplete="off" spellcheck="false" ' +
@@ -411,7 +440,9 @@
   var TOOLS_SOURCES = [
     { id: 'nav_studio' }, { id: 'nav_analysis' }, { id: 'nav_team' },
     { id: 'nav_legalreq' }, { id: 'nav_admin' }, { id: 'nav_staffpull' }, { id: 'nav_help' },
-    { id: 'askCopilotHdrBtn' }, { id: 'intakeBtn' }, { id: 'customWidgetHdrBtn' },
+    /* askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
+       button, and listing it here as well is the duplication we are removing. */
+    { id: 'intakeBtn' }, { id: 'customWidgetHdrBtn' },
     { label: /^templates$/i, within: '#appHeader' },
     { label: /^settings$/i, within: '#appHeader' },
     { label: /^log out$/i, within: '#appHeader' },
@@ -583,6 +614,16 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
       });
     });
+  }
+
+  /* Opens the canonical Copilot by clicking the control the app already owns,
+     falling back to the global opener only if that control is absent. We call
+     openCopilotDock, we never WRAP it - wrapping it has caused re-entrancy
+     trouble in this app before. */
+  function openCopilot() {
+    var btn = D.getElementById('askCopilotHdrBtn');
+    if (available(btn)) { runControl(btn); return; }
+    safe(function () { if (typeof W.openCopilotDock === 'function') W.openCopilotDock(); });
   }
 
   /* Navigation delegates to the real rail tab. The rail is the single owner. */
