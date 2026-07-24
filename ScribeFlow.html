@@ -981,6 +981,17 @@
   #tplWorkspace>*{grid-column:1 / -1;min-width:0}
   #tplWorkspace>#tplList{grid-column:1}
   #tplWorkspace>#tplDetail{grid-column:2}
+  /* On a phone the two-pane split collapsed the preview to a ~60px sliver.
+     grid-template-columns is INLINE on the element so the override needs
+     !important, and the column placements above must be neutralised or
+     grid-column:2 rebuilds an implicit second column and the same broken split.
+     position:static clears the inline sticky, which has nothing to stick to in
+     a single column. */
+  @media(max-width:640px){
+    #tplWorkspace{grid-template-columns:1fr!important}
+    #tplWorkspace>#tplList,#tplWorkspace>#tplDetail{grid-column:1 / -1}
+    #tplWorkspace>#tplDetail{position:static!important}
+  }
   /* ===== Settings sections (additive, MLS) — titled groups in the Settings modal ===== */
   .set-section{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
   .set-section:first-of-type{border-top:none;padding-top:0;margin-top:0}
@@ -1616,7 +1627,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            paperwork only — never a clinical unlock). Doctor signs; the owner
            countersigns the BAA from Admin; both parties receive copies. -->
       <div id="agCeremonyWrap" style="display:none">
-        <p class="sub">Before you start, please review and electronically sign your onboarding agreements. Your signed copy downloads as a PDF, and a compliance record is sent to your administrator. The two-party Business Associate Agreement is fully executed once MLS countersigns.</p>
+        <p class="sub">Before you start, please review and electronically sign your onboarding agreements. Your signature is recorded with your account, and a compliance record is sent to your administrator. The two-party Business Associate Agreement is fully executed once MLS countersigns.</p>
         <div id="agGateSections"></div>
         <div class="field" style="margin-top:16px">
           <label for="agSignName">Type your full legal name</label>
@@ -27773,7 +27784,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b551';
+  window.__MLS_AV='b552';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

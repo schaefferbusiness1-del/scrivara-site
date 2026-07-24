@@ -12692,7 +12692,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       + '#analysisView .mlsrvu-note,#analysisView .mlsrvu-foot{color:#46586f!important}'
       + '#analysisView .mlsrvu-kpi .l{color:#46586f!important}'
       + '#analysisView h2{color:#1E2B24!important;letter-spacing:-.2px}'
-      + '#analysisView .code-disclaim{color:#6b5518!important;background:#fffaf0;'
+      + '#analysisView .code-disclaim{color:#6b5528!important;background:#fffaf0;'
       + 'border:1px solid #f0e3c0;border-radius:8px;padding:6px 10px;font-size:11.5px}'
       /* consistent card chrome in the plain fallback; never doubled inside ax tiles */
       + '#analysisView:not(.ax-grid)>.card{border:1px solid #dde6f2!important;border-radius:14px!important;'
@@ -33029,7 +33029,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b551';
+  window.__MLS_AV = window.__MLS_AV || 'b552';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33339,7 +33339,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b551';
+  var MLS_APP_BUILD='2026-07-24-b552';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
