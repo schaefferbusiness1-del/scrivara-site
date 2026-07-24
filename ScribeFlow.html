@@ -12121,7 +12121,21 @@ function _intakeSummary(x){
   add('Phone',x.phone); add('Email',x.email); add('Preferred pharmacy',x.pharmacy); add('Referring physician',x.referrer);
   return lines.join('\n');
 }
+/* dup-1.0.0 (audit H10, verified): "Create & attach" had NO in-flight guard,
+   and the ck-1.1.0 re-attach guard below is only armed AFTER the merge
+   completes — several awaits later. A double tap therefore ran two merges
+   concurrently, each seeing __mlsIntakeMerged empty, and created TWO duplicate
+   patient charts for one intake. Claim the intake id SYNCHRONOUSLY here, before
+   the first await, so the second tap is a no-op; release it in finally so a
+   failed attempt can still be retried. */
 async function attachIntake(id, patientId){
+  var __attaching=(window.__mlsIntakeAttaching=window.__mlsIntakeAttaching||{});
+  if(__attaching[id]) return;
+  __attaching[id]=true;
+  try{ return await _attachIntakeImpl(id, patientId); }
+  finally{ delete __attaching[id]; }
+}
+async function _attachIntakeImpl(id, patientId){
   /* ck-1.1.0 re-attach guard: if this intake was already merged in this
      session (e.g. its resolve call failed and it reappeared), never merge it
      a second time — just retry the resolve. */
@@ -27708,7 +27722,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b537';
+  window.__MLS_AV='b538';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
