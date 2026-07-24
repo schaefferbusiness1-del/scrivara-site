@@ -153,3 +153,14 @@ Earlier today I wrote that the batch chart OPEN looked like a no-op on v26.7. **
 **Decisive experiment queued (cheap):** during a live pull, capture the tabId in the chart-open receipt and `vr.diag.tabId` from the visits read. Different → thread the proven tabId through `mlsAppReadAllVisits` and have `runAllVisits` use it instead of `pickEmrTab` (page + extension, 3.0.6). Identical → it is a true in-tab settle problem and the DOM work is needed instead.
 
 **Interim remedy for the owner:** keep exactly ONE athenaOne tab open while a pull runs. This costs nothing and, if the hypothesis holds, is the difference between 0/5 and 5/5 chart bodies.
+
+## 2026-07-24 — OFF-MODE PULL IS COMPLETE AND MEETS THE OWNER'S 10s/PATIENT TARGET
+
+Owner set a new hard target while leaving: "speeds of 10 seconds or less per person saving their history, with full visit notes OFF" and "even with full visit notes off it should still store the useful info for the upcoming visit".
+
+**RESULT (live, b532 site + ext 3.0.5, owner's signed-in tab, 2026-07-24, 5 scheduled):**
+`Verified complete: schedule 5/5; history 5/5; failures 0.` — **complete:true, reason "complete", 56s total.** Schedule verified at 7s, then five patients from 7s -> 56s = **~9.8 s/patient. TARGET MET.** This is also the FIRST fully verified complete pull of the day (ON mode remains blocked by the tab-binding issue, task #20).
+
+**What OFF mode actually stores per patient (verified by reading the store):** allergies, 9 vitals fields, a full history object (pmh, psh, social, family, smoking, immunizations), the AI summary, the chart summary block, the scheduled reason for the upcoming visit (e.g. "MILD L3-4, L4-5 with B/L L4 TF ESI"), athenaProfileCoverage.complete === true and exactIdentityVerified === true. So the six-card pre-visit context IS captured, with identity proven, in under 10s.
+
+**GAP FOUND — problems and meds come back EMPTY.** Sampling the three most recent imports: problems 0/0/1 and meds 0/0/0, while allergies and vitals populate every time. Those two are the most useful facts for an upcoming visit, so this is exactly the owner's "still store the useful info" concern. NEXT: open one of these charts read-only in Athena and compare the live Medications and Problems sections against what the six-card reader extracts — either the patients genuinely have none recorded, or the reader's selectors for those two cards are missing on athena v26.7 (the same version that broke the batch chart swap). Do NOT assume the former; the empty-across-the-board pattern for meds points at the reader.
