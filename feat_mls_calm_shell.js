@@ -142,6 +142,17 @@
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
+    /* prep summary rows */
+    '#mlsPrepRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:2px 18px;margin:2px 0 4px}',
+    '#mlsPrepRows .r{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05)}',
+    '#mlsPrepRows .k{flex:0 0 92px;font:500 11px/1.4 inherit;letter-spacing:.4px;text-transform:uppercase;color:#8C978F}',
+    '#mlsPrepRows .v{font:400 13.5px/1.5 inherit;color:#1A211C;min-width:0;overflow-wrap:anywhere}',
+    '#mlsPrepRows .v.none{color:#B4BDB7}',
+    /* Clipped, NOT display:none — the Copy button reads rendered text, and a
+       display:none block would silently start copying less than it used to. */
+    '.mls-raw-clipped{position:absolute!important;width:1px;height:1px;overflow:hidden;',
+    'clip-path:inset(50%);white-space:pre-wrap!important;pointer-events:none}',
+
     /* tools menu */
     '#mlsToolsMenu{position:fixed;z-index:930;min-width:224px;padding:6px;border-radius:16px;',
     'background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);',
@@ -767,6 +778,59 @@
     }
   }
 
+  /* ---------------------------------------------------- prep summary rows */
+
+  /* The doctor prep summary printed a wall of pre-wrap text under the cards:
+     ALLERGIES / PROBLEMS / MEDICATIONS / VITALS / HISTORY / LAST VISIT. That
+     text is NOT redundant - it is the only place those fields appear - so it is
+     rendered as rows instead of hidden.
+
+     Two rules it enforces:
+     - An empty field is "—", never "None recorded". The app cannot tell "the
+       chart says none" from "we never read that card", and printing a clinical
+       negative it cannot back is the same defect that lost patient rows.
+     - The raw text stays in the DOM (clipped, not display:none) so the existing
+       Copy button, which reads rendered text, keeps producing exactly what it
+       always did. Nothing here rewrites another module's output. */
+  var PREP_LABELS = ['ALLERGIES', 'PROBLEMS', 'MEDICATIONS', 'VITALS', 'HISTORY', 'LAST VISIT'];
+  var PREP_EMPTY = /^(none recorded|not recorded|none flagged|none|n\/a|unknown|-|—)?$/i;
+
+  function prepRows() {
+    var box = qs('#mlsEpSummaryBox .body');
+    if (!box) return;
+    var raw = box.textContent || '';
+    if (raw.indexOf('PREP SUMMARY') === -1) return;
+
+    var found = [];
+    PREP_LABELS.forEach(function (label) {
+      var re = new RegExp('^\\s*' + label.replace(' ', '\\s+') + '\\s*:\\s*(.*)$', 'im');
+      var m = re.exec(raw);
+      if (m) found.push({ label: label, value: (m[1] || '').trim() });
+    });
+    /* Fallback by construction: if the generated format ever changes and we
+       cannot read at least three fields, leave the original display alone. */
+    if (found.length < 3) return;
+
+    var host = qs('#mlsPrepRows');
+    var sig = found.map(function (f) { return f.label + '=' + f.value; }).join('|');
+    if (host && host.getAttribute('data-sig') === sig) return;
+    if (!host) {
+      host = D.createElement('div');
+      host.id = 'mlsPrepRows';
+      box.parentNode.insertBefore(host, box);
+    }
+    host.setAttribute('data-sig', sig);
+    host.innerHTML = found.map(function (f) {
+      var empty = PREP_EMPTY.test(f.value);
+      var val = empty
+        ? '<span class="v none" title="Not captured. This does not mean the chart is empty - re-pull to check.">—</span>'
+        : '<span class="v">' + f.value.replace(/[<>&]/g, '') + '</span>';
+      return '<div class="r"><span class="k">' + f.label.toLowerCase() + '</span>' + val + '</div>';
+    }).join('');
+
+    box.classList.add('mls-raw-clipped');
+  }
+
   /* ----------------------------------------------------------------- stages */
 
   var STAGES = ['Prep', 'Record', 'Review', 'Sign', 'Send'];
@@ -1131,6 +1195,7 @@
       safe(syncDock);
       safe(renderRightNow);
       safe(renderStages);
+      safe(prepRows);
       safe(arm);
     });
   }
@@ -1150,6 +1215,11 @@
       if (el) observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
     });
     if (visit) observer.observe(visit, { childList: true, subtree: true });
+    /* The prep summary only exists once a patient is selected, so watch the
+       patients view too. prepRows() no-ops when its signature is unchanged, so
+       its own insertion cannot drive a render loop. */
+    var pts = qs('#patientsView');
+    if (pts) observer.observe(pts, { childList: true, subtree: true });
   }
 
   function boot() {
@@ -1170,6 +1240,7 @@
       W.__mlsCalmShell.active = true;
       renderRightNow();
       renderStages();
+      safe(prepRows);
       watch();
       D.addEventListener('mousemove', onMove, true);
       D.addEventListener('keydown', onKey, true);
