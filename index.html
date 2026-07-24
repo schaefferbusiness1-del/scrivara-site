@@ -459,6 +459,11 @@ body.mdl-lock{overflow:hidden}
   .mbar a{flex:1;text-align:center;text-decoration:none;font-weight:700;font-size:15px;padding:13px 10px;border-radius:12px}
   .mbar .mb-in{color:var(--deep);border:1.5px solid var(--deep);background:#fff}
   .mbar .mb-demo{background:linear-gradient(135deg,var(--green),var(--deep));color:#fff;box-shadow:var(--sh-btn)}
+  /* The fixed bar already offers Sign in and Book a demo at every scroll
+     position, so the hero was stacking five full-width buttons on a phone and
+     two of them were the same two choices twice. Keep the primary action and
+     pricing in the hero; the bar keeps the other two permanently in reach. */
+  .ctas a[href="#demo"],.ctas a[href="ScribeFlow.html"]{display:none}
   .nav .cta .book{display:none}
   #mlsChatPanel{bottom:80px;height:440px;max-height:calc(100vh - 100px)}
 }

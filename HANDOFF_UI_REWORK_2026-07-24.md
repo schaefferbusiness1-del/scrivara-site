@@ -62,10 +62,35 @@ b533 shell · b535 doubled rail + empty bar · b537 14 adversarial-review defect
 · b539 trusted-gesture spotlight · b540 loading screen + emptied sidebar · b541
 dock frozen on mobile · b542 public-site + extension truth · b543 patient-page
 palette, Classic out of the dock · b544 prep summary rows · b548 lawyers
-directory controls · b549 portal schema leak + cancel confirmation.
+directory controls · b549 portal schema leak + cancel confirmation · b550
+patient screen folds to four things · b551 one action per patient, list reads as
+people · b552 honest signing promise + Templates on phones · b553 blank Settings
+tab.
 
 b534/b538/b546/b547 belong to the Athena session. **b536 and b545 are retired,
 never reuse them.** Always take the next free number and announce it.
+
+### The pin trap, concretely
+
+Changing a satellite module means moving its immutable `?v=` token, and a token
+can be pinned in **more than one test**. `feat_athena_tooltip_dedupe.js` was
+pinned in THREE: `immutable-satellite-loader-cache` (which records the *retired*
+token to assert the old URL is unreachable), `day-progress-responsive-layout`,
+and `scoped-lifecycle-watchers`. Updating one turned the gate red on the second;
+only a repo-wide grep for the old token found the third. **After any token move,
+grep the whole repo for the retired token before gating.**
+
+## Audit findings whose stated CAUSE was wrong
+
+The read-only audit produced 29 confirmed findings and was extremely useful, but
+four named a real symptom with a wrong cause. Verify before acting:
+
+- The attorney intake form is a **test-pinned refusal surface**, not dead UI.
+- `privacy.html`/`terms.html` are **assent-hashed**; restyling is not cosmetic.
+- The signing ceremony **does** build a PDF (`agBuildReceiptPdf`) — it is
+  uploaded as `receiptPdfBase64`, never downloaded, and is best-effort.
+- The review-finder upsell card is **not** JS-hidden; the 1500ms timeout nearby
+  clears a "Saved." message. Only its purple border was wrong.
 
 ## Reverted deliberately — do NOT retry these
 
