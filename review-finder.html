@@ -237,7 +237,7 @@ function dash(){
     '<div class="kpi"><div class="n stars">'+(avg?avg.toFixed(1):'—')+'</div><div class="l">avg rating <span class="stars">'+stars+'</span></div></div>'
     +'<div class="kpi"><div class="n">'+totC+'</div><div class="l">total reviews found</div></div>'
     +'<div class="kpi"><div class="n">'+covered+' / '+PLATFORMS.length+'</div><div class="l">sites with a profile ('+pct+'%)</div></div>'
-    +'<div class="kpi"><div class="n" style="color:#F3D9AE">'+missing.length+'</div><div class="l">profiles to claim</div></div>';
+    +'<div class="kpi"><div class="n" style="color:var(--amber)">'+missing.length+'</div><div class="l">profiles to claim</div></div>';
   $('coverage').innerHTML = missing.length? '<div class="out" style="border-left-color:var(--amber)"><b>Claim these profiles</b> — patients search here and you\'re not showing up: '+missing.map(function(p){return esc(PLATFORMS.filter(function(x){return x.k===p.k;})[0].nm);}).join(', ')+'.</div>' : (covered? '<div class="out" style="border-left-color:var(--green)">Good coverage. Keep review volume growing with the request tools below.</div>' : '');
 }
 function quotes(){

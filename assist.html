@@ -37,7 +37,7 @@
   <div class="card" style="text-align:center">
     <span class="pill">Step 1 · Download</span>
     <h2 style="margin-top:12px">Get the extension</h2>
-    <p class="muted" style="margin:2px 0 18px">Use only the published channel: the Chrome Web Store listing or the exact stamped v3.0.0 ZIP with its printed SHA-256 digest. Loose or unstamped candidate files are never distributed.</p>
+    <p class="muted" style="margin:2px 0 18px">Use only the published channel: the Chrome Web Store listing or the exact stamped release ZIP with its printed SHA-256 digest. Loose or unstamped candidate files are never distributed.</p>
     <a class="dl" href="get-extension.html">Open the published channel</a>
     <p class="muted" style="margin-top:14px">Do not remove a working extension to install loose or unstamped candidate files.</p>
   </div>
@@ -56,8 +56,8 @@
 
   <div class="card">
     <span class="pill">Step 3 · Check site access</span>
-    <h2 style="margin-top:12px">Two sites only — by design</h2>
-    <p style="margin:6px 0 10px">MLS Assist asks Chrome for exactly two sites: <code>mlsscribe.com</code> and <code>athenanet.athenahealth.com</code>. It cannot see any other site, so in Chrome&rsquo;s toolbar extension menu the broader <b>&ldquo;On all sites&rdquo;</b> choice shows grayed out. That is normal and correct &mdash; there is no all-sites permission to grant, and nothing is missing or broken.</p>
+    <h2 style="margin-top:12px">Site access — what Chrome will show</h2>
+    <p style="margin:6px 0 10px">MLS Assist never asks Chrome for all-sites access, so in Chrome&rsquo;s toolbar extension menu the broader <b>&ldquo;On all sites&rdquo;</b> choice shows grayed out. That is normal and correct &mdash; there is no all-sites permission to grant, and nothing is missing or broken. For clinical work it uses exactly two sites: <code>mlsscribe.com</code> and <code>athenanet.athenahealth.com</code>. Chrome will also list the public review sites the reputation feature reads (Google Maps, Healthgrades, Vitals, WebMD, RateMDs, Zocdoc and similar) &mdash; those carry no patient data and are never used for clinical work.</p>
     <ol>
       <li>Right-click the MLS Assist icon in the toolbar and choose <b>Manage extension</b> (or open Chrome&rsquo;s Extensions page and pick MLS Assist &rarr; Details).</li>
       <li>Under <b>Site access</b>, confirm both <code>mlsscribe.com</code> and <code>athenanet.athenahealth.com</code> are allowed &mdash; both toggles on.</li>
