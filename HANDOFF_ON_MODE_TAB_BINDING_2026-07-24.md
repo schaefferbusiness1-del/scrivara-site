@@ -540,3 +540,38 @@ even a colour change perturbs a legal audit trail. Expect those suites to stop y
 change, next extension build); per-card capture receipts (read | empty-confirmed | not-found) so an
 empty Medications card cannot be confused with an unread one; Adam writeback x2 (BLOCKED — only the
 owner can create the encounter); ON x2 + month x2 acceptance.
+
+## 3.0.7 RESULT — PARTIAL. The identity fix works for 3 of 5; the failure moved downstream.
+
+Same 5-patient day, bodies ON, ext 3.0.7 pong-verified running:
+
+```
+schedule 5/5 · history 5/5 · coverageComplete 0 · 933s
+fails: visit-bodies-incomplete x3 · same-frame-name-mismatch x2
+```
+
+**The failure mix changed for the first time in four builds** (3.0.4/3.0.5/3.0.6 were all
+same-frame-name-mismatch x5). Three patients now CLEAR the identity gate and fail later at
+`visit-bodies-incomplete`. So the banner-aware extractor is doing real work — the "Last, FIRST" branch
+resolves identity where the title-case-only regex never could — but it is not sufficient.
+
+**Interpretation, stated carefully:** identity extraction was A cause, not THE only cause. Two patients
+still mismatch (their banners presumably differ again — possibly hyphenated or single-token surnames,
+or a frame whose banner is genuinely absent so the weakName fallback fires and is correctly distrusted).
+Three now get far enough to attempt bodies and cannot finish them, which is a DIFFERENT problem in the
+two-stage reader's body-collection phase.
+
+### Next, in order
+
+1. **Instrument, do not guess** (this is now the fourth iteration): emit per candidate frame the raw
+   identity object + gate reason, AND for `visit-bodies-incomplete` emit expected vs parsed counts and
+   which encounter rows failed. One patient of each failure class is enough.
+2. For the 2 remaining mismatches: log the actual banner text seen. The fix is likely one more branch
+   (hyphenated/single-token surnames) — but confirm from the string, do not infer.
+3. For the 3 bodies-incomplete: that is the 2.9.22-era two-stage body reader, which has never been
+   updated for the v26.3 progressive/collapsible Visits panel. Expect the row-expansion step to be the
+   next thing to have gone stale.
+
+**Keep 3.0.7.** It is a strict improvement (3 patients further along, no regressions, no loosened gate)
+and it is hand-loaded and pong-verified. It is NOT published — run the pin train only once a day
+actually completes.
