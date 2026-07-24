@@ -41650,7 +41650,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260719sg2e';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
-;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sr232";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
+;(function(){try{var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260723sr233";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260718pr204';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260723tl120';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
@@ -42469,13 +42469,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     DS.retrying = true;
+    DS.retryStartedAt = Date.now();
     if (retryBtn) retryBtn.disabled = true;
     if (pullBtn) pullBtn.disabled = true;
     if (stat) { stat.style.display = 'block'; stat.textContent = 'Retrying only the incomplete patient histories...'; }
+    /* Owner 2026-07-23 ("retry does not show me it's working"): the retry now
+       paints the SAME #mlsDsPullBar the pull uses (deliberate self-contained
+       copy, same as the relay lane) — real X/N + elapsed, not just a line. */
+    var paintRetryProgress = function (m) {
+      try {
+        if (!stat) return;
+        var msg = String(m || '');
+        var bar = document.getElementById('mlsDsPullBar');
+        if (!bar) {
+          bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
+          bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
+          bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+          stat.parentNode.insertBefore(bar, stat.nextSibling);
+        }
+        var fill = bar.firstElementChild;
+        var mm = msg.match(/(\d+)\s+of\s+(\d+)/);
+        if (mm && Number(mm[2]) > 0) {
+          var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
+          bar.style.display = 'block'; fill.style.width = pct + '%';
+          fill.textContent = 'Retry ' + mm[1] + '/' + mm[2] + (DS.retryStartedAt ? ' · ' + Math.floor((Date.now() - DS.retryStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - DS.retryStartedAt) % 60000) / 1000) + 's' : '');
+        } else if (bar.style.display !== 'block') {
+          bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Retry starting…';
+        }
+      } catch (e) {}
+    };
+    paintRetryProgress('');
     var source = DS.lastResult, closed = false;
     function finish(receipt, err) {
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true; DS.retrying = false;
+      try { var rBar = document.getElementById('mlsDsPullBar'); if (rBar) rBar.style.display = 'none'; } catch (eBar) {}
       if (pullBtn) pullBtn.disabled = false;
       if (err) {
         syncRetryControl(source);
@@ -42498,7 +42526,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast('History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '.', 'err'); } catch (e2) {}
     }
     try {
-      var p = importer.retryFailedHistory(source, function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (stat && m) stat.textContent = String(m); } catch (e) {} });
+      var p = importer.retryFailedHistory(source, function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (stat && m) stat.textContent = String(m); } catch (e) {} paintRetryProgress(m); });
       if (p && typeof p.then === 'function') p.then(function (receipt) { finish(receipt, null); }, function (err) { finish(null, err || new Error('history-retry-failed')); });
       else finish(null, new Error('history-retry-unverified'));
     } catch (e3) { finish(null, e3); }

@@ -32,7 +32,7 @@ const freshHardcodedLoaderTags = new Map([
   ['feat_mls_outcome_pdf.js', '20260722lib2'],
   ['feat_mls_studygroups.js', '20260722sg1c6'],
   ['feat_comp_report.js', '20260718pr5'],
-  ['feat_mls_study_request.js', '20260718sr232']
+  ['feat_mls_study_request.js', '20260723sr233']
 ]);
 
 const stagingAdjunctRequirements = new Map([

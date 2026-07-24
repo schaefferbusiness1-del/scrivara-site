@@ -382,8 +382,12 @@
 
     sourcePatients.forEach(function (p) {
       var rec = locate(p);
-      (p && (p.visits || p.history || p.encounters) || []).forEach(function (v) { addVisit(rec, v, v.source || 'patient-record'); });
-      (p && p.notes || []).forEach(function (v) { addVisit(rec, v, v.source || 'patient-note'); });
+      /* 2026-07-23 owner-hit crash: p.history is an OBJECT on athena-imported
+         rows, so the truthy-|| chain handed a non-array to forEach. Pick the
+         first ARRAY source only. */
+      var visitRows = (p && Array.isArray(p.visits) && p.visits) || (p && Array.isArray(p.history) && p.history) || (p && Array.isArray(p.encounters) && p.encounters) || [];
+      visitRows.forEach(function (v) { addVisit(rec, v, v.source || 'patient-record'); });
+      ((p && Array.isArray(p.notes) && p.notes) || []).forEach(function (v) { addVisit(rec, v, v.source || 'patient-note'); });
     });
 
     /* __mlsSgFix is the authoritative app harvester (saved notes, pulled
