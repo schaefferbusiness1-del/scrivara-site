@@ -142,6 +142,14 @@
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
+    /* The patient context bar: keep its controls, make them read as one row.
+       Consistent gaps, wrapping instead of overflow, and a shared baseline so a
+       tall chip cannot shove its neighbours out of line. */
+    'body.mls-calm #patientBar,body.mls-calm #mlsCtxBar{display:flex;align-items:center;',
+    'flex-wrap:wrap;gap:8px 10px;row-gap:8px}',
+    'body.mls-calm #patientBar>*,body.mls-calm #mlsCtxBar>*{min-width:0}',
+    'body.mls-calm #patientBar button,body.mls-calm #mlsCtxBar button{white-space:nowrap}',
+
     /* Relocated to the right-now bar / Tools. Still in the DOM, still clickable
        by the shell, still counted as available - just not crowding the header. */
     'body.mls-calm #profileCard .mls-moved,',
@@ -173,11 +181,21 @@
     'body.mls-calm #profileCard .mls-fold.mls-open > *:not(:first-child){animation:mlsViewIn var(--mls-base) var(--mls-spring)}',
 
     /* prep summary rows */
-    '#mlsPrepRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:2px 18px;margin:2px 0 4px}',
-    '#mlsPrepRows .r{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05)}',
-    '#mlsPrepRows .k{flex:0 0 92px;font:500 11px/1.4 inherit;letter-spacing:.4px;text-transform:uppercase;color:#8C978F}',
-    '#mlsPrepRows .v{font:400 13.5px/1.5 inherit;color:#1A211C;min-width:0;overflow-wrap:anywhere}',
+    '#mlsPrepRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0 22px;margin:2px 0 6px}',
+    '#mlsPrepRows .r{display:flex;align-items:baseline;gap:10px;padding:8px 0;min-width:0;',
+    'border-bottom:1px solid rgba(0,0,0,.05)}',
+    '#mlsPrepRows .k{flex:0 0 88px;font:500 11px/1.4 inherit;letter-spacing:.4px;text-transform:uppercase;color:#8C978F}',
+    /* Clamped to two lines. A prep summary is a glance, not a note: LAST VISIT
+       carries a whole SOAP note and rendered a 313px wall of text in one row.
+       The full value is on the title attribute, and the untouched raw block
+       below still holds everything for Copy. */
+    '#mlsPrepRows .v{flex:1 1 auto;min-width:0;font:400 13.5px/1.5 inherit;color:#1A211C;overflow-wrap:anywhere;',
+    'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
     '#mlsPrepRows .v.none{color:#B4BDB7}',
+    /* Below ~430px the fixed label column starved the value; stack instead. */
+    '@media (max-width:430px){',
+    '#mlsPrepRows .r{flex-direction:column;gap:1px;padding:7px 0}',
+    '#mlsPrepRows .k{flex:0 0 auto}}',
     /* Clipped, NOT display:none — the Copy button reads rendered text, and a
        display:none block would silently start copying less than it used to. */
     '.mls-raw-clipped{position:absolute!important;width:1px;height:1px;overflow:hidden;',
@@ -405,10 +423,10 @@
     { label: /^verify saved data$/i, within: '#profileCard' },
     { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
     { label: /^add a visit$/i, within: '#profileCard' },
-    /* Relocated off the patient context bar — see CTX_MOVED. */
-    { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' },
-    { label: /^after-visit summary$/i, within: '#patientBar,#mlsCtxBar' },
-    { label: /^patient portal$/i, within: '#patientBar,#mlsCtxBar' }
+    /* Only Snapshot is relocated off the context bar — see CTX_MOVED. After-visit
+       summary and Patient portal stay on the bar, so they are deliberately NOT
+       listed here; offering them in both places is the duplication this removes. */
+    { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' }
   ];
 
   /* ------------------------------------------------ trusted-gesture controls */
@@ -871,7 +889,13 @@
       var m = re.exec(raw);
       if (!m) return;
       var v = (m[1] || '').replace(/\s+/g, ' ').trim();
-      found.push({ label: label, value: v });
+      /* LAST VISIT carries an entire note - 'SAMPLE NOTE ... Subjective: ...
+         Objective: ... Assessment: ...' - which rendered as a 313px wall of
+         text inside a summary row. A summary shows the first line and offers
+         the rest on hover; the full text stays in the raw block for Copy. */
+      var full = v;
+      if (v.length > 150) v = v.slice(0, 150).replace(/\s+\S*$/, '') + '…';
+      found.push({ label: label, value: v, full: full });
     });
     /* Fallback by construction: if the generated format ever changes and we
        cannot read at least three fields, leave the original display alone. */
@@ -890,7 +914,8 @@
       var empty = PREP_EMPTY.test(f.value);
       var val = empty
         ? '<span class="v none" title="Not captured. This does not mean the chart is empty - re-pull to check.">—</span>'
-        : '<span class="v">' + f.value.replace(/[<>&]/g, '') + '</span>';
+        : '<span class="v" title="' + String(f.full || f.value).replace(/[<>&"]/g, '').slice(0, 600) +
+          '">' + f.value.replace(/[<>&]/g, '') + '</span>';
       return '<div class="r"><span class="k">' + f.label.toLowerCase() + '</span>' + val + '</div>';
     }).join('');
 
@@ -923,13 +948,14 @@
      header keeps showing until someone decides where it belongs. */
   var PT_MOVED = /^(start visit|schedule|draft op note|share \/ export|export everything for emr|verify saved data|copy every visit from athenaone|add a visit)$/i;
 
-  /* The patient context bar carried six controls over one patient. Snapshot,
-     After-visit summary and Patient portal move to Tools. Snapshot is NOT
-     broken - it renders real patient data - it is redundant: the bar already
-     names the patient it would describe, and both of its actions (Open chart,
-     Start visit) are already on screen. Chart and Switch patient stay, because
-     they are the two things actually done from here. */
-  var CTX_MOVED = /^(snapshot|after-visit summary|patient portal)$/i;
+  /* ONLY Snapshot moves. It is not broken - it renders real patient data - it
+     is a duplicate of the bar it sits on: that bar already names the patient
+     Snapshot would describe, and both of its actions (Open chart, Start visit)
+     are already on screen.
+     After-visit summary and Patient portal STAY. They are distinct features a
+     doctor reaches for, and burying a real feature in a menu reads as deleting
+     it. Thinning a busy bar is not the same as removing what it is for. */
+  var CTX_MOVED = /^snapshot$/i;
 
   function contextBar() {
     if (!W.__mlsCalmShell.active) return;

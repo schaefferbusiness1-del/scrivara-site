@@ -240,7 +240,13 @@ a{color:var(--blue)}
 
   function step4() {
     return '<div class="card"><h2>5 · Your listing text, written by MLS</h2>' +
-      '<div class="note">MLS writes the profile description, services and first post from your <b>real scraped reviews</b> plus your resume/CV — truthful, compliant, and it will <b>never</b> present a practice-wide rating as your personal one.</div>' +
+      /* Only claim review grounding when the review data is actually present.
+         Nothing currently writes mlsRFScrapeCache, so this promised "real
+         scraped reviews" on every run while the prompt silently went out with
+         no ratings and no excerpts - the output looked informed and was not. */
+      (scrapeData()
+        ? '<div class="note">MLS writes the profile description, services and first post from your <b>real scraped reviews</b> plus your resume/CV — truthful, compliant, and it will <b>never</b> present a practice-wide rating as your personal one.</div>'
+        : '<div class="note" style="border-left:3px solid var(--sub);padding-left:10px">No verified review data is loaded, so this will be written from the details you entered and your resume/CV only — no ratings and no review excerpts. Run Review Finder first if you want it grounded in your real reviews. It stays truthful either way, and will <b>never</b> present a practice-wide rating as your personal one.</div>') +
       '<label>Paste your resume / bio / fellowships / special training (optional but makes it much better)</label>' +
       '<textarea id="aiMat" placeholder="Board-certified in… Fellowship at… Special interests…">' + esc(S.f.resume || '') + '</textarea>' +
       '<div class="row" style="margin-top:8px"><button class="btn primary" id="aiGo">✨ Write my listing</button><span class="note" id="aiNote"></span></div>' +
