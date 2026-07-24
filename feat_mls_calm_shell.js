@@ -142,6 +142,23 @@
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
+    /* Relocated to the right-now bar / Tools. Still in the DOM, still clickable
+       by the shell, still counted as available - just not crowding the header. */
+    'body.mls-calm #profileCard .mls-moved,',
+    'body.mls-calm #patientBar .mls-moved,',
+    'body.mls-calm #mlsCtxBar .mls-moved{display:none!important}',
+
+    /* The patient list showed 150 names and 300 buttons, so it read as a wall of
+       controls rather than a list of people. The row controls stay present and
+       full-size - touch targets are untouched, nothing is hover-only - they are
+       just quiet until the row is hovered, focused or active. Names lead. */
+    'body.mls-calm #ptList .pt-row button,body.mls-calm #ptList li button{opacity:.42;',
+    'transition:opacity var(--mls-fast) linear}',
+    'body.mls-calm #ptList .pt-row:hover button,body.mls-calm #ptList li:hover button,',
+    'body.mls-calm #ptList .pt-row:focus-within button,body.mls-calm #ptList li:focus-within button,',
+    'body.mls-calm #ptList .pt-row.on button,body.mls-calm #ptList li.on button{opacity:1}',
+    'body.mls-calm #ptList button:focus-visible{opacity:1;outline:2px solid #2E6A4B;outline-offset:2px}',
+
     /* patient screen: reference blocks fold to one line */
     'body.mls-calm #profileCard .mls-fold{border:1px solid #EDEBE4;border-radius:12px;margin:8px 0;background:#fff}',
     'body.mls-calm #profileCard .mls-fold:not(.mls-open) > *:not(:first-child){display:none!important}',
@@ -379,7 +396,19 @@
     { id: 'askCopilotHdrBtn' }, { id: 'intakeBtn' }, { id: 'customWidgetHdrBtn' },
     { label: /^templates$/i, within: '#appHeader' },
     { label: /^settings$/i, within: '#appHeader' },
-    { label: /^log out$/i, within: '#appHeader' }
+    { label: /^log out$/i, within: '#appHeader' },
+    /* Relocated off the patient header — see PT_MOVED. */
+    { label: /^schedule$/i, within: '#profileCard' },
+    { label: /^draft op note$/i, within: '#profileCard' },
+    { label: /^share \/ export$/i, within: '#profileCard' },
+    { label: /^export everything for emr$/i, within: '#profileCard' },
+    { label: /^verify saved data$/i, within: '#profileCard' },
+    { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
+    { label: /^add a visit$/i, within: '#profileCard' },
+    /* Relocated off the patient context bar — see CTX_MOVED. */
+    { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' },
+    { label: /^after-visit summary$/i, within: '#patientBar,#mlsCtxBar' },
+    { label: /^patient portal$/i, within: '#patientBar,#mlsCtxBar' }
   ];
 
   /* ------------------------------------------------ trusted-gesture controls */
@@ -635,7 +664,11 @@
      by a label pattern scoped to a container. Absent control -> absent action,
      which is the charter rule (illegal actions are absent, not disabled). */
   var ACTIONS = {
+    /* With a patient open, the one thing a doctor is here to do is start the
+       visit. Everything else that used to crowd the profile header moves to the
+       Tools menu. With no patient open, the list actions are what matter. */
     patient: [
+      { label: /^start visit$/i, within: '#profileCard', primary: true, moved: true },
       { id: 'ptNewBtn', primary: true },
       { id: 'ptPullAthenaBtn' },
       { id: 'ptIntakeBtn' }
@@ -662,16 +695,21 @@
     ]
   };
 
+  /* `moved` means THIS SHELL hid the control (PT_MOVED), so visibility is not
+     the right test - availability is. Without it, relocating a control off the
+     patient header would also delete it from the bar that now owns it. It is
+     never used to surface something the APP gated off. */
   function findControl(spec) {
+    var ok = spec.moved ? available : visible;
     if (spec.id) {
       var el = D.getElementById(spec.id);
-      return visible(el) ? el : null;
+      return ok(el) ? el : null;
     }
     var root = spec.within ? qs(spec.within) : D;
     if (!root) return null;
     var hit = null;
     qsa('button,.btn-primary,.btn-ghost,.btn-green', root).some(function (b) {
-      if (!visible(b)) return false;
+      if (!ok(b)) return false;
       if (!spec.label.test(textOf(b))) return false;
       hit = b;
       return true;
@@ -862,10 +900,42 @@
     return head ? textOf(head).slice(0, 60) : '';
   }
 
+  /* Eight actions competed at the top of one patient. These move: Start visit
+     becomes the right-now bar's primary, the rest go to the Tools menu (which
+     matches on availability, so a control hidden by THIS shell is still
+     offered). Marked with a class rather than a blanket CSS rule so only the
+     controls actually relocated are hidden - anything new that appears in that
+     header keeps showing until someone decides where it belongs. */
+  var PT_MOVED = /^(start visit|schedule|draft op note|share \/ export|export everything for emr|verify saved data|copy every visit from athenaone|add a visit)$/i;
+
+  /* The patient context bar carried six controls over one patient. Snapshot,
+     After-visit summary and Patient portal move to Tools. Snapshot is NOT
+     broken - it renders real patient data - it is redundant: the bar already
+     names the patient it would describe, and both of its actions (Open chart,
+     Start visit) are already on screen. Chart and Switch patient stay, because
+     they are the two things actually done from here. */
+  var CTX_MOVED = /^(snapshot|after-visit summary|patient portal)$/i;
+
+  function contextBar() {
+    if (!W.__mlsCalmShell.active) return;
+    var bar = qs('#patientBar,#mlsCtxBar');
+    if (!bar) return;
+    qsa('button,.btn-ghost,.btn-white', bar).forEach(function (b) {
+      if (!CTX_MOVED.test(textOf(b))) return;
+      b.classList.add('mls-moved');
+    });
+  }
+
   function patientScreen() {
     if (!W.__mlsCalmShell.active) return;
     var card = qs('#profileCard');
     if (!card || !visible(card)) return;
+
+    qsa('button,.btn-primary,.btn-ghost,.btn-green', card).forEach(function (b) {
+      if (b.closest && b.closest('#mlsPrepRows,#mlsRightNow')) return;
+      if (!PT_MOVED.test(textOf(b))) return;
+      b.classList.add('mls-moved');
+    });
 
     qsa(':scope > div, :scope > section', card).forEach(function (block) {
       if (block.id === 'mlsPrepRows') return;
@@ -1260,6 +1330,7 @@
       safe(renderStages);
       safe(prepRows);
       safe(patientScreen);
+      safe(contextBar);
       safe(arm);
     });
   }
