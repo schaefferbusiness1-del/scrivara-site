@@ -33007,7 +33007,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b523';
+  window.__MLS_AV = window.__MLS_AV || 'b524';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33317,7 +33317,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b523';
+  var MLS_APP_BUILD='2026-07-24-b524';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41721,7 +41721,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260723tl120';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* authenticated versioned template sets: preview-first import, explicit activation, conflict-safe persistence, archive/restore */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */
-;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260719cmd103';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; version-aware compatibility owner (cpal-1.0.3; revert()). */
+;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260724cmd104';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; version-aware compatibility owner (cpal-1.0.3; revert()). */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260719wd110';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */

@@ -84,6 +84,11 @@
           var b = $('mlsdlLaunch'); if (b) { b.click(); } else { toast('The letter tool has not loaded yet.', 'err'); }
         } },
       { icon: '🎓', title: 'Guided tour', desc: 'Open the onboarding walkthrough', kw: 'tour help onboarding how to guide', run: function () { safe(function () { var t = window.__mlsOnboardingTour || window.__mlsGuidedTour; if (t && isFn(t.open)) t.open(); }); } },
+      /* 3.0.5 one-pill fold: the extension's always-on Athena-tab chip is gone
+         when the voice pill owns the corner — this entry is the app-side way
+         to summon the same picker panel (the extension listens for this
+         message on every build that ever had the chip). */
+      { icon: '🔗', title: 'Choose the Athena tab', desc: 'Pick which open athenaOne tab MLS Assist uses', kw: 'athena tab picker pin choose switch link connection', run: function () { safe(function () { window.postMessage({ source: 'mls-app', type: 'mlsShowTabPicker' }, location.origin); }); } },
       { icon: '⭐', title: 'Reviews & reputation', desc: 'Practice reviews dashboard', kw: 'reviews reputation google rating', run: function () { if (!nav('reviews')) toast('Reviews opens from the Menu on this build.', ''); } }
     ];
     var views = [['visit', '🏠', 'Visit'], ['patients', '👥', 'Patients'], ['calendar', '📅', 'Calendar'], ['history', '🗃', 'History'], ['analysis', '📊', 'Analysis'], ['studio', '✨', 'AI Studio'], ['settings', '⚙️', 'Settings']];
