@@ -29788,6 +29788,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   cleanup.push(function () { window.removeEventListener('message', onExtVersion); });
   try { window.postMessage({ source: 'mls-app', type: 'mlsAppGetVersion' }, location.origin); } catch (e) {}
   setTimeout(function () { try { window.postMessage({ source: 'mls-app', type: 'mlsAppGetVersion' }, location.origin); } catch (e) {} }, 6000);
+  /* Owner 2026-07-23: a signed-in browser with NO extension must be TOLD to
+     download it — not just a quiet Settings row. One dismissable banner per
+     dismissal window (same VKEY as the update nag), after a 25s handshake
+     grace so a slow-loading extension never gets a false "not installed". */
+  setTimeout(function () {
+    try {
+      if (!hostedSessionReady() || verState.installed || window.__mlsExtReportedVersion) return;
+      banner('MLS Assist is not installed in this browser — Athena pulls and chart writes need it.',
+        'Download it from mlsscribe.com Settings → Get MLS Assist (takes under a minute; your data is untouched).');
+    } catch (e) {}
+  }, 25000);
 
   /* ---------- D) day-progress strip restore (owner: "counter strip disappeared") ----------
      The top "X / Y seen" strip (feat_mls_dayprogress.js) hides itself because
