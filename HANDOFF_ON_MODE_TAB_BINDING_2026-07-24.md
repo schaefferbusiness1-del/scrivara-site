@@ -602,3 +602,49 @@ is failing because:
 Each of those four points at a different fix. **Read the receipt before writing any more code** — this
 is the fifth iteration, and every theory that was measured has held while every theory that was
 reasoned-about has died.
+
+---
+
+## 🎯 THE RECEIPT NAMED IT — the encounter index is being read from `stm.esp` (the coordinator/inbox frame)
+
+Captured live from one failing `mlsAppAllVisitsResult` (chart proved as Joan Holliday immediately before):
+
+```json
+{ "ok": false, "reason": "same-frame-name-mismatch",
+  "identity": { "name": "Monterosso, ROSEMARY", "dob": "6-23-1942", "via": "lastfirst",
+                "score": -6.8,
+                "url": "https://athenanet.athenahealth.com/22724/6/coordinator/enterprise/stm.esp?..." },
+  "receipt": { "indexComplete": true, "expected": 38, "parsed": 0, "attempted": 0,
+               "identityVerified": false, "readerVersion": "2.9.22-visits-r4-two-stage" },
+  "failedIndexes": [] }
+```
+
+**Two conclusions, both firm:**
+
+1. **The 3.0.7 identity fix WORKS.** `via: "lastfirst"` is the branch I added — it parsed athena's
+   `Last, FIRST` banner correctly. The extractor is no longer the problem.
+2. **The frame it parsed is the WRONG FRAME.** That URL is
+   `coordinator/enterprise/stm.esp` — the enterprise coordinator / inbox surface, NOT the patient chart.
+   background.js already classifies it as noise:
+   `if (/stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(href)) score -= 4;`
+   and `NOISE_FRAME_RE` lists it. Its score here is **-6.8** — penalised, and it STILL won candidate
+   selection, because the penalty is a soft ranking nudge rather than an exclusion.
+
+That frame legitimately displays a different patient (someone in the doctor's inbox/worklist), so the
+identity gate refused — **correctly, again**. And `expected: 38, parsed: 0` means the enumerate step
+counted 38 "encounters" out of the coordinator surface, which is why the counts never made sense.
+
+### The fix (precise, small, and it tightens rather than loosens safety)
+
+**Exclude noise frames from `enumCandidates` outright** instead of merely penalising them. A frame whose
+URL matches `NOISE_FRAME_RE` (`stm.esp`, `globalnav`, `statusbar`, `inbox`, `messag`, `findpatient.esp`,
+`globalframeset`, `globaliframe`, `framecontent`) can never be a patient's encounter index, so it must
+not be a candidate at any score. Belt-and-braces: refuse when the winning candidate's score is negative.
+
+This is the first hypothesis of the night that is READ OFF THE DATA rather than reasoned toward, and it
+explains the whole arc: every earlier fix improved the ranking or the parsing of a frame that should
+never have been in the running.
+
+**Still verify.** Ship as 3.0.8, hand-load, run a bodies-ON day, and expect the enumerate step to bind
+to the real Visits panel. If `expected` stops being 38-from-nowhere and `parsed` starts matching it,
+that is the proof.
