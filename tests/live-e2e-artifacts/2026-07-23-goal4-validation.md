@@ -110,3 +110,21 @@ persistence, apply-without-pull, honest empty state, fail-closed stale/duplicate
 **E12 nav notes:** first two attempts died on "week strip shows no selected day" — post-midnight day-rollover + the extension choosing the owner's out-of-group athena tab (diag tabId 256594014); cured by healing my tab via the CSRF interstitial Continue + fresh frameset, after which nav succeeded in 8s.
 
 **EXT 3.0.5 TRAIN SPEC (background.js, release protocol):** (1) provider roster verb reads the full department/practice provider list, not the schedule grid header (owner: "should show way more people"; design doc PROVIDER_ROSTER_LANE_2026-07-23.md); (2) all-visits reader settle check must prove the chart frame belongs to the EXPECTED patient before starting the read (fixes same-frame-name-mismatch race — compare banner identity before read, re-settle instead of refuse-after-read); (3) fold the corner "Athena tab" pill (content.js:1984) into the one-pill design; (4) day-nav: tolerate post-midnight week-strip no-selection (goHome then explicit date click).
+
+## 2026-07-24 — "N saves not confirmed" ROOT-CAUSED, FIXED, PROVEN LIVE (b530)
+
+**Owner report:** "6 saves not confirmed. Bernard P Brooks, Christopher Fink, Lindsey Bray, Luz Maria Lemus, and 2 more were not found in the saved store after saving."
+
+**Probe that cracked it:** every named patient was PRESENT in the live store (Bernard P Brooks p_sched_ibuwu5, Christopher Fink p_sched_157yjhf, Lindsey Bray p_sched_1b2vbd, Luz Maria Lemus p_sched_1fmgvk0 — all source athena-schedule). The saves LANDED; something deleted them before the verifier looked and a later pass re-created them. Real row loss, not a false banner.
+
+**Root cause:** savePatients(arr) is a wholesale replacement. Every render/sweep/organize path materializes its roster array BEFORE writing, so any row saved in between is deleted. upsertPatient keys by exact id, so nothing was folded — rows were dropped and re-made. Reproduced deterministically from shipped bytes: tests/patient-row-loss-guard.test.js (one stale bulk write deletes all four owner-named patients).
+
+**Fix 1 pts-rowguard-1.0.0 (ScribeFlow.html):** a write may only remove a row the caller could plausibly have SEEN. Rows written within 12s are carried forward unless the caller passes {allowRemovals:true}; purge + deletePatient opt in explicitly. Idempotent, PHI-free logging (ids only), fails SAFE.
+
+**Fix 2 sv-1.1.0 (feat_save_verify.js):** an unconfirmed save is automatically RE-SAVED once (id-anchored through upsertPatient.__mlsOrig — cannot duplicate, cannot touch another chart, once per patient) before anything is reported. The card no longer tells the doctor to reload and retry.
+
+**LIVE PROOF on b530 (owner's signed-in app, real store):** store 1481 → planted probe row (direct store write, no server mirror) → 1482 → fired the exact stale bulk write that used to destroy data → **probe SURVIVED**, guard logged {kept:1, ids:['__rowguard_probe_…']} → authorized removal with {allowRemovals:true} → probe gone, store back to **1481 exactly**. This also proves the third argument survives the whole savePatients wrapper chain (wipe-guard forwards via orig.apply), so deletes still delete. No real patient touched.
+
+**END-TO-END pull on b530 (2026-07-24, bodies ON, 5 scheduled):** schedule 5/5, **ZERO "saves not confirmed" cards**, store 1481 → 1481 (no loss), guard catches 0 (expected — all 5 rows already existed, so no fresh row for a stale writer to drop). Remaining: 5/5 chart-body reads failed on the KNOWN chart-swap-settle race — ext 3.0.5 (built, unpublished) is the fix; the browser still runs 3.0.4.
+
+**Certification:** gate 277/277 green in an isolated tree built from the exact staged bytes (shared worktree is red on another session's in-flight mls-connect.js — verified theirs, not this lane). Shipped as 1a61c24 (fix) + 4fe51a0 (b530 cache-bust, staged surgically from HEAD so no foreign WIP rode along).
