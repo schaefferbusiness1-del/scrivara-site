@@ -259,10 +259,20 @@
     if(/^sig$/i.test(s)) return "Sig";
     return s;
   }
-  function detailHTML(it){
+  /* This is a PATIENT's own record. Expanding a row used to print every key on
+     the object - internal database ids, foreign keys, created/updated stamps,
+     source and raw blobs - and then repeat the title and meta already shown on
+     the row above it. A patient should see their information, not our schema.
+     Skipping everything leaves the "no detail" branch below to render a plain
+     non-expandable row, which is the honest result for a record that carries
+     nothing beyond what is already visible. */
+  var PORTAL_HIDE=/^(_.*|id|.*_id|.*Id|uid|guid|uuid|created|updated|created_?at|updated_?at|deleted_?at|source|raw|meta|payload|rev|version|hash|sha\d*|token)$/i;
+  function detailHTML(it, used){
     var rows="";
     for(var k in it){
       if(!it.hasOwnProperty(k)) continue;
+      if(PORTAL_HIDE.test(k)) continue;
+      if(used && used[k]) continue;
       var v=it[k];
       if(v==null || v==="") continue;
       if(typeof v==="object"){ try{ v=JSON.stringify(v); }catch(e){ v=String(v); } }
@@ -274,17 +284,24 @@
     if(it==null) return "";
     if(typeof it === "string"){ return '<li><div class="li-head"><div class="li-title">'+esc(it)+'</div></div></li>'; }
     if(typeof it !== "object"){ return '<li><div class="li-head"><div class="li-title">'+esc(String(it))+'</div></div></li>'; }
-    var title = it.name || it.title || it.description || it.problem || it.medication || it.drug || it.reason || it.type || it.chief_complaint || it.summary || "";
+    /* Track which keys the row already shows, so the expanded detail adds
+       information instead of repeating the title and meta back at the patient. */
+    var used = {};
+    var title = "";
+    ["name","title","description","problem","medication","drug","reason","type","chief_complaint","summary"].some(function(k){
+      if(it[k]==null || it[k]==="") return false;
+      title = it[k]; used[k] = 1; return true;
+    });
     var metaParts = [];
     ["date","start","when","time","provider","doctor","status","dose","dosage","sig","frequency","code","icd10","location"].forEach(function(k){
-      if(it[k]!=null && it[k]!=="" && String(it[k])!==title) metaParts.push(esc(String(it[k])));
+      if(it[k]!=null && it[k]!=="" && String(it[k])!==title){ metaParts.push(esc(String(it[k]))); used[k]=1; }
     });
     if(!title){
-      var vals=[]; for(var k in it){ if(it.hasOwnProperty(k) && (typeof it[k]==="string"||typeof it[k]==="number")) vals.push(esc(String(it[k]))); }
+      var vals=[]; for(var k in it){ if(it.hasOwnProperty(k) && !PORTAL_HIDE.test(k) && (typeof it[k]==="string"||typeof it[k]==="number")){ vals.push(esc(String(it[k]))); if(vals.length<=2) used[k]=1; } }
       title = vals.slice(0,2).join(" — ") || "Record";
     }
     var meta = metaParts.length ? '<div class="li-meta">'+metaParts.slice(0,3).join(" · ")+'</div>' : "";
-    var detail = detailHTML(it);
+    var detail = detailHTML(it, used);
     if(!detail){ return '<li><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div></div></li>'; }
     return '<li class="li-x" data-exp="0"><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div><span class="li-chev">▸</span></div>'+
            '<div class="li-detail"><div class="li-detail-in">'+detail+'</div></div></li>';
