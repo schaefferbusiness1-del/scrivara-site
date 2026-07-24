@@ -794,7 +794,11 @@
 
   function directSettingsSections() {
     var modal = byId('settingsModal');
-    return modal ? Array.prototype.slice.call(modal.querySelectorAll('.modal > .set-section')) : [];
+    /* :not([hidden]) — a retired section (e.g. #legalProfileSettings, held with
+       the legal workspace) still exists in the DOM, so enumerating it built a
+       "Legal profile" tab that opened a completely blank pane. With no matching
+       section the tab is simply not offered. */
+    return modal ? Array.prototype.slice.call(modal.querySelectorAll('.modal > .set-section:not([hidden])')) : [];
   }
 
   function settingsHeading(section) {
