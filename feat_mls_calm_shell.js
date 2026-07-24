@@ -1402,6 +1402,21 @@
     }
   }
 
+  /* render() runs one pass SYNCHRONOUSLY, bypassing schedule()'s
+     requestAnimationFrame. Not decoration: rAF does not fire in a tab that is
+     not compositing, so in any headless or background verification context every
+     renderer silently never runs - which made a working patient screen read as
+     completely inert and cost a build to chase. Anything that cannot be observed
+     cannot be claimed, so the shell exposes a way to observe it. */
+  function renderNow() {
+    safe(syncDock);
+    safe(renderRightNow);
+    safe(renderStages);
+    safe(prepRows);
+    safe(patientScreen);
+    safe(contextBar);
+  }
+
   W.__mlsCalmShell = {
     version: VERSION,
     contract: CONTRACT,
@@ -1409,6 +1424,7 @@
     go: go,
     busy: busy,
     stage: stageNow,
+    render: renderNow,
     revert: teardown,
     boot: boot
   };
