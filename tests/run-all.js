@@ -118,6 +118,7 @@ const tests = [
   'history-ingestion-card-hardening.test.js',
   'save-verify-managed-batch-toast.test.js',
   'save-verify-fold-tolerant-contract.test.js',
+  'patient-row-loss-guard.test.js',
   'athena-pull-toast-lifecycle.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',

@@ -7493,7 +7493,47 @@ function __mlsAthenaProofGuard(key,arr){
     }
   }
 }
-function savePatients(arr,__storageKey){
+/* pts-rowguard-1.0.0 — owner 2026-07-24: "6 saves not confirmed. Bernard P
+   Brooks, Christopher Fink, Lindsey Bray, Luz Maria Lemus, and 2 more were not
+   found in the saved store after saving." A live probe found every one of them
+   PRESENT (p_sched_* ids, source athena-schedule), so the saves had landed and
+   something removed them before the verifier looked; a later pass re-created
+   them. savePatients(arr) is a WHOLESALE replacement, and every render/sweep/
+   organize path materializes its array before it writes — so each one deletes
+   whatever was saved in between. upsertPatient keys by exact id, so these rows
+   were not folded or merged: they were dropped and re-made.
+   Rule: a write may only remove a row the caller could plausibly have SEEN.
+   Rows written within the recent window are carried forward unless the caller
+   explicitly authorizes removals ({allowRemovals:true} — purge and delete
+   patient, the only two intentional removal paths). Fails SAFE: a carried row
+   is removed again by the next authorized pass, but a lost chart is
+   unrecoverable. */
+var __MLS_PTS_ROWGUARD_MS=12000;
+function __mlsPtsRowGuard(key,arr,opts){
+  if(!Array.isArray(arr))return arr;
+  if(opts&&opts.allowRemovals===true)return arr;
+  var cur=null;
+  try{ if(uns('patients')===key)cur=getPatients(); }catch(e){ cur=null; }
+  if(!Array.isArray(cur)||!cur.length)return arr;
+  var have=Object.create(null),i,r;
+  for(i=0;i<arr.length;i++){ r=arr[i]; if(r&&r.id!=null)have[String(r.id)]=1; }
+  var now=Date.now(),carried=null;
+  for(i=0;i<cur.length;i++){
+    r=cur[i];
+    if(!r||r.id==null||have[String(r.id)])continue;
+    var at=Number(r.updated||r.created||0);
+    if(!(at>0)||(now-at)>__MLS_PTS_ROWGUARD_MS)continue; /* settled — an intended removal */
+    (carried||(carried=[])).push(r);
+  }
+  if(!carried)return arr;
+  try{
+    var log=window.__mlsPtsRowGuardLog=window.__mlsPtsRowGuardLog||[];
+    log.push({at:now,kept:carried.length,ids:carried.map(function(x){return String(x.id).slice(0,24);}).slice(0,8)});
+    if(log.length>60)log.splice(0,log.length-60);
+  }catch(e){}
+  return carried.concat(arr);
+}
+function savePatients(arr,__storageKey,__opts){
   var __key=__mlsPtsStorageKey(__storageKey);
   /* While an old account's managed pull is draining, an unbound write from a
      newly-selected account must fail closed instead of mixing patient stores.
@@ -7504,6 +7544,7 @@ function savePatients(arr,__storageKey){
     __accountErr.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';
     throw __accountErr;
   }
+  arr=__mlsPtsRowGuard(__key,arr,__opts);
   try{ __mlsAthenaProofGuard(__key,arr); }catch(e){}
   var __json=JSON.stringify(arr);
   /* b392 perf: identical content + untouched storage → skip the multi-MB LZ
@@ -7729,7 +7770,7 @@ async function purgeAthenaImportedPatients(){
     }catch(e){}
   }
   // Local: drop athena patients + their imported notes.
-  try{ savePatients(local.filter(function(p){ return p.source!=='athena-schedule'; })); }catch(e){}
+  try{ savePatients(local.filter(function(p){ return p.source!=='athena-schedule'; }),undefined,{allowRemovals:true}); }catch(e){}
   try{ var ns=getNotes().filter(function(n){ return !athIds[n.patientId]; }); saveNotes(ns); }catch(e){}
   try{ window._heroTodayList=[]; var box=document.getElementById('heroToday'); if(box){ box.innerHTML=''; box.style.display='none'; } }catch(e){}
   try{ if(typeof loadCalendar==='function') loadCalendar(); }catch(e){}
@@ -12263,7 +12304,7 @@ function goNewUnassignedVisit(){
 }
 async function deletePatient(id){
   if(!await mlsConfirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
-  savePatients(getPatients().filter(p=>p.id!==id));
+  savePatients(getPatients().filter(p=>p.id!==id),undefined,{allowRemovals:true});
   // hosted mode: best-effort server delete (owner-only; skips silently if no server id known)
   if(backendMode() && bkToken()){ try{ deletePatientOnServer(id); }catch(e){} }
   // unassign their notes

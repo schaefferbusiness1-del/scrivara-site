@@ -32,7 +32,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.3';
+  var VERSION = '1.1.0';
   var ASSET = 'feat_save_verify.js';
 
   if (window.__mlsSaveVerify && window.__mlsSaveVerify.installed) { return; }
@@ -565,6 +565,7 @@
       _verifyEpoch++;
       try { Object.keys(_pendingUpsert).forEach(function (k) { clearTimeout(_pendingUpsert[k]); }); } catch (e) {}
       _pendingUpsert = {}; _prevVisitCount = {}; _knownPatients = null;
+      _resaveAttempted = Object.create(null);
     });
   } catch (e) {}
   function verifySuppressed() {
@@ -582,6 +583,28 @@
      rolling window folds into the same self-replacing card; the card names the
      items, the state, and the safe retry. */
   var _svUnconfirmed = [], _svUnconfirmedCard = null, _svUnconfirmedTs = 0;
+
+  /* sv-1.1.0 (owner 2026-07-24: "6 saves not confirmed … do not rely on the
+     user to manually reload and retry"). A row still missing after the settle
+     is re-saved ONCE, automatically, before anything is shown. The retry
+     re-issues the SAME patient object through upsertPatient, which keys by
+     patient id — so it can only rewrite that exact record: it cannot create a
+     duplicate and cannot touch another chart. __mlsOrig skips this module's
+     own verify scheduling (no retry loop) while keeping every other guard in
+     the wrap chain. Only a retry that ALSO fails is worth interrupting the
+     doctor for. */
+  var _resaveAttempted = Object.create(null);
+  function resaveOnce(p) {
+    if (!p || p.id == null) return null;
+    var key = patientId(p);
+    if (_resaveAttempted[key]) return null;
+    _resaveAttempted[key] = 1;
+    var up = fn('upsertPatient');
+    if (!up) return null;
+    try { (up.__mlsOrig || up).call(window, p); } catch (e) { return null; }
+    return safe(function () { return verifyPatientSaved(p); });
+  }
+
   function warnSaveNotConfirmed(name) {
     var t = Date.now();
     if (t - _svUnconfirmedTs > 90000) _svUnconfirmed = [];
@@ -594,7 +617,8 @@
     _svUnconfirmedCard = banner('warn',
       n === 1 ? '⚠ Save not confirmed' : ('⚠ ' + n + ' saves not confirmed'),
       [shown + (n === 1 ? ' was' : ' were') + ' not found in the saved store after saving.',
-        'Your charts stay safe on the MLS server — pull or reload to re-sync, then retry if an item is truly missing.']);
+        'MLS already re-saved ' + (n === 1 ? 'it' : 'them') + ' automatically and checked again — still missing, so this needs a look. Nothing was written to another chart.',
+        'Pull that patient again to restore the record; your other charts are unaffected.']);
   }
 
   function scheduleUpsertVerify(p) {
@@ -648,6 +672,14 @@
           banner('info', 'Schedule shorthand — no separate chart created',
             ['"' + res.name + '" is a shorthand schedule name, so it was not stored as a separate patient record.',
               'If this is a real new patient, add them from Patients with their full name.'], { ttl: 8000 });
+          return;
+        }
+        /* Retry before reporting — see resaveOnce (sv-1.1.0). */
+        var healed = resaveOnce(p);
+        if (healed && healed.ok) {
+          _prevVisitCount[key] = healed.visitCount;
+          banner('ok', '✓ Saved & verified: ' + (healed.name || res.name || 'patient'),
+            ['The first save did not settle, so MLS saved it again and confirmed it.'], { ttl: 5000 });
           return;
         }
         warnSaveNotConfirmed(res.name);

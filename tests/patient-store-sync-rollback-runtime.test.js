@@ -31,7 +31,13 @@ function patientStoreBlock(file) {
    carry-forward in upsertPatient) after the live 2026-07-20 clobber. Still
    fully synchronous — the retired-marker sweep below proves the b429
    worker/journal experiment stays out. */
-const B448_PATIENT_STORE_SHA256 = 'acf7986a7abff098d76601353a47cdb6b78a1d190a2d523bcbd0774c89146334';
+/* b525 re-pin (owner 2026-07-24: "6 saves not confirmed … were not found in
+   the saved store after saving"): the synchronous writer gained
+   pts-rowguard-1.0.0 — savePatients may no longer delete a row written
+   within the recent window unless the caller passes {allowRemovals:true}
+   (purge / delete patient). Still fully synchronous, same MLSZ1 single-key
+   writer; behaviour is pinned by tests/patient-row-loss-guard.test.js. */
+const B448_PATIENT_STORE_SHA256 = '9e222d0b9a56fb096b3617c4093f1940b9a250be450d1bf7ea404ffac0a82cb5';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),
