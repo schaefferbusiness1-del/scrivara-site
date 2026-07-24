@@ -138,3 +138,18 @@ persistence, apply-without-pull, honest empty state, fail-closed stale/duplicate
 - ext 3.0.5 (b531): **682s (-25%)**, schedule 5/5, still 0/5 coverage-complete, but the failure mix MOVED: same-frame-name-mismatch x3 + visit-bodies-incomplete x2 (two charts now clear the identity gate and fail later instead of burning a full wrong-chart read).
 
 **HONEST VERDICT: the swap-settle pre-gate is a real speed and diagnosis win, not a fix.** The batch lane still cannot get the chart to swap for most patients. Combined with the earlier single-lane experiment (which refused with "athenaOne has a DIFFERENT patient open"), the evidence now points at the chart OPEN itself being a no-op in the batch lane on athena v26.7 — the frame keeps rendering patient N-1 because nothing actually navigated, so no amount of settle-polling can help. NEXT (needs live DOM evidence during a batch open, owner-present): instrument the batch chart-open click path against the live v26.7 DOM, confirm whether the open verb still targets a control that exists, and fix the opener — not the waiter. Do NOT claim ON x2 until a day reaches coverage-complete.
+
+## 2026-07-24 — chart-swap diagnosis CORRECTED: the opener is fine; the READ is not tab-bound
+
+Earlier today I wrote that the batch chart OPEN looked like a no-op on v26.7. **That was wrong, and this corrects it.** Reading the code path end to end:
+
+- The history loop DOES open each chart per patient: `feat_mls_schedimport_exact.js:2259` calls `window._assistReadChart(target, …)` with its own request id and deadline, immediately before the visits read at `:2375`. There is a bounded in-batch retry around it (si-1.7.2) precisely for "the chart OPEN landed on the previous patient".
+- The visits read is NOT bound to a tab. `background.js:9448 runAllVisits()` calls `pickEmrTab(frozenHint)` and reads whatever chart is open in whatever Athena tab it picks. The tabId that the chart was just proven in is never passed to it.
+
+**Multi-tab evidence:** a goto diagnostic earlier today reported the extension driving `tabId 256594014` while this session's tab group held Athena tab `256594376` — so at least TWO Athena tabs exist in the owner's Chrome. Project memory already carries this hazard class ("athenaTabs must be 1", write-test encounter gate).
+
+**Consequence:** if the chart is opened in tab A and the reader picks tab B, tab B is legitimately showing a different patient and the identity gate refuses with `same-frame-name-mismatch` — a CORRECT refusal protecting against a wrong-chart read. That explains why 3.0.5's settle-polling improved wall-clock (-25%) and moved two charts to a later failure stage but fixed nothing: no amount of waiting makes tab B become tab A.
+
+**Decisive experiment queued (cheap):** during a live pull, capture the tabId in the chart-open receipt and `vr.diag.tabId` from the visits read. Different → thread the proven tabId through `mlsAppReadAllVisits` and have `runAllVisits` use it instead of `pickEmrTab` (page + extension, 3.0.6). Identical → it is a true in-tab settle problem and the DOM work is needed instead.
+
+**Interim remedy for the owner:** keep exactly ONE athenaOne tab open while a pull runs. This costs nothing and, if the hypothesis holds, is the difference between 0/5 and 5/5 chart bodies.
