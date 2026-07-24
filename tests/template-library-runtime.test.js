@@ -244,18 +244,85 @@ async function uploadDedupeAndRetryHandle() {
   await assert.rejects(() => h2.context.tplMultiFile({ target: { files: tooLarge } }), /20 MB/);
 }
 
+/* Loading-states contract (b511 lane, owner-reproduced 2026-07-23): a hosted
+   form save must show its preview WHERE THE USER ACTED — result box under the
+   save row, centered scroll, busy button while the preview round-trips. */
+async function formSaveVisibility() {
+  function el(id) {
+    return {
+      id, style: {}, dataset: {}, value: '', textContent: '', innerHTML: '',
+      disabled: false, isConnected: true, onclick: null, scrollCalls: [],
+      scrollIntoView(opts) { this.scrollCalls.push(opts || null); },
+      parentElement: null, nextElementSibling: null, setAttribute() {}, appendChild() {},
+    };
+  }
+  const ids = {};
+  ['tplName', 'tplKeywords', 'tplText', 'tplMultiResult'].forEach(id => { ids[id] = el(id); });
+  ids.tplName.value = 'Form template';
+  ids.tplText.value = 'Body text';
+  const formRow = el('formRow');
+  const formParent = {
+    children: [],
+    insertBefore(node) { this.children.push(node); if (node.id) ids[node.id] = node; },
+    appendChild(node) { this.children.push(node); if (node.id) ids[node.id] = node; },
+  };
+  ids.tplText.parentElement = formParent;
+  ids.tplText.nextElementSibling = formRow;
+  formRow.parentElement = formParent;
+  const saveBtn = el('saveBtn');
+  saveBtn.textContent = '💾 Save template';
+  const doc = {
+    readyState: 'complete',
+    head: { appendChild() {} },
+    documentElement: { appendChild() {} },
+    getElementById(id) { return ids[id] || null; },
+    createElement() { return el(''); },
+    addEventListener() {},
+    querySelector(sel) { return /saveTemplateFromForm/.test(String(sel)) ? saveBtn : null; },
+  };
+  let releasePreview;
+  const previewGate = new Promise(resolve => { releasePreview = resolve; });
+  const h = makeHarness(async (url) => {
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: '', sets: [] });
+    if (url.endsWith('/api/template-imports/preview')) {
+      await previewGate;
+      return response(200, { preview: { targetSetId: null, targetVersion: 0, counts: { added: 1 }, detail: { rejected: [] }, proposedTemplateCount: 1, canCommit: true } });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  }, { document: doc, toast() {}, clearTplForm() {} });
+  h.setHosted(true);
+  const run = h.context.saveTemplateFromForm();
+  assert.strictEqual(saveBtn.disabled, true, 'save button must go busy while the preview round-trips');
+  assert(/Preparing preview/.test(saveBtn.textContent), 'busy button must say what is happening');
+  releasePreview();
+  await run;
+  assert.strictEqual(saveBtn.disabled, false, 'save button must restore after the preview lands');
+  assert.strictEqual(saveBtn.textContent, '💾 Save template', 'save button label must restore');
+  const formBox = ids.tplFormResult;
+  assert(formBox, 'form saves must create a result box beside the form');
+  assert(/Import preview — nothing saved yet/.test(formBox.innerHTML), 'the review card must render in the form-local box');
+  assert(/Commit one recoverable version/.test(formBox.innerHTML), 'the commit affordance must be in the form-local box');
+  assert.strictEqual(ids.tplMultiResult.innerHTML, '', 'form saves must not render into the above-the-fold upload box');
+  assert(formBox.scrollCalls.length >= 1 && formBox.scrollCalls[0] && formBox.scrollCalls[0].block === 'center',
+    'the review card must scroll to CENTER (nearest left it out of view — owner repro 2026-07-23)');
+}
+
 function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
+  assert(source.includes("VERSION='tl-1.2.0'"), 'form-save visibility lane must carry tl-1.2.0');
+  assert(source.includes('function importResultBox'), 'import previews must target the box where the user acted');
+  assert(source.includes("block:'center'"), 'import review must scroll into the middle of the viewport');
+  assert(source.includes("resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult'"), 'commit results must land in the same box as their preview');
   assert(!source.includes("addEventListener('click',importClick,{once:true})"), 'checking activate-after must not consume the commit listener');
   assert(source.includes('providedIdempotencyKey'), 'snapshot retries must retain their idempotency key');
   assert(source.includes("TEMPLATE_VERSION_CONFLICT"));
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260722tl112'));
+    assert(loader.includes('feat_mls_template_library.js?v=20260723tl120'));
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260722tl112');
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260723tl120');
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');
@@ -269,7 +336,8 @@ function staticContracts() {
   await conflictPreservesDeviceChanges();
   await failedCommitKeepsPreviewAndIdempotency();
   await uploadDedupeAndRetryHandle();
-  console.log('PASS template library runtime, isolation, preview/commit, conflict, retry, loader, and upload contracts');
+  await formSaveVisibility();
+  console.log('PASS template library runtime, isolation, preview/commit, conflict, retry, loader, upload, and form-save visibility contracts');
 })().catch(error => {
   console.error(error);
   process.exit(1);
