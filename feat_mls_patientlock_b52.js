@@ -85,7 +85,13 @@
       LOCK.snapshot = snapshotOf(currentActive());
       LOCK.capturing = true;
       LOCK.hasPendingWork = true;
-      return origStart.apply(this, arguments);
+      var out = origStart.apply(this, arguments);
+      /* 2026-07-23 wedge: startCapture returns false on EVERY refused start
+         (consent pending/declined/canceled, prep refusal, no recognizer). No
+         capture began, so no lock may remain — a stale capturing flag blocked
+         patient switching until a full reload. */
+      if (out === false) clearLock();
+      return out;
     };
   }
   if (isFn(window.stopCapture)) {
