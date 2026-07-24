@@ -24,8 +24,16 @@ const navigation = between(
   '  function syncTitle(){'
 );
 
-assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_history',label:'History'\},\s*\{id:'nav_analysis',label:'Practice'\},\s*\{id:'nav_studio',label:'Tools'\}/.test(navigation),
+/* Pin updated 2026-07-24 (owner /goal UI rework): History leaves the rail —
+   five lead routes; nav_history is FOLDED (hidden, still routable) and its
+   list stays reachable via Today's "View completed notes", patient charts,
+   and the command palette. */
+assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_analysis',label:'Practice'\},\s*\{id:'nav_studio',label:'Tools'\}/.test(navigation),
   'clinician lead routes lost their exact order or labels');
+assert(/FOLDED_NAV=\['nav_history'\]/.test(navigation),
+  'History must be deliberately folded, not accidentally dropped');
+assert(/data-mlsrd-folded/.test(redesign),
+  'folded rail tabs must be marked so the fold is inspectable');
 assert(!/id:'nav_orders',label:'Tasks'|label:'Tasks'/.test(navigation),
   'Orders was relabelled as a task inbox even though no real Tasks route exists');
 assert(/SECONDARY_NAV=\['nav_staffpull','mlsPtab_reviews','mlsPtab_send','nav_help'\]/.test(navigation),
@@ -155,12 +163,16 @@ vm.runInContext(`${navigation}\nthis.organizePrimaryNavigation=organizePrimaryNa
   { filename: 'clinician-navigation-runtime.js' });
 
 assert.strictEqual(context.organizePrimaryNavigation(), true);
-assert.deepStrictEqual(nav.children.slice(0, 6).map(node => node.id), [
-  'nav_visit', 'nav_patients', 'nav_calendar', 'nav_history', 'nav_analysis', 'nav_studio'
+/* 2026-07-24 UI rework: five lead routes; History is folded (attribute-marked,
+   hidden when a real style object exists) but never removed from the DOM. */
+assert.deepStrictEqual(nav.children.slice(0, 5).map(node => node.id), [
+  'nav_visit', 'nav_patients', 'nav_calendar', 'nav_analysis', 'nav_studio'
 ]);
-assert.deepStrictEqual(nav.children.slice(0, 6).map(node => node.childNodes[0].data.trim()), [
-  '🎙️ Today', '👥 Patients', '📅 Calendar', '📚 History', '📊 Practice', '✨ Tools'
+assert.deepStrictEqual(nav.children.slice(0, 5).map(node => node.childNodes[0].data.trim()), [
+  '🎙️ Today', '👥 Patients', '📅 Calendar', '📊 Practice', '✨ Tools'
 ]);
+assert.strictEqual(nodes.nav_history.getAttribute('data-mlsrd-folded'), '1',
+  'History must be folded deliberately (marked), not dropped');
 assert.strictEqual(nodes.nav_orders.childNodes[0].data.trim(), 'Orders', 'real Orders route was renamed');
 assert.strictEqual(nav.attrs.role, 'navigation');
 assert.strictEqual(nav.attrs['aria-label'], 'Primary navigation');

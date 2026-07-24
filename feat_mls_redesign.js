@@ -423,14 +423,18 @@
   /* Keep the clinician's repeat-every-visit destinations together without
      cloning or replacing a route. Orders is deliberately NOT relabelled as
      "Tasks": it is a real order workspace, not a general clinical inbox. */
+  /* UI rework (owner /goal 2026-07-24 "free the doctor from all the
+     buttons"): History leaves the rail. Its list stays one tap away — Today's
+     "View completed notes", every patient chart, the command palette, and
+     showView('history') all still open it. */
   var PRIMARY_NAV=[
     {id:'nav_visit',label:'Today'},
     {id:'nav_patients',label:'Patients'},
     {id:'nav_calendar',label:'Calendar'},
-    {id:'nav_history',label:'History'},
     {id:'nav_analysis',label:'Practice'},
     {id:'nav_studio',label:'Tools'}
   ];
+  var FOLDED_NAV=['nav_history'];
   var SECONDARY_NAV=['nav_staffpull','mlsPtab_reviews','mlsPtab_send','nav_help'];
   function navDirectText(tab){
     try{ for(var i=0;i<tab.childNodes.length;i++) if(tab.childNodes[i].nodeType===3) return tab.childNodes[i]; }catch(e){}
@@ -518,6 +522,15 @@
       for(var i=0;i<PRIMARY_NAV.length;i++){
         var spec=PRIMARY_NAV[i], tab=$(spec.id);
         if(tab&&tab.parentElement===nav){ setClinicianNavLabel(tab,spec.label); desired.push(tab); }
+      }
+      for(var f=0;f<FOLDED_NAV.length;f++){
+        try{
+          var foldTab=$(FOLDED_NAV[f]);
+          if(foldTab&&foldTab.getAttribute('data-mlsrd-folded')!=='1'){
+            foldTab.setAttribute('data-mlsrd-folded','1');
+            if(foldTab.style) foldTab.style.display='none';
+          }
+        }catch(eFold){}
       }
       var settled=true;
       for(var d=0;d<desired.length;d++) if(tabs[d]!==desired[d]){ settled=false; break; }
