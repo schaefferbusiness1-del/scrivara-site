@@ -33007,7 +33007,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b522';
+  window.__MLS_AV = window.__MLS_AV || 'b523';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33317,7 +33317,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b522';
+  var MLS_APP_BUILD='2026-07-24-b523';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44706,3 +44706,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* REJECTED_EEV_ROLLBACK_END */
 ;(function(){try{var A='feat_mls_premium_gate.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260718pmg110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pmg-1.1.0: plan-level truth - Pay Report + Reviews + widget-deck builder openers upsell instead of opening for signed-in non-Premium; demo/logged-out untouched */
 ;(function(){try{var A='feat_mls_pull_device_picker.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717pdp100';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pdp-1.0.0: choose which registered computer runs Athena pulls (office/secondary); relay targets exact deviceId; phones excluded as pullers */
+
+/* br-1.0.0 boot-readiness strip (loading lane slice 2, owner directive: no
+   surface may look ready before it is). After sign-in there is a window where
+   buttons exist but the satellite module train is still installing; this thin
+   strip names that state honestly and removes itself the moment the core
+   engines are live (or after 30s, whichever comes first - it never wedges). */
+;(function(){try{
+  if(window.__mlsBootReadiness)return;window.__mlsBootReadiness={installed:true,version:'br-1.0.0'};
+  var CORE=[['Athena pull engine',function(){return !!(window.__mlsSI&&window.__mlsSI.pull)}],
+            ['Assistant',function(){return !!(window.__mlsAsstFix&&window.__mlsAsstFix.installed)}],
+            ['Copilot Voice',function(){return !!(window.__mlsCopilotVoiceV2&&window.__mlsCopilotVoiceV2.installed)}],
+            ['Patient safety locks',function(){return !!window.__mlsPatientLock}]];
+  var el=null,t0=Date.now();
+  function paint(n,total){
+    if(!el){el=document.createElement('div');el.id='mlsBootReadiness';el.setAttribute('role','status');
+      el.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147482800;background:#1A211C;color:#EAF1EE;font:600 12px system-ui;border-radius:0 0 10px 10px;padding:5px 14px;opacity:.92;transition:opacity .4s';
+      (document.body||document.documentElement).appendChild(el);}
+    el.textContent='Getting MLS ready - '+n+' of '+total+' engines live';
+  }
+  function gone(){if(el){el.style.opacity='0';setTimeout(function(){try{el.remove()}catch(e){}},450);el=null;}}
+  var iv=setInterval(function(){try{
+    var n=0;for(var i=0;i<CORE.length;i++){try{if(CORE[i][1]())n++}catch(e){}}
+    if(n>=CORE.length||Date.now()-t0>30000){clearInterval(iv);gone();return}
+    if(document.body)paint(n,CORE.length);
+  }catch(e2){try{clearInterval(iv)}catch(e3){}gone();}},400);
+}catch(e){}})();
