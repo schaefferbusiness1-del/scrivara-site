@@ -745,70 +745,38 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <p>Commercial terms, refunds and production scope must be reviewed before checkout or external reward links are enabled.</p>
 </div>
 </div>
-<div class="price-grid">
-<div class="price">
-<div class="tier">Lite</div>
-<div class="amt">$30<span> / provider / mo</span></div>
-<div class="note">Just the scribe · or $300/yr</div>
-<ul>
-<li>Unlimited visits &amp; AI notes</li>
-<li>Browser-based ambient capture</li>
-<li>Copy / export draft for clinician review</li>
-<li>HIPAA-compliant security controls enforced in production</li>
-</ul>
-<button class="btn btn-ghost" onclick="startCheckout('lite_monthly', this)">Discuss Lite evaluation</button>
-<span class="demolink" data-checkout-note></span>
-</div>
-<div class="price">
-<div class="tier">Standard</div>
-<div class="amt">$44<span> / provider / mo</span></div>
-<div class="note">Everything most clinics need · or $440/yr</div>
-<ul>
-<li>Everything in Lite</li>
-<li>Suggested E/M, ICD-10 &amp; CPT + reimbursement</li>
-<li>One-click superbill</li>
-<li>Athena candidate workflow under validation</li>
-<li>Synthetic patient-intake evaluation</li>
-<li>Outcomes · referral, UR, IME &amp; procedure notes</li>
-<li><b>Legal / IME attorney portal</b> — held; no intake, payment, signature or release</li>
-<li>2FA, audit and storage controls under verification</li>
-</ul>
-<button class="btn btn-ghost" onclick="startCheckout('standard_monthly', this)">Discuss Standard evaluation</button>
-<span class="demolink" data-checkout-note></span>
-</div>
+<div class="price-grid"><!-- Owner 2026-07-23: only Premium (price unchanged) and a call-us group card are displayed; Lite/Standard retired from display; checkout stays held; Stripe/backend untouched. -->
 <div class="price feat">
-<span class="tag">Most popular</span>
+<span class="tag">Everything included</span>
 <div class="tier">Premium</div>
 <div class="amt">$60<span> / provider / mo</span></div>
-<div class="note">For data-driven practices · or $600/yr</div>
+<div class="note">The complete MLS platform · or $600/yr</div>
 <ul>
-<li>Everything in Standard</li>
+<li>Unlimited visits &amp; AI notes, ambient capture</li>
+<li>Suggested E/M, ICD-10 &amp; CPT + one-click superbill</li>
 <li class="star">Faster generation &amp; model choice</li>
-<li class="star">Reputation &amp; marketing concepts — held</li>
 <li class="star">AI Studio — MLS Copilot assistant</li>
 <li class="star">Unlimited custom widgets + library</li>
 <li class="star">Ask-your-data Study Engine</li>
-<li class="star">Monthly Pay Reports</li>
-<li class="star">Branded, white-label exports</li>
-<li class="star">Referral outcome reports</li>
-<li class="star">Practice-wide outcomes registry</li>
+<li class="star">Monthly Pay Reports &amp; branded exports</li>
+<li class="star">Referral outcomes &amp; practice-wide registry</li>
 <li>Team analytics &amp; priority support</li>
+<li>HIPAA-compliant security controls enforced in production</li>
 </ul>
 <button class="btn btn-primary" onclick="startCheckout('premium_monthly', this)">Discuss Premium evaluation</button>
 <span class="demolink" data-checkout-note></span>
 </div>
 <div class="price">
-<div class="tier">Enterprise</div>
-<div class="amt">$40<span> / provider / mo</span></div>
-<div class="note">3+ providers · or $400/yr each</div>
+<div class="tier">Group rates</div>
+<div class="amt">Let’s talk</div>
+<div class="note">3+ providers — volume pricing below the Premium rate</div>
 <ul>
 <li>Everything in Premium, for the whole group</li>
-<li>Volume pricing — the full Premium feature set below the Premium rate</li>
 <li>White-glove onboarding &amp; template migration</li>
 <li>Practice-wide rollout, training &amp; team setup</li>
 <li>Dedicated support with a named contact</li>
 </ul>
-<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">Discuss group evaluation</button>
+<button class="btn btn-ghost" onclick="startCheckout('enterprise_monthly', this)">📞 Call us for group rates</button>
 <span class="demolink" data-checkout-note></span>
 </div>
 </div>
@@ -1139,7 +1107,7 @@ sendpatient:{g:'📤',t:'Patient portal',badge:'<span class="badge-soon">Validat
 api:{g:'🧩',t:'Synthetic developer API',intro:'Evaluation contracts exist, while PHI and production integration access remain closed.',steps:[['Synthetic only','Use test fixtures, not real patient information.'],['Server gate','PHI routes stay closed until server readiness checks pass.'],['Official preview','SMART production claims wait for official sandbox evidence.']],cta:[{label:'See readiness status',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
 bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Held</span>',intro:'The directory is not published while rating evidence, consent and privacy controls are reviewed.',steps:[['No ratings','No real-visit score is published in this release.'],['Rights preserved','The opt-out and correction path remains available.'],['Evidence first','Any future launch requires reviewed methodology and substantiation.']]},
 security:{g:'🔒',t:'Security evaluation',intro:'Synthetic evaluation only — security controls require production verification before real patient information is allowed.',steps:[['Protect','Encryption and backup controls are under test.'],['Control','Two-factor authentication and inactivity log-off are under test.'],['Verify','Audit evidence and vendor/legal readiness must be independently confirmed.'],['You review','Clinical drafts require clinician review; final actions stay in the EHR.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
-'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'Flat per-provider pricing with generous fair use — annual plans get two months free.',steps:[['Lite — $30/mo','Just the scribe: unlimited AI notes and capture.'],['Standard — $44/mo','Coding & reimbursement, intake, outcomes and the attorney portal.'],['Premium — $60/mo','Reputation suite, ask-your-data Study Engine and white-label exports.'],['Enterprise — $40/provider/mo (3+ providers)','Everything in Premium plus white-glove onboarding and dedicated support for the whole group.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
+'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'One complete plan per provider — annual pays for ten months. Groups call for volume rates.',steps:[['Premium — $60/mo','The complete MLS platform: notes, coding, Copilot, Study Engine, outcomes and white-label exports.'],['Group rates — call us','3+ providers: everything in Premium at volume pricing, with white-glove onboarding and dedicated support.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-hours':{g:'⏱️',t:'Outcome evidence pending',intro:'No independently verified time-savings result is published for this release.',steps:[['Define','Specify the baseline, cohort and measurement period.'],['Measure','Collect repeatable workflow evidence with practice approval.'],['Publish','Share only claims supported by the measured data.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
 'stat-codes':{g:'🧾',t:'E/M · ICD-10 · CPT on every note',intro:'Every note lands with suggested codes for you to confirm.',steps:[['E/M','The visit level your documentation actually supports.'],['ICD-10','Diagnoses pulled from what the note describes.'],['CPT','Procedures, plus a one-click superbill.']],cta:[{label:'See coding',href:'#features',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-emr':{g:'🔌',t:'Integration readiness',intro:'Athena is the current candidate; other EHRs have no published compatibility or delivery guarantee.',steps:[['Athena','Exact-origin schedule and review-first fixtures are passing in isolated Chrome.'],['FHIR / SMART','Official preview validation remains pending.'],['Other EHRs','Scope is documented only after technical discovery and testing.']],cta:[{label:'See readiness status',href:'#emr',primary:true},{label:'Book a demo',href:'#demo'}]}

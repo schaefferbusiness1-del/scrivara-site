@@ -16,31 +16,29 @@ const root = path.join(__dirname, '..');
 const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const scribe = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
-// --- Enterprise $40 display, matching the backend PLANS amounts -------------
-// (owner directive 2026-07-21: $40/provider/mo and $400/provider/yr; the
-//  3-provider minimum and every other tier price stay unchanged)
-assert(/<div class="tier">Enterprise<\/div>\s*<div class="amt">\$40<span> \/ provider \/ mo<\/span><\/div>/.test(index),
-  'Enterprise must display $40/provider/mo');
-assert(index.includes('3+ providers · or $400/yr each'), 'Enterprise must show the $400 annual equivalent and 3+ minimum');
-assert(!/\$50<span> \/ provider \/ mo/.test(index), 'the retired $50 Enterprise price must not appear');
-assert(!/\$20<span> \/ provider \/ mo/.test(index), 'the retired $20 Enterprise price must not appear');
-assert(!index.includes('$100/yr'), 'the retired $100 Enterprise annual must not appear');
-assert(!/Enterprise — \$50\/mo/.test(index) && !/Enterprise — \$20\//.test(index),
-  'retired Enterprise prices must not appear in the stat/tooltip copy');
-assert(/Enterprise — \$40\/provider\/mo \(3\+ providers\)/.test(index),
-  'the stat/tooltip copy must carry the current $40 Enterprise price');
-// $40 sits above Lite ($30): the card must not claim to undercut EVERY solo tier.
-assert(!index.includes('below every solo tier per provider'),
-  'the "below every solo tier" claim is false at $40 (Lite is $30) and must stay retired');
-
-// annual equivalents stay present and consistent on every tier
-for (const annual of ['$300/yr', '$440/yr', '$600/yr', '$400/yr']) {
-  assert(index.includes(annual), 'missing annual equivalent: ' + annual);
-}
+// --- Two-card display: Premium $60 + Group rates (owner directive 2026-07-23:
+//     "Only keep Premium and Group rates; Premium stays $60; group is a call.")
+//     DISPLAY ONLY — the backend PLANS amounts and Stripe configuration are
+//     untouched; checkout stays held behind MLS_SALES_RELEASED.
+assert(/<div class="tier">Premium<\/div>\s*<div class="amt">\$60<span> \/ provider \/ mo<\/span><\/div>/.test(index),
+  'Premium must display $60/provider/mo');
+assert(index.includes('$600/yr'), 'Premium must show the $600 annual equivalent');
+assert(/<div class="tier">Group rates<\/div>/.test(index), 'the Group rates card must exist');
+assert(/Call us for group rates/.test(index), 'group pricing is a call, not a checkout price');
+assert(/3\+ providers/.test(index), 'the 3+ provider minimum stays stated');
+assert(!/<div class="tier">Lite<\/div>/.test(index) && !/<div class="tier">Standard<\/div>/.test(index)
+  && !/<div class="tier">Enterprise<\/div>/.test(index),
+  'Lite/Standard/Enterprise cards are retired from display (2026-07-23)');
+assert(!/\$30<span> \/ provider \/ mo/.test(index) && !/\$44<span> \/ provider \/ mo/.test(index)
+  && !/\$40<span> \/ provider \/ mo/.test(index),
+  'retired tier prices must not appear as displayed amounts');
+assert(!/Lite — \$30\/mo/.test(index) && !/Standard — \$44\/mo/.test(index) && !/Enterprise — \$40\/provider\/mo/.test(index),
+  'retired tiers must not appear in the stat/tooltip copy');
+assert(/Group rates — call us/.test(index), 'the stat/tooltip copy must carry the group-rates call CTA');
 
 // --- no false error bars; capability-driven status --------------------------
 assert(!index.includes('>Checkout unavailable<'), 'static per-card "Checkout unavailable" bars must be gone');
-assert((index.match(/<span class="demolink" data-checkout-note>/g) || []).length === 4, 'each card keeps one truthful note slot');
+assert((index.match(/<span class="demolink" data-checkout-note>/g) || []).length === 2, 'each displayed card keeps one truthful note slot');
 assert(index.includes('id="pricingStatus"'), 'one pricing-area status line must exist');
 assert(index.includes("fetch(BILLING_API + '/api/billing/health'"), 'the status must come from the server capability check');
 assert(!/function startCheckout[\s\S]{0,200}alert\(/.test(index), 'the checkout CTA must not be a dead alert()');
