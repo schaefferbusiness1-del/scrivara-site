@@ -265,7 +265,13 @@ async function main() {
     'op-prep ESC-to-close handler is missing');
   assert(scribeFlow.includes('Couldn’t draft '+"'+row.appt.name+'"+'’s op note'), 'draft failure no longer names the row/reason');
   assert(scribeFlow.includes("window.__mlsLastOpFidelityError||''"), 'draft failure does not read the shared error channel');
-  assert(scribeFlow.includes("_pendingBackupRemove(rec.id); return 'synced';"), 'saveNoteToBackend no longer reports sync status');
+  /* synctruth-1.0.0 (owner 2026-07-24): saveNoteToBackend still reports its
+     status, but 'synced' is now reserved for a real 2xx — a 402/403 refusal
+     reports 'declined' instead of masquerading as a backup. */
+  assert(scribeFlow.includes("if(r.ok){ _pendingBackupRemove(rec.id); _svrDeclinedRemove(rec.id); return 'synced'; }"),
+    'saveNoteToBackend no longer reports sync status on a real success');
+  assert(scribeFlow.includes("return 'declined';"),
+    'saveNoteToBackend must report a server refusal honestly instead of calling it synced');
   assert(scribeFlow.includes('label class="mini" for="opPrepProc_'), 'procedure input lost its label association');
 
   console.log('PASS op-note workflow hardening: appointment provider/facility carried, template staleness remembered, diagnosis relevance gated, attestation restored, real failure reasons surfaced, drafts resume without duplicates, machine fills are not clinician edits, cross-patient history gated, deep-target needle default, dialog a11y + honest sync status');

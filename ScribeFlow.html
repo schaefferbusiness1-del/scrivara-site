@@ -5380,6 +5380,21 @@ async function logout(force){
   if(force!==true && typeof getQolConfirmLogout==='function' && getQolConfirmLogout()){
     if(!await mlsConfirm('Log out of MLS now?')) return;
   }
+  /* synctruth-1.0.0 (owner 2026-07-24): sign-out purges local clinical state BY
+     DESIGN. Notes the server never accepted — still queued, or refused outright
+     with 402/403 — exist ONLY on this device, so that purge is silent permanent
+     loss. Name the count and let the doctor stop. The forced inactivity logout
+     cannot prompt, which is exactly why those notes now carry a visible
+     "⏳ Syncing" / "📱 Device only" chip while the session is alive. */
+  if(force!==true && backendMode()){
+    var _unsynced=0;
+    try{ _unsynced=(_pendingBackupGet()||[]).length+(_svrDeclinedGet()||[]).length; }catch(e){}
+    if(_unsynced>0){
+      var _okUnsynced=false;
+      try{ _okUnsynced=await mlsConfirm(_unsynced+' note'+(_unsynced===1?'':'s')+' on this device '+(_unsynced===1?'has':'have')+' NOT been backed up to your account. Signing out clears local data and '+(_unsynced===1?'that copy':'those copies')+' cannot be recovered. Sign out anyway?'); }catch(e){ _okUnsynced=false; }
+      if(!_okUnsynced) return;
+    }
+  }
   const _logoutEmail=(session&&session.email)||getSessionEmail()||'';
   const _logoutHosted=backendMode();
   const _logoutToken=_logoutHosted?bkToken():'';
@@ -13325,6 +13340,7 @@ function opPrepSave(i){
   var isComplete=unresolved.length===0;
   var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
   if(!p){ try{ toast('Op note not saved: exact patient identity could not be verified. Re-open it from that patient’s chart.','err'); }catch(e){} return; }
+  var __opSaved=false;
   try{
     var ns=getNotes();
     var cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
@@ -13332,9 +13348,27 @@ function opPrepSave(i){
     if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
-    try{ if(typeof saveNoteToBackend==='function'){ var sv=ns.find(function(x){ return x.id===row._noteId; }); if(sv) saveNoteToBackend(sv); } }catch(e){}
-  }catch(e){}
+    /* opsv-1.0.0 (owner 2026-07-24: "every save must be verified"): PROVE the
+       write before claiming it. The notes store is plain JSON sharing the ~5MB
+       origin budget with transcripts, SOAP bodies and chart-import blocks, so a
+       QuotaExceededError (or a browser that refuses storage entirely) is
+       reachable — and it used to be swallowed here while the green "✓ Saved to
+       History" message printed anyway, losing a FINISHED operative note behind
+       an affirmatively false receipt. Read the note back before saying a word. */
+    __opSaved=((typeof getNotes==='function'?getNotes():[])||[]).some(function(x){ return x&&x.id===row._noteId; });
+    if(__opSaved){ try{ if(typeof saveNoteToBackend==='function'){ var sv=ns.find(function(x){ return x.id===row._noteId; }); if(sv) saveNoteToBackend(sv); } }catch(e){} }
+  }catch(e){ __opSaved=false; }
   var msg=document.getElementById('opPrepMsg_'+i);
+  if(!__opSaved){
+    /* Never navigate away from unsaved clinical text, and never claim a chart
+       write that did not happen. The note stays on screen so it can be copied. */
+    if(msg){
+      msg.style.color='#b4231e';
+      msg.innerHTML='⚠ This op note could NOT be saved on this device (storage error). Nothing was written to '+esc(p.name)+'’s chart. Copy the note text above before closing this window, then free space and try again.';
+    }
+    try{ toast('Op note NOT saved — device storage error. Copy the text before closing.','err'); }catch(e){}
+    return;
+  }
   if(msg){
     if(isComplete){
       msg.innerHTML='✓ Saved to '+esc(p.name)+'’s History · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#204034;font-weight:700">Open in History →</a>';
@@ -14445,6 +14479,18 @@ function _pendingBackupGet(){ try{ return JSON.parse(localStorage.getItem(uns('p
 function _pendingBackupSet(a){ try{ localStorage.setItem(uns('pendingBackup'), JSON.stringify(Array.from(new Set(a)).slice(0,1000))); }catch(e){} _renderBackupBadge(); try{ if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(e2){} }
 function _pendingBackupAdd(id){ if(!id) return; var a=_pendingBackupGet(); if(a.indexOf(id)<0){ a.push(id); _pendingBackupSet(a); } else { _renderBackupBadge(); } }
 function _pendingBackupRemove(id){ var a=_pendingBackupGet(); if(a.indexOf(id)>=0){ _pendingBackupSet(a.filter(function(x){ return x!==id; })); } }
+/* synctruth-1.0.0 (owner 2026-07-24: "every save must be verified … clearly
+   reported"). A 402 (plan gate) or 403 (access refused) means the server
+   REFUSED to store the note — it is not a backup. Treating it as 'synced' both
+   dropped the note from the retry queue and painted a "☁ Synced · Backed up to
+   your account" chip over a note that exists on this device only, which is the
+   exact class of false receipt that hid the patient row loss. Declined notes
+   get their own honest state: kept locally, never silently retried forever,
+   never claimed as backed up. */
+function _svrDeclinedGet(){ try{ return JSON.parse(localStorage.getItem(uns('serverDeclined'))||'[]')||[]; }catch(e){ return []; } }
+function _svrDeclinedSet(a){ try{ localStorage.setItem(uns('serverDeclined'), JSON.stringify(Array.from(new Set(a)).slice(0,1000))); }catch(e){} try{ if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(e2){} }
+function _svrDeclinedAdd(id){ if(!id) return; var a=_svrDeclinedGet(); if(a.indexOf(id)<0){ a.push(id); _svrDeclinedSet(a); } }
+function _svrDeclinedRemove(id){ var a=_svrDeclinedGet(); if(a.indexOf(id)>=0){ _svrDeclinedSet(a.filter(function(x){ return x!==id; })); } }
 function _renderBackupBadge(){
   var n=_pendingBackupGet().length;
   var el=document.getElementById('_backupBadge');
@@ -14462,7 +14508,8 @@ async function _retryPendingBackups(manual){
     try{
       var r=await fetch(bkBase()+'/api/records',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({client_id:rec.id, patient_external_id:rec.patientId||null, record:rec, meta:recordMeta(rec)})});
       if(r.status===401){ handle401(); return; }
-      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); }
+      if(r.ok){ _pendingBackupRemove(rec.id); _svrDeclinedRemove(rec.id); }
+      else if(r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); _svrDeclinedAdd(rec.id); }
     }catch(e){ /* still offline — keep it queued for the next round */ }
   }
   if(manual){ var left=_pendingBackupGet().length; try{ toast(left?(left+' still pending — I\'ll keep retrying.'):'All notes backed up to the server.', left?'':'ok'); }catch(e){} }
@@ -14485,8 +14532,12 @@ function saveNoteToBackend(rec){
         meta: recordMeta(rec)                    // non-PHI plaintext meta for analytics
       })
     }).then(r=>{
-      if(r.status===401){ handle401(); return 'queued'; }
-      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); return 'synced'; }
+      /* 401: the session died mid-save. Queue it FIRST — the old code returned
+         'queued' without ever queueing, so the note was never retried. */
+      if(r.status===401){ _pendingBackupAdd(rec.id); handle401(); return 'queued'; }
+      if(r.ok){ _pendingBackupRemove(rec.id); _svrDeclinedRemove(rec.id); return 'synced'; }
+      /* 402/403 = the server REFUSED to store this note. Not a backup. */
+      if(r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); _svrDeclinedAdd(rec.id); return 'declined'; }
       _pendingBackupAdd(rec.id); return 'queued';   // server rejected — queue for retry
     }).catch(()=>{ _pendingBackupAdd(rec.id); return 'queued'; }); // offline — queue for retry
   }catch(e){ _pendingBackupAdd(rec.id); }
@@ -14616,10 +14667,16 @@ function renderHistory(){
   /* Loading-lane slice 3 (owner 2026-07-23): the _pendingBackup retry queue
      was invisible app-wide — every saved note now shows its sync truth. */
   const _pendingSync=new Set(hosted&&typeof _pendingBackupGet==='function'?_pendingBackupGet():[]);
+  /* synctruth-1.0.0: a note the server REFUSED (402 plan gate / 403 access)
+     used to render "☁ Synced · Backed up to your account". It says so honestly
+     now, so the doctor knows that copy lives on this device only. */
+  const _declined=new Set(hosted&&typeof _svrDeclinedGet==='function'?_svrDeclinedGet():[]);
   const _syncBadge=(n)=> hosted
-    ? (_pendingSync.has(n.id)
-        ? ' <span class="badge draft" title="Not on the server yet — MLS retries automatically every minute and when you come back online">⏳ Syncing</span>'
-        : ' <span class="badge" style="background:#e8f5ed;color:#204034;border-color:#cfe0d7" title="Backed up to your account (encrypted)">☁ Synced</span>')
+    ? (_declined.has(n.id)
+        ? ' <span class="badge draft" style="background:#fff7e6;color:#8a5a00;border-color:#f0d9a0" title="Your account did not accept a server copy of this note — it is saved on this device only. Export or copy it if this device may be replaced.">📱 Device only</span>'
+        : _pendingSync.has(n.id)
+          ? ' <span class="badge draft" title="Not on the server yet — MLS retries automatically every minute and when you come back online">⏳ Syncing</span>'
+          : ' <span class="badge" style="background:#e8f5ed;color:#204034;border-color:#cfe0d7" title="Backed up to your account (encrypted)">☁ Synced</span>')
     : ' <span class="badge draft" title="Saved only in this browser — sign in to back it up to your account">📱 This device</span>';
   var _histHtml=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
@@ -27651,7 +27708,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b531';
+  window.__MLS_AV='b532';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

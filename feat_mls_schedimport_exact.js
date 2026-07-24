@@ -3171,8 +3171,44 @@
      released by the platform when the returned promise settles, including all
      deadline failures. ifAvailable prevents an old/other MLS tab from queuing
      a surprise pull later; the user must explicitly retry instead. */
+  /* ---------------------------------------------------------------------
+     pr-1.0.0 — a pull survives a refresh or leaving the page.
+     Owner 2026-07-24: "it should keep pulling and working even if I refresh or
+     go to a different page." The pull engine lives in the page, so a reload
+     used to kill it silently and throw away 15-45 minutes of work with no
+     trace. The pull now records a RESUME INTENT before it starts and clears it
+     only when the day is genuinely complete; the next load picks it up and
+     continues where it left off. si-2.0.0 carries make that cheap — patients
+     already verified are skipped in seconds, so a resume pays only for the
+     work that was actually still outstanding.
+     Bounded on purpose: an intent older than 2h is dropped, at most 2 automatic
+     resumes are attempted (a day that keeps failing must not loop forever), a
+     pull running in another tab is never disturbed, and the doctor always sees
+     the countdown with a way to stop it.
+     --------------------------------------------------------------------- */
+  var RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000, RESUME_MAX_ATTEMPTS = 2, RESUME_COUNTDOWN_S = 10;
+  function resumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("pullResumeV1") : "pullResumeV1"; }, "pullResumeV1"); }
+  function resumeGet() { return safe(function () { var r = window.localStorage.getItem(resumeKey()); return r ? JSON.parse(r) : null; }, null); }
+  function resumeSave(rec) { safe(function () { window.localStorage.setItem(resumeKey(), JSON.stringify(rec)); }); }
+  function resumeClear() { safe(function () { window.localStorage.removeItem(resumeKey()); }); }
+  function resumeBusyElsewhere() {
+    var k = safe(function () { return isFn(window.uns) ? window.uns("mlsPullBusyXTabV1") : "mlsPullBusyXTabV1"; }, "mlsPullBusyXTabV1");
+    var at = safe(function () { return Number(window.localStorage.getItem(k) || 0); }, 0);
+    return !!(at && Date.now() - at < 90000);
+  }
+
   function pull(opts) {
     opts = opts || {};
+    var __resumeDate = String(opts.date || "");
+    if (__resumeDate) {
+      var __prev = resumeGet();
+      resumeSave({
+        date: __resumeDate,
+        startedAt: Date.now(),
+        attempts: (__prev && __prev.date === __resumeDate) ? Number(__prev.attempts || 0) : 0,
+        includeHistory: opts.includeHistory !== false
+      });
+    }
     var run = function () {
       return withPatientBatch("schedule-pull", function (token) {
         var runOpts = {};
@@ -3187,6 +3223,9 @@
         : "Another explicit pull is still running in this MLS tab.", includeHistory: opts.includeHistory !== false, retry: {} };
     }).then(function (value) {
       lastPullResult = value || null;
+      /* Clear the intent only when the day is genuinely finished. An honest
+         partial keeps it, so the next load continues instead of forgetting. */
+      if (__resumeDate && value && value.complete === true) resumeClear();
       return value;
     });
   }
@@ -3389,12 +3428,75 @@
     var n = 0, iv = setInterval(function () { installImport(); if (++n > 8) clearInterval(iv); }, 1200);
   }
 
+  /* pr-1.0.0 resume driver: on load, continue a pull the page never finished. */
+  var resumeTimer = null, resumeCard = null;
+  function resumeDismiss(clearIntent) {
+    if (resumeTimer) { safe(function () { clearInterval(resumeTimer); }); resumeTimer = null; }
+    if (resumeCard) { safe(function () { resumeCard.remove(); }); resumeCard = null; }
+    if (clearIntent) resumeClear();
+  }
+  function resumeStart(rec) {
+    resumeDismiss(false);
+    var prev = resumeGet() || rec;
+    resumeSave({ date: rec.date, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1, includeHistory: rec.includeHistory !== false });
+    safe(function () {
+      pull({ date: rec.date, includeHistory: rec.includeHistory !== false, onStatus: function (m, k) {
+        safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(m, k); });
+      } });
+    });
+  }
+  function resumeOffer(rec) {
+    if (resumeCard || typeof document === "undefined" || !document.body) return;
+    var left = RESUME_COUNTDOWN_S;
+    var box = document.createElement("div");
+    box.id = "mlsPullResumeCard";
+    box.setAttribute("role", "status");
+    box.style.cssText = "position:fixed;left:16px;bottom:84px;z-index:9000;max-width:340px;background:#eef6f1;border:1px solid #cfe0d7;color:#204034;border-radius:12px;padding:11px 13px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.16)";
+    box.innerHTML = '<div style="font-weight:700;margin-bottom:3px">↻ Unfinished pull for ' + String(rec.date).replace(/[<>&"]/g, "") + '</div>' +
+      '<div id="mlsPullResumeMsg" style="font-size:12.5px;line-height:1.35">This page reloaded before the pull finished. Continuing in ' + left + 's — already-verified charts are skipped.</div>' +
+      '<div style="margin-top:8px;display:flex;gap:6px"><button type="button" id="mlsPullResumeGo" style="border:1px solid #2e6a4b;background:#2e6a4b;color:#fff;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Continue now</button>' +
+      '<button type="button" id="mlsPullResumeNo" style="border:1px solid #bcd0c5;background:#fff;color:#204034;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Not now</button></div>';
+    document.body.appendChild(box);
+    resumeCard = box;
+    safe(function () { document.getElementById("mlsPullResumeGo").onclick = function () { resumeStart(rec); }; });
+    safe(function () { document.getElementById("mlsPullResumeNo").onclick = function () { resumeDismiss(true); }; });
+    resumeTimer = setInterval(function () {
+      left--;
+      if (left <= 0) { resumeStart(rec); return; }
+      safe(function () { var m = document.getElementById("mlsPullResumeMsg"); if (m) m.textContent = "This page reloaded before the pull finished. Continuing in " + left + "s — already-verified charts are skipped."; });
+    }, 1000);
+  }
+  function maybeResumePull() {
+    var rec = resumeGet();
+    if (!rec || !rec.date) return;
+    if (!(Date.now() - Number(rec.startedAt || 0) < RESUME_MAX_AGE_MS)) { resumeClear(); return; }
+    if (Number(rec.attempts || 0) >= RESUME_MAX_ATTEMPTS) return;   // never loop on a day that keeps failing
+    if (pullRunning || resumeBusyElsewhere()) return;               // another tab owns it
+    resumeOffer(rec);
+  }
+  safe(function () {
+    if (typeof document === "undefined") return;
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      if (tries > 10) { safe(function () { clearInterval(iv); }); return; }
+      if (!document.body) return;
+      var signedIn = safe(function () { return !isFn(window.backendMode) || !window.backendMode() || !!(isFn(window.bkToken) && window.bkToken()); }, true);
+      if (!signedIn) return;                                        // never resume over a sign-in gate
+      safe(function () { clearInterval(iv); });
+      maybeResumePull();
+    }, 3000);
+  });
+
   window.__mlsSI = {
     installed: true,
     version: VERSION,
     asset: "feat_mls_schedimport_exact.js",
     importAppts: importAppts,
     pull: pull,
+    resumeState: resumeGet,
+    resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
+    _maybeResumePull: maybeResumePull,
     pullMonth: pullMonth,
     pullCalendarSelection: pullCalendarSelection,
     calendarSelection: calendarSelection,

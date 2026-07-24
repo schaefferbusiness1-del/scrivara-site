@@ -119,6 +119,8 @@ const tests = [
   'save-verify-managed-batch-toast.test.js',
   'save-verify-fold-tolerant-contract.test.js',
   'patient-row-loss-guard.test.js',
+  'save-truth-contract.test.js',
+  'pull-resume-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
