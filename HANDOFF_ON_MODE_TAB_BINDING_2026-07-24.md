@@ -396,3 +396,44 @@ working identity path into the visits reader. If one frame returns the RIGHT ide
 still refuses → the bug is in `visitIdentityGate` normalization, not the extractor.
 
 **Do not ship a fourth theory without that data.**
+
+---
+
+## 🔎 NEW HARD DATUM — the visits reader is 2.9.22-era code
+
+A diag probe against ext **3.0.6** returned:
+
+```json
+{ "ok": false, "reason": "no-athena-tab",
+  "receipt": { "readerVersion": "2.9.22-visits-r4-two-stage" } }
+```
+
+**The extension is 3.0.6; the visits reader inside it still identifies as `2.9.22-visits-r4-two-stage`.**
+Every 3.0.x release since has updated the chart reader, the schedule reader, the identity bootstrap and
+the write lane — but this component has not moved since 2.9.22, which predates BOTH athena UI changes
+(the 2026-07-21 v26.3 flip that made the Visits panel collapsible/progressive, and the v26.7 upgrade).
+
+That is exactly consistent with the constrained remainder:
+- `mlsAppReadChart` (updated path) extracts identity correctly — proven live, right name AND DOB.
+- the visits reader's per-frame identity probe (2.9.22 path) never matches, across 5 patients x up to
+  16 frames, and once reported a completely different patient.
+
+**This is now the prime suspect and it is a component-level answer, not another one-line guess:** the
+two-stage visits reader's frame/identity selectors are two athena UI generations out of date.
+
+### Also learned from the same probe (useful, non-obvious)
+
+`no-athena-tab` is returned when there is **no fresh verified-read lease AND no open chart matching the
+hint** — the reader refuses rather than reading an arbitrary tab. That is correct and is why a bare
+visits probe (without a preceding chart read) cannot be used as a test harness: always do
+`mlsAppReadChart` immediately before, exactly as the batch does.
+
+### Recommended next step (unchanged discipline: instrument, then fix)
+
+1. Find the 2.9.22 two-stage visits reader in `background.js` (search `2.9.22-visits-r4-two-stage`) and
+   diff its frame-selection/identity extraction against the CHART reader's, which demonstrably works on
+   v26.7.
+2. Emit per-candidate `frameId` + raw identity + gate reason (one patient is enough).
+3. Port the chart reader's proven identity extraction into the visits reader rather than patching
+   selectors blind. Keep `visitIdentityGate` exactly as it is — it has been correct at every step and is
+   the only reason no wrong-patient body was ever stored.
