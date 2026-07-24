@@ -293,6 +293,16 @@
   function mountDOM() {
     if (!hasDOM) return null;
     if (!isAthenaProductHost()) return null;
+    /* Owner 2026-07-24: "just remove this mls thing - the one that pops up
+       when on athena". This is the only unrequested overlay MLS puts on top
+       of a live chart, and the doctor already drives every pull, read and
+       write from the MLS app itself, so the widget only duplicates a surface
+       the owner is deliberately simplifying. Not deleted: the module stays
+       loaded and window.__mlsPopup keeps its entire API, so anything calling
+       into it still works and re-enabling is a flag rather than a revert -
+       set window.__mlsPopupShowOnAthena = true before load. mountDOM already
+       returns null on three other paths, so every caller handles this. */
+    if (window.__mlsPopupShowOnAthena !== true) return null;
     if (document.getElementById('mls-popup-root')) return null;
 
     var root = document.createElement('div');
