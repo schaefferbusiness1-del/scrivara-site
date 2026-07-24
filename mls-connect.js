@@ -18558,17 +18558,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      second transcript/recorder lane and shifted the room after first paint. */
   function visitQuickToolsHtml() {
     var transcriptReady = S.phase !== 'gen' && S.phase !== 'note';
-    var h = '<div class="ez3fl-quick" id="ez3QuickTools"><span class="ez3fl-qlbl">QUICK TOOLS</span>' +
-      '<button type="button" class="ez3fl-qchip" id="ez3QVoice" aria-label="Copilot Voice">&#127897; Copilot Voice</button>' +
-      '<button type="button" class="ez3fl-qchip" id="ez3QAssistant" aria-label="MLS Assistant">&#129658; MLS Assistant</button>';
-    if (transcriptReady) {
-      h += '<button type="button" class="ez3fl-qchip" id="ez3QDictate">&#127908; Dictate</button>' +
-           '<button type="button" class="ez3fl-qchip" id="ez3QPaste">&#128203; Paste a transcript</button>';
+    /* UI rework slice (owner /goal 2026-07-23: "free the doctor from all the
+       buttons"): the seven always-on chips collapse behind ONE Tools chip.
+       Nothing is removed — every tool is one tap away, voice stays on the
+       corner pill, and the open/closed choice is remembered. */
+    var toolsOpen = false;
+    try { toolsOpen = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT) {}
+    var h = '<div class="ez3fl-quick" id="ez3QuickTools">' +
+      '<button type="button" class="ez3fl-qchip" id="ez3QToolsToggle" aria-expanded="' + (toolsOpen ? 'true' : 'false') + '" aria-label="' + (toolsOpen ? 'Hide tools' : 'Show tools') + '">&#129520; Tools ' + (toolsOpen ? '&#9652;' : '&#9662;') + '</button>';
+    if (toolsOpen) {
+      h += '<button type="button" class="ez3fl-qchip" id="ez3QVoice" aria-label="Copilot Voice">&#127897; Copilot Voice</button>' +
+        '<button type="button" class="ez3fl-qchip" id="ez3QAssistant" aria-label="MLS Assistant">&#129658; MLS Assistant</button>';
+      if (transcriptReady) {
+        h += '<button type="button" class="ez3fl-qchip" id="ez3QDictate">&#127908; Dictate</button>' +
+             '<button type="button" class="ez3fl-qchip" id="ez3QPaste">&#128203; Paste a transcript</button>';
+      }
+      h += '<button type="button" class="ez3fl-qchip" id="ez3QPhone">&#128241; Record on phone</button>' +
+           '<button type="button" class="ez3fl-qchip" id="ez3QAvs">&#128196; After-visit summary</button>' +
+           '<button type="button" class="ez3fl-qchip" id="ez3QOrders">&#128221; Orders</button>';
     }
-    h += '<button type="button" class="ez3fl-qchip" id="ez3QPhone">&#128241; Record on phone</button>' +
-         '<button type="button" class="ez3fl-qchip" id="ez3QAvs">&#128196; After-visit summary</button>' +
-         '<button type="button" class="ez3fl-qchip" id="ez3QOrders">&#128221; Orders</button>' +
-         '</div>';
+    h += '</div>';
     return h;
   }
   function clickCanonicalControl(id, unavailable) {
@@ -18586,6 +18595,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setTimeout(function () { try { fn(); } catch (e2) { toast('That tool could not open. Try again.'); } }, 80);
   }
   function wireVisitQuickTools() {
+    on('ez3QToolsToggle', function () {
+      var cur = false; try { cur = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT1) {}
+      try { localStorage.setItem(uns('ez3ToolsOpen'), cur ? '0' : '1'); } catch (eT2) {}
+      render();
+    });
     on('ez3QVoice', function () { clickCanonicalControl('mlsCopVoiceBtn', 'Copilot Voice is still loading.'); });
     on('ez3QAssistant', function () {
       var panel = $('mlsAsstPanel');
@@ -32941,7 +32955,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b518';
+  window.__MLS_AV = window.__MLS_AV || 'b519';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33251,7 +33265,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-23-b518';
+  var MLS_APP_BUILD='2026-07-23-b519';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
