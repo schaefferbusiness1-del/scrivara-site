@@ -6583,8 +6583,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              so the existing symmetric cleanup removes it with the CTA. */
           var q = document.createElement('div');
           q.className = 'ez3fl-quick';
-          var ql = document.createElement('span'); ql.className = 'ez3fl-qlbl'; ql.textContent = 'QUICK TOOLS'; q.appendChild(ql);
-          var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); return c; };
+          /* UI rework (owner goal 2026-07-24): this lane gets the same one-chip
+             fold as the canonical renderer (b519). All chips stay built and
+             wired; only their visibility follows the shared Tools preference. */
+          var qBody = [];
+          var qt = document.createElement('button'); qt.type = 'button'; qt.className = 'ez3fl-qchip'; qt.id = 'ez3flToolsToggle';
+          q.appendChild(qt);
+          var syncQ = function () {
+            var open = false; try { open = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eQ) {}
+            qt.innerHTML = '&#129520; Tools ' + (open ? '&#9652;' : '&#9662;');
+            qt.setAttribute('aria-expanded', open ? 'true' : 'false');
+            qt.setAttribute('aria-label', open ? 'Hide tools' : 'Show tools');
+            for (var qi = 0; qi < qBody.length; qi++) { try { qBody[qi].style.display = open ? '' : 'none'; } catch (eQi) {} }
+          };
+          qt.addEventListener('click', function () {
+            var cur = false; try { cur = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT1) {}
+            try { localStorage.setItem(uns('ez3ToolsOpen'), cur ? '0' : '1'); } catch (eT2) {}
+            syncQ();
+          });
+          var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); qBody.push(c); return c; };
           var cv = mkq('<span aria-hidden="true">&#127897;</span><span class="ez3fl-vlabel">Copilot Voice</span>', 'Talk to Copilot Voice for hands-free visit commands', function () {
             clickTopVoiceControl('mlsCopVoiceBtn', 'Copilot Voice');
             setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
@@ -6625,6 +6642,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             openWorkspace(false);
             setTimeout(function () { try { var oc = $('visitOrdersCard'); if (oc) oc.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 800);
           });
+          syncQ();
           rec.appendChild(q);
 
           /* The lane lives INSIDE #ez3Wrap before the screen's first action
@@ -32989,7 +33007,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b521';
+  window.__MLS_AV = window.__MLS_AV || 'b522';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33299,7 +33317,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b521';
+  var MLS_APP_BUILD='2026-07-24-b522';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
