@@ -174,3 +174,23 @@ Before changing the six-card reader I checked Athena itself. Opened Joan Hollida
 So meds:[] is TRUE for her, and her 42 stored problems prove the problems parser works. I nearly "fixed" a parser that is behaving correctly — the across-the-board empty meds was real clinical data, not a v26.7 selector break.
 
 **The genuine defect this exposed is an honesty gap, and it is the same class as the save bug that opened this goal:** a patient with `meds: []` is indistinguishable from a patient whose medications card was never read. Empty array, no receipt, no way to tell absence from failure. FIX TO BUILD: per-card capture receipts in athenaProfileCoverage (read | empty-confirmed | not-found) so the UI can say "No medications reported (confirmed in Athena)" instead of rendering a blank box that might mean either. Must be verified against a patient who DOES have medications before shipping — Joan cannot prove the populated path.
+
+### FINAL SAVE VERIFICATION — the four patients the owner named, re-checked after a full evening of pulls
+
+The owner's complaint named: Bernard P Brooks, Christopher Fink, Lindsey Bray, Luz Maria Lemus.
+Re-read from the live store at the END of the evening, after ~6 day pulls (ON and OFF), the b530/b532
+ships, the extension 3.0.5 install, and the probe test:
+
+| patient | found | id | dob | last written |
+|---|---|---|---|---|
+| Bernard P Brooks | 1 | p_sched_ibuwu5 | 06/13/1951 | 2026-07-24 19:20 |
+| Christopher Fink | 1 | p_sched_157yjhf | 07/06/1957 | 2026-07-24 19:23 |
+| Lindsey Bray | 2 (two different DOBs — genuinely two people) | p_sched_1b2vbd | 04/04/1984 | 15:47 |
+| Luz Maria Lemus | 1 | p_sched_1fmgvk0 | 11/10/1974 | 15:47 |
+
+All four present, none lost, none duplicated. Bernard and Christopher were UPDATED again at 19:20/19:23
+tonight — i.e. they went through further write cycles under pts-rowguard and survived. Store 1481,
+`__mlsPtsRowGuardLog` empty for this tab's session (no stale bulk writer attempted a delete in it).
+
+That closes the loop on the original report: the rows the verifier once declared missing are stable
+across a full evening of the exact workload that used to delete them.
