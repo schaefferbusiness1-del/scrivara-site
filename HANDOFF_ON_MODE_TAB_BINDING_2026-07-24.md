@@ -153,3 +153,52 @@ if (chartReceiptStrict.complete || exactGlobalIdentity) {
 Add nothing; just observe. During an ON pull, log `self.__mlsVerifiedReadTarget` at the moment each
 visits read starts. If it is null → cause 1. If it is present but `leaseMatches` is false → cause 2.
 Both are one-line fixes at 7496/9245 respectively, and neither requires new plumbing.
+
+---
+
+## DECISIVE EXPERIMENT (same night) — it is NOT the name compare. The tab shows a DIFFERENT PATIENT.
+
+Run with no code change, using the identical name string for both calls so the lease compare at
+`:9245` could not possibly fail:
+
+1. `mlsAppReadChart {patient:'Joan Holliday', dob:'05/27/1946', mrn:'7821966'}`
+   → **`{ok:true, chartName:"Joan Holliday", chartDob:"05/27/1946", receipt.complete:true}`**
+   `receipt.complete === true`, so the lease at `background.js:7497` **WAS written**, with
+   `name:'Joan Holliday'` and the tabId it just proved.
+2. Immediately after, `mlsAppReadAllVisits` with `hint:{name:'Joan Holliday', dob:'05/27/1946', athenaId:'7821966'}`
+   — byte-identical name, so `nk(lease.name) === nk(wantName)` is TRUE and `leaseMatches` holds.
+   → **`{ok:false, reason:'same-frame-name-mismatch', visits:0, identity.name:"Monterosso, ROSEMARY"}`**
+
+### What this rules IN and OUT
+
+- **RULED OUT — cause 2 (name-normalization mismatch).** The names were identical strings. The lease
+  matched. This is not an abbreviated-banner problem.
+- **RULED OUT — cause 1 (lease never written).** `receipt.complete` was true.
+- **RULED IN:** the reader resolved a tab and that tab was displaying **a different patient entirely**
+  (`Monterosso, ROSEMARY` — banner "Last, FIRST" format, so it IS an Athena chart banner, just the
+  wrong chart). The identity gate then refused **correctly**. The gate is not the bug; it is the only
+  reason a wrong-patient read did not happen.
+
+So the remaining question is narrow and concrete: **why is the tab the reader reads showing a stale
+patient?** Two candidates, and they are distinguishable:
+
+- **(A) Multiple Athena tabs.** `lease.tabId` points at tab A (where Joan was proven), but
+  `cand.find(t => t.id === lease.tabId)` fails — tab A is not in the filtered candidate list — so the
+  code falls to `resolve(exact || null)` → **null** → and the caller's re-pick loop then chooses a
+  DIFFERENT tab (tab B), which is parked on Rosemary Monterosso from an earlier operation.
+  Note `resolve(exact || null)` silently degrades here; nothing reports "the proven tab was not a
+  candidate".
+- **(B) The proven tab navigated away** between the chart proof and the visits read (a background
+  yank, an idle redirect, or another automation touching the same tab).
+
+**Next step, still no release needed:** log/emit `{leaseTabId, candidateTabIds, chosenTabId}` from
+`pickEmrTab` into the visits receipt `diag`. One object tells you A vs B immediately. Today that whole
+decision is invisible, which is exactly why this took so long.
+
+**Whichever it is, the fix rule is the same:** for `initiator:'schedule-batch'`, if the proven tab is
+not available or no longer shows the expected patient, **refuse with `chart-tab-unproven` and let the
+batch re-open** — never silently resolve to another tab. Reading "whatever tab looks right" is the
+only path by which a wrong-chart body could ever be attributed to a patient.
+
+**Owner-side workaround to try first (10 seconds, no code):** close every athenaOne tab except one,
+then run an ON-mode pull. If candidate (A) is correct, that alone should make ON mode complete.
