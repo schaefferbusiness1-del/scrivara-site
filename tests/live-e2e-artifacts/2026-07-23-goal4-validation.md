@@ -164,3 +164,13 @@ Owner set a new hard target while leaving: "speeds of 10 seconds or less per per
 **What OFF mode actually stores per patient (verified by reading the store):** allergies, 9 vitals fields, a full history object (pmh, psh, social, family, smoking, immunizations), the AI summary, the chart summary block, the scheduled reason for the upcoming visit (e.g. "MILD L3-4, L4-5 with B/L L4 TF ESI"), athenaProfileCoverage.complete === true and exactIdentityVerified === true. So the six-card pre-visit context IS captured, with identity proven, in under 10s.
 
 **GAP FOUND — problems and meds come back EMPTY.** Sampling the three most recent imports: problems 0/0/1 and meds 0/0/0, while allergies and vitals populate every time. Those two are the most useful facts for an upcoming visit, so this is exactly the owner's "still store the useful info" concern. NEXT: open one of these charts read-only in Athena and compare the live Medications and Problems sections against what the six-card reader extracts — either the patients genuinely have none recorded, or the reader's selectors for those two cards are missing on athena v26.7 (the same version that broke the batch chart swap). Do NOT assume the former; the empty-across-the-board pattern for meds points at the reader.
+
+### CORRECTION — the empty meds are REAL DATA, not a broken reader
+
+Before changing the six-card reader I checked Athena itself. Opened Joan Holliday's chart READ-ONLY (mlsAppReadChart, ok:true, name+DOB matched) and read the live Medications section in frame top.1.2.2:
+
+> "Medications (1 new)  HISTORICAL (0 new)  Historical Meds  Active  Prescription drug monitoring report Viewed by csimmons189 on 03/27/2026  View medications from other sources  Arrange by: Date  **No medications reported**"
+
+So meds:[] is TRUE for her, and her 42 stored problems prove the problems parser works. I nearly "fixed" a parser that is behaving correctly — the across-the-board empty meds was real clinical data, not a v26.7 selector break.
+
+**The genuine defect this exposed is an honesty gap, and it is the same class as the save bug that opened this goal:** a patient with `meds: []` is indistinguishable from a patient whose medications card was never read. Empty array, no receipt, no way to tell absence from failure. FIX TO BUILD: per-card capture receipts in athenaProfileCoverage (read | empty-confirmed | not-found) so the UI can say "No medications reported (confirmed in Athena)" instead of rendering a blank box that might mean either. Must be verified against a patient who DOES have medications before shipping — Joan cannot prove the populated path.
