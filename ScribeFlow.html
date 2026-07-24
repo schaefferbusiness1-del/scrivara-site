@@ -14401,7 +14401,7 @@ function recordMeta(rec){
    retried automatically (on a timer, when back online, or on the next save) so a
    note can never be silently lost from the encrypted server copy. ---- */
 function _pendingBackupGet(){ try{ return JSON.parse(localStorage.getItem(uns('pendingBackup'))||'[]')||[]; }catch(e){ return []; } }
-function _pendingBackupSet(a){ try{ localStorage.setItem(uns('pendingBackup'), JSON.stringify(Array.from(new Set(a)).slice(0,1000))); }catch(e){} _renderBackupBadge(); }
+function _pendingBackupSet(a){ try{ localStorage.setItem(uns('pendingBackup'), JSON.stringify(Array.from(new Set(a)).slice(0,1000))); }catch(e){} _renderBackupBadge(); try{ if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(e2){} }
 function _pendingBackupAdd(id){ if(!id) return; var a=_pendingBackupGet(); if(a.indexOf(id)<0){ a.push(id); _pendingBackupSet(a); } else { _renderBackupBadge(); } }
 function _pendingBackupRemove(id){ var a=_pendingBackupGet(); if(a.indexOf(id)>=0){ _pendingBackupSet(a.filter(function(x){ return x!==id; })); } }
 function _renderBackupBadge(){
@@ -14572,6 +14572,14 @@ function renderHistory(){
   const HIST_CAP=200;
   const _histCapped=ordered.length>HIST_CAP;
   if(_histCapped) ordered=ordered.slice(0,HIST_CAP);
+  /* Loading-lane slice 3 (owner 2026-07-23): the _pendingBackup retry queue
+     was invisible app-wide — every saved note now shows its sync truth. */
+  const _pendingSync=new Set(hosted&&typeof _pendingBackupGet==='function'?_pendingBackupGet():[]);
+  const _syncBadge=(n)=> hosted
+    ? (_pendingSync.has(n.id)
+        ? ' <span class="badge draft" title="Not on the server yet — MLS retries automatically every minute and when you come back online">⏳ Syncing</span>'
+        : ' <span class="badge" style="background:#e8f5ed;color:#204034;border-color:#cfe0d7" title="Backed up to your account (encrypted)">☁ Synced</span>')
+    : ' <span class="badge draft" title="Saved only in this browser — sign in to back it up to your account">📱 This device</span>';
   var _histHtml=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -14594,7 +14602,7 @@ function renderHistory(){
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
         <div class="t">${patName} — ${cc}</div>
-        <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}${kindTag}${orphanTag}</div>
+        <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}${_syncBadge(n)}${kindTag}${orphanTag}</div>
       </div>
       ${pushBtn}
       ${attachBtn}
@@ -27602,7 +27610,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b517';
+  window.__MLS_AV='b518';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
