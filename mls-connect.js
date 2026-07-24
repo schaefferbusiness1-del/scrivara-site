@@ -18594,6 +18594,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     setTimeout(function () { try { fn(); } catch (e2) { toast('That tool could not open. Try again.'); } }, 80);
   }
+  /* UI rework (owner /goal 2026-07-24: "free the doctor from all the
+     buttons"): the core loop advances itself. When the doctor STOPS a
+     recording that captured a real conversation (>=12 words), the note starts
+     generating with no extra press — same warn-and-proceed gate as the manual
+     button, so cross-patient safety is identical. Opt-out:
+     uns('ez3AutoGenerate')='0'. Review, Sign and Send remain human-only. */
+  (function installAutoAdvance() {
+    if (window.__ez3AutoGenWrap) return;
+    var orig = window.stopCapture;
+    if (!isFn(orig)) { setTimeout(installAutoAdvance, 1500); return; }
+    window.__ez3AutoGenWrap = true;
+    window.stopCapture = function () {
+      var out = orig.apply(this, arguments);
+      try {
+        var enabled = true;
+        try { enabled = localStorage.getItem(uns('ez3AutoGenerate')) !== '0'; } catch (eA) {}
+        var t = document.getElementById('transcript');
+        var words = (t && String(t.value || '').trim().split(/\s+/).filter(Boolean).length) || 0;
+        if (enabled && words >= 12 && S && S.appt && !S.genClickedAt) {
+          setTimeout(function () {
+            try {
+              if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
+              var g = genBtnResolve();
+              if (!g) return;
+              toast('Generating the note from this visit — review it before signing. (Turn off auto-generate in Settings if you prefer the button.)');
+              S.genClickedAt = Date.now(); S.signedAt = 0;
+              g.click(); S.phase = 'gen'; render();
+            } catch (eG) {}
+          }, 900);
+        }
+      } catch (eW) {}
+      return out;
+    };
+  })();
   function wireVisitQuickTools() {
     on('ez3QToolsToggle', function () {
       var cur = false; try { cur = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT1) {}
@@ -32955,7 +32989,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b519';
+  window.__MLS_AV = window.__MLS_AV || 'b520';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33265,7 +33299,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-23-b519';
+  var MLS_APP_BUILD='2026-07-24-b520';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
