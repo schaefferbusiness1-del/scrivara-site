@@ -12692,7 +12692,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       + '#analysisView .mlsrvu-note,#analysisView .mlsrvu-foot{color:#46586f!important}'
       + '#analysisView .mlsrvu-kpi .l{color:#46586f!important}'
       + '#analysisView h2{color:#1E2B24!important;letter-spacing:-.2px}'
-      + '#analysisView .code-disclaim{color:#6b5568!important;background:#fffaf0;'
+      + '#analysisView .code-disclaim{color:#6b5518!important;background:#fffaf0;'
       + 'border:1px solid #f0e3c0;border-radius:8px;padding:6px 10px;font-size:11.5px}'
       /* consistent card chrome in the plain fallback; never doubled inside ax tiles */
       + '#analysisView:not(.ax-grid)>.card{border:1px solid #dde6f2!important;border-radius:14px!important;'
@@ -33029,7 +33029,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b556';
+  window.__MLS_AV = window.__MLS_AV || 'b557';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33339,7 +33339,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b556';
+  var MLS_APP_BUILD='2026-07-24-b557';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -41747,7 +41747,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260719wd110';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v=20260724calm111';s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Calm Shell: dock + right-now bar + visit stages + heads-down + Ask over the existing controls, ?ui=classic escape hatch (window.__mlsCalmShell calm-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v=20260724calm112';s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Calm Shell: dock + right-now bar + visit stages + heads-down + Ask over the existing controls, ?ui=classic escape hatch (window.__mlsCalmShell calm-1.0.0; revert()) */
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260723onf2100';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */

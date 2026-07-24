@@ -858,11 +858,20 @@
     var raw = box.textContent || '';
     if (raw.indexOf('PREP SUMMARY') === -1) return;
 
+    /* Parse by label boundary, NOT by line. textContent returns this block with
+       no newlines at all - the labels run straight together, e.g.
+       "...Sample follow-upALLERGIES: No sample allergies documentedPROBLEMS:..."
+       so an anchored ^LABEL:...$ per line matched nothing on real data. Each
+       value therefore runs until the next known label or the end of the text. */
+    var NEXT = PREP_LABELS.concat(['KEY RISKS / REMINDERS', 'KEY RISKS'])
+      .map(function (l) { return l.replace(/\//g, '\\/').replace(/ /g, '\\s*'); }).join('|');
     var found = [];
     PREP_LABELS.forEach(function (label) {
-      var re = new RegExp('^\\s*' + label.replace(' ', '\\s+') + '\\s*:\\s*(.*)$', 'im');
+      var re = new RegExp(label.replace(/ /g, '\\s*') + '\\s*:\\s*([\\s\\S]*?)(?=(?:' + NEXT + ')\\s*:|$)', 'i');
       var m = re.exec(raw);
-      if (m) found.push({ label: label, value: (m[1] || '').trim() });
+      if (!m) return;
+      var v = (m[1] || '').replace(/\s+/g, ' ').trim();
+      found.push({ label: label, value: v });
     });
     /* Fallback by construction: if the generated format ever changes and we
        cannot read at least three fields, leave the original display alone. */
