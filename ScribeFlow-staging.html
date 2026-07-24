@@ -6305,7 +6305,11 @@ async function purgeAthenaImportedPatients(){
   var local=(typeof getPatients==='function'?getPatients():[])||[];
   var athena=local.filter(function(p){ return p && p.source==='athena-schedule'; });
   if(!athena.length){ try{ toast('No Athena-imported patients are stored — nothing to remove.','ok'); }catch(e){} return 0; }
-  if(!await mlsConfirm('Remove all '+athena.length+' patients MLS imported from Athena (their records, imported history, and today’s pulled appointments) from this device AND your account?\n\nPatients you created yourself are kept. This cannot be undone.')) return 0;
+  /* 2026-07-23 incident: one confirm click erased 1,400+ imported patients.
+     Bulk erasure now demands the typed word REMOVE — never a single click. */
+  var typedGate=null;
+  try{ typedGate=await ((typeof window.mlsPrompt==='function')?window.mlsPrompt('This deletes '+athena.length+' Athena-imported patients (records, imported history, and today’s pulled appointments) from this device AND your account. Patients you created yourself are kept.\n\nType REMOVE to confirm:',''):null); }catch(e){}
+  if(String(typedGate||'').trim().toUpperCase()!=='REMOVE'){ try{ toast('Nothing was removed.','ok'); }catch(e){} return 0; }
   var athIds={}; athena.forEach(function(p){ athIds[p.id]=1; });
   var removed=0;
   if(typeof backendMode==='function' && backendMode() && bkToken()){
@@ -23011,6 +23015,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b511';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b512';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
