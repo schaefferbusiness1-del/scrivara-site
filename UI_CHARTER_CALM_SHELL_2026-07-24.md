@@ -381,6 +381,38 @@ here. Two of them were patient-safety defects that were live.
 - The Tools menu could not be toggled shut (the away-handler compared identity,
   not containment, so the same click closed and reopened it) and had no Escape.
 
+## b539 — the shell stops proxying what only a human may press
+
+The last known defect in the shell, and an architectural one. Everything the
+Calm Shell does, it does by calling `el.click()` on the real control. That event
+carries `isTrusted: false`, and the app deliberately refuses exactly that on
+controls which may only be driven by a real human gesture:
+
+- `ScribeFlow.html:16617` `startPhoneMic` — refuses **silently**
+- `mls-connect.js` `startPhoneMicFromEasy` — refuses **silently**
+- `feat_mls_exact_encounter_verify.js:554` — refuses audibly
+
+`isTrusted` is set by the browser and cannot be forged; that is the entire
+point of it. So there is no clever proxy that works, and looking for one would
+mean attacking a patient-safety guard. The rule is now explicit in the module:
+**relocate or spotlight, never synthesize.** Gated controls (`#phoneMicBtn`,
+`#phoneMicStopBtn`, `#mlsSyncVerifyNow`, anything labelled for phone recording
+or exact-encounter verification) are scrolled to, highlighted, and explained —
+"that one has to be pressed directly" — instead of being fired into a silent
+no-op.
+
+Every place the shell acts on a control now goes through one `runControl()`, so
+a single call site cannot drift out of the rule, and the coverage suite fails
+the build if `trustedGated()` disappears, if either known gated id stops being
+listed, if fewer than four call sites route through `runControl()`, or if the
+module ever starts constructing events. Treat anything that starts a recording,
+verifies an encounter, or writes to Athena as gated even if it is not yet — the
+guard may be added later, and a proxy would break silently the day it is.
+
+Credit where it is due: this was found because the Athena session wrote up
+*why* its "Record on phone" chips were dead (phn-1.0.1) rather than just fixing
+them. The same class of bug was sitting in the foundation of this shell.
+
 ## FOR THE SESSIONS PICKING THIS UP
 
 - Repo: `dispatch-work/claude-commercial-20260717` (site + app).

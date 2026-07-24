@@ -198,6 +198,12 @@
     'body.mls-calm #mlsPullResumeCard{bottom:104px!important}',
     'body.mls-calm #_backupBadge{bottom:172px!important}',
 
+    '#mlsNote{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(6px);z-index:940;',
+    'max-width:min(430px,88vw);padding:10px 15px;border-radius:14px;background:rgba(26,33,28,.9);color:#fff;',
+    'font:400 12.5px/1.45 inherit;opacity:0;pointer-events:none;',
+    'transition:opacity var(--mls-base) linear,transform var(--mls-base) var(--mls-spring)}',
+    '#mlsNote.on{opacity:1;transform:translateX(-50%) translateY(0)}',
+
     /* view transition */
     'body.mls-calm .view-enter{animation:mlsViewIn var(--mls-base) var(--mls-spring)}',
     '@keyframes mlsViewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}',
@@ -340,6 +346,72 @@
     { label: /^log out$/i, within: '#appHeader' }
   ];
 
+  /* ------------------------------------------------ trusted-gesture controls */
+
+  /* Some controls may only be operated by a REAL human gesture. `isTrusted` is
+     set by the browser and cannot be forged — that is the entire point — so a
+     shell that delegates with el.click() can never drive them:
+       ScribeFlow.html:16617  startPhoneMic        refuses SILENTLY
+       mls-connect.js         startPhoneMicFromEasy refuses SILENTLY
+       feat_mls_exact_encounter_verify.js:554       refuses audibly
+     The fix is architectural, not a workaround: these are SHOWN, never fired.
+     Never synthesize an event and never weaken a guard to make a proxy work —
+     the guards exist so that nothing scripted can start a recording or drive a
+     clinical action. Treat anything that starts a recording, verifies an
+     encounter, or writes to Athena as gated even if it is not yet, because the
+     guard may be added later and would silently break a proxy. */
+  var TRUSTED_GATED_IDS = ['phoneMicBtn', 'phoneMicStopBtn', 'mlsSyncVerifyNow'];
+  var TRUSTED_GATED_LABEL = /record on phone|phone mic|exact encounter|verify (this )?encounter/i;
+
+  function trustedGated(el) {
+    if (!el) return false;
+    if (el.id && TRUSTED_GATED_IDS.indexOf(el.id) !== -1) return true;
+    if (TRUSTED_GATED_LABEL.test(textOf(el))) return true;
+    if (el.closest && el.closest('#phoneMicPanel')) return true;
+    return false;
+  }
+
+  function spotlight(el) {
+    if (!el) return;
+    safe(function () { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    safe(function () {
+      var prev = el.style.boxShadow;
+      el.style.boxShadow = '0 0 0 3px rgba(46,106,75,.55)';
+      setTimeout(function () { el.style.boxShadow = prev; }, 2400);
+    });
+  }
+
+  function note(msg) {
+    var n = qs('#mlsNote');
+    if (!n) {
+      n = D.createElement('div');
+      n.id = 'mlsNote';
+      n.setAttribute('role', 'status');
+      n.setAttribute('aria-live', 'polite');
+      (D.body || D.documentElement).appendChild(n);
+    }
+    n.textContent = msg;
+    n.classList.add('on');
+    if (n.__t) clearTimeout(n.__t);
+    n.__t = setTimeout(function () { n.classList.remove('on'); }, 5000);
+  }
+
+  /* One place, so the bar, the Tools menu and Ask cannot drift apart. Returns
+     true when it handled the control itself (gated -> shown, not fired). */
+  function runControl(el) {
+    if (!el) return true;
+    if (trustedGated(el)) {
+      spotlight(el);
+      note('That one has to be pressed directly — the app only accepts a real click there. It is highlighted for you.');
+      return true;
+    }
+    busyMaybe(textOf(el));
+    spotlight(el);
+    el.click();
+    setTimeout(function () { safe(syncDock); safe(renderRightNow); safe(renderStages); }, 280);
+    return true;
+  }
+
   /* Availability, not visibility: these are hidden BY THIS SHELL, so offsetWidth
      would report every one of them as gone. What matters is whether the app
      itself gated them (inline display:none, hidden, disabled). */
@@ -422,9 +494,7 @@
         var it = items[parseInt(row.getAttribute('data-i'), 10)];
         close();
         if (!it) return;
-        busyMaybe(it.label);
-        it.el.click();
-        setTimeout(function () { safe(syncDock); safe(renderRightNow); safe(renderStages); }, 260);
+        runControl(it.el);
       });
       row.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
@@ -665,11 +735,7 @@
       b.textContent = textOf(p.el);
       if (p.primary && i === 0) b.className = 'primary';
       b.style.animationDelay = (i * 45) + 'ms';
-      b.addEventListener('click', function () {
-        busyMaybe(textOf(p.el));
-        p.el.click();
-        setTimeout(function () { safe(renderRightNow); safe(renderStages); }, 260);
-      });
+      b.addEventListener('click', function () { runControl(p.el); });
       bar.appendChild(b);
     });
 
@@ -930,26 +996,16 @@
       close();
       input.value = '';
       input.blur();
-      var spotlight = function () {
-        safe(function () { r.el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
-        safe(function () {
-          var prev = r.el.style.boxShadow;
-          r.el.style.boxShadow = '0 0 0 3px rgba(46,106,75,.55)';
-          setTimeout(function () { r.el.style.boxShadow = prev; }, 2200);
-        });
-      };
-
       /* Several controls carry this label — typically one per row in a list. The
          shell cannot know which row the doctor meant, so it shows the first
          instead of guessing. Guessing here is how you act on the wrong patient. */
-      if (r.count > 1) { spotlight(); return; }
+      if (r.count > 1) {
+        spotlight(r.el);
+        note('Several controls are called "' + r.label + '" — showing you the first rather than guessing which one you meant.');
+        return;
+      }
 
-      var proceed = function () {
-        busyMaybe(r.label);
-        spotlight();
-        r.el.click();
-        setTimeout(function () { safe(syncDock); safe(renderRightNow); safe(renderStages); }, 300);
-      };
+      var proceed = function () { runControl(r.el); };
       /* Destructive controls keep their own gates. We add a confirmation rather
          than removing friction the app put there on purpose. Never a native
          dialog — the app owns mlsConfirm. */
@@ -999,7 +1055,8 @@
 
   function teardown() {
     D.body.classList.remove('mls-calm', 'mls-headsdown');
-    ['#mlsDock', '#mlsRightNow', '#mlsStages', '#mlsBusy', '#mlsHeadsDownHint', '#mlsClassicBtn'].forEach(function (s) {
+    ['#mlsDock', '#mlsRightNow', '#mlsStages', '#mlsBusy', '#mlsHeadsDownHint', '#mlsClassicBtn',
+      '#mlsToolsMenu', '#mlsNote'].forEach(function (s) {
       var el = qs(s);
       if (el && el.parentNode) el.parentNode.removeChild(el);
     });

@@ -204,6 +204,31 @@ if (fs.existsSync(SHELL_MODULE)) {
   if (!/revert\s*:/.test(src)) {
     fail('feat_mls_calm_shell.js must export revert() — every module in this app can be taken back out.');
   }
+
+  /* A shell that delegates with el.click() sends isTrusted:false, and the app
+     deliberately refuses that on controls which may only be driven by a real
+     human gesture (startPhoneMic and startPhoneMicFromEasy return silently;
+     feat_mls_exact_encounter_verify.js refuses audibly). Those controls must be
+     SHOWN, never fired — and the guard must not quietly disappear in a later
+     refactor, because the failure mode is a button that does nothing at all. */
+  if (!/function\s+trustedGated\s*\(/.test(src)) {
+    fail('feat_mls_calm_shell.js must keep trustedGated(): trusted-gesture controls are spotlighted, ' +
+      'never proxied. isTrusted cannot be forged, so a proxied click on one is a silent no-op.');
+  }
+  ['phoneMicBtn', 'mlsSyncVerifyNow'].forEach(function (id) {
+    if (src.indexOf(id) === -1) {
+      fail('feat_mls_calm_shell.js no longer lists #' + id + ' as trusted-gesture gated. ' +
+        'Proxying it would silently do nothing.');
+    }
+  });
+  if ((src.match(/runControl\(/g) || []).length < 4) {
+    fail('every place the shell acts on a control (right-now bar, Tools menu, Ask) must go through ' +
+      'runControl(), so the trusted-gesture rule cannot be bypassed by one call site drifting.');
+  }
+  if (/isTrusted\s*[:=]/.test(src) || /new\s+MouseEvent|dispatchEvent\s*\(/.test(src)) {
+    fail('feat_mls_calm_shell.js appears to synthesize an event. Trust is set by the browser and must ' +
+      'never be faked to get past a clinical guard — spotlight the control instead.');
+  }
 }
 
 /* ---- report ------------------------------------------------------------- */
