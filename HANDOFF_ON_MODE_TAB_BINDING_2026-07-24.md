@@ -575,3 +575,30 @@ two-stage reader's body-collection phase.
 **Keep 3.0.7.** It is a strict improvement (3 patients further along, no regressions, no loosened gate)
 and it is hand-loaded and pong-verified. It is NOT published — run the pin train only once a day
 actually completes.
+
+### CORRECTION to the "next step": the body-failure instrumentation ALREADY EXISTS. Do not build it.
+
+`background.js` (~9868) already returns, on `visit-bodies-incomplete`:
+
+```js
+receipt: { expected: clinicalTotal, parsed: visits.length, administrativeRows, indexTotal: total,
+           attempted: attemptedCount, failures: failures.length, stableKeysComplete, minimalBodies,
+           identityVerified: gate.ok && finalGate.ok, ... },
+failedIndexes: failures,          // [{index, reason}, ...]
+error: 'Athena exposed N encounters, but only M had full clinical detail bound to the exact encounter row.'
+```
+
+So the next diagnosis needs **no new build at all** — just capture `r.receipt` and `r.failedIndexes`
+from ONE failing `mlsAppAllVisitsResult` (do a `mlsAppReadChart` for that patient immediately before,
+or the reader correctly refuses with `no-athena-tab`). That single object says whether the bodies stage
+is failing because:
+
+- `expected` (clinicalTotal) is wrong — the index over-counts, e.g. administrative rows misclassified;
+- `parsed` < `expected` with reasons in `failedIndexes` — specific rows would not expand/bind, which is
+  the v26.3 progressive/collapsible Visits panel suspicion;
+- `stableKeysComplete: false` — duplicate/absent `sourceVisitKey`, an index problem not a body problem;
+- `identityVerified: false` — the FINAL gate refused even though the first one passed.
+
+Each of those four points at a different fix. **Read the receipt before writing any more code** — this
+is the fifth iteration, and every theory that was measured has held while every theory that was
+reasoned-about has died.
