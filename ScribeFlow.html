@@ -27417,8 +27417,12 @@ function _ptGroupSort(mode){
                  st.count ? (st.count+' visit'+(st.count===1?'':'s')) : 'no visits',
                  st.last ? ('last '+st.last) : '' ].filter(Boolean).join('  ·  ');
     bar.style.display='flex';
+    /* Owner 2026-07-23 ("just keep recents and that chart thing — SIMPLIFY"):
+       the bar carries exactly Chart + Switch patient; the NAME itself opens the
+       chart; Visit/History/Schedule live on in the nav and command palette
+       (capability relocated, not removed). Recent chip is module-injected. */
     var baseHtml =
-      '<div class="mlsctx-id">'
+      '<div class="mlsctx-id" data-act="chart" role="button" tabindex="0" title="Open '+escapeHtml(p.name||'this patient')+'’s chart" style="cursor:pointer">'
       +   '<span class="mlsctx-av">'+escapeHtml(initials(p.name))+'</span>'
       +   '<span class="mlsctx-idtext">'
       +     '<span class="mlsctx-name">'+escapeHtml(p.name||'Patient')+'</span>'
@@ -27428,9 +27432,6 @@ function _ptGroupSort(mode){
       + '<div class="mlsctx-slot" id="mlsCardSlot"></div>'
       + '<div class="mlsctx-actions">'
       +   '<button type="button" data-act="chart">Chart</button>'
-      +   '<button type="button" data-act="visit">Visit</button>'
-      +   '<button type="button" data-act="history">History</button>'
-      +   '<button type="button" data-act="schedule">Schedule</button>'
       +   '<button type="button" data-act="switch" class="mlsctx-switch">Switch patient</button>'
       + '</div>';
     /* Cross-tab patient saves can call refresh repeatedly. Preserve the existing
@@ -27449,12 +27450,12 @@ function _ptGroupSort(mode){
        than expected" so a module that ADDS its own [data-act] control cannot
        trigger a rebuild loop. */
     var mlsCtxActionsPresent = bar.querySelectorAll('.mlsctx-actions button[data-act]').length;
-    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions') || mlsCtxActionsPresent < 5;
+    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions') || mlsCtxActionsPresent < 2;
     if (needsBase){
       bar.innerHTML = baseHtml;
       bar.__mlsCardBaseHtml = baseHtml;
       var id = p.id;
-      bar.querySelectorAll('button[data-act]').forEach(function(b){
+      bar.querySelectorAll('[data-act]').forEach(function(b){
         b.onclick = function(){
           var a = b.getAttribute('data-act');
           if (a==='chart') openChart(id);
@@ -27464,6 +27465,9 @@ function _ptGroupSort(mode){
           else if (a==='switch') doSwitch();
         };
       });
+      /* keyboard access for the clickable identity block */
+      var idBlock = bar.querySelector('.mlsctx-id[data-act="chart"]');
+      if (idBlock) idBlock.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChart(id); } };
     }
     if (_syncHtml) { var slot = bar.querySelector('#mlsCardSlot'); if (slot) slot.innerHTML = _syncHtml; }
   }
@@ -27598,7 +27602,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b514';
+  window.__MLS_AV='b515';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
