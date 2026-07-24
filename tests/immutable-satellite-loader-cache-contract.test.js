@@ -31,7 +31,7 @@ const assets = [
   ['feat_mls_widgetinsert.js', '20260719wi3', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260719cmd103', '20260719cmd102'],
-  ['feat_mls_copilot_voice_v2.js', '20260723cv2120', '20260719cvhot116'],
+  ['feat_mls_copilot_voice_v2.js', '20260723cv2121', '20260723cv2120'],
   ['feat_mls_voice_ai.js', '20260719vaihot112', '20260719vai112'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],

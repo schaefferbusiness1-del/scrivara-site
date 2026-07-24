@@ -86,7 +86,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'cv2-1.2.0';
+  var VERSION = 'cv2-1.2.1';
   var previous = null;
   try { previous = window.__mlsCopilotVoiceV2; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -185,7 +185,12 @@
       '#' + BTN_ID + '.listening{animation:mlsCv2Pulse 1s ease-in-out infinite}',
       '#' + BTN_ID + '.denied{background:linear-gradient(135deg,#9aa4b2,#6b7684)}',
       '@keyframes mlsCv2Pulse{50%{box-shadow:0 8px 34px rgba(220,60,60,.8)}}',
-      '#mlsAsstFab{bottom:64px!important}'
+      '#mlsAsstFab{bottom:64px!important}',
+      /* Owner 2026-07-23 ("one button down here that is just MLS Copilot
+         Voice"): the always-there Dictate dock folds into this pill. Dictation
+         itself is untouched — the focused-field Dictate chip, the Quick Tools
+         chip, and the voice command all still dictate. */
+      '#mlsDaDock{display:none!important}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -251,7 +256,7 @@
     var fx = assistantBridge();
     if (!fx) return 'not-ready';
     registerIntents();
-    /* cv2-1.2.0: deterministic visit commands run LOCALLY and never enter the
+    /* cv2-1.2.1: deterministic visit commands run LOCALLY and never enter the
        chat path. Routing them through the assistant meant the panel popped
        open on every spoken command, and any intent-registry reset dropped the
        words into the Copilot AI, which would REPLY "started recording"
@@ -711,7 +716,7 @@
       return !!(d && /consent/i.test(d.textContent || ''));
     }, false);
   }
-  /* cv2-1.2.0: never claim "recording" without looking. startCapture() fails
+  /* cv2-1.2.1: never claim "recording" without looking. startCapture() fails
      closed into the consent dialog (and the scheduled-appointment gates) and
      returns without capturing; the old unconditional success line told the
      user recording had started when nothing was running. */
