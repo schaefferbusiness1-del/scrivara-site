@@ -580,9 +580,15 @@
     if (!tab) return;
     tab.click();
     markViewEnter();
-    safe(syncDock);
-    safe(renderRightNow);
-    safe(renderStages);
+    /* Re-run AFTER the view has actually switched. The document-level click hook
+       fires in capture phase - before showView() reveals the new view - so a
+       screen that produces no further mutations (a loaded patient profile is
+       static) would never get its first pass. Two delayed passes cover the
+       switch and anything that fills in just after it; schedule() coalesces to
+       one rAF and every renderer skips unchanged work. */
+    safe(schedule);
+    setTimeout(function () { safe(schedule); }, 140);
+    setTimeout(function () { safe(schedule); }, 600);
   }
 
   /* Every rail tab, by id. Scoping the "which view am I on" read to
