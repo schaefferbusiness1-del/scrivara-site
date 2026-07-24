@@ -142,6 +142,19 @@
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
+    /* patient screen: reference blocks fold to one line */
+    'body.mls-calm #profileCard .mls-fold{border:1px solid #EDEBE4;border-radius:12px;margin:8px 0;background:#fff}',
+    'body.mls-calm #profileCard .mls-fold:not(.mls-open) > *:not(:first-child){display:none!important}',
+    'body.mls-calm #profileCard .mls-fold > .mls-fold-hd{margin:0;padding:12px 14px;cursor:pointer;',
+    'display:flex;align-items:center;gap:9px;font:500 13.5px/1.3 inherit;color:#4A5B51;border:0;background:none}',
+    'body.mls-calm #profileCard .mls-fold > .mls-fold-hd:hover{background:#F6FAF8;border-radius:12px}',
+    'body.mls-calm #profileCard .mls-fold > .mls-fold-hd::after{content:"";margin-left:auto;width:7px;height:7px;',
+    'border-right:1.6px solid #9AA69E;border-bottom:1.6px solid #9AA69E;transform:rotate(-45deg);',
+    'transition:transform var(--mls-base) var(--mls-spring)}',
+    'body.mls-calm #profileCard .mls-fold.mls-open > .mls-fold-hd::after{transform:rotate(45deg)}',
+    'body.mls-calm #profileCard .mls-fold:not(.mls-open) > .mls-fold-hd button{display:none!important}',
+    'body.mls-calm #profileCard .mls-fold.mls-open > *:not(:first-child){animation:mlsViewIn var(--mls-base) var(--mls-spring)}',
+
     /* prep summary rows */
     '#mlsPrepRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:2px 18px;margin:2px 0 4px}',
     '#mlsPrepRows .r{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05)}',
@@ -831,6 +844,56 @@
     box.classList.add('mls-raw-clipped');
   }
 
+  /* ------------------------------------------------------- patient screen */
+
+  /* The patient profile stacked FOURTEEN fully-expanded blocks - prep summary,
+     visit context, risks, problems, insurance, documents, outside records,
+     timeline, export, trend chart - all open, all competing. Before walking into
+     a room a doctor needs four things: who this is, why they are here, what is
+     dangerous, and what is wrong with them. Everything else is real, but it is
+     reference: it becomes one quiet line that opens on demand.
+     Nothing is removed - every folded block keeps its own heading as the click
+     target, so its controls stay one click away and keep their 'panel' reach. */
+  var PT_KEEP_OPEN = ['mlsEpTopBox', 'mlsEpRisksBox', 'mlsEpSummaryBox'];
+  var PT_KEEP_OPEN_TEXT = /problem list/i;
+
+  function foldTitle(block) {
+    var head = block.children[0];
+    return head ? textOf(head).slice(0, 60) : '';
+  }
+
+  function patientScreen() {
+    if (!W.__mlsCalmShell.active) return;
+    var card = qs('#profileCard');
+    if (!card || !visible(card)) return;
+
+    qsa(':scope > div, :scope > section', card).forEach(function (block) {
+      if (block.id === 'mlsPrepRows') return;
+      if (PT_KEEP_OPEN.indexOf(block.id) !== -1) return;
+      if (PT_KEEP_OPEN_TEXT.test(foldTitle(block))) return;
+      if (block.children.length < 2) return;          /* nothing to fold */
+      if (block.classList.contains('mls-fold')) return;
+      var title = foldTitle(block);
+      if (!title) return;
+
+      block.classList.add('mls-fold');
+      var head = block.children[0];
+      head.classList.add('mls-fold-hd');
+      head.setAttribute('role', 'button');
+      head.setAttribute('tabindex', '0');
+      head.setAttribute('aria-expanded', 'false');
+      head.addEventListener('click', function (e) {
+        /* Let the block's own controls work normally when it is already open. */
+        if (e.target.closest && e.target.closest('button,a,input,select,textarea')) return;
+        var open = block.classList.toggle('mls-open');
+        head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      head.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); head.click(); }
+      });
+    });
+  }
+
   /* ----------------------------------------------------------------- stages */
 
   var STAGES = ['Prep', 'Record', 'Review', 'Sign', 'Send'];
@@ -1196,6 +1259,7 @@
       safe(renderRightNow);
       safe(renderStages);
       safe(prepRows);
+      safe(patientScreen);
       safe(arm);
     });
   }
