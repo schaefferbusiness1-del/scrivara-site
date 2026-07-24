@@ -248,3 +248,55 @@ These probes were raw bridge calls, so they did NOT hold the pull lease or the c
 that a real `pull()` holds. That does not weaken the conclusion — the tab the extension proved was
 already not the tab this session can see — but a real batch run holds those leases, so reproduce
 inside a real pull before declaring 3.0.6 fixed.
+
+---
+
+## ⛔ RETRACTION — THERE IS ONLY ONE ATHENA TAB. The multi-tab conclusion above is WRONG.
+
+I tested my own conclusion instead of shipping it, and it failed. Navigating this session's athenaOne
+tab (`256594376`) away from athenanet and immediately starting an ON pull produced:
+
+```
+"No athenaOne tab open."   → nav-failed in 16s
+```
+
+If a second athenaOne tab existed, the pull would have used it. **My tab was the only one.** So:
+
+- The earlier "the extension drives tabId 256594014 while my group holds 256594376" observation is not
+  evidence of two live tabs — tab ids change across the session (Chrome reassigns them; my own group
+  was recreated at least twice tonight after the extension host blipped).
+- The "the visible tab shows RTKR, Dr, not Joan" observation was a **BAD PROBE**: my regex
+  `([A-Z][a-zA-Z'-]+,\s*[A-Z][a-zA-Z'-]+)` matched a procedure/provider string somewhere in the frame
+  tree, NOT the patient banner. It never proved which chart was displayed.
+
+**b540's tabhint-1.0.0 message is therefore mis-worded** and should be corrected: it tells the doctor
+to close extra athenaOne tabs, which is not the cause. It is harmless (the advice is safe, and the
+"nothing was saved to the wrong patient" half is true and valuable) but it points at the wrong thing.
+Fix the wording when the real cause lands.
+
+### What the evidence actually supports now
+
+The visits read returned `identity.name:"Monterosso, ROSEMARY"` — a genuine Athena banner in
+"Last, FIRST" form — from the SAME tab in which "Joan Holliday" had just been proven. Within one tab,
+that means the reader resolved a **stale frame belonging to a previous patient**. The codebase already
+documents exactly this, at `background.js` above line 7490:
+
+> *"athenaCollector keeps a CACHED encounter iframe from the PREVIOUS patient alive on the chart, and
+> it can outscore the still-hydrating fresh list … silently starved the lease, collapsing batch bodies
+> to no-athena-tab refusals."*
+
+That is the live hypothesis now: **the frame-scoring picks a cached previous-patient iframe over the
+freshly-hydrating one**, and the identity gate then refuses — correctly. 3.0.2 added a same-frame
+identity walk for exactly this; v26.7 appears to have changed the shape enough that the walk picks
+wrong again.
+
+### Next step (unchanged in spirit, corrected in target)
+
+Emit, from the visits read, WHICH frame was chosen and what identity each candidate frame reported.
+The decision is invisible today. Then make the batch lane refuse (`chart-frame-unproven`) and re-open
+rather than reading a frame whose identity does not match — never widen the identity gate to make a
+read succeed.
+
+**Lesson worth keeping:** two of my three conclusions tonight were wrong, and each was caught only by
+running the experiment that could disprove it. Do not ship a diagnosis that has not survived an
+attempt to break it.
