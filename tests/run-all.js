@@ -278,6 +278,7 @@ const tests = [
   'template-standard-line-runtime.test.js',
   'tooltip-single-source-contract.test.js',
   'ui-single-owner-contract.test.js',
+  'ui-control-coverage.test.js',
   'visit-control-continuity.test.js',
   'visit-day-ownership-contract.test.js',
   'visit-exact-appointment-binding-runtime.test.js',
