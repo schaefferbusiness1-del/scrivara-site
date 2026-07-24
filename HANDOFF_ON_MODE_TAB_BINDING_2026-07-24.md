@@ -490,3 +490,53 @@ Recommended shape:
 Ship as 3.0.7, hand-load, then run a bodies-ON day and expect coverage-complete. **Verify before
 believing it** — three theories died tonight; this one is the best-evidenced but is not proven until a
 day completes.
+
+---
+
+## STATE AS OF 3.0.7 (keep this section current — owner asked that any AI can take over cold)
+
+**Extension versions tonight:** 3.0.5 (swap-settle; -25% wall clock, did not fix reads) -> 3.0.6
+(frame-walk cap 4->16; did NOT fix reads, retained because the bound is now time-based too) -> **3.0.7
+(banner-aware identity extractor — the fix aimed at the bug I could actually see in the code).**
+
+**3.0.7 contents:** in `background.js` `op === 'identity'`, the name match now also accepts athena's real
+banner shape `Last, FIRST [M]` (all-caps given names, comma separator), tries explicit patient-name
+containers before any generic heading, and when a name came ONLY from a bare `h1,h2` it returns
+`weakName: true` so a stray heading can never be trusted as identity proof. `visitIdentityGate` is
+untouched — it tokenises and lowercases, so "Holliday, JOAN" satisfies wanted "Joan Holliday" without
+any loosening.
+- built from a CLEAN worktree at origin/main (NEVER the shared clone — its background.js carries ~254
+  insertions of another session's WIP)
+- digest `3.0.7+core-sha256:b52623dfd2cc9b0478f83f7e2309df6ee479e67ae0b49d2dcb476fab1ffe9b63`
+- zip sha `3463e1b07d85d082e82b8ed2740b5a8e113d1dabfa5867f9e6da4896f79a0377`
+- hand-loaded into `C:\Users\Micha\Downloads\MLS_Assist_v1.65` and **pong-verified running 3.0.7**
+- **NOT yet published** (no pin train run for 3.0.7) and **NOT yet proven** — a bodies-ON day must reach
+  coverage-complete first. If it does: run the pin train, publish, then ON x2. If it does NOT: retract
+  as loudly as the previous three and go to per-frame instrumentation.
+
+**Scripts to reuse (scratchpad, this session):** `fix-identity-banner.js` (the 3.0.7 edit, latin1 +
+CR-census guarded), `bump307.js`, `stage-306b.js` (full pin train + build bump, mine-only from HEAD),
+`stage-next.js` (generic bump stager that SCANS for pins instead of trusting the stale build-ship list).
+
+**Build ledger (neither session may reuse a number):** UI session b533/535/537/539/540/541/542/543/544/
+548/549; me b534/538/546/547. **b536 and b545 are RETIRED** (abandoned mid-flight). Live is b549; the UI
+session takes b550 next.
+
+**Backend facts I was handed and have NOT independently verified — ask the backend, not the repo files:**
+- `/api/health` reports every capability true including communications; `/api/billing/health` reports
+  mode LIVE with checkout ready and webhooks configured. The old "live keys but TEST webhook secret"
+  note is STALE.
+- Twilio credentials are already in Render. The ONLY remaining action is pointing the number's Voice
+  webhook at `https://scrivara-backend.onrender.com/api/voice/<booking-token>` where the token is the
+  practice's existing booking-link token from `schedule_tokens`. `POST /api/voice/:token` is written and
+  books real open slots (weekdays 9-5, 30-min, next ~3 weeks, minus booked).
+- Repo files claiming things are unconfigured (e.g. privacy.html listing Twilio as "Planned") are stale.
+
+**Files that will refuse edits, by design:** the attorney intake form is a test-pinned refusal surface,
+not dead UI; `privacy.html` / `terms.html` have their SHA-256 pinned into the signup assent manifest, so
+even a colour change perturbs a legal audit trail. Expect those suites to stop you.
+
+**Owner asks still open:** remove the MLS popup that appears on the athenaOne page (content-script
+change, next extension build); per-card capture receipts (read | empty-confirmed | not-found) so an
+empty Medications card cannot be confused with an unread one; Adam writeback x2 (BLOCKED — only the
+owner can create the encounter); ON x2 + month x2 acceptance.
