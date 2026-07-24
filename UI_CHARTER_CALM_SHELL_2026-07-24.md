@@ -298,6 +298,32 @@ The reach map claimed `dock:tools` for them, so the fix was to make that true �
 the Tools dock item opens a real menu of every displaced control, built from the
 live DOM and filtered by whether the app itself gated them.
 
+## b535 — two defects the gate could not have caught
+
+(b534 belongs to the Athena session: the phone-chip trusted-gesture fix,
+phn-1.0.1. These two shell fixes were renumbered to b535 after that landed.)
+
+Both found by verifying b533 on the live site in a sandboxed `?preview=1` tab,
+which is the argument for never calling a UI change done at "gate green":
+
+1. **The rail did not hide.** `feat_mls_redesign.js` relocates `.mainnav` into
+   `#mlsRdNav` in the header and pins it with `#mlsRdNav .mainnav{display:flex
+   !important}`. An ID outranks two classes, so `body.mls-calm .mainnav` lost and
+   b533 rendered the dock AND the old rail together. Fixed by out-specifying
+   every container the rail is known to live in. No static test can see this —
+   it is a specificity race between two modules resolved only by a real browser.
+2. **The right-now bar could stay empty forever.** The first render can land
+   before the rail marks a tab `.on` or before a view fills in, and on a quiet
+   screen nothing mutates afterwards, so the observer never fires again. Fixed
+   with two delayed recomputes after boot plus a passive document-level click
+   listener, both funnelled through the existing rAF coalescing and the bar's
+   own no-change guard.
+
+Also recorded, because it nearly shipped: bumping build pins with a blanket
+string replace rewrote *prose* — the b533 references in this document and in the
+module's own comments, which describe what b533 shipped and are historical
+facts. Bump scripts must target pins, not every occurrence of a build number.
+
 ## FOR THE SESSIONS PICKING THIS UP
 
 - Repo: `dispatch-work/claude-commercial-20260717` (site + app).

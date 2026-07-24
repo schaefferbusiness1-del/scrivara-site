@@ -71,7 +71,15 @@
      no layout-animating properties, so a mid-clinic machine never janks. */
   var CSS = [
     ':root{--mls-spring:cubic-bezier(.32,.72,0,1);--mls-fast:180ms;--mls-base:260ms;--mls-slow:380ms}',
-    'body.mls-calm .mainnav{display:none!important}',
+    /* feat_mls_redesign.js relocates the rail into #mlsRdNav inside the header and
+       pins it with `#mlsRdNav .mainnav{display:flex!important}`. An ID beats two
+       classes, so the plain `body.mls-calm .mainnav` rule lost and b533 shipped
+       with BOTH the dock and the old rail on screen. Verified live, fixed by
+       out-specifying every container the rail is known to live in. */
+    'html body.mls-calm .mainnav,',
+    'html body.mls-calm #mlsRdNav .mainnav,',
+    'html body.mls-calm #appHeader .mainnav,',
+    'html body.mls-calm #appWrap .mainnav{display:none!important}',
     'body.mls-calm #appHeader .tools .btn-white{display:none!important}',
     'body.mls-calm #appHeader .tools .btn-white.mls-calm-keep{display:inline-flex!important}',
     'body.mls-calm{padding-bottom:96px}',
@@ -866,6 +874,7 @@
     if (idleTimer) clearTimeout(idleTimer);
     D.removeEventListener('mousemove', wake, true);
     D.removeEventListener('keydown', onKey, true);
+    D.removeEventListener('click', schedule, true);
     var css = qs('#mlsCalmShellCss');
     if (css && css.parentNode) css.parentNode.removeChild(css);
     dockEl = null;
@@ -939,6 +948,15 @@
       watch();
       D.addEventListener('mousemove', wake, true);
       D.addEventListener('keydown', onKey, true);
+      /* The first render can land before the rail has marked a tab .on or before
+         a view has filled in, and on a quiet screen NOTHING mutates afterwards —
+         so b533 could sit on "Nothing to do here yet" forever. Two delayed
+         recomputes cover startup, and a passive document click covers state the
+         doctor changes through controls this shell did not fire. Both are cheap:
+         schedule() coalesces to one rAF and the bar skips identical content. */
+      setTimeout(schedule, 350);
+      setTimeout(schedule, 1200);
+      D.addEventListener('click', schedule, true);
       W.__mlsCalmShell.active = true;
       return true;
     } catch (e) {
