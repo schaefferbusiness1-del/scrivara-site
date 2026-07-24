@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.9.0';
+  var VERSION = 'onf-2.10.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -73,6 +73,9 @@
       '.onf-fillbox .onf-field-actions button:hover{background:#eef4fb;}',
       '.onf-fillbox .onf-field-actions button.onf-stop{color:#8a2a2a;border-color:#e8c6c6;}',
       '.onf-fillbox .onf-mic{font-size:12px;padding:2px 7px;}',
+      '.onf-fillbox details.onf-auto{margin-top:7px;border:1px dashed #cbd8c9;border-radius:8px;padding:5px 9px;background:#f6faf5;}',
+      '.onf-fillbox details.onf-auto summary{cursor:pointer;font:700 11.5px system-ui;color:#16924e;outline-offset:2px;}',
+      '.onf-fillbox details.onf-auto[open]{padding-bottom:8px;}',
       '.onf-dict{margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:8px;}',
       '.onf-dict textarea{width:100%;min-height:52px;font:12.5px system-ui;border:1px solid #c9d6e5;border-radius:7px;padding:6px 8px;margin:6px 0 4px;}',
       '.onf-dict .onf-dict-status{font:600 11px system-ui;color:#7a5310;margin-left:8px;}',
@@ -418,9 +421,16 @@
   }
   function chartValue(label, row) {
     var l = S(label).toLowerCase();
-    if (!/history|diagnosis|indication/.test(l)) return '';
+    /* onf-2.10.0 (owner: "never ask for things like patient history"): every
+       chart-derivable field fills silently from the exact patient — history in
+       all its spellings, meds, allergies, BMI. Empty chart data still asks
+       (honest blank); nothing is ever invented. */
+    if (!/history|diagnosis|indication|\bhpi\b|\bpmh\b|background|presentation|allerg|medication|\bmeds\b|\bbmi\b|body mass/.test(l)) return '';
     if (/postoperative|post ?op/.test(l)) return '';         /* postop stays the template's own value */
     var p = chartPatient(row); if (!p) return '';
+    if (/allerg/.test(l)) return S(p.allergies).replace(/\s*\r?\n+\s*/g, '; ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (/medication|\bmeds\b/.test(l)) return S(p.meds || p.medications).replace(/\s*\r?\n+\s*/g, '; ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (/\bbmi\b|body mass/.test(l)) { var b = patientBmi(row); return b ? S(b) : ''; }
     var probList = rowProblems(p, row);
     if (/diagnosis|indication/.test(l)) return S(probList[0] || '').slice(0, 140);
     var problems = probList.slice(0, 3).join('; ');
@@ -1005,7 +1015,7 @@
         var m = lines[i].match(/^\s*([A-Za-z][A-Za-z +\/&()-]{2,42}):\s*(.+?)\s*$/);
         if (!m) continue;
         var lab = m[1].toLowerCase(), val = m[2];
-        if (!val || /\[\s*fill/i.test(val) || /^[_.\s-]+$/.test(val) || val.length > 80) continue;
+        if (!val || /\[\s*fill/i.test(val) || /\[\[[a-z0-9_]+\]\]/i.test(val) || /^[_.\s-]+$/.test(val) || val.length > 80) continue;
         var all = true;
         for (var w = 0; w < words.length; w++) { if (lab.indexOf(words[w]) < 0) { all = false; break; } }
         if (all) return val;
@@ -1106,7 +1116,14 @@
     var box = existing || document.createElement('div');
     box.className = 'onf-fillbox';
     safe(function () { box.setAttribute('data-onf-for', ta.id); });
-    var rowsHtml = tokens.map(function (label) {
+    /* onf-2.10.0 (owner: "way too many fields — it should know way more"):
+       fields the app filled CONFIDENTLY (chart / schedule / settings /
+       template / the doctor's own saved answers) collapse into a review
+       expander; the doctor only faces genuine unknowns and amber
+       suggestions. Every collapsed field stays fully editable inside the
+       expander — nothing is hidden, it's just no longer asking. */
+    var askHtml = [], autoHtml = [];
+    tokens.forEach(function (label) {
       var key = label.toLowerCase(), spec = fieldSpec(label), cur = vals[key] || '', kind = meta[key] || 'blank';
       var fid = 'onfF_' + idx + '_' + key.replace(/[^a-z0-9]+/g, '_'), ctrl;
       if (spec.type === 'select') {
@@ -1146,9 +1163,13 @@
           acts.push('<button type="button" class="onf-stop" data-onf-default-act="clear" data-onf-default-label="' + esc(label) + '">Stop using</button>');
         }
       }
-      return '<div class="onf-field"><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>' +
+      var fieldHtml = '<div class="onf-field"><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>' +
         (acts.length ? ('<div class="onf-field-actions">' + acts.join('') + '</div>') : '') + '</div>';
-    }).join('');
+      /* silent-fill kinds: filled + not awaiting the doctor. A value that is
+         itself an unresolved placeholder can never count as filled. */
+      if (cur && kind !== 'suggested' && kind !== 'blank' && !/\[\[[a-z0-9_]+\]\]|\[FILL:/i.test(cur)) autoHtml.push(fieldHtml);
+      else askHtml.push(fieldHtml);
+    });
     var blanks = 0; for (var m in meta) if (meta[m] === 'blank') blanks++;
     /* onf-2.4.0 (owner: "one or two clicks then it's done"): the accept step IS
        the save step — one green button right here finalizes this note into the
@@ -1162,8 +1183,19 @@
       '<span class="onf-dict-status" id="mlsOnfDictStatus_' + idx + '"></span>' +
       '<textarea id="mlsOnfDictPad_' + idx + '" style="display:none" placeholder="Speak naturally — e.g. “22 gauge three and a half inch needle, half percent bupivacaine with 10 of dex per level, fluoro time 40 seconds” — or type here."></textarea>' +
       '</div>';
-    box.innerHTML = '<div class="onf-h">✏️ Fields (' + tokens.length + ') — known facts and your saved defaults fill first' + (blanks ? ' · <b>' + blanks + '</b> still need a value' : '') + '</div>' +
-      '<div class="onf-grid">' + rowsHtml + '</div>' +
+    var suggested = 0; for (var m2 in meta) if (meta[m2] === 'suggested') suggested++;
+    var header = askHtml.length
+      ? ('✏️ ' + askHtml.length + ' field' + (askHtml.length === 1 ? '' : 's') + ' need' + (askHtml.length === 1 ? 's' : '') + ' you'
+        + (blanks && suggested ? (' (' + blanks + ' blank · ' + suggested + ' suggested)') : ''))
+      : '✅ Nothing needs your input';
+    if (autoHtml.length) header += ' · ✓ ' + autoHtml.length + ' filled automatically';
+    var autoBlock = autoHtml.length
+      ? ('<details class="onf-auto"><summary>✓ ' + autoHtml.length + ' filled automatically from the chart, schedule & your settings — tap to review or edit</summary>' +
+         '<div class="onf-grid">' + autoHtml.join('') + '</div></details>')
+      : '';
+    box.innerHTML = '<div class="onf-h">' + header + '</div>' +
+      (askHtml.length ? ('<div class="onf-grid">' + askHtml.join('') + '</div>') : '') +
+      autoBlock +
       '<div class="onf-note">Anything uncertain stays editable. “Use every time” applies only after you choose it, and changing a field updates this draft instantly.</div>' + dictHtml + saveBtn;
     if (!existing || ta.previousElementSibling !== box) ta.parentNode.insertBefore(box, ta);
     var acc = box.querySelector('[data-onf-accept]');

@@ -65,7 +65,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(oniSource, context, { filename: 'feat_mls_opnote_integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.installed && api.version === 'oni-2.14.0', 'integrity owner did not install at oni-2.14.0');
+  assert(api && api.installed && api.version === 'oni-2.15.0', 'integrity owner did not install at oni-2.15.0');
 
   // 1. newRow must carry appointment provider/facility scope like the base _opNewRow.
   const row = context._opNewRow('Current Patient', 'Lumbar ESI', '1980-01-02', 'July 24', 'p-safe',
@@ -98,6 +98,35 @@ async function main() {
   const outRelated = await context._genOpNote('Current Patient', 'July 24, 2026', 'Lumbar ESI', diagTpl.text, { patientId: 'p-safe', dob: '1980-01-02', templateId: 'esi-2' });
   assert(outRelated.note.includes('Lumbar radiculopathy'), 'a procedure-relevant chart problem no longer fills the diagnosis slot');
   assert(!outRelated.note.includes('[[preoperative_diagnosis]]'), 'relevant diagnosis fill left the placeholder behind');
+
+  // 3b. oni-2.15.0 (owner: "never ask for things like patient history"): every
+  //     chart-derivable slot resolves at generation — history aliases (PMH/HPI),
+  //     meds, allergies, BMI — with newline chart lists joined as "; ".
+  //     Empty chart data still leaves the slot (honest blank, never invented).
+  patient.problems = 'Lumbar radiculopathy';
+  patient.meds = 'Gabapentin 300mg TID\nMeloxicam 15mg daily';
+  patient.allergies = 'Penicillin - rash';
+  const richTpl = { id: 'esi-3', name: 'Lumbar ESI', text: 'PROCEDURE NOTE\nHISTORY:\nMEDICATIONS:\nALLERGIES:\nBMI:\nPROCEDURE: Lumbar ESI\nCOMPLICATIONS: None.' };
+  templatesArr.push(richTpl);
+  responder = async () => JSON.stringify({
+    note: 'PROCEDURE NOTE\nHISTORY: [[past_medical_history]]\nMEDICATIONS: [[current_medications]]\nALLERGIES: [[allergies]]\nBMI: [[bmi]]\nPROCEDURE: Lumbar ESI\nCOMPLICATIONS: None.',
+    missing: [{ key: 'past_medical_history', label: 'History' }, { key: 'current_medications', label: 'Medications' }, { key: 'allergies', label: 'Allergies' }, { key: 'bmi', label: 'BMI' }]
+  });
+  const rich = await context._genOpNote('Current Patient', 'July 24, 2026', 'Lumbar ESI', richTpl.text, { patientId: 'p-safe', dob: '1980-01-02', bmi: 31.2, templateId: 'esi-3' });
+  assert(!/\[\[(past_medical_history|current_medications|allergies|bmi)\]\]/.test(rich.note),
+    'a chart-derivable slot survived generation and would ask the doctor: ' + rich.note);
+  assert(rich.note.includes('Gabapentin 300mg TID; Meloxicam 15mg daily'), 'newline med list lost its "; " separators');
+  assert(rich.note.includes('Penicillin - rash'), 'allergies did not fill from the chart');
+  assert(rich.note.includes('BMI: 31.2'), 'BMI did not fill from ctx');
+  patient.problems = 'Hypertension'; patient.meds = ''; patient.allergies = '';
+
+  // 3c. onf presentation: confidently-filled fields collapse; a value that is
+  //     itself a placeholder can NEVER count as auto-filled (templateDefault
+  //     must skip [[snake]] template values).
+  assert(/details class="onf-auto"/.test(onfSource), 'auto-filled fields no longer collapse into the review expander');
+  assert(onfSource.includes("kind !== 'suggested' && kind !== 'blank' && !/\\[\\[[a-z0-9_]+\\]\\]|\\[FILL:/i.test(cur)"),
+    'the collapse gate no longer excludes placeholder-valued fields');
+  assert(onfSource.includes("/\\[\\[[a-z0-9_]+\\]\\]/i.test(val)"), 'templateDefault accepts [[snake]] placeholders as template values again');
 
   // 4a. attestation: with the prep module installed, generate() appends its footer AFTER validation.
   context.__mlsOpNotePrep = { installed: true, attest: function (note, ctx) { return note + '\n\nATTEST-FOOTER ' + String(ctx && ctx.patientId || ''); } };
@@ -218,7 +247,7 @@ async function main() {
   assert(opnpSource.includes('blockUnsavedSwitch'), 'day/mode switch has no unsaved-content guard');
 
   /* ---------------- onf source pins: edit flag, history gates, needle depth ---------------- */
-  assert(onfSource.includes("var VERSION = 'onf-2.9.0'"), 'onf version did not move');
+  assert(onfSource.includes("var VERSION = 'onf-2.10.0'"), 'onf version did not move');
   assert(/wasEdited = row \? !!row\.edited : false;[\s\S]{0,400}row\.edited = wasEdited;/.test(onfSource),
     'writeRendered no longer restores the clinician edit flag around machine renders');
   assert(onfSource.includes('if (val && defaultEligible(label) && scopedKey'), 'account dropdown-history write is not allowlist-gated');

@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.14.0';
+  var VERSION = 'oni-2.15.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -936,9 +936,24 @@
     } catch (e) {}
     if (plan) hist = [hist, 'Most recent plan: ' + plan.slice(0, 160)].filter(Boolean).join('. ');
     if (hist) hist = hist.replace(/\.+$/, '') + '.';
+    /* oni-2.15.0 (owner: "it should never ask for things like patient history —
+       that should always fill automatically"): every chart-derivable slot the
+       model leaves behind resolves HERE, from the exact verified patient, so
+       the fill box never has to ask. Aliases cover the key names models
+       actually emit. Empty chart data leaves the slot visible (honest blank —
+       we broaden what fills, never what gets invented). */
+    /* newline-separated chart lists keep their item boundaries as "; " */
+    var meds = S(p.meds || p.medications).replace(/\s*\r?\n+\s*/g, '; ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    var allergies = S(p.allergies).replace(/\s*\r?\n+\s*/g, '; ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    var bmi = (ctx && ctx.bmi != null) ? S(ctx.bmi) : (p.bmi != null ? S(p.bmi) : '');
     return S(note)
-      .replace(/\[\[(history|clinical_history|patient_history)\]\]/gi, function (m) { return hist || m; })
-      .replace(/\[\[(pre_?operative_diagnosis|diagnosis|indication|indications|indications_for_procedure)\]\]/gi, function (m) { return diag || m; });
+      .replace(/\[\[(history|clinical_history|patient_history|past_medical_history|pmh|medical_history|hpi|history_of_present_illness|background|patient_background|clinical_background|presentation)\]\]/gi, function (m) { return hist || m; })
+      .replace(/\[\[(pre_?operative_diagnosis|diagnosis|indication|indications|indications_for_procedure)\]\]/gi, function (m) { return diag || m; })
+      .replace(/\[\[(medications|current_medications|home_medications|meds|medication_list)\]\]/gi, function (m) { return meds || m; })
+      .replace(/\[\[(allergies|drug_allergies|allergy_list|known_allergies)\]\]/gi, function (m) { return allergies || m; })
+      .replace(/\[\[(bmi|body_mass_index)\]\]/gi, function (m) { return bmi || m; })
+      .replace(/\[\[(age|patient_age)\]\]/gi, function (m) { return age ? S(age) : m; })
+      .replace(/\[\[(sex|gender|patient_sex|patient_gender)\]\]/gi, function (m) { return sex || m; });
   }
 
   function patientAge(dob){
