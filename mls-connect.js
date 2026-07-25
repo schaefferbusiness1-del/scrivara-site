@@ -17642,6 +17642,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function mount() {
     var vv = $('visitView'); if (!vv) return false;
     if (host && host.parentElement === vv && vv.firstElementChild === host) return true;
+    /* txf-1.2.0: the host is already in the right parent but is no longer the
+       FIRST child, because some other module inserted ahead of it. The line
+       below would "fix" the order with insertBefore - but insertBefore on a
+       connected node MOVES it, and moving a subtree that contains the focused
+       element blurs that element. mount() runs on an interval, so the doctor
+       was being thrown out of #ez3flTranscript every ~3 seconds and every
+       keystroke after that went to <body>. Measured in real Chrome: 3 blurs in
+       9 idle seconds, 59 of 63 typed characters lost.
+       While the caret is inside this host, cosmetic ordering loses to not
+       destroying the doctor's typing. Every other case is unchanged, so the
+       host still gets restored to first position whenever nobody is typing. */
+    if (host && host.parentElement === vv) {
+      var _a = null;
+      try { _a = document.activeElement; } catch (eA) {}
+      if (_a && _a !== document.body && host.contains(_a)) return true;
+    }
     if (!host || !host.parentElement) { if (!host) buildHost(); }
     try { vv.insertBefore(host, vv.firstChild); } catch (e) { return false; }
     render();
@@ -33313,7 +33329,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b618';
+  window.__MLS_AV = window.__MLS_AV || 'b619';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33623,7 +33639,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b618';
+  var MLS_APP_BUILD='2026-07-25-b619';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
