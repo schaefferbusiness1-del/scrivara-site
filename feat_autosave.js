@@ -500,14 +500,18 @@
 })();
 
 /* --- ADDITIVE LOADER (2026-07-01): recording backup module. Lives here because this file is
-   loaded on every page with a fresh cache-buster. The module itself is additive + reversible
+   loaded on every page under the release token. It used to append Date.now(), which made the
+   URL unique on every boot: never cache-hit, re-downloaded every load, and MISSING entirely on
+   an offline or flaky-network boot - for the module that is the recording safety net. It now
+   uses the same (window.__MLS_AV || Date.now()) release token as every other satellite loader.
+   The module itself is additive + reversible
    (window.__mlsRecBackup.revert()); removing these lines fully retires it. --- */
 (function () {
   try {
     if (document.getElementById("mlsRecBackupLdr")) return;
     var s = document.createElement("script");
     s.id = "mlsRecBackupLdr";
-    s.src = "/feat_mls_record_backup.js?v=" + Date.now();
+    s.src = "/feat_mls_record_backup.js?v=" + (window.__MLS_AV || Date.now());
     s.async = true;
     (document.head || document.documentElement).appendChild(s);
   } catch (e) {}
@@ -520,7 +524,7 @@
     if (document.getElementById("mlsUxPack1Ldr")) return;
     var s = document.createElement("script");
     s.id = "mlsUxPack1Ldr";
-    s.src = "/feat_mls_uxpack1.js?v=" + Date.now();
+    s.src = "/feat_mls_uxpack1.js?v=" + (window.__MLS_AV || Date.now());
     s.async = true;
     (document.head || document.documentElement).appendChild(s);
   } catch (e) {}
