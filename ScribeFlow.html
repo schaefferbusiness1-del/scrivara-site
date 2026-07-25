@@ -1732,7 +1732,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div style="font-size:13px;font-weight:600;color:var(--brand-dk);margin-bottom:6px">📤 Your pre-visit intake link — text or email it to patients to fill out at home:</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input id="previsitLinkInput" aria-label="Pre-visit link" readonly style="flex:1;min-width:200px;border:1px solid #cfdbe8;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
-          <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyPrevisitLinkText()">📋 Copy</button>
+          <button class="btn-primary" style="font-size:13px;padding:8px 14px" aria-label="Copy pre-visit intake link" onclick="copyPrevisitLinkText()">📋 Copy</button>
         </div>
       </div>
       <div id="pendingIntakeBox" style="display:none;margin-top:12px;background:#f0f7ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
@@ -1740,7 +1740,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div style="font-size:13px;font-weight:600;color:#127a55;margin-bottom:6px">📅 Your online booking link — patients open it to request appointments (no login):</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input id="bookingLinkInput" aria-label="Booking link" readonly style="flex:1;min-width:200px;border:1px solid #bfe6d2;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
-          <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyBookingLinkText()">📋 Copy</button>
+          <button class="btn-primary" style="font-size:13px;padding:8px 14px" aria-label="Copy online booking link" onclick="copyBookingLinkText()">📋 Copy</button>
         </div>
       </div>
       <div id="recTabBar" style="display:none;gap:7px;flex-wrap:wrap;margin:2px 0 4px">
@@ -27845,7 +27845,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b624';
+  window.__MLS_AV='b625';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
