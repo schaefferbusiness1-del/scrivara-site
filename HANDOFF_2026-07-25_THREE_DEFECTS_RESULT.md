@@ -199,16 +199,54 @@ is 5.5–11s — which brackets the measured foreground TBT of 10,929ms.
 `!!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)` — called
 once per candidate control, and the coverage suite counts 802 active controls.
 
-> **Read this before "fixing" it.** A tight read-only loop is NOT the problem;
-> once layout is clean, subsequent reads are free. The cost is read → write →
-> read interleaving. Confirm the interleave before batching anything, and do not
-> memoize `visible()` across a write — a stale visibility answer puts a control
-> in the bar that the user cannot press, which is worse than a slow boot.
+### What one forced layout costs here — 18.2ms. This is the number.
 
-**Measured at 28ms in a hidden tab, which is meaningless** — a hidden tab has no
-layout to compute, so forced reads are free there. That number will only become
-real in a foreground window. It is the single measurement this defect still
-needs, and it takes about a minute (see below).
+Measured on the running page at b600, with no instrument wrapping (verified:
+`instrumentStillWrapping: false`, because the first attempt at this measured my
+own probe's `new Error().stack` and read 16.7ms for the wrong reason):
+
+```
+write then read (forces style+layout)   median 18.2ms   p90 19.4ms
+read with no intervening write          median  0ms
+
+7,982 DOM nodes · 197 stylesheets · 3,934 CSS rules
+```
+
+**One forced layout on this page costs 18.2 milliseconds.** A healthy page of
+this size is under 1ms; this is roughly 20× that. At ~2.3µs per node it is the
+page itself that is expensive to lay out, not any one caller.
+
+That reframes the defect. It is not really a *boot* problem:
+
+- 600 write→read interleavings anywhere = **10.9s**, which is the measured
+  foreground TBT almost exactly
+- all 5,576 boot reads interleaved = **101s**, which is the ~80s cold boot the
+  original handoff recorded
+- and it means **every interaction** that reads layout after a write pays 18.2ms,
+  not just boot
+
+So there are two independent fixes, and the second is worth more:
+
+1. **Stop interleaving** in the two modules that own 96% of the reads. Batch
+   reads before writes. Note a tight read-only loop is already free (0ms above) —
+   only reads *after* a write pay. Confirm the interleave in the code before
+   touching it, and do **not** memoize `visible()` across a write: a stale
+   visibility answer puts a control in the bar the user cannot press, which is
+   worse than a slow boot.
+2. **Make a layout cost less than 18.2ms.** 197 stylesheets and 3,934 rules over
+   7,982 nodes is the reason a single layout is this expensive. This is the one
+   that also speeds up every click, not just boot.
+
+This measurement is reproducible in five seconds, needs no foreground window
+(forced layout is computed on demand regardless of visibility), and is the
+recommended regression check for any fix:
+
+```js
+const el=document.body,s=[];
+for(let i=0;i<40;i++){el.style.setProperty('--p',String(i));
+  const t0=performance.now(); void el.offsetHeight; s.push(performance.now()-t0);}
+el.style.removeProperty('--p'); s.sort((a,b)=>a-b); s[20];   // median ms
+```
 
 ### The observer theory — also killed
 
@@ -260,18 +298,18 @@ individually reasonable.
 **Superseded as a cause** by the 444ms measurement above — keep the pin, drop the
 theory.
 
-### The one measurement this defect still needs
+### What is still unmeasured
 
-Everything expensive here is rendering, and **rendering is free in a hidden tab**.
-That is why five sessions have produced five different wrong answers. Automation
-cannot force window focus: `document.hidden` was true on every attempt bar one,
-and `long-animation-frame` records nothing without animation frames.
+How many of the 5,576 reads actually follow a write **in the foreground**. In a
+hidden tab those reads total 28ms, meaning almost none of them were interleaved
+there — but a foreground tab also lays out for painting every frame, so the
+interleaving pattern differs. That count is the last gap, and it needs the Chrome
+window focused with the MLS tab selected; automation could not obtain it
+(`document.hidden` was true on every attempt but one).
 
-**With the Chrome window focused for ~60 seconds**, run the layout-read
-instrument above plus a `longtask` observer across one reload. That yields
-forced-layout cost per module in the foreground and either confirms or kills the
-layout-thrash lead in a single pass. Until then, do not refactor either module:
-the 28ms hidden-tab figure is not evidence, and neither is anyone's intuition.
+It is a gap in *attribution*, not in the diagnosis. The 18.2ms figure is
+foreground-independent and is already enough to act on, in this order:
+measure 18.2ms → make a change → re-measure with the five-second snippet above.
 
 **Confirming measurement, and it has to come before any fix.** Attribute
 main-thread time *per module* with the tab genuinely in **front** — the Chrome
