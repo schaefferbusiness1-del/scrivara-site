@@ -696,3 +696,63 @@ silently, which is the exact regression the 2026-07-21 artifact records.
 The reader currently refuses honestly and saves nothing. That is the correct
 behaviour for a reader that cannot prove completeness, and it is why this is a
 defect to fix rather than an incident to contain.
+
+---
+
+## Gate 2 is not a completeness check. It is the landing-pane discriminator.
+
+This is the last thing source analysis can establish, and it inverts the obvious
+reading of the code.
+
+Gate 2's own comment presents it as a progressive-render guard:
+
+> "when the SHOW control itself declares 'All Events (N)', the index is complete
+> only when the list really renders N items."
+
+Read alongside the 2026-07-21 acceptance artifact, it is doing something else as
+well — and the something else is the safety-critical half.
+
+**The chain.** Gate 1 is recorded *passing* on the landing pane, so it cannot
+discriminate. Gates 2 and 3 were added afterwards, as the queued fix for exactly
+that failure ("reconcile with the panel's 'All Events (N)' total"). The reason
+they work is not arithmetic: it is that **"All Events (N)" belongs to the real
+Visits panel's SHOW control, and a 1–2 row "recent" landing list does not have
+one.** Requiring the label is what tells the two surfaces apart. The count
+comparison is the completeness check riding on top of it.
+
+### Why that matters more than it looks
+
+It means gate 2 is load-bearing for **safety**, not merely for completeness, and
+that changes the risk of every candidate fix:
+
+- **"Drop the mandatory total"** does not merely lose a completeness proof. It
+  removes the only working landing-pane discriminator in the reader, because
+  gate 1 demonstrably is not one. A 1–2 row index would then be accepted.
+- **"Fall back to row-count stability when the total is unreadable"** is the
+  same thing wearing a disguise. A landing pane that has finished rendering its
+  two rows is *perfectly stable*. Stability proves rendering has stopped; it says
+  nothing about which surface stopped.
+- **The safe shape is to split the two jobs the label is currently doing**:
+  prove panel identity from the presence of the SHOW control (or a structural
+  handle on the panel that owns the list), and prove completeness separately —
+  from the count when it is there, from stability when it is not. Today one
+  string has to satisfy both, which is why one missing label breaks everything.
+
+### What still needs the reading, stated exactly
+
+Whether the collapsed panel renders *no SHOW control at all* (identity is
+genuinely unavailable — the split above is impossible and gate 1 must become
+structural first) or renders **"All Events" without the "(N)"** (identity is
+available, only the count is missing — the split is straightforward and the fix
+is small).
+
+Those two are one word apart in the DOM and lead to completely different
+changes. The receipt distinguishes them: `visits-total-not-readable` with
+`rows=N;kids=N` tells you the list is populated and the label is not matching,
+and `enumDiag.frames` carries the URLs to confirm which surface answered.
+
+**Do not widen the `All\s*Events\s*\(\s*(\d{1,4})\s*\)` pattern to make the gate
+pass.** If the count is genuinely absent, matching "All Events" alone would let
+the gate succeed with `evTotal = 0`, and `listKids < 0` is false — so the index
+is accepted with no completeness proof whatsoever. That is the worst available
+outcome and it is one careless regex edit away.
