@@ -1322,6 +1322,36 @@
      them says "Edit, Edit, Edit, Edit", and not one had an aria-label or a
      title. The short visible text is deliberate and stays; only the ACCESSIBLE
      name changes, so there is no visual change at all. */
+  /* DELIBERATELY SCOPED TO #profileCard. Do not generalise this pass to the
+     whole app without re-running the measurement below — it was tried, against
+     the live DOM, and BOTH candidate heuristics regress somewhere:
+
+       subtraction-first (this one)  #profileCard 9/9 correct
+                                     #visitView   picks the sibling BUTTON, so
+                                                  Copy/Print rows name each
+                                                  other: "Copy — Print",
+                                                  "Print — Copy", and one
+                                                  "Copy — PF-RUN-20260725-96375"
+
+       heading/inert-first           #visitView   good: "Copy — Clinical note
+                                                  Draft", "Print — (dx + CPT
+                                                  for billing)"
+                                     #profileCard 8 of 9 WORSE — sections
+                                                  collapse onto "Visit context",
+                                                  and it lifts patient data into
+                                                  the accessible name:
+                                                  "Edit — Sample medication
+                                                  10 mg daily"
+
+     The second failure is the disqualifying one: an aria-label REPLACES the
+     visible text for a screen reader, so a wrong one is worse than a generic
+     one, and clinical detail does not belong in a control name. The two regions
+     have genuinely different DOM shapes — the card is heading+control rows, the
+     visit screen is control rows inside titled cards — and one heuristic cannot
+     read both. Measured cost, for whoever revisits this: scoped to the visible
+     view a generic-label scan is 0.19ms against a 3.27ms render pass; document
+     wide it is 2.1ms. Cost was never the blocker. Correctness was.
+     Guarded by tests/calm-shell-generic-naming-scope.test.js. */
   var GENERIC_LABEL = /^(edit|copy|clear|add|remove|open|view|more|refresh)$/i;
 
   /* Read the section from the row the control sits in, by subtracting the
