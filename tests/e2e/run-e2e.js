@@ -732,6 +732,247 @@ async function addPatient(page, name, dob) {
     await page.setViewport({ width: 1280, height: 850 });
   });
 
+  /* ======================= PHONE CONTRACTS (ph-e2e-1.0.0) =======================
+     Why these exist, and why they do not reuse the step above.
+
+     The step above measures documentElement.scrollWidth. Below 760px the app
+     sets `html, body.mls-redesign{ max-width:100vw; overflow-x:hidden }`
+     (feat_mls_redesign.js:1040). MEASURED in Chrome 390x844: a deliberately
+     1200px-wide child reports documentElement.scrollWidth === clientWidth ===
+     390, i.e. the signal is fully suppressed, while getBoundingClientRect()
+     still reports right === 1200. The existing step is therefore structurally
+     incapable of detecting overflow at phone width — it has been passing
+     vacuously on exactly the breakpoint it is named for.
+
+     Every contract below measures geometry per element, and PHONE_A11Y_PROBE
+     proves the detector fires before trusting a clean result.
+     ============================================================================= */
+
+  /* Shared in-page probe. Returns violations for one viewport.
+     Elements inside a legitimately scrollable container are not overflow bugs.
+
+     Passed to page.evaluate as a FUNCTION REFERENCE, never as a source string:
+     a string goes through puppeteer's function-detection and an extra escaping
+     hop, which silently produced a probe that returned a clean result on a page
+     the identical logic flagged when run directly. The canary step below exists
+     to catch exactly that. */
+  function phoneProbe() {
+    const vw = document.documentElement.clientWidth;
+    const seen = (el) => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      if (el.getAttribute && el.getAttribute('data-mls-preview-hidden') === '1') return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const inScroller = (el) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const ox = getComputedStyle(p).overflowX;
+        if (ox === 'auto' || ox === 'scroll') return true;
+      }
+      return false;
+    };
+    const desc = (el) => el.tagName.toLowerCase()
+      + (el.id ? '#' + el.id : '')
+      + (el.className && typeof el.className === 'string' && el.className.trim()
+          ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+
+    const overflow = [], small = [], zoom = [];
+    document.querySelectorAll('*').forEach((el) => {
+      if (!seen(el)) return;
+      const r = el.getBoundingClientRect();
+      if (r.right > vw + 2 && !inScroller(el)) {
+        overflow.push({ el: desc(el), right: Math.round(r.right), vw: vw });
+      }
+    });
+    document.querySelectorAll('button,a[href],[role="button"],[role="menuitem"],summary,select,input[type="checkbox"],input[type="radio"],input[type="submit"]').forEach((el) => {
+      if (!seen(el)) return;
+      if (el.disabled === true || el.getAttribute('aria-disabled') === 'true') return;
+      const r = el.getBoundingClientRect();
+      if (r.width < 44 || r.height < 44) {
+        small.push({ el: desc(el), w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10,
+                     txt: (el.textContent || '').trim().slice(0, 22) });
+      }
+    });
+    document.querySelectorAll('input,textarea,select,[contenteditable="true"]').forEach((el) => {
+      if (!seen(el)) return;
+      const t = (el.getAttribute('type') || '').toLowerCase();
+      if (['checkbox','radio','range','color','file','submit','button','hidden'].indexOf(t) >= 0) return;
+      const fs = parseFloat(getComputedStyle(el).fontSize);
+      if (fs < 16) zoom.push({ el: desc(el), fontSize: fs });
+    });
+    return { overflow: overflow, small: small, zoom: zoom };
+  }
+
+  const PHONE_VIEWPORTS = [
+    { name: 'iPhone 390x844', width: 390, height: 844 },
+    { name: 'Android 360x800', width: 360, height: 800 }
+  ];
+  const PHONE_VIEWS = ['visit', 'history', 'orders', 'profile'];
+
+  /* A dedicated page per phone viewport.
+     Mobile emulation is applied BEFORE goto on purpose: calling setViewport
+     with isMobile/hasTouch on an already-loaded page makes puppeteer reload it,
+     which raises the app's beforeunload guard; the suite's default dialog
+     handler dismisses, dismissing CANCELS the navigation, and the whole thing
+     surfaces as a bogus 30s "Navigation timeout" (see reloadApp's note).
+     A fresh page also means the phone contracts are not measured on a session
+     already dirtied by the desktop steps above. */
+  async function newPhonePage(vp) {
+    const p = await browser.newPage();
+    const cdp = await p.createCDPSession();
+    await cdp.send('Network.setBypassServiceWorker', { bypass: true });
+    p.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
+    await p.setViewport({ width: vp.width, height: vp.height, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+    await p.goto(APP, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const ready = await waitForAppSettled(p);
+    if (process.env.MLS_E2E_PHONE_DEBUG) {
+      const d = await p.evaluate(() => {
+        const vis = (id) => { const e = document.getElementById(id); if (!e) return 'absent'; const cs = getComputedStyle(e); const r = e.getBoundingClientRect(); return cs.display + '/' + Math.round(r.width) + 'x' + Math.round(r.height); };
+        return {
+          url: location.href,
+          authScreen: vis('authScreen'), appScreen: vis('appScreen'),
+          buttons: document.querySelectorAll('button').length,
+          inputs: document.querySelectorAll('input,textarea,select').length,
+          scripts: document.querySelectorAll('script').length,
+          bodyClass: (document.body.className || '').slice(0, 90),
+          text: (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160)
+        };
+      });
+      console.log('  [phone-debug ' + vp.name + '] ready=' + JSON.stringify(ready) + ' ' + JSON.stringify(d));
+    }
+    return p;
+  }
+
+  /* Wait until the app is BOOTED AND SETTLED — not merely parsed, and not
+     merely painted once.
+
+     Two distinct traps were measured here, both of which produce a green run
+     against nothing:
+       1. For ~2s after domcontentloaded every element measures 0x0 through
+          getBoundingClientRect (an ancestor is not yet displayed), so every
+          geometry contract reports zero violations.
+       2. Even once something is sized, the app is still mid-boot: 12 of ~229
+          script tags present, body text "Connecting to your practice…", and the
+          shell CSS layers (mls-redesign / mls-calm) not yet applied — i.e. the
+          exact stylesheet whose phone rules are under test is absent.
+
+     A fixed sleep is not a fix, it is the same bug with a longer fuse. Require
+     the module loader to have run, then require two consecutive identical
+     geometry samples so we only ever measure a page that has stopped moving. */
+  async function waitForAppSettled(p, timeoutMs = 90000) {
+    const started = Date.now();
+    let last = null, stable = 0, prevKey = '';
+    while (Date.now() - started < timeoutMs) {
+      last = await p.evaluate(() => {
+        const sized = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        const controls = [...document.querySelectorAll('button, input')].filter(sized).length;
+        const bodyR = document.body ? document.body.getBoundingClientRect() : { height: 0 };
+        return {
+          scripts: document.querySelectorAll('script').length,
+          controls: controls,
+          bodyHeight: Math.round(bodyR.height),
+          booting: /Connecting to your practice/i.test(document.body ? (document.body.innerText || '') : ''),
+          shell: (document.body && document.body.className || '')
+        };
+      });
+      const loaded = last.scripts > 200 && !last.booting && last.controls >= 10 && last.bodyHeight > 100;
+      const key = last.controls + ':' + last.bodyHeight + ':' + last.scripts;
+      stable = (loaded && key === prevKey) ? stable + 1 : 0;
+      prevKey = key;
+      if (loaded && stable >= 2) return last;
+      await sleep(400);
+    }
+    throw new Error('app never settled within ' + timeoutMs + 'ms; last signal: ' + JSON.stringify(last));
+  }
+  async function probeViews(p, views) {
+    const out = { overflow: [], zoom: [], small: [] };
+    for (const v of views) {
+      try { await p.evaluate((view) => { try { showView(view); } catch (e) {} }, v); } catch (e) {}
+      await sleep(350);
+      const r = await p.evaluate(phoneProbe);
+      r.overflow.forEach(o => out.overflow.push(v + ' → ' + o.el + ' right=' + o.right + ' > ' + o.vw));
+      r.zoom.forEach(z => out.zoom.push(v + ' → ' + z.el + ' @' + z.fontSize + 'px'));
+      r.small.forEach(s => out.small.push(v + ' → ' + s.el + ' ' + s.w + 'x' + s.h + ' "' + s.txt + '"'));
+    }
+    return out;
+  }
+
+  for (const vp of PHONE_VIEWPORTS) {
+    const pp = await newPhonePage(vp);
+
+    await step('phone instrument: the overflow detector actually fires at ' + vp.name + ' (reverse A/B)', async () => {
+      const before = await pp.evaluate(phoneProbe);
+      await pp.evaluate(() => {
+        const d = document.createElement('div');
+        d.id = '__mlsOverflowCanary';
+        d.style.cssText = 'width:1200px;height:24px;background:transparent';
+        document.body.appendChild(d);
+      });
+      await sleep(150);
+      /* Probe FIRST, then diagnose. The app runs self-healing MutationObservers;
+         if the canary is measured before the probe runs, a removal in between
+         is indistinguishable from a filtering bug. */
+      const dirty = await pp.evaluate(phoneProbe);
+      const canary = await pp.evaluate(() => {
+        const c = document.getElementById('__mlsOverflowCanary');
+        if (!c) return { presentAfterProbe: false };
+        const r = c.getBoundingClientRect();
+        const cs = getComputedStyle(c);
+        let scroller = null;
+        for (let p = c.parentElement; p; p = p.parentElement) {
+          const ox = getComputedStyle(p).overflowX;
+          if (ox === 'auto' || ox === 'scroll') { scroller = (p.id || p.tagName) + ':' + ox; break; }
+        }
+        return { presentAfterProbe: true, w: Math.round(r.width), right: Math.round(r.right),
+                 vw: document.documentElement.clientWidth, display: cs.display,
+                 maxWidth: cs.maxWidth, scrollerAncestor: scroller,
+                 parent: c.parentElement ? (c.parentElement.id || c.parentElement.tagName) : null };
+      });
+      const deBlind = await pp.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2);
+      await pp.evaluate(() => { const c = document.getElementById('__mlsOverflowCanary'); if (c) c.remove(); });
+      await sleep(150);
+      const after = await pp.evaluate(phoneProbe);
+
+      assert(dirty.overflow.some(o => /__mlsOverflowCanary/.test(o.el)),
+        'DETECTOR IS BLIND: a 1200px-wide element at ' + vp.width + 'px was not reported. ' +
+        'Canary state: ' + JSON.stringify(canary) +
+        ' | probe.overflow=' + JSON.stringify(dirty.overflow) +
+        ' | probe counts: small=' + dirty.small.length + ' zoom=' + dirty.zoom.length);
+      assert(deBlind,
+        'documentElement.scrollWidth was expected to be suppressed by overflow-x:hidden here. ' +
+        'If this fails, the legacy documentElement-based step may be trustworthy again — re-evaluate it.');
+      assert.strictEqual(after.overflow.length, before.overflow.length,
+        'canary removal did not restore the baseline — the probe mutates what it measures');
+    });
+
+    await step('phone: no element overflows the viewport at ' + vp.name, async () => {
+      const r = await probeViews(pp, PHONE_VIEWS);
+      const uniq = [...new Set(r.overflow)];
+      assert.strictEqual(uniq.length, 0, uniq.length + ' overflowing element(s):\n    ' + uniq.slice(0, 12).join('\n    '));
+    });
+
+    await step('phone: no text field under 16px (iOS zooms the page on focus) at ' + vp.name, async () => {
+      const r = await probeViews(pp, PHONE_VIEWS);
+      const uniq = [...new Set(r.zoom)];
+      assert.strictEqual(uniq.length, 0, uniq.length + ' field(s) below 16px:\n    ' + uniq.slice(0, 14).join('\n    '));
+    });
+
+    await step('phone: every enabled control is at least 44x44 at ' + vp.name, async () => {
+      const r = await probeViews(pp, PHONE_VIEWS);
+      const uniq = [...new Set(r.small)];
+      assert.strictEqual(uniq.length, 0, uniq.length + ' control(s) under 44x44:\n    ' + uniq.slice(0, 16).join('\n    '));
+    });
+
+    try { await pp.close(); } catch (e) {}
+  }
+
+  /* NOTE: do not restore a desktop viewport here. Leaving isMobile:true makes
+     puppeteer reload the page, which raises the app's beforeunload guard; the
+     dismissed dialog cancels the navigation and surfaces as a bogus 30s
+     "Navigation timeout". The browser closes on the next line regardless. */
+
   await browser.close();
   server.close();
   console.log('\n' + results.length + ' e2e steps, ' + failed + ' failed');

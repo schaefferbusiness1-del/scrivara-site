@@ -1214,6 +1214,108 @@
 
 /* BROKEN-3 fix (2026-07-09): the LIVE redesigned header is #appHeader.mlsRdHdr (class added at runtime by the bundle); the b104 .mainnav z-index bump missed it, so fixed full-page views (z-index:5000) painted over the open Menu dropdown. 6000 stays below #_patientFace (9500) and #toast (99999). */
 #appHeader.mlsRdHdr{z-index:6000!important}
+
+/* ===== ph-zoom-1.0.0 — iOS focus-zoom floor (2026-07-25, phone lane) =========
+ * Mobile Safari ZOOMS the whole page when a form field smaller than 16px takes
+ * focus, and does not zoom back out. Measured at b621 on a settled app at both
+ * 390x844 and 360x800, five fields did this — including #ez3flTranscript, the
+ * visit transcript, i.e. the one box a clinician types corrections into:
+ *     #mlsPqsInput 13.5px · #ez3flTranscript 14px · #histSearch 13.5px
+ *     #ordType 13.5px     · #mlsDockAsk 15.5px
+ *
+ * The fix must be FONT SIZE. Suppressing zoom via user-scalable=no /
+ * maximum-scale is banned by tests/phone-secure-lifecycle.test.js:15 ("phone
+ * recorder must preserve browser pinch zoom") and is an accessibility
+ * regression regardless.
+ *
+ * Scoped to <=760px so desktop density is untouched (that is another lane's
+ * surface). Additive only: no existing rule is edited, so the four suites that
+ * pin mobile CSS as exact literal substrings are unaffected.
+ *
+ * On specificity — deliberately NOT "just add !important":
+ *   feat_mls_history_exact.js:40 already sets
+ *     #historyView #histSearch{...font-size:13.5px!important}
+ *   at (2,0,0). A competing !important at lower specificity LOSES. Each
+ *   override below therefore out-specifies its target rather than stacking.
+ *   Everything else in scope sets font-size WITHOUT !important, so the blanket
+ *   floor alone is sufficient for those. */
+@media (max-width:760px){
+  /* Blanket floor — catches every field, including any added later. */
+  html body input[type="text"], html body input[type="email"], html body input[type="password"],
+  html body input[type="search"], html body input[type="tel"], html body input[type="url"],
+  html body input[type="number"], html body input[type="date"], html body input:not([type]),
+  html body textarea, html body select, html body .sf-select,
+  html body [contenteditable="true"]{ font-size:16px !important; }
+
+  /* Targeted overrides where the owning rule is itself !important or highly
+     specific. Each simply prefixes the ORIGINAL selector with `html body`,
+     which adds (0,0,2) and therefore always wins the tie — rather than adding
+     a competing !important at lower specificity, which loses silently.
+     Enumerated by scanning every root .js/.html for a sub-16px font-size
+     !important on a field selector; there were nine. Re-run that scan if a new
+     "exact" module lands. */
+  html body #historyView #histSearch{ font-size:16px !important; }                    /* feat_mls_history_exact.js:40 */
+  html body #ordersView .sf-select, html body #ordersView select,
+  html body #ordersView input[type="text"], html body #ordersView .field input{ font-size:16px !important; } /* feat_mls_orders_exact.js:36 */
+  html body #authScreen .field input{ font-size:16px !important; }                    /* feat_mls_login_exact.js:29 — the FIRST field a clinician touches */
+  html body #studioView #copilotInput{ font-size:16px !important; }                   /* feat_mls_studio_exact.js:53 */
+  html body #mls-sg-root input, html body #mls-sg-root select,
+  html body #mls-sg-root textarea{ font-size:16px !important; }                       /* feat_mls_studio_exact.js:81 */
+  html body #mlsSgPro input[type="text"], html body #mlsSgPro input:not([type]),
+  html body #mlsSgPro select{ font-size:16px !important; }                            /* feat_mls_study_calm.js:39 */
+  html body #settingsModal.mls-settings-clean .mls-set-search-row input,
+  html body #settingsModal.mls-settings-clean .set-section input[type="text"],
+  html body #settingsModal.mls-settings-clean .set-section textarea,
+  html body #settingsModal.mls-settings-clean .set-section select{ font-size:16px !important; } /* feat_athena_tooltip_dedupe.js:534,:545 */
+  html body #visitView .vx-tools-host .extra-card .xbody,
+  html body #visitView .vx-tools-host .extra-card textarea{ font-size:16px !important; }        /* feat_mls_notetools_exact.js:73 */
+  html body .mlspp-wrap select{ font-size:16px !important; }                          /* feat_mls_protocol.js:143 */
+
+  /* Non-!important but ID-scoped, so the blanket already wins; listed for the
+     next reader: #mlsEz3 .ez3fl-tx (the visit transcript), #mlsRdSearchSlot
+     .mlsRdSearch, #mlsDockAsk. */
+  html body #mlsEz3 .ez3fl-tx{ font-size:16px !important; }
+  html body #mlsRdSearchSlot .mlsRdSearch{ font-size:16px !important; }
+  html body #mlsDock #mlsDockAsk{ font-size:16px !important; }
+}
+
+/* ===== ph-tap-1.0.0 — 44x44 touch targets (2026-07-25, phone lane) ==========
+ * Apple HIG and WCAG 2.5.5 both put the minimum at 44x44. Measured at b621 on a
+ * settled app, 38 controls were under it at BOTH 390x844 and 360x800 — and the
+ * failures are WIDTH, not height:
+ *     top bar  #mlsRdRailBtn / #mlsRdBackBtn / #mlsRdNewBtn / #mlsTbMenuBtn 38px
+ *              #mlsAccountMenuBtn 39px
+ *     dock     all nav buttons 35x49   (the dock IS the navigation on a phone:
+ *              feat_mls_calm_shell.js:180 hides .mainnav under body.mls-calm)
+ *     history  .del 30.7x44
+ *
+ * A 44px floor already exists at ScribeFlow.html:1027 but it is a `button` TYPE
+ * selector inside @media(max-width:600px) — so it never reaches <a>,
+ * [role=menuitem] or <input>, and it is out-specified in the dock by
+ * feat_mls_calm_shell.js:542 `#mlsDock button{min-width:0;flex:1}`.
+ *
+ * Each rule below out-specifies the rule it must beat (prefixing `html body`
+ * adds (0,0,2)); none of them stacks a competing !important at lower
+ * specificity, which is the failure mode that has cost this repo repeatedly. */
+@media (max-width:760px){
+  /* Generic floor that actually reaches non-<button> controls. */
+  html body a[href], html body [role="button"], html body [role="menuitem"],
+  html body summary, html body button{ min-height:44px; }
+
+  /* Top bar. Height is already 44; these are all too NARROW. */
+  html body #mlsRdRailBtn, html body #mlsRdBackBtn, html body #mlsRdNewBtn,
+  html body #mlsTbMenuBtn, html body #mlsAccountMenuBtn{ min-width:44px; }
+
+  /* Dock — beats `#mlsDock button{min-width:0}` (1,0,1) and
+     `#mlsDock #mlsDockCopilot{min-width:64px}` (2,0,0). Copilot is allowed to
+     shrink to 44 so the row can afford 44 for everything else. */
+  html body #mlsDock button{ min-width:44px; }
+  html body #mlsDock #mlsDockCopilot{ min-width:44px; }
+  html body #mlsDock #mlsDockAsk{ min-width:44px; }
+
+  /* Row actions (history delete, and the same pattern elsewhere). */
+  html body .del, html body button.del{ min-width:44px; }
+}
 </style>
 <!-- Networked legal intake, public-expert editing/review, file exchange, messaging,
      billing, and testimony are held until separately released. -->
@@ -16158,7 +16260,18 @@ function startCapture(){
     return false;
   }
   if(!recog && !initRecog()){
-    showMicWarn('Live voice transcription isn’t supported in this browser. Try Chrome or Edge — or just type/paste the visit conversation below. Everything else works the same.');
+    /* ph-mic-1.0.0 (2026-07-25, phone lane): "Try Chrome or Edge" is IMPOSSIBLE
+       advice on an iPhone. Every iOS browser is required to use WebKit, none of
+       them exposes SpeechRecognition, so the single instruction this gave named
+       a route that cannot exist — the same defect class as an "Upgrade in
+       Settings" message pointing at a Settings screen with no upgrade control.
+       Name a route that DOES exist: the iOS keyboard's own dictation key
+       dictates straight into the transcript textarea. */
+    var _mlsIsIOS = /iPad|iPhone|iPod/.test(navigator.userAgent||'') ||
+                    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints||0) > 1);
+    showMicWarn(_mlsIsIOS
+      ? 'Live dictation isn’t available in any iPhone or iPad browser — Chrome and Edge on iOS use the same engine as Safari, so switching won’t help. Tap the 🎤 key on your keyboard to dictate straight into the transcript below, or type/paste it. Everything else works the same.'
+      : 'Live voice transcription isn’t supported in this browser. Try Chrome or Edge — or just type/paste the visit conversation below. Everything else works the same.');
     return false;
   }
   const captureBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recording');

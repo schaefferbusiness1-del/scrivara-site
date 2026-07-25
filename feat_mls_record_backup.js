@@ -247,9 +247,57 @@
       return !!(b && (b.classList.contains("recording") || /stop/i.test(b.textContent || "")));
     }, false);
   }
+  /* ---------------- screen wake lock (ph-wake-1.0.0, 2026-07-25) -------------
+   * Verified at b621: the signed-in app contained ZERO `wakeLock` and ZERO
+   * `visibilitychange` references across ScribeFlow.html and mls-connect.js.
+   * On a phone that means the screen sleeps mid-visit, the Web Speech
+   * recognizer is torn down with it, and dictation stops SILENTLY — the app
+   * still shows "recording". This is the difference between a phone that can
+   * take a visit and one that cannot.
+   *
+   * phone.html already solved exactly this and is proven in the field
+   * (phone.html:545 wake lock, :547 visibilitychange re-arm). This ports that
+   * pattern rather than inventing a second one.
+   *
+   * Deliberately NO new setInterval: tests/boot-script-budget.test.js caps
+   * setInterval occurrences across every root feat_*.js (INTERVAL_CEILING) and
+   * counts files whether or not the loader pulls them in. The lock is acquired
+   * and released from the sentinel tick that already runs, plus one
+   * visibilitychange listener — a wake lock is auto-released whenever the page
+   * is hidden, so it MUST be re-requested on return, not merely held. */
+  var wakeLock = null;
+  function wakeSupported() {
+    return safe(function () { return !!(navigator.wakeLock && navigator.wakeLock.request); }, false);
+  }
+  function grabWake() {
+    if (wakeLock || !wakeSupported()) return;
+    safe(function () {
+      navigator.wakeLock.request("screen").then(function (lock) {
+        wakeLock = lock;
+        safe(function () {
+          lock.addEventListener("release", function () { wakeLock = null; });
+        });
+      }, function () { wakeLock = null; });
+    });
+  }
+  function dropWake() {
+    if (!wakeLock) return;
+    var lock = wakeLock; wakeLock = null;
+    safe(function () { lock.release(); });
+  }
+  safe(function () {
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      if (!capturingNow()) { dropWake(); return; }
+      grabWake();   /* released automatically while hidden — re-take it */
+      safe(sentinel); /* the recognizer may have been torn down meanwhile */
+    });
+  });
+
   function sentinel() {
     safe(wrapProto);
-    if (!capturingNow()) return;
+    if (!capturingNow()) { dropWake(); return; }
+    grabWake();
     var r = lastRec;
     if (!r || r.__mlsRbStopped) return;
     var endedAt = r.__mlsRbEnded || 0;
@@ -371,6 +419,12 @@
     list: allSess,
     download: download,
     restarts: function () { return restarts; },
+    /* ph-wake-1.0.0: observable so a test can assert the lock is actually held
+       while recording, rather than merely that the code exists. */
+    wakeSupported: wakeSupported,
+    wakeHeld: function () { return !!wakeLock; },
+    _grabWake: grabWake,
+    _dropWake: dropWake,
     _startBackup: startBackup,
     _stopBackup: stopBackup,
     purge: purge,

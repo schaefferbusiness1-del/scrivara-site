@@ -318,7 +318,8 @@ const tests = [
   'prep-summary-clinical-negatives.test.js',
   'calm-shell-generic-naming-scope.test.js',
   'settings-preview-commit-contract.test.js',
-  'calm-shell-return-path.test.js'
+  'calm-shell-return-path.test.js',
+  'phone-capture-survival.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
