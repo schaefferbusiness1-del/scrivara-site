@@ -583,7 +583,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v170'], 'activation must remove every superseded MLS cache');
+  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v171'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [
@@ -613,7 +613,7 @@ async function verifyServiceWorkerRuntime() {
       `secret-free phone mode flag must resolve to the cached shell offline: ${modeUrl}`);
   }
   /* …and the allowance must be READ-ONLY: the query URL is never cached. */
-  const afterModeKeys = (await (await cacheApi.open('mls-v170')).keys()).map((r) => r.url);
+  const afterModeKeys = (await (await cacheApi.open('mls-v171')).keys()).map((r) => r.url);
   assert(!afterModeKeys.some((u) => /ScribeFlow\.html\?phone=/.test(u)),
     'the phone mode flag must never be written to the cache — only read back from the plain shell');
   /* A near-miss must NOT be waved through: the whitelist is exact strings. */

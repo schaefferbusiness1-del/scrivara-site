@@ -33,11 +33,12 @@
   .login-card h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em;font-size:22px;margin:14px 0 4px}
   .login-card p.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
   label{display:block;font-size:12.5px;font-weight:700;color:var(--blue-d);margin:14px 0 5px}
-  input{width:100%;padding:12px 13px;border:1px solid #E4E1D8;border-radius:10px;font-size:15px;background:#FCFBF8;color:var(--ink)}
-  input::placeholder{color:#656A65}
-  input:focus{outline:none;border-color:#2E6A4B;box-shadow:0 0 0 3px rgba(46,106,75,.12)}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:10px;
-    background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:12px 16px;cursor:pointer;width:100%;margin-top:18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
+  input:not([type=checkbox]),select,textarea{width:100%;padding:15px 16px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;font-family:inherit;background:#F7F8F7;color:var(--ink)}
+  textarea{min-height:74px;resize:vertical}
+  input::placeholder,textarea::placeholder{color:#656A65}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:#2E6A4B;box-shadow:0 0 0 3px rgba(46,106,75,.12)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:999px;
+    background:var(--blue);color:#fff;font-weight:700;font-size:15.5px;padding:15px 20px;min-height:50px;cursor:pointer;width:100%;margin-top:18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
   .btn:hover{background:#28503f}
   .btn[disabled]{opacity:.6;cursor:default}
   .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px;box-shadow:none}
@@ -69,7 +70,7 @@
     margin-top:14px;background:#F4F6F4;border:1px solid #E7EAE6}
   #login .privacy{font-size:12.5px;line-height:1.55}
   #login form + .privacy{margin-top:18px;padding-top:16px;border-top:1px solid #EDEFEC}
-  .err{background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:10px 12px;font-size:13.5px;margin-top:14px}
+  .err{background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:12px;padding:10px 12px;font-size:13.5px;margin-top:14px}
   .privacy{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
 
   /* ---------- App ---------- */
@@ -77,7 +78,7 @@
   .top-in{max-width:1080px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
   .who{font-size:13px;color:var(--muted)}
   .who b{color:var(--ink)}
-  .linkbtn{background:none;border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue-d);cursor:pointer}
+  .linkbtn{background:none;border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:700;color:var(--blue-d);cursor:pointer}
   .linkbtn:hover{background:var(--soft)}
   .demo-banner{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;font-size:13px;padding:9px 14px;border-radius:10px;margin:16px 0}
   .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px}
@@ -135,7 +136,7 @@
     .grid{gap:12px;margin-top:14px}
     .msg{max-width:93%}
     .login-card{padding:24px 18px}
-    input{font-size:16px}            /* prevents iOS auto-zoom on focus */
+    input,select,textarea{font-size:16px}  /* prevents iOS auto-zoom on focus */
     .li-head{padding:13px 2px}
     .composer .btn{padding:12px 15px}
     .chat{min-height:360px}
@@ -228,7 +229,7 @@
   <div class="wrap">
     <div id="demoBanner" class="demo-banner hide">👀 You're viewing <b>sample demo data</b> — this is not a real patient. Sign in to see your own records.</div>
 
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Send a request and your practice will confirm the exact time.</div></div><button id="bookingBtn" type="button" style="border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Request an appointment</button></div>
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Send a request and your practice will confirm the exact time.</div></div><button id="bookingBtn" type="button" style="border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;border-radius:999px;padding:13px 20px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Request an appointment</button></div>
 
     <div class="grid">
       <!-- LEFT: records -->
@@ -598,11 +599,11 @@
       +'<div style="margin:10px 0 2px;font-size:14.5px;color:#1A211C">✓ Your secure link worked — you\'re connected to <b>your own</b> records.</div>'
       +'<div style="margin:6px 0 2px;color:#55605A;font-size:13.5px">One quick step: choose a password. You\'ll use it (with your email and date of birth) to sign in from now on.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:14px 0 5px">New password (8+ characters)</label>'
-      +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;background:#F7F8F7;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
-      +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="pwsErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
-      +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
+      +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;background:#F7F8F7;box-sizing:border-box" />'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="pwsErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:12px;padding:10px 13px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="pwsGo" style="width:100%;border:none;border-radius:999px;background:#204034;color:#fff;font-weight:700;font-size:15.5px;padding:15px 18px;min-height:50px;cursor:pointer;margin-top:16px">Save my password</button>'
       +'<div style="font-size:12px;color:#55605A;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
       +'</div>';
     document.body.appendChild(back);
@@ -684,18 +685,18 @@
   document.body.appendChild(back);
   function body(html){ $("mcBody").innerHTML=html; }
   function close(){ var b=$("mlsClaimBack"); if(b) b.remove(); }
-  var OKBTN='<button onclick="document.getElementById(\'mlsClaimBack\').remove()" style="display:block;width:100%;margin-top:16px;border:1px solid #E4E1D8;background:#F4F2EC;color:#204034;border-radius:10px;font-weight:700;font-size:14px;padding:12px;cursor:pointer">OK — take me to sign in</button>';
+  var OKBTN='<button onclick="document.getElementById(\'mlsClaimBack\').remove()" style="display:block;width:100%;margin-top:16px;border:1px solid #E4E1D8;background:#F4F2EC;color:#204034;border-radius:999px;font-weight:700;font-size:14.5px;padding:14px;cursor:pointer">OK — take me to sign in</button>';
 
   function pwForm(username){
     body(
       '<div style="font-weight:700;color:#2E6A4B">✓ You\'re verified.</div>'
       +'<div style="margin:8px 0 4px;color:#55605A;font-size:13.5px">Choose a password for your portal account'+(username?(' (<b>'+String(username).replace(/[<>&]/g,'')+'</b>)'):'')+'. You\'ll use it with your date of birth to sign in next time.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">New password (8+ characters)</label>'
-      +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;background:#F7F8F7;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
-      +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="mcErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
-      +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
+      +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;background:#F7F8F7;box-sizing:border-box" />'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="mcErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:12px;padding:10px 13px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="mcGo" style="width:100%;border:none;border-radius:999px;background:#204034;color:#fff;font-weight:700;font-size:15.5px;padding:15px 18px;min-height:50px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
     );
     function err(t){ var e=$("mcErr"); e.style.display="block"; e.textContent=t; }
     $("mcGo").onclick=function(){
@@ -817,8 +818,8 @@
     ".mlsm h3{margin:0 0 4px;color:var(--blue-d);font-size:18px}"+
     ".mlsm .safe{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}"+
     ".mlsm label{margin-top:12px}"+
-    ".mlsm textarea{width:100%;min-height:70px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#FCFBF8;color:var(--ink);resize:vertical}"+
-    ".mlsm select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#FCFBF8;color:var(--ink)}"+
+    ".mlsm textarea{width:100%;min-height:74px;padding:15px 16px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;font-family:inherit;background:#F7F8F7;color:var(--ink);resize:vertical}"+
+    ".mlsm select{width:100%;padding:15px 16px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;background:#F7F8F7;color:var(--ink)}"+
     ".mlsm .rowb{display:flex;gap:8px;margin-top:16px}"+
     ".mlsm .rowb .btn{margin-top:0}.mlsm .cancel{flex:1;background:var(--soft);color:var(--blue-d);border:1px solid var(--line)}.mlsm .go{flex:2}"+
     ".mlsm .res{border-radius:10px;padding:12px 14px;font-size:13.5px;margin-top:14px}"+
@@ -867,7 +868,7 @@
       safe:"MLS can’t tell you when your next injection should be — the timing of injections is decided by your care team based on your plan and history. This sends your question to the office; they’ll advise you.",
       fields:function(){
         return '<label>Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
-               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#FCFBF8">'+
+               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;background:#F7F8F7">'+
                '<label>Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
       },
       collect:function(){ return { procedure:($("mReqProc").value||"").trim(), lastDate:$("mReqLast").value, question:($("mReqQ").value||"").trim() }; },
