@@ -68,6 +68,7 @@ const tests = [
   'progress-stages-runtime.test.js',
   'interaction-performance-contract.test.js',
   'immutable-satellite-loader-cache-contract.test.js',
+  'calm-shell-cache-bust.test.js',
   'scribeflow-inline-syntax.test.js',
   'startup-hydration-contract.test.js',
   'hosted-login-usability-runtime.test.js',
