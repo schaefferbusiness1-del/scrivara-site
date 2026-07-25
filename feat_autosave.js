@@ -130,6 +130,24 @@
       return "";
     }, "") || "none";
   }
+  /* asv-1.1.0: activePtId() returns the literal "none" when no patient is
+     selected, so EVERY unassigned/walk-in visit shares one bucket -
+     transcript::none. keyFor() therefore cannot tell two walk-ins apart, and
+     doRecover's guard (keyFor(f) !== key) passes between them: patient A's
+     transcript could be offered on patient B's fresh visit screen, and
+     recovering it fires input, binds the visit, and feeds Generate Note.
+     The core app has this guard already (ScribeFlow.html:6923/6957 refuse a
+     cross-patient restore by name); this module never had it.
+     The patient LABEL is the one identity a walk-in does carry, so we record
+     it with the draft, withhold the offer when it provably belongs to someone
+     else, and NAME the owner when we cannot prove it either way rather than
+     asking "recover unsaved transcript?" about an unidentified person. */
+  function ptLabelNow() {
+    return safe(function () {
+      var el = document.getElementById("patientLabel");
+      return el && el.value != null ? String(el.value).trim() : "";
+    }, "");
+  }
   // current open history-note id (set when the raw-note editor is opened)
   var _curViewNoteId = "";
   function scopeId(field) {
@@ -141,7 +159,7 @@
     var pid = activePtId();
     var viewId = _curViewNoteId;
     var scope = field && field.scope === "view" ? ("v_" + (viewId || pid)) : pid;
-    return { field: field, el: el, key: field.kind + "::" + scope, ptId: pid, viewId: viewId, text: norm(safe(function () { return el.value; }, "")) };
+    return { field: field, el: el, key: field.kind + "::" + scope, ptId: pid, ptLabel: ptLabelNow(), viewId: viewId, text: norm(safe(function () { return el.value; }, "")) };
   }
   function snapshotStillVisible(snap) {
     return !!(snap && snap.field && snap.el && keyFor(snap.field) === snap.key
@@ -224,7 +242,7 @@
       if (snapshotStillVisible(snap)) setInd(el, "", "");
       return false;
     }
-    o.drafts[key] = { text: norm(val), ts: now(), kind: f.kind, ptId: snap.ptId };
+    o.drafts[key] = { text: norm(val), ts: now(), kind: f.kind, ptId: snap.ptId, ptLabel: snap.ptLabel || "" };
     var ok = writeStore(o);
     if (ok) { stats.writes++; if (snapshotStillVisible(snap)) setInd(el, "saved", "Draft saved " + String.fromCharCode(10003) + " " + clockTime(now())); }
     else { stats.writeErrors++; if (snapshotStillVisible(snap)) setInd(el, "error", "Couldn't save draft"); }
@@ -249,6 +267,11 @@
     var cur = norm(safe(function () { return el.value; }, ""));
     // already reflected in the box -> nothing to recover
     if (norm(d.text) === cur) return;
+    /* asv-1.1.0: never offer one person's draft on another person's screen.
+       Both labels present and different is PROOF of a different visit, even
+       when the key is the shared "none" bucket. */
+    var curLabel = ptLabelNow();
+    if (d.ptLabel && curLabel && d.ptLabel !== curLabel) return;
     // only offer when the draft is genuinely NEWER than the last explicit save
     var savedAt = (o.savedAt && o.savedAt[key]) || 0;
     if (d.ts <= savedAt) return;
@@ -263,7 +286,10 @@
     box.setAttribute("data-mls-as", el.id);
     var msg = safe(function () { return document.createElement("span"); });
     msg.className = "mls-as-rtext";
-    msg.textContent = "Recover unsaved " + (f.label || "draft") + " from " + relTime(d.ts) + "?";
+    /* asv-1.1.0: an unnamed offer is impossible to answer safely - the doctor
+       cannot tell whether it is this patient's text or the last one's. */
+    var who = d.ptLabel ? (" for " + d.ptLabel) : "";
+    msg.textContent = "Recover unsaved " + (f.label || "draft") + who + " from " + relTime(d.ts) + "?";
     var rec = safe(function () { return document.createElement("button"); });
     rec.type = "button"; rec.className = "mls-as-rec"; rec.textContent = "Recover";
     var disc = safe(function () { return document.createElement("button"); });
