@@ -229,7 +229,13 @@
        between the doctor and the record button. The transcript comes back the
        instant it has a word, so nothing is lost - it just stops reserving a
        quarter of the screen to report that it is empty. */
-    'body.mls-calm .ez3-clockbar{display:none!important}',
+    /* mlsRdStyle already declares
+         body.mls-redesign #ez3Wrap > .ez3-clockbar{display:flex!important}
+       which is (1,2,1) against a plain body.mls-calm .ez3-clockbar at (0,2,1).
+       Both carry !important, so the ID wins and the plain rule was inert -
+       parsed, matched, and beaten. Same trap as #mlsRdNav. Out-specify it
+       rather than pile on another !important, which would change nothing. */
+    'body.mls-calm.mls-redesign #ez3Wrap > .ez3-clockbar,body.mls-calm .ez3-clockbar{display:none!important}',
     'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
     /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
        patient. The single largest duplication is the prep summary. prepRows()
