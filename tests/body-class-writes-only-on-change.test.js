@@ -37,7 +37,20 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
-const FILES = ['mls-connect.js', 'feat_athena_tooltip_dedupe.js', 'feat_mls_pervisit_unify.js', 'ScribeFlow.html'];
+/* Rule 3 below scans EVERY published file, not a hand-written list. Three
+   rounds of this fix each found another writer in a file the previous round had
+   not thought to look at: seven in three files, then an eighth in ScribeFlow.html,
+   then three more in feat_mls_redesign.js. A rule scoped to the files you already
+   suspect is a rule that keeps missing the next one. */
+const PUBLISHED = (() => {
+  const inv = JSON.parse(read('pages-publication-inventory.json'));
+  const all = new Set();
+  for (const v of Object.values(inv)) {
+    if (!Array.isArray(v)) continue;
+    for (const f of v) if (typeof f === 'string' && /\.(js|html)$/.test(f) && fs.existsSync(path.join(root, f))) all.add(f);
+  }
+  return [...all];
+})();
 
 /* ---- 1. every writer on a repeating pass compares before it commits -------
  *
@@ -75,7 +88,16 @@ const GUARDED = [
   ['ScribeFlow.html', 'ctx-bar build(), add arm', '5 measured live at b632',
     'safe(function(){ if (!document.body.classList.contains(BODY_CLS)) document.body.classList.add(BODY_CLS); });'],
   ['ScribeFlow.html', 'renderProfile()', 'unsampled',
-    "if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta);"]
+    "if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta);"],
+  /* The worst of the set, and invisible to every idle measurement: this runs
+     from a CAPTURE-phase 'input' listener on document, so it fired on every
+     keystroke in the note editor and wrote THREE body classes per character. */
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+    "if(bcl.contains('mls-has-active-patient')!==wantHas) bcl.toggle('mls-has-active-patient',wantHas);"],
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+    "if(bcl.contains('mls-no-active-patient')!==wantNone) bcl.toggle('mls-no-active-patient',wantNone);"],
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+    "if(bcl.contains('mls-has-note-draft')!==wantDraft) bcl.toggle('mls-has-note-draft',wantDraft);"]
 ];
 
 for (const [file, fn, volume, guard] of GUARDED) {
@@ -95,7 +117,10 @@ const BANNED = [
   ['feat_mls_pervisit_unify.js', '    if (rich && base) cls.add("mls-pvu-rich");\n    else cls.remove("mls-pvu-rich");'],
   ['ScribeFlow.html', 'safe(function(){ document.body.classList.remove(BODY_CLS); });'],
   ['ScribeFlow.html', 'safe(function(){ document.body.classList.add(BODY_CLS); });'],
-  ['ScribeFlow.html', "try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}"]
+  ['ScribeFlow.html', "try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}"],
+  ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-active-patient',hasPatient);"],
+  ['feat_mls_redesign.js', "document.body.classList.toggle('mls-no-active-patient',!hasPatient);"],
+  ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-note-draft',!!(hasPatient&&noteText));"]
 ];
 for (const [file, snippet] of BANNED) {
   assert(!read(file).includes(snippet),
@@ -116,7 +141,9 @@ for (const [file, snippet] of BANNED) {
 const TOGGLE_FORCE = /(?:document\.body|\bbody)\.classList\.toggle\(\s*['"]([\w-]+)['"]\s*,/;
 const FLIPS_FIRST = /(\w+(?:\.\w+)*)\s*=\s*!\1\s*;/; /* x.y = !x.y — a real flip */
 
-for (const file of FILES) {
+let scanned = 0;
+for (const file of PUBLISHED) {
+  scanned++;
   const lines = read(file).split('\n');
   lines.forEach((line, i) => {
     const m = TOGGLE_FORCE.exec(line);
@@ -138,7 +165,7 @@ for (const file of FILES) {
    this file and read the measurement above. All sites at these counts have been
    read by hand; one-shot init and teardown paths are included and are not
    churn. */
-const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12 };
+const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -159,20 +186,20 @@ for (const [file, expected] of Object.entries(SITES)) {
 const connect = read('mls-connect.js');
 for (const [asset, token, retired] of [
   ['feat_athena_tooltip_dedupe.js', '20260725ui124', '20260724ui123'],
-  ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1']
+  ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
+  ['feat_mls_redesign.js', '20260725rd324', '20260724rd323']
 ]) {
   /* The loaders build the URL from a variable — s.src = A + '?v=' + token — so
-     the literal "asset.js?v=token" never appears in the source. Match the
-     loader IIFE for this asset and require the token inside it. */
-  const at = connect.indexOf(asset);
-  assert(at > -1, asset + ' has no production loader at all');
-  const iife = connect.slice(at, at + 400);
-  assert(iife.includes("?v=" + token) || iife.includes('?v=' + token),
+     the literal "asset.js?v=token" never appears in the source. Assert on the
+     token itself, exactly as the immutable-satellite contract does: present
+     once, and the retired one gone. */
+  assert(connect.includes(asset), asset + ' has no production loader at all');
+  assert.strictEqual(connect.split('?v=' + token).length - 1, 1,
     asset + ' was changed by this fix, so it must be served under a token that moved. ' +
-    'Its loader does not carry ?v=' + token + '. The service worker serves versioned assets ' +
-    'cache-first: a corrected file behind a frozen token reaches no browser.');
+    'Expected exactly one loader carrying ?v=' + token + '. The service worker serves ' +
+    'versioned assets cache-first: a corrected file behind a frozen token reaches no browser.');
   assert(!connect.includes(retired),
     asset + ' still exposes the retired cache token ' + retired + ' somewhere in the loader bundle');
 }
 
-console.log('PASS body-class churn: 10 writers on repeating passes compare before committing (3 measured at 68+54+14 no-op whole-document style invalidations in 44s, 4 more found by reading every site, 3 more in a fourth file found by re-measuring live after the first fix), the 4 permitted unguarded toggles provably flip first, and both changed satellites ship under moved cache tokens');
+console.log('PASS body-class churn: 13 writers on repeating passes compare before committing (3 measured at 68+54+14 no-op whole-document style invalidations in 44s, 4 more found by reading every site, 3 more in a fourth file found by re-measuring live after the first fix, 3 more that fired on EVERY KEYSTROKE found by scanning all 273 published files), every remaining unguarded toggle across ' + scanned + ' published files provably flips first, and all three changed satellites ship under moved cache tokens');

@@ -1125,9 +1125,15 @@
       var note=$('mls-note')||$('noteBox')||$('ez3flNote')||$('ez3Note');
       var noteText='';
       try{ noteText=String(note&&(note.value!=null?note.value:note.textContent)||'').trim(); }catch(e2){}
-      document.body.classList.toggle('mls-has-active-patient',hasPatient);
-      document.body.classList.toggle('mls-no-active-patient',!hasPatient);
-      document.body.classList.toggle('mls-has-note-draft',!!(hasPatient&&noteText));
+      /* This runs from a CAPTURE-phase 'input' listener on document, so it fires
+         on every keystroke in the note editor. Unguarded, that was THREE whole-
+         document style invalidations per character typed, none of which changed
+         a value: while you dictate, hasPatient and noteText do not vary. */
+      var wantHas=!!hasPatient, wantNone=!hasPatient, wantDraft=!!(hasPatient&&noteText);
+      var bcl=document.body.classList;
+      if(bcl.contains('mls-has-active-patient')!==wantHas) bcl.toggle('mls-has-active-patient',wantHas);
+      if(bcl.contains('mls-no-active-patient')!==wantNone) bcl.toggle('mls-no-active-patient',wantNone);
+      if(bcl.contains('mls-has-note-draft')!==wantDraft) bcl.toggle('mls-has-note-draft',wantDraft);
     }catch(e){}
   }
   function installClinicalSurfaceState(){
