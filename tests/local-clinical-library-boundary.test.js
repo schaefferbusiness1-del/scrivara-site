@@ -28,7 +28,7 @@ const freshHardcodedLoaderTags = new Map([
   ['mls-outcome-study.js', '20260722lib2'],
   ['mls-opnote-pro.js', '20260722lib2'],
   ['mls-procedure-report.js', '20260722lib2'],
-  ['feat_mls_assistant_exact.js', '20260718asst216'],
+  ['feat_mls_assistant_exact.js', '20260725asst217'],
   ['feat_mls_outcome_pdf.js', '20260722lib2'],
   ['feat_mls_studygroups.js', '20260722sg1c6'],
   ['feat_comp_report.js', '20260718pr5'],
