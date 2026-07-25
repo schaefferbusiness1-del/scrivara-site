@@ -559,6 +559,58 @@
        another locale. The connectors are decoration — the dots already carry
        done/now — and a connector spanning a line break is worse than none. */
     '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:12px}',
+
+    /* ---------------- motion system (mls-motion-system) ----------------
+       One vocabulary, four durations, three easings. Adopted here and by the
+       voice cluster; the older bespoke curves stay where they are rather than
+       being rewritten blind across a 40k-line bundle, but nothing NEW should
+       invent its own timing again.
+
+       dur-1 press/hover  dur-2 state change  dur-3 entrance  dur-4 view
+       ease-out arriving  ease-inout moving in place  ease-spring summoned */
+    ':root{--mls-dur-1:120ms;--mls-dur-2:200ms;--mls-dur-3:300ms;--mls-dur-4:420ms;'+
+      '--mls-ease-out:cubic-bezier(.2,.7,.3,1);'+
+      '--mls-ease-inout:cubic-bezier(.4,0,.2,1);'+
+      '--mls-ease-spring:cubic-bezier(.2,.9,.3,1.06)}',
+
+    /* Views arrive rather than appear. transform+opacity only. */
+    '@keyframes mlsMoIn{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}',
+    'body.mls-calm #patientsView.mls-mo,body.mls-calm #ordersView.mls-mo,'+
+      'body.mls-calm #historyView.mls-mo,body.mls-calm #recsView.mls-mo,'+
+      'body.mls-calm #analysisView.mls-mo,body.mls-calm #studioView.mls-mo,'+
+      'body.mls-calm #calendarView.mls-mo,body.mls-calm #teamView.mls-mo'+
+      '{animation:mlsMoIn var(--mls-dur-4) var(--mls-ease-out) both}',
+
+    /* Controls answer the finger. Press feedback is the cheapest motion there
+       is and the most missed when absent. Scoped to the shell's own chrome so
+       it can never fight an app control that already has its own press state. */
+    '#mlsDock button,#mlsRightNow button,#mlsStages button'+
+      '{transition:transform var(--mls-dur-1) var(--mls-ease-out),'+
+      'background var(--mls-dur-2) var(--mls-ease-inout),'+
+      'color var(--mls-dur-2) var(--mls-ease-inout)}',
+    '#mlsDock button:active,#mlsRightNow button:active,#mlsStages button:active'+
+      '{transform:scale(.965)}',
+
+    /* The right-now bar is summoned by the user, so it may spring slightly. */
+    '@keyframes mlsMoRise{from{opacity:0;transform:translate3d(0,7px,0)}to{opacity:1;transform:none}}',
+    '#mlsRightNow:not(.empty){animation:mlsMoRise var(--mls-dur-3) var(--mls-ease-spring) both}',
+
+    /* NEVER animate a surface that rebuilds on a timer or that a doctor types
+       into. The transcript host is destroyed and rebuilt about every 3s and
+       #visitOrdersBody every ~5s with identical markup — an entrance rule in
+       there is a permanent flicker, not a flourish. .mls-mo-never is the
+       opt-out for anything else that turns out to re-render. */
+    '#visitView .mls-mo,#ez3Wrap .mls-mo,#visitOrdersBody .mls-mo,'+
+      '#noteCard .mls-mo,.mls-mo-never,.mls-mo-never *'+
+      '{animation:none!important}',
+
+    /* Motion is decoration. Everything above is transform/opacity, so removing
+       it changes nothing structural — which is exactly what makes it safe to
+       switch off wholesale. */
+    '@media (prefers-reduced-motion: reduce){'+
+      'body.mls-calm [class*="mls-mo"],#mlsRightNow:not(.empty),'+
+      '#mlsDock button,#mlsRightNow button,#mlsStages button'+
+      '{animation:none!important;transition:none!important;transform:none!important}}',
     '#mlsStages .bar{display:none}}'
   ].join('');
 
