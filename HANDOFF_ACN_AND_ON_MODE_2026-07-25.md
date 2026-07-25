@@ -850,3 +850,81 @@ firing `mlsDevReload` from an mlsscribe.com tab. That is what was used here —
 backup taken first, files copied individually rather than mirrored, digest
 verified in the running browser before and after. The earlier claim stands only
 for a *new* folder.
+
+---
+
+## Addendum 9 — the visit-page "glitch": 14 no-op `<body class>` writers (b632→b638)
+
+**Owner's report:** "the whole visit page glitches out every few seconds."
+
+**Root cause.** `classList.add` / `remove` / `toggle` re-commit the class
+attribute even when the class is already in the requested state. A `<body>`
+class write invalidates style for the *entire* document. Measured foreground on
+the owner's signed-in visit screen: **86 writes in 44s, 0 of which changed the
+value** — roughly 1.4 whole-page style recalculations per second, for nothing.
+
+`toggle(name, force)` is the trap. It reads like a conditional and is not: the
+force argument selects *which* state to commit, never *whether* to commit.
+
+**14 writers, in 5 files, found over three rounds:**
+
+| round | file | writers | how found |
+|---|---|---|---|
+| b632 | mls-connect.js, feat_athena_tooltip_dedupe.js, feat_mls_pervisit_unify.js | 7 | 3 by stack sampling, 4 more by reading all 22 sites |
+| b635 | ScribeFlow.html | 3 | re-measuring live *after* the first fix |
+| b638 | feat_mls_redesign.js | 3 | scanning all 273 published files |
+
+Round 3 was the worst and no idle measurement could have caught it:
+`syncClinicalSurfaceState` is bound to `input` in **capture phase on document**,
+so it wrote **three body classes per keystroke** while typing a note.
+
+**Verification (this is the part that matters).**
+A write count alone cannot prove this fix. The tab was hidden, and a hidden tab
+clamps timers — "0 writes" is exactly what a throttled page reports with or
+without the fix. (Confirmed: a 1s `setInterval` in the probe fired **zero**
+times in 33s.) The unfakeable metric is **guard evaluations** — hook `contains`
+as well as the mutators, and show the pass ran N times and declined N times:
+
+    idle, 67s     40 guard evals   0 no-op writes   (control: 341 doc mutation records)
+    typing, 61ch 183 guard evals   0 no-op writes   (exactly 3 evals per keystroke)
+
+183 evaluations for 61 characters is the old code's 183 whole-document style
+invalidations, now zero. Two writes did occur and both legitimately changed the
+value.
+
+**Instrumentation warning.** Hooking `body.className` or
+`Element.prototype.setAttribute` finds **nothing** here — `classList` mutates the
+attribute node directly and goes through neither. Only
+`DOMTokenList.prototype`, filtered on `this === document.body.classList`, sees
+these writes. An earlier pass used a setAttribute hook and concluded the body
+was quiet: a confident false negative.
+
+**Guard:** `tests/body-class-writes-only-on-change.test.js` encodes the rule
+rather than a count — an unguarded toggle-with-force is permitted only where the
+caller provably flipped the value first (the four `S.advOpen = !S.advOpen` click
+handlers) — and scans **all 273 published files**, because a rule scoped to the
+files you already suspect keeps missing the next one. 15/15 mutations caught.
+
+**Cache tokens moved** (a changed file behind a frozen token reaches no browser):
+`feat_athena_tooltip_dedupe.js` → `20260725ui124`, `feat_mls_pervisit_unify.js` →
+`20260725pvu1c2`, `feat_mls_redesign.js` → `20260725rd324` (prod + staging).
+`feat_mls_pervisit_unify.js` was **not registered in the immutable-loader
+contract at all**, so nothing would have objected had its token stayed frozen; it
+is registered now. Two unrelated suites also pinned these tokens literally
+(`day-progress-responsive-layout-contract`, `site-audit-regressions`) and had to
+be moved in step — worth knowing before the next token bump.
+
+### Still open / for whoever picks this up
+
+- **Commit-subject drift:** the b632 commit is titled "b631" — a build-token
+  collision with a parallel lane forced a re-bump after the message was written,
+  and I chose not to force-push `main` with other lanes active.
+- **`.mls-dock-count` and `authScreen` re-decoration** (206 and 484 writes in the
+  coordinator's earlier survey) were not re-measured after b626/b629; they are
+  element-scoped, not body-scoped, so they do not carry the whole-document blast
+  radius, but they are still churn.
+- **Visit dirty-flag defect** reported by the coordinator (`_visitDirty` stays
+  true when the transcript is emptied, raising a false "Leave site?" prompt) did
+  **not reproduce** on the owner's tab at b629 — `_visitDirty` read `false`,
+  transcript empty, and no `beforeunload` handler was registered. Not fixed, not
+  confirmed; needs the exact sequence that produced it.

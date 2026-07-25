@@ -77,7 +77,10 @@ const tests = [
   'immutable-satellite-loader-cache-contract.test.js',
   'deterministic-cache-token-contract.test.js',
   'calm-shell-cache-bust.test.js',
+<<<<<<< Updated upstream
   'body-class-writes-only-on-change.test.js',
+=======
+>>>>>>> Stashed changes
   'shell-passes-write-only-on-change.test.js',
   'control-accessible-name-runtime.test.js',
   'shell-hidden-controls-keep-reach.test.js',
