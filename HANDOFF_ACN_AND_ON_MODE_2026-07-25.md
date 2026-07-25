@@ -489,3 +489,82 @@ The staged build is now
 byte-verified, gate 299/299); the 3.0.15 folder has been removed so there is
 only one to load. Its README captures both `enumDiag` and the strings, so the
 reading is complete whichever turns out to be right.
+
+---
+
+## Defect 1b, gate by gate: what is fixed, and what each fix would need
+
+Asserting "three gates need opposite fixes" is not the same as showing it. Here
+is the enumeration, so the next person can check the reasoning rather than
+inherit the conclusion — and so it is clear that **one part of this defect was
+never blocked at all** and has now been fixed.
+
+### Already fixed, and it needed no reading (ext 3.0.17)
+
+The handoff records the symptom as two things: patients fail, **and** it "burns
+93–160s per patient first". The second half is this loop — 47 retries at 3.5s,
+re-running `openVisits` each pass — and it is fixable regardless of which gate
+fires, because stopping early **never turns a refusal into an acceptance**. It
+exits through the same `return { ok: false }`, about 110 seconds sooner.
+
+The stuck key carries the row and child counts (which move while a panel
+renders) and excludes the elapsed-time counters (which move every pass by
+construction), so a hydrating chart cannot look stuck. Threshold: 16 identical
+passes, ~56s, against a recorded observation of a real panel sitting at 22 rows
+for 70s. The refusal says it stopped early and after how many passes.
+
+Also fixed without a reading: the noise-surface hole (3.0.14), the evidence that
+never crossed the hop (3.0.16), and the truncation that hid the numbers (3.0.17).
+
+### Not fixable without the reading — one gate at a time
+
+**Gate 1 — `visits-panel-not-open`.** The only check that identifies the
+*panel*; gates 2 and 3 only measure completeness.
+
+| candidate fix | why it must wait |
+|---|---|
+| widen the text pattern ("Visits", "Encounters") | widens what counts as the panel. The landing pane carries the same row markup, so this can admit the very surface gate 1 exists to reject |
+| add a structural check *alongside* the text one | same problem — an OR only ever accepts more |
+| replace with structural identity | the right answer, but it needs the actual DOM: which element owns `ul.encounter-list.accordion-container`, and whether it carries a heading, `aria-label` or `data-` handle. Inventing a selector is guessing |
+| tighten to structural *only* | narrows. If gate 1 currently passes, this could start failing charts that work today |
+
+**Gate 2 — `visits-total-not-readable`.** Refuses **forever** while the SHOW
+label is unreadable.
+
+| candidate fix | why it must wait |
+|---|---|
+| drop the requirement | removes the only positive proof of completeness. A partial index becomes a complete one |
+| fall back to row-count stability | correct *only if* gate 1 excludes the landing pane — see below |
+| widen the label pattern | needs to know what the label now says. The 2026-07-21 flip changed the panel; nobody has read the new markup |
+
+**Gate 3 — `visits-list-still-rendering`.** `listKids < evTotal`.
+
+| candidate fix | why it must wait |
+|---|---|
+| compare encounter rows instead of `parent.children` | **measured out already**: `listKids` pairs with an All-Events total that legitimately counts appointments and vitals. Narrowing it makes the gate refuse *more* and breaks charts that work today |
+| accept below the total once stable | same landing-pane dependency as gate 2 |
+
+### The dependency that ties them together
+
+Gates 2 and 3 are the only thing standing between the reader and a landing pane
+believed to be a complete history — **because gate 1 probably cannot tell them
+apart.** It is a text scan over 6,000 characters of an ancestor *eight levels
+up*, and eight levels above an encounter list on a briefing page is plausibly
+the whole briefing page, which contains the "Visits and Cases" heading whether
+or not the rows in hand belong to that panel.
+
+So the sequencing is forced: **make gate 1 structural first, then relax 2 and
+3.** In that order the "refuses forever" problem disappears with it. In the
+other order, a stable landing pane becomes an accepted complete index — a chart
+reporting success with 2 of a patient's 22 encounters, silently. That is worse
+than the current failure, which at least refuses honestly.
+
+Every one of these needs one fact that only a pull produces: **which gate fires,
+with its numbers.** That is what the staged build reports.
+
+### The staged build
+
+`C:\Users\Micha\Downloads\MLS_Assist_3.0.17_ONMODE_DIAGNOSTIC\` — 20 files from
+`agent/ext-3.0.14-on-mode`, SHA-256 verified per file, gate 300/300, unpublished.
+Superseded folders removed so there is only one to load. Three steps in its
+README: load unpacked, paste a passive listener, run one pull.
