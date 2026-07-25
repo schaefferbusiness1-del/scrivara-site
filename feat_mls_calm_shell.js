@@ -395,6 +395,13 @@
     '#mlsToolsMenu{position:fixed;z-index:930;min-width:224px;padding:6px;border-radius:16px;',
     'background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);',
     'border:1px solid rgba(0,0,0,.07);box-shadow:0 16px 40px rgba(20,35,28,.18);',
+    /* Clamped because this menu is built from whatever the live DOM still
+       offers, so its height is not a constant the layout can rely on. It
+       measured a safe 297px with the 7 rows a preview session exposes, but a
+       signed-in session lists more, and position:fixed with no bound puts the
+       first rows above y=0 on a phone, where nothing can scroll to them. The
+       bound leaves room for the dock underneath. */
+    'max-height:calc(100vh - 132px);overflow-y:auto;overscroll-behavior:contain;',
     'transform-origin:bottom left;animation:mlsPop var(--mls-base) var(--mls-spring)}',
     '#mlsToolsMenu .r{padding:9px 12px;border-radius:11px;font-size:13.5px;color:#1A211C;cursor:pointer}',
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
@@ -537,7 +544,22 @@
     '#mlsDock #mlsDockAsk,#mlsDock #mlsDockAsk:focus{width:96px;flex:1 1 auto}',
     '#mlsDock #mlsDockAskWrap{flex:1 1 auto;min-width:0}',
     '#mlsDock #mlsDockClassic{padding:7px 8px;font-size:10.5px}',
-    '#mlsAskResults{width:min(340px,86vw)}}'
+    '#mlsAskResults{width:min(340px,86vw)}',
+
+    /* The stage rail could not show its last stage on a phone. Measured at 375px
+       on every build from b581 to b593: clientWidth 336 against scrollWidth 400,
+       flex-wrap:nowrap, overflow-x:visible, and body/html overflow-x:hidden with
+       NO scrollable ancestor — so "Send", the stage that ends the visit, was cut
+       44px past the viewport edge with no gesture that could reach it. It read
+       as a four-stage workflow.
+
+       Wrap rather than scroll: a progress rail exists to show every stage at
+       once, a horizontal scroller hides the last one behind a gesture nobody is
+       told about, and wrapping cannot clip whatever the labels turn out to be in
+       another locale. The connectors are decoration — the dots already carry
+       done/now — and a connector spanning a line break is worse than none. */
+    '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:12px}',
+    '#mlsStages .bar{display:none}}'
   ].join('');
 
   function injectCss() {
