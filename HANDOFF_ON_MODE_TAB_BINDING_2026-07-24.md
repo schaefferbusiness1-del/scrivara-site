@@ -651,66 +651,79 @@ that is the proof.
 
 ---
 
-## CORRECTION: "3 of 5 charts finished" was NOT 3 completions
+## CONFIRMED ROOT CAUSE: frame QUALIFICATION, not frame selection
 
-I reported that line as the night's first ON-mode success. It was not. The
-progress string counts charts the walk has *finished attempting*, not charts
-that produced verified history. The receipt for that same run:
+Two independent measurements, ext 3.0.12 (branch `agent/ext-3.0.10-on-mode`
+@ 2dca036, NOT published).
+
+**Page-side sampler**, 1.5s cadence, taken while a pull was live:
 
 ```
-{ complete: false, secs: 601, coverageComplete: 0,
-  fails: { "no-chart-frame-candidate": 3, "visit-bodies-incomplete": 2 } }
+frMain present 40/40 samples over 70s
+same index, same URL, 22 li.encounter-list-item rows on every tick
 ```
 
-coverageComplete 0. Nothing completed. Anyone reading only my progress
-commentary would have believed ON mode was nearly working; it was not, and the
-receipt is the only thing that should ever be quoted as a result. The pattern
-that produced this mistake is the same one that produced the three retracted
-diagnoses above: I reported a hopeful intermediate signal before the run ended.
+**Extension-side receipt**, per failing patient:
 
-## What the failure counts actually named
+```
+enum=0-,532-,535-,530-,526-,527-,531-,538-,534-,528+,529-,536-
+```
 
-`no-chart-frame-candidate` is MY refusal string, added in 3.0.9. Its presence
-for 3 of 5 charts means the 3.0.8 exclusion rules skipped EVERY candidate, so
-the real chart frame was discarded along with the inbox. Both of my rules were
-plausible and one of them was too broad:
+Twelve frames answer `enumerate`; the injection reaches all of them including
+depth-3 nested ones. Exactly ONE returns ok: 528, which is
+`coordinator/enterprise/stm.esp` - the doctor's inbox.
 
-| rule (3.0.8) | verdict |
-|---|---|
-| exclude `stm.esp|globalnav|statusbar|inbox|messag|findpatient.esp` | correct - these are proven to show a different patient's banner |
-| exclude `globalframeset|globaliframe|framecontent` | too broad - these are CONTAINERS; a real chart can live inside one |
-| refuse any candidate scoring < 0 | too broad - the whole candidate set can score negative on a slow-rendering chart |
+So the chart frame **is** injected, **does** answer, and is judged **not-ok**
+while holding 22 rows of the selector scored at +100000. The defect is in how
+the enumerate op QUALIFIES a frame, not in how the walk SELECTS one. Every hour
+spent on scoring, exclusion, ranking and reachability was one layer too high.
 
-Ranking alone was too loose (stm.esp won at -6.8 despite a -4 penalty, because a
-penalty only reorders). Blanket exclusion was too tight. The answer was not to
-pick one but to tier them by how much each rule is worth.
+### Six theories, all killed by measurement, none by argument
 
-## 3.0.10 - two-pass candidate walk
+| # | theory | killed by |
+|---|---|---|
+| 1 | broken chart opener | the experiment run to test it |
+| 2 | multiple Athena tabs | same |
+| 3 | the 4-candidate cap | same |
+| 4 | noise-frame ranking vs exclusion | `enum=` showing one candidate, ever |
+| 5 | charts in use by the live clinic | the DOM read: chart open, 22 rows |
+| 6 | frMain torn down and rebuilt | 40/40 stable samples |
 
-* HARD rules (inbox/worklist/nav surfaces) apply in every pass. A surface that
-  demonstrably reports another patient is never an encounter index.
-* SOFT rules (container frames, negative scores) apply on the strict pass only.
-  If the strict pass finds nothing, a relaxed pass reconsiders them.
-* The identity gate decides in both passes, so relaxing CANNOT admit the wrong
-  patient - it can only give the right one a chance to be seen. The safety
-  property is unchanged; only the willingness to look is.
-* Identities are cached per frame, so the relaxed pass costs no extra round
-  trips - it re-reads nothing.
-* Refusals now carry the candidate table (url, score, name, drop reason). The
-  next receipt will NAME the frame that was dropped and which rule dropped it.
+### Leading hypothesis for the fix - NOT yet proven
 
-That last point is the real lesson of the night. Every one of my four theories
-died to the experiment that could disprove it, and the one fix that worked came
-from a receipt that named its own frame. The diagnostic table exists so the next
-person does not have to guess four times to find out what the code already knew.
+Three gates can refuse inside the enumerate op: `visits-panel-not-open`,
+`visits-total-not-readable`, and `visits-list-still-rendering`
+(`listKids < evTotal`). `enum=` records only ok/not-ok, so it cannot tell them
+apart; carrying the refusal reason into that string is a one-line change and
+turns the guess into a reading.
 
-## Status, stated plainly
+Strongest prior (from the UI session, and better than my collapsed-panel lead):
+`listKids` counts `g.parent.children.length` while `evTotal` comes from
+"All Events (N)" - and this repo documents elsewhere that Athena's declared
+count includes non-visit artifacts (future appointments, vitals, patient cases),
+which is why `declaredEncounterCount()` exists. Gate 3 may therefore compare 22
+rendered encounter rows against a total that never counted the same population.
+That refuses forever, deterministically, and explains why 2 of 5 patients pass
+each run - pane composition, not luck.
 
-* ON mode (full visit bodies): NOT working. Not shipped. Not published.
-* OFF mode: working and fast - 5/5 schedule, 5/5 history, 0 failures, 56s for
-  5 patients (~9.8s each), against the owner's 10s target.
-* Live extension remains 3.0.5. 3.0.6 through 3.0.10 are branch-only
-  (`agent/ext-3.0.10-on-mode`), hand-loaded for testing, never published.
-* Extension source cannot land on main without a rebuilt zip: the
-  extension-package gate byte-verifies the root files against the published
-  package. That is why these fixes are on a branch and not in main.
+### Doctor-facing surface
+
+The diagnostic token `no-chart-frame-candidate[...]` does NOT reach a doctor -
+it dies at `receipt.retry[].reason`, which nothing renders. The real defect was
+**silence**: three charts folded into a bare failure count after 93-160s each.
+Fixed site-side by the UI session (`chartframe-1.0.0`) with a message that
+deliberately suggests no repair, because the obvious repair line ("expand Visits
+and Cases") is provably false - the panel was already open with 22 rows.
+
+Do NOT swap the `vErrText = vr.reason || vr.error` precedence: the machine token
+is load-bearing for both the retry matcher and the anchored `SWEEPABLE_REASON`
+test. And do NOT add these reasons to `SWEEPABLE_REASON`: the refusal is
+deterministic, so sweeping would burn batch budget re-failing.
+
+### Method note for whoever picks this up
+
+A refusal must carry its own evidence, and only the `reason` STRING survives the
+extension->page hop - a diagnostic attached to the gate object is silently
+dropped, which cost a full run to discover. Never quote a progress line as a
+result: "3 of 5 charts finished" counts attempts, while the receipt said
+`coverageComplete: 0`.
