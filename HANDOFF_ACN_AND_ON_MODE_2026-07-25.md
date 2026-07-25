@@ -756,3 +756,97 @@ pass.** If the count is genuinely absent, matching "All Events" alone would let
 the gate succeed with `evTotal = 0`, and `listKids < 0` is false — so the index
 is accepted with no completeness proof whatsoever. That is the worst available
 outcome and it is one careless regex edit away.
+
+---
+
+# DEFECT 1b IS FIXED AND VERIFIED — ext 3.0.18
+
+The owner authorised the diagnostic pull. One run settled what six theories
+could not, and the fix is proven on the same patients that failed.
+
+## What the reading said
+
+Five consecutive patients, Fri Jul 24 schedule, ext 3.0.17, every one refusing
+at **gate 3** — as the narrowing from the 2026-07-21 artifact predicted:
+
+```
+102 list-still-rendering  rendered=9   declared=13  rows=7   n=16 sameFor=53
+102 list-still-rendering  rendered=9   declared=11  rows=7   n=16 sameFor=53
+102 list-still-rendering  rendered=16  declared=53  rows=14  n=16 sameFor=53
+102 list-still-rendering  rendered=22  declared=41  rows=20  n=16 sameFor=53
+```
+
+`rows === listKids - 2` on every one — a fixed two-item chrome in the `<ul>`.
+The declared total ranges 11 to 53 with no relation to either figure. Nothing
+moved for 53 seconds across 16 passes, each with an `openVisits` re-drive.
+
+## The root cause
+
+`listKids >= evTotal` was never a race condition. It is a **category error**,
+and `background.js` already said so a few lines below the branch that made it:
+
+> "Athena's nearby declared count includes non-visit artifacts sharing the list
+> (future appointments, vitals and patient cases). The exact previous-visit
+> encounter rows are the authoritative body count."
+
+One branch treated the declared count as authoritative while the next declared
+it untrustworthy. "All Events (N)" counts a population the encounter `<ul>`
+never renders, so the comparison is unsatisfiable on every chart — which is why
+ON mode refused 5 of 5 on 2026-07-24 and 5 of 5 again at the start of this
+session.
+
+## The fix
+
+Below the declared total, refuse only while the panel is still **moving**;
+accept once both the child count and the row count have held across ≥6 passes
+and ≥20s. Measured settle was immediate and held 53s, so the dwell is ~3×
+conservative.
+
+**The mandatory-total rule is untouched.** Its *presence* is the only working
+landing-pane discriminator, because gate 1's ancestor text scan is recorded
+passing on that pane. Only the arithmetic changed.
+
+## The proof
+
+Same five patients, same day, immediately after loading 3.0.18:
+
+```
+Verified complete: schedule 5/5; history 5/5; failures 0
+
+expected/parsed/visitCount/persisted/bodies/orgOk
+7/7/10/7/7/1      7/7/7/7/7/1       20/20/22/20/20/1
+14/14/15/14/14/1  6/6/14/6/6/1
+```
+
+`expected == parsed == persisted == bodies` on all five, `coverageComplete = 1`
+on all five, **47 encounter bodies persisted**. The 7-row, 20-row and 14-row
+charts are the same ones that refused an hour earlier.
+
+That is *coverageComplete above zero on real patients* — the handoff's own
+success criterion, and the one it warned not to confuse with the frame merely
+being accepted.
+
+## What changed elsewhere, and what to watch
+
+- The receipt carries `acceptedOnStability`, `declaredEvents` and
+  `renderedListItems`, so nothing downstream can present a stability-accepted
+  index as count-verified.
+- `tests/enumerate-refusal-evidence.test.js` asserted the opposite until now —
+  "stability must not yet be used as an acceptance condition … until one live
+  pull says what the numbers are." The pull happened. That assertion is
+  replaced, with the reason recorded rather than deleted.
+- **Duration is the remaining rough edge.** A full-bodies pull ran ~18 minutes
+  per patient (7–20 encounters each, each body a slideout + iframe read). It
+  completes and it is honest, but that is the next thing worth attacking, and it
+  is now a performance problem rather than a correctness one.
+
+## Environment note, corrected
+
+An earlier section of this document says no agent session can take this reading
+because `chrome://extensions` is unreachable. That was true of *loading a new
+unpacked extension*, and it is not the only route: `dispatch-work/auto-load/`
+already documents pushing bytes into the **pinned** folder Chrome has loaded and
+firing `mlsDevReload` from an mlsscribe.com tab. That is what was used here —
+backup taken first, files copied individually rather than mirrored, digest
+verified in the running browser before and after. The earlier claim stands only
+for a *new* folder.
