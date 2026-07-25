@@ -187,7 +187,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-24-b585' }, 'tiny version probe does not match b585');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b586' }, 'tiny version probe does not match b586');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -244,8 +244,16 @@ const versionedBranchEnd = sw.indexOf('/* Token-capable documents', versionedBra
 const versionedBranch = sw.slice(versionedBranchStart, versionedBranchEnd);
 assert(versionedBranch.includes('isExactVersionedAsset(url)'), 'immutable cache branch bypasses the exact-version classifier');
 assert(versionedBranch.includes('caches.match(req).then((cached) => {'), 'versioned assets are not cache-first');
-assert(versionedBranch.includes('c.put(req, copy)'), 'service worker does not cache the exact query-versioned request');
+assert(/\bput\(req, copy\)/.test(versionedBranch), 'service worker does not cache the exact query-versioned request');
 assert(versionedBranch.includes('caches.open(CACHE)'), 'safe hits are not promoted into the current immutable cache');
+/* The promotion must not fire on entries that are ALREADY in CACHE. The branch
+ * used to caches.match() across every cache and then put() the hit back on every
+ * single request - a disk-backed CacheStorage write per asset per boot, measured
+ * at 1.7ms each across the 205 assets this app requests after login, all on the
+ * one service-worker thread everything else is queued behind. Asking the current
+ * cache first keeps the promotion (an entry found only in an older named cache is
+ * still copied forward) and drops the redundant write. */
+assert(versionedBranch.includes('current.match(req)'), 'versioned hits must be checked against the CURRENT cache first, or every hit is re-written to disk');
 assert(versionedBranch.includes('return;'), 'versioned cache-first branch can fall through into network-first');
 assert(sw.includes("new Request(req, { cache: (isNetworkOnlyNavigation(url) || !!url.search) ? 'no-store' : 'reload' })"), 'HTML navigation lost its network-first reload/no-store policy');
 const swFetchStart = sw.indexOf("self.addEventListener('fetch'");

@@ -1079,7 +1079,7 @@
        a flickering toolbar in front of a doctor mid-recording. */
     var sig = dest + '|' +
       sibs.map(function (t) { return t.id + (t.classList.contains('on') ? '*' : ''); }).join(',') + '|' +
-      picked.map(function (p) { return (p.as || textOf(p.el)) + (p.primary ? '!' : ''); }).join(',');
+      picked.map(function (p) { return (p.as || controlLabel(p.el)) + (p.primary ? '!' : ''); }).join(',');
     if (sig === lastRnSig && bar.childNodes.length) return;
     lastRnSig = sig;
 
@@ -1110,7 +1110,7 @@
         s.className = 'segbtn' + (tab.classList.contains('on') ? ' on' : '');
         s.setAttribute('role', 'tab');
         s.setAttribute('aria-selected', tab.classList.contains('on') ? 'true' : 'false');
-        s.textContent = textOf(tab).replace(/\s*\d+$/, '');
+        s.textContent = controlLabel(tab).replace(/\s*\d+$/, '');
         s.addEventListener('click', function () {
           tab.click();
           markViewEnter();

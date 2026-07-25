@@ -71,6 +71,7 @@ const tests = [
   'deterministic-cache-token-contract.test.js',
   'calm-shell-cache-bust.test.js',
   'shell-hidden-controls-keep-reach.test.js',
+  'shell-label-authority-contract.test.js',
   'scribeflow-inline-syntax.test.js',
   'startup-hydration-contract.test.js',
   'hosted-login-usability-runtime.test.js',
