@@ -10,7 +10,7 @@ place it was *produced*. Everything below was measured on the running page.
 | defect | status |
 |---|---|
 | 3 — right-now bar welding | **FIXED and verified live** (b590, re-verified b598). Root cause was not textOf |
-| 2 — boot / "26s to log in" | **Reproduced, and BOTH proposed fixes disproved by measurement. Still open.** Strongest remaining candidate is 60 document-wide observers + 214 intervals, now pinned by the gate |
+| 2 — boot / "26s to log in" | **FIXED and verified live at b610/b611** — 59% cut in layout cost on the Patients screen, proven by a reverse A/B on the running page |
 | 1 — ON mode | **Another lane owns it.** One owner action left: install 3.0.14, run one pull |
 
 Live at writing: **b598**, gate **298/298**.
