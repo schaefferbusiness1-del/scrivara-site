@@ -37,8 +37,12 @@
   .hide{display:none}
   .err{background:#fff3f3;border:1px solid #f3c6c6;color:#a12c2c;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
   .pill{display:inline-block;background:var(--soft);color:var(--brand-dk);border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700}
-  .slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:7px;margin-top:6px}
-  .slot{padding:9px 4px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;text-align:center;cursor:pointer;color:var(--ink);user-select:none}
+  .slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin-top:6px}
+  /* Appointment times are the thing patients actually tap, usually one-handed on
+   a phone. At 9px/4px padding and 13px text these were about 34px tall with
+   4px between them - under the 44px minimum, and packed in a grid where the
+   neighbouring slot is half a thumb away. A mis-tap here books the wrong time. */
+.slot{min-height:46px;display:flex;align-items:center;justify-content:center;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;font-weight:600;text-align:center;cursor:pointer;color:var(--ink);user-select:none;touch-action:manipulation}
   .slot:hover{border-color:var(--brand)}
   .slot.sel{background:var(--brand);color:#fff;border-color:var(--brand)}
   .slot.taken{background:#f1f3f6;color:#b9c2cf;cursor:not-allowed;text-decoration:line-through}

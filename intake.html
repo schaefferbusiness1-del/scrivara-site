@@ -75,7 +75,13 @@
   <div id="formWrap" class="hide">
     <div class="card">
       <h1>Before your visit</h1>
-      <p class="lead">Please fill out what you can — your care team will review everything with you. It only takes a few minutes, and it helps your provider make the most of your appointment.</p>
+      <!-- The form asks for 20 things and requires 3. "Fill out what you can"
+           is true but vague, and the red asterisks only make sense to someone
+           who already knows the convention - so a patient in pain on a phone
+           reads twenty fields, assumes all of them are expected, and either
+           grinds through it or abandons. Say the number, and say it before the
+           first field rather than after. -->
+      <p class="lead">Only three things are needed: your <b>name</b>, your <b>date of birth</b>, and the <b>main reason for your visit</b>. Everything else is optional — fill in what you like and skip the rest. Your care team will go through it all with you.</p>
     </div>
 
     <form id="ikForm" autocomplete="off">
@@ -126,7 +132,7 @@
       </div>
 
       <div class="card sec">
-        <h3>📋 Your health</h3>
+        <h3>📋 Your health <span style="font-weight:400;color:var(--muted);font-size:13.5px">— all optional</span></h3>
         <div class="field"><label for="conditions">Medical conditions</label><textarea id="conditions" placeholder="e.g. diabetes, high blood pressure"></textarea></div>
         <div class="field"><label for="surgeries">Prior surgeries</label><textarea id="surgeries"></textarea></div>
         <div class="grid2">
@@ -167,7 +173,7 @@
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
       .then(function(r){
         if(!r || (r.status >= 500)) { show('offline'); return null; }   /* server fault: unknown, not invalid */
-        /* b566: an unreadable body is NOT a server "no". It used to be coerced
+        /* b567: an unreadable body is NOT a server "no". It used to be coerced
            to {ok:false}, which rendered the permanent "this pre-visit link is
            not valid" verdict for a truncated response or an HTML error page
            served with a 2xx - both transient. Only a body we could actually

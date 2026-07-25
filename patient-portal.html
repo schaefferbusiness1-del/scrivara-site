@@ -135,15 +135,28 @@
     <h1>Your health records</h1>
     <p class="sub">Sign in to view your medications, problems, appointments and visit history — and ask questions about your own records.</p>
     <form id="loginForm" autocomplete="on">
-      <label for="u">Username</label>
-      <input id="u" name="username" type="text" autocomplete="username" required />
+      <!-- This said "Username" while both password-setup screens tell the
+           patient they will "sign in with your email". The word email appeared
+           nowhere on this form, so a patient coming back weeks later typed
+           something else, was told to check three things at once, and had no
+           way to recover. Same word everywhere, and say which email. -->
+      <label for="u">Email</label>
+      <input id="u" name="username" type="email" autocomplete="username" placeholder="the email your practice has on file" required />
       <label for="p">Password</label>
       <input id="p" name="password" type="password" autocomplete="current-password" required />
-      <label for="d">Date of birth</label>
+      <label for="d">Date of birth <span style="font-weight:400;color:#68736B;font-size:13px">— so we can be sure it's you</span></label>
       <input id="d" name="dob" type="date" required />
       <div id="loginErr" class="err hide"></div>
       <button class="btn" id="loginBtn" type="submit">Sign in</button>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;font-size:13.5px;color:#55605A">
+        <input type="checkbox" id="showPw" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password
+      </label>
     </form>
+    <!-- The recovery path existed and was invisible to the one person who needs
+         it: a patient who has failed twice sees no forgot-password link, no
+         number, and no way out but closing the tab. The practice can already
+         send a fresh invite - this just says so. -->
+    <p class="privacy" style="margin-top:10px">Forgot your password? Ask your practice to send you a new sign-in link — it replaces the old one.</p>
     <button class="btn ghost" id="demoBtn" type="button">Preview with sample data</button>
     <p class="privacy">🔒 Your connection is encrypted. MLS only shows you your own records.</p>
   </div>
@@ -253,10 +266,14 @@
 
   function pkey(k){
     var s=String(k).replace(/_/g," ");
-    if(/^icd10$/i.test(s)) return "ICD-10";
-    if(/^mrn$/i.test(s)) return "MRN";
-    if(/^dob$/i.test(s)) return "DOB";
-    if(/^sig$/i.test(s)) return "Sig";
+    /* Prescriber and billing shorthand on a page a 70-year-old reads about
+       their own body. "Sig" sits next to the single most important line - how
+       to take the medicine - and looks like a label not meant for them, so they
+       stop expanding rows at all. Pure rename, same data. */
+    if(/^icd10$/i.test(s)) return "Medical code";
+    if(/^mrn$/i.test(s)) return "Chart number";
+    if(/^dob$/i.test(s)) return "Date of birth";
+    if(/^sig$/i.test(s)) return "How to take it";
     return s;
   }
   /* This is a PATIENT's own record. Expanding a row used to print every key on
@@ -533,7 +550,7 @@
       +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
       +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<div id="pwsErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="pwsErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
       +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
       +'<div style="font-size:12px;color:#55605A;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
       +'</div>';
@@ -626,7 +643,7 @@
       +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
       +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<div id="mcErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="mcErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
       +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
     );
     function err(t){ var e=$("mcErr"); e.style.display="block"; e.textContent=t; }
@@ -704,6 +721,18 @@
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
   function isDemo(){ var b=$("demoBanner"); return !!(b && !b.classList.contains("hide")); }
+  /* Five masked fields on this page and not one had a reveal. An older
+     patient on a phone keyboard cannot see a mistype, so they hit "the two
+     passwords do not match" and retype both blind - then have to remember a
+     password they never actually saw, with no forgot-password path to fall
+     back on. One checkbox ends the loop. */
+  window.mlsTogglePw = function (on) {
+    var ids = ["p", "pwsP1", "pwsP2", "mcP1", "mcP2"], i, el;
+    for (i = 0; i < ids.length; i++) {
+      el = document.getElementById(ids[i]);
+      if (el) el.type = on ? "text" : "password";
+    }
+  };
   function office(){
     var c={}; try{ c=JSON.parse(localStorage.getItem("mlsEasyBook")||"{}"); }catch(e){}
     try{ if(window.MLS_OFFICE) c=Object.assign({},c,window.MLS_OFFICE); }catch(e){}
@@ -759,12 +788,18 @@
       fields:function(){
         var meds=medNames();
         var opts='<option value="">— choose a medication —</option>'+meds.map(function(m){return '<option>'+esc(m)+'</option>';}).join('')+'<option value="__other">Other / not listed</option>';
-        return '<label>Which medication?</label><select id="mReqMed">'+opts+'</select>'+
+        /* Choosing "Other / not listed" used to be a dead end: collect()
+           blanked the value and the modal then answered "Please choose a
+           medication" - the thing they had just chosen - with nowhere to type
+           the name. A refill request could never be sent for anything the
+           portal did not already list. */
+        return '<label>Which medication?</label><select id="mReqMed" onchange="var o=document.getElementById(\'mReqOtherWrap\'); if(o) o.style.display = this.value===\'__other\' ? \'block\' : \'none\';">'+opts+'</select>'+
+               '<div id="mReqOtherWrap" style="display:none"><label>What is it called?</label><input id="mReqOther" placeholder="the name on the bottle or box"></div>'+
                '<label>Pharmacy (name &amp; location)</label><textarea id="mReqPharm" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
                '<label>Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" placeholder="e.g. down to my last few doses"></textarea>';
       },
-      collect:function(){ var med=$("mReqMed").value; if(med==="__other") med=""; return { medication:med, pharmacy:($("mReqPharm").value||"").trim(), note:($("mReqNote").value||"").trim() }; },
-      valid:function(d){ return !!(d.medication || d.note); }, need:"Please choose a medication (or add a note)." },
+      collect:function(){ var med=$("mReqMed").value; if(med==="__other"){ var o=$("mReqOther"); med=(o&&o.value||"").trim(); } return { medication:med, pharmacy:($("mReqPharm").value||"").trim(), note:($("mReqNote").value||"").trim() }; },
+      valid:function(d){ return !!(d.medication || d.note); }, need:"Please choose your medication, or type its name below." },
 
     appointment:{ icon:"📅", title:"Request an appointment", cat:"Appointment request",
       safe:"This sends a request — a team member confirms the exact time with you. For a medical emergency, call 911.",
@@ -875,7 +910,7 @@
     var html="Online requests aren’t available right now. Please contact "+esc(o.practice)+" directly and they’ll help you";
     html+= key==="pain" ? " — pain-medicine questions are always handled by the office." : ".";
     if(o.phone){ html+='<br><a class="callbtn" href="tel:'+esc(tel(o.phone))+'">📞 Call '+esc(o.phone)+'</a>'; }
-    else { html+='<br>Call the office using the number on your appointment paperwork.'; }
+    else { html+='<br>Call your practice - the number is on your appointment reminder text, your visit summary, or the website for your practice.'; }
     res.className="res warn"; res.innerHTML=html;
   }
   window.__mlsOpenReq=openReq; // exposed for the chat guard + card buttons
