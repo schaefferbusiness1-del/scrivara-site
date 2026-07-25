@@ -21,7 +21,13 @@
 <meta name="copyright" content="© 2026 MLS Scribe LLC. All rights reserved. Proprietary and confidential.">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- viewport-fit=cover (ph-safe-1.0.0, 2026-07-25): required for env(safe-area-inset-*)
+     to report anything but 0. This page already declares apple-mobile-web-app-capable,
+     so an installed instance runs TRUE full screen — without both halves of this
+     (cover + inset padding, added together in ph-safe-1.0.0 below) content sits under
+     the notch and the home indicator. Adding cover WITHOUT the padding would make it
+     strictly worse, so the two must never be separated. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MLS — Ambient AI Medical Scribe</title>
 <script>
 /* Capture one-time auth handoffs before any dependency, worker registration,
@@ -1315,6 +1321,56 @@
 
   /* Row actions (history delete, and the same pattern elsewhere). */
   html body .del, html body button.del{ min-width:44px; }
+}
+
+/* ===== ph-safe-1.0.0 — notch and home-indicator insets (2026-07-25) =========
+ * ScribeFlow.html declares apple-mobile-web-app-capable=yes, so once a
+ * clinician adds MLS to the Home Screen it runs TRUE full screen with no
+ * browser chrome to absorb the notch. At b621 the page had `viewport-fit`
+ * ABSENT and ZERO env(safe-area-inset-*) rules — verified by counting matching
+ * CSS rules on the live running page, not by grep. The result on any notched
+ * iPhone: the sticky header sits under the notch and the dock — which IS the
+ * navigation on a phone — sits under the home indicator.
+ *
+ * This landed together with viewport-fit=cover in the head. The two are a pair:
+ * cover alone extends the canvas into the unsafe area and would make the bug
+ * WORSE, insets alone are inert because env() reports 0 without cover.
+ *
+ * phone.html already did both (phone.html:8 and :185) — this brings the app
+ * itself up to the standard its own accessory already met.
+ *
+ * env(...) carries a 0px fallback everywhere, so nothing moves on a device
+ * without insets, and no existing rule is edited. */
+@supports (padding: env(safe-area-inset-top)) {
+  /* Sticky top bar — the notch. */
+  html body #appHeader{
+    padding-top:calc(env(safe-area-inset-top,0px)) !important;
+    box-sizing:content-box;
+  }
+  /* Landscape: the notch eats a side margin too. */
+  html body #appWrap, html body #appScreen{
+    padding-left:calc(env(safe-area-inset-left,0px)) !important;
+    padding-right:calc(env(safe-area-inset-right,0px)) !important;
+  }
+  @media (max-width:760px){
+    /* The dock is the navigation on a phone (the calm shell hides .mainnav),
+       so it must clear the home indicator or its buttons are half-unreachable.
+       --mls-kbd is driven by ph-kbd-1.0.0 (bottom of this file): iOS does NOT
+       shrink the layout viewport when the on-screen keyboard opens, so without
+       it the dock — which carries the Ask input — sits BEHIND the keyboard the
+       moment you tap into it. Consumed as a variable rather than fought with an
+       inline style, because this rule is !important and would win. */
+    html body #mlsDock{
+      bottom:calc(8px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)) !important;
+    }
+    html body #mlsA2hsCard{
+      bottom:calc(84px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)) !important;
+    }
+    /* Keep the last of the page scrollable above the dock AND the indicator. */
+    html body.mls-redesign #appWrap{
+      padding-bottom:calc(110px + env(safe-area-inset-bottom,0px)) !important;
+    }
+  }
 }
 
 /* ===== ph-deadend-1.0.0 — N5: remove the Pull button that cannot work =======
@@ -28001,7 +28057,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b651';
+  window.__MLS_AV='b652';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -28446,10 +28502,106 @@ function _ptGroupSort(mode){
   api.cardId = CARD_ID;
   api.show = show;
   api.close = close;
+  api.isIOS = isIOS;
   api.eligible = function () { return isHandheld() && !isStandalone() && !dismissed(); };
   api.revert = function () {
     close();
     try { delete window.__mlsA2HS; } catch (e) { window.__mlsA2HS = null; }
+  };
+})();
+</script>
+<script>
+/* ===== ph-kbd-1.0.0 — keep the dock above the on-screen keyboard ============
+ * `visualViewport` appeared ZERO times in the app's own code at b621 (the only
+ * hit in the repo was a test harness). That matters specifically here because
+ * the dock is `position:fixed` at the bottom AND carries a text input
+ * (#mlsDockAsk, the "run any button by name" box).
+ *
+ * On iOS the on-screen keyboard does NOT shrink the layout viewport — window
+ * .innerHeight is unchanged and a fixed bottom element stays exactly where it
+ * was, i.e. BEHIND the keyboard. So tapping Ask hides the very field you just
+ * tapped into. (Android Chrome usually resizes instead, which is why this is
+ * easy to miss on the platform most people test on.)
+ *
+ * visualViewport.height DOES shrink, so the overlap is
+ *   innerHeight - visualViewport.height - visualViewport.offsetTop
+ * and the dock is lifted by exactly that much through a CSS variable. A
+ * variable rather than an inline style on purpose: the dock's bottom is set
+ * with !important by ph-safe-1.0.0, so an inline style would silently lose —
+ * and it composes with the safe-area inset instead of overwriting it.
+ *
+ * No new module (loader ceiling is exactly 234), no interval, no observer.
+ *
+ * NAMESPACE: __mlsKbdInset, NOT __mlsKbd. feat_mls_keyboard_layer.js already
+ * owns window.__mlsKbd (the unified keyboard-SHORTCUT layer). This module was
+ * first written as __mlsKbd and its own `if (window.__mlsKbd) return;` guard
+ * then made it bail out on every single load — it never ran once, silently,
+ * with no error anywhere. Nothing static would have caught that: the code was
+ * present, correct and shipped. Only reading the live object's keys did
+ * (["__live","__reverted","open","revert"] — plainly someone else's object).
+ * Reversible: window.__mlsKbdInset.revert(). */
+(function () {
+  if (window.__mlsKbdInset) return;
+  /* Read visualViewport LAZILY. Capturing it into a var at module-init time
+     produced supported:false on a page where window.visualViewport was
+     demonstrably present moments later — a live browser object should never be
+     snapshotted at boot, and doing so silently disabled the whole handler. */
+  function VV() { try { return window.visualViewport || null; } catch (e) { return null; } }
+  var applied = 0, bound = false;
+  var api = { installed: true, version: 'ph-kbd-1.0.0' };
+  window.__mlsKbdInset = api;
+  function overlap() {
+    var vv = VV();
+    if (!vv) return 0;
+    try {
+      var o = window.innerHeight - vv.height - vv.offsetTop;
+      return (isFinite(o) && o > 0) ? Math.round(o) : 0;
+    } catch (e) { return 0; }
+  }
+  function apply() {
+    try {
+      var o = overlap();
+      /* Small deltas are browser chrome (the collapsing URL bar), not a
+         keyboard. Lifting the dock for those would make it jitter while you
+         scroll, so only react to something keyboard-sized. */
+      var next = o > 80 ? o : 0;
+      if (next === applied) return;
+      applied = next;
+      document.documentElement.style.setProperty('--mls-kbd', next ? (next + 'px') : '0px');
+    } catch (e) {}
+  }
+
+  function bind() {
+    if (bound) return true;
+    var vv = VV();
+    if (!vv) return false;
+    try {
+      vv.addEventListener('resize', apply);
+      vv.addEventListener('scroll', apply);
+      bound = true;
+    } catch (e) { bound = false; }
+    return bound;
+  }
+  bind();
+  apply();
+  /* Retry binding once the document is ready, so a late-initialised
+     visualViewport still gets listeners instead of failing silently forever. */
+  if (document.readyState === 'loading') {
+    try { document.addEventListener('DOMContentLoaded', function () { bind(); apply(); }, false); } catch (e) {}
+  }
+
+  api.overlap = overlap;
+  api.applied = function () { return applied; };
+  api.apply = apply;
+  api.bind = bind;
+  api.supported = function () { return !!VV(); };
+  api.bound = function () { return bound; };
+  api.revert = function () {
+    var vv = VV();
+    try { if (vv) vv.removeEventListener('resize', apply); } catch (e) {}
+    try { if (vv) vv.removeEventListener('scroll', apply); } catch (e) {}
+    try { document.documentElement.style.removeProperty('--mls-kbd'); } catch (e) {}
+    try { delete window.__mlsKbdInset; } catch (e) { window.__mlsKbdInset = null; }
   };
 })();
 </script>

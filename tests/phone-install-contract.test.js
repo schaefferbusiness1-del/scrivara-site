@@ -97,5 +97,39 @@ assert(/if \(url\.search && !SAFE_SHELL_QUERIES\.has\(url\.search\)\) return '';
 assert(!/SAFE_SHELL_QUERIES[\s\S]{0,400}token/.test(sw),
   'no capability-bearing query may ever enter the offline allowance');
 
+/* ---- ph-safe-1.0.0: the notch and the home indicator ----
+ * apple-mobile-web-app-capable=yes means an installed instance runs TRUE full
+ * screen, with no browser chrome to absorb the notch. viewport-fit=cover and
+ * env(safe-area-inset-*) are a PAIR: cover without insets pushes content INTO
+ * the unsafe area (strictly worse than before), insets without cover are inert
+ * because env() resolves to 0. Assert both, so neither can be removed alone. */
+const viewport = (shell.match(/<meta name="viewport" content="([^"]+)"/) || [, ''])[1];
+assert(/viewport-fit\s*=\s*cover/.test(viewport),
+  'viewport-fit=cover is required or every safe-area inset resolves to 0: ' + viewport);
+assert(/#appHeader\s*\{[^}]*env\(safe-area-inset-top/.test(shell),
+  'the sticky header must pad for the notch, or it renders underneath it');
+assert(/#mlsDock\s*\{[^}]*env\(safe-area-inset-bottom/.test(shell),
+  'the dock must clear the home indicator — it IS the navigation on a phone');
+assert(/apple-mobile-web-app-capable/.test(shell),
+  'this contract exists because the app declares itself web-app-capable');
+
+/* ---- ph-kbd-1.0.0: namespace, and why this assertion exists ----
+ * The keyboard-inset handler was first written as window.__mlsKbd, which
+ * feat_mls_keyboard_layer.js already owns (the unified keyboard SHORTCUT
+ * layer). Its own `if (window.__mlsKbd) return;` guard then made it bail on
+ * every load — present, correct, shipped, and never executed once, with no
+ * error anywhere. Only reading the live object's keys revealed it. */
+/* Assert against comment-stripped source. Prose explaining the collision
+   necessarily contains the very identifier being banned, and matching that
+   would have this test grade a comment — the same mistake the capture-survival
+   suite already made once. */
+const shellCode = shell.replace(/\/\*[\s\S]*?\*\//g, '');
+assert(!/window\.__mlsKbd\b(?!Inset)/.test(shellCode),
+  'ScribeFlow.html must not touch window.__mlsKbd — feat_mls_keyboard_layer.js owns that namespace');
+assert(/window\.__mlsKbdInset/.test(shell), 'the keyboard-inset handler must own its own namespace');
+assert(/--mls-kbd/.test(shell), 'the keyboard offset must travel via the --mls-kbd custom property');
+assert(/var\(--mls-kbd,\s*0px\)/.test(shell),
+  'the dock bottom must consume --mls-kbd with a 0px fallback, or a browser without the handler breaks');
+
 console.log('PASS phone install contract: stable id, root-scoped start_url, manifest theme matches the shell, ' +
   manifest.icons.length + ' icons verified on disk at their declared pixel sizes, and the phone-mode URL opens offline');

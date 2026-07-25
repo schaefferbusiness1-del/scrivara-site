@@ -823,6 +823,10 @@ async function addPatient(page, name, dob) {
     const cdp = await p.createCDPSession();
     await cdp.send('Network.setBypassServiceWorker', { bypass: true });
     p.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
+    if (process.env.MLS_E2E_PHONE_DEBUG) {
+      p.on('pageerror', (e) => console.log('  [page-error] ' + String(e && e.message || e).slice(0, 240)));
+      p.on('console', (m) => { if (m.type() === 'error') console.log('  [console-error] ' + m.text().slice(0, 240)); });
+    }
     await p.setViewport({ width: vp.width, height: vp.height, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
     await p.goto(APP, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const ready = await waitForAppSettled(p);
@@ -906,7 +910,13 @@ async function addPatient(page, name, dob) {
       await pp.evaluate(() => {
         const d = document.createElement('div');
         d.id = '__mlsOverflowCanary';
-        d.style.cssText = 'width:1200px;height:24px;background:transparent';
+        /* Pin every property the visibility filter reads. An inherited rule
+           (an entry animation mid-flight, a transient overlay) previously left
+           the canary undetected intermittently, which makes the instrument
+           itself flaky — worse than a blind one, because it passes most runs. */
+        d.style.cssText = 'width:1200px;height:24px;background:transparent;' +
+          'display:block;visibility:visible;opacity:1;position:static;' +
+          'margin:0;padding:0;max-width:none;transform:none';
         document.body.appendChild(d);
       });
       await sleep(150);
@@ -925,7 +935,9 @@ async function addPatient(page, name, dob) {
           if (ox === 'auto' || ox === 'scroll') { scroller = (p.id || p.tagName) + ':' + ox; break; }
         }
         return { presentAfterProbe: true, w: Math.round(r.width), right: Math.round(r.right),
+                 h: Math.round(r.height),
                  vw: document.documentElement.clientWidth, display: cs.display,
+                 visibility: cs.visibility, opacity: cs.opacity,
                  maxWidth: cs.maxWidth, scrollerAncestor: scroller,
                  parent: c.parentElement ? (c.parentElement.id || c.parentElement.tagName) : null };
       });
@@ -967,6 +979,148 @@ async function addPatient(page, name, dob) {
 
     try { await pp.close(); } catch (e) {}
   }
+
+  await step('phone: the on-screen keyboard cannot hide the dock (and its Ask box)', async () => {
+    const kp = await newPhonePage(PHONE_VIEWPORTS[0]);
+    try {
+      const state = await kp.evaluate(() => ({
+        installed: !!window.__mlsKbdInset,
+        supported: !!(window.__mlsKbdInset && window.__mlsKbdInset.supported && window.__mlsKbdInset.supported()),
+        bound: !!(window.__mlsKbdInset && window.__mlsKbdInset.bound && window.__mlsKbdInset.bound()),
+        applied: (window.__mlsKbdInset && typeof window.__mlsKbdInset.applied === 'function')
+          ? window.__mlsKbdInset.applied() : null,
+        keys: window.__mlsKbdInset ? Object.keys(window.__mlsKbdInset) : null,
+        version: window.__mlsKbdInset && window.__mlsKbdInset.version,
+        vvPresent: typeof window.visualViewport !== 'undefined' && !!window.visualViewport,
+        vvHeight: window.visualViewport ? Math.round(window.visualViewport.height) : null,
+        innerHeight: window.innerHeight
+      }));
+      assert(state.installed, 'no keyboard handling installed');
+      assert(state.supported,
+        'visualViewport unavailable — the handler can never lift the dock. ' + JSON.stringify(state));
+      assert(state.bound,
+        'visualViewport listeners were never attached, so a keyboard would move nothing. ' + JSON.stringify(state));
+      assert.strictEqual(state.applied, 0, 'the dock was lifted with no keyboard open');
+
+      /* A real on-screen keyboard cannot be summoned in headless Chrome, so
+         drive the exact variable the handler drives and prove the CSS honours
+         it. This is the half that could fail SILENTLY: the dock's bottom is set
+         with !important by ph-safe-1.0.0, so an inline style would have lost.
+         Reverse A/B — measure, apply, measure, restore, measure. */
+      const move = await kp.evaluate(() => {
+        const d = document.getElementById('mlsDock');
+        if (!d) return { dock: false };
+        const at = () => Math.round(d.getBoundingClientRect().bottom);
+        const before = at();
+        document.documentElement.style.setProperty('--mls-kbd', '300px');
+        const lifted = at();
+        document.documentElement.style.setProperty('--mls-kbd', '0px');
+        const restored = at();
+        return { dock: true, before: before, lifted: lifted, restored: restored,
+                 usesVar: /var\(--mls-kbd/.test(getComputedStyle(d).bottom) };
+      });
+      assert(move.dock, '#mlsDock not present to measure');
+      assert.strictEqual(move.before - move.lifted, 300,
+        'setting --mls-kbd did not lift the dock by exactly 300px (before=' + move.before +
+        ' lifted=' + move.lifted + ') — the keyboard offset is not reaching the dock, ' +
+        'most likely out-specified by an !important bottom');
+      assert.strictEqual(move.restored, move.before,
+        'the dock did not return to its resting position when the keyboard closed');
+    } finally {
+      try { await kp.close(); } catch (e) {}
+    }
+  });
+
+  await step('phone: the notch and home indicator do not cover the app (safe-area insets)', async () => {
+    const sp = await browser.newPage();
+    try {
+      const cdp = await sp.createCDPSession();
+      await cdp.send('Network.setBypassServiceWorker', { bypass: true });
+      sp.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
+      await sp.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+      await sp.goto(APP, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await waitForAppSettled(sp);
+
+      /* The head declaration is a prerequisite: without viewport-fit=cover,
+         env(safe-area-inset-*) reports 0 on every device and the CSS is inert. */
+      const meta = await sp.evaluate(() => {
+        const m = document.querySelector('meta[name="viewport"]');
+        return m ? m.getAttribute('content') : '';
+      });
+      assert(/viewport-fit\s*=\s*cover/.test(meta),
+        'viewport-fit=cover is required or every safe-area inset resolves to 0: ' + meta);
+
+      const before = await sp.evaluate(() => {
+        const h = document.getElementById('appHeader');
+        const d = document.getElementById('mlsDock');
+        return {
+          headerPadTop: h ? getComputedStyle(h).paddingTop : null,
+          dockBottom: d ? getComputedStyle(d).bottom : null
+        };
+      });
+
+      /* Real emulation if this Chrome supports it. */
+      let emulated = false;
+      try {
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+          insets: { top: 59, left: 0, bottom: 34, right: 0 }   /* iPhone 15 Pro portrait */
+        });
+        emulated = true;
+      } catch (e) { emulated = false; }
+
+      if (emulated) {
+        await sleep(400);
+        const after = await sp.evaluate(() => {
+          const h = document.getElementById('appHeader');
+          const d = document.getElementById('mlsDock');
+          const px = (v) => parseFloat(v || '0') || 0;
+          return {
+            headerPadTop: px(h ? getComputedStyle(h).paddingTop : '0'),
+            dockBottom: px(d ? getComputedStyle(d).bottom : '0'),
+            headerTop: h ? Math.round(h.getBoundingClientRect().top) : null
+          };
+        });
+        assert(after.headerPadTop >= 59,
+          'the sticky header does not clear a 59px notch (padding-top=' + after.headerPadTop + 'px) — ' +
+          'content would render underneath it on any modern iPhone');
+        assert(after.dockBottom >= 42,
+          'the dock does not clear the 34px home indicator (bottom=' + after.dockBottom + 'px) — ' +
+          'the dock IS the navigation on a phone, so its buttons would be partly unreachable');
+      } else {
+        /* No emulation available: prove the rules are PARSED AND MATCHED against
+           real elements. "Present in the stylesheet" is not "winning", and this
+           repo has shipped rules that matched nothing at all. Reported loudly so
+           a green result is never mistaken for device-verified. */
+        const matched = await sp.evaluate(() => {
+          const want = ['#appHeader', '#mlsDock'];
+          const out = {};
+          want.forEach((w) => { out[w] = { rule: false, matchesElement: !!document.querySelector(w) }; });
+          for (const sheet of document.styleSheets) {
+            let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+            const walk = (list) => {
+              for (const r of list) {
+                if (r.cssRules) { walk(r.cssRules); continue; }
+                const t = r.cssText || '';
+                if (!/safe-area-inset/.test(t)) continue;
+                want.forEach((w) => { if (t.indexOf(w) > -1) out[w].rule = true; });
+              }
+            };
+            walk(rules);
+          }
+          return out;
+        });
+        Object.keys(matched).forEach((sel) => {
+          assert(matched[sel].rule, 'no safe-area rule found for ' + sel);
+          assert(matched[sel].matchesElement, sel + ' safe-area rule matches no element in the live DOM');
+        });
+        console.log('    NOTE: Emulation.setSafeAreaInsetsOverride unavailable in this Chrome — ' +
+          'verified the rules are parsed AND match real elements, NOT that a device honours them.');
+      }
+      assert(before.headerPadTop !== null, 'appHeader was not present to measure');
+    } finally {
+      try { await sp.close(); } catch (e) {}
+    }
+  });
 
   await step('phone: an iPhone is told how to add MLS to the Home Screen, and "Not now" sticks', async () => {
     const ip = await browser.newPage();
