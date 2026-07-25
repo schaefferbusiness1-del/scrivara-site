@@ -350,3 +350,71 @@ reading. One pull still settles it.
   possibly right — but the landing pane the mandatory total exists to reject can
   also sit stable, so swapping one for the other without the live reading trades
   a known refusal for an unknown false accept in a clinical read path.
+
+---
+
+## The ON-mode pull is now three steps, and here is what to do with each answer
+
+**The build is staged and ready to load:**
+`C:\Users\Micha\Downloads\MLS_Assist_3.0.15_ONMODE_DIAGNOSTIC\`
+
+Twenty package files copied from `agent/ext-3.0.14-on-mode` @ `adc05ee` and
+**verified byte-identical by SHA-256 per file**, manifest `3.0.15`, core digest
+`cac24f27…`, gate 298/298. Deliberately a separate folder — the running
+extension in `Downloads\MLS_Assist_v1.65` is untouched, because overwriting a
+loaded unpacked folder is its own documented way to lose an evening. Loading it
+alongside gives two entries; removing the 3.0.15 one restores the status quo
+exactly.
+
+`READ-ME-FIRST.md` in that folder is written for the owner: load unpacked, paste
+a listener into the signed-in tab, run **one** pull with Full visit notes ON,
+paste back what it printed. The listener is passive — a `message` handler plus a
+DOM/localStorage scan — so nothing depends on knowing where the receipt lives.
+
+### Why the gates cannot simply be relaxed, which is the fix's whole shape
+
+Gate 1 is the only check that identifies the panel; gates 2 and 3 only measure
+completeness. So the tempting fix — drop the mandatory total, accept once the
+row count is stable — is safe **only if gate 1 reliably excludes the landing
+pane**. It probably does not:
+
+```js
+var vcOk = false, vcScope = g.parent;
+for (var va = 0; va < 8 && vcScope; va++) {
+  var vcT = String(vcScope.textContent || '').slice(0, 6000);
+  if (/visits\s*and\s*cases/i.test(vcT)) { vcOk = true; break; }
+  vcScope = vcScope.parentElement;
+}
+```
+
+That is a **text scan over up to 6,000 characters of an ancestor eight levels
+up**. Eight levels above an encounter list on a briefing page is plausibly the
+whole briefing page — which contains the "Visits and Cases" heading whether or
+not the rows in hand belong to that panel. The 3.0.2 note says the landing pane
+carries *the same row markup* and hydrates first. If both surfaces sit under a
+common ancestor containing that heading, gate 1 passes for both, and the
+mandatory total is the only thing standing between the reader and a 1–2 row
+landing pane believed to be a complete history.
+
+That is reasoning from the source, not a measurement — flagged as such. But it
+is the reason the sequencing matters: **tighten gate 1 to structural identity
+before relaxing gates 2 and 3.** Bind to the element that actually owns the
+`ul.encounter-list.accordion-container` — a heading node, an `aria-label`, a
+`data-` attribute on the panel container — rather than to text found anywhere in
+an ancestor's subtree. Once panel identity is *structural*, a stability-based
+completeness rule becomes safe, and the "refuses forever when the SHOW label
+never renders" problem disappears with it.
+
+Sequenced the other way round, a stable landing pane becomes an accepted
+complete index, and the failure is silent: a chart that reports success with two
+of a patient's twenty-two encounters is worse than one that honestly refuses.
+
+### Reading the answer
+
+| receipt | what it establishes | first move |
+|---|---|---|
+| `visits-panel-not-open[rows=N;up=8]` | the walk never matched the heading even at 8 levels | gate 1 is too strict *and* structurally wrong — go straight to structural identity |
+| `visits-total-not-readable[…;sameFor=67s]` | no "All Events (N)"; list unchanged for a minute | the collapsible-panel flip removed the label. Tighten gate 1, then let stability replace the total |
+| `visits-list-still-rendering[22/38;…;sameFor=67s]` | declared 38, rendered 22, not moving | the declared total counts non-encounters. Compare against encounter rows, or drop to stability — after gate 1 |
+| `noise-frames-excluded:N` present | 3.0.14 working: the inbox is no longer offered as the index | nothing; confirmation only |
+| nothing printed | the pull never reached the chart | check the Athena session first — expired session has been the #1 blocker |
