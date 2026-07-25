@@ -212,8 +212,40 @@ read with no intervening write          median  0ms
 7,982 DOM nodes · 197 stylesheets · 3,934 CSS rules
 ```
 
-> **CORRECTION — the 18.2ms figure is BOOT-WINDOW ONLY, and an earlier version of
-> this section got that wrong.** Re-measured across five spaced rounds:
+> ## FINAL ANSWER — it is the PATIENTS SCREEN, not time and not boot
+>
+> Two earlier versions of this section were wrong (first "18.2ms is what a layout
+> costs", then "18.8ms decays to 3.0ms over time"). Both were the same mistake:
+> attributing to *time* what belongs to *which screen is open*.
+>
+> Sampled every 2.5s from t=4s to t=58s: layout stayed flat at **16–19ms**. No
+> decay, no cliff. Then measured per screen inside one page load, same ~7,890
+> DOM nodes throughout:
+>
+> | screen | ms per forced layout |
+> |---|---|
+> | **Patients** (the screen the app boots into) | **16.3 – 16.7** |
+> | Day | 6.1 |
+> | Visit | 3.2 |
+> | Review | **2.4** |
+>
+> **7× spread with an identical DOM node count.** It is not node count, not
+> stylesheet count, not elapsed time, and not the boot path. It is that the
+> Patients directory is laid out — the store holds **1,481 patients** and the
+> directory renders **150 rows**, each with an avatar, chips and buttons.
+>
+> So the ~700 DOM mutations during boot each pay a ~16ms layout *because the
+> patient directory is the visible screen while they happen*. 700 × 16ms = 11.2s,
+> against the measured foreground TBT of 10,929ms.
+>
+> **The fix follows directly and is cheap to try:** stop the off-screen rows from
+> participating in layout. `content-visibility: auto` with a
+> `contain-intrinsic-size` on the patient row element is the textbook form and is
+> pure CSS, reversible, and measurable with the snippet below. Verify
+> find-in-page and scroll-anchoring behaviour before shipping, and re-measure the
+> Patients screen: the target is Review's 2.4ms.
+>
+> Superseded detail from the previous two revisions, kept so nobody re-derives it:
 >
 > | when | median | p90 |
 > |---|---|---|
