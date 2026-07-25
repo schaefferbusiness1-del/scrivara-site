@@ -9507,7 +9507,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       /* 3.0.12: which frames actually answered, and did any hold an index. */
       try {
         enrSeen = (enR || []).map(function (r) {
-          return String((r && r.frameId) != null ? r.frameId : '?') + ((r && r.result && r.result.ok) ? '+' : '-');
+          var id = String((r && r.frameId) != null ? r.frameId : '?');
+          var res = r && r.result;
+          if (res && res.ok) return id + '+';
+          /* 3.0.13: WHICH gate refused. '+/-' proved the real chart frame is
+             reached and judged not-ok, but three different gates inside the
+             enumerate op can say no and they need opposite fixes. The reason
+             is trimmed of its 'visits-' prefix only to fit the budget. */
+          var why = String((res && res.reason) || (res ? 'ok-false-no-reason' : 'no-result'));
+          return id + '-' + why.replace(/^visits-/, '').slice(0, 22);
         });
       } catch (e) { enrSeen = ['(capture-failed)']; }
       var eb = bestResult(enR, function (r) {
