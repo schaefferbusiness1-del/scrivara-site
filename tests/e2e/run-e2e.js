@@ -76,6 +76,41 @@ async function newAppPage(browser, { fresh } = {}) {
   return page;
 }
 
+/* Reload the app the way a person hits refresh — and check the guard.
+ *
+ * The app warns before discarding unsaved visit work (a beforeunload prompt).
+ * puppeteer's default handler in this suite is dismiss(), and dismissing a
+ * beforeunload CANCELS the navigation — which surfaces as "Navigation timeout
+ * of 30000 ms exceeded", looking nothing like a dialog problem. That cost this
+ * suite a phantom failure on the Recent-chip step, whose only crime was
+ * reloading after an earlier step deliberately dirtied #transcript. Measured
+ * four ways: a clean page reloads in 68ms with 0 prompts, a dirty page times
+ * out under dismiss and reloads in 65ms under accept, and the prompt does NOT
+ * require a user gesture.
+ *
+ * So accept the prompt (a user choosing "Leave") — and assert the guard while
+ * we are here: it must fire IF AND ONLY IF there is unsaved work. Deriving the
+ * expectation from the app's own state keeps this honest as steps are
+ * reordered, and it covers a real data-loss path nothing else here touches: a
+ * refresh that silently discards in-progress dictation. */
+async function reloadApp(page) {
+  const dirty = await page.evaluate(() =>
+    !!window._visitDirty || (typeof capturing !== 'undefined' && !!capturing));
+  let prompts = 0;
+  page.removeAllListeners('dialog');
+  page.on('dialog', async d => { prompts++; try { await d.accept(); } catch (e) {} });
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+  } finally {
+    page.removeAllListeners('dialog');
+    page.on('dialog', async d => { try { await d.dismiss(); } catch (e) {} });
+  }
+  assert.strictEqual(prompts, dirty ? 1 : 0, dirty
+    ? 'refresh with unsaved visit work did NOT warn before discarding it — the beforeunload guard is gone'
+    : 'refresh warned about unsaved work when nothing was dirty — a spurious "Leave site?" on every refresh');
+  return dirty;
+}
+
 async function signUp(page, email, pass) {
   await page.waitForSelector('#authScreen', { visible: true, timeout: 15000 });
   // switch to signup mode via its tab
@@ -156,7 +191,7 @@ async function addPatient(page, name, dob) {
     idA = await addPatient(page, 'E2E Alice Alpha', '01/02/1970');
     idB = await addPatient(page, 'E2E Bob Beta', '03/04/1980');
     await page.evaluate(id => { setActivePtId(id); try { renderProfile(); renderPatientBar(); } catch (e) {} }, idA);
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await reloadApp(page);
     await sleep(1500);
     const got = await page.evaluate(() => getActivePtId());
     assert.strictEqual(String(got), String(idA), 'reload switched the active patient: ' + got);
@@ -212,7 +247,7 @@ async function addPatient(page, name, dob) {
     }
     const before = await chipGeom();
     assert(before && before.width >= 100, 'recent chip missing or unreserved: ' + JSON.stringify(before));
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await reloadApp(page);
     const after = await chipGeom();
     assert(after && after.width >= 100, 'recent chip lost its reserved space after reload: ' + JSON.stringify(after));
   });
@@ -659,12 +694,8 @@ async function addPatient(page, name, dob) {
     assert(out.backToAlice, 'could not return to the original record');
     assert(out.draftSaved, 'unsaved work did not reach the draft slot');
     /* resume after reload — the dirty transcript raises the app's beforeunload
-       guard (working as designed); accept it for this deliberate reload */
-    page.removeAllListeners('dialog');
-    page.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    page.removeAllListeners('dialog');
-    page.on('dialog', async d => { try { await d.dismiss(); } catch (e) {} });
+       guard (working as designed); reloadApp() accepts it and asserts it fired */
+    await reloadApp(page);
     await sleep(2500);
     const res = await page.evaluate(async () => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
