@@ -47,11 +47,42 @@
     if (el.hidden || el.disabled) return false;
     return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   }
-  function textOf(el) {
-    var t = (el && (el.textContent || el.getAttribute('title') || el.getAttribute('aria-label'))) || '';
-    return t.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ' ')
+  function normLabel(t) {
+    return String(t || '').replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ' ')
       .replace(/[←-⯿☀-➿️‍＋]/g, ' ')
       .replace(/\s+/g, ' ').trim();
+  }
+  function textOf(el) {
+    return normLabel((el && (el.textContent || el.getAttribute('title') || el.getAttribute('aria-label'))) || '');
+  }
+
+  /* A control's label is NOT its textContent.
+     Owner, 2026-07-24, on the right-now bar: "i ahte this patient banner like
+     wtf is this its aweful". The bar was showing "Linda S Bledsoe9:40 AM".
+
+     The ez3 buttons put the patient in a block-level <small> with NO separator
+     in the markup, which is correct in that shell - .ez3-big small is
+     display:block, so it renders on its own line. textContent has no concept of
+     that line break, so flattening the button into this bar's plain-text label
+     welds the surname onto the time. It reads as a typo in the patient's NAME,
+     which is the worst place on a clinical screen to have one.
+
+     The bug is real but it is NOT a CSS problem: this bar assigns
+     b.textContent = ..., so it contains no <small> element to style, and a
+     '#mlsRightNow button small' rule cannot fire. The separator has to be put
+     back where the label is derived. */
+  function controlLabel(el) {
+    if (!el) return '';
+    var small = el.querySelector && el.querySelector('small');
+    if (!small) return textOf(el);
+    var whole = String(el.textContent || '');
+    var raw = String(small.textContent || '');
+    var head = (raw && whole.slice(-raw.length) === raw) ? whole.slice(0, whole.length - raw.length) : whole;
+    head = normLabel(head);
+    var tail = normLabel(raw);
+    if (!head) return tail;
+    if (!tail) return head;
+    return head + ' · ' + tail;
   }
 
   /* ---------------------------------------------------------------- enable */
@@ -238,6 +269,15 @@
     '#mlsRightNow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding:10px 12px;',
     'background:rgba(255,255,255,.86);border:1px solid #E7E5DD;border-radius:16px;',
     'box-shadow:0 1px 2px rgba(20,35,28,.04)}',
+    /* idc-1.0.0 — the patient card that used to be a button label. Reads as
+       information: no border that suggests pressing it, no hover state. */
+    'body.mls-calm .mls-idcard{margin:0 0 8px;padding:11px 14px;border-radius:14px;',
+    'background:#F4F7F5;border:1px solid #E4EAE6;text-align:left}',
+    'body.mls-calm .mls-idname{font:650 17px/1.25 inherit;color:#1A211C;letter-spacing:-.01em;',
+    'overflow-wrap:anywhere}',
+    'body.mls-calm .mls-idmeta{margin-top:3px;font:500 13px/1.35 inherit;color:#5B6B62}',
+    /* The action shrinks back to an action once the identity leaves it. */
+    'body.mls-calm .ez3-big{line-height:1.25}',
     '#mlsRightNow .lbl{font:500 12px inherit;color:#8C978F;margin-right:2px}',
     '#mlsRightNow button{border:1px solid #DFE5E1;background:#fff;color:#204034;border-radius:12px;padding:9px 15px;',
     'font:500 13.5px inherit;cursor:pointer;opacity:0;transform:translateY(4px);',
@@ -895,7 +935,7 @@
     picked.forEach(function (p, i) {
       var b = D.createElement('button');
       b.type = 'button';
-      b.textContent = p.as || textOf(p.el);
+      b.textContent = p.as || controlLabel(p.el);
       if (p.as) b.title = 'Runs "' + textOf(p.el) + '" on this screen';
       if (p.primary && i === 0) b.className = 'primary';
       b.style.animationDelay = (i * 45) + 'ms';
@@ -1407,6 +1447,7 @@
       var el = qs(s);
       if (el && el.parentNode) el.parentNode.removeChild(el);
     });
+    safe(dropIdentityCards);
     if (observer) safe(function () { observer.disconnect(); });
     if (idleTimer) clearTimeout(idleTimer);
     D.removeEventListener('mousemove', onMove, true);
@@ -1534,6 +1575,112 @@
     }
   }
 
+  /* ------------------------------------------------------------------
+     idc-1.0.0 — the patient is a person, not part of a button label.
+
+     Owner, 2026-07-24, looking at the Today screen: "i ahte this patient
+     banner like wtf is this its aweful and also like if Im on a paietn the
+     patient banner sohuld be up there".
+
+     The Today surface built its primary action as
+       "🎙 Start Recording — Atoussa Salimi<small>7:30 AM · DOB 11/05/1968</small>"
+     so the patient's name, time and date of birth were part of a control's
+     label. Three things follow from that and all three are wrong: identity
+     reads as an instruction, the button gets worse the longer the name is, and
+     there is no patient header anywhere on the screen to look at.
+
+     Identity moves ABOVE the action as its own card; the button becomes one
+     thing to press. Done here rather than in the four generators that build
+     these buttons (Start Recording, Start Visit, and the two "up next" forms)
+     because this is presentation, the generators live in a 1.9MB file, and one
+     transform covers every variant including any added later.
+
+     NOT a claim that a chart is open. On Today no patient is selected yet, so
+     the card is deliberately scoped to the ez3 action it belongs to and never
+     pinned to the top of the app - a persistent banner there would imply the
+     doctor is already in that patient's chart when they are not.
+
+     The button keeps its full original text as aria-label, so nothing that
+     resolves controls by accessible name loses its reach and a screen reader
+     still hears which patient the action belongs to. Handlers are bound by id
+     (ez3Now/ez3Nxt), never by label, so the visible text is safe to shorten -
+     checked before writing this. */
+  var ID_SPLIT = /^([^—]{1,40}?)\s+—\s+(.+)$/;
+
+  function identityCards() {
+    if (!W.__mlsCalmShell.active) return;
+    qsa('.ez3-big').forEach(function (btn) {
+      if (!btn.parentNode) return;
+      var small = btn.querySelector('small');
+      /* Raw textContent, NOT textOf(): textOf strips emoji to spaces, which
+         would both break the suffix arithmetic below and eat the 🎙 that makes
+         the action recognisable at a glance. */
+      var whole = String(btn.textContent || '');
+      var smallText = small ? String(small.textContent || '') : '';
+      /* The ez3 surface repaints itself, which destroys the card and restores
+         the long label. Re-deriving from the button each pass is what makes
+         this idempotent; the signature only skips work when nothing moved. */
+      var sig = whole + '|';
+      if (btn.__mlsIdSig === sig && btn.previousSibling && btn.previousSibling.classList &&
+          btn.previousSibling.classList.contains('mls-idcard')) return;
+
+      var head = whole;
+      if (smallText && whole.slice(-smallText.length) === smallText) head = whole.slice(0, whole.length - smallText.length);
+      var m = ID_SPLIT.exec(head.replace(/\s+/g, ' ').trim());
+      if (!m) return;                       /* no identity fused in - leave it */
+      var action = m[1].trim(), who = m[2].trim();
+      if (!who) return;
+
+      var card = btn.previousSibling;
+      if (!card || !card.classList || !card.classList.contains('mls-idcard')) {
+        card = D.createElement('div');
+        card.className = 'mls-idcard';
+        btn.parentNode.insertBefore(card, btn);
+      }
+      card.textContent = '';
+      var nm = D.createElement('div');
+      nm.className = 'mls-idname';
+      nm.textContent = who;
+      card.appendChild(nm);
+      if (small) {
+        var mt = D.createElement('div');
+        mt.className = 'mls-idmeta';
+        mt.textContent = textOf(small);
+        card.appendChild(mt);
+      }
+
+      /* Keep the exact original markup so teardown() can put the control back
+         byte-for-byte. Without it, leaving the shell would strand a button
+         reading "Start Recording" with no patient on it until the ez3 surface
+         happened to repaint - the same class of debris that made the Classic
+         escape hatch untrustworthy before. */
+      if (btn.__mlsIdHtml == null) btn.__mlsIdHtml = btn.innerHTML;
+      /* Built from the parts with a separator, NOT from the raw textContent:
+         the markup has no whitespace before <small>, so concatenating gives
+         "Atoussa Salimi7:30 AM". On screen that is invisible - <small> is
+         display:block and renders on its own line - but an aria-label is a
+         flat string, so a screen reader really would say the surname and the
+         time as one word. The visual is fine; this is the one place the join
+         actually reaches a person. */
+      btn.setAttribute('aria-label',
+        (head.replace(/\s+/g, ' ').trim() + (smallText ? ' · ' + smallText.replace(/\s+/g, ' ').trim() : '')));
+      btn.textContent = action;
+      /* Compare against what the button NOW reads, so the next pass does not
+         try to re-split an already-split label. */
+      btn.__mlsIdSig = action + '|';
+    });
+  }
+
+  function dropIdentityCards() {
+    qsa('.mls-idcard').forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+    qsa('.ez3-big').forEach(function (btn) {
+      if (btn.__mlsIdHtml == null) return;
+      btn.innerHTML = btn.__mlsIdHtml;
+      btn.removeAttribute('aria-label');
+      try { delete btn.__mlsIdHtml; delete btn.__mlsIdSig; } catch (e) { btn.__mlsIdHtml = null; btn.__mlsIdSig = ''; }
+    });
+  }
+
   /* render() runs one pass SYNCHRONOUSLY, bypassing schedule()'s
      requestAnimationFrame. Not decoration: rAF does not fire in a tab that is
      not compositing, so in any headless or background verification context every
@@ -1547,6 +1694,7 @@
     safe(prepRows);
     safe(patientScreen);
     safe(contextBar);
+    safe(identityCards);
   }
 
   W.__mlsCalmShell = {
