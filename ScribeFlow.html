@@ -6399,6 +6399,31 @@ function getQolGroupProc(){ return localStorage.getItem(uns('qolGroupProc'))==='
 function applyPtLayout(){ try{ document.body.classList.toggle('pt-split', getQolPtLayout()==='split'); }catch(e){} }
 function applyPtLayoutPreview(v){ try{ localStorage.setItem(uns('qolPtLayout'), v); }catch(e){} applyPtLayout(); }
 function applyGroupProcPreview(c){ try{ localStorage.setItem(uns('qolGroupProc'), c?'1':'0'); }catch(e){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
+/* Patient layout and group-by-procedure are the two Display controls that
+   commit the moment they change, while the other three preview and wait for
+   Save. That split is invisible on screen and it made one Save button mean two
+   opposite things in a single section.
+
+   They cannot simply become preview-only: applyPtLayout() and renderPatients()
+   read the value back OUT of storage rather than taking it as an argument, so
+   previewing them at all means writing. The honest way to keep Save meaningful
+   is therefore to remember what they were when the modal opened and put that
+   back if Save is never pressed — which makes all five behave identically from
+   the doctor's side: change freely, Save keeps it, Close discards it. */
+var qolCommitSnapshot=null;
+function snapshotQolCommits(){
+  try{ qolCommitSnapshot={ptLayout:getQolPtLayout(),groupProc:getQolGroupProc()}; }
+  catch(e){ qolCommitSnapshot=null; }
+}
+function restoreQolCommits(){
+  if(!qolCommitSnapshot) return;
+  try{
+    localStorage.setItem(uns('qolPtLayout'),qolCommitSnapshot.ptLayout);
+    localStorage.setItem(uns('qolGroupProc'),qolCommitSnapshot.groupProc?'1':'0');
+  }catch(e){}
+  try{ if(typeof applyPtLayout==='function') applyPtLayout(); }catch(e){}
+  try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){}
+}
 function applyTextSizePreview(v){
   const b=document.body; b.classList.remove('text-small','text-large');
   if(v==='small') b.classList.add('text-small'); else if(v==='large') b.classList.add('text-large');
@@ -6593,6 +6618,7 @@ function mlsBuildSettingsTabs(){
   mlsSelectSettingsTab(0);
 }
 function openSettings(){
+  snapshotQolCommits();   /* what Close must put back if Save is never pressed */
   applyBackendModeUI();
   /* Re-mirror the TRUE nav layout into the Display select at open time — the
      boot-time sync can run before the shell restores its rail, leaving the
@@ -6664,11 +6690,17 @@ function openSettings(){
    real and worth resolving, but it is a behaviour change to those controls,
    not a close-time fix. */
 function closeSettings(){
+  /* Storage first: applyAppearance() calls applyPtLayout(), which reads the
+     value back out of storage, so the snapshot has to be back in place before
+     anything re-applies. */
+  restoreQolCommits();
   try{ applyAppearance(); }catch(e){}
   try{
     const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
     const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
     const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
+    const qpl=document.getElementById('qolPtLayout'); if(qpl) qpl.value=getQolPtLayout();
+    const qgp=document.getElementById('qolGroupProc'); if(qgp) qgp.checked=getQolGroupProc();
   }catch(e){}
   document.getElementById('settingsModal').classList.remove('show');
 }
@@ -6724,6 +6756,9 @@ function saveSettings(){
   // MLS additive — persist 📋 Patient intake custom questions
   const _iq=document.getElementById('intakeQuestions'); if(_iq) localStorage.setItem(uns('intakeQuestions'),_iq.value.trim());
   applyAppearance();                 // apply theme / text size / compact now
+  /* Saved values become the new baseline, so a later Close keeps them instead
+     of reverting to whatever was stored when the modal opened. */
+  snapshotQolCommits();
   if(typeof applyLegalUI==='function') applyLegalUI(); // show/hide the optional ⚖️ Legal button
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
@@ -27810,7 +27845,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b605';
+  window.__MLS_AV='b606';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

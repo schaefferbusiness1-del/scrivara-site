@@ -76,4 +76,46 @@ for (const key of ['qolTheme', 'qolTextSize', 'qolCompact']) {
     'Save no longer persists ' + key + ', so the setting could never survive a reload at all.');
 }
 
-console.log('PASS settings preview/commit contract: closing restores the stored appearance, previews stay preview-only, Save still commits');
+/* 5. The two self-committing controls now honour Save too.
+ *
+ * Patient layout and group-by-procedure write storage the moment they change,
+ * because applyPtLayout() and renderPatients() read the value back OUT of
+ * storage rather than taking it as an argument — so previewing them means
+ * writing. Save is kept meaningful by snapshotting them on open and restoring
+ * on close, which makes all five Display controls behave the same way from the
+ * doctor's side: change freely, Save keeps it, Close discards it. */
+assert(/function\s+snapshotQolCommits\s*\(/.test(app) && /function\s+restoreQolCommits\s*\(/.test(app),
+  'the snapshot/restore pair for the self-committing Display controls is gone. Patient layout ' +
+  'and group-by-procedure would again save permanently without Save ever being pressed.');
+
+const open = fnBody('openSettings');
+assert(/snapshotQolCommits\(\)/.test(open),
+  'openSettings() no longer snapshots the self-committing controls, so closing has nothing to ' +
+  'put back and those two commit silently again.');
+
+assert(/restoreQolCommits\(\)/.test(close),
+  'closeSettings() no longer restores the self-committing controls.');
+
+/* Ordering matters: applyAppearance() calls applyPtLayout(), which reads the
+ * value back out of storage, so the snapshot must land BEFORE it re-applies.
+ *
+ * Compare CODE only. A first attempt at this assertion matched the call name
+ * inside the comment that explains the ordering, and failed against a correctly
+ * ordered function — the same trap that made a sibling suite report a phantom
+ * call site. Strip comments before reasoning about position. */
+const closeCode = close.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+assert(closeCode.indexOf('restoreQolCommits()') < closeCode.indexOf('applyAppearance()'),
+  'closeSettings() restores the snapshot AFTER applyAppearance(). applyPtLayout() reads storage, ' +
+  'so it would re-apply the unsaved value and the restore would not be visible.');
+
+for (const id of ['qolPtLayout', 'qolGroupProc']) {
+  assert(new RegExp("getElementById\\('" + id + "'\\)").test(close),
+    'closeSettings() no longer resets #' + id + ', so reopening Settings shows a discarded value.');
+}
+
+const save = fnBody('saveSettings');
+assert(/snapshotQolCommits\(\)/.test(save),
+  'saveSettings() no longer re-snapshots. A Save followed by Close would revert the values ' +
+  'that were just saved — the opposite defect.');
+
+console.log('PASS settings preview/commit contract: all five Display controls preview and commit on Save, closing restores, ordering is storage-before-apply');
