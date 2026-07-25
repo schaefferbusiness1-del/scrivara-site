@@ -15178,7 +15178,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<div id="tpfMatch" style="display:none">' +
         "<b style=\"font-size:12.5px;color:#16233a\">\uD83D\uDD0E Which template would a visit match?</b>" +
         '<div class="tpf-chips">' + CHIPS.map(function (c) { return '<button type="button" data-chip="' + esc(c) + '">' + esc(c) + "</button>"; }).join("") + "</div>" +
-        '<input type="text" id="tpfMatchIn" placeholder="Describe the visit or procedure \u2014 e.g. pre-op clearance, right SI joint injection\u2026">' +
+        '<input type="text" id="tpfMatchIn" aria-label="Describe the visit or procedure" placeholder="Describe the visit or procedure \u2014 e.g. pre-op clearance, right SI joint injection\u2026">' +
         '<div id="tpfMatchOut"></div>' +
         "</div>" +
         "</details>";
@@ -32077,7 +32077,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var card = $("studioResultCard"); if (!card || $("mlsB39Improve")) return;
       var row = document.createElement("div"); row.id = "mlsB39Improve";
-      row.innerHTML = '<input id="mlsB39ImproveTx" type="text" placeholder="&#9999;&#65039; Tell MLS what to change &mdash; e.g. add a search box, make the buttons bigger, chart it by month&hellip;"><button type="button" id="mlsB39ImproveBtn">&#10024; Improve it</button>';
+      row.innerHTML = '<input id="mlsB39ImproveTx" aria-label="Tell MLS what to change" type="text" placeholder="&#9999;&#65039; Tell MLS what to change &mdash; e.g. add a search box, make the buttons bigger, chart it by month&hellip;"><button type="button" id="mlsB39ImproveBtn">&#10024; Improve it</button>';
       card.appendChild(row);
       function go() {
         var tx = $("mlsB39ImproveTx"), btn = $("mlsB39ImproveBtn");
@@ -33337,7 +33337,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b629';
+  window.__MLS_AV = window.__MLS_AV || 'b630';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33647,7 +33647,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b629';
+  var MLS_APP_BUILD='2026-07-25-b630';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
