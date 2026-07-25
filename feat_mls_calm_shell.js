@@ -848,6 +848,10 @@
           safe(function () { localStorage.setItem(STORE_KEY, '0'); });
           close();
           teardown();
+          /* Offer the way back in the same gesture. Not inside teardown(),
+             which also runs on the boot error path, where re-offering the
+             shell that just threw would invite a loop. */
+          safe(mountReturn);
           return;
         }
         var it = items[parseInt(row.getAttribute('data-i'), 10)];
@@ -1656,6 +1660,7 @@
     b.addEventListener('click', function () {
       safe(function () { localStorage.setItem(STORE_KEY, '0'); });
       teardown();
+      safe(mountReturn);
     });
     host.appendChild(b);
   }
@@ -1758,8 +1763,64 @@
     if (pts) observer.observe(pts, { childList: true, subtree: true });
   }
 
+  /* --------------------------------------------- returning from classic */
+
+  /* "Classic layout" writes mlsCalmShell='0', and enabled() honours that on
+     every later load — so one click permanently retired the redesign and
+     NOTHING in the app offered a way back. Measured on the running page at
+     b585: after one click, zero visible controls anywhere mention the new
+     layout, and the only routes back were typing ?ui=calm by hand or clearing
+     site data. A doctor who tried Classic once would report that the redesign
+     had disappeared, and they would be right.
+
+     The dock deliberately carries no "go back" button because the calm shell
+     IS the UI. That same argument makes this control correct: it exists only
+     in the classic layout, where it is the only thing that knows the redesign
+     is there at all, so it costs the calm UI nothing. */
+  function mountReturn() {
+    if (qs('#mlsCalmReturn')) return true;
+    var app = qs('#appScreen');
+    if (!app || !visible(app)) return false;
+    /* Never before auth settles — the legacy #mlsFab shipped that bug once. */
+    var auth = qs('#authScreen');
+    if (auth && visible(auth)) return false;
+
+    var css = D.createElement('style');
+    css.id = 'mlsCalmReturnCss';
+    css.textContent = '#mlsCalmReturn{position:fixed;right:14px;bottom:14px;z-index:940;' +
+      'border:1px solid #DFE5E1;background:rgba(255,255,255,.94);color:#5B6B62;' +
+      'border-radius:999px;padding:8px 14px;cursor:pointer;opacity:.72;' +
+      'font:500 12.5px system-ui,-apple-system,"Segoe UI",sans-serif;' +
+      'box-shadow:0 2px 10px rgba(20,35,28,.10)}' +
+      '#mlsCalmReturn:hover,#mlsCalmReturn:focus-visible{opacity:1;color:#204034;outline:0}';
+    (D.head || D.documentElement).appendChild(css);
+
+    var b = D.createElement('button');
+    b.id = 'mlsCalmReturn';
+    b.type = 'button';
+    b.textContent = 'Use the new layout';
+    b.title = 'Return to the simplified layout with the bottom bar';
+    b.addEventListener('click', function () {
+      safe(function () { localStorage.setItem(STORE_KEY, '1'); });
+      /* A ui=classic still in the URL wins over the stored preference on the
+         next enabled() call, so booting in place would immediately bounce
+         back. Swap the parameter and let the reload settle it. */
+      if (/[?&]ui=classic/i.test(String(location.search || ''))) {
+        location.search = String(location.search).replace(/([?&])ui=classic/i, '$1ui=calm');
+        return;
+      }
+      var node = qs('#mlsCalmReturn'); if (node) node.remove();
+      var sheet = qs('#mlsCalmReturnCss'); if (sheet) sheet.remove();
+      /* Boot in place rather than reload — a reload mid-clinic can cost
+         unsaved work, and boot() already fails back to classic if it throws. */
+      if (boot() !== true) safe(function () { location.reload(); });
+    });
+    (D.body || D.documentElement).appendChild(b);
+    return true;
+  }
+
   function boot() {
-    if (!enabled()) return;
+    if (!enabled()) return mountReturn();
     if (!qs('#appScreen') || !visible(qs('#appScreen'))) return false;
     /* If any part of the shell fails to come up we return the doctor to the
        classic layout rather than leaving them with a hidden rail and no dock.
