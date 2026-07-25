@@ -2040,6 +2040,29 @@
      visible() forces layout. Both are skipped while a control's flat text is
      unchanged, which is every pass after the first for all but the few controls
      that actually re-rendered. Reading textContent costs no style or layout. */
+  /* RENDERED, not operable. visible() answers "may the shell offer this as an
+     action", so it rejects `disabled`  correct there, wrong here. A disabled
+     control is still painted, still in the accessibility tree, and still read
+     out. Gating naming on operability left the Pay Reports card announcing
+     "Pay Reports PREMIUMThis month's visits, coded and totaled Open full report"
+     on every screen: measured on the running page at b582, 486px wide, disabled,
+     unnamed, while its enabled twin on another screen was named correctly  which
+     is what made it look like a race rather than a rule. Whether a control can be
+     pressed has nothing to do with what it is called. */
+  function onScreen(el) {
+    if (!el || el.hidden) return false;
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  /* Advanced whenever the destination changes. The signature caches a verdict
+     that depends on COMPUTED STYLE, not only on text: a control examined in a
+     moment when its stylesheet had not applied derives a label identical to its
+     flat text, and a text-only key would cache that "nothing to fix" for the
+     life of the page. Keying on the epoch too means each control is re-derived
+     at most once per view change  cheap, bounded, and unable to pin a wrong
+     verdict forever. */
+  var acnEpoch = 0;
+
   function nameControls() {
     if (!W.__mlsCalmShell.active) return;
     qsa('button,[role="button"]').forEach(function (el) {
@@ -2047,10 +2070,11 @@
       var stamped = el.getAttribute('data-mls-acn');
       if (el.getAttribute('aria-label') && !stamped) return;
       var flat = normLabel(el.textContent);
-      if (el.__mlsAcnSig === flat) return;
+      var sig = acnEpoch + '|' + flat;
+      if (el.__mlsAcnSig === sig) return;
       if (el.closest && el.closest('#mlsDock,#mlsRightNow,#mlsToolsMenu,#mlsAskResults')) return;
-      if (!visible(el)) return;
-      el.__mlsAcnSig = flat;
+      if (!onScreen(el)) return;
+      el.__mlsAcnSig = sig;
       var derived = controlLabel(el);
       if (!derived || derived === flat || derived.length > 200) {
         /* It agreed after all — drop a stamp from an earlier pass rather than
@@ -2108,7 +2132,15 @@
      renderer silently never runs - which made a working patient screen read as
      completely inert and cost a build to chase. Anything that cannot be observed
      cannot be claimed, so the shell exposes a way to observe it. */
+  var acnDest = null;
+
   function renderNow() {
+    /* One epoch bump per destination change, read here because renderNow is the
+       one pass guaranteed to run on every screen. markViewEnter() is not  it
+       returns early when no *View element is on screen, which is exactly the
+       mid-switch moment a stale naming verdict would be cached in. */
+    var destNow = safe(currentDest) || '';
+    if (destNow !== acnDest) { acnDest = destNow; acnEpoch++; }
     safe(syncDock);
     safe(renderRightNow);
     safe(renderStages);
