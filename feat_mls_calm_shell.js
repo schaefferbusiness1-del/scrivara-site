@@ -962,24 +962,38 @@
       /* Tools is a menu over whatever is still offered, so it never disappears;
          a navigation destination disappears when the app gated its view off. */
       var offered = d && (d.menu || destTarget(d));
-      b.style.display = offered ? '' : 'none';
+      var wantDisp = offered ? '' : 'none';
+      if (b.style.display !== wantDisp) b.style.display = wantDisp;
       var on = offered && id === active;
       b.classList.toggle('on', !!on);
-      b.setAttribute('aria-current', on ? 'page' : 'false');
+      /* WRITE ONLY ON CHANGE. setAttribute fires a mutation record even when
+         the value is identical, and this pass runs on every external DOM
+         change: measured on the owner's signed-in visit screen, 605
+         aria-current writes in 40 seconds, EVERY ONE a no-op. The dock is not
+         the source of the churn - it was amplifying it for free. */
+      var wantCur = on ? 'page' : 'false';
+      if (b.getAttribute('aria-current') !== wantCur) b.setAttribute('aria-current', wantCur);
       if (on) activeBtn = b;
     });
     if (pill && activeBtn) {
-      pill.style.width = activeBtn.offsetWidth + 'px';
-      pill.style.transform = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
-      pill.style.opacity = '1';
-    } else if (pill) {
+      /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, in the
+         file the boot lane measured at 29% of boot's 5,576 forced layouts. */
+      var w = activeBtn.offsetWidth + 'px';
+      var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
+      if (pill.style.width !== w) pill.style.width = w;
+      if (pill.style.transform !== tx) pill.style.transform = tx;
+      if (pill.style.opacity !== '1') pill.style.opacity = '1';
+    } else if (pill && pill.style.opacity !== '0') {
       pill.style.opacity = '0';
     }
     qsa('.mls-dock-count', dockEl).forEach(function (c) {
       var src = D.getElementById(c.getAttribute('data-count'));
       var n = src ? parseInt(textOf(src), 10) : 0;
       if (!isFinite(n) || n <= 0) { c.classList.remove('show'); return; }
-      c.textContent = n > 99 ? '99+' : String(n);
+      /* Assigning textContent replaces the text node, so an unchanged count
+         still fires a childList record: 121 of them in the same 40 seconds. */
+      var want = n > 99 ? '99+' : String(n);
+      if (c.textContent !== want) c.textContent = want;
       c.classList.add('show');
     });
   }
@@ -1574,10 +1588,12 @@
     if (!W.__mlsCalmShell.active) return;
     var visit = qs('#visitView');
     var el = qs('#mlsStages');
-    if (!visit || !visible(visit)) { if (el) el.style.display = 'none'; return; }
+    /* Both display writes sit BEFORE the lastStage guard below, so they ran on
+       every pass regardless of whether anything changed. */
+    if (!visit || !visible(visit)) { if (el && el.style.display !== 'none') el.style.display = 'none'; return; }
     el = ensureStages();
     if (!el) return;
-    el.style.display = 'flex';
+    if (el.style.display !== 'flex') el.style.display = 'flex';
     var now = stageNow();
     if (now === lastStage && el.childNodes.length) return;
     lastStage = now;
