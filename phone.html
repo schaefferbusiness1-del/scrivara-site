@@ -236,11 +236,20 @@
   <!-- RECORDER SCREEN -->
   <div class="screen hidden" id="recScreen">
     <div class="center">
-      <div class="pill">🔗 Linked to computer · code <b id="codeShown">----</b></div>
+      <!-- Says "not confirmed yet" until an upload has actually been ACCEPTED.
+           This used to assert "Linked to computer" the instant a 4-character
+           code was typed, with nothing checked - so one mistyped character gave
+           a green link pill, a live Record button, and eight seconds of a real
+           visit recorded into a code that does not exist. -->
+      <div class="pill" id="linkPill">📱 Code <b id="codeShown">----</b> · not confirmed yet</div>
       <button class="recBtn" id="recBtn" onclick="toggleRec()"><span class="ic" id="recIc">●</span><span id="recLabel">Record</span></button>
       <div class="status" id="status">Tap to start recording</div>
       <div class="meta" id="sent"></div>
       <div class="err" id="recErr"></div>
+      <!-- Revealed only when a code is rejected. Without it the recorder was a
+           dead end: the page told the user to get a fresh code from their
+           computer, with no field on the phone to type it into. -->
+      <button class="btn btn-ghost" id="recodeBtn" onclick="reconnectCode()" style="display:none;max-width:280px">Enter a different code</button>
       <button class="btn btn-ghost" id="doneBtn" onclick="finishRec()" style="display:none;max-width:260px">✓ Done — back to computer</button>
     </div>
     <div class="foot">Short audio clips upload to MLS for transcription. They are not saved to this phone's storage. Keep this page open until MLS confirms each upload, then confirm the transcript on your computer.</div>
@@ -259,6 +268,19 @@
     if(v.length<4){ err.textContent='Enter the code from your computer (about 6 characters).'; return; }
     err.textContent='';
     enterRecorder(v);
+  }
+  /* Back to the code screen after a rejected code. stopRec() resolves to the
+     guard wrapper, so the mic and wake lock are released before leaving. */
+  function reconnectCode(){
+    try{ if(typeof stopRec==='function') stopRec(); }catch(e){}
+    var b=document.getElementById('recodeBtn'); if(b) b.style.display='none';
+    var d=document.getElementById('doneBtn'); if(d) d.style.display='none';
+    var er=document.getElementById('recErr'); if(er) er.textContent='';
+    var lp=document.getElementById('linkPill');
+    if(lp) lp.innerHTML='📱 Code <b id="codeShown">----</b> · not confirmed yet';
+    show('connect');
+    var i=document.getElementById('codeInput');
+    if(i){ i.value=''; try{ i.focus(); }catch(e){} }
   }
   function enterRecorder(c){
     code=c;
@@ -457,14 +479,24 @@
       if(rr.ok){
         sentCount++;
         var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS';
+        /* The link is only real once the backend has accepted a clip. */
+        var lp=document.getElementById('linkPill');
+        if(lp) lp.textContent='🔗 Linked to computer · code '+code;
         releaseItem(item); pendBadge();
         if(active) setStatus('● Recording… talk normally','#A9E3C4');
         return true;
       }
       if(rr.status===404){
         releaseItem(item);
+        /* Stop recording. Continuing to capture into a code the server does not
+           know is recording into nothing, and the pulsing Record button says
+           the opposite. Also cover the far more likely cause than expiry: a
+           mistyped code, since entry never verified it. */
+        try{ if(typeof stopRec==='function') stopRec(); }catch(e){}
         var expired=document.getElementById('recErr');
-        if(expired) expired.textContent='That code expired. This clip was not saved on this phone. Re-open Phone mic on your computer for a fresh code.';
+        if(expired) expired.textContent='That code was not accepted — it may be mistyped or expired. This clip was not saved on this phone. Check the code on your computer (Visit → Phone mic), then enter it again below.';
+        var rb=document.getElementById('recodeBtn');
+        if(rb) rb.style.display='inline-block';
         return false;
       }
       throw new Error('http '+rr.status);

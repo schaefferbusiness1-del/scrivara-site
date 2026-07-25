@@ -65,6 +65,11 @@
   <!-- Loading / invalid states -->
   <div id="loading" class="state"><div class="big">⏳</div><p class="lead">Loading your intake form…</p></div>
   <div id="invalid" class="state hide"><div class="big">🔗</div><h2>This link isn't active</h2><p class="lead">This pre-visit link is no longer valid. Please contact the clinic for a new one.</p></div>
+  <!-- "We could not reach the clinic" is NOT "your link is dead". Any network
+       failure, abort or 5xx used to land in #invalid, and the backend is on a
+       host whose cold start can exceed the 15s abort - so a patient holding a
+       perfectly good link was told it was broken, and phoned the office. -->
+  <div id="offline" class="state hide"><div class="big">📡</div><h2>We couldn't reach your clinic just now</h2><p class="lead">Your link may be perfectly fine — we couldn't get an answer. Please try again in a moment.</p><button type="button" class="btn" style="max-width:280px;margin:16px auto 0" onclick="retryIntakeLink()">Try again</button></div>
 
   <!-- The form -->
   <div id="formWrap" class="hide">
@@ -145,16 +150,27 @@
 (function(){
   var BACKEND_URL='https://scrivara-backend.onrender.com';
   function $(id){return document.getElementById(id);}
-  function show(id){['loading','invalid','formWrap','done'].forEach(function(x){$(x).classList.toggle('hide', x!==id);});}
+  function show(id){['loading','invalid','offline','formWrap','done'].forEach(function(x){var e=$(x); if(e) e.classList.toggle('hide', x!==id);});}
   var captured=(window.__mlsSensitiveUrl&&window.__mlsSensitiveUrl.query)||{};
   var token=captured.token||captured.intake||'';
   if(!token){ show('invalid'); return; }
 
   // Validate the link token (no PHI returned — just whether it's live).
-  mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
-    .then(function(r){return r.json().catch(function(){return {ok:false};});})
-    .then(function(d){ if(d&&d.ok){ show('formWrap'); } else { show('invalid'); } })
-    .catch(function(){ show('invalid'); });
+  /* Only claim the link is dead when the backend actually ANSWERED and said so.
+     A transport failure means we do not know, and saying "not valid" there is
+     stating something we cannot back. */
+  function checkIntakeLink(){
+    show('loading');
+    mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
+      .then(function(r){
+        if(!r || (r.status >= 500)) { show('offline'); return null; }   /* server fault: unknown, not invalid */
+        return r.json().catch(function(){return {ok:false};});
+      })
+      .then(function(d){ if(d===null) return; if(d&&d.ok){ show('formWrap'); } else { show('invalid'); } })
+      .catch(function(){ show('offline'); });                            /* timeout / abort / offline */
+  }
+  window.retryIntakeLink=checkIntakeLink;
+  checkIntakeLink();
 
   function val(id){ var e=$(id); return e?String(e.value||'').trim():''; }
 

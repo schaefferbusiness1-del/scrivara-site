@@ -164,11 +164,20 @@
     'body.mls-calm #patientBar>*,body.mls-calm #mlsCtxBar>*{min-width:0}',
     'body.mls-calm #patientBar button,body.mls-calm #mlsCtxBar button{white-space:nowrap}',
 
-    /* Relocated to the right-now bar / Tools. Still in the DOM, still clickable
-       by the shell, still counted as available - just not crowding the header. */
+    /* QUIETED, NOT HIDDEN. display:none broke every control that anchors UI to
+       itself: Snapshot positions its popover from its own getBoundingClientRect,
+       and a hidden button measures 0x0, so "Tools > Snapshot" opened a panel
+       off-screen and looked like nothing happened. Share/Export and the export
+       menus have the same shape. So these stay laid out and measurable - just
+       small and muted, so one primary action can lead without anything losing
+       the position its own behaviour depends on. */
     'body.mls-calm #profileCard .mls-moved,',
     'body.mls-calm #patientBar .mls-moved,',
-    'body.mls-calm #mlsCtxBar .mls-moved{display:none!important}',
+    'body.mls-calm #mlsCtxBar .mls-moved{font-size:12px!important;padding:5px 9px!important;',
+    'opacity:.5;font-weight:400!important;box-shadow:none!important;',
+    'transition:opacity var(--mls-fast) linear}',
+    'body.mls-calm #profileCard .mls-moved:hover,body.mls-calm #patientBar .mls-moved:hover,',
+    'body.mls-calm #mlsCtxBar .mls-moved:hover,body.mls-calm .mls-moved:focus-visible{opacity:1}',
 
     /* The patient list showed 150 names and 300 buttons, so it read as a wall of
        controls rather than a list of people. The row controls stay present and
@@ -442,7 +451,12 @@
     { id: 'nav_legalreq' }, { id: 'nav_admin' }, { id: 'nav_staffpull' }, { id: 'nav_help' },
     /* askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
        button, and listing it here as well is the duplication we are removing. */
-    { id: 'intakeBtn' }, { id: 'customWidgetHdrBtn' },
+    /* "Patient intake" and "New patient" are DIFFERENT things and read as the
+       same thing, so a doctor reaching for one lands in the other's UI. Named
+       here for what each actually does; adding a patient stays a single flow,
+       reached from Patients > New patient. */
+    { id: 'intakeBtn', as: 'Pre-visit intake forms' },
+    { id: 'customWidgetHdrBtn' },
     { label: /^templates$/i, within: '#appHeader' },
     { label: /^settings$/i, within: '#appHeader' },
     { label: /^log out$/i, within: '#appHeader' },
@@ -553,7 +567,7 @@
           });
         }
       }
-      if (available(el) && textOf(el)) out.push({ el: el, label: textOf(el) });
+      if (available(el) && textOf(el)) out.push({ el: el, label: spec.as || textOf(el) });
     });
     return out;
   }
@@ -738,10 +752,18 @@
       { id: 'ptPullAthenaBtn' },
       { id: 'ptIntakeBtn' }
     ],
+    /* Applying a date range turns the calendar into a flat list of every
+       appointment in it - 600 rows - and the way back is a button labelled
+       "Clear", fifth in a row of eight. That is how you get stuck on a screen
+       with no visible exit. The exit now comes first, and says where it goes.
+       Refresh is deliberately NOT here: it was what this bar used to offer, and
+       it is the least useful control on the screen. */
     day: [
-      { label: /^(pull|refresh|import)/i, within: '#calendarView' },
-      { id: 'ptBoardBtn' },
-      { id: 'ptPullAthenaBtn' }
+      { label: /^clear$/i, within: '#calendarView', as: 'Back to the calendar', primary: true },
+      { label: /^\+?\s*new appointment$/i, as: 'New appointment' },
+      { label: /^pull plan$/i, within: '#calendarView' },
+      { label: /^check in to the office$/i, within: '#calendarView', as: 'Check in' },
+      { id: 'ptBoardBtn' }
     ],
     visit: [
       { label: /^(start|record|begin)/i, within: '#visitView', primary: true },
@@ -811,7 +833,9 @@
       var el = findControl(spec);
       if (!el) return;
       var dup = picked.some(function (p) { return p.el === el; });
-      if (!dup) picked.push({ el: el, primary: !!spec.primary });
+      /* spec.as re-labels a control for the bar without touching the control
+         itself. "Clear" is accurate in its own row and meaningless out of it. */
+      if (!dup) picked.push({ el: el, primary: !!spec.primary, as: spec.as || '' });
     });
 
     var destDef = null;
@@ -824,7 +848,7 @@
        a flickering toolbar in front of a doctor mid-recording. */
     var sig = dest + '|' +
       sibs.map(function (t) { return t.id + (t.classList.contains('on') ? '*' : ''); }).join(',') + '|' +
-      picked.map(function (p) { return textOf(p.el) + (p.primary ? '!' : ''); }).join(',');
+      picked.map(function (p) { return (p.as || textOf(p.el)) + (p.primary ? '!' : ''); }).join(',');
     if (sig === lastRnSig && bar.childNodes.length) return;
     lastRnSig = sig;
 
@@ -871,7 +895,8 @@
     picked.forEach(function (p, i) {
       var b = D.createElement('button');
       b.type = 'button';
-      b.textContent = textOf(p.el);
+      b.textContent = p.as || textOf(p.el);
+      if (p.as) b.title = 'Runs "' + textOf(p.el) + '" on this screen';
       if (p.primary && i === 0) b.className = 'primary';
       b.style.animationDelay = (i * 45) + 'ms';
       b.addEventListener('click', function () { runControl(p.el); });
