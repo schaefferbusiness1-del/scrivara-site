@@ -6,15 +6,18 @@
  * calls getComputedStyle AND getBoundingClientRect on each one. While
  * #calendarView is not the visible screen, every rect is 0, so isBlk()'s
  * `r.height < 10` check rejects all of them and the function already did
- * nothing — after paying two forced layout reads per node to find that out.
+ * nothing — after paying a forced layout read per node to find that out.
+ * (isBlk short-circuits on position !== absolute, so most nodes cost only a
+ * getComputedStyle. An earlier version of this header said two reads per node
+ * and was wrong: the counterfactual measured 113 reads for 113 nodes, not 226.)
  * applyAll() runs 13 times during boot: once, then a 700ms interval x12.
  *
  * Measured on the running page at b606, with the calendar hidden:
  *
  *   calendarView.display        "none"
  *   calGrid.getClientRects()    empty
- *   nodes scanned per pass      113   -> 226 forced reads per pass
- *   across 13 boot passes             -> 2,938 forced reads
+ *   nodes scanned per pass      113   -> 113 forced reads per pass
+ *   across 13 boot passes             -> 1,456 reads saved (112 x 13)
  *   blocks actually found       0
  *
  * The other lane measured 3,722 reads from this file on a signed-in session —
@@ -69,4 +72,4 @@ assert(/\[\]\.slice\.call\(grid\.querySelectorAll\("\*"\)\)\.filter\(isBlk\)/.te
 assert(/deoverlapGrid\(\);/.test(src) && /function applyAll\(\)/.test(src),
   'deoverlapGrid is no longer called from the orchestration path');
 
-console.log('PASS calendar de-overlap skips a hidden grid: one rect replaces ~226 forced layout reads per pass (2,938 across boot)');
+console.log('PASS calendar de-overlap skips a hidden grid: one rect replaces 112 forced layout reads per pass (1,456 across boot)');
