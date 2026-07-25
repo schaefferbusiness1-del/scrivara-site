@@ -471,6 +471,23 @@
   }
   function deoverlapGrid() {
     var grid = $("calGrid"); if (!grid) return;
+    /* dgo-1.0.0: bail before the per-node scan when the grid is not laid out.
+       isBlk() calls getComputedStyle AND getBoundingClientRect on EVERY node
+       under #calGrid. While #calendarView is not the visible screen every rect
+       is 0, so isBlk() rejects all of them and this function already did
+       nothing - but it paid two forced layout reads per node to find that out,
+       and applyAll() runs 13 times during boot (once, then a 700ms interval
+       x12). Measured at b598: 3,722 forced layout reads from this file, 67% of
+       the 5,576 in the whole app, which is ~140 nodes x 2 reads x 13 passes.
+       Each one costs ~16ms because the PATIENTS directory is the screen being
+       laid out while boot runs (1,481 patients, 150 rows), which is where the
+       10,929ms of Total Blocking Time comes from.
+       One rect on the grid answers the same question. This is behaviour-
+       preserving by construction: hidden means every rect was 0 and the scan
+       returned empty anyway, and when the calendar IS visible getClientRects()
+       is non-empty and everything below runs exactly as before.
+       Note visibility:hidden still reports rects, so that case is unchanged. */
+    if (!grid.getClientRects().length) return;
     var all = [].slice.call(grid.querySelectorAll("*")).filter(isBlk);
     if (!all.length) return;
     var i, anyFresh = false;

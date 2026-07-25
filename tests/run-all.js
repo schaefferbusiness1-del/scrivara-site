@@ -39,6 +39,7 @@ const tests = [
   'staging-stamp-follows-production.test.js',
   'premium-block-names-a-real-route.test.js',
   'feature-directory-routes-exist.test.js',
+  'calendar-deoverlap-skips-hidden-grid.test.js',
   'autosave-draft-owner.test.js',
   'athena-unified-manifest-contract.test.js',
   'athena-final-action-truth-contract.test.js',
