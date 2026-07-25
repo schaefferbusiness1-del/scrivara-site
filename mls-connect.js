@@ -33329,7 +33329,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b622';
+  window.__MLS_AV = window.__MLS_AV || 'b623';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33639,7 +33639,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b622';
+  var MLS_APP_BUILD='2026-07-25-b623';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -33707,10 +33707,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsHideAskDup) return;
   window.__mlsHideAskDup=true;
-  /* Remove the duplicate 'Ask your data' FAB - it is already MLS Copilot in AI Studio */
-  function hide(){ var b=document.getElementById('mls-ask-btn'); if(b){ b.style.setProperty('display','none','important'); return true; } return false; }
-  var n=0,iv=setInterval(function(){ hide(); if(++n>150) clearInterval(iv); },700);
-  if(document.readyState!=='loading') hide();
+  /* Remove the duplicate 'Ask your data' FAB - it is already MLS Copilot in AI
+     Studio, and the real panel lives in the Analysis view.
+
+     A STYLESHEET rule, not an inline style and not a poll. Both of those were
+     why the owner kept seeing this bubble in the bottom-left:
+
+     - the poll ran 150 times at 700ms and then STOPPED at 105 seconds. The
+       creator re-adds on its own interval, so anything that created or
+       restored the button after that window simply won. Measured live on the
+       running page just before this fix: the guard was set, and the inline
+       hide was NOT on the element.
+     - an inline display:none would ALSO defeat available(), which tests only
+       INLINE display - so it would silently drop 'Ask your data' out of the
+       Calm Shell's Tools menu, which is the one place the control is still
+       reachable. Hide by rule, never inline.
+
+     An id selector (1,0,0) beats the UA's button{inline-flex} without needing
+     !important, and it applies whenever the node appears, however late. */
+  function hide(){
+    if(document.getElementById('mlsHideAskDupCss')) return true;
+    var s=document.createElement('style');
+    s.id='mlsHideAskDupCss';
+    s.textContent='#mls-ask-btn{display:none}';
+    (document.head||document.documentElement).appendChild(s);
+    return true;
+  }
+  hide();
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',hide);
 })();
 
 (function(){
