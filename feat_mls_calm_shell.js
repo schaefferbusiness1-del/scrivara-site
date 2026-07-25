@@ -421,7 +421,9 @@
     'body.mls-calm .mls-idmeta{margin-top:3px;font:500 13px/1.35 inherit;color:#5B6B62}',
     /* The action shrinks back to an action once the identity leaves it. */
     'body.mls-calm .ez3-big{line-height:1.25}',
-    '#mlsRightNow .lbl{font:500 12px inherit;color:#8C978F;margin-right:2px}',
+    /* the .lbl rule went with the "Right now" caption it styled — leaving it
+       would be the same dead-CSS-with-a-confident-comment I deleted from the
+       motion block this build */
     '#mlsRightNow button{border:1px solid #DFE5E1;background:#fff;color:#204034;border-radius:12px;padding:9px 15px;',
     'font:500 13.5px inherit;cursor:pointer;opacity:0;transform:translateY(4px);',
     'animation:mlsRise var(--mls-base) var(--mls-spring) forwards;',
@@ -573,33 +575,47 @@
       '--mls-ease-inout:cubic-bezier(.4,0,.2,1);'+
       '--mls-ease-spring:cubic-bezier(.2,.9,.3,1.06)}',
 
-    /* Views arrive rather than appear. transform+opacity only. */
-    '@keyframes mlsMoIn{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}',
-    'body.mls-calm #patientsView.mls-mo,body.mls-calm #ordersView.mls-mo,'+
-      'body.mls-calm #historyView.mls-mo,body.mls-calm #recsView.mls-mo,'+
-      'body.mls-calm #analysisView.mls-mo,body.mls-calm #studioView.mls-mo,'+
-      'body.mls-calm #calendarView.mls-mo,body.mls-calm #teamView.mls-mo'+
-      '{animation:mlsMoIn var(--mls-dur-4) var(--mls-ease-out) both}',
+    /* NO VIEW-ENTRANCE RULE HERE, DELIBERATELY. b653 shipped one and it was
+       wrong twice over:
+         - It could never match. showView (ScribeFlow.html:10423) writes ONLY
+           .style.display on the containers (10443-10462) and never classList,
+           and the containers carry no class at all — `id="patientsView"
+           style="display:none"`. So the rule was dead CSS whose comment
+           ("Views arrive rather than appear") asserted behaviour that did not
+           exist. A false comment in a file the motion suite pins is worse than
+           no comment.
+         - Wiring it up would re-introduce a REVERTED design. ScribeFlow.html
+           :10440 records the decision: "Routes render immediately at full
+           opacity; whole-view fades made every navigation feel like a
+           screen-level pop." It would also wrap #patientsView — a
+           content-visibility:auto list — in an animated-opacity stacking
+           context at boot, on the screen whose TBT is the known problem.
 
-    /* Controls answer the finger. Press feedback is the cheapest motion there
-       is and the most missed when absent. Scoped to the shell's own chrome so
-       it can never fight an app control that already has its own press state. */
+       Press feedback is likewise NOT redeclared here. ScribeFlow.html:10441
+       already ships a global `button{transition:transform .07s ease}
+       button:active{transform:scale(.97)}`. Adding a near-identical rule at
+       .965 was me adding to the exact incoherence this system exists to fix —
+       eleven pulses and two spellings of one curve. The incumbent wins. */
+
+    /* Colour/state transitions on the shell's own chrome, which the global
+       press rule does not cover. Transform is left to the incumbent. */
     '#mlsDock button,#mlsRightNow button,#mlsStages button'+
-      '{transition:transform var(--mls-dur-1) var(--mls-ease-out),'+
-      'background var(--mls-dur-2) var(--mls-ease-inout),'+
-      'color var(--mls-dur-2) var(--mls-ease-inout)}',
-    '#mlsDock button:active,#mlsRightNow button:active,#mlsStages button:active'+
-      '{transform:scale(.965)}',
+      '{transition:background var(--mls-dur-2) var(--mls-ease-inout),'+
+      'color var(--mls-dur-2) var(--mls-ease-inout),'+
+      'border-color var(--mls-dur-2) var(--mls-ease-inout)}',
 
     /* The right-now bar is summoned by the user, so it may spring slightly. */
     '@keyframes mlsMoRise{from{opacity:0;transform:translate3d(0,7px,0)}to{opacity:1;transform:none}}',
     '#mlsRightNow:not(.empty){animation:mlsMoRise var(--mls-dur-3) var(--mls-ease-spring) both}',
 
-    /* NEVER animate a surface that rebuilds on a timer or that a doctor types
-       into. The transcript host is destroyed and rebuilt about every 3s and
-       #visitOrdersBody every ~5s with identical markup — an entrance rule in
-       there is a permanent flicker, not a flourish. .mls-mo-never is the
-       opt-out for anything else that turns out to re-render. */
+    /* A STANDING PROHIBITION, not a rule for motion that exists today. Nothing
+       currently applies .mls-mo — this is here so that the next person to add an
+       entrance animation cannot put one inside a host that rebuilds on a timer
+       or that a doctor types into. The transcript host is destroyed and rebuilt
+       about every 3s and #visitOrdersBody every ~5s with identical markup; an
+       entrance rule in there is a permanent flicker in front of someone
+       mid-recording, not a flourish. .mls-mo-never is the opt-out for anything
+       else that turns out to re-render. Keep this even while it matches nothing. */
     '#visitView .mls-mo,#ez3Wrap .mls-mo,#visitOrdersBody .mls-mo,'+
       '#noteCard .mls-mo,.mls-mo-never,.mls-mo-never *'+
       '{animation:none!important}',
@@ -1226,6 +1242,16 @@
     bar.classList.toggle('empty', empty);
     if (empty) return;
 
+    /* When the bar holds nothing but actions, it stops being a panel.
+       Measured on the running page at b654 it was 407x65 whose entire content
+       was the caption "Right now" and ONE 181x44 button — a bordered, shadowed,
+       20px-padded card built to hold a segmented row that was not there. The
+       owner: "I absolutely hate the top Right now then the button next to it."
+       With no segments there is no group to draw a box around, so the box goes
+       and the action stands on its own. The card returns the moment segments do. */
+    var bare = sibs.length <= 1;
+    if (bar.classList.contains('bare') !== bare) bar.classList.toggle('bare', bare);
+
     if (sibs.length > 1) {
       var seg = D.createElement('span');
       seg.className = 'seg';
@@ -1254,10 +1280,17 @@
       bar.appendChild(seg);
     }
 
-    var lbl = D.createElement('span');
-    lbl.className = 'lbl';
-    lbl.textContent = 'Right now';
-    bar.appendChild(lbl);
+    /* NO VISIBLE "Right now" LABEL. The owner, 2026-07-25: "I absolutely hate
+       the top Right now then the button next to it."
+       He is right, and the word was never doing any work. It is chrome
+       explaining chrome: a fixed caption in front of buttons that already say
+       what they do, so "Start visit" was read as "Right now  Start visit" every
+       single time, and the caption never changed. b582 already found the same
+       word to be the entire content of an empty bar and hid it in that case;
+       this finishes the thought for the full case too.
+       Nothing is lost for assistive tech — the bar itself carries
+       aria-label="Right now" (see mountRightNow), so the region keeps its name
+       while the eye gets the actions unprefixed. */
 
     if (!picked.length) {
       var note = D.createElement('span');

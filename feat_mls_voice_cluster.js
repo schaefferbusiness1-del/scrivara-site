@@ -90,6 +90,41 @@
     }).filter(Boolean);
   }
 
+  /* The visit lane's own copies of the three tools. When these are genuinely on
+     screen they are the canonical controls and the cluster must get out of the
+     way — that part was always right. */
+  var TWINS = ['ez3flCopilotVoice', 'ez3flAssistant', 'ez3flDictate'];
+
+  /* Should the cluster stand down?
+   *
+   * b651 answered this with a CSS rule keyed on body.mls-top-voice-tools,
+   * reasoning "hide under the same class the originals hide under, so the two
+   * surfaces cannot drift." That class can LIE. Measured on the owner's live
+   * signed-in tab at b653, with the class set:
+   *
+   *   #mlsCopVoiceBtn / #mlsAsstFab / #mlsDaDock   display:none  (the class)
+   *   #ez3flCopilotVoice / #ez3flAssistant / #ez3flDictate   display:none, 0x0
+   *   #mlsVoiceCluster                              display:none  (my rule)
+   *
+   * Three routes to Copilot Voice, MLS Assistant and Dictate, all closed. The
+   * class asserted the top lane owned them while the top lane rendered nothing.
+   *
+   * So ask the question the class was standing in for, the way the app already
+   * asks it in topLaneIsVisible() (mls-connect.js ~:6447): does a twin actually
+   * have layout? Geometry cannot lie the way a class can. If no twin is on
+   * screen the cluster stays up, and the doctor keeps all three tools. */
+  function standDown() {
+    for (var i = 0; i < TWINS.length; i++) {
+      var t = $(TWINS[i]);
+      if (!t) continue;
+      var cs = getComputedStyle(t);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      var r = t.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) return true;
+    }
+    return false;
+  }
+
   /* Is this control currently running? Read the app's own signals — never a
      private flag of ours, which could disagree with the truce. */
   function isOn(el) {
@@ -110,9 +145,11 @@
       'html body.' + BODY_ON + ' #mlsAsstFab,',
       'html body.' + BODY_ON + ' #mlsDaDock{display:none!important;}',
 
-      /* the top lane owns these when it is on screen — same rule the three
-         originals already follow, so the two surfaces cannot drift */
-      'html body.mls-top-voice-tools #' + ROOT_ID + '{display:none!important;}',
+      /* Standing down is decided at RUNTIME by real twin geometry, not by this
+         class. See standDown() — the class can assert that the top lane owns
+         these controls while the top lane is not rendering them, and trusting it
+         left a doctor with three closed doors and no voice tools at all. */
+      '#' + ROOT_ID + '.standdown{display:none!important;}',
 
       '#' + ROOT_ID + '{position:fixed;left:18px;bottom:18px;z-index:2147482000;',
       'display:flex;flex-direction:column-reverse;align-items:flex-start;gap:9px;',
@@ -181,7 +218,21 @@
       '70%{box-shadow:0 0 0 7px rgba(123,224,172,0);}100%{box-shadow:0 0 0 0 rgba(123,224,172,0);}}',
 
       /* phones: the row must never own the last content pixels */
-      '@media (max-width:760px){#' + ROOT_ID + '{left:12px;bottom:12px;}',
+      /* Clear the dock. On a phone #mlsDock is the ONLY navigation and it spans
+         the full width at bottom:8px (feat_mls_calm_shell.js:543). At bottom:12px
+         this cluster overlapped it and won both stacking (z 2147482000 vs 920)
+         and pointer events — the bubble would have eaten taps meant for Patients,
+         Visit and Review.
+         Standing down does not save us here: phone mode kills the ez3 twins
+         (mls-connect.js:44428 `body.mls-phone .ez3fl-quick{display:none}`), so no
+         twin has layout and standDown() is correctly false. The cluster is meant
+         to be up on a phone — it just has to sit above the dock.
+         Same clearance ScribeFlow.html:1367 already uses for #mlsA2hsCard, so
+         both float above the same dock by the same rule. Static value: `bottom`
+         is never transitioned here (only transform/box-shadow/filter are), so
+         this animates nothing. */
+      '@media (max-width:760px){#' + ROOT_ID +
+      '{left:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px));}',
       '#mlsVcFace{font-size:14px;padding:11px 15px 11px 13px;}',
       '.vc-item .vc-hint{display:none;}}',
 
@@ -285,6 +336,10 @@
      that is the truce's business, not ours — we show what is true. */
   function sync() {
     if (!root) return;
+    /* Re-decided every sync, because the visit lane comes and goes. Toggled by
+       class on our OWN root — never an inline write, and never on the twins. */
+    var down = standDown();
+    if (root.classList.contains('standdown') !== down) root.classList.toggle('standdown', down);
     var liveNames = [];
     var btns = fan ? fan.querySelectorAll('.vc-item') : [];
     for (var i = 0; i < btns.length; i++) {
@@ -357,6 +412,10 @@
 
   W.__mlsVoiceCluster = {
     version: VERSION,
+    /* Exposed so the preview runtime can open the fan without
+       re-implementing it. The fan is disclosure, not action: the three
+       tools inside stay blocked in preview and keep their own refusals. */
+    toggle: function () { toggle(); return !!(root && root.classList.contains('open')); },
     /* Put the three back exactly as they were. Nothing else to undo, because
        nothing else was taken. */
     revert: function () { unmount(); var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); return true; },
@@ -366,6 +425,19 @@
         mounted: !!root,
         open: !!(root && root.classList.contains('open')),
         live: !!(root && root.classList.contains('live')),
+        /* mounted:true is not the same as VISIBLE — that distinction is what
+           made a b651 verification true and irrelevant. Report both, plus the
+           twin geometry the decision is made from, so nobody has to sweep. */
+        standDown: standDown(),
+        visible: !!(root && !root.classList.contains('standdown') &&
+                    root.getBoundingClientRect().width > 0),
+        twins: TWINS.map(function (id) {
+          var t = $(id);
+          if (!t) return { id: id, present: false };
+          var r = t.getBoundingClientRect();
+          return { id: id, present: true, display: getComputedStyle(t).display,
+                   w: Math.round(r.width), h: Math.round(r.height) };
+        }),
         items: ITEMS.map(function (it) {
           var el = $(it.id);
           return { key: it.key, id: it.id, present: !!el, available: available(el), on: isOn(el) };

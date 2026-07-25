@@ -495,6 +495,27 @@
     });
   }
 
+  /* The voice cluster's face opens a menu. It cannot contact Athena,
+     record, send or save — the three tools inside can, and they stay
+     blocked. Blocking the face too left the sample workspace with an inert
+     bubble a prospect could not open, which hides the feature instead of
+     disclosing that it is read-only. */
+  function rewriteVoiceCluster() {
+    var face = document.getElementById('mlsVcFace'); if (!face) return;
+    face.removeAttribute('data-mls-preview-blocked');
+    face.setAttribute('aria-disabled', 'false');
+    try { face.disabled = false; } catch (e) {}
+    face.setAttribute('data-mls-preview-action', 'voice-cluster');
+    face.setAttribute('data-tip', 'Opens the voice and assistant tools. In this sample workspace they are read-only.');
+  }
+
+  function openVoiceCluster(target) {
+    var api = window.__mlsVoiceCluster;
+    if (!api || typeof api.toggle !== 'function') { explain('Voice tools are still loading.'); return; }
+    var open = api.toggle();
+    if (target) target.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
   function rewriteDayPull() {
     var button = document.getElementById('mlsDsPullBtn'); if (!button) return;
     button.removeAttribute('data-mls-preview-blocked'); button.setAttribute('aria-disabled', 'false');
@@ -925,6 +946,7 @@
     root = root && root.querySelectorAll ? root : document;
     rewriteStaffCopy(root);
     rewriteDayPull();
+    rewriteVoiceCluster();
     decorateStaffMenu(root);
     if (!skipGlobalRewrite) rewritePreviewCopy();
     var controls = [];
@@ -1039,6 +1061,7 @@
     if (target.getAttribute('data-mls-preview-action') === 'sample-month') loadSampleMonth();
     else if (target.getAttribute('data-mls-preview-action') === 'sample-day') loadSampleDay();
     else if (target.getAttribute('data-mls-preview-action') === 'open-sample-appointment') openSampleAppointment(target);
+    else if (target.getAttribute('data-mls-preview-action') === 'voice-cluster') openVoiceCluster(target);
     else explain('That action is disabled in the read-only sample workspace. Nothing was sent, saved, recorded, or pulled.');
   }
 

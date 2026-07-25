@@ -91,11 +91,54 @@ CANON.forEach((id) => {
   );
 });
 
-/* ---- 5. the top lane still wins, so the two surfaces cannot drift ---- */
+/* ---- 5. the top lane wins ONLY when it is really on screen ----
+ *
+ * This assertion used to require the opposite: a CSS rule hiding the cluster
+ * under body.mls-top-voice-tools, "exactly as the three originals do". It was
+ * pinned on a belief that turned out to be false, and it pinned it hard enough
+ * that removing the bug failed the suite.
+ *
+ * Measured on the owner's live signed-in tab at b653, with that class SET:
+ *
+ *   #mlsCopVoiceBtn / #mlsAsstFab / #mlsDaDock            display:none (the class)
+ *   #ez3flCopilotVoice / #ez3flAssistant / #ez3flDictate  display:none, rect 0x0
+ *   #mlsVoiceCluster                                      display:none (my rule)
+ *
+ * Three routes to the voice tools, all closed, because the class asserted the
+ * top lane owned them while the top lane rendered nothing. A class is a claim;
+ * geometry is a fact. The app already asks the real question in
+ * topLaneIsVisible() (mls-connect.js ~:6447).
+ *
+ * So what is pinned now is the decision PROCEDURE, not a selector. */
 assert.ok(
-  /html body\.mls-top-voice-tools #' \+ ROOT_ID \+ '\{display:none!important;\}/.test(src),
-  'the cluster must hide under body.mls-top-voice-tools exactly as the three ' +
-  'originals do — otherwise the bottom-left and the visit lane both claim these tools'
+  /function standDown\(\)/.test(src),
+  'the cluster must decide standing down at runtime, not with a CSS rule keyed ' +
+  'on body.mls-top-voice-tools — that class can assert the top lane owns these ' +
+  'controls while the top lane renders nothing, which left a doctor with none.'
+);
+assert.ok(
+  !/body\.mls-top-voice-tools #' \+ ROOT_ID/.test(src),
+  'the class-keyed hide is back. It is the exact defect: three closed doors and ' +
+  'no voice tools at all.'
+);
+{
+  const fn = /function standDown\(\)[\s\S]*?\n  \}/.exec(src);
+  assert.ok(fn, 'standDown() is missing');
+  assert.ok(
+    /getBoundingClientRect\(\)/.test(fn[0]) && /r\.width > 0 && r\.height > 0/.test(fn[0]),
+    'standDown() must decide on real twin GEOMETRY. Anything else is trusting a ' +
+    'claim again. Found: ' + fn[0].slice(0, 200)
+  );
+  ['ez3flCopilotVoice', 'ez3flAssistant', 'ez3flDictate'].forEach((id) => {
+    assert.ok(src.includes("'" + id + "'"), 'the twin ' + id + ' is not consulted');
+  });
+}
+/* and the report must distinguish mounted from visible — conflating them is how
+   a true verification became an irrelevant one */
+assert.ok(
+  /standDown: standDown\(\)/.test(src) && /visible: !!\(root/.test(src),
+  'describe() must report standDown and visible, not just mounted. "mounted:true" ' +
+  'was truthfully reported at b651 about a state the owner is never in.'
 );
 
 /* ---- 6. an empty bubble is chrome pretending to be a feature ---- */
@@ -143,7 +186,76 @@ assert.ok(
   'pattern feat_mls_copilot_voice_v2.js established for this slot'
 );
 
-/* ---- 10. the guard can fail ---- */
+/* ---- 10. in the sample workspace the FACE opens; the three TOOLS stay blocked ----
+ * Preview stamped the merged face data-mls-preview-blocked="1", classifying a
+ * DISCLOSURE control as an action. Before the merge a prospect saw three
+ * blocked-but-visible pills and knew the tools existed; after it they saw one
+ * inert bubble and could not discover them at all. Merging the chrome hid the
+ * feature on a sales surface. Fixed through public-preview-runtime's own
+ * sanctioned shape (rewriteStaffCopy / rewriteDayPull), not by out-writing it. */
+{
+  const preview = fs.readFileSync(path.join(root, 'public-preview-runtime.js'), 'utf8');
+
+  assert.ok(
+    /function rewriteVoiceCluster\(\)/.test(preview),
+    'public-preview-runtime must unblock the cluster FACE, or the sample workspace ' +
+    'shows an inert bubble that hides the feature instead of disclosing it is read-only'
+  );
+  assert.ok(
+    /rewriteVoiceCluster\(\);/.test(preview),
+    'rewriteVoiceCluster() is defined but never called, so it runs on no harden pass'
+  );
+  assert.ok(
+    /'voice-cluster'\) openVoiceCluster\(target\)/.test(preview),
+    'the face must be dispatched through blockedClick like every other preview-safe ' +
+    'action, not given a private escape hatch'
+  );
+  /* the face may open the menu; it must never gain the power the tools have */
+  const fn = /function rewriteVoiceCluster\(\)[\s\S]*?\n  \}/.exec(preview)[0];
+  ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach((id) => {
+    assert.ok(
+      !fn.includes(id),
+      'rewriteVoiceCluster unblocks ' + id + '. The three TOOLS must stay blocked in ' +
+      'the sample workspace — they can record, send and contact Athena. Only the ' +
+      'disclosure opens.'
+    );
+  });
+  assert.ok(
+    /api\.toggle\(\)/.test(preview) && /toggle: function \(\)/.test(src),
+    'preview must call the cluster\'s own toggle(), not duplicate the open/close logic — ' +
+    'two implementations of one behaviour is how they drift'
+  );
+}
+
+/* ---- 11. the bubble must never sit on the phone's only navigation ----
+ * On a phone #mlsDock spans the full width at bottom:8px and is the ONLY way to
+ * reach Patients, Visit and Review. This cluster is z-index 2147482000 against
+ * the dock's 920, so an overlap does not just look wrong — it eats the taps.
+ *
+ * Standing down does not save us: phone mode kills the ez3 twins
+ * (mls-connect.js:44428), so no twin has layout and standDown() is correctly
+ * false. The cluster is SUPPOSED to be up on a phone. It just has to clear the
+ * dock, using the same calc ScribeFlow.html:1367 already uses for #mlsA2hsCard. */
+{
+  /* the phone block is built by concatenation, so match on its literal text
+     rather than trying to reconstruct the selector */
+  const phone = /max-width:760px[\s\S]{0,400}?left:12px;bottom:([^;}]*)/.exec(src);
+  assert.ok(phone, 'the phone media block for the cluster is gone');
+  assert.ok(
+    phone[1].indexOf('calc(84px + env(safe-area-inset-bottom') > -1,
+    'the cluster does not clear the dock on phones. At bottom:12px it overlaps ' +
+    '#mlsDock (bottom:8px, full width) and wins pointer events (z 2147482000 vs ' +
+    '920), so taps meant for Patients/Visit/Review hit the bubble instead. ' +
+    'Found bottom: ' + phone[1]
+  );
+  assert.ok(
+    !/^\s*\d+px/.test(phone[1]),
+    'a static pixel offset is back in the phone block, which cannot clear a dock ' +
+    'whose height varies with the safe-area inset and the keyboard: ' + phone[1]
+  );
+}
+
+/* ---- 12. the guard can fail ---- */
 {
   const broken = "var target = $(it.def.id);\n        if (target) target.focus();";
   assert.ok(
