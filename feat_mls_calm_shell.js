@@ -1310,6 +1310,21 @@
     var own = normLabel(el.textContent || '');
     var node = el.parentElement;
     for (var i = 0; i < 4 && node; i++) {
+      /* Prefer a sibling title ELEMENT before subtracting text. Subtraction
+         alone cannot name the Visit context row, whose container holds the
+         heading AND the body: removing "Edit" from it leaves 84 characters
+         reading "Reason for visit / chief complaintNo visit reason is
+         included..." — and textContent welds block children with no
+         separator, so there is no boundary left to cut on. Verified on the
+         running page at b589 that this changes none of the eight names
+         subtraction already got right. */
+      var kids = node.children || [];
+      for (var k = 0; k < kids.length; k++) {
+        var kid = kids[k];
+        if (kid === el || kid.contains(el)) continue;
+        var kt = normLabel(kid.textContent || '');
+        if (kt.length >= 3 && kt.length <= 60) return kt;
+      }
       var whole = normLabel(node.textContent || '');
       if (whole && whole.length > own.length) {
         var rest = whole.replace(own, ' ').replace(/\s+/g, ' ').trim();
