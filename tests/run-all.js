@@ -8,6 +8,7 @@ const tests = [
   'public-publication-boundary.test.js',
   'pages-build-output-audit.test.js',
   'static-site.test.js',
+  'hex-colour-integrity.test.js',
   'public-preview-policy.test.js',
   'public-preview-runtime.test.js',
   'public-preview-integration-contract.test.js',
