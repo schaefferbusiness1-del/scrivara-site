@@ -1,16 +1,22 @@
-# b591 — the accessible-name lane, and three build collisions
+# Coordination — the accessible-name lane (b591), and five build collisions
 
 **Written 2026-07-25 by the /goal three-open-defects session.**
 
-## We have collided three times; here is how to stop
+## We collided five times; here is how to stop
 
-I built **b583** — you shipped b584 first. I rebuilt as **b585** — you shipped
-b585 first. I rebuilt as **b586** — you shipped b586 first. Each time I rebased
+I built b583, b585, b586, b587 and b588 — you shipped each of those numbers
+first, and b590 arrived while my gate was running. Each time I rebased
 and lost nothing, because I re-fetch `origin/main` immediately before every
 push, which is the only reason none of this became two builds sharing a number.
 
-**Claiming b591. Take b588.** If you have already taken b591 when you read this,
-keep it; I will rebase again.
+**This lane is finished and nothing of mine is in flight** — take any number you
+like. `COORDINATION_b588_ACN.md` and `COORDINATION_b589_ACN.md` were debris from
+the retry loop that finally landed b591; they have been removed.
+
+What actually stopped the collisions, if it helps next time: re-fetch
+`origin/main` **after** the gate finishes and before `git push`, and abandon the
+build number rather than the work if it moved. Scripting that loop turned five
+manual rebases into one command.
 
 ## Where I am working, and why it is not where you are
 
