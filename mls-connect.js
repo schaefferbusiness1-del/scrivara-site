@@ -6496,7 +6496,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         setLaneDisabled(previewRecord, true);
         setLaneAttr(previewRecord, 'aria-disabled', 'true');
         setLaneAttr(previewRecord, 'data-mls-preview-blocked', '1');
-        setLaneAttr(previewRecord, 'title', 'Recording is off in the read-only sample workspace.');
+        setLaneAttr(previewRecord, 'data-tip', 'Recording is off in the read-only sample workspace.');
       }
       var previewHint = rec.querySelector('.ez3fl-rechint');
       setLaneText(previewHint, 'Sample workspace only - recording, cloud sync, Athena, sending, and signing are off.');
@@ -6522,7 +6522,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneDisabled(avsQuick, !avsPatient);
       setLaneAttr(avsQuick, 'aria-disabled', avsPatient ? 'false' : 'true');
       setLaneAttr(avsQuick, 'aria-label', avsPatient ? 'After-visit summary' : 'After-visit summary unavailable — open a patient first');
-      setLaneAttr(avsQuick, 'title', avsPatient ? 'A patient-friendly summary of this visit — preview first, nothing sends by itself' : 'Open a patient first to create an after-visit summary');
+      setLaneAttr(avsQuick, 'data-tip', avsPatient ? 'A patient-friendly summary of this visit — preview first, nothing sends by itself' : 'Open a patient first to create an after-visit summary');
       setLaneText(avsQuick, avsPatient ? '\uD83D\uDCC4 After-visit summary' : '\uD83D\uDCC4 After-visit summary — open a patient');
     }
     var nmEl = document.querySelector('.mlsctx-name');
@@ -33337,7 +33337,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b628';
+  window.__MLS_AV = window.__MLS_AV || 'b629';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33647,7 +33647,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b628';
+  var MLS_APP_BUILD='2026-07-25-b629';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

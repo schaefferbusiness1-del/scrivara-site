@@ -994,7 +994,9 @@
          still fires a childList record: 121 of them in the same 40 seconds. */
       var want = n > 99 ? '99+' : String(n);
       if (c.textContent !== want) c.textContent = want;
-      c.classList.add('show');
+      /* 108 no-op class writes in 23s: adding a class an element already
+         carries still notifies every attribute observer. */
+      if (!c.classList.contains('show')) c.classList.add('show');
     });
   }
 
