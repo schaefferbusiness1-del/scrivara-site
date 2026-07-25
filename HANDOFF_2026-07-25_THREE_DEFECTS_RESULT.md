@@ -238,12 +238,31 @@ read with no intervening write          median  0ms
 > patient directory is the visible screen while they happen*. 700 × 16ms = 11.2s,
 > against the measured foreground TBT of 10,929ms.
 >
-> **The fix follows directly and is cheap to try:** stop the off-screen rows from
-> participating in layout. `content-visibility: auto` with a
-> `contain-intrinsic-size` on the patient row element is the textbook form and is
-> pure CSS, reversible, and measurable with the snippet below. Verify
-> find-in-page and scroll-anchoring behaviour before shipping, and re-measure the
-> Patients screen: the target is Review's 2.4ms.
+> ### The obvious fix was TRIED and made it WORSE — do not ship it
+>
+> The directory is `#ptList` (`div.pt-list`) holding **151 `.pt-item` rows**, each
+> 157px tall. The textbook remedy is to keep off-screen rows out of layout, so it
+> was applied to the running page and measured:
+>
+> ```
+> #patientsView .pt-item{content-visibility:auto;contain-intrinsic-size:auto 157px}
+>
+> layout before          7.10ms
+> layout WITH the rule   9.40ms     <- 32% WORSE
+> after removing it      7.00ms     (clean revert)
+> ```
+>
+> It adds containment bookkeeping and buys nothing. **Do not ship it**, and note
+> the caveat that also makes this test incomplete: a hidden tab has nothing
+> on-screen, so `content-visibility` has nothing to skip. It could still help in a
+> foreground window — but it must be proven there first, not assumed.
+>
+> ### Read the per-screen numbers as a RANKING, not as absolutes
+>
+> The Patients screen measured **16.3ms** on one load and **7.1ms** on another.
+> The ordering (Patients worst, Review best) reproduced; the absolute values did
+> not. Any fix must be judged by a before/after on the *same* page load, never
+> against a number quoted from this document.
 >
 > Superseded detail from the previous two revisions, kept so nobody re-derives it:
 >
