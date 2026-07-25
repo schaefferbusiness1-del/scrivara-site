@@ -305,6 +305,7 @@ const tests = [
   'visit-selection-restore-identity.test.js',
   'prep-summary-clinical-negatives.test.js',
   'calm-shell-generic-naming-scope.test.js',
+  'settings-preview-commit-contract.test.js',
   'calm-shell-return-path.test.js'
 ];
 

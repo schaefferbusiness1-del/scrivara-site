@@ -6645,7 +6645,33 @@ function openSettings(){
   document.getElementById('settingsModal').classList.add('show');
   try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcileSettings==='function') window.__mlsUiUnification.reconcileSettings(); }catch(e){}
 }
-function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+/* Theme, text size and compact are PREVIEW-only: applyThemePreview and friends
+   toggle body classes and nothing else, and only Save writes them to storage.
+   Closing used to leave that preview applied for the rest of the session, so a
+   doctor switched to dark mode, worked in it all day, and came back the next
+   morning to a light app with nothing to explain it — the change had never been
+   saved, and closing never said so.
+
+   Closing now restores what is actually stored, through applyAppearance(),
+   which is the same function Save uses. So what is on screen is always what
+   will still be there tomorrow. Called from Save's path too, where it is a
+   no-op: Save persists first and applies second, so the stored values are
+   already the ones showing.
+
+   The two Display controls that DO self-commit — patient layout and group by
+   procedure — are deliberately left alone here; they write storage on change,
+   so restoring from storage is what they already show. That inconsistency is
+   real and worth resolving, but it is a behaviour change to those controls,
+   not a close-time fix. */
+function closeSettings(){
+  try{ applyAppearance(); }catch(e){}
+  try{
+    const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
+    const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
+    const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
+  }catch(e){}
+  document.getElementById('settingsModal').classList.remove('show');
+}
 /* MLS — Clear saved data on THIS device only.
    Scoped strictly to this app's per-user namespace produced by uns():
    'sf_u::<email>::*'. Never touches the session, other accounts, or any
@@ -27784,7 +27810,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b603';
+  window.__MLS_AV='b604';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
