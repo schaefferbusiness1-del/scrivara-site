@@ -1,5 +1,17 @@
 /* feat_mls_premium_gate.js -> window.__mlsPremiumGate (pmg-1.0.0)
  *
+ * pmg-1.0.1: this told the doctor to "upgrade to Premium in Settings".
+ * Settings has no upgrade control - measured on the running page at b600:
+ * the settings modal holds 12,935 characters of text, the word "upgrade"
+ * does not appear in it once, and a scan of every button, link and select
+ * inside it for upgrade/plan/premium/billing returns ZERO controls. So the
+ * one message a blocked doctor is given pointed at a dead end.
+ * The app DOES have a working route - showUpsell() in mls-connect.js opens
+ * an overlay linking to /index.html#pricing - but it is module-local and
+ * not exported (window.__mlsShowUpsell is undefined), so this module cannot
+ * call it. Naming the destination is the honest fix available here; wiring
+ * the toast to that overlay needs the export and belongs with that module.
+ *
  * Plan levels now match their labels. Pay Reports and Reviews & reputation
  * carried PREMIUM badges but never checked the plan, so Lite and Standard
  * accounts could open them anyway. This satellite closes that gap in the UI
@@ -37,7 +49,7 @@
     if (now - lastToast < 1200) return;
     lastToast = now;
     safe(function () {
-      if (typeof toast === "function") toast(featureName + " is a Premium feature. Your plan keeps everything else — upgrade to Premium in Settings to unlock it.", "err");
+      if (typeof toast === "function") toast(featureName + " is a Premium feature. Your plan keeps everything else — see plans on the MLS home page to upgrade.", "err");
     });
   }
 
