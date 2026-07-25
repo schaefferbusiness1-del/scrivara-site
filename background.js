@@ -9501,8 +9501,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          refusing every body while ~2 minutes of budget sat unused. Only
          observation retries - every identity gate is unchanged. */
       var ehStableCount = -1;
+      var enrSeen = [];
       for (var ehPass = 0; ehPass < 48; ehPass++) {
       var enR = await exec(emrId, null, ['enumerate', cfg]);
+      /* 3.0.12: which frames actually answered, and did any hold an index. */
+      try {
+        enrSeen = (enR || []).map(function (r) {
+          return String((r && r.frameId) != null ? r.frameId : '?') + ((r && r.result && r.result.ok) ? '+' : '-');
+        });
+      } catch (e) { enrSeen = ['(capture-failed)']; }
       var eb = bestResult(enR, function (r) {
         if (!(r && r.ok)) return 0;
         return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0);
@@ -9587,6 +9594,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               var tail = String(f.url || '?').split('?')[0].split('/').pop() || '?';
               return tail.slice(0, 26) + '~' + f.score + '~' + f.drop;
             }).join(';') + ']';
+            /* 3.0.12: frames that answered enumerate this pass. Few ids means
+               the injection never reached the nested chart frame; many ids
+               with no '+' means it was reached and judged not-ok. */
+            gate.reason += '|enum=' + enrSeen.slice(0, 12).join(',');
           }
         } catch (e) {}
       }
