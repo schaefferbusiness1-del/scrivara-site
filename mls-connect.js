@@ -6591,7 +6591,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           q.appendChild(qt);
           var syncQ = function () {
             var open = false; try { open = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eQ) {}
-            qt.innerHTML = '&#129520; Tools ' + (open ? '&#9652;' : '&#9662;');
+            qt.innerHTML = '&#129520; Visit shortcuts ' + (open ? '&#9652;' : '&#9662;');
             qt.setAttribute('aria-expanded', open ? 'true' : 'false');
             qt.setAttribute('aria-label', open ? 'Hide tools' : 'Show tools');
             for (var qi = 0; qi < qBody.length; qi++) { try { qBody[qi].style.display = open ? '' : 'none'; } catch (eQi) {} }
@@ -18597,7 +18597,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var toolsOpen = false;
     try { toolsOpen = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT) {}
     var h = '<div class="ez3fl-quick" id="ez3QuickTools">' +
-      '<button type="button" class="ez3fl-qchip" id="ez3QToolsToggle" aria-expanded="' + (toolsOpen ? 'true' : 'false') + '" aria-label="' + (toolsOpen ? 'Hide tools' : 'Show tools') + '">&#129520; Tools ' + (toolsOpen ? '&#9652;' : '&#9662;') + '</button>';
+      '<button type="button" class="ez3fl-qchip" id="ez3QToolsToggle" aria-expanded="' + (toolsOpen ? 'true' : 'false') + '" aria-label="' + (toolsOpen ? 'Hide tools' : 'Show tools') + '">&#129520; Visit shortcuts ' + (toolsOpen ? '&#9652;' : '&#9662;') + '</button>';
     if (toolsOpen) {
       h += '<button type="button" class="ez3fl-qchip" id="ez3QVoice" aria-label="Copilot Voice">&#127897; Copilot Voice</button>' +
         '<button type="button" class="ez3fl-qchip" id="ez3QAssistant" aria-label="MLS Assistant">&#129658; MLS Assistant</button>';
@@ -33079,7 +33079,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b576';
+  window.__MLS_AV = window.__MLS_AV || 'b577';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33389,7 +33389,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b576';
+  var MLS_APP_BUILD='2026-07-24-b577';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
