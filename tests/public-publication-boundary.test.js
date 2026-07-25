@@ -613,7 +613,11 @@ async function verifyServiceWorkerRuntime() {
       `secret-free phone mode flag must resolve to the cached shell offline: ${modeUrl}`);
   }
   /* …and the allowance must be READ-ONLY: the query URL is never cached. */
-  const afterModeKeys = (await (await cacheApi.open('mls-v171')).keys()).map((r) => r.url);
+  /* Derive the cache name rather than hardcoding it — activation above already
+     asserts there is exactly one, and a hardcoded stamp silently desyncs on the
+     next CACHE bump (it survived one only by luck of a textual rebase). */
+  const [liveCacheName] = await cacheApi.keys();
+  const afterModeKeys = (await (await cacheApi.open(liveCacheName)).keys()).map((r) => r.url);
   assert(!afterModeKeys.some((u) => /ScribeFlow\.html\?phone=/.test(u)),
     'the phone mode flag must never be written to the cache — only read back from the plain shell');
   /* A near-miss must NOT be waved through: the whitelist is exact strings. */
