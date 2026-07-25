@@ -6287,6 +6287,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var VERSION = 'fl-1.7.2';
   var _obs = null, _deb = null, _iv = null, _laneIv = null, _laneRaf = null;
   var _primaryLane = null;
+  /* txf-1.0.0: caret carried across an engine re-render. The ez3 engine rebuilds
+     #ez3Wrap from an HTML string on a timer, which DESTROYS the transcript the
+     doctor is typing into; focus falls to <body> and every later keystroke is
+     lost. Measured in real Chrome before this fix: 3 rebuilds in 9 idle seconds,
+     and 59 of 63 typed characters gone. */
+  var _txFocusCarry = null;
   /* fl-1.7.2: transcript presence is NOT audio-session history. A pasted or
      typed transcript must never render "Resume recording"/"Recording stopped"
      when no recording ever ran in this tab. */
@@ -6649,6 +6655,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rec.appendChild(txWrap);
           var topTx = txWrap.querySelector('#ez3flTranscript');
           topTx.addEventListener('input', function () { syncRealTranscript(topTx.value); syncTopLane(rec); });
+          /* txf-1.0.0: remember the caret when this node is torn out from under
+             a typing doctor. A blur whose element is left DETACHED, with focus
+             on <body>, is the engine's re-render - not the doctor clicking away,
+             which leaves the node connected or moves focus to a real control. */
+          topTx.addEventListener('blur', function () {
+            var el = topTx, ss = null, se = null;
+            try { ss = el.selectionStart; se = el.selectionEnd; } catch (eB1) {}
+            setTimeout(function () {
+              try {
+                if (el.isConnected) return;
+                if (document.activeElement && document.activeElement !== document.body) return;
+                _txFocusCarry = { s: ss, e: se, at: Date.now() };
+              } catch (eB2) {}
+            }, 0);
+          });
+          /* ...and take focus back on the rebuilt box, after the value has been
+             synced back in, clamping the caret to whatever actually arrived. */
+          if (_txFocusCarry && (Date.now() - _txFocusCarry.at) < 4000) {
+            var carry = _txFocusCarry; _txFocusCarry = null;
+            setTimeout(function () {
+              try {
+                if (!topTx.isConnected) return;
+                if (document.activeElement && document.activeElement !== document.body) return;
+                topTx.focus();
+                var n = topTx.value.length;
+                var cs = Math.min(carry.s == null ? n : carry.s, n);
+                var ce = Math.min(carry.e == null ? n : carry.e, n);
+                topTx.setSelectionRange(cs, ce);
+              } catch (eR) {}
+            }, 0);
+          }
           var noteWrap = document.createElement('div');
           noteWrap.className = 'ez3fl-note'; noteWrap.id = 'ez3flNoteWrap'; noteWrap.hidden = true;
           noteWrap.innerHTML = '<label for="ez3flNote">Generated note - review and edit</label><textarea id="ez3flNote"></textarea>' +
@@ -33276,7 +33313,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b616';
+  window.__MLS_AV = window.__MLS_AV || 'b617';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33586,7 +33623,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b616';
+  var MLS_APP_BUILD='2026-07-25-b617';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

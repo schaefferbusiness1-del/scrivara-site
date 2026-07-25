@@ -93,6 +93,7 @@ const tests = [
   'visit-active-controls-contrast-contract.test.js',
   'easy-transcript-continuity.test.js',
   'transcript-mirror-merge-runtime.test.js',
+  'transcript-focus-survives-rebuild.test.js',
   'easy-lane-engine-rewrite-runtime.test.js',
   'easy-canonical-action-owner-runtime.test.js',
   'easy-pause-resume-runtime.test.js',
