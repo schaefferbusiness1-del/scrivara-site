@@ -1288,6 +1288,46 @@
     });
   }
 
+  /* The patient card carries four visible buttons that all read "✎ Edit" and
+     announce exactly that — Reason for visit, Key risks & reminders, Vitals,
+     and History & background. Measured on the running page at b587: tabbing
+     them says "Edit, Edit, Edit, Edit", and not one had an aria-label or a
+     title. The short visible text is deliberate and stays; only the ACCESSIBLE
+     name changes, so there is no visual change at all. */
+  var GENERIC_LABEL = /^(edit|copy|clear|add|remove|open|view|more|refresh)$/i;
+
+  /* Read the section from the row the control sits in, by subtracting the
+     control's own words from its container's. Hunting a heading ELEMENT fails
+     here: several of these rows title themselves with a bare text node, and
+     the ones that do use an element put the button inside the same heading. */
+  function sectionNameFor(el) {
+    var own = normLabel(el.textContent || '');
+    var node = el.parentElement;
+    for (var i = 0; i < 4 && node; i++) {
+      var whole = normLabel(node.textContent || '');
+      if (whole && whole.length > own.length) {
+        var rest = whole.replace(own, ' ').replace(/\s+/g, ' ').trim();
+        /* Capped: past the row, textContent is the whole card. */
+        if (rest.length >= 3 && rest.length <= 60) return rest;
+      }
+      node = node.parentElement;
+    }
+    return '';
+  }
+
+  function nameIfGeneric(b) {
+    var flat = normLabel(b.textContent || '');
+    if (!GENERIC_LABEL.test(flat)) return;
+    /* Never overwrite a name the APP chose; only one this pass wrote. */
+    if (b.getAttribute('aria-label') && !b.getAttribute('data-mls-secname')) return;
+    var section = sectionNameFor(b);
+    if (!section) return;
+    var name = flat + ' — ' + section;
+    if (b.getAttribute('aria-label') === name) return;
+    b.setAttribute('aria-label', name);
+    b.setAttribute('data-mls-secname', '1');
+  }
+
   function patientScreen() {
     if (!W.__mlsCalmShell.active) return;
     var card = qs('#profileCard');
@@ -1295,6 +1335,7 @@
 
     qsa('button,.btn-primary,.btn-ghost,.btn-green', card).forEach(function (b) {
       if (b.closest && b.closest('#mlsPrepRows,#mlsRightNow')) return;
+      nameIfGeneric(b);
       if (!PT_MOVED.test(textOf(b))) return;
       b.classList.add('mls-moved');
     });
@@ -2017,6 +2058,11 @@
   }
 
   function dropControlNames() {
+    /* Section names are this shell's too, so Classic must not inherit them. */
+    qsa('[data-mls-secname]').forEach(function (el) {
+      el.removeAttribute('aria-label');
+      el.removeAttribute('data-mls-secname');
+    });
     qsa('[data-mls-acn]').forEach(function (el) {
       el.removeAttribute('aria-label');
       el.removeAttribute('data-mls-acn');
