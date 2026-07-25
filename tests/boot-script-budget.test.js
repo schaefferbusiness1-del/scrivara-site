@@ -160,12 +160,65 @@ if (eager < EAGER_FLOOR) {
   );
 }
 
+/* ---- arm C: what the modules DO, which is where the time actually goes ----
+ *
+ * Arms A and B count files. This one counts the two constructs that make 234
+ * cheap modules expensive together, and it is the arm the measurements point at:
+ *
+ *   - a document-wide subtree MutationObserver reacts to EVERY DOM change made
+ *     by every other module. During boot all 234 are mutating, so the cost is
+ *     mutations x observers, not per-module.
+ *   - a setInterval never stops. 200+ of them are a permanent background load,
+ *     which is also why a long task shows up ~22s after load with nothing left
+ *     to boot.
+ *
+ * This also explains the two things single-module attribution could not: why no
+ * single script ever owns the blob (the work belongs to the observers reacting
+ * to everyone else), and why a BACKGROUND tab reads 1.4s (observers still fire,
+ * but the style and layout they dirty is never computed).
+ *
+ * tests/interaction-performance-contract.test.js already polices named modules
+ * for exactly these two constructs. This is the population-level pin so the
+ * total cannot grow while each individual addition looks reasonable. */
+const featFiles = fs.readdirSync(ROOT).filter((f) => /^feat_.*\.js$/.test(f));
+let docObservers = 0;
+let intervals = 0;
+for (const f of featFiles) {
+  const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  docObservers += (s.match(/observe\(\s*document(?:\.documentElement|\.body)?\s*,\s*\{[^}]*subtree\s*:\s*true/g) || []).length;
+  intervals += (s.match(/setInterval\s*\(/g) || []).length;
+}
+
+const OBSERVER_CEILING = 60;   // measured across 250 feature modules at b596
+const INTERVAL_CEILING = 214;
+
+if (docObservers > OBSERVER_CEILING) {
+  failed = true;
+  console.error(
+    '\nFAIL: ' + docObservers + ' document-wide subtree MutationObservers, up from ' +
+    OBSERVER_CEILING + '.\nEach one runs on every DOM change every other module makes, so this is\n' +
+    'multiplicative during boot. Scope the observer to the subtree it cares about\n' +
+    '(see feat_mls_centerpiece.js, which is scoped to #visitView), or raise the\n' +
+    'ceiling deliberately and say why.\n'
+  );
+}
+if (intervals > INTERVAL_CEILING) {
+  failed = true;
+  console.error(
+    '\nFAIL: ' + intervals + ' setInterval pollers across feature modules, up from ' +
+    INTERVAL_CEILING + '.\nAn interval never stops. Prefer an event, a MutationObserver scoped to the\n' +
+    'subtree, or a bounded set of timeouts, or raise the ceiling and say why.\n'
+  );
+}
+
 assert(n > 0, 'expected to find feature-script references in ' + LOADER);
 assert.strictEqual(eager + deferred, n, 'every referenced script must be classified eager or deferred');
+assert(docObservers > 0 && intervals > 0, 'arm C found nothing - the detectors are broken, not the code');
 
 if (failed) { process.exit(1); }
 
 console.log(
   'boot-script-budget: OK (' + n + ' feature scripts, ceiling ' + CEILING + '; ' +
-  eager + ' eager / ' + deferred + ' deferred, eager ceiling ' + EAGER_CEILING + ')'
+  eager + ' eager / ' + deferred + ' deferred, eager ceiling ' + EAGER_CEILING + '; ' +
+  docObservers + ' document-wide observers, ' + intervals + ' intervals)'
 );
