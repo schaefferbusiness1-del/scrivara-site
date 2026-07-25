@@ -294,7 +294,8 @@ const tests = [
   'visit-exact-appointment-binding-runtime.test.js',
   'visit-exact-action-gate-runtime.test.js',
   'visible-clinical-action-gate-runtime.test.js',
-  'visit-selection-restore-identity.test.js'
+  'visit-selection-restore-identity.test.js',
+  'prep-summary-clinical-negatives.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
