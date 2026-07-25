@@ -17399,7 +17399,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
+    '#ez3Toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -18948,7 +18948,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dob: locked.dob || (a ? dobOf(a) : ''),
       activeName: an,
       mismatch: !match,
-      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+      onYes: function () { handOff(function () { p.click(); }, ''); if (document.getElementById('athenaReceipt') || document.getElementById('mlsAthenaUnifiedConfirm')) { toast('Opened Athena’s review & confirm screen — confirm there to file the note.'); } }
     });
   }
   function openConfirm(cfg) {
@@ -18968,13 +18968,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
       '</div></div>';
     document.body.appendChild(m);
+    /* mdl-1.1.0: a confirm that cannot be escaped or focused is not a dialog.
+       This one had no role, no aria-modal, no focus move, no Esc and no focus
+       containment - so a screen reader announced nothing, and Tab walked
+       straight out of an open "send to Athena" confirm into the dock behind
+       it, where Enter fires Record. The app already implements all of this at
+       ScribeFlow.html:7019-7057; only the behaviour is borrowed, the ez3 look
+       is untouched. */
+    try {
+      var card = m.querySelector(".ez3-modal-card") || m;
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      m.__mlsPrevFocus = document.activeElement;
+      var first = m.querySelector(".ez3-sm.pri") || m.querySelector("button");
+      if (first && first.focus) first.focus();
+      m.__mlsKey = function (e) {
+        if (e.key === "Escape") { e.preventDefault(); closeConfirm(); return; }
+        if (e.key !== "Tab") return;
+        var f = m.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+        if (!f.length) return;
+        var a = f[0], z = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+        else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+      };
+      document.addEventListener("keydown", m.__mlsKey, true);
+    } catch (eDlg) {}
     /* modal clicks live in their own registry so a background render() can't clear them */
     MCLICKS = {
       ez3ConfCancel: function () { closeConfirm(); },
       ez3ConfYes: function () { closeConfirm(); if (cfg.onYes) cfg.onYes(); }
     };
   }
-  function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) m.remove(); }
+  function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) { try { if (m.__mlsKey) document.removeEventListener('keydown', m.__mlsKey, true); var pf = m.__mlsPrevFocus; if (pf && pf.focus) pf.focus(); } catch (eC) {} m.remove(); } }
   cleanup.push(closeConfirm);
 
   /* generic small confirm (v3.3) — same look as the send confirm */
@@ -22701,7 +22726,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
+    '#ez3Toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -23599,7 +23624,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dob: locked.dob || (a ? dobOf(a) : ''),
       activeName: an,
       mismatch: !match,
-      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+      onYes: function () { handOff(function () { p.click(); }, ''); if (document.getElementById('athenaReceipt') || document.getElementById('mlsAthenaUnifiedConfirm')) { toast('Opened Athena’s review & confirm screen — confirm there to file the note.'); } }
     });
   }
   function openConfirm(cfg) {
@@ -23619,13 +23644,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
       '</div></div>';
     document.body.appendChild(m);
+    /* mdl-1.1.0: a confirm that cannot be escaped or focused is not a dialog.
+       This one had no role, no aria-modal, no focus move, no Esc and no focus
+       containment - so a screen reader announced nothing, and Tab walked
+       straight out of an open "send to Athena" confirm into the dock behind
+       it, where Enter fires Record. The app already implements all of this at
+       ScribeFlow.html:7019-7057; only the behaviour is borrowed, the ez3 look
+       is untouched. */
+    try {
+      var card = m.querySelector(".ez3-modal-card") || m;
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      m.__mlsPrevFocus = document.activeElement;
+      var first = m.querySelector(".ez3-sm.pri") || m.querySelector("button");
+      if (first && first.focus) first.focus();
+      m.__mlsKey = function (e) {
+        if (e.key === "Escape") { e.preventDefault(); closeConfirm(); return; }
+        if (e.key !== "Tab") return;
+        var f = m.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+        if (!f.length) return;
+        var a = f[0], z = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+        else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+      };
+      document.addEventListener("keydown", m.__mlsKey, true);
+    } catch (eDlg) {}
     /* modal clicks live in their own registry so a background render() can't clear them */
     MCLICKS = {
       ez3ConfCancel: function () { closeConfirm(); },
       ez3ConfYes: function () { closeConfirm(); if (cfg.onYes) cfg.onYes(); }
     };
   }
-  function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) m.remove(); }
+  function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) { try { if (m.__mlsKey) document.removeEventListener('keydown', m.__mlsKey, true); var pf = m.__mlsPrevFocus; if (pf && pf.focus) pf.focus(); } catch (eC) {} m.remove(); } }
   cleanup.push(closeConfirm);
 
   /* generic small confirm (v3.3) — same look as the send confirm */
@@ -24787,7 +24837,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
+    '#ez3Toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -25554,7 +25604,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dob: locked.dob || (a ? dobOf(a) : ''),
       activeName: an,
       mismatch: !match,
-      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+      onYes: function () { handOff(function () { p.click(); }, ''); if (document.getElementById('athenaReceipt') || document.getElementById('mlsAthenaUnifiedConfirm')) { toast('Opened Athena’s review & confirm screen — confirm there to file the note.'); } }
     });
   }
   function openConfirm(cfg) {
@@ -26604,7 +26654,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
+    '#ez3Toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -27064,7 +27114,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dob: locked.dob || (a ? dobOf(a) : ''),
       activeName: an,
       mismatch: !match,
-      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+      onYes: function () { handOff(function () { p.click(); }, ''); if (document.getElementById('athenaReceipt') || document.getElementById('mlsAthenaUnifiedConfirm')) { toast('Opened Athena’s review & confirm screen — confirm there to file the note.'); } }
     });
   }
   function openConfirm(cfg) {
@@ -28179,7 +28229,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;',
       'margin-left:8px;vertical-align:middle;box-shadow:0 4px 14px rgba(23,58,140,.35);}',
     '#mlsEz3Launch.fx{position:fixed;top:10px;right:12px;z-index:2147481100;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
+    '#ez3Toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481300;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -28579,7 +28629,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dob: locked.dob || (a ? dobOf(a) : ''),
       activeName: an,
       mismatch: !match,
-      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+      onYes: function () { handOff(function () { p.click(); }, ''); if (document.getElementById('athenaReceipt') || document.getElementById('mlsAthenaUnifiedConfirm')) { toast('Opened Athena’s review & confirm screen — confirm there to file the note.'); } }
     });
   }
   function openConfirm(cfg) {
@@ -33029,7 +33079,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b568';
+  window.__MLS_AV = window.__MLS_AV || 'b569';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33339,7 +33389,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b568';
+  var MLS_APP_BUILD='2026-07-24-b569';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -33446,7 +33496,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function byText(re){return [].find.call(document.querySelectorAll('button,a,[role=button],.vx-qbtn'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&vis(x)&&(x.textContent||'').length<60;})||null;}
   function pick(c){for(var i=0;i<c.length;i++){var e=c[i].id?byId(c[i].id):byText(c[i].re);if(e)return e;}return null;}
   function flash(e){try{var o=e.style.boxShadow;e.style.boxShadow='0 0 0 3px rgba(47,124,246,.7)';setTimeout(function(){e.style.boxShadow=o;},700);}catch(_){}}
-  function toast(m){var t=document.getElementById('mlsCkToast');if(!t){t=document.createElement('div');t.id='mlsCkToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s;max-width:88vw;text-align:center';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
+  function toast(m){var t=document.getElementById('mlsCkToast');if(!t){t=document.createElement('div');t.id='mlsCkToast';t.style.cssText='position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s;max-width:88vw;text-align:center';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
   function go(c,msg){var e=pick(c);if(!e){toast(msg||'Not available on this step yet.');return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);setTimeout(function(){try{e.click();}catch(_){}},170);}
   function focusEl(c,msg){var e=pick(c);if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);try{e.focus();}catch(_){}}
   function scrollToEl(sel,msg){var e=document.querySelector(sel);if(!e||e.offsetParent===null){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);}
@@ -33497,7 +33547,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function clickText(re,sel){var e=byText(re,sel);if(e){e.click();return true;}return false;}
   function focusSel(sel){var e=document.querySelector(sel);if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}try{e.focus();}catch(_){}return true;}return false;}
   function scrollText(re){var e=byText(re,'*');if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}return true;}return false;}
-  function toast(m){var t=el('mlsEwToast');if(!t){t=document.createElement('div');t.id='mlsEwToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;z-index:9000;opacity:0;transition:opacity .2s;box-shadow:0 6px 24px rgba(0,0,0,.3)';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1800);}
+  function toast(m){var t=el('mlsEwToast');if(!t){t=document.createElement('div');t.id='mlsEwToast';t.style.cssText='position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;z-index:9000;opacity:0;transition:opacity .2s;box-shadow:0 6px 24px rgba(0,0,0,.3)';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1800);}
   function A(fn,msg){return function(){var ok=false;try{ok=fn();}catch(e){ok=false;}if(!ok)toast(msg||'Not ready yet.');};}
   var WIDS=[
     {icon:'\uD83C\uDFAC',title:'Start a visit',sub:'Pick a patient, then record',btns:[
@@ -33551,7 +33601,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function byText(re){return [].find.call(document.querySelectorAll('button,a,[role=button],.vx-qbtn'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&vis(x)&&(x.textContent||'').length<60;})||null;}
   function pick(cands){for(var i=0;i<cands.length;i++){var c=cands[i];var e=c.id?byId(c.id):byText(c.re);if(e)return e;}return null;}
   function flash(e){try{var o=e.style.boxShadow;e.style.boxShadow='0 0 0 3px rgba(47,124,246,.7)';setTimeout(function(){e.style.boxShadow=o;},700);}catch(_){}}
-  function toast(m){var t=document.getElementById('mlsWizToast');if(!t){t=document.createElement('div');t.id='mlsWizToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2200);}
+  function toast(m){var t=document.getElementById('mlsWizToast');if(!t){t=document.createElement('div');t.id='mlsWizToast';t.style.cssText='position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2200);}
   function go(cands,msg){var e=pick(cands);if(!e){toast(msg||'That is not available on this step yet.');return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);setTimeout(function(){try{e.click();}catch(_){}},180);}
   function focusEl(cands,msg){var e=pick(cands);if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);try{e.focus();}catch(_){}}
   function scrollTo(re,msg){var e=[].find.call(document.querySelectorAll('*'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&x.offsetParent!==null&&(x.textContent||'').length<50;});if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);}
