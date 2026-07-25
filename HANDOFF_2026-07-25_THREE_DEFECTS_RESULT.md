@@ -212,30 +212,50 @@ read with no intervening write          median  0ms
 7,982 DOM nodes · 197 stylesheets · 3,934 CSS rules
 ```
 
-**One forced layout on this page costs 18.2 milliseconds.** A healthy page of
-this size is under 1ms; this is roughly 20× that. At ~2.3µs per node it is the
-page itself that is expensive to lay out, not any one caller.
+> **CORRECTION — the 18.2ms figure is BOOT-WINDOW ONLY, and an earlier version of
+> this section got that wrong.** Re-measured across five spaced rounds:
+>
+> | when | median | p90 |
+> |---|---|---|
+> | ~10s after load (boot window) | **18.8ms** | 22ms |
+> | ~126s after load (steady state) | **3.0ms** | 4.5ms |
+>
+> Both reproducible, instrument verified unwrapped. So the claim "every
+> interaction pays 18.2ms" was **wrong** — interactions pay ~3ms. Boot pays ~19ms.
+> A 6× decay, which means something during the boot window keeps layout expensive
+> and then stops. That decay is itself the most interesting unexplained thing left
+> here and is probably where the fix is.
 
-That reframes the defect. It is not really a *boot* problem:
+**During boot one forced layout costs ~18.8ms**, against ~3.0ms once the page is
+quiet. Even 3.0ms is high for 7,982 nodes; 18.8ms is roughly 20× a healthy page.
 
-- 600 write→read interleavings anywhere = **10.9s**, which is the measured
-  foreground TBT almost exactly
-- all 5,576 boot reads interleaved = **101s**, which is the ~80s cold boot the
-  original handoff recorded
-- and it means **every interaction** that reads layout after a write pays 18.2ms,
-  not just boot
+The arithmetic that matches the observed boot:
+
+- ~700 DOM mutations landing in separate frames × 18.8ms = **13.2s**, against a
+  measured foreground TBT of 10,929ms
+- all 5,576 boot reads interleaved would be 105s, bracketing the ~80s cold boot
+  the original handoff recorded
+
+Note boot's 5,576 layout reads cost only **28ms** in total in a hidden tab, so
+boot is **not** forcing expensive layouts — the cost is ordinary per-frame layout
+in the foreground, once per frame in which the DOM changed.
 
 So there are two independent fixes, and the second is worth more:
 
-1. **Stop interleaving** in the two modules that own 96% of the reads. Batch
-   reads before writes. Note a tight read-only loop is already free (0ms above) —
-   only reads *after* a write pay. Confirm the interleave in the code before
-   touching it, and do **not** memoize `visible()` across a write: a stale
-   visibility answer puts a control in the bar the user cannot press, which is
-   worse than a slow boot.
-2. **Make a layout cost less than 18.2ms.** 197 stylesheets and 3,934 rules over
-   7,982 nodes is the reason a single layout is this expensive. This is the one
-   that also speeds up every click, not just boot.
+1. **Find what makes boot-window layout 6× steady-state, and stop it.** This is
+   the highest-value thread and it is unexplained. Layout is 18.8ms at t=10s and
+   3.0ms at t=126s with the same DOM and the same 197 stylesheets, so something
+   is keeping the tree dirty and then stopping. Candidates already on record: the
+   214 `setInterval` pollers (arm C), and late modules still mutating. Bisect by
+   time, not by module — sample the bench every 5s from load to 120s and find
+   where the cliff is.
+2. **Reduce the number of frames in which boot mutates the DOM.** ~700 mutations
+   × one layout each is the shape that matches. Batching writes into fewer frames
+   cuts layouts proportionally. Note a tight read-only loop is already free (0ms
+   measured) — only reads *after* a write pay, and boot's reads total 28ms, so
+   **do not start by chasing the 5,576 reads**; they are not the cost.
+   Do **not** memoize `visible()` across a write: a stale visibility answer puts a
+   control in the bar the user cannot press, which is worse than a slow boot.
 
 This measurement is reproducible in five seconds, needs no foreground window
 (forced layout is computed on demand regardless of visibility), and is the
