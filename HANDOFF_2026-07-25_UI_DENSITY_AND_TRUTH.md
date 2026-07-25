@@ -174,6 +174,21 @@ underneath → master-detail, list returns on `:focus-within` of search.
   while load is 26s, the loader is a red herring. Note
   `tests/boot-script-budget.test.js` counts *names in mls-connect.js*, so it
   measures **bundling, not deferral** — a deferral win would read as no progress.
+
+  > 🛑 **RESOLVED AND SUPERSEDED at b586/b596 — read
+  > `HANDOFF_2026-07-25_THREE_DEFECTS_RESULT.md` before touching the boot path.**
+  > The 26s **is** reproduced: it only appears in a **foreground** signed-in tab
+  > (FCP 148ms, load 373ms, **Total Blocking Time 10,929ms**, last long task
+  > ending at 24,568ms). A hidden tab skips the rendering work and reads 1.4s,
+  > which is why three sessions failed to reproduce it — including on
+  > `?preview=1`, above.
+  >
+  > **Do not bundle.** Re-fetching the same 205 cached assets with the main
+  > thread idle projects to **~170ms** of the ~9,500ms; bundling 205 → 1 buys
+  > ~2% and still executes the same code on the same thread. The queue time is a
+  > symptom of main-thread contention, not a cause. What remains is the work each
+  > of **234** modules does at boot over a real store. The budget regex also only
+  > watched **164 of 234** until b596 widened it.
 - **ON-mode (extension).** Root cause is frame **qualification**, not selection:
   12 frames answer enumerate, only the enterprise inbox returns ok, and the real
   chart frame (stable 40/40 samples, 22 rows of `li.encounter-list-item`) is

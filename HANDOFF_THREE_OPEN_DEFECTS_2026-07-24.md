@@ -86,9 +86,19 @@ cold ~80s · warm ~26s
 
 **Root cause.** Not the network, not the server, not the cache, not auth — every file is already local and arrives in 4ms. The cost is 152 separate cached scripts requested at once, each round-tripping the service worker, then parsed and executed **serially on the main thread**. The browser is queued behind itself.
 
-**Where the fix goes.** Bundle the feature scripts, or defer everything the first screen doesn't need. Highest blast radius in the product — full gate plus live-tab verification, no blind change.
+**Where the fix goes.** ~~Bundle the feature scripts, or defer everything the first screen doesn't need.~~ Highest blast radius in the product — full gate plus live-tab verification, no blind change.
+
+> 🛑 **SUPERSEDED AT b596 — DO NOT BUNDLE. Read `HANDOFF_2026-07-25_THREE_DEFECTS_RESULT.md` before touching the boot path.**
+>
+> The recommendation above is wrong, and it was measured wrong rather than argued wrong. Re-fetching the SAME 205 cached assets through the SAME service worker on the SAME running page with the main thread **idle**: 150 in parallel = 124ms total (0.83ms/request); sequential = 3.11ms/request; projected for 205 ≈ **170ms**. At boot those identical requests span 9,543ms with a 5,659ms median queue — **56×**.
+>
+> So the transfer is ~170ms of ~9,500ms. **Bundling 205 → 1 buys ~2%**, and the bundle still executes the same code on the same thread. The queue time is a *symptom* of main-thread contention, not a cause, and the 0-byte/2-second signature that reads as serialization is scripts waiting on a busy thread, not paying for transfer.
+>
+> What is actually left is the **work each of 234 modules does at boot over a real store** — 1,481 patients, 2,166 visits, 471KB, 1.74MB localStorage, 8,154 DOM nodes. `getPatients()` is memoized (0.1ms first call, 0ms after), so it is not repeated store parsing.
 
 > ⚠️ **The boot budget test I added measures BUNDLING ONLY.** It counts unique `feat_mls_*.js` names in `mls-connect.js`. If you defer instead of bundling, every name stays, the count stays 164, and it reports zero progress on a change that could halve boot time. The floor would never trip either. Extend it with a second measurement — *scripts requested before first paint* — which is what deferral actually moves.
+>
+> **Also corrected at b596:** that regex matched **164 of 234** scripts — it missed the entire `feat_athena_*` family (24), plus `feat_visit*`, `feat_opnote_*`, `feat_autosave`, `feat_save_verify`, `feat_task3_*`. A ceiling with a 30% blind spot could not do the job the file claimed. Now widened, with a second arm counting eagerly-inserted scripts.
 
 ---
 
