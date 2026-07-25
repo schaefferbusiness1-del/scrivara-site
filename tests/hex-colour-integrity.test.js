@@ -42,16 +42,35 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
-  '#4B564F': 1,   // "b581"
-  '#d8b574': 8,   // "b581"
+  '#4B564F': 1,   // "b564"
+  '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"
   '#5b7186': 19,  // "b718"
   '#6b7280': 5,   // "b728"
   '#6B756E': 1,   // "b756"
-  '#B07636': 42,  // "b763"
+  '#B07636': 42,  // "b076"
   '#6b7684': 1,   // "b768"
   '#b9770a': 6,   // "b977"
 };
+
+/* The annotations above have rotted before: successive blanket build bumps
+   rewrote the b564 and b574 comments to b581 — which is exactly the defect
+   this file exists to prevent, committed against the file that prevents it.
+   Nobody noticed, because a comment cannot fail a suite. Now it can: each
+   annotation is checked against the hex it describes. */
+{
+  const src = fs.readFileSync(__filename, 'utf8');
+  const documented = src.match(/'#[0-9a-fA-F]{6}':\s*\d+,\s*\/\/\s*"b\d{3}"/g) || [];
+  assert(documented.length >= 8,
+    'PREEXISTING annotations disappeared; found ' + documented.length);
+  for (const line of documented) {
+    const hex = line.match(/'(#[0-9a-fA-F]{6})'/)[1];
+    const said = line.match(/"(b\d{3})"/)[1].toLowerCase();
+    const real = (hex.match(BUILD_TOKEN_IN_HEX) || [''])[0].toLowerCase();
+    assert(said === real, 'hex ' + hex + ' is annotated "' + said + '" but actually contains "' +
+      real + '". A build bump rewrote the comment: bump pins, never prose.');
+  }
+}
 
 function currentBuildToken() {
   const raw = JSON.parse(fs.readFileSync(path.join(ROOT, 'app-version.json'), 'utf8'));
