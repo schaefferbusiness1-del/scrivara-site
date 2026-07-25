@@ -968,6 +968,51 @@ async function addPatient(page, name, dob) {
     try { await pp.close(); } catch (e) {}
   }
 
+  await step('phone: losing the network says so, instead of rendering a normal app', async () => {
+    const op = await newPhonePage(PHONE_VIEWPORTS[0]);
+    try {
+      const read = () => op.evaluate(() => {
+        const b = document.getElementById('mlsOfflineBar');
+        if (!b) return { present: false };
+        const cs = getComputedStyle(b);
+        return {
+          present: true, display: cs.display,
+          role: b.getAttribute('role'), live: b.getAttribute('aria-live'),
+          text: (b.textContent || '').trim(),
+          onLine: navigator.onLine
+        };
+      });
+
+      const online = await read();
+      assert.strictEqual(online.display, 'none',
+        'the offline notice must be hidden while the network is up (got display=' + online.display + ')');
+
+      /* Real offline, driven through CDP — not a synthetic event. */
+      await op.setOfflineMode(true);
+      await sleep(600);
+      const offline = await read();
+      assert.strictEqual(offline.onLine, false, 'CDP offline mode did not reach navigator.onLine');
+      assert.strictEqual(offline.display, 'block',
+        'a phone with a dead uplink still rendered a complete, normal app with no offline notice');
+      assert(/offline/i.test(offline.text), 'the notice must say the app is offline: ' + offline.text);
+      assert(/sync/i.test(offline.text),
+        'the notice must say work will not sync — that is the part a clinician acts on');
+      assert.strictEqual(offline.role, 'status', 'the notice must be role=status');
+      assert.strictEqual(offline.live, 'polite',
+        'aria-live must be polite so it is announced without stealing focus from typing');
+
+      /* …and it must clear itself, or it becomes a permanent false alarm. */
+      await op.setOfflineMode(false);
+      await sleep(600);
+      const back = await read();
+      assert.strictEqual(back.display, 'none',
+        'the offline notice did not clear when the network returned');
+    } finally {
+      try { await op.setOfflineMode(false); } catch (e) {}
+      try { await op.close(); } catch (e) {}
+    }
+  });
+
   /* NOTE: do not restore a desktop viewport here. Leaving isMobile:true makes
      puppeteer reload the page, which raises the app's beforeunload guard; the
      dismissed dialog cancels the navigation and surfaces as a bogus 30s

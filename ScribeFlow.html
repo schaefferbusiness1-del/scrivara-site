@@ -28214,5 +28214,80 @@ function _ptGroupSort(mode){
   };
 })();
 </script>
+<script>
+/* ===== ph-offline-1.1.0 — say so when the network is gone ===================
+ * Verified at b621: `navigator.onLine` appeared ZERO times in the entire front
+ * end. With ~205 assets precached by the service worker, a phone with a dead
+ * uplink renders a COMPLETE, normal, responsive app — so a clinician can open a
+ * chart, dictate a visit and tap Send believing all of it is syncing. For a
+ * clinical product that is the worst available failure mode: silent, confident,
+ * and only discovered later.
+ *
+ * Honesty about the signal itself: navigator.onLine === false is RELIABLE (no
+ * interface, definitely offline). navigator.onLine === true is NOT a promise
+ * that the backend is reachable — it only means a network interface exists. So
+ * this announces the reliable negative and never claims the positive; it says
+ * "offline", it does not say "connected".
+ *
+ * Deliberately in the shell rather than a new feat_*.js: boot-script-budget
+ * caps the loader at exactly 234 modules, and counts observers/intervals across
+ * every root feat_*.js whether loaded or not. This adds neither a module, nor
+ * an interval, nor an observer — two event listeners and one node.
+ * Reversible: window.__mlsOffline.revert(). */
+(function () {
+  if (window.__mlsOffline) return;
+  var BAR_ID = 'mlsOfflineBar';
+  var api = { installed: true, version: 'ph-offline-1.1.0' };
+  window.__mlsOffline = api;
+
+  function bar() {
+    var b = document.getElementById(BAR_ID);
+    if (b) return b;
+    b = document.createElement('div');
+    b.id = BAR_ID;
+    /* role=status + aria-live so a screen reader announces the change without
+       stealing focus from whatever the clinician is typing into. */
+    b.setAttribute('role', 'status');
+    b.setAttribute('aria-live', 'polite');
+    b.style.cssText = [
+      'position:fixed', 'left:0', 'right:0', 'top:0', 'z-index:99998',
+      'display:none', 'box-sizing:border-box',
+      'padding:10px 14px', 'padding-top:calc(10px + env(safe-area-inset-top,0px))',
+      'background:#8A5A00', 'color:#fff',
+      'font:600 13.5px/1.4 "Public Sans",system-ui,-apple-system,sans-serif',
+      'text-align:center', 'box-shadow:0 1px 6px rgba(0,0,0,.22)'
+    ].join(';');
+    (document.body || document.documentElement).appendChild(b);
+    return b;
+  }
+
+  function paint() {
+    try {
+      /* Only the reliable negative. Absent API => assume online, never warn. */
+      var off = (typeof navigator.onLine === 'boolean') ? navigator.onLine === false : false;
+      var b = bar();
+      if (!off) { b.style.display = 'none'; b.textContent = ''; return; }
+      b.textContent = 'You are offline. MLS is showing the last data saved on this device. '
+        + 'Nothing you type will sync, and pulling, sending and signing are unavailable until the connection returns.';
+      b.style.display = 'block';
+    } catch (e) {}
+  }
+
+  try { window.addEventListener('online', paint, false); } catch (e) {}
+  try { window.addEventListener('offline', paint, false); } catch (e) {}
+  if (document.readyState === 'loading') {
+    try { document.addEventListener('DOMContentLoaded', paint, false); } catch (e) {}
+  } else { paint(); }
+
+  api.paint = paint;
+  api.isOffline = function () { return navigator.onLine === false; };
+  api.revert = function () {
+    try { window.removeEventListener('online', paint, false); } catch (e) {}
+    try { window.removeEventListener('offline', paint, false); } catch (e) {}
+    try { var b = document.getElementById(BAR_ID); if (b) b.remove(); } catch (e) {}
+    try { delete window.__mlsOffline; } catch (e) { window.__mlsOffline = null; }
+  };
+})();
+</script>
 </body>
 </html>

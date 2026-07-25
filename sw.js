@@ -173,8 +173,31 @@ function isSafeCacheUrl(urlLike) {
   return pathname === '/' || STATIC_SHELL_PATHS.has(pathname);
 }
 
+/* ph-offline-1.0.0 (2026-07-25, phone lane): mode flags that carry NO
+ * capability and may therefore still resolve to the cached shell offline.
+ *
+ * Why this exception exists at all: `?phone=1` is the exact URL the pairing QR
+ * and the setup email hand to a phone (mls-connect.js PHONE_URL). Because every
+ * query previously failed closed here, that one URL was a browser error page
+ * offline while the BYTE-IDENTICAL /ScribeFlow.html sat in the cache — the one
+ * address we tell phones to use was the one address that could not open.
+ *
+ * The exception is deliberately a whitelist of exact strings, not a relaxation:
+ *   - it is secret-free. Contrast /appointment.html?token=, /booking.html?code=,
+ *     /intake.html?invite=, /patient-portal.html?token= — all still fail closed,
+ *     and ?demo=1 stays closed too (it selects a different data universe).
+ *   - it changes nothing about behaviour: __mlsPhoneHome persists phone mode in
+ *     sessionStorage, so the served shell resolves to the same UI.
+ *   - it is READ-ONLY. isSafeCacheUrl still rejects every query, so the query
+ *     URL is never written to the cache and purgeUnsafeCacheEntries still
+ *     removes any that somehow appears.
+ * ?phone=0 is included because it is the documented escape hatch back to the
+ * full app; failing it closed offline is the same defect mirrored. */
+const SAFE_SHELL_QUERIES = new Set(['?phone=1', '?phone=0']);
+
 function offlineShellKey(url) {
-  if (!url || url.search) return '';
+  if (!url) return '';
+  if (url.search && !SAFE_SHELL_QUERIES.has(url.search)) return '';
   const pathname = normalizedPath(url.href);
   if (pathname === '/') return '/index.html';
   if (pathname === '/index.html') return '/index.html';
@@ -297,11 +320,18 @@ self.addEventListener('fetch', (e) => {
       return networkResponse;
     })
     .catch(() => {
-      if (!isSafeCacheUrl(url)) return Response.error();
+      /* ph-offline-1.0.0: a NAVIGATION whose only query is a secret-free mode
+         flag (SAFE_SHELL_QUERIES) may still fall back to the cached shell, even
+         though isSafeCacheUrl rejects it for caching purposes. Read-only: the
+         query URL itself is never stored. */
+      const shellKey = isNav ? offlineShellKey(url) : '';
+      if (!isSafeCacheUrl(url)) {
+        if (!shellKey) return Response.error();
+        return caches.match(shellKey).then((shell) => shell || Response.error());
+      }
       return caches.match(req).then((cached) => {
         if (cached) return cached;
         if (!isNav) return Response.error();
-        const shellKey = offlineShellKey(url);
         return shellKey ? caches.match(shellKey).then((shell) => shell || Response.error()) : Response.error();
       });
     });

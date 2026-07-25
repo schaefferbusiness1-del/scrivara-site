@@ -1,16 +1,18 @@
 {
+  "id": "/ScribeFlow.html",
   "name": "MLS — AI Medical Scribe",
   "short_name": "MLS",
   "description": "AI medical scribe and lightweight EMR for spine, PM&R and pain practices.",
-  "start_url": "ScribeFlow.html",
-  "scope": "./",
+  "start_url": "/ScribeFlow.html",
+  "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#ffffff",
-  "theme_color": "#2563eb",
+  "background_color": "#F7F5EF",
+  "theme_color": "#2E6A4B",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
   ]
 }

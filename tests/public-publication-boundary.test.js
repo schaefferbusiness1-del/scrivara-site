@@ -598,6 +598,30 @@ async function verifyServiceWorkerRuntime() {
     const response = await runFetch(origin + sensitiveUrl, { mode: 'navigate', accept: 'text/html' });
     assert.strictEqual(response.status, 0, `sensitive/query workflow must fail closed offline: ${sensitiveUrl}`);
   }
+
+  /* ph-offline-1.0.0 (2026-07-25, phone lane): the ONE query that may resolve.
+   * ?phone=1 is the exact URL the pairing QR and the setup email hand to a
+   * phone (mls-connect.js PHONE_URL). Every query used to fail closed here, so
+   * that address was a browser error page offline while the byte-identical
+   * /ScribeFlow.html sat in the cache — the one URL we tell phones to use was
+   * the one URL that could not open. It is secret-free (contrast ?token=,
+   * ?code=, ?invite=, and ?demo=1, all asserted closed above) and behaviourally
+   * identical, since phone mode persists in sessionStorage. */
+  for (const modeUrl of ['/ScribeFlow.html?phone=1', '/ScribeFlow.html?phone=0']) {
+    const modeResponse = await runFetch(origin + modeUrl, { mode: 'navigate', accept: 'text/html' });
+    assert.strictEqual(modeResponse.status, 200,
+      `secret-free phone mode flag must resolve to the cached shell offline: ${modeUrl}`);
+  }
+  /* …and the allowance must be READ-ONLY: the query URL is never cached. */
+  const afterModeKeys = (await (await cacheApi.open('mls-v170')).keys()).map((r) => r.url);
+  assert(!afterModeKeys.some((u) => /ScribeFlow\.html\?phone=/.test(u)),
+    'the phone mode flag must never be written to the cache — only read back from the plain shell');
+  /* A near-miss must NOT be waved through: the whitelist is exact strings. */
+  for (const nearMiss of ['/ScribeFlow.html?phone=1&token=synthetic-h', '/ScribeFlow.html?phone=2']) {
+    const missResponse = await runFetch(origin + nearMiss, { mode: 'navigate', accept: 'text/html' });
+    assert.strictEqual(missResponse.status, 0,
+      `only the exact secret-free mode flags may resolve offline: ${nearMiss}`);
+  }
   for (const retiredUrl of [
     '/easy-book.html',
     '/legal-connect.html?code=synthetic-d',

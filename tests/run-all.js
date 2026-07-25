@@ -320,7 +320,8 @@ const tests = [
   'calm-shell-generic-naming-scope.test.js',
   'settings-preview-commit-contract.test.js',
   'calm-shell-return-path.test.js',
-  'phone-capture-survival.test.js'
+  'phone-capture-survival.test.js',
+  'phone-install-contract.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
