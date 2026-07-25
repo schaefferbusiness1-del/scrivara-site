@@ -3234,7 +3234,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal-bg" id="settingsModal">
+<div class="modal-bg" id="settingsModal" role="dialog" aria-modal="true" aria-label="Settings">
   <div class="modal">
     <button class="modal-x" onclick="closeSettings()">×</button>
     <h3>⚙️ Settings</h3>
@@ -3769,7 +3769,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- VIEW NOTE MODAL (history) -->
-<div class="modal-bg" id="viewModal">
+<div class="modal-bg" id="viewModal" role="dialog" aria-modal="true" aria-label="Saved visit">
   <div class="modal" style="max-width:680px">
     <button class="modal-x" onclick="closeView()">×</button>
     <h3 id="viewTitle">📄 Saved visit</h3>
@@ -3783,7 +3783,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- Retired browser countersign surface retained only as a safe explanatory target. -->
-<div class="modal-bg" id="countersignModal">
+<div class="modal-bg" id="countersignModal" role="dialog" aria-modal="true" aria-label="Countersign the Business Associate Agreement">
   <div class="modal" style="max-width:680px">
     <button class="modal-x" onclick="closeCountersign()">×</button>
     <h3>🖋️ Countersign the Business Associate Agreement</h3>
@@ -3803,7 +3803,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- TEMPLATES MODAL (optional output-formatting templates) -->
-<div class="modal-bg" id="templatesModal">
+<div class="modal-bg" id="templatesModal" role="dialog" aria-modal="true" aria-label="Templates">
   <div class="modal" style="max-width:960px">
     <button class="modal-x" onclick="closeTemplates()">×</button>
     <h3>📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></h3>
@@ -3912,7 +3912,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
      The doctor describes any card; AI designs a SPEC (emoji/title/description/
      per-visit prompt/format) — never code. Saved widgets render as real
      extra-cards and auto-fill on every Generate. -->
-<div class="modal-bg" id="widgetBuilderModal">
+<div class="modal-bg" id="widgetBuilderModal" role="dialog" aria-modal="true" aria-label="Custom widget builder">
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeWidgetBuilder()">×</button>
     <h3>🧩 Custom widget builder <span style="font-weight:400;font-size:14px;color:var(--muted)">(your own auto-generated cards)</span></h3>
@@ -3999,7 +3999,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- MLS HELP — in-app "how do I / where is" assistant -->
-<div class="modal-bg" id="helpModal">
+<div class="modal-bg" id="helpModal" role="dialog" aria-modal="true" aria-label="MLS Help">
   <div class="modal" style="max-width:620px">
     <button class="modal-x" onclick="closeMlsHelp()">×</button>
     <h3>❓ MLS Help <span style="font-weight:400;font-size:14px;color:var(--muted)">— ask how to do anything</span></h3>
@@ -4017,7 +4017,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- SET UP YOUR PRACTICE — first-run guided onboarding wizard -->
-<div class="modal-bg" id="setupModal">
+<div class="modal-bg" id="setupModal" role="dialog" aria-modal="true" aria-label="Set up your practice">
   <div class="modal" style="max-width:660px">
     <button class="modal-x" onclick="closeSetup()">×</button>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -4113,7 +4113,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- MLS additive — OPTIONAL LEGAL MODAL (medical-legal report builder) -->
-<div class="modal-bg" id="legalModal">
+<div class="modal-bg" id="legalModal" role="dialog" aria-modal="true" aria-label="Medical-legal report">
   <div class="modal" style="max-width:680px">
     <button class="modal-x" onclick="closeLegal()">×</button>
     <h3>⚖️ Medical-legal report <span style="font-weight:400;font-size:14px;color:var(--muted)">(attorney request → formal report)</span></h3>
@@ -4181,7 +4181,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 <!-- MLS additive — FILL-IN-THE-BLANKS for a medical-legal report. Instead of leaving
      [bracketed placeholders], the doctor is asked for each piece of missing info and it
      is substituted into the report. -->
-<div class="modal-bg" id="legalFillModal">
+<div class="modal-bg" id="legalFillModal" role="dialog" aria-modal="true" aria-label="Complete the report">
   <div class="modal" style="max-width:640px">
     <button class="modal-x" onclick="closeLegalFill()">×</button>
     <h3>✏️ Complete the report</h3>
@@ -4195,7 +4195,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- TEAM PATIENT (READ-ONLY) MODAL -->
-<div class="modal-bg" id="teamPtModal">
+<div class="modal-bg" id="teamPtModal" role="dialog" aria-modal="true" aria-label="Patient — read-only">
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeTeamPt()">×</button>
     <h3 id="teamPtTitle">🗃️ Patient — read-only</h3>
@@ -4242,7 +4242,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- DOCUMENT VIEW MODAL -->
-<div class="modal-bg" id="docModal">
+<div class="modal-bg" id="docModal" role="dialog" aria-modal="true" aria-label="Document">
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeDocModal()">×</button>
     <h3 id="docTitle">📄 Document</h3>
@@ -4266,7 +4266,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- SHARE / EXPORT MODAL -->
-<div class="modal-bg" id="shareModal">
+<div class="modal-bg" id="shareModal" role="dialog" aria-modal="true" aria-label="Share / Export patient record">
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeShareModal()">×</button>
     <h3>📤 Share / Export patient record</h3>
@@ -27845,7 +27845,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b615';
+  window.__MLS_AV='b616';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
