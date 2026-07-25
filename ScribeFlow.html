@@ -28281,11 +28281,155 @@ function _ptGroupSort(mode){
 
   api.paint = paint;
   api.isOffline = function () { return navigator.onLine === false; };
+  api.barId = BAR_ID;
   api.revert = function () {
     try { window.removeEventListener('online', paint, false); } catch (e) {}
     try { window.removeEventListener('offline', paint, false); } catch (e) {}
     try { var b = document.getElementById(BAR_ID); if (b) b.remove(); } catch (e) {}
     try { delete window.__mlsOffline; } catch (e) { window.__mlsOffline = null; }
+  };
+})();
+</script>
+<script>
+/* ===== ph-a2hs-1.0.0 — get MLS onto the home screen ========================
+ * `beforeinstallprompt` appeared ZERO times in the front end, and the only
+ * install-ish card in the app (mls-connect.js installPrompt) is the DESKTOP
+ * "put MLS on your phone" card — its `if (wantPhone()) return` is correct, you
+ * do not tell someone already holding their phone to go get their phone. So a
+ * clinician standing on the phone app had nothing at all telling them it could
+ * BE an app.
+ *
+ * The two platforms need genuinely different things, and pretending otherwise
+ * is how you end up naming a route that does not exist:
+ *   - Android/Chrome fires `beforeinstallprompt`; capture it and offer a real
+ *     button that calls prompt().
+ *   - iOS/Safari has NO such event and never will — installing is Share →
+ *     "Add to Home Screen". The only honest thing to offer there is that
+ *     instruction, naming the control the user can actually see.
+ *
+ * Shown only to a real handheld that is NOT already installed, and only once:
+ * a dismissal persists. Lives in the shell for the same reason as the offline
+ * notice — no new module against the 234 ceiling, no interval, no observer.
+ * Reversible: window.__mlsA2HS.revert(). */
+(function () {
+  if (window.__mlsA2HS) return;
+  var CARD_ID = 'mlsA2hsCard', SEEN = 'mls_a2hs_dismissed';
+  var deferred = null;
+  var api = { installed: true, version: 'ph-a2hs-1.0.0' };
+  window.__mlsA2HS = api;
+
+  function isStandalone() {
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+      if (navigator.standalone === true) return true;   /* iOS Safari */
+    } catch (e) {}
+    return false;
+  }
+  function isIOS() {
+    try {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+             (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+    } catch (e) { return false; }
+  }
+  function isHandheld() {
+    try {
+      if (isIOS()) return true;
+      return /Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
+             ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+    } catch (e) { return false; }
+  }
+  function dismissed() { try { return localStorage.getItem(SEEN) === '1'; } catch (e) { return false; } }
+  function remember() { try { localStorage.setItem(SEEN, '1'); } catch (e) {} }
+
+  function close() {
+    var c = document.getElementById(CARD_ID);
+    if (c && c.parentNode) c.parentNode.removeChild(c);
+  }
+
+  function show() {
+    if (!isHandheld() || isStandalone() || dismissed()) return;
+    if (document.getElementById(CARD_ID)) return;
+    if (!document.body) return;
+    /* Android without a captured prompt would leave a button that cannot do
+       anything — say nothing rather than offer a dead control. */
+    if (!isIOS() && !deferred) return;
+
+    var card = document.createElement('div');
+    card.id = CARD_ID;
+    card.setAttribute('role', 'note');
+    /* Clears the dock (bottom:8px, ~64px tall) and the home indicator. */
+    card.style.cssText = [
+      'position:fixed', 'left:8px', 'right:8px',
+      'bottom:calc(84px + env(safe-area-inset-bottom,0px))',
+      'z-index:99997', 'box-sizing:border-box',
+      'display:flex', 'align-items:center', 'gap:10px', 'flex-wrap:wrap',
+      'background:#F6FBF8', 'border:1px solid #D8E5DE', 'border-radius:12px',
+      'padding:12px 14px', 'box-shadow:0 6px 20px rgba(20,33,28,.14)',
+      'font:600 13.5px/1.4 "Public Sans",system-ui,-apple-system,sans-serif', 'color:#1A211C'
+    ].join(';');
+
+    var msg = document.createElement('span');
+    msg.style.cssText = 'flex:1 1 190px;min-width:0';
+    msg.textContent = isIOS()
+      ? 'Add MLS to your Home Screen: tap the Share button below, then “Add to Home Screen”.'
+      : 'Add MLS to your home screen for full-screen access.';
+    card.appendChild(msg);
+
+    if (!isIOS()) {
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.textContent = 'Add to Home Screen';
+      add.style.cssText = 'min-height:44px;min-width:44px;border:0;border-radius:10px;background:#2E6A4B;color:#fff;' +
+        'font:700 13.5px "Public Sans",system-ui,sans-serif;padding:0 14px;cursor:pointer';
+      add.addEventListener('click', function () {
+        var p = deferred; deferred = null;
+        if (!p) { close(); return; }
+        try {
+          p.prompt();
+          /* Either outcome ends the offer — accepted installs it, dismissed
+             means they said no and should not be asked again. */
+          if (p.userChoice && p.userChoice.then) p.userChoice.then(function () { remember(); close(); }, function () { close(); });
+          else { remember(); close(); }
+        } catch (e) { close(); }
+      });
+      card.appendChild(add);
+    }
+
+    var no = document.createElement('button');
+    no.type = 'button';
+    no.textContent = 'Not now';
+    no.setAttribute('aria-label', 'Not now — do not offer to add MLS to the home screen again');
+    no.style.cssText = 'min-height:44px;min-width:44px;border:1px solid #E4E1D8;border-radius:10px;background:#fff;' +
+      'color:#1A211C;font:600 13px "Public Sans",system-ui,sans-serif;padding:0 12px;cursor:pointer';
+    no.addEventListener('click', function () { remember(); close(); });
+    card.appendChild(no);
+
+    document.body.appendChild(card);
+  }
+
+  try {
+    window.addEventListener('beforeinstallprompt', function (e) {
+      try { e.preventDefault(); } catch (e2) {}
+      deferred = e;
+      show();
+    }, false);
+  } catch (e) {}
+  try {
+    window.addEventListener('appinstalled', function () { remember(); close(); }, false);
+  } catch (e) {}
+
+  function boot() { try { show(); } catch (e) {} }
+  if (document.readyState === 'loading') {
+    try { document.addEventListener('DOMContentLoaded', boot, false); } catch (e) {}
+  } else { boot(); }
+
+  api.cardId = CARD_ID;
+  api.show = show;
+  api.close = close;
+  api.eligible = function () { return isHandheld() && !isStandalone() && !dismissed(); };
+  api.revert = function () {
+    close();
+    try { delete window.__mlsA2HS; } catch (e) { window.__mlsA2HS = null; }
   };
 })();
 </script>

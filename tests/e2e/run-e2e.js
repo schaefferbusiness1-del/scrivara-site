@@ -968,6 +968,72 @@ async function addPatient(page, name, dob) {
     try { await pp.close(); } catch (e) {}
   }
 
+  await step('phone: an iPhone is told how to add MLS to the Home Screen, and "Not now" sticks', async () => {
+    const ip = await browser.newPage();
+    try {
+      const cdp = await ip.createCDPSession();
+      await cdp.send('Network.setBypassServiceWorker', { bypass: true });
+      ip.on('dialog', async d => { try { await d.accept(); } catch (e) {} });
+      /* A real iPhone UA: iOS has no beforeinstallprompt, so the ONLY correct
+         affordance is the Share -> Add to Home Screen instruction. */
+      await ip.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 ' +
+        '(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1');
+      await ip.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+      await ip.goto(APP, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await ip.evaluate(() => { try { localStorage.removeItem('mls_a2hs_dismissed'); } catch (e) {} });
+      await waitForAppSettled(ip);
+      await ip.evaluate(() => { try { window.__mlsA2HS && window.__mlsA2HS.show(); } catch (e) {} });
+      await sleep(400);
+
+      const card = await ip.evaluate(() => {
+        const c = document.getElementById('mlsA2hsCard');
+        if (!c) return { present: false };
+        const btns = [...c.querySelectorAll('button')].map((b) => {
+          const r = b.getBoundingClientRect();
+          return { txt: (b.textContent || '').trim(), w: Math.round(r.width), h: Math.round(r.height) };
+        });
+        const r = c.getBoundingClientRect();
+        return {
+          present: true, text: (c.textContent || '').trim(), buttons: btns,
+          right: Math.round(r.right), vw: document.documentElement.clientWidth
+        };
+      });
+      assert(card.present, 'an iPhone was offered no way to install MLS to the Home Screen');
+      assert(/Home Screen/i.test(card.text), 'the card must name the Home Screen: ' + card.text);
+      assert(/Share/i.test(card.text),
+        'on iOS the card must name the Share button — there is no beforeinstallprompt to offer instead');
+      assert(!/Add to Home Screen<\/button>|^Add to Home Screen$/.test((card.buttons[0] || {}).txt || ''),
+        'iOS must NOT get an install BUTTON — tapping it could do nothing, which is a dead control');
+      card.buttons.forEach((b) => {
+        assert(b.w >= 44 && b.h >= 44, 'install-card control under 44x44: "' + b.txt + '" ' + b.w + 'x' + b.h);
+      });
+      assert(card.right <= card.vw + 2, 'the install card overflows the viewport');
+
+      /* "Not now" must persist, or it becomes a nag on every single boot. */
+      await ip.evaluate(() => {
+        const c = document.getElementById('mlsA2hsCard');
+        const no = [...c.querySelectorAll('button')].find((b) => /not now/i.test(b.textContent || ''));
+        no.click();
+      });
+      await sleep(300);
+      const afterDismiss = await ip.evaluate(() => ({
+        gone: !document.getElementById('mlsA2hsCard'),
+        stored: localStorage.getItem('mls_a2hs_dismissed')
+      }));
+      assert(afterDismiss.gone, '"Not now" did not close the card');
+      assert.strictEqual(afterDismiss.stored, '1', '"Not now" did not persist — it would return on the next boot');
+
+      await ip.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+      await waitForAppSettled(ip);
+      await ip.evaluate(() => { try { window.__mlsA2HS && window.__mlsA2HS.show(); } catch (e) {} });
+      await sleep(400);
+      const returned = await ip.evaluate(() => !!document.getElementById('mlsA2hsCard'));
+      assert.strictEqual(returned, false, 'the install card came back after being dismissed');
+    } finally {
+      try { await ip.close(); } catch (e) {}
+    }
+  });
+
   await step('phone: losing the network says so, instead of rendering a normal app', async () => {
     const op = await newPhonePage(PHONE_VIEWPORTS[0]);
     try {
