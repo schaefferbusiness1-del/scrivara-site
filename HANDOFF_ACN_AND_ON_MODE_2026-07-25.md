@@ -568,3 +568,76 @@ with its numbers.** That is what the staged build reports.
 `agent/ext-3.0.14-on-mode`, SHA-256 verified per file, gate 300/300, unpublished.
 Superseded folders removed so there is only one to load. Three steps in its
 README: load unpacked, paste a passive listener, run one pull.
+
+---
+
+## Recorded live evidence narrows Defect 1b from three gates to two
+
+`tests/live-e2e-artifacts/2026-07-21-reliability-acceptance.md` has been in the
+repo since the day of the athenaOne flip and is not cited anywhere in the
+ON-mode handoffs. It contains a live observation of the post-flip panel that
+settles two things I had only reasoned about.
+
+> "Remaining blocker at stop time: the new panel's PROGRESSIVE render
+> **satisfies every completeness check with its first 1-2 rows (real panel, real
+> identity, unique bindings, rendered==declared)** before the rest stream in, so
+> the reader binds a too-short index and per-row detail then fails."
+
+Same surface as today's defect — the same artifact describes the flip that
+produced it: the Visits panel became collapsible, and "the chart landing pane
+now clones `li.encounter-list-item` markup for a 1-2 row 'recent' list that
+hydrates FIRST".
+
+### 1. Gate 1 does not discriminate the landing pane — confirmed, not inferred
+
+"**real panel**" in that sentence means the panel check passed *on the landing
+pane*. I had argued from the source that an 8-ancestor, 6,000-character text
+scan probably could not tell the two apart. It is not "probably": on
+2026-07-21, on this exact surface, it did not.
+
+Everything the earlier addendum says about sequencing therefore stands on a
+measurement rather than an argument. **Relaxing gate 2 or 3 before gate 1 is
+structural would re-create the exact failure this artifact records** — an index
+of 1–2 rows accepted as a complete history.
+
+### 2. Gate 1 is very unlikely to be the gate refusing today
+
+Gate 1 is recorded *passing* on this surface. That makes it the least likely of
+the three to be the one refusing now, and narrows the live reading's job from
+three candidates to two: `visits-total-not-readable` and
+`visits-list-still-rendering`. Both are completeness checks, and both were added
+*as the fix for what this artifact describes*.
+
+### 3. The three gates ARE the 3.0.2 fix, now over-refusing
+
+The artifact's queued fix direction reads:
+
+> "require the rendered row count to be STABLE across two consecutive polls AND
+> reconcile with the panel's 'All Events (N)' total before accepting the index."
+
+That is precisely what gates 2 and 3 plus the caller's `ehStableCount` check now
+do. So this is not an unexplained refusal — it is a guard built for
+accept-too-early, now failing in the opposite direction after the panel changed
+again. That reframes the fix: not "why is the reader broken", but "the
+completeness proof this guard depends on is no longer available on this panel,
+and the panel-identity check underneath it was never load-bearing enough to
+stand alone".
+
+Which of the two remaining gates loses that proof — the label not rendering at
+all, or rendering a total the encounter list can never reach — is the one fact
+the pull returns, and 3.0.17 now reports both with their numbers.
+
+### What this does not change
+
+It does not make the fix guessable. Gate 2 failing needs the label's new markup;
+gate 3 failing needs to know whether the declared total is unreachable or merely
+late. Those are different changes and the evidence distinguishes them. But the
+*shape* of the eventual fix is now fixed by measurement rather than judgement:
+
+1. give gate 1 structural identity, because it demonstrably cannot carry the
+   discrimination on its own;
+2. then let stability replace whichever completeness proof the panel stopped
+   providing.
+
+Doing (2) without (1) is not a risk any more. It is a known regression with a
+date on it.
