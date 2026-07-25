@@ -180,7 +180,7 @@ assert(rl.includes('targetDeviceId: targetDeviceId'), 'phone jobs are not target
 assert(rl.includes('(presence && presence.officeId)'), 'phone does not take the target from presence.officeId');
 /* frozen date/provider + requestId travel; the phone verifies the echo */
 assert(rl.includes("dedupeKey: 'pullDay|' + date + '|'"), 'duplicate commands are not deduped server-side');
-/* Pin moved deliberately at b657 (rl-2.0.2 N4), not relaxed. The frozen trio is
+/* Pin moved deliberately at b659 (rl-2.0.2 N4), not relaxed. The frozen trio is
    still asserted verbatim; it simply became a named object so the requesting
    device's "Full visit notes" choice could be added WITHOUT it. That choice has
    to travel because the importer otherwise reads pullVisitBodies from the

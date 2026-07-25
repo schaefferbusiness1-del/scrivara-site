@@ -84,7 +84,7 @@ const ROOT = path.resolve(__dirname, '..');
 const LOADER = 'mls-connect.js';
 
 /* arm A - request count */
-/* 234 -> 235 at b657, deliberately, for feat_mls_voice_cluster.js.
+/* 234 -> 235 at b659, deliberately, for feat_mls_voice_cluster.js.
  *
  * Raised rather than dodged, and here is the why this file asks for:
  *   - It is the FIRST module in this loader that is NOT eager. It loads on
