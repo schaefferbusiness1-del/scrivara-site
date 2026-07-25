@@ -27716,7 +27716,17 @@ function initTooltips(){
     if(e.pointerType!=='touch'&&e.pointerType!=='pen') return;
     lpShown=false;
     var r=find(e.target); if(!r) return;
-    lpEl=r[0]; lpText=r[1]; lpX=e.clientX; lpY=e.clientY;
+    lpEl=r[0];
+    /* Never instruct a gesture this device cannot perform. The calendar chips
+       say "Click for details · drag to reschedule", but HTML5 drag-and-drop does
+       not fire for touch input and these chips have no touch-drag fallback — so
+       on a phone the drag half named a route that does not exist. The TAP half
+       is real (calChipOpen / calApptPeek), so show only that. */
+    lpText=String(r[1]||'')
+      .replace(/\s*[·|-]\s*drag[^·|]*/i,'')
+      .replace(/\bClick\b/g,'Tap')
+      .trim();
+    lpX=e.clientX; lpY=e.clientY;
     lpTimer=setTimeout(function(){
       lpTimer=null;
       if(!lpEl) return;

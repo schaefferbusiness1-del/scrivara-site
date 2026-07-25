@@ -1024,8 +1024,15 @@ async function addPatient(page, name, dob) {
       assert.strictEqual(held.display, 'block',
         'long-pressing ' + target.id + ' showed no explanation — on touch there is no other route, ' +
         'because every title is stripped and the hover tip is cancelled by pointerdown');
-      assert(held.text && target.tip.indexOf(held.text.slice(0, 20)) === 0,
-        'the explanation did not match the control: shown="' + held.text + '" expected="' + target.tip + '"');
+      assert(held.text, 'the explanation was empty');
+      /* It must never instruct a gesture this device cannot perform. HTML5
+         drag-and-drop does not fire for touch, and the calendar chips have no
+         touch-drag fallback, so "drag to reschedule" on a phone names a route
+         that does not exist. */
+      assert(!/\bdrag\b/i.test(held.text),
+        'a touch device was told to drag: "' + held.text + '"');
+      assert(!/\bclick\b/i.test(held.text),
+        'a touch device was told to click rather than tap: "' + held.text + '"');
 
       /* 3) Lifting must not ALSO press the control. Holding a destructive
             control to ask what it does must never perform it. */
