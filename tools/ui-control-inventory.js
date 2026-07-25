@@ -199,10 +199,22 @@ function collect(file) {
     const aria = attr(attrs, 'aria-label');
     const text_ = cleanLabel(label) || cleanLabel(aria) || cleanLabel(title) || domId;
     if (!text_) return;
+    /* `label` is what the control LOOKS like: visible text first, falling back
+     * to aria-label/title only when there is no text. The accessible name is
+     * the opposite precedence — aria-label WINS over text — so the two differ
+     * exactly where a control was disambiguated for a screen reader without
+     * changing what is on screen.
+     *
+     * Recorded separately rather than folded into `label`, for two reasons:
+     * five reach-map entries are keyed `view::label`, and a duplicate-name
+     * audit that reads `label` was reporting six controls as still colliding
+     * after they had been fixed — the receipt could not see its own repair. */
+    const accessible = cleanLabel(aria) || cleanLabel(label) || cleanLabel(title) || domId;
     const line = lineAt(index);
     push({
       id: domId || (slug(file) + '-' + line + '-' + (slug(text_) || kind)),
       label: text_,
+      accessibleName: accessible,
       title: cleanLabel(title),
       kind: kind,
       tag: tag.toLowerCase(),
