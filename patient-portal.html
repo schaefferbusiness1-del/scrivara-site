@@ -166,7 +166,10 @@
       <input id="p" name="password" type="password" autocomplete="current-password" required />
       <label for="d">Date of birth <span style="font-weight:400;color:#68736B;font-size:13px">— so we can be sure it's you</span></label>
       <input id="d" name="dob" type="date" required />
-      <div id="loginErr" class="err hide"></div>
+      <!-- b582: a patient who mistypes a password got the reason painted on
+           screen and never announced. role=alert matches intake.html's
+           convention for an error that blocks the action the user just took. -->
+      <div id="loginErr" class="err hide" role="alert" aria-live="assertive"></div>
       <button class="btn" id="loginBtn" type="submit">Sign in</button>
       <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;font-size:13.5px;color:#55605A">
         <input type="checkbox" id="showPw" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password
@@ -570,7 +573,7 @@
       +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
       +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="pwsErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="pwsErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
       +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
       +'<div style="font-size:12px;color:#55605A;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
       +'</div>';
@@ -663,7 +666,7 @@
       +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
       +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="mcErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<label style="display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:13px;color:#55605A"><input type="checkbox" style="width:auto;margin:0" onchange="mlsTogglePw(this.checked)"> Show password</label><div id="mcErr" role="alert" aria-live="assertive" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
       +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
     );
     function err(t){ var e=$("mcErr"); e.style.display="block"; e.textContent=t; }

@@ -249,7 +249,7 @@
       </div>
       <button class="btn btn-white" id="connectBtn" onclick="doConnect()">Connect</button>
       <div class="hint">On your computer, open MLS → Visit → <b>📱 Phone mic</b>. A 6-character code (and a QR) appears there. Type it above, or scan the QR to open this with the code already filled in.</div>
-      <div class="err" id="connectErr"></div>
+      <div class="err" id="connectErr" role="alert" aria-live="assertive"></div>
     </div>
   </div>
 
@@ -263,9 +263,9 @@
            visit recorded into a code that does not exist. -->
       <div class="pill" id="linkPill">📱 Code <b id="codeShown">----</b> · not confirmed yet</div>
       <button class="recBtn" id="recBtn" onclick="toggleRec()"><span class="ic" id="recIc">●</span><span id="recLabel">Record</span></button>
-      <div class="status" id="status">Tap to start recording</div>
+      <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true">Tap to start recording</div>
       <div class="meta" id="sent"></div>
-      <div class="err" id="recErr"></div>
+      <div class="err" id="recErr" role="alert" aria-live="assertive"></div>
       <!-- Revealed only when a code is rejected. Without it the recorder was a
            dead end: the page told the user to get a fresh code from their
            computer, with no field on the phone to type it into. -->

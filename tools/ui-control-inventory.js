@@ -2,7 +2,7 @@
 
 /* UI control inventory — slice S0 of UI_CHARTER_CALM_SHELL_2026-07-24.md.
  *
- * Walks ScribeFlow.html and every feat_*.js module and records EVERY control a
+ * Walks ScribeFlow.html, mls-connect.js and every feat_*.js module and records EVERY control a
  * doctor can reach: buttons, nav tabs, and any element carrying an inline
  * handler. The result is the receipt behind the owner's binding constraint —
  * "ease of use without losing any features". The Calm Shell relocates controls;
@@ -19,10 +19,17 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const APP_HTML = 'ScribeFlow.html';
+/* S7: mls-connect.js is 44,807 lines and defines hundreds of controls, and for
+ * twenty builds it was NOT walked here. That blind spot meant the "no features
+ * lost" receipt was silently partial: a control defined in mls-connect.js could
+ * be relocated or hidden by a shell and no suite would notice, which is exactly
+ * how one real regression reached the live app. It is a first-class control
+ * source, not a library. */
+const APP_CONNECT = 'mls-connect.js';
 const MANIFEST_PATH = path.join(ROOT, 'tests', 'fixtures', 'ui-control-manifest.json');
 
 function sourceFiles() {
-  const files = [APP_HTML];
+  const files = [APP_HTML, APP_CONNECT];
   for (const name of fs.readdirSync(ROOT)) {
     if (/^feat_.*\.js$/.test(name)) files.push(name);
   }

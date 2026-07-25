@@ -106,8 +106,37 @@
     if (d) return /^(block|flex|grid|list-item|table)/.test(d);
     return /^(SMALL|DIV|P|LI|SECTION)$/.test(n.tagName || '');
   }
-  function controlLabel(el) {
+  /* RECURSIVE, and that is the whole point. The first version flushed at a block
+     child and pushed `n.textContent` — the raw flattened text of that child's
+     ENTIRE subtree — so it separated exactly one level and re-welded everything
+     below it. Measured live at b581 on the patient header, which is two levels
+     deep:
+
+       .mlsctx-id[role=button]
+         span.mlsctx-av      flex   "SO"                    <- avatar initials
+         span.mlsctx-idtext  flex
+           span.mlsctx-name  block  "Sample Patient One"
+           span.mls-age-chip none   "Age 51 yrs"            <- hidden
+           span.mlsctx-meta  block  "51y F · DOB …"
+
+     One level of separation yields
+       "SO · Sample Patient OneAge 51 yrs51y F · DOB 01/15/1975 · MRN …"
+     which welds the patient's surname to a hidden chip and then to their sex —
+     in the patient header, announced to every screen-reader user. Recursing
+     gives "SO · Sample Patient One · 51y F · DOB …" and drops the hidden chip,
+     because the hidden test is applied at every depth rather than only the top.
+
+     The inline branch also guards its own boundary: an inline child whose text
+     abuts the preceding text with no whitespace in the markup ("8:10 AM" +
+     "Sample O.") is the same collision in a shape that never reaches the block
+     branch. A single space is the minimum honest repair there — these render on
+     one line, so ' · ' would claim a break the eye does not see.
+
+     Depth is capped so a pathological tree cannot recurse without bound; at the
+     cap it falls back to flattened text, which is what it always did. */
+  function controlLabel(el, depth) {
     if (!el || !el.childNodes || !el.childNodes.length) return textOf(el);
+    if (depth > 6) return normLabel(el.textContent);
     var segs = [], cur = '';
     function flush() { var s = normLabel(cur); if (s) segs.push(s); cur = ''; }
     for (var i = 0; i < el.childNodes.length; i++) {
@@ -116,8 +145,10 @@
       if (n.nodeType !== 1) continue;
       if ((n.tagName || '') === 'BR') { flush(); continue; }
       if (labelHidden(n)) continue;
-      if (labelBlocky(n)) { flush(); var t = normLabel(n.textContent); if (t) segs.push(t); continue; }
-      cur += String(n.textContent || '');
+      if (labelBlocky(n)) { flush(); var t = controlLabel(n, (depth || 0) + 1); if (t) segs.push(t); continue; }
+      var inlineText = String(n.textContent || '');
+      if (/\S$/.test(cur) && /^\S/.test(inlineText)) cur += ' ';
+      cur += inlineText;
     }
     flush();
     if (!segs.length) return textOf(el);
@@ -427,7 +458,11 @@
        label-derivation time - see controlLabel(). Do not add this rule back. */
     '#mlsRightNow button.primary{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
     '#mlsRightNow button.primary:hover{background:#357855}',
-    '#mlsRightNow .tools{margin-left:auto}',
+    /* .tools{margin-left:auto} lived here for the bar's own Tools chip, which
+       b582 removed as a duplicate of the dock's. Out-specifies the base
+       #mlsRightNow{display:flex} at (1,1,0) vs (1,0,0) — no !important, per the
+       rule that a second !important never wins a specificity race. */
+    '#mlsRightNow.empty{display:none}',
     '@keyframes mlsRise{to{opacity:1;transform:translateY(0)}}',
     '#mlsRightNow .note{font-size:12.5px;color:#8C978F}',
     '#mlsRightNow .seg{display:inline-flex;padding:3px;border-radius:12px;background:rgba(0,0,0,.045);gap:2px;margin-right:6px}',
@@ -1055,6 +1090,16 @@
 
     bar.innerHTML = '';
 
+    /* b582: with no actions AND no segmented tabs, this bar still rendered 59px
+       of chrome whose entire content was the word "Right now", the sentence
+       "Nothing to do here yet", and a Tools button that opened the very same
+       menu as the dock's Tools. An empty strip is not information. It hides,
+       and returns the moment an action exists. Segments are navigation, so a
+       bar that still has tabs keeps rendering even with no actions. */
+    var empty = !picked.length && sibs.length <= 1;
+    bar.classList.toggle('empty', empty);
+    if (empty) return;
+
     if (sibs.length > 1) {
       var seg = D.createElement('span');
       seg.className = 'seg';
@@ -1092,19 +1137,24 @@
       var b = D.createElement('button');
       b.type = 'button';
       b.textContent = p.as || controlLabel(p.el);
-      if (p.as) b.title = 'Runs "' + textOf(p.el) + '" on this screen';
+      /* controlLabel, not textOf: `as` re-labels the button, and this tooltip is
+         the only place the doctor is told which real control it runs. textOf
+         would put the welded string back into the one surface that exists to
+         explain the button — "Runs "Pull from AthenaOpens this patient's chart
+         in your signed-in Athena tab (read-on..." — hidden text and all. */
+      if (p.as) b.title = 'Runs "' + controlLabel(p.el) + '" on this screen';
       if (p.primary && i === 0) b.className = 'primary';
       b.style.animationDelay = (i * 45) + 'ms';
       b.addEventListener('click', function () { runControl(p.el); });
       bar.appendChild(b);
     });
 
-    var tools = D.createElement('button');
-    tools.type = 'button';
-    tools.className = 'tools';
-    tools.textContent = 'Tools';
-    tools.addEventListener('click', function (e) { openTools(e.currentTarget); });
-    bar.appendChild(tools);
+    /* The Tools chip that lived here was removed in b582. It was appended
+       unconditionally and called the same openTools() as the dock's Tools
+       button, so every screen in every mode carried two visible controls with
+       an identical label and identical behaviour — measured live at b581 as the
+       one remaining duplicate visible label. The dock's Tools is persistent and
+       is now the single route to that menu; nothing became unreachable. */
 
     if (hadFocus) {
       qsa('button', bar).some(function (b) {
@@ -1619,6 +1669,7 @@
     });
     qsa('.mls-dup').forEach(function (b) { b.classList.remove('mls-dup'); });
     safe(dropIdentityCards);
+    safe(dropControlNames);
     if (observer) safe(function () { observer.disconnect(); });
     if (idleTimer) clearTimeout(idleTimer);
     D.removeEventListener('mousemove', onMove, true);
@@ -1842,6 +1893,78 @@
     });
   }
 
+  /* ------------------------------------------------------------------
+     acn-1.0.0 — the name a control announces is the name it reads.
+
+     idc-1.0.0 fixed the accessible name of ONE shape: an .ez3-big whose label
+     splits on an em dash. The handoff's own lesson is that per-shape fixes do
+     not hold, and it was right — measured on the running page at b581, with a
+     patient active, every screen still announced:
+
+       .mlsctx-id   "SOSample Patient OneAge 51 yrs51y F · DOB 01/15/1975 …"
+       .ez3-qchip   "8:10 AMSample O."
+       #ez3Choose   "Choose patient2 on today's schedule"
+       .uc1-pay     "Pay Reports PREMIUMThis month's visits, coded and totaled…"
+
+     Every one of these LOOKS right — the colliding pieces are separate boxes on
+     separate lines — so no amount of looking at the screen finds them. They are
+     wrong only in the flat string, which is what a screen reader speaks, what
+     voice control matches, and what the Ask index and control inventory search.
+     "8:10 AMSample O." is the owner's original complaint exactly, still shipping
+     in a different shape, on a control that names a patient.
+
+     So the derived label is PUBLISHED rather than merely used: any composite
+     control whose flattened text differs from its derived label gets that label
+     as an explicit aria-label. Central, shape-independent, and it covers
+     controls added later without anyone remembering this rule exists.
+
+     Three constraints, each deliberate:
+     - Never overwrite an aria-label the app set. An explicit name is a decision
+       by whoever owns that control; this only fills a gap.
+     - The derived label always CONTAINS the visible words, in reading order, so
+       voice control ("click Pay Reports") keeps matching. This adds separators,
+       it never renames anything.
+     - Stamped with data-mls-acn so teardown removes exactly what it added and
+       the Classic escape hatch leaves no debris. */
+  /* This runs on every render pass, and a busy chart carries ~800 controls, so
+     the expensive half is gated behind a text signature. controlLabel calls
+     getComputedStyle per child — style resolution, not a free read — and
+     visible() forces layout. Both are skipped while a control's flat text is
+     unchanged, which is every pass after the first for all but the few controls
+     that actually re-rendered. Reading textContent costs no style or layout. */
+  function nameControls() {
+    if (!W.__mlsCalmShell.active) return;
+    qsa('button,[role="button"]').forEach(function (el) {
+      if (!el.children || !el.children.length) return;
+      var stamped = el.getAttribute('data-mls-acn');
+      if (el.getAttribute('aria-label') && !stamped) return;
+      var flat = normLabel(el.textContent);
+      if (el.__mlsAcnSig === flat) return;
+      if (el.closest && el.closest('#mlsDock,#mlsRightNow,#mlsToolsMenu,#mlsAskResults')) return;
+      if (!visible(el)) return;
+      el.__mlsAcnSig = flat;
+      var derived = controlLabel(el);
+      if (!derived || derived === flat || derived.length > 200) {
+        /* It agreed after all — drop a stamp from an earlier pass rather than
+           leave a stale name on a control that has since re-rendered. */
+        if (stamped) { el.removeAttribute('aria-label'); el.removeAttribute('data-mls-acn'); }
+        return;
+      }
+      el.setAttribute('aria-label', derived);
+      el.setAttribute('data-mls-acn', '1');
+    });
+  }
+
+  function dropControlNames() {
+    qsa('[data-mls-acn]').forEach(function (el) {
+      el.removeAttribute('aria-label');
+      el.removeAttribute('data-mls-acn');
+      /* Clear the signature too, or switching to Classic and back would leave
+         every control looking up-to-date and none of them named. */
+      el.__mlsAcnSig = null;
+    });
+  }
+
   function dropIdentityCards() {
     qsa('.mls-idcard').forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
     qsa('.ez3-big').forEach(function (btn) {
@@ -1880,6 +2003,10 @@
     safe(patientScreen);
     safe(contextBar);
     safe(identityCards);
+    /* After identityCards: that pass sets its own aria-label on the shapes it
+       splits, and nameControls must see the finished markup so it neither
+       overwrites that name nor re-derives one from a label mid-rewrite. */
+    safe(nameControls);
     safe(visitCalm);
   }
 
@@ -1892,7 +2019,15 @@
     stage: stageNow,
     render: renderNow,
     revert: teardown,
-    boot: boot
+    boot: boot,
+    /* Exported so label derivation can be checked on the RUNNING PAGE against
+       real markup and real computed styles — the one verification that counts.
+       The welding bug survived a build because it was confirmed by reading the
+       served file; a hand-rolled DOM cannot reproduce getComputedStyle on a
+       child of a display:none subtree, which is exactly what decides here.
+         __mlsCalmShell.label(document.getElementById('ptPullAthenaBtn'))
+       must read "Pull from Athena · READ-ONLY", never the tooltip. */
+    label: controlLabel
   };
 
   /* The app screen appears after auth; poll cheaply until it does, then stop.
