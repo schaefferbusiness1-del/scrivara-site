@@ -77,12 +77,31 @@ assert(/declaredEvents: evTotal/.test(stillRendering) && /renderedListItems: lis
 assert(/window\.__mlsEnumStab/.test(gates), 'row-count stability across passes must be recorded');
 assert(/sameFor=/.test(gates), 'the refusal must say how long the count has been unchanged');
 assert(/if \(evTotal <= 0\) \{/.test(gates), 'the mandatory-total rule must still be present');
-assert(!/stab\s*&&|prev\.n\s*>=|sameFor\s*>/.test(gates.replace(/'[^']*'/g, '')),
-  'stability must not yet be used as an acceptance condition — it is observation only until one live pull says what the numbers are');
+
+/* THIS SUITE ONCE ASSERTED THE OPPOSITE, and the change is the point.
+ *
+ * At 3.0.15-3.0.17 it required that stability be observation only: "it is
+ * observation only until one live pull says what the numbers are." That was the
+ * right constraint while the numbers were unknown — it stopped anyone promoting
+ * a guess into a clinical read path.
+ *
+ * The pull happened on 2026-07-25. Five patients, every one showing a panel
+ * settled 53s below a declared total that counts a different population
+ * (9/13, 9/11, 16/53, 22/41). So stability is now deliberately an acceptance
+ * condition, bounded by a dwell, and tests/enumerate-all-events-is-not-the-row-
+ * count.test.js owns that contract in full.
+ *
+ * What survives here is the half that is still true: the mandatory total must
+ * remain, because its PRESENCE is the landing-pane discriminator. */
+assert(/stabN >= 6 && stabMs >= 20000/.test(gates),
+  'stability is now an acceptance condition and must stay bounded by both a pass count and a dwell');
 
 /* ---- the stability counter is real code; run it. --------------------------- */
 
-const stabStart = gates.indexOf('        var stab = \'\';');
+/* Anchored on the declaration's stable prefix, not its full text: 3.0.18 added
+   `stabN`/`stabMs` to that same line when stability became load-bearing rather
+   than merely reported, and an exact-match bound broke against correct code. */
+const stabStart = gates.indexOf("        var stab = ''");
 const stabEnd = gates.indexOf('        if (evTotal <= 0) {');
 assert(stabStart > 0 && stabEnd > stabStart, 'stability block could not be bounded');
 
@@ -93,8 +112,16 @@ function runStability(samples) {
   for (const s of samples) {
     sandbox.__now = s.at;
     sandbox.listKids = s.kids;
-    vm.runInContext('(function(){ var listKids = this.listKids;\n' + gates.slice(stabStart, stabEnd) + '\nthis.out.push(stab); }).call(this)', sandbox);
+    /* 3.0.18 keys stability on the row count as well, so the lifted block needs
+       `g`. Absent it, the block's own try/catch swallowed the ReferenceError and
+       every sample came back ";stab?" — which read as "a growing list looks
+       stable" rather than as a broken harness. The guard below makes that
+       impossible to mistake again. */
+    sandbox.g = { rows: { length: s.rows != null ? s.rows : s.kids } };
+    vm.runInContext('(function(){ var listKids = this.listKids, g = this.g;\n' + gates.slice(stabStart, stabEnd) + '\nthis.out.push(stab); }).call(this)', sandbox);
   }
+  assert(!sandbox.out.some((x) => x === ';stab?'),
+    'the lifted stability block threw — the harness is missing a binding, not the product misbehaving');
   return sandbox.out;
 }
 
@@ -123,4 +150,4 @@ function runStability(samples) {
   assert.strictEqual(out[2], ';n=1;sameFor=0s', 'a landing pane that later grows must reset the counter');
 }
 
-console.log('PASS enumerate refusal evidence: all three qualification gates carry their numbers in the reason string, and row-count stability is measured across passes without yet gating acceptance');
+console.log('PASS enumerate refusal evidence: all three qualification gates carry their numbers in the reason string, and row-count stability now gates acceptance, bounded by a pass count and a dwell');

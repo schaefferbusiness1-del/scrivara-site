@@ -8622,21 +8622,65 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            re-enumerates every ~3.5s; a list that is really still rendering
            changes count between passes, and one that has stalled does not.
            Observation only - it gates nothing. */
-        var stab = '';
+        var stab = '', stabN = 0, stabMs = 0;
         try {
           var nowMs = Date.now();
+          /* Keyed on BOTH counts. A list whose child count holds steady while
+             rows convert to previous-visit is still changing shape. */
+          var shape = listKids + ':' + g.rows.length;
           var prev = window.__mlsEnumStab;
-          if (!prev || prev.count !== listKids) { prev = { count: listKids, first: nowMs, n: 1 }; }
+          if (!prev || prev.shape !== shape) { prev = { shape: shape, first: nowMs, n: 1 }; }
           else { prev.n++; }
           window.__mlsEnumStab = prev;
-          stab = ';n=' + prev.n + ';sameFor=' + Math.round((nowMs - prev.first) / 1000) + 's';
+          stabN = prev.n; stabMs = nowMs - prev.first;
+          stab = ';n=' + stabN + ';sameFor=' + Math.round(stabMs / 1000) + 's';
         } catch (eStab) { stab = ';stab?'; }
         if (evTotal <= 0) {
           /* Refuses FOREVER while the SHOW label is unreadable. Recorded, not changed. */
           return { ok: false, count: 0, score: 0, reason: 'visits-total-not-readable[rows=' + g.rows.length + ';kids=' + listKids + stab + ']' };
         }
+        var acceptedOnStability = false;
         if (listKids < evTotal) {
+          /* MEASURED 2026-07-25 on the owner's live signed-in chart, ext 3.0.17,
+             five consecutive patients:
+
+               rendered=9  declared=13  rows=7   stable 53s / 16 passes
+               rendered=9  declared=11  rows=7   stable 53s / 16 passes
+               rendered=16 declared=53  rows=14  stable 53s / 16 passes
+               rendered=22 declared=41  rows=20  stable 53s / 16 passes
+
+             rows === listKids - 2 on every one, and the declared total ranges
+             11 to 53 with no relation to either. No progressive render leaves
+             37 of 53 items unrendered for 53 seconds across 16 passes, each
+             with an openVisits re-drive in between.
+
+             So listKids >= evTotal is not a race, it is a CATEGORY ERROR - and
+             this file already says so, a few lines below:
+
+               "Athena's nearby declared count includes non-visit artifacts
+                sharing the list (future appointments, vitals and patient
+                cases). The exact previous-visit encounter rows are the
+                authoritative body count."
+
+             "All Events (N)" counts a population this <ul> never renders, so
+             the comparison is permanently unsatisfiable and every ON-mode
+             patient refuses: 5/5 on 2026-07-24, 5/5 again today.
+
+             WHAT THE TOTAL IS STILL FOR. Its PRESENCE is what proves this is
+             the real Visits panel and not the 1-2 row landing pane that clones
+             the same row markup - gate 1's text scan cannot tell them apart
+             (recorded PASSING on the landing pane, 2026-07-21 acceptance).
+             That check is untouched: evTotal <= 0 still refuses above. Only
+             the arithmetic changes, and only once the list has stopped moving.
+
+             Stability, not the count, is what proves completeness here: six
+             consecutive identical observations of BOTH counts spanning 20s+,
+             with an openVisits re-drive between each. The measured settle was
+             immediate and held 53s, so this is ~3x conservative. */
+          if (!(stabN >= 6 && stabMs >= 20000)) {
           return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ']', declaredEvents: evTotal, renderedListItems: listKids };
+          }
+          acceptedOnStability = true;
         }
       }
       if (!g) {
@@ -8673,7 +8717,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU) { return ''; } })(),
         median: g.median, withClick: g.withClick, strongRows: g.strongRows || 0,
         uniqueDates: g.uniqueDates || 0, richCount: 0, rows: rows,
-        indexComplete: uniqueBindings && rows.length === expectedCount
+        indexComplete: uniqueBindings && rows.length === expectedCount,
+        /* Downstream must be able to tell a count-verified index from one
+           accepted because the panel stopped moving. */
+        acceptedOnStability: acceptedOnStability,
+        declaredEvents: (typeof evTotal === 'number' ? evTotal : 0),
+        renderedListItems: (typeof listKids === 'number' ? listKids : 0)
       };
     }
     if (op === 'readExpanded') {
