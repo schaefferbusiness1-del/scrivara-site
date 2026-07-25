@@ -9,9 +9,11 @@ place it was *produced*. Everything below was measured on the running page.
 
 | defect | status |
 |---|---|
-| 3 — right-now bar welding | **FIXED and verified live.** Root cause was not textOf |
-| 2 — boot / "26s to log in" | **Reproduced and root-caused. NOT fixed.** The proposed fix would not have worked |
-| 1 — ON mode | **Not started.** Needs the owner's Athena session and a live pull |
+| 3 — right-now bar welding | **FIXED and verified live** (b590, re-verified b598). Root cause was not textOf |
+| 2 — boot / "26s to log in" | **Reproduced, and BOTH proposed fixes disproved by measurement. Still open.** Strongest remaining candidate is 60 document-wide observers + 214 intervals, now pinned by the gate |
+| 1 — ON mode | **Another lane owns it.** One owner action left: install 3.0.14, run one pull |
+
+Live at writing: **b598**, gate **298/298**.
 
 ---
 
@@ -174,9 +176,45 @@ The cost is the **work each module does at boot**, over a real store:
 repeated store parsing. It is what 234 modules each *do* with that data while the
 first screen is trying to paint.
 
-**Next measurement, and it has to come before any fix.** Attribute main-thread
-time *per module* with the tab genuinely in **front**. Two instruments are known
-not to work here and will waste a session each:
+### The strongest candidate, from source (b598)
+
+Per-module runtime attribution needs a **foreground browser window**, which
+automation cannot force — `document.hidden` was true on every attempt, and LoAF
+records nothing without animation frames. So the population was audited from
+source instead. Across the 250 feature modules:
+
+```
+ 60 document-wide subtree MutationObservers  (57 modules)
+214 setInterval pollers                      (169 modules)
+```
+
+A document-wide `subtree:true` observer reacts to **every DOM change made by
+every other module**. During boot all 234 are mutating, so the cost is
+`mutations × observers`, not per-module. This is the first hypothesis that
+explains both things single-module attribution could not:
+
+- **why no single script ever owns the blob** — three runs blamed three different
+  files because the work belongs to the observers reacting to everyone else,
+  not to whichever script happened to be executing
+- **why a background tab reads 1.4s** — the observers still fire; the style and
+  layout they dirty is never computed
+
+214 intervals never stop, which also explains a long task appearing ~22s after
+load with nothing left to boot.
+
+Pinned by arm C of `tests/boot-script-budget.test.js` (both ceilings
+negative-tested). `tests/interaction-performance-contract.test.js` already
+polices *named* modules for exactly these two constructs — arm C is the
+population-level pin so the total cannot grow while each addition looks
+individually reasonable.
+
+**This is a candidate, not a proven cause.** It needs the runtime confirmation
+below before anyone rewrites 57 observers.
+
+**Confirming measurement, and it has to come before any fix.** Attribute
+main-thread time *per module* with the tab genuinely in **front** — the Chrome
+window focused, not just the tab selected. Two instruments are known not to work
+here and will waste a session each:
 
 - load-event-gap attribution — three runs blamed three different files
 - `long-animation-frame` — returns nothing in a non-compositing pane, and the
@@ -200,16 +238,17 @@ and re-pinned to 234/200 on both arms. Caught by the QA lane, not by me.
 
 ---
 
-## Defect 1 — not started
+## Defect 1 — not mine; another lane has it
 
-Untouched. It needs extension **3.0.13** installed from
-`agent/ext-3.0.10-on-mode`, one real pull on the owner's signed-in Athena tab,
-and the `enum=` reason string read from the receipt. Judge by `coverageComplete`
-above zero on real patients, never by the frame being accepted. The safety item
-in the original handoff — exclude noise surfaces when *building* enumerate
-candidates, so a complete-looking index can never be believed while the reader is
-looking at the doctor's inbox — still stands on its own terms and is still
-unaddressed.
+I did not touch the extension, `background.js`, or `agent/ext-3.0.10-on-mode`.
+A parallel session picked it up and has since carried it to
+`agent/ext-3.0.14-on-mode` (rebased onto main, gate green for the first time,
+plus the noise-surface fix: `bestResult(enR, …)` had no noise filter, so the
+inbox could supply the index, set `receipt.expected`, and end the retry loop).
+
+One owner action remains and cannot be automated: install it, run one pull, read
+the `enum=` reason. Judge by `coverageComplete` above zero on real patients,
+never by the frame being accepted.
 
 ---
 
