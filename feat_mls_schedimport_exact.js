@@ -3165,15 +3165,37 @@
                no wrong-patient body was ever stored. The doctor cannot guess
                any of that from "same-frame-name-mismatch", so say the one thing
                that actually fixes it. */
-            var __mismatch = 0;
+            /* chartframe-1.0.0 (2026-07-24): the OTHER failure class a doctor
+               cannot act on is the encounter index never being recognised —
+               reasons no-chart-frame-candidate and encounter-index-incomplete.
+               These are counted into "failures N" and then explained by
+               nothing at all, which is worse than an ugly string: the doctor
+               sees three patients missing with no statement of what happened,
+               whether anything was saved, or whether a wrong chart was read.
+               Confirmed live 2026-07-24: three of five patients failed this way
+               for 93-160s each and the run reported only "failures 3".
+               Deliberately makes NO repair suggestion. The mechanism is a
+               reader defect (the real Visits frame is reached and refused
+               inside the enumerate op), so telling the doctor to open or expand
+               anything would be a guess, and a wrong instruction is worse than
+               an honest "nothing you did caused this". Say only what is known:
+               nothing was saved, nothing was misfiled, retrying is safe.
+               These reasons are intentionally NOT in SWEEPABLE_REASON — the
+               refusal is deterministic, so an automatic re-sweep would burn
+               batch budget re-failing rather than recover anything. */
+            var __mismatch = 0, __noIndex = 0;
             try {
               (historyReceipt.patients || []).forEach(function (p) {
-                if (p && /same-frame-name-mismatch/.test(String(p.visitsReason || p.chartReason || p.reason || ""))) __mismatch++;
+                var why = String((p && (p.visitsReason || p.chartReason || p.reason)) || "");
+                if (/same-frame-name-mismatch/.test(why)) __mismatch++;
+                else if (/no-chart-frame-candidate|encounter-index-incomplete/.test(why)) __noIndex++;
               });
             } catch (eMm) {}
             res.multiTabSuspected = __mismatch >= 2;
+            res.encounterIndexUnreadable = __noIndex;
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
-              (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : ""), "err");
+              (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
+              (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : ""), "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested.", "ok");
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0.", "ok");
             return res;
