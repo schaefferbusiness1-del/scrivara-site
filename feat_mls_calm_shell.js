@@ -70,19 +70,58 @@
      The bug is real but it is NOT a CSS problem: this bar assigns
      b.textContent = ..., so it contains no <small> element to style, and a
      '#mlsRightNow button small' rule cannot fire. The separator has to be put
-     back where the label is derived. */
+     back where the label is derived.
+
+     Live probe of #ptPullAthenaBtn showed the problem is bigger than a missing
+     separator. Its textContent is four things welded together:
+       "📥 Pull from Athena"                     the actual label
+       span.mlsac-sub    display:none            a hidden sub-label
+       span.mlsac-tag    inline-block, after <br>  "READ-ONLY"
+       span.mlsactip-pop visibility:hidden;opacity:0;role=tooltip
+     so the bar was publishing a hover tooltip and a hidden element as part of
+     a button's name: "Pull from AthenaOpens this patient's chart in your
+     signed-in Athena tab (read-on...". Hidden text in a label is worse than a
+     missing separator - it is text the doctor never chose to read, and because
+     the Ask index and the control inventory match on these labels, it pollutes
+     search results too.
+
+     So: drop anything the element itself hides, break on block-level children
+     and <br>, and join what remains with a separator.
+
+     Visibility is judged from each child's OWN computed style, never from
+     rects or offsetParent - measured live, every child reports width 0 and
+     offsetParent null purely because an ancestor view is hidden, so a
+     rect-based test would call every label empty. */
+  function labelHidden(n) {
+    if (n.getAttribute && n.getAttribute('role') === 'tooltip') return true;
+    var cs = null;
+    try { cs = W.getComputedStyle(n); } catch (e) { return false; }
+    if (!cs) return false;
+    return cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0';
+  }
+  function labelBlocky(n) {
+    var cs = null;
+    try { cs = W.getComputedStyle(n); } catch (e) { cs = null; }
+    var d = cs && cs.display;
+    if (d) return /^(block|flex|grid|list-item|table)/.test(d);
+    return /^(SMALL|DIV|P|LI|SECTION)$/.test(n.tagName || '');
+  }
   function controlLabel(el) {
-    if (!el) return '';
-    var small = el.querySelector && el.querySelector('small');
-    if (!small) return textOf(el);
-    var whole = String(el.textContent || '');
-    var raw = String(small.textContent || '');
-    var head = (raw && whole.slice(-raw.length) === raw) ? whole.slice(0, whole.length - raw.length) : whole;
-    head = normLabel(head);
-    var tail = normLabel(raw);
-    if (!head) return tail;
-    if (!tail) return head;
-    return head + ' · ' + tail;
+    if (!el || !el.childNodes || !el.childNodes.length) return textOf(el);
+    var segs = [], cur = '';
+    function flush() { var s = normLabel(cur); if (s) segs.push(s); cur = ''; }
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3) { cur += n.nodeValue; continue; }
+      if (n.nodeType !== 1) continue;
+      if ((n.tagName || '') === 'BR') { flush(); continue; }
+      if (labelHidden(n)) continue;
+      if (labelBlocky(n)) { flush(); var t = normLabel(n.textContent); if (t) segs.push(t); continue; }
+      cur += String(n.textContent || '');
+    }
+    flush();
+    if (!segs.length) return textOf(el);
+    return segs.join(' · ');
   }
 
   /* ---------------------------------------------------------------- enable */
@@ -285,16 +324,15 @@
     'transition:transform var(--mls-fast) var(--mls-spring),box-shadow var(--mls-fast) linear,background var(--mls-fast) linear}',
     '#mlsRightNow button:hover{background:#F6FAF8;box-shadow:0 2px 8px rgba(20,35,28,.08)}',
     '#mlsRightNow button:active{transform:scale(.96)}',
-    /* The right-now bar reuses the ez3 action button, whose label carries the
-       patient in a <small>. mls-connect.js:17236 gives that element
-       .ez3-big small{display:block}, but the button is re-rendered HERE,
-       outside .ez3-big, so <small> fell back to inline and the surname ran
-       straight into the time - 'Bledsoe9:40 AM', 'Salimi7:30 AM'. It reads as
-       a typo in the patient's name, which is the worst place on a clinical
-       screen to have one. Fixed by re-declaring the block behaviour in this
-       scope rather than by editing the shared label string, which omits a
-       separator on purpose and renders correctly in the ez3 shell. */
-    '#mlsRightNow button small{display:block;font-size:11.5px;font-weight:600;opacity:.85;margin-top:2px}',
+    /* A '#mlsRightNow button small' rule lived here and was removed, not
+       restyled. The symptom it targeted is real - the bar showed
+       'Bledsoe9:40 AM' - but the rule could never fire: this bar does not
+       reuse or re-render the ez3 button, it builds a new one and assigns
+       b.textContent, so there is no <small> element in it to style. Verified
+       live: #mlsRightNow contains zero <small> and zero .ez3-big.
+       The collision comes from textContent welding the block-level <small>
+       onto the name when the label is flattened, so the fix is a separator at
+       label-derivation time - see controlLabel(). Do not add this rule back. */
     '#mlsRightNow button.primary{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
     '#mlsRightNow button.primary:hover{background:#357855}',
     '#mlsRightNow .tools{margin-left:auto}',
