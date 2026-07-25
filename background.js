@@ -8598,7 +8598,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (/visits\s*and\s*cases/i.test(vcT)) { vcOk = true; break; }
           vcScope = vcScope.parentElement;
         }
-        if (!vcOk) return { ok: false, count: 0, score: 0, reason: 'visits-panel-not-open' };
+        if (!vcOk) return { ok: false, count: 0, score: 0, reason: 'visits-panel-not-open[rows=' + g.rows.length + ';up=' + va + ']' };
         /* Progressive render (owner goal 2026-07-22): when the SHOW control
            itself declares "All Events (N)", the index is complete only when
            the list really renders N items. A filtered SHOW selection has a
@@ -8618,11 +8618,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         /* The SHOW total is MANDATORY for the batch index: a glacial chart
            renders the panel header late, and without the declared total a
            short stalled list could pass the stability check. Wait for it. */
+        /* Row-count stability across passes, kept on the frame. The caller
+           re-enumerates every ~3.5s; a list that is really still rendering
+           changes count between passes, and one that has stalled does not.
+           Observation only - it gates nothing. */
+        var stab = '';
+        try {
+          var nowMs = Date.now();
+          var prev = window.__mlsEnumStab;
+          if (!prev || prev.count !== listKids) { prev = { count: listKids, first: nowMs, n: 1 }; }
+          else { prev.n++; }
+          window.__mlsEnumStab = prev;
+          stab = ';n=' + prev.n + ';sameFor=' + Math.round((nowMs - prev.first) / 1000) + 's';
+        } catch (eStab) { stab = ';stab?'; }
         if (evTotal <= 0) {
-          return { ok: false, count: 0, score: 0, reason: 'visits-total-not-readable' };
+          /* Refuses FOREVER while the SHOW label is unreadable. Recorded, not changed. */
+          return { ok: false, count: 0, score: 0, reason: 'visits-total-not-readable[rows=' + g.rows.length + ';kids=' + listKids + stab + ']' };
         }
         if (listKids < evTotal) {
-          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering', declaredEvents: evTotal, renderedListItems: listKids };
+          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ']', declaredEvents: evTotal, renderedListItems: listKids };
         }
       }
       if (!g) {
