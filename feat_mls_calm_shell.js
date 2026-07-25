@@ -236,6 +236,14 @@
        parsed, matched, and beaten. Same trap as #mlsRdNav. Out-specify it
        rather than pile on another !important, which would change nothing. */
     'body.mls-calm.mls-redesign #ez3Wrap > .ez3-clockbar,body.mls-calm .ez3-clockbar{display:none!important}',
+    /* The day strip wrapped to 243px because it carried two SETTINGS beside
+       the day navigation: where pulls run, and whether to fetch full visit
+       notes. Neither is part of working a day - they are configured once and
+       then sit above every screenful of actual work. Both move to Tools,
+       where available() still finds them because the WRAPPER is hidden by
+       class and the controls keep no inline display. Day nav and the pull
+       action stay exactly where they are. */
+    'body.mls-calm #mlsDsStrip > #mlsPdpWrap,body.mls-calm #mlsDsStrip > #mlsDsVisitTgl{display:none!important}',
     'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
     /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
        patient. The single largest duplication is the prep summary. prepRows()
@@ -603,6 +611,8 @@
        here for what each actually does; adding a patient stays a single flow,
        reached from Patients > New patient. */
     { id: 'mls-ask-btn', as: 'Ask your data' },
+    { id: 'mlsPdpSel', as: 'Where pulls run' },
+    { id: 'mlsDsVisitBodies', as: 'Full visit notes' },
     { id: 'intakeBtn', as: 'Pre-visit intake forms' },
     { id: 'customWidgetHdrBtn' },
     { label: /^templates$/i, within: '#appHeader' },
