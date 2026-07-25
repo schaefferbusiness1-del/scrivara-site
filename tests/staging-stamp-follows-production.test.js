@@ -47,7 +47,12 @@ assert.strictEqual(staging, production,
   'The staging loader builds its bundle URL from this token, so staging will keep serving the\n' +
   'bundle cached under ' + staging + ' and anyone testing there is exercising stale code.\n' +
   'Bump staging with production — read its OWN current token rather than assuming it equals\n' +
-  "production's, because it does not always.");
+  "production's, because it does not always.\n\n" +
+  '  FIX:  node scripts/sync-staging-stamp.js\n\n' +
+  'That forces staging to production and is idempotent, so call it from your bump path\n' +
+  'unconditionally. This has now drifted at b586, b587, b595, b598, b599, b601 and b607 —\n' +
+  'three lanes ship from three bump scripts and only two of them carry the staging stamp.\n' +
+  'Repairing it by hand again is what guarantees an eighth time.');
 
 /* the loader must actually derive the bundle URL from that stamp - if it ever
    hardcodes a token instead, equality above stops meaning anything */
