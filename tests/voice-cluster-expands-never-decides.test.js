@@ -255,7 +255,57 @@ assert.ok(
   );
 }
 
-/* ---- 12. the guard can fail ---- */
+/* ---- 12. a CLOSED bubble must not swallow clicks, and must open UPWARD ----
+ *
+ * Both measured on the running page at b655 with the cluster mounted and closed:
+ *
+ *   elementFromPoint at the centre of the fan region -> DIV#mlsVoiceCluster
+ *   faceBox top 605 / bottom 653, fanBox top 662 / bottom 810
+ *
+ * The first is a 196x148 invisible region eating clicks meant for the page
+ * beneath. The fan ITEMS already had pointer-events:none; the container was the
+ * aggressor, and its box is full height whether the fan is open or not. This is
+ * the same defect shape as the phone-dock overlap — an element winning taps it
+ * has no business winning — except invisible, so nobody would file it as
+ * anything but "the page stopped responding down there".
+ *
+ * The second: with flex-direction:column-reverse and DOM order [fan, face], the
+ * FACE rendered above the FAN, so a bottom-anchored bubble floated 157px off the
+ * bottom and its items expanded downward toward the dock. */
+{
+  const rootRule = /'#' \+ ROOT_ID \+ '\{position:fixed[\s\S]{0,400}?\}',/.exec(src);
+  assert.ok(rootRule, 'the cluster root rule is gone');
+
+  assert.ok(
+    /pointer-events:none/.test(rootRule[0]),
+    'the cluster root must be pointer-events:none. Its box is ~196x205 whether ' +
+    'the fan is open or closed, so without this a closed bubble swallows every ' +
+    'click in the fan region — invisibly.'
+  );
+  assert.ok(
+    /'#mlsVcFace\{pointer-events:auto/.test(src),
+    'the face must opt back in to pointer events, or the one control that is ' +
+    'always visible stops being clickable'
+  );
+  assert.ok(
+    /\.open #mlsVcFan\{pointer-events:auto/.test(src),
+    'the fan must regain pointer events when open, or the three tools cannot be clicked'
+  );
+
+  assert.ok(
+    /flex-direction:column;/.test(rootRule[0]),
+    'the root must be flex-direction:column. DOM order is [fan, face], so plain ' +
+    'column puts the face at the BOTTOM and the fan above it — which is what a ' +
+    'bottom:18px-anchored bubble has to be. column-reverse floated the face 157px ' +
+    'off the bottom with the fan hanging below it.'
+  );
+  assert.ok(
+    !/flex-direction:column-reverse[^']*}',\s*$/m.test(rootRule[0]),
+    'column-reverse is back on the root: the face will render above the fan again'
+  );
+}
+
+/* ---- 13. the guard can fail ---- */
 {
   const broken = "var target = $(it.def.id);\n        if (target) target.focus();";
   assert.ok(

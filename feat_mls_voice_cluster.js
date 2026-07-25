@@ -151,12 +151,27 @@
          left a doctor with three closed doors and no voice tools at all. */
       '#' + ROOT_ID + '.standdown{display:none!important;}',
 
+      /* column, NOT column-reverse. DOM order is [fan, face], so plain `column`
+         puts the fan above and the face at the bottom — which is what a
+         bottom-anchored bubble has to be. Measured at b655 with column-reverse:
+         face top 605/bottom 653, fan top 662/bottom 810 — the face floated 157px
+         off the bottom with an invisible fan hanging BELOW it, and the items
+         would have expanded downward toward the dock.
+
+         pointer-events:none on the ROOT is not cosmetic. The root's box is
+         196x205 whether the fan is open or not, and while closed a click at the
+         centre of the fan region returned DIV#mlsVoiceCluster — a 196x148
+         invisible region swallowing clicks meant for the page beneath. The fan
+         items already carry pointer-events:none; the container was the aggressor.
+         The face re-enables it for itself, and the fan for itself when open. */
       '#' + ROOT_ID + '{position:fixed;left:18px;bottom:18px;z-index:2147482000;',
-      'display:flex;flex-direction:column-reverse;align-items:flex-start;gap:9px;',
+      'display:flex;flex-direction:column;align-items:flex-start;gap:9px;',
+      'pointer-events:none;',
       'font-family:inherit;-webkit-font-smoothing:antialiased;}',
 
       /* ---- the one bubble ---- */
-      '#mlsVcFace{display:inline-flex;align-items:center;gap:9px;border:0;cursor:pointer;',
+      /* the face opts itself back in — the root is pointer-events:none */
+      '#mlsVcFace{pointer-events:auto;display:inline-flex;align-items:center;gap:9px;border:0;cursor:pointer;',
       'padding:12px 17px 12px 14px;border-radius:999px;min-height:48px;',
       'background:linear-gradient(135deg,#204034 0%,#2E6A4B 100%);color:#fff;',
       'font-size:14.5px;font-weight:700;font-family:inherit;letter-spacing:.01em;',
