@@ -1044,3 +1044,76 @@ suite's registration from `run-all.js`. Live for ~11 minutes; caught on the
 since added a gate that gets conflict markers before they are served.
 Check `git stash list` before pairing stash/pop, and read `--stat` before every
 push — especially when the message says "docs".
+
+---
+
+## Addendum 11 — the owner's "every 5 seconds", found and fixed (b649)
+
+**`#visitOrdersBody` was torn down and rebuilt with byte-identical markup every
+~5 seconds, while visible.** Measured on the owner's live session at b645 with
+the Advanced visit workspace open:
+
+    #visitOrdersBody          VISIBLE 524x50, inside a 608x1059 note card
+    rebuilds in 105s          15
+    median gap                5008 ms
+    distinct content hashes   1     across all 15
+
+**Why three rounds of body-class work walked straight past it.** `#noteCard` is
+hidden by CSS unconditionally and revealed only by `body.ez3adv`, which the
+"Advanced visit workspace" button sets. Every earlier measurement ran in the
+default view, where the element is behind `display:none` — so it was twice
+written off as invisible waste. That call was correct for the default view and
+wrong for the view the clinician actually works in. Seeding content into the
+note did not reveal it; **content was never the gate, CSS was.**
+
+### Two fixes, both required
+
+1. **The driver.** `onPong` is the extension *capability handshake*. The
+   extension pongs every ~4s forever, but the version and the
+   `supervisedOrderPlacementV2` flag change at most once per session — yet it
+   re-rendered both order lists on every heartbeat. Captured live by wrapping
+   `renderVisitOrders`: 6 calls in 75s, median gap 4008ms, **every one from
+   `onPong`**. Now compares a handshake signature and returns early.
+2. **The renderer.** `renderVisitOrders()` assigned `box.innerHTML`
+   unconditionally, and `innerHTML = s` recreates every child even when `s` is
+   identical. Confirmed by mutation type live: childList only, nodes removed and
+   re-added, zero content change. Now builds the markup, compares, commits only
+   on a difference.
+
+Guarding only the driver leaves the renderer unsafe for the next caller;
+guarding only the renderer still rebuilds the string 15×/minute.
+
+### Verification at b649, same conditions
+
+    ez3adv true, #visitOrdersBody VISIBLE 524x50, page live (88 doc records)
+
+    DRIVER pongs received      4
+    renderVisitOrders calls    0
+    orders mutation records    0
+
+**That is the unfakeable form.** The driver demonstrably fired 4 times and
+produced zero renders and zero DOM churn; pre-fix each pong produced both.
+Throttling can slow the pong rate but cannot turn an arrived pong into a
+suppressed render — only the guard does that.
+
+Instrument note: an earlier reading showed `clockTicks: 0` over 128s, which
+looked like a dead page. It was not — I had attached the clock observer *before*
+clicking Advanced, and the workspace render replaced the clock node, detaching
+it. `#ez3Clock` read 6:20 PM against a 6:21 PM wall clock. Also, in this
+throttled tab a `setTimeout(20000)` overran a 45s CDP deadline, so measurements
+here must install a probe and poll it across separate calls rather than await
+in-page.
+
+### Still not established
+
+Whether a user *perceives* the rebuild as a flash — I measured DOM, not pixels.
+The subtree currently holds **zero focusable elements**, so nothing loses focus
+today, but that only holds while the orders list is empty and will not once
+orders are staged.
+
+### Not mine, still open (coordinator's board)
+
+`title` writers at ~1.2/s (reduced 76%, not eliminated; lower cost class — the
+audit found **no CSS `[title]` selector** in the repo, so these cost observer
+wakeups, not document-wide recalc) · the 215 sub-10s `setInterval`s at ~204
+fires/sec.
