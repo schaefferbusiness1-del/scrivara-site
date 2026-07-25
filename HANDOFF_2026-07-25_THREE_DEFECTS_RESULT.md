@@ -238,7 +238,38 @@ read with no intervening write          median  0ms
 > patient directory is the visible screen while they happen*. 700 × 16ms = 11.2s,
 > against the measured foreground TBT of 10,929ms.
 >
-> ### The obvious fix was TRIED and made it WORSE — do not ship it
+> ### ⚠️ THE A/B FOR THIS FIX IS NOT TRUSTWORTHY IN AN AUTOMATION TAB
+>
+> Three runs of the same `content-visibility: auto` A/B on `.pt-item`, same page,
+> same session, gave three different verdicts:
+>
+> | run | method | verdict |
+> |---|---|---|
+> | 1 | `setTimeout` waits between apply and measure | **32% WORSE** |
+> | 2 | fully synchronous apply → measure → revert | **63% BETTER** (16.5 → 6.1ms, 3 rounds, 60–63%) |
+> | 3 | same synchronous method, minutes later | **49–82% WORSE**, baseline had moved 16.5 → 5.1ms |
+>
+> Run 1 was invalid: hidden tabs throttle `setTimeout` to ≥1s, so the style had
+> not settled. But run 3 exposes the real problem — **the probe permanently
+> mutates the page state it is measuring**. `#ptList.scrollHeight` went 17,222 →
+> 25,084 and *stayed* there after the rule was removed, because
+> `contain-intrinsic-size: auto` makes rows remember a size. So every subsequent
+> baseline is measured against a page my earlier probe already changed.
+>
+> **Therefore there is no trustworthy verdict on this fix, and it must not be
+> shipped on any of the numbers above.** To settle it: a **fresh page load**, in a
+> **foreground window**, one apply/measure/revert, and then *reload before
+> measuring again*. Never A/B it twice in the same page.
+>
+> Verified side-effects to check when it is settled: `innerText` on a row returns
+> `""` while skipped (`textContent` still works — no `innerText` readers of
+> `.pt-item` exist today, confirmed by grep), and the scrollbar over-estimates
+> until rows have been rendered once.
+>
+> The natural home for the rule, when proven, is `feat_mls_ptcard_contain.js` —
+> a module that already exists solely for patient-list card containment.
+>
+> ### An earlier attempt, superseded by the above
 >
 > The directory is `#ptList` (`div.pt-list`) holding **151 `.pt-item` rows**, each
 > 157px tall. The textbook remedy is to keep off-screen rows out of layout, so it
