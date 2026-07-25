@@ -245,6 +245,16 @@
     'transition:transform var(--mls-fast) var(--mls-spring),box-shadow var(--mls-fast) linear,background var(--mls-fast) linear}',
     '#mlsRightNow button:hover{background:#F6FAF8;box-shadow:0 2px 8px rgba(20,35,28,.08)}',
     '#mlsRightNow button:active{transform:scale(.96)}',
+    /* The right-now bar reuses the ez3 action button, whose label carries the
+       patient in a <small>. mls-connect.js:17236 gives that element
+       .ez3-big small{display:block}, but the button is re-rendered HERE,
+       outside .ez3-big, so <small> fell back to inline and the surname ran
+       straight into the time - 'Bledsoe9:40 AM', 'Salimi7:30 AM'. It reads as
+       a typo in the patient's name, which is the worst place on a clinical
+       screen to have one. Fixed by re-declaring the block behaviour in this
+       scope rather than by editing the shared label string, which omits a
+       separator on purpose and renders correctly in the ez3 shell. */
+    '#mlsRightNow button small{display:block;font-size:11.5px;font-weight:600;opacity:.85;margin-top:2px}',
     '#mlsRightNow button.primary{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
     '#mlsRightNow button.primary:hover{background:#357855}',
     '#mlsRightNow .tools{margin-left:auto}',
