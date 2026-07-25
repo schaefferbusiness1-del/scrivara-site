@@ -1478,7 +1478,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <label>Your photo <span style="font-weight:400;color:#41606d">(optional — helps your care team recognize you)</span></label>
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
             <img id="ikFacePreview" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px;display:none;border:1px solid #cfe0e7;background:#fff">
-            <input type="file" id="ikFaceFile" accept="image/*" capture="user" style="display:none" onchange="onIntakeFacePhoto(event)">
+            <input type="file" id="ikFaceFile" aria-label="Photo of yourself" accept="image/*" capture="user" style="display:none" onchange="onIntakeFacePhoto(event)">
             <button type="button" class="ik-cardbtn" onclick="document.getElementById('ikFaceFile').click()">📷 Take a photo</button>
             <button type="button" class="ik-cardbtn" id="ikFaceClear" style="display:none" onclick="clearIntakeFacePhoto()">Remove</button>
           </div>
@@ -1490,7 +1490,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="ik-sec">
         <h3>💳 Insurance</h3>
         <p class="ik-sub">The fastest way: take a photo of your insurance card and we'll fill this in for you.</p>
-        <input type="file" id="ikCardFile" accept="image/*" capture="environment" style="display:none" onchange="onIntakeCardPhoto(event)">
+        <input type="file" id="ikCardFile" aria-label="Photo of your insurance card" accept="image/*" capture="environment" style="display:none" onchange="onIntakeCardPhoto(event)">
         <button type="button" class="ik-cardbtn" onclick="document.getElementById('ikCardFile').click()">📷 Photo of insurance card</button>
         <div id="ikCardStatus" style="font-size:14px;color:#41606d;margin:8px 0 12px;min-height:18px"></div>
         <div class="ik-grid2">
@@ -1731,7 +1731,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="previsitLinkRow" style="display:none;margin-top:10px;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px">
         <div style="font-size:13px;font-weight:600;color:var(--brand-dk);margin-bottom:6px">📤 Your pre-visit intake link — text or email it to patients to fill out at home:</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input id="previsitLinkInput" readonly style="flex:1;min-width:200px;border:1px solid #cfdbe8;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
+          <input id="previsitLinkInput" aria-label="Pre-visit link" readonly style="flex:1;min-width:200px;border:1px solid #cfdbe8;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
           <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyPrevisitLinkText()">📋 Copy</button>
         </div>
       </div>
@@ -1739,7 +1739,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="bookingLinkRow" style="display:none;margin-top:10px;background:#eefaf3;border:1px solid #bfe6d2;border-radius:10px;padding:10px 12px">
         <div style="font-size:13px;font-weight:600;color:#127a55;margin-bottom:6px">📅 Your online booking link — patients open it to request appointments (no login):</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input id="bookingLinkInput" readonly style="flex:1;min-width:200px;border:1px solid #bfe6d2;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
+          <input id="bookingLinkInput" aria-label="Booking link" readonly style="flex:1;min-width:200px;border:1px solid #bfe6d2;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
           <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyBookingLinkText()">📋 Copy</button>
         </div>
       </div>
@@ -1823,7 +1823,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <button class="edit" onclick="addDocPaste()">＋ Paste text</button>
           <button class="edit" onclick="document.getElementById('docFileInput').click()">📷 Upload photo / file</button>
         </h3>
-        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" multiple style="display:none" onchange="onDocFile(event)">
+        <input type="file" id="docFileInput" aria-label="Upload a photo or file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" multiple style="display:none" onchange="onDocFile(event)">
         <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries — or snap a <b>photo of a document</b>. Photos &amp; scans are read automatically with OCR; .txt and PDF text are extracted too. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile. <span style="color:var(--muted)">(Select a patient first.)</span></p>
         <div id="docEmpty" class="mini" style="color:var(--muted)">No documents yet.</div>
         <div class="doc-list" id="docList"></div>
@@ -2150,7 +2150,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div id="legalMyPatientRow" style="display:none;margin:8px 0 0;background:#f0fff4;border:1px solid #b9e6cf;border-radius:10px;padding:10px 12px;font-size:13.5px">
           <b>➕ Did you also treat this patient?</b> Add your own chart + visit notes so the report includes your exam and your meeting with the patient.
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-            <select id="legalMyPatientSel" class="sf-select" style="max-width:300px" onchange="setLegalAttachedPatient(this.value)"></select>
+            <select id="legalMyPatientSel" aria-label="Choose your own chart for this patient" class="sf-select" style="max-width:300px" onchange="setLegalAttachedPatient(this.value)"></select>
             <span id="legalMyPatientStatus" style="color:#1f7a4d;font-weight:600"></span>
           </div>
         </div>
@@ -2173,7 +2173,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div id="legalMsgPanel" style="display:none;margin-top:8px"></div>
         </div>
         <p class="sub" style="margin:4px 0 0">Draft medical-legal report built from the selected synthetic record and documented request details. Missing data appears as [bracketed placeholders]. Review and edit locally. Signing and release are unavailable until a server-side ceremony separately verifies the exact report, signer, patient authorization, and recipient.</p>
-        <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
+        <textarea class="xbody" id="legalBody" aria-label="Medical-legal report draft" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
       </div>
 
@@ -2240,7 +2240,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <button class="sec-copy" onclick="printHandout()">🖨 Print</button>
         </h3>
         <p class="sub" style="margin:4px 0 0">Plain-language home-exercise &amp; care sheet for the current diagnosis. Edit before printing — general guidance only.</p>
-        <textarea id="handoutBody" style="min-height:240px;margin-top:10px"></textarea>
+        <textarea id="handoutBody" aria-label="Patient handout draft" style="min-height:240px;margin-top:10px"></textarea>
       </div>
 
       <!-- FHIR / EMR export -->
@@ -2250,7 +2250,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <button class="sec-copy" onclick="downloadFhir()">⬇ Download</button>
         </h3>
         <p class="sub" style="margin:4px 0 0">A minimal FHIR R4 collection Bundle (Encounter + one Condition per ICD-10 + DocumentReference for the note). Patient identifiers are <b>[PATIENT_ID]</b> placeholders — no fabricated IDs.</p>
-        <textarea id="fhirBody" style="min-height:240px;margin-top:10px;font-family:'Consolas','Courier New',monospace;font-size:13px" readonly></textarea>
+        <textarea id="fhirBody" aria-label="FHIR bundle" style="min-height:240px;margin-top:10px;font-family:'Consolas','Courier New',monospace;font-size:13px" readonly></textarea>
       </div>
 
       <!-- RED-FLAG SAFETY SCAN -->
@@ -2360,7 +2360,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
         <div id="procResultWrap" style="display:none;margin-top:12px">
           <label>Procedure note <span style="font-weight:400;color:var(--muted)">(editable — complete any [bracketed] items)</span></label>
-          <textarea id="procNoteBody" style="min-height:280px"></textarea>
+          <textarea id="procNoteBody" aria-label="Procedure note" style="min-height:280px"></textarea>
           <div class="row tight">
             <button class="btn-ghost" onclick="copyProcNote()">📑 Copy</button>
             <button class="btn-ghost" onclick="printProcNote()">🖨 Print</button>
@@ -2495,7 +2495,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <div id="histSearchRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px">
       <input id="histSearch" oninput="__mlsDebRender('hist',renderHistory)" placeholder="🔎 Search history — patient, date, procedure, diagnosis, any word in the note…" style="flex:1;min-width:220px;font-size:14px;padding:9px 13px;border:1px solid var(--line);border-radius:10px">
-      <select id="histFilter" onchange="renderHistory()" style="font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:9px" title="Filter by type">
+      <select id="histFilter" aria-label="Filter visit history" onchange="renderHistory()" style="font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:9px" title="Filter by type">
         <option value="">All visits</option>
         <option value="opnote">💉 Op notes</option>
         <option value="signed">✅ Signed</option>
@@ -2579,7 +2579,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <h3>➕ New order</h3>
         <div class="field" style="margin-top:8px">
           <label>Order type</label>
-          <select class="sf-select" id="ordType" onchange="renderOrderFields()">
+          <select class="sf-select" id="ordType" aria-label="Order type" onchange="renderOrderFields()">
             <option value="">— Choose a type —</option>
             <option value="medication">💊 Medication</option>
             <option value="pt">🏃 Physical Therapy</option>
@@ -2622,7 +2622,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <p class="sub" id="paSubAppeal" style="margin:6px 0 10px;display:none">Draft a targeted appeal letter that directly rebuts the payer's stated denial reason, pulling medical necessity and conservative care from the note. Honest: it uses only documented facts and brackets anything not in the chart for you to complete.</p>
         <div class="field" style="margin-top:8px">
           <label>Service requested</label>
-          <select class="sf-select" id="paServiceSelect" onchange="onPaServiceChange()">
+          <select class="sf-select" id="paServiceSelect" aria-label="Service requested" onchange="onPaServiceChange()">
             <option value="">— Pick from this visit's orders, or choose “Other” —</option>
           </select>
         </div>
@@ -2634,7 +2634,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div id="paAppealFields" style="display:none">
           <div class="field">
             <label>Reason the payer gave for denial</label>
-            <select class="sf-select" id="paDenialReason">
+            <select class="sf-select" id="paDenialReason" aria-label="Reason the payer gave for denial">
               <option value="Not medically necessary">Not medically necessary</option>
               <option value="Step therapy not met">Step therapy not met</option>
               <option value="Experimental / investigational">Experimental / investigational</option>
@@ -2653,7 +2653,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
         <div id="paResultWrap" style="display:none;margin-top:12px">
           <label>Draft letter <span style="font-weight:400;color:var(--muted)">(editable — review and complete any [bracketed] items before sending)</span></label>
-          <textarea id="paLetter" style="min-height:300px"></textarea>
+          <textarea id="paLetter" aria-label="Appeal letter draft" style="min-height:300px"></textarea>
           <div class="row tight">
             <button class="btn-ghost" onclick="sendPaToEMR(this)" title="Review this letter and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
             <button class="btn-ghost" onclick="copyPriorAuth()">📑 Copy</button>
@@ -2867,8 +2867,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <button id="calMode_day" onclick="calSetMode('day')" style="font-size:12.5px;padding:6px 13px;border:0;border-left:1px solid var(--line);background:#fff;cursor:pointer">Day</button>
         </span>
         <div id="calMonthLabel" style="font-weight:800;font-size:19px;margin-left:8px"></div>
-        <input type="month" id="calJump" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px" title="Jump to a month">
-        <select id="calProvFilter" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px"><option value="">All providers</option></select>
+        <input type="month" id="calJump" aria-label="Jump to month" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px" title="Jump to a month">
+        <select id="calProvFilter" aria-label="Filter calendar by provider" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px"><option value="">All providers</option></select>
         <button class="btn-ghost" onclick="cleanupDuplicateAppointments(this)" style="font-size:13px;padding:6px 11px;margin-left:auto;color:#a12c2c;border-color:#e8b7b7" title="Scan the whole calendar and remove duplicate appointments (same patient, same day & time) — keeps one of each">🧹 Remove duplicates</button>
         <button class="btn-ghost" onclick="loadCalendar()" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
       </div>
@@ -3223,7 +3223,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <button class="sec-copy" onclick="lawDownloadReport()">📄 Save as PDF</button>
         </span>
       </h3>
-      <textarea class="xbody" id="lawReportBody" readonly style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
+      <textarea class="xbody" id="lawReportBody" aria-label="Returned report" readonly style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
     </div>
   </div>
 </div>
@@ -3702,7 +3702,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div id="newApiKeyBox" style="display:none;margin-top:10px">
             <label>Your new key — copy it now</label>
             <div class="row tight" style="gap:8px">
-              <input type="text" id="newApiKey" readonly style="flex:1;font-family:monospace;font-size:12px">
+              <input type="text" id="newApiKey" aria-label="New API key" readonly style="flex:1;font-family:monospace;font-size:12px">
               <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
             </div>
             <p class="note">Use this for the FHIR API or to authenticate the extension on a machine where you won't be signed in to MLS.</p>
@@ -3745,7 +3745,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </label>
         <div class="row tight" style="gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
           <span style="font-size:14px">Run at</span>
-          <select id="emrSyncHour" style="font-size:14px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></select>
+          <select id="emrSyncHour" aria-label="Run at (server time, UTC)" style="font-size:14px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></select>
           <span style="font-size:12px;color:var(--muted)">(server time, UTC)</span>
         </div>
         <label class="row tight" style="gap:8px;align-items:center;font-size:13px;margin-top:10px;cursor:pointer">
@@ -3774,7 +3774,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <button class="modal-x" onclick="closeView()">×</button>
     <h3 id="viewTitle">📄 Saved visit</h3>
     <p class="note" id="viewMeta"></p>
-    <textarea id="viewBody" style="min-height:340px;font-size:14px" readonly></textarea>
+    <textarea id="viewBody" aria-label="Saved visit text" style="min-height:340px;font-size:14px" readonly></textarea>
     <div class="row">
       <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
@@ -3833,7 +3833,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div style="font-weight:700;font-size:14px">✨ Have several forms / templates to import?</div>
       <div style="font-size:12.5px;color:var(--muted);margin:3px 0 9px">Drop one big PDF with many forms, OR drop a whole batch of files at once (Word, PDF, images, text). MLS recognizes and splits out every template — even 50–100 of them.</div>
       <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="document.getElementById('tplMultiFileInput').click()">📑 Upload templates (one PDF or many files)</button>
-      <input type="file" id="tplMultiFileInput" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" multiple style="display:none" onchange="tplMultiFile(event)">
+      <input type="file" id="tplMultiFileInput" aria-label="Upload templates: one PDF or many files" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" multiple style="display:none" onchange="tplMultiFile(event)">
       <div id="tplMultiDrop" ondragover="_tplMultiDragOver(event,true)" ondragleave="_tplMultiDragOver(event,false)" ondrop="_tplMultiDrop(event)" onclick="document.getElementById('tplMultiFileInput').click()" style="margin-top:8px;border:2px dashed #EAF1EE;border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:12.5px;background:#fbfbff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop your forms here (one multi-form PDF, or many files at once)</div>
       <div id="tplMultiStatus" class="mini" style="color:var(--muted);margin-top:8px"></div>
       <div id="tplMultiResult" style="margin-top:8px"></div>
@@ -3852,7 +3852,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (Word / PDF / image / text)</button>
       <button class="btn-ghost" onclick="tplPasteText()">✍️ Type or paste below</button>
     </div>
-    <input type="file" id="tplFileInput" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" style="display:none" onchange="onTplFile(event)">
+    <input type="file" id="tplFileInput" aria-label="Upload template: Word, PDF, image or text" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" style="display:none" onchange="onTplFile(event)">
     <div id="tplDropZone" ondragover="_tplDragOver(event,true)" ondragleave="_tplDragOver(event,false)" ondrop="_tplDrop(event)" onclick="document.getElementById('tplFileInput').click()" style="margin-top:8px;border:2px dashed #cfe0f5;border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:#fafcff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop a template file here — Word (.doc/.docx), PDF, image, text, or any file — or click to browse</div>
     <textarea id="tplText" placeholder="Extracted template text appears here. You can edit it before saving." style="min-height:120px;font-size:13px;margin-top:8px"></textarea>
     <div class="row" style="margin-top:6px">
@@ -4256,7 +4256,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
     </div>
     <label style="margin-top:14px">Document text</label>
-    <textarea id="docText" style="min-height:240px;font-size:13.5px" readonly></textarea>
+    <textarea id="docText" aria-label="Document text" style="min-height:240px;font-size:13.5px" readonly></textarea>
     <div class="row">
       <button class="btn-primary" id="docAnalyzeBtn" onclick="analyzeDoc()" style="flex:1">✨ Analyze with AI</button>
       <button class="btn-ghost" onclick="closeDocModal()">Close</button>
@@ -4271,7 +4271,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <button class="modal-x" onclick="closeShareModal()">×</button>
     <h3>📤 Share / Export patient record</h3>
     <p class="note">A clean, compiled record: profile + visit notes + document summaries. Real secure sending to another provider comes with the hosted version — for now, copy, print, or download.</p>
-    <textarea id="shareText" style="min-height:300px;font-size:13px" readonly></textarea>
+    <textarea id="shareText" aria-label="Shared patient record text" style="min-height:300px;font-size:13px" readonly></textarea>
     <div class="row">
       <button class="btn-primary" onclick="copyShare()">📑 Copy</button>
       <button class="btn-ghost" onclick="printShare()">🖨 Print</button>
@@ -27845,7 +27845,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b619';
+  window.__MLS_AV='b620';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

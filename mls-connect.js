@@ -15366,7 +15366,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (dayRow && !$("tpfMonthBtn")) {
         var wrap = document.createElement("span"); wrap.className = "tpf-month";
         var now = new Date(); var ymNow = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
-        wrap.innerHTML = '<input type="month" id="tpfMonthIn" value="' + ymNow + '" max="' + ymNow + '">' +
+        wrap.innerHTML = '<input type="month" id="tpfMonthIn" aria-label="Month" value="' + ymNow + '" max="' + ymNow + '">' +
           '<button type="button" id="tpfMonthBtn">\uD83D\uDDD3 Whole month</button>';
         dayRow.appendChild(wrap);
         wrap.querySelector("#tpfMonthBtn").onclick = function () { openMonth(($("tpfMonthIn") || {}).value || ""); };
@@ -17725,7 +17725,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -23019,7 +23019,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -25125,7 +25125,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -26962,7 +26962,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -28532,7 +28532,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
     });
     return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -30884,15 +30884,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sec.className = 'mls-r44-soft';
     sec.style.cssText = 'margin:12px;padding:16px;';
     function row(label, id, on) {
-      return '<div class="mls-r44-row"><label style="flex:1">' + label + '</label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '></div>';
+      return '<div class="mls-r44-row"><label for="' + id + '" style="flex:1">' + label + '</label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '></div>';
     }
     sec.innerHTML = '<b style="font-size:16px">🎛 MLS Controls</b><div class="sub">Every new feature, one place.</div>'
       + row('🎙️ Voice button acts standalone (no chat panel pop-up)', 'r44cVoiceSA', c.voiceStandalone)
       + row('Show the 🎙️ voice button', 'r44cVoice', c.showVoice)
-      + '<div class="mls-r44-row"><label style="flex:1">Show "Simple mode (tunnel)" guided view</label><input type="checkbox" id="r44cTunnel"' + (c.showTunnel ? ' checked' : '') + '><button class="mls-r44-btn ghost" id="r44cTunnelGo">🎯 Open</button></div>'
+      + '<div class="mls-r44-row"><label for="r44cTunnel" style="flex:1">Show "Simple mode (tunnel)" guided view</label><input type="checkbox" id="r44cTunnel"' + (c.showTunnel ? ' checked' : '') + '><button class="mls-r44-btn ghost" id="r44cTunnelGo">🎯 Open</button></div>'
       + row('🎂 Show birthdays on patient chips', 'r44cBday', c.birthdays)
       + row('Friendly "no patients scheduled" messages (instead of HTTP errors)', 'r44cErr', c.friendlyErrors)
-      + '<div class="mls-r44-row"><label style="flex:1">Quick-pick patients shown</label><select id="r44cQp" class="mls-r44-field" style="width:70px;margin:0"><option' + (c.qpCount === 3 ? ' selected' : '') + '>3</option><option' + (c.qpCount === 5 ? ' selected' : '') + '>5</option><option' + (c.qpCount === 8 ? ' selected' : '') + '>8</option></select></div>'
+      + '<div class="mls-r44-row"><label for="r44cQp" style="flex:1">Quick-pick patients shown</label><select id="r44cQp" class="mls-r44-field" style="width:70px;margin:0"><option' + (c.qpCount === 3 ? ' selected' : '') + '>3</option><option' + (c.qpCount === 5 ? ' selected' : '') + '>5</option><option' + (c.qpCount === 8 ? ' selected' : '') + '>8</option></select></div>'
       + '<div class="mls-r44-row"><label style="flex:1">🌟 Google Business Profile</label><span class="mls-r44-badge wait" id="r44cGbpSt">checking…</span><button class="mls-r44-btn ghost" id="r44cGbpOpen">Open</button></div>'
       + '<div class="mls-r44-row"><label style="flex:1">Plan</label><span class="mls-r44-badge on" id="r44cPlan">checking…</span></div>'
       + '<div class="mls-r44-row"><label style="flex:1">MLS cloud backend</label><span class="mls-r44-badge wait" id="r44cBk">checking…</span></div>';
@@ -33329,7 +33329,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b619';
+  window.__MLS_AV = window.__MLS_AV || 'b620';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33639,7 +33639,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b619';
+  var MLS_APP_BUILD='2026-07-25-b620';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
