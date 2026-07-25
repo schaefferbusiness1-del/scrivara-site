@@ -39,7 +39,7 @@
   'use strict';
   try { if (window.__mlsPtCardContain && window.__mlsPtCardContain.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ptc-2.0.0';
+  var VERSION = 'ptc-2.1.0';
   var STYLE_ID = 'mlsPtCardContainCss';
 
   function install() {
@@ -48,6 +48,32 @@
       var css = document.createElement('style');
       css.id = STYLE_ID;
       css.textContent =
+        /* ---- LAYOUT containment (ptc-2.1.0): the boot cost ----
+           #ptList is an 833px scroller holding 151 .pt-item rows, so ~146 rows
+           are off-screen and were still being laid out. That made the Patients
+           screen the most expensive view in the app to lay out, and layout cost
+           is paid once per frame in which anything mutates the DOM - which during
+           boot is ~700 frames' worth of work behind whichever view the doctor
+           last had open.
+
+           Measured on the running page, apply/measure/revert in a single
+           synchronous pass, three rounds:
+             forced style+layout   17.3ms -> 7.1ms   (59% faster)
+             #ptList.scrollHeight  17,222 -> 17,734  (3% over, self-correcting)
+             reverts to exactly 17,222 every time
+
+           contain-intrinsic-size is a FIXED 78px, deliberately NOT `auto`.
+           `auto` makes each row remember its rendered size, which permanently
+           changes scrollHeight (17,222 -> 25,084 and it stays there) - that made
+           the A/B unrepeatable and produced three contradictory verdicts before
+           it was spotted. A fixed size mutates nothing and reverts cleanly.
+           78px was chosen by sweeping 127/114/100/88/78: all cut layout ~60%,
+           and 78 is the only one whose scrollbar estimate is within 3% of true.
+
+           Note innerText on a skipped row returns '' while textContent still
+           works. Nothing reads innerText of .pt-item today (grepped), but any
+           future label/search code over this list must use textContent. */
+        '#patientsView .pt-item{content-visibility:auto;contain-intrinsic-size:78px}' +
         /* ---- horizontal containment (long/unbroken names) ---- */
         '.pt-item{min-width:0}' +
         '.pt-item .pt-main{min-width:0;overflow:hidden}' +
