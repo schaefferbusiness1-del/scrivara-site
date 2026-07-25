@@ -176,7 +176,56 @@ The cost is the **work each module does at boot**, over a real store:
 repeated store parsing. It is what 234 modules each *do* with that data while the
 first screen is trying to paint.
 
-### The strongest candidate, from source (b598)
+### THE LEAD — forced synchronous layout, 96% from two named modules (b598)
+
+Instrumented `getBoundingClientRect`, `getComputedStyle` and the eight
+`offset*`/`client*`/`scroll*` getters, installed before the feature scripts:
+
+```
+5,576 forced-layout reads during boot
+
+  feat_mls_calendar_exact.js   3,722   67%
+  feat_mls_calm_shell.js       1,633   29%
+  mls-connect.js                 103
+  everything else                118
+```
+
+Two modules are **96%** of every layout read at boot. Interleaved with the
+~700 DOM mutations happening at the same time, each read forces a synchronous
+style+layout over an 8,154-node DOM with 3,934 CSS rules. At ~1–2ms each that
+is 5.5–11s — which brackets the measured foreground TBT of 10,929ms.
+
+`feat_mls_calm_shell.js:48` is the shell's `visible()`:
+`!!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)` — called
+once per candidate control, and the coverage suite counts 802 active controls.
+
+> **Read this before "fixing" it.** A tight read-only loop is NOT the problem;
+> once layout is clean, subsequent reads are free. The cost is read → write →
+> read interleaving. Confirm the interleave before batching anything, and do not
+> memoize `visible()` across a write — a stale visibility answer puts a control
+> in the bar that the user cannot press, which is worse than a slow boot.
+
+**Measured at 28ms in a hidden tab, which is meaningless** — a hidden tab has no
+layout to compute, so forced reads are free there. That number will only become
+real in a foreground window. It is the single measurement this defect still
+needs, and it takes about a minute (see below).
+
+### The observer theory — also killed
+
+Instrumented `MutationObserver` construction and every callback:
+
+```
+182 observers created (94 document-wide at runtime)
+17,474 callback invocations · 65,490 mutation records
+TOTAL callback time: 444ms  (408ms of it document-wide)
+```
+
+444ms of ~9,500ms. The observer population is worth pinning (arm C, below)
+because it is real waste and it grows, but **it is not the boot defect**. Note
+65,490 records across ~94 document-wide observers implies only ~700 actual DOM
+mutations — the mutation count is fine. The reads are the problem, not the writes.
+
+### The population pin, from source (arm C)
 
 Per-module runtime attribution needs a **foreground browser window**, which
 automation cannot force — `document.hidden` was true on every attempt, and LoAF
@@ -208,8 +257,21 @@ polices *named* modules for exactly these two constructs — arm C is the
 population-level pin so the total cannot grow while each addition looks
 individually reasonable.
 
-**This is a candidate, not a proven cause.** It needs the runtime confirmation
-below before anyone rewrites 57 observers.
+**Superseded as a cause** by the 444ms measurement above — keep the pin, drop the
+theory.
+
+### The one measurement this defect still needs
+
+Everything expensive here is rendering, and **rendering is free in a hidden tab**.
+That is why five sessions have produced five different wrong answers. Automation
+cannot force window focus: `document.hidden` was true on every attempt bar one,
+and `long-animation-frame` records nothing without animation frames.
+
+**With the Chrome window focused for ~60 seconds**, run the layout-read
+instrument above plus a `longtask` observer across one reload. That yields
+forced-layout cost per module in the foreground and either confirms or kills the
+layout-thrash lead in a single pass. Until then, do not refactor either module:
+the 28ms hidden-tab figure is not evidence, and neither is anyone's intuition.
 
 **Confirming measurement, and it has to come before any fix.** Attribute
 main-thread time *per module* with the tab genuinely in **front** — the Chrome
