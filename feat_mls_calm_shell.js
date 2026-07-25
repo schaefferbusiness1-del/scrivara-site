@@ -966,34 +966,18 @@
       if (b.style.display !== wantDisp) b.style.display = wantDisp;
       var on = offered && id === active;
       b.classList.toggle('on', !!on);
-<<<<<<< Updated upstream
       /* WRITE ONLY ON CHANGE. setAttribute fires a mutation record even when
          the value is identical, and this pass runs on every external DOM
          change: measured on the owner's signed-in visit screen, 605
          aria-current writes in 40 seconds, EVERY ONE a no-op. The dock is not
          the source of the churn - it was amplifying it for free. */
-=======
-      /* WRITE ONLY ON CHANGE. setAttribute fires a mutation record even when the
-         value is identical, and this pass runs on every external DOM change:
-         measured on the owner's signed-in visit screen, 605 aria-current writes
-         in 40 seconds, EVERY ONE a no-op. That is ~3 full shell passes a second,
-         each one re-notifying every MutationObserver on the page - including the
-         ones whose own writes triggered this pass. The dock is not the source of
-         the churn, but it was amplifying it for free. */
->>>>>>> Stashed changes
       var wantCur = on ? 'page' : 'false';
       if (b.getAttribute('aria-current') !== wantCur) b.setAttribute('aria-current', wantCur);
       if (on) activeBtn = b;
     });
     if (pill && activeBtn) {
-<<<<<<< Updated upstream
       /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, in the
          file the boot lane measured at 29% of boot's 5,576 forced layouts. */
-=======
-      /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, and the
-         boot lane measured this file at 29% of boot's 5,576 forced layouts.
-         Skip the whole block when the pill is already where it belongs. */
->>>>>>> Stashed changes
       var w = activeBtn.offsetWidth + 'px';
       var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
       if (pill.style.width !== w) pill.style.width = w;
@@ -1006,7 +990,6 @@
       var src = D.getElementById(c.getAttribute('data-count'));
       var n = src ? parseInt(textOf(src), 10) : 0;
       if (!isFinite(n) || n <= 0) { c.classList.remove('show'); return; }
-<<<<<<< Updated upstream
       /* Assigning textContent replaces the text node, so an unchanged count
          still fires a childList record: 121 of them in the same 40 seconds. */
       var want = n > 99 ? '99+' : String(n);
@@ -1014,13 +997,6 @@
       /* 108 no-op class writes in 23s: adding a class an element already
          carries still notifies every attribute observer. */
       if (!c.classList.contains('show')) c.classList.add('show');
-=======
-      /* textContent assignment replaces the text node, so an unchanged count
-         still fires a childList record: 121 of them in the same 40 seconds. */
-      var want = n > 99 ? '99+' : String(n);
-      if (c.textContent !== want) c.textContent = want;
-      c.classList.add('show');
->>>>>>> Stashed changes
     });
   }
 
@@ -1620,13 +1596,7 @@
     var visit = qs('#visitView');
     var el = qs('#mlsStages');
     /* Both display writes sit BEFORE the lastStage guard below, so they ran on
-<<<<<<< Updated upstream
        every pass regardless of whether anything changed. */
-=======
-       every pass regardless of whether anything changed - and this pass runs on
-       every external DOM mutation. Same reason as the dock: a style write fires
-       a mutation record even when the value is identical. */
->>>>>>> Stashed changes
     if (!visit || !visible(visit)) { if (el && el.style.display !== 'none') el.style.display = 'none'; return; }
     el = ensureStages();
     if (!el) return;
