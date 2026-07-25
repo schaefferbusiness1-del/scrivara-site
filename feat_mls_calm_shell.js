@@ -256,6 +256,19 @@
        loses its reach. The richer control - the one that also brings the note
        card into view - is the one that stays visible. */
     'body.mls-calm .ez3-advrow{display:none!important}',
+    /* On a phone, opening a patient showed the profile AND kept the whole
+       patient list underneath it - 1664px of profile stacked on 808px of list,
+       so the doctor scrolled through a directory they had already used to get
+       where they were. Master-detail, not master-AND-detail.
+       The list folds only while a profile is open, only under 700px, and it
+       comes straight back on :focus-within of the search row - so the primary
+       way to switch patients still works with one tap and needs no new
+       control. The dock's Patient button is the second route. Verified live:
+       503px -> 0 while reading, 0 -> 503px the moment search takes focus. */
+    '@media (max-width:700px){',
+    'body.mls-calm #ptSplitWrap.px-has-profile #ptList{display:none!important}',
+    'body.mls-calm #ptSplitWrap.px-has-profile .pt-search:focus-within ~ #ptList{display:block!important}',
+    '}',
     'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
     /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
        patient. The single largest duplication is the prep summary. prepRows()
