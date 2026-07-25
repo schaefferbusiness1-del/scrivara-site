@@ -37,16 +37,22 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
-const FILES = ['mls-connect.js', 'feat_athena_tooltip_dedupe.js', 'feat_mls_pervisit_unify.js'];
+const FILES = ['mls-connect.js', 'feat_athena_tooltip_dedupe.js', 'feat_mls_pervisit_unify.js', 'ScribeFlow.html'];
 
 /* ---- 1. every writer on a repeating pass compares before it commits -------
  *
  * The first three were named by stack sampling during the measurement. The
- * other four were found by reading all 22 body.classList sites rather than only
+ * next four were found by reading all 22 body.classList sites rather than only
  * the sampled ones - each runs on a render or reconcile pass, so each is the
  * same defect; they simply did not happen to be sampled. Note that
  * mls-top-voice-tools has TWO writers: guarding only the sampled one would have
  * left the churn roughly where it was.
+ *
+ * The last three are in ScribeFlow.html, which was outside the scope of the
+ * first fix entirely. Re-measuring live at b632 found it immediately:
+ * remove('mls-has-active-pt') committed 5 times in 80s, 0 of them changing the
+ * value. Scoping a rule to the files you already suspect is how the eighth
+ * writer survives the fix for the first seven.
  */
 
 const GUARDED = [
@@ -63,7 +69,13 @@ const GUARDED = [
   ['feat_athena_tooltip_dedupe.js', 'reconcilePortalOwner', 'unsampled',
     "if (document.body.classList.contains('mls-has-exact-portal-action') !== wantPortal) document.body.classList.toggle('mls-has-exact-portal-action', wantPortal);"],
   ['feat_athena_tooltip_dedupe.js', 'settings reconcile', 'unsampled',
-    "if (document.body && document.body.classList.contains('mls-settings-open') !== open) document.body.classList.toggle('mls-settings-open', open);"]
+    "if (document.body && document.body.classList.contains('mls-settings-open') !== open) document.body.classList.toggle('mls-settings-open', open);"],
+  ['ScribeFlow.html', 'ctx-bar build(), remove arm', '5 measured live at b632',
+    'safe(function(){ if (document.body.classList.contains(BODY_CLS)) document.body.classList.remove(BODY_CLS); });'],
+  ['ScribeFlow.html', 'ctx-bar build(), add arm', '5 measured live at b632',
+    'safe(function(){ if (!document.body.classList.contains(BODY_CLS)) document.body.classList.add(BODY_CLS); });'],
+  ['ScribeFlow.html', 'renderProfile()', 'unsampled',
+    "if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta);"]
 ];
 
 for (const [file, fn, volume, guard] of GUARDED) {
@@ -80,7 +92,10 @@ const BANNED = [
   ['feat_athena_tooltip_dedupe.js', "\n    document.body.classList.add('mls-has-easy-advanced-trigger');"],
   ['feat_athena_tooltip_dedupe.js', "    document.body.classList.toggle('mls-has-exact-portal-action', !!(exact && exact.isConnected));"],
   ['feat_athena_tooltip_dedupe.js', "    if (document.body) document.body.classList.toggle('mls-settings-open', open);"],
-  ['feat_mls_pervisit_unify.js', '    if (rich && base) cls.add("mls-pvu-rich");\n    else cls.remove("mls-pvu-rich");']
+  ['feat_mls_pervisit_unify.js', '    if (rich && base) cls.add("mls-pvu-rich");\n    else cls.remove("mls-pvu-rich");'],
+  ['ScribeFlow.html', 'safe(function(){ document.body.classList.remove(BODY_CLS); });'],
+  ['ScribeFlow.html', 'safe(function(){ document.body.classList.add(BODY_CLS); });'],
+  ['ScribeFlow.html', "try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}"]
 ];
 for (const [file, snippet] of BANNED) {
   assert(!read(file).includes(snippet),
@@ -123,7 +138,7 @@ for (const file of FILES) {
    this file and read the measurement above. All sites at these counts have been
    read by hand; one-shot init and teardown paths are included and are not
    churn. */
-const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1 };
+const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -160,4 +175,4 @@ for (const [asset, token, retired] of [
     asset + ' still exposes the retired cache token ' + retired + ' somewhere in the loader bundle');
 }
 
-console.log('PASS body-class churn: 7 writers on repeating passes compare before committing (3 measured at 68+54+14 no-op whole-document style invalidations in 44s, 4 more found by reading every site), the 4 permitted unguarded toggles provably flip first, and both changed satellites ship under moved cache tokens');
+console.log('PASS body-class churn: 10 writers on repeating passes compare before committing (3 measured at 68+54+14 no-op whole-document style invalidations in 44s, 4 more found by reading every site, 3 more in a fourth file found by re-measuring live after the first fix), the 4 permitted unguarded toggles provably flip first, and both changed satellites ship under moved cache tokens');

@@ -6515,11 +6515,11 @@ function applyAppearance(){
   b.classList.toggle('compact', getQolCompact());
 }
 /* Live preview helpers wired to the Settings selects/checkbox. */
-function applyThemePreview(v){ document.body.classList.toggle('theme-dark', v==='dark'); }
+function applyThemePreview(v){ var w=v==='dark'; if(document.body.classList.contains('theme-dark')!==w) document.body.classList.toggle('theme-dark', w); }
 /* Patient profile position (split/stack) + group-by-procedure — per-device prefs. */
 function getQolPtLayout(){ return localStorage.getItem(uns('qolPtLayout'))||'split'; }
 function getQolGroupProc(){ return localStorage.getItem(uns('qolGroupProc'))==='1'; }
-function applyPtLayout(){ try{ document.body.classList.toggle('pt-split', getQolPtLayout()==='split'); }catch(e){} }
+function applyPtLayout(){ try{ var w=getQolPtLayout()==='split'; if(document.body.classList.contains('pt-split')!==w) document.body.classList.toggle('pt-split', w); }catch(e){} }
 function applyPtLayoutPreview(v){ try{ localStorage.setItem(uns('qolPtLayout'), v); }catch(e){} applyPtLayout(); }
 function applyGroupProcPreview(c){ try{ localStorage.setItem(uns('qolGroupProc'), c?'1':'0'); }catch(e){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
 /* Patient layout and group-by-procedure are the two Display controls that
@@ -6551,7 +6551,7 @@ function applyTextSizePreview(v){
   const b=document.body; b.classList.remove('text-small','text-large');
   if(v==='small') b.classList.add('text-small'); else if(v==='large') b.classList.add('text-large');
 }
-function applyCompactPreview(on){ document.body.classList.toggle('compact', !!on); }
+function applyCompactPreview(on){ var w=!!on; if(document.body.classList.contains('compact')!==w) document.body.classList.toggle('compact', w); }
 
 /* Strip any prior signature block off the end of a note so re-generating or
    re-saving never duplicates it (idempotent). Mirrors stripCommentBlock(). */
@@ -12639,7 +12639,7 @@ function renderProfile(){
   const nonePanel=document.getElementById('profileNonePanel');
   const chip=document.getElementById('ptDeselectChip');
   const p=activePatient();
-  try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}
+  try{ var wantPta=!!p; if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta); }catch(e){}
   if(!p){
     card.style.display='none';
     if(nonePanel) nonePanel.style.display=getPatients().length?'block':'none';
@@ -13832,7 +13832,7 @@ function applyNavLayout(){
     var sel2=document.getElementById('navLayoutSel'); if(sel2&&sel2.value!==actual) sel2.value=actual;
     return;
   }
-  document.body.classList.toggle('mls-nav-left',mode==='left');
+  var wNavL=mode==='left'; if(document.body.classList.contains('mls-nav-left')!==wNavL) document.body.classList.toggle('mls-nav-left',wNavL);
   var sel=document.getElementById('navLayoutSel'); if(sel&&sel.value!==mode) sel.value=mode;
   var nav=document.querySelector('.mainnav'); if(!nav) return;
   var btn=document.getElementById('navCollapseBtn');
@@ -13849,7 +13849,7 @@ function applyNavLayout(){
       nav.insertBefore(btn,nav.firstChild);
     }
     var col=false; try{ col=localStorage.getItem(uns('navCollapsed'))==='1'; }catch(e){}
-    document.body.classList.toggle('mls-nav-collapsed',col);
+    if(document.body.classList.contains('mls-nav-collapsed')!==!!col) document.body.classList.toggle('mls-nav-collapsed',!!col);
     btn.textContent=col?'⟩':'⟨'; btn.title=col?'Expand the sidebar':'Collapse to the icon rail';
   }else{
     document.body.classList.remove('mls-nav-collapsed');
@@ -27855,7 +27855,9 @@ function _ptGroupSort(mode){
     var p = activePt();
     if (!p){
       if (bar) bar.style.display='none';
-      safe(function(){ document.body.classList.remove(BODY_CLS); });
+      /* 5 no-op removes in 80s, measured live: the class is already absent,
+         and re-committing it invalidates style for the whole document. */
+      safe(function(){ if (document.body.classList.contains(BODY_CLS)) document.body.classList.remove(BODY_CLS); });
       return;
     }
     if (!bar){
@@ -27865,7 +27867,7 @@ function _ptGroupSort(mode){
       nav.parentElement.insertBefore(bar, nav.nextSibling);
     }
     renderInto(bar, p);
-    safe(function(){ document.body.classList.add(BODY_CLS); });
+    safe(function(){ if (!document.body.classList.contains(BODY_CLS)) document.body.classList.add(BODY_CLS); });
   }
   function injectCss(){
     if ($(CSS_ID)) return;
@@ -27979,7 +27981,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b634';
+  window.__MLS_AV='b635';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
