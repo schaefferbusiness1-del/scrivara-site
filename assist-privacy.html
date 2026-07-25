@@ -15,7 +15,7 @@
 </head>
 <body>
 <h1>MLS Assist — Privacy Policy</h1>
-<p class="muted">Last updated: July 18, 2026 · Provided by MLS Scribe LLC</p>
+<p class="muted">Last updated: July 24, 2026 · Provided by MLS Scribe LLC</p>
     <p class="muted" style="margin-top:6px">The full MLS Scribe privacy policy is at <a href="https://mlsscribe.com/privacy.html">mlsscribe.com/privacy.html</a>; where the two differ, that policy governs.</p>
 
 <p>MLS Assist is a Chrome extension used to evaluate MLS alongside athenaOne and the MLS app. It supports clinician-started live schedule reads, supervised reads from the one chart the clinician selects, and reviewed draft placement. The current hosted release is not authorized for real patient information.</p>
@@ -39,7 +39,23 @@
   <li><code>tabs</code> — to identify the EMR tab to act on and return you to MLS.</li>
   <li><code>storage</code> — to remember your local settings.</li>
   <li><code>alarms</code> — to run the optional one-open-chart snapshot at the time you choose.</li>
-  <li><code>host access</code> — limited to the supported MLS and athenaOne origins declared in the extension manifest.</li>
+  <li><code>webNavigation</code> — to identify which frame of the EMR page holds the chart being read.</li>
+  <li><code>system.display</code> — to place the MLS and EMR windows side by side when you start a pull.</li>
+  <li><code>offscreen</code> — to hold the audio recorder in a background document so recording survives tab changes.</li>
+  <li><code>host access</code> — see the exact list below.</li>
+</ul>
+
+<!-- This section previously read "limited to the supported MLS and athenaOne
+     origins declared in the extension manifest", which understated the shipped
+     manifest by eleven hosts. A privacy policy that names fewer origins than the
+     extension actually declares is the wrong error to make in the user's favour. -->
+<h2>Exactly which sites the extension can access</h2>
+<ul>
+  <li><b>athenanet.athenahealth.com</b> — your EMR: reading the visit and taking the steps you approve.</li>
+  <li><b>mlsscribe.com</b> (and subdomains) — the MLS app itself.</li>
+  <li><b>scrivara-backend.onrender.com</b> — the MLS backend that stores your account data and clinical content.</li>
+  <li><b>localhost / 127.0.0.1</b> — development builds only; unused in the published extension.</li>
+  <li><b>Google Maps, g.page, Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, Yelp, Facebook</b> — used <b>only</b> by the optional reputation tools, and only when you start a scan. These read <b>public business listings and public reviews</b> about your practice. No patient information is sent to any of them, and they are never touched during clinical work.</li>
 </ul>
 
 <h2>Protected health information (HIPAA)</h2>

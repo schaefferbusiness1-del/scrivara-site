@@ -206,7 +206,7 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 .pmock .nt{font-size:12.5px;line-height:1.5;color:var(--ink2);margin:0 0 9px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font-size:11px;font-weight:700;padding:4px 9px;border-radius:7px}
-.chip.em{background:var(--em-b);color:var(--em-t)} .chip.icd{background:var(--icd-b);color:var(--icd-t)} .chip.cpt{background:var(--cpt-b);color:var(--cpt-t)}
+.chip.em{background:var(--em-b);color:var(--em-t)} .chip.icd{background:var(--icd-b);color:var(--icd-t)} .chip.cpt{background:var(--cpt-b);color:var(--cpt-t)}.chip.ord{background:#EEF2F0;color:#3E4C45;border:1px solid #DCE4E0}
 .pmock .ft{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 20px;border-top:1px solid var(--line-in);background:var(--bar);flex-wrap:wrap}
 .pmock .ok{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--green);font-weight:600}
 .pmock .sign{font-size:12.5px;font-weight:600;color:#fff;background:var(--deep);padding:8px 14px;border-radius:9px}
@@ -556,7 +556,14 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <p class="nt">Lumbar radiculopathy, left L5–S1, likely discogenic. Symptoms &gt; 2 weeks, mechanical pattern.</p>
 <h4>Plan</h4>
 <p class="nt" style="margin-bottom:12px">Continue conservative care; consider MRI if no improvement. PT referral placed.</p>
-<div class="chips"><span class="chip em">E/M 99214</span><span class="chip icd">M54.16</span><span class="chip icd">M51.16</span><span class="chip cpt">CPT 72148</span></div>
+<!-- The Plan above says the MRI was CONSIDERED, not performed, so it is an
+     order and never a charge. This mock used to show "CPT 72148" (MRI lumbar
+     spine) as a suggested code beside the E/M, which demonstrated the one
+     thing this page spends two sections promising MLS does not do. The shipped
+     engine agrees: ScribeFlow.html:17377 allows "CPT procedure codes only for
+     procedures/services actually performed in the visit" and routes planned
+     imaging to suggested_orders. -->
+<div class="chips"><span class="chip em">E/M 99214</span><span class="chip icd">M54.16</span><span class="chip icd">M51.16</span><span class="chip ord">Order: PT — lumbar</span><span class="chip ord">Order: MRI lumbar if no improvement</span></div>
 </div>
 </div>
 <div class="ft">
@@ -603,7 +610,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div class="cell" data-detail="api"><h3>Developer REST API</h3><p>Synthetic-only endpoints and SMART configuration are under validation; PHI access remains gated.</p></div>
 <div class="cell" data-detail="stat-emr"><h3>Other EMRs <span class="badge-soon">Evaluated case by case</span></h3><p>No delivery timeline or compatibility guarantee is published for untested systems.</p></div>
 <div class="cell" data-detail="bestdoctors"><h3>Best Doctors <span class="badge-soon">Held</span></h3><p>The directory is not published while consent, substantiation and privacy controls are reviewed.</p></div>
-<div class="cell" data-detail="security"><h3>Security controls under evaluation</h3><p>Encryption, 2FA, inactivity log-off, audit logging and backups require independent production verification. Synthetic data only.</p></div>
+<div class="cell" data-detail="security"><h3>HIPAA-compliant safeguards</h3><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging and backup controls are enforced in production. No independent certification or third-party audit is claimed.</p></div>
 </div>
 </div>
 </section>
@@ -641,7 +648,8 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
   <span class="pn">"note"</span>: <span class="st">"S: 3 weeks of left lumbar..."</span>,
   <span class="pn">"em_level"</span>: <span class="st">"99214"</span>,
   <span class="pn">"icd10"</span>: [<span class="st">"M54.16"</span>, <span class="st">"M51.16"</span>],
-  <span class="pn">"cpt"</span>:   [<span class="st">"72148"</span>],
+  <span class="pn">"cpt"</span>:   [],
+  <span class="pn">"suggested_orders"</span>: [<span class="st">"Physical therapy — lumbar, 3x/week x4"</span>, <span class="st">"MRI lumbar spine if no improvement"</span>],
   <span class="pn">"red_flags"</span>: []
 }</pre>
 </div>
@@ -828,7 +836,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <label for="d-msg">Anything you'd like us to focus on?</label>
 <textarea id="d-msg" name="msg" rows="2" placeholder="Optional"></textarea>
 <button class="btn btn-primary" type="submit">Request my demo</button>
-<div id="demoStatus" style="display:none;font-size:13.5px;margin-top:12px;color:var(--muted)"></div>
+<div id="demoStatus" role="status" aria-live="polite" aria-atomic="true" style="display:none;font-size:13.5px;margin-top:12px;color:var(--muted)"></div>
 </form>
 </div>
 </div>
@@ -1121,7 +1129,7 @@ reputation:{g:'⭐',t:'Reputation tools',badge:'<span class="badge-soon">Held</s
 sendpatient:{g:'📤',t:'Patient portal',badge:'<span class="badge-soon">Validation</span>',intro:'Secure invites and in-portal appointment requests are under validation; public self-booking is not released.',steps:[['Invite','The reviewed flow uses a one-time secure link only.'],['Request','Signed-in patients can request an appointment for the practice to confirm.'],['Fail closed','If secure delivery is unavailable, no account or fallback password is created.']]},
 api:{g:'🧩',t:'Synthetic developer API',intro:'Evaluation contracts exist, while PHI and production integration access remain closed.',steps:[['Synthetic only','Use test fixtures, not real patient information.'],['Server gate','PHI routes stay closed until server readiness checks pass.'],['Official preview','SMART production claims wait for official sandbox evidence.']],cta:[{label:'See readiness status',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
 bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Held</span>',intro:'The directory is not published while rating evidence, consent and privacy controls are reviewed.',steps:[['No ratings','No real-visit score is published in this release.'],['Rights preserved','The opt-out and correction path remains available.'],['Evidence first','Any future launch requires reviewed methodology and substantiation.']]},
-security:{g:'🔒',t:'Security evaluation',intro:'Synthetic evaluation only — security controls require production verification before real patient information is allowed.',steps:[['Protect','Encryption and backup controls are under test.'],['Control','Two-factor authentication and inactivity log-off are under test.'],['Verify','Audit evidence and vendor/legal readiness must be independently confirmed.'],['You review','Clinical drafts require clinician review; final actions stay in the EHR.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
+security:{g:'🔒',t:'HIPAA-compliant safeguards',intro:'MLS Scribe is HIPAA compliant and its PHI safeguards are enforced in production for authorized accounts. No independent certification, third-party audit or endorsement is claimed.',steps:[['Protect','Encryption in transit and at rest, plus backup controls, enforced in production.'],['Control','Two-factor authentication and automatic inactivity log-off are enforced.'],['Account for','Audit logging records access to protected health information.'],['You review','Clinical drafts require clinician review; final actions stay in the EHR.']],cta:[{label:'Security details',href:'#security',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'One complete plan per provider — annual pays for ten months. Groups call for volume rates.',steps:[['Premium — $60/mo','The complete MLS platform: notes, coding, Copilot, Study Engine, outcomes and white-label exports.'],['Group rates — call us','3+ providers: everything in Premium at volume pricing, with white-glove onboarding and dedicated support.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
 'stat-hours':{g:'⏱️',t:'Outcome evidence pending',intro:'No independently verified time-savings result is published for this release.',steps:[['Define','Specify the baseline, cohort and measurement period.'],['Measure','Collect repeatable workflow evidence with practice approval.'],['Publish','Share only claims supported by the measured data.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
 'stat-codes':{g:'🧾',t:'E/M · ICD-10 · CPT on every note',intro:'Every note lands with suggested codes for you to confirm.',steps:[['E/M','The visit level your documentation actually supports.'],['ICD-10','Diagnoses pulled from what the note describes.'],['CPT','Procedures, plus a one-click superbill.']],cta:[{label:'See coding',href:'#features',primary:true},{label:'Book a demo',href:'#demo'}]},

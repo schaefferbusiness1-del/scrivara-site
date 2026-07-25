@@ -320,10 +320,19 @@ load(); renderPlatforms(); dash();
     '<button class="btn violet" id="repGenBtn" onclick="window.__repGen()">✨ Write my Google listing</button><span class="note" id="repGenNote"></span></div>'+
     '<div id="repGenOut"></div></div>'+
 
+    /* The FREE guided setup lives in its own card, deliberately separate from
+       the paid upsell below. mls_reviews_scrape_app.js hides #repUpsell about a
+       second after load (it owns the single reputation surface), and this link
+       used to sit inside it - so the only route to gbp-setup.html from any
+       published page vanished on its own a moment after appearing. A free path
+       must not be removed by the code that retires a paid pitch. */
+    '<div class="card" id="repGuided" style="border-color:rgba(46,106,75,.45)"><h2>🌟 Set up your Google Business Profile</h2>'+
+    '<p class="hint">A free, guided walkthrough: every field pre-filled and copy-buttoned, every Google page deep-linked. You create and verify the listing yourself — MLS never sees your Google password.</p>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn green" style="text-decoration:none" href="gbp-setup.html">🌟 Set up my Google Business Profile (guided)</a></div></div>'+
+
     '<div class="card" id="repUpsell" style="border-color:rgba(46,106,75,.45)"><h2>🚀 Let MLS run your marketing</h2>'+
     '<p class="hint"><b>MLS Marketing</b> keeps your Google Business Profile optimized, drafts a reply to every review, and runs compliant review-request campaigns to real patients — every change doctor-approved before it publishes. Start with the free guided setup; add paid automation whenever you\'re ready.</p>'+
-    '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn green" style="text-decoration:none" href="gbp-setup.html">🌟 Set up my Google Business Profile (guided)</a></div>'+
-    '<p class="note" style="margin-top:6px">The guided setup is free and MLS never sees your Google password. Paid automation is optional — you approve everything before it publishes.</p></div>';
+    '<p class="note" style="margin-top:6px">Paid automation is optional — you approve everything before it publishes. The guided setup above stays free.</p></div>';
   if(docCard && docCard.parentNode){ docCard.parentNode.insertBefore(host, docCard.nextSibling); }
   else document.querySelector('.wrap').appendChild(host);
 

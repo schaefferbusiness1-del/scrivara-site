@@ -228,7 +228,12 @@ a{color:var(--blue)}
       '<div class="row" style="margin:10px 0"><a class="btn primary" target="_blank" rel="noopener noreferrer" href="' + url + '">↗ Open Google and start</a></div>' +
       '<label>Business name (exactly this — no taglines, Google rejects keyword-stuffed names)</label>' +
       copybox('cbName', S.f.doctor ? (S.f.doctor + (S.f.practice ? ' — ' + S.f.practice : '')) : S.f.practice) +
-      '<label>Category</label>' + copybox('cbCat', S.f.category || 'Pain management physician') +
+      /* Never invent the doctor's specialty. This fell back to 'Pain management
+         physician' whenever the category was left unset, and then offered it as
+         a copy-ready value to paste into a real Google Business Profile - so an
+         orthopaedic surgeon who skipped the field could publish themselves as a
+         pain physician without ever choosing it. An unanswered field says so. */
+      '<label>Category</label>' + copybox('cbCat', S.f.category || '— choose your category in step 1 first —') +
       '<label>Address</label>' + copybox('cbAddr', S.f.address) +
       '<label>Phone</label>' + copybox('cbPhone', S.f.phone) +
       '<label>Website</label>' + copybox('cbSite', S.f.website) +

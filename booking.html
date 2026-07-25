@@ -177,9 +177,26 @@ function loadSlots(){
   document.getElementById('slotMsg').textContent='';
   var doc=document.getElementById('doctor').value;
   var url=BACKEND_URL+'/api/schedule/public/'+encodeURIComponent(token)+'/slots?date='+date+(doc?('&doctor='+doc):'');
-  mlsSensitiveFetch(url).then(function(r){ return r.ok?r.json():{slots:[]}; }).then(function(j){
-    var slots=j.slots||[];
+  /* A failed request is not an empty schedule. `r.ok ? json : {slots:[]}` turned
+     every HTTP error into zero slots, which the page then reported as a fact
+     about the office's availability - so a 5xx told the patient there were no
+     appointments that day and they went elsewhere. Only an answer the server
+     actually gave may be presented as availability. */
+  mlsSensitiveFetch(url).then(function(r){
+    if(r.ok) return r.json().then(function(j){ return {ok:true, j:j}; }, function(){ return {ok:false}; });
+    return {ok:false};
+  }, function(){ return {ok:false}; }).then(function(res){
     grid.innerHTML='';
+    if(!res.ok){
+      document.getElementById('slotMsg').textContent = 'We could not load times for this day — this is a connection problem, not a full schedule. Please try again.';
+      var again=document.createElement('button');
+      again.type='button'; again.className='btn ghost'; again.textContent='Try again';
+      again.onclick=function(){ loadSlots(); };
+      grid.appendChild(again);
+      return;
+    }
+    var j=res.j||{};
+    var slots=j.slots||[];
     if(!slots.length){ document.getElementById('slotMsg').textContent=openDaysMsg(false); return; }
     slots.forEach(function(s){
       var b=document.createElement('div');

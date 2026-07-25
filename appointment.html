@@ -54,6 +54,17 @@
     <p class="sub">This link may have expired or already been used. Please contact the office if you need help.</p>
   </div>
 
+  <!-- A transient failure is not a verdict on the link. 5xx, a Render cold
+       start, a dropped connection and an unreadable body used to land in
+       #notfound above, telling the patient their appointment link was expired
+       or used when the office had simply not answered - and #notfound has no
+       control, so the page was a dead end. -->
+  <div id="offline" class="card hide">
+    <h1>We couldn't reach the office</h1>
+    <p class="sub">Your appointment is unchanged and nothing has been cancelled. This is usually a connection problem — please try again.</p>
+    <button type="button" class="btn" id="retryLoad" onclick="init()">Try again</button>
+  </div>
+
   <div id="view" class="card hide">
     <span id="statusPill" class="pill req">Requested</span>
     <h1 id="hello">Your appointment</h1>
@@ -73,7 +84,7 @@
       <button class="btn ghost" onclick="cancelAppt()" style="margin-top:6px">Need to cancel?</button>
     </div>
 
-    <div id="apptErr" class="err hide"></div>
+    <div id="apptErr" class="err hide" role="status" aria-live="polite" aria-atomic="true"></div>
     <p class="note">🔒 This secure page is just for you — no password needed. Please don't include medical details. For anything urgent, call the office or 911.</p>
   </div>
 
@@ -88,7 +99,7 @@
 <script>
 var BACKEND_URL = 'https://scrivara-backend.onrender.com';
 var ptoken = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.t) || '';
-function show(id){ ['loading','notfound','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
+function show(id){ ['loading','notfound','offline','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
 
 function render(a){
   document.getElementById('whenText').textContent = a.when || a.date || 'Time to be confirmed';
@@ -108,12 +119,27 @@ function render(a){
   show('view');
 }
 
+/* Only the server may declare this link dead. A parsed answer means the office
+   spoke - ok:false, or a 404/410 for a token it has retired - and that is a
+   real "not found". A rejection, a 5xx, or a body that will not parse is
+   transient and must stay retryable: those used to reject into the same
+   #notfound panel, so a cold backend told the patient their appointment link
+   had expired or been used, with no control left to try again. */
 function init(){
   if(!ptoken){ show('notfound'); return; }
+  show('loading');
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
-    .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
-    .then(function(j){ if(j && j.ok && j.appointment){ render(j.appointment); } else { show('notfound'); } })
-    .catch(function(){ show('notfound'); });
+    .then(function(r){
+      if(r.ok) return r.json().then(function(j){ return {kind:'answered', body:j}; }, function(){ return {kind:'trouble'}; });
+      if(r.status === 404 || r.status === 410) return {kind:'gone'};
+      return {kind:'trouble'};
+    }, function(){ return {kind:'trouble'}; })
+    .then(function(res){
+      if(res.kind === 'trouble'){ show('offline'); return; }
+      if(res.kind === 'gone'){ show('notfound'); return; }
+      var j = res.body;
+      if(j && j.ok && j.appointment){ render(j.appointment); } else { show('notfound'); }
+    });
 }
 
 function confirmAppt(){
@@ -131,10 +157,20 @@ function confirmAppt(){
    and offered no protection against double-submits). The second tap within
    6 seconds confirms; the request locks while in flight, and a repeat cancel
    of an already-cancelled appointment is a clean no-op server-side. */
+/* The window has a FLOOR as well as a ceiling. With only an upper bound, an
+   ordinary double-click or a phone's double-tap satisfied both taps in a few
+   milliseconds, so a patient could cancel a real appointment without ever
+   seeing the confirmation they were supposed to be answering. 600ms is below
+   deliberate re-tap speed and above every accidental one. */
+var CANCEL_ARM_MIN_MS = 600, CANCEL_ARM_MAX_MS = 6000;
 var _cancelArmedAt = 0, _cancelBusy = false, _cancelPromptTimer = null;
 function cancelAppt(){
   if(_cancelBusy) return;
-  if(Date.now() - _cancelArmedAt > 6000){
+  if(_cancelArmedAt && Date.now() - _cancelArmedAt < CANCEL_ARM_MIN_MS){
+    showPrompt('Tap "Cancel" once more to confirm — the office will be notified.');
+    return;
+  }
+  if(Date.now() - _cancelArmedAt > CANCEL_ARM_MAX_MS){
     _cancelArmedAt = Date.now();
     showPrompt('Tap "Cancel" once more within 6 seconds to confirm — the office will be notified.');
     if(_cancelPromptTimer) clearTimeout(_cancelPromptTimer);

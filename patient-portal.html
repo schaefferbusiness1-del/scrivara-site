@@ -377,11 +377,22 @@
     // 1) Bearer-mode attempt: NO credentials → no credentialed preflight → not
     //    blocked by the current server CORS config.
     mlsSensitiveFetch(API+"/api/patient/auth/login", { method:"POST", credentials:"omit", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) })
-      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, status:r.status, j:j}; }); })
       .then(function(res){
         if(!res.ok){
-          try{ console.warn('[patient portal] sign-in declined',res.j||{}); }catch(e){}
-          fail("We couldn't sign you in. Check your username, password, and date of birth, then try again.");
+          try{ console.warn('[patient portal] sign-in declined',res.status,res.j||{}); }catch(e){}
+          /* Only 401/403 means the credentials were actually rejected. A 500,
+             a 502 from a cold backend, or a 429 used to produce the same
+             sentence, so the portal told a patient their own username, password
+             and date of birth were wrong when the server had simply failed -
+             and they would sit there re-checking details that were correct. */
+          if(res.status===401||res.status===403){
+            fail("We couldn't sign you in. Check your username, password, and date of birth, then try again.");
+          } else if(res.status===429){
+            fail("Too many sign-in attempts. Please wait a minute and try again — your details may well be correct.");
+          } else {
+            fail("We couldn't reach the portal just now. Your details may be fine — please try again in a moment.");
+          }
           return null;
         }
         var tok = res.j && (res.j.session || res.j.token);
@@ -649,7 +660,16 @@
       if(res.ok){ pwForm(res.j&&res.j.username); return; }
       try{ console.warn('[patient portal] invite claim declined',res.status,res.j||{}); }catch(e){}
       if(res.status===404){ body('This setup link cannot be completed. Sign in with the <b>username and password</b> from your care team, or ask them for a new invite.'+OKBTN); return; }
-      body('This link has expired or was already used.<div style="color:#55605A;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
+      /* "Expired or already used" is a verdict, and only the server may reach
+         it. Every non-404 used to land here, so a 500 or a 502 from a cold
+         backend told the patient their one-time invite was spent - and since
+         the copy tells them to ask for a fresh link, a transient blip made
+         them burn a working invite and go back to the practice for another. */
+      if(res.status===410||res.status===409||res.status===400){
+        body('This link has expired or was already used.<div style="color:#55605A;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
+        return;
+      }
+      body('We could not open your invite just now.<div style="color:#55605A;font-size:13px;margin-top:8px">Your link has <b>not</b> been used. This is usually a temporary problem — please try the same link again in a moment.</div>'+OKBTN);
     })
     .catch(function(){ body('We could not open your invite. Check your connection, then open the latest link from your email again.'+OKBTN); });
 })();

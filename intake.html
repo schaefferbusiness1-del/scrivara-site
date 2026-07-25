@@ -111,7 +111,7 @@
           <!-- Untouched, this used to submit 0 - "no pain" - as if the patient
                had said it. A slider at rest is an unanswered question, not an
                answer of zero. It reads "—" until the patient actually moves it. -->
-          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" data-touched="0" aria-describedby="painVal" oninput="this.setAttribute('data-touched','1');document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">—</span></div>
+          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" data-touched="0" aria-label="Current pain level, 0 means none and 10 means worst" aria-valuetext="Not answered yet" aria-describedby="painVal" oninput="this.setAttribute('data-touched','1');this.setAttribute('aria-valuetext',this.value);document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">—</span></div>
         </div>
         <div class="field"><label for="painLoc">Where is the pain / problem?</label><input id="painLoc" placeholder="e.g. lower back, right leg"></div>
         <div class="grid2">
@@ -137,7 +137,7 @@
 
       <div class="card sec">
         <button type="submit" class="btn" id="submitBtn">Submit to my care team</button>
-        <div class="err" id="formErr"></div>
+        <div class="err" id="formErr" role="alert" aria-live="assertive"></div>
         <p class="note">🔒 Your information is encrypted and sent only to your clinic. It is not stored on this page or this device.</p>
       </div>
     </form>
@@ -167,9 +167,18 @@
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
       .then(function(r){
         if(!r || (r.status >= 500)) { show('offline'); return null; }   /* server fault: unknown, not invalid */
-        return r.json().catch(function(){return {ok:false};});
+        /* b566: an unreadable body is NOT a server "no". It used to be coerced
+           to {ok:false}, which rendered the permanent "this pre-visit link is
+           not valid" verdict for a truncated response or an HTML error page
+           served with a 2xx - both transient. Only a body we could actually
+           parse may decide validity. */
+        return r.json().then(function(j){ return j; }, function(){ return {__unreadable:true}; });
       })
-      .then(function(d){ if(d===null) return; if(d&&d.ok){ show('formWrap'); } else { show('invalid'); } })
+      .then(function(d){
+        if(d===null) return;
+        if(d && d.__unreadable){ show('offline'); return; }
+        if(d && d.ok){ show('formWrap'); } else { show('invalid'); }
+      })
       .catch(function(){ show('offline'); });                            /* timeout / abort / offline */
   }
   window.retryIntakeLink=checkIntakeLink;

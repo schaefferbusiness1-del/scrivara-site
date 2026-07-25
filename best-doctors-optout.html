@@ -47,7 +47,7 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
   <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg></div>
   <div class="card" id="card">
     <h1>Your privacy choice</h1>
-    <div id="body"><p class="note">Loading…</p></div>
+    <div id="body" role="status" aria-live="polite" aria-atomic="true"><p class="note">Loading…</p></div>
   </div>
 </div>
 <script>
@@ -60,7 +60,14 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
   var captured = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query) || {};
   var token = captured.t || captured.token || '';
   /* visitRatings.newToken() emits exactly 24 random bytes as lowercase hex. */
-  if (!/^[a-f0-9]{48}$/.test(token)) { $('body').innerHTML = '<div class="bad">This link is missing or invalid. Please use the exact link you were given.</div>'; return; }
+  /* A malformed token is a dead end with a route forward, like the retired-link
+     path - not a bare error. The commonest cause is a link broken across two
+     lines by an email client, which the patient can fix themselves. */
+  if (!/^[a-f0-9]{48}$/.test(token)) {
+    $('body').innerHTML = '<div class="bad">This link is incomplete, so your choice cannot be recorded here.</div>'
+      + '<p class="note" style="margin-top:12px">Email programs sometimes break a long link across two lines. Try opening it again from the original message, or reply to that message and ask for a new one. Your care is not affected either way.</p>';
+    return;
+  }
 
   /* Three different situations used to collapse into one sentence: the link is
    * genuinely retired, MLS is having trouble, or this device could not reach
@@ -89,10 +96,19 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
     render('<div class="bad">This link is no longer valid, so your choice cannot be recorded here.</div>'
       + '<p class="note" style="margin-top:12px">If you still want your visit left out of any rating, reply to the message that contained this link and ask for a new one. Your care is not affected either way.</p>');
   }
+  /* The retry has to LOOK like it did something. Pressing it re-issued the
+     request while the failure message stayed on screen and the button kept its
+     original label, so on a slow connection the page was indistinguishable
+     from one that had ignored the tap - and a patient trying to withdraw
+     consent would press it repeatedly or give up. */
   function showRecoverable(message, again) {
     render('<div class="bad">' + message + '</div>'
       + '<button class="btn quiet" id="again" style="margin-top:12px">Try again</button>');
-    $('again').onclick = again;
+    $('again').onclick = function () {
+      var b = $('again');
+      if (b) { b.disabled = true; b.textContent = 'Trying again…'; }
+      again();
+    };
   }
 
   function loadChoice() {
