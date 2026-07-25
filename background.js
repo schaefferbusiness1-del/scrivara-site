@@ -8573,12 +8573,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
     }
     if (op === 'identity') {
-      var body = txt(document.body), dob = '', name = '', mrn = '';
+      var body = txt(document.body), dob = '', name = '', mrn = '', weakName = false;
       var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
       var mm = body.match(/\b(?:MRN|Medical Record(?: Number| No\.?| ID)?|Patient ID)\s*[:#\-]?\s*([A-Z0-9\-]{4,})/i); if (mm) mrn = mm[1];
       var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
-      if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name,[class*="patientname" i]'); if (h) name = txt(h).slice(0, 60); }
-      return { name: name, dob: dob, mrn: mrn };
+      if (!name) { var bn = body.match(/([A-Z][A-Za-z'\-]{1,})\s*,\s*([A-Z][A-Za-z'\-]{1,}(?:\s+[A-Z]\.?)?)/); if (bn) name = bn[1] + ' ' + bn[2]; }
+      if (!name) { var hx = document.querySelector('[data-patient-name],.patient-name,[class*="patientname" i]'); if (hx) name = txt(hx).slice(0, 60); }
+      if (!name) { var h = document.querySelector('h1,h2'); if (h) { name = txt(h).slice(0, 60); weakName = true; } }
+      return { name: name, dob: dob, mrn: mrn, weakName: weakName };
     }
     if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
@@ -8624,7 +8626,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       }
       if (!g) {
-        if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true };
+        if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true, frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU2) { return ''; } })() };
         return { ok: false, count: 0, score: 0 };
       }
       var rows = g.rows.map(function (n, i) {
@@ -8654,6 +8656,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var expectedCount = declaredCount == null ? g.count : declaredCount;
       return {
         ok: true, selector: g.selector, count: expectedCount, renderedCount: g.count, declaredCount: declaredCount, score: g.score,
+        frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU) { return ''; } })(),
         median: g.median, withClick: g.withClick, strongRows: g.strongRows || 0,
         uniqueDates: g.uniqueDates || 0, richCount: 0, rows: rows,
         indexComplete: uniqueBindings && rows.length === expectedCount
@@ -9499,9 +9502,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          refusing every body while ~2 minutes of budget sat unused. Only
          observation retries - every identity gate is unchanged. */
       var ehStableCount = -1;
+      var enrSeen = [];
       for (var ehPass = 0; ehPass < 48; ehPass++) {
       var enR = await exec(emrId, null, ['enumerate', cfg]);
-      var eb = bestResult(enR, function (r) {
+      /* 3.0.12: which frames actually answered, and did any hold an index. */
+      try {
+        enrSeen = (enR || []).map(function (r) {
+          var id = String((r && r.frameId) != null ? r.frameId : '?');
+          var res = r && r.result;
+          if (res && res.ok) return id + '+';
+          /* 3.0.13: WHICH gate refused. '+/-' proved the real chart frame is
+             reached and judged not-ok, but three different gates inside the
+             enumerate op can say no and they need opposite fixes. The reason
+             is trimmed of its 'visits-' prefix only to fit the budget. */
+          var why = String((res && res.reason) || (res ? 'ok-false-no-reason' : 'no-result'));
+          return id + '-' + why.replace(/^visits-/, '').slice(0, 22);
+        });
+      } catch (e) { enrSeen = ['(capture-failed)']; }
+      /* One definition of a noise surface, shared with the candidate walk below.
+         Fails OPEN: a result with no frameUrl is kept, so this can only remove a
+         frame that identified itself as noise, never one that stayed silent. */
+      var NOISE_SURFACE_RE = /stm.esp|globalnav|statusbar|inbox|messag|findpatient.esp/i;
+      function noiseResult(r) {
+        var u = String((r && r.result && r.result.frameUrl) || '');
+        return !!u && NOISE_SURFACE_RE.test(u);
+      }
+      var enChart = (enR || []).filter(function (r) { return !noiseResult(r); });
+      var enNoiseDropped = (enR || []).length - enChart.length;
+      var eb = bestResult(enChart, function (r) {
         if (!(r && r.ok)) return 0;
         return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0);
       });
@@ -9510,7 +9538,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
         if (ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
-          ok: false, reason: 'encounter-index-incomplete', identity: {}, visits: [], diag: diag,
+          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : ''), identity: {}, visits: [], diag: diag,
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
         };
@@ -9526,25 +9554,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          frame identity matches the frozen patient. No match anywhere keeps
          the same honest refusal, reporting the best frame's identity. */
       var enumCandidates = [];
-      for (var ecJ = 0; ecJ < (enR || []).length; ecJ++) { var ecR = enR[ecJ]; if (ecR && ecR.result && ecR.result.ok) enumCandidates.push(ecR); }
+      for (var ecJ = 0; ecJ < enChart.length; ecJ++) { var ecR = enChart[ecJ]; if (ecR && ecR.result && ecR.result.ok) enumCandidates.push(ecR); }
       enumCandidates.sort(function (a, b) {
         function ecScore(x) { var r = x.result; return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0); }
         return ecScore(b) - ecScore(a);
       });
       if (!enumCandidates.length) enumCandidates.push({ result: enumRes, frameId: listFrame });
-      var gate = null;
+      /* 3.0.9: seeded with a refusal, never null. 3.0.8 added `continue` for
+         noise frames and negative scores; when every candidate is skipped the
+         walk assigns nothing, and the post-loop gate.ok deref threw "Cannot
+         read properties of null". A chart with no usable frame must REPORT
+         that, not crash the patient's read. */
+      var gate = { ok: false, reason: 'no-chart-frame-candidate' };
+      var ecSeen = [], ecPicked = false, ecRelaxed = false, ecIdCache = {};
+      for (var ecPass = 0; ecPass < 2; ecPass++) {
+        ecRelaxed = (ecPass === 1);
+        if (ecRelaxed && (ecPicked || (gate && gate.ok) || Date.now() >= readDeadline)) break;
       for (var ecI = 0; ecI < enumCandidates.length && ecI < 16; ecI++) {
         var ecCand = enumCandidates[ecI];
-        var ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]);
+        var ecIds = ecIdCache[ecCand.frameId];
+        if (!ecIds) { ecIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]); ecIdCache[ecCand.frameId] = ecIds; }
         var ecIdentity = bestResult(ecIds, function (r) {
           if (!r) return 0;
           return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
         }).result || {};
+        /* 3.0.8: never accept an encounter index from a NON-CHART surface.
+           Live 2026-07-24: the index was being read from
+           coordinator/enterprise/stm.esp - the enterprise inbox/worklist - which
+           reported a DIFFERENT patient's banner (a name from the doctor's
+           worklist) and 38 pseudo-encounters, so every body read was refused
+           same-frame-name-mismatch. That frame was already penalised (-4) and
+           still won at score -6.8, because a penalty only reorders candidates.
+           Exclusion, not ranking: a noise surface can never be a patient's
+           encounter index, and a candidate that only wins on a negative score
+           has not earned trust either. This TIGHTENS the safety contract. */
+        var ecUrl = String((ecIdentity && ecIdentity.url) || '');
+        var ecScoreN = Number((ecIdentity && ecIdentity.score) || 0);
+        var ecDrop = '';
+        if (/stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(ecUrl)) ecDrop = 'noise-surface';
+        else if (!ecRelaxed && /globalframeset|globaliframe|framecontent/i.test(ecUrl)) ecDrop = 'container-frame';
+        else if (!ecRelaxed && ecScoreN < 0) ecDrop = 'negative-score';
+        if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || 'kept' });
+        if (ecDrop) continue;
         var ecGate = visitIdentityGate(frozenHint, ecIdentity);
-        if (ecI === 0 || ecGate.ok) { identity = ecIdentity; gate = ecGate; }
+        if (!ecPicked || ecGate.ok) { identity = ecIdentity; gate = ecGate; ecPicked = true; }
         if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
         if (Date.now() >= readDeadline) break;
         touchVisitLease();
+      }
+      }
+      if (!(gate && gate.ok) && ecSeen.length) {
+        try {
+          gate.frames = ecSeen.slice(0, 8);
+          /* 3.0.11: the object does not survive the boundary - only `reason`
+             does - so the evidence goes in the string or it does not arrive. */
+          if (String(gate.reason || '') === 'no-chart-frame-candidate') {
+            gate.reason = 'no-chart-frame-candidate[' + ecSeen.slice(0, 4).map(function (f) {
+              var tail = String(f.url || '?').split('?')[0].split('/').pop() || '?';
+              return tail.slice(0, 26) + '~' + f.score + '~' + f.drop;
+            }).join(';') + ']';
+            /* 3.0.12: frames that answered enumerate this pass. Few ids means
+               the injection never reached the nested chart frame; many ids
+               with no '+' means it was reached and judged not-ok. */
+            gate.reason += '|enum=' + enrSeen.slice(0, 12).join(',');
+          }
+        } catch (e) {}
       }
       if (gate && gate.ok) {
         /* Accept only a STABLE index: the same rendered row count on two

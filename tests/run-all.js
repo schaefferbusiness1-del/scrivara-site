@@ -214,6 +214,7 @@ const tests = [
   'nightly-backup-tab-safety.test.js',
   'athena-import-backup-truth-contract.test.js',
   'extension-package.test.js',
+  'enumerate-noise-surface-exclusion.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',

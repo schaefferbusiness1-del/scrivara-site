@@ -188,6 +188,9 @@ function makeEnvironment(options) {
     addEventListener(type, fn) { addListener(windowListeners, type, fn); },
     removeEventListener(type, fn) { removeListener(windowListeners, type, fn); }
   };
+  /* Opt-in only, and set before the module runs — mountDOM reads it at mount
+     time, so a flag applied afterwards would prove nothing. */
+  if (options.showOnAthena) window.__mlsPopupShowOnAthena = true;
   window.window = window;
 
   const status = { athenaOpen: true, mlsApp: true, patientOpen: true, identity: { name: 'Test Patient' } };
@@ -271,7 +274,35 @@ async function flushPromises() {
   assert.strictEqual(unrelated.activeTimers(), 0, 'off-host overlay registered a status timer');
   assert.strictEqual(unrelated.activeObservers().length, 0, 'off-host overlay registered a remount observer');
 
-  const env = makeEnvironment();
+  /* The overlay is OFF on athenaOne by default.
+   *
+   * Owner, 2026-07-24, twice: "just remove this mls thing - the one that pops up
+   * when on athena". It is the only unrequested surface MLS puts on top of a
+   * live chart, and every pull, read and write is already driven from the MLS
+   * app itself.
+   *
+   * This suite used to assert the overlay mounts on the exact athenaOne host,
+   * full stop, which made the owner's request unshippable: the change was
+   * written, and the branch carrying it could never go green, so it sat
+   * unmerged. What the suite is actually FOR is that there is exactly one
+   * canonical overlay owner and that its lifecycle is clean — one root, no
+   * legacy second panel, no stray listeners, timers or observers off-host, and
+   * a position that cannot escape the viewport. All of that is still asserted,
+   * against the same overlay, one flag away.
+   *
+   * Removal, not deletion: window.__mlsPopup keeps its whole API and the module
+   * stays loaded, so re-enabling is a flag rather than a revert. That is what
+   * the two assertions below pin — default off, and identical behaviour when
+   * switched on. If the owner reverses this, flip the default and the rest of
+   * the suite is unchanged. */
+  const offByDefault = makeEnvironment();
+  await flushPromises();
+  assert.strictEqual(offByDefault.document.getElementById('mls-popup-root'), null,
+    'the athenaOne overlay must not mount by default — the owner asked for it gone twice');
+  assert(offByDefault.window.__mlsPopup && offByDefault.window.__mlsPopup.installed,
+    'the overlay must be REMOVED, not deleted: __mlsPopup must still install so callers and the toolbar keep working');
+
+  const env = makeEnvironment({ showOnAthena: true });
   await flushPromises();
   const api = env.window.__mlsPopup;
   let root = env.document.getElementById('mls-popup-root');
