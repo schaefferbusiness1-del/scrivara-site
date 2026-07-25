@@ -29962,7 +29962,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var seen = p.appts.filter(isSeen).length;
       var want = '🗓 Today’s agenda (' + seen + '/' + p.appts.length + ')';
       if (chip.textContent !== want) chip.textContent = want;
-      chip.title = 'Appointments today for ' + p.prov + ' — ' + seen + ' of ' + p.appts.length + ' seen. Click to view & jump.';
+      /* data-tip, not title: a [title] observer strips title to data-tip and
+         removes it, so a title guard can never hold and the tooltip text froze at
+         its boot-time value - the hover bubble showed a stale seen-count all
+         session. data-tip is what that bubble actually reads, and nothing deletes
+         it, so this compare is stable. */
+      var chipTip = 'Appointments today for ' + p.prov + ' — ' + seen + ' of ' + p.appts.length + ' seen. Click to view & jump.';
+      if (chip.getAttribute('data-tip') !== chipTip) chip.setAttribute('data-tip', chipTip);
     } catch (e) {}
   }
   /* ---------- popup ---------- */
@@ -32005,8 +32011,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var head = heads[0];
       if (!head) { head = document.createElement("button"); head.id = "mlsB39SgHead"; }
       heads.slice(1).forEach(function (node) { try { node.remove(); } catch (e) {} });
-      head.type = "button";
-      head.setAttribute("aria-controls", "mlsB39SgBody");
+      /* head is created as a <button> and reused across ticks, so both of these
+         wrote a value the element already had, once per tick. */
+      if (head.type !== "button") head.type = "button";
+      if (head.getAttribute("aria-controls") !== "mlsB39SgBody") head.setAttribute("aria-controls", "mlsB39SgBody");
       if (!head.querySelector('.b39-caret')) head.innerHTML = '&#128202; Study Groups <span style="font:600 12px system-ui;color:#7d8ba1">&mdash; advanced: build a patient cohort, then run a study (graph + Excel + PDF)</span><span class="b39-caret">&#9662;</span>';
 
       var bodies = [].slice.call(wrap.querySelectorAll('[id="mlsB39SgBody"]'));
@@ -32025,7 +32033,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (open) wrap.classList.add("open");
         wrap.setAttribute("data-mls-sg-ready", "1");
       }
-      head.setAttribute("aria-expanded", wrap.classList.contains("open") ? "true" : "false");
+      var sgExp = wrap.classList.contains("open") ? "true" : "false";
+      if (head.getAttribute("aria-expanded") !== sgExp) head.setAttribute("aria-expanded", sgExp);
       head.onclick = function () {
         wrap.classList.toggle("open");
         head.setAttribute("aria-expanded", wrap.classList.contains("open") ? "true" : "false");
@@ -33349,7 +33358,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b644';
+  window.__MLS_AV = window.__MLS_AV || 'b645';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33659,7 +33668,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b644';
+  var MLS_APP_BUILD='2026-07-25-b645';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38532,7 +38541,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function applyDoctorRestrictions(){
     if (!isLiteUser()) return;
     try {
-      document.body.classList.add('mls-lite');
+      /* setInterval(tick, 1500) re-enters this for the whole session. add()
+         re-commits <body class> even when the token is already present, so
+         unguarded this was ~40 no-op whole-document style invalidations a
+         minute - for Lite users only, which is why no measurement on an admin
+         or Premium account ever saw it. */
+      if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');
       NAV_IDS.forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = 'none'; });
       var v = document.getElementById('nav_visit'); if (v) v.style.display = '';
       try {

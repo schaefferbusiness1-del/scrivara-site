@@ -104,7 +104,15 @@ const GUARDED = [
   ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', 'toggle — belt-and-braces',
     "if(bcl.contains('mls-no-active-patient')!==wantNone) bcl.toggle('mls-no-active-patient',wantNone);"],
   ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', 'toggle — belt-and-braces',
-    "if(bcl.contains('mls-has-note-draft')!==wantDraft) bcl.toggle('mls-has-note-draft',wantDraft);"]
+    "if(bcl.contains('mls-has-note-draft')!==wantDraft) bcl.toggle('mls-has-note-draft',wantDraft);"],
+  /* Found by static audit, never by measurement: applyDoctorRestrictions() returns
+     early unless isLiteUser(), which is false for admin and Premium accounts. Every
+     live measurement in this work ran on the owner's admin account and recorded
+     zero. On a Lite account it is an unguarded add() on setInterval(tick, 1500) -
+     ~40 no-op whole-document style invalidations per minute, all session. Same
+     defect as the original, on the one population nobody sampled. */
+  ['mls-connect.js', 'applyDoctorRestrictions (LITE USERS ONLY)', 'add() — ~40/min all session',
+    "if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');"]
 ];
 
 for (const [file, fn, volume, guard] of GUARDED) {
@@ -128,7 +136,8 @@ const BANNED = [
   ['ScribeFlow.html', "try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}"],
   ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-active-patient',hasPatient);"],
   ['feat_mls_redesign.js', "document.body.classList.toggle('mls-no-active-patient',!hasPatient);"],
-  ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-note-draft',!!(hasPatient&&noteText));"]
+  ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-note-draft',!!(hasPatient&&noteText));"],
+  ['mls-connect.js', "\n      document.body.classList.add('mls-lite');"]
 ];
 for (const [file, snippet] of BANNED) {
   assert(!read(file).includes(snippet),
