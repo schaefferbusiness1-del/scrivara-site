@@ -636,6 +636,19 @@
        here for what each actually does; adding a patient stays a single flow,
        reached from Patients > New patient. */
     { id: 'mls-ask-btn', as: 'Ask your data' },
+    /* b560 folded three floating pills into the dock's Copilot button and
+       hid #mlsCopVoiceBtn, #mlsAsstFab and #mlsDaDock. That was right about the
+       clutter and wrong about the reach: the dock's Copilot opens
+       askCopilotHdrBtn, which is a DIFFERENT surface from Copilot Voice, the
+       Assistant panel, and dictate-into-the-transcript. Their only remaining
+       route was the ez3 chips on the Visit screen, so on every other screen
+       three capabilities had no reach at all. The coverage suite never caught
+       it because these ids are not in the inventory.
+       Reading the chip handlers is what surfaced this - I had been about to
+       fold the chips as duplicates, which would have stranded all three. */
+    { id: 'mlsCopVoiceBtn', as: 'Copilot Voice' },
+    { id: 'mlsAsstFab', as: 'MLS Assistant' },
+    { id: 'mlsDaDock', as: 'Dictate' },
     { id: 'mlsPdpSel', as: 'Where pulls run' },
     { id: 'mlsDsVisitBodies', as: 'Full visit notes' },
     { id: 'intakeBtn', as: 'Pre-visit intake forms' },
