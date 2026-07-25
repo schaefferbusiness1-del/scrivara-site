@@ -1037,7 +1037,12 @@
       { id: 'ptBoardBtn' }
     ],
     visit: [
-      { label: /^(start|record|begin)/i, within: '#visitView', primary: true },
+      /* The negative lookahead is load-bearing. /^start/i also matches
+         "Start over", which DISCARDS the visit — and measured on the running
+         page at b625 that was the bar's only action on the Visit screen, styled
+         as the green primary. The one control offered on the screen where a
+         doctor records an encounter was the one that throws it away. */
+      { label: /^(?!start over)(start|record|begin)/i, within: '#visitView', primary: true },
       { label: /\bstop\b/i, within: '#visitView', primary: true },
       { label: /^(pause|resume)/i, within: '#visitView' },
       { label: /^generate/i, within: '#visitView', primary: true },
@@ -1742,7 +1747,7 @@
      form would otherwise have Ask fire the visit view's Clear button and destroy
      a 20-minute transcript with no confirmation and no undo. Anything that can
      lose captured work is destructive, not just anything that writes to Athena. */
-  var DESTRUCTIVE = /remove|delete|purge|discharge|sign|send to athena|place order|log out|clear|discard|reset|erase|wipe|end visit|new visit/i;
+  var DESTRUCTIVE = /remove|delete|purge|discharge|sign|send to athena|place order|log out|clear|discard|reset|erase|wipe|end visit|new visit|start over/i;
 
   function wireAsk() {
     var input = qs('#mlsDockAsk');
