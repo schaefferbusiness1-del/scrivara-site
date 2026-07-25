@@ -478,7 +478,7 @@
     var html = "";
     if (opts.showNote !== false) {
       if (res.fallback) html += '<p class="mlspk-note">No one on today\'s schedule yet &mdash; showing your most recent day (' + esc(res.dateLabel) + ').</p>';
-      else if (total) html += '<p class="mlspk-note">' + total + ' patient' + (total === 1 ? "" : "s") + ' on ' + esc(res.dateLabel === "today" ? "today&#39;s schedule" : res.dateLabel) + ' &middot; in time order &middot; tap one to select.</p>';
+      else if (total) html += '<p class="mlspk-note">' + total + ' patient' + (total === 1 ? "" : "s") + ' on ' + esc(res.dateLabel === "today" ? "today's schedule" : res.dateLabel) + ' &middot; in time order &middot; tap one to select.</p>';
     }
     if (!total) {
       html += '<div class="mlspk-empty">No patients scheduled for ' + esc(res.dateLabel || "this day") + '. Pick another day above, pull from athenaOne with your Day schedule open, or use &ldquo;Find a patient by name&rdquo; / &ldquo;Enter manually&rdquo; below.</div>';

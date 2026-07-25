@@ -189,7 +189,7 @@ for (const f of featFiles) {
   intervals += (s.match(/setInterval\s*\(/g) || []).length;
 }
 
-const OBSERVER_CEILING = 60;   // measured across 250 feature modules at b596
+const OBSERVER_CEILING = 59;   // 60 at b596; one retired when the caption double-escape was fixed at source
 const INTERVAL_CEILING = 214;
 
 if (docObservers > OBSERVER_CEILING) {

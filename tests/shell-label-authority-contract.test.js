@@ -229,4 +229,31 @@ const matchAt = clarity.indexOf('matchEntry(btn)', decorateStart);
 assert.ok(decorateStart > -1 && guardAt > -1 && matchAt > guardAt,
   'the proxy guard must run before matchEntry() stamps the control as decorated');
 
-console.log('shell-label-authority-contract: OK (' + displaySites.length + ' display sites, 7 derivation cases, proxy guard)');
+/* --------------------------------- 4. escape exactly once, at the source --- */
+
+/* Same family as the welding above: text a doctor reads, mangled on its way to
+ * the screen. feat_mls_patientpick.js:481 held the literal "today&#39;s schedule"
+ * - already HTML-escaped - and then passed it through esc(), which escaped the
+ * leading & again to &amp;. The browser parses "&amp;#39;" back to the visible
+ * characters &#39;, so the picker note read "122 patients on today&#39;s schedule".
+ *
+ * That shipped with a workaround module, feat_mls_caption_entityfix.js, which
+ * observed document.documentElement with {childList,subtree,characterData} for
+ * the LIFETIME OF THE SESSION - the most expensive observer kind there is, woken
+ * by every text change anywhere in the app - to repair one apostrophe. Fixing the
+ * source retired that observer (boot-script-budget arm C: 60 -> 59).
+ *
+ * Pin the source, not the workaround: a pre-escaped literal must never be handed
+ * to esc(). Raw-HTML uses of &#39; that never touch esc() (lines 535, 682) are
+ * correct and deliberately not covered here. */
+const pick = fs.readFileSync(path.join(root, 'feat_mls_patientpick.js'), 'utf8');
+const escCalls = pick.match(/esc\([^)]*\)/g) || [];
+const doubleEscaped = escCalls.filter((c) => /&(?:#\d+|amp|quot|lt|gt);/.test(c));
+assert.deepStrictEqual(
+  doubleEscaped, [],
+  'a pre-escaped HTML entity is being passed through esc(), which escapes its & again ' +
+  'and renders the raw entity to the doctor:\n  ' + doubleEscaped.join('\n  ')
+);
+
+console.log('shell-label-authority-contract: OK (' + displaySites.length +
+  ' display sites, 7 derivation cases, proxy guard, escape-once)');

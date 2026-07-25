@@ -57,16 +57,23 @@
     _t = setTimeout(function () { _t = null; sweep(); }, 80);
   }
 
+  /* Bounded, not permanent. The source double-escape this module worked around
+     is fixed in feat_mls_patientpick.js, so there is nothing left to react to;
+     what remains is a safety net for a late-rendering picker. A document-wide
+     {subtree,characterData} observer woke on EVERY text change in the whole app
+     for the life of the session - the most expensive observer kind there is -
+     to correct one apostrophe. Settling passes cost nothing after they finish. */
+  var _timers = [];
   function boot() {
     sweep();
     safe(function () {
-      _obs = new MutationObserver(function () { schedule(); });
-      _obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      [400, 1200, 3000].forEach(function (d) { _timers.push(setTimeout(sweep, d)); });
     });
   }
 
   function revert() {
     safe(function () { if (_obs) _obs.disconnect(); _obs = null; });
+    safe(function () { _timers.forEach(function (t) { clearTimeout(t); }); _timers = []; });
     safe(function () { if (_t) { clearTimeout(_t); _t = null; } });
     safe(function () { window.__mlsCaptionEntityFix.installed = false; });
   }
