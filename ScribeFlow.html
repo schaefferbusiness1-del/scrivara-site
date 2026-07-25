@@ -1402,7 +1402,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
 
     <div class="auth-tabs">
-      <div class="auth-tab on" id="tabLogin" onclick="switchAuth('login')">Log in</div>
+      <div class="auth-tab on" id="tabLogin" aria-label="Show the log in form" onclick="switchAuth('login')">Log in</div>
       <div class="auth-tab" id="tabSignup" onclick="switchAuth('signup')">Sign up</div>
     </div>
 
@@ -1440,7 +1440,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="authAssentErr" role="alert" aria-live="assertive" class="auth-err" style="margin-top:9px"></div>
     </section>
 
-    <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
+    <button class="btn-primary" id="authBtn" style="width:100%" aria-label="Log in to your account" onclick="doAuth()">Log in</button>
 
     <a href="ScribeFlow.html?preview=1" id="authPreviewLink" class="btn-ghost" style="display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;margin-top:11px;text-decoration:none">Explore a sample day &mdash; no account</a>
     <p style="font-size:12.5px;line-height:1.4;text-align:center;color:var(--muted);margin:7px 0 0">Uses invented patients. Athena, cloud sync, sending, and signing are off.</p>
@@ -2213,7 +2213,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="sec-copy" onclick="copySection('O')">Objective</button>
         <button class="sec-copy" onclick="copySection('A')">Assessment</button>
         <button class="sec-copy" onclick="copySection('P')">Plan</button>
-        <button class="sec-copy" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
+        <button class="sec-copy" aria-label="Regenerate the clinical note" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
       </div>
 
       <!-- Teach Scrivara: suggested preferences learned from edits -->
@@ -2257,7 +2257,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="extra-card" id="legalCard" style="display:none">
         <h3>⚖️ Medical-legal report <span id="legalSignedBadge" style="display:none;font-weight:600;font-size:12px;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:2px 9px">✔ Signed</span>
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="sec-copy" id="legalRegenBtn" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="regenerateLegalReport()" title="Rebuild the report from scratch on the latest model — includes the patient you selected and any field changes">🔄 Regenerate</button>
+            <button class="sec-copy" id="legalRegenBtn" aria-label="Regenerate the medical-legal report" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="regenerateLegalReport()" title="Rebuild the report from scratch on the latest model — includes the patient you selected and any field changes">🔄 Regenerate</button>
             <button class="sec-copy" id="legalFillBtn" style="display:none;background:#fff4e0;border-color:#f0c060;color:#8a5a00;font-weight:600" onclick="openLegalFill()" title="Fill in the details the AI left blank — they'll be inserted into the report">✏️ Fill in blanks</button>
             <button class="sec-copy" onclick="copyExtra('legalBody')" title="Copy the report text to your clipboard">📑 Copy</button>
             <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')" title="Open a print-ready version of the report">🖨 Print</button>
@@ -2726,7 +2726,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div id="ordList" class="hist-list"></div>
         <div class="row" id="ordActionsRow" style="display:none">
           <button class="btn-primary" onclick="printOrders()">🖨 Print orders</button>
-          <button class="btn-ghost" onclick="sendOrdersToEMR(this)" title="Review the order sheet and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
+          <button class="btn-ghost" aria-label="Review EMR route for the order sheet" onclick="sendOrdersToEMR(this)" title="Review the order sheet and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
           <button class="btn-ghost" onclick="copyOrders()">📑 Copy orders</button>
           <button class="btn-ghost" onclick="saveOrdersToHistory()">💾 Save with visit</button>
           <button class="btn-ghost btn-red-ghost" onclick="clearAllOrders()" style="margin-left:auto">🗑 Clear all</button>
@@ -2778,7 +2778,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <label>Draft letter <span style="font-weight:400;color:var(--muted)">(editable — review and complete any [bracketed] items before sending)</span></label>
           <textarea id="paLetter" aria-label="Appeal letter draft" style="min-height:300px"></textarea>
           <div class="row tight">
-            <button class="btn-ghost" onclick="sendPaToEMR(this)" title="Review this letter and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
+            <button class="btn-ghost" aria-label="Review EMR route for the prior-authorisation letter" onclick="sendPaToEMR(this)" title="Review this letter and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
             <button class="btn-ghost" onclick="copyPriorAuth()">📑 Copy</button>
             <button class="btn-ghost" onclick="printPriorAuth()">🖨 Print</button>
           </div>
@@ -27981,7 +27981,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b636';
+  window.__MLS_AV='b637';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
