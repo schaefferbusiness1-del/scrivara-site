@@ -324,6 +324,32 @@
     'transition:transform var(--mls-fast) var(--mls-spring),box-shadow var(--mls-fast) linear,background var(--mls-fast) linear}',
     '#mlsRightNow button:hover{background:#F6FAF8;box-shadow:0 2px 8px rgba(20,35,28,.08)}',
     '#mlsRightNow button:active{transform:scale(.96)}',
+
+    /* mdl-1.0.0 - give the popups the dock's motion.
+       Owner: "I love that bottom bar make sure to add cool animations to
+       everything". Every major modal in the app - ez2, ez3, Settings,
+       Templates, Add patient, Op-note prep, Share, Countersign - had ZERO
+       animation rules and jump-cut into place, which is why they feel like a
+       different product from the shell.
+       Deliberately opacity + a small translate on the CARD only, never on the
+       fixed-position container: transforming a fixed ancestor re-parents its
+       positioned children and would break centring and any nested popover.
+       Under body.mls-calm only, so teardown removes it with the stylesheet. */
+    '@keyframes mlsMdlIn{from{opacity:0}to{opacity:1}}',
+    '@keyframes mlsMdlCard{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}',
+    'body.mls-calm .ez2-modal,body.mls-calm #mlsMPmodal,body.mls-calm #mlsAddPtModal,',
+    'body.mls-calm #settingsModal,body.mls-calm #templatesModal,body.mls-calm #opPrepModal,',
+    'body.mls-calm #shareModal,body.mls-calm #countersignModal,body.mls-calm #detailModal,',
+    'body.mls-calm #docModal,body.mls-calm #helpModal,body.mls-calm #patientModal',
+    '{animation:mlsMdlIn .18s ease both}',
+    'body.mls-calm .ez3-modal-card,body.mls-calm .ez2-modal>*,body.mls-calm #settingsModal>*,',
+    'body.mls-calm #templatesModal>*,body.mls-calm #opPrepModal>*,body.mls-calm #patientModal>*',
+    '{animation:mlsMdlCard .26s cubic-bezier(.2,.7,.3,1) both}',
+    '@media (prefers-reduced-motion:reduce){',
+    'body.mls-calm .ez2-modal,body.mls-calm .ez3-modal-card,body.mls-calm #settingsModal,',
+    'body.mls-calm #templatesModal,body.mls-calm #opPrepModal,body.mls-calm #patientModal,',
+    'body.mls-calm .ez2-modal>*,body.mls-calm #settingsModal>*,body.mls-calm #templatesModal>*',
+    '{animation:none!important}}',
     /* A '#mlsRightNow button small' rule lived here and was removed, not
        restyled. The symptom it targeted is real - the bar showed
        'Bledsoe9:40 AM' - but the rule could never fire: this bar does not

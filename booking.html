@@ -48,6 +48,39 @@
   .slot.taken{background:#f1f3f6;color:#b9c2cf;cursor:not-allowed;text-decoration:line-through}
   .slot.taken:hover{border-color:var(--line)}
   .google{display:none;margin:10px 0 2px;text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-weight:700;text-align:center;background:#fff}
+
+  /* ---- mls motion kit (b568) ---- */
+  @media (prefers-reduced-motion: no-preference){
+    @keyframes mlsRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    @keyframes mlsPop{0%{transform:scale(.92)}62%{transform:scale(1.04)}100%{transform:scale(1)}}
+    @keyframes mlsBreathe{0%,100%{opacity:1}50%{opacity:.55}}
+    @keyframes mlsSweep{from{background-position:-180% 0}to{background-position:180% 0}}
+    .card,.state{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both}
+    .card:nth-of-type(2){animation-delay:.06s}
+    .card:nth-of-type(3){animation-delay:.12s}
+    .card:nth-of-type(4){animation-delay:.18s}
+    .card:nth-of-type(5){animation-delay:.24s}
+    .btn,button{transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .18s ease,background .18s ease,opacity .18s ease}
+    .btn:active:not(:disabled),button:active:not(:disabled){transform:scale(.972)}
+    input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+    /* The success mark earns a beat - it is the one moment worth celebrating. */
+    .big{animation:mlsPop .52s cubic-bezier(.2,.9,.3,1.25) both}
+    /* "Loading…" should look alive rather than stuck. */
+    #loading{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both,mlsBreathe 1.8s ease-in-out .4s infinite}
+  }
+
+  @media (prefers-reduced-motion: no-preference){
+    .slot{transition:transform .16s cubic-bezier(.2,.7,.3,1),background .18s ease,border-color .18s ease,color .18s ease}
+    .slot:active:not(.taken){transform:scale(.95)}
+    .slot.sel{animation:mlsPop .34s cubic-bezier(.2,.9,.3,1.25) both}
+    /* Times arrive in a quick cascade so the grid reads as filling in. */
+    .slotgrid .slot{animation:mlsRise .28s cubic-bezier(.2,.7,.3,1) both}
+    .slotgrid .slot:nth-child(2){animation-delay:.02s}
+    .slotgrid .slot:nth-child(3){animation-delay:.04s}
+    .slotgrid .slot:nth-child(4){animation-delay:.06s}
+    .slotgrid .slot:nth-child(5){animation-delay:.08s}
+    .slotgrid .slot:nth-child(n+6){animation-delay:.1s}
+  }
 </style>
 </head>
 <body>
@@ -59,6 +92,13 @@
   <div id="loading" class="card">Loading…</div>
 
   <!-- Inactive link -->
+  <!-- A missing token means the page scrubbed it (refresh / Back / a phone
+       reloading a backgrounded tab), not that the booking link died. -->
+  <div id="reopen" class="card hide">
+    <h1>Please open your link again</h1>
+    <p class="sub">For your privacy the link address is removed from the browser bar once the page opens, so a refresh or the Back button loses it. Open the original link again from your text message or email — it still works.</p>
+  </div>
+
   <div id="inactive" class="card hide">
     <h1>This booking link isn't active</h1>
     <p class="sub">The link may have expired or been turned off. Please contact the office for an appointment.</p>
@@ -68,7 +108,7 @@
   <div id="formCard" class="card hide">
     <span class="pill">Online booking</span>
     <h1>Request an appointment</h1>
-    <p class="sub">Fill this out and the office will confirm your time. No account needed.</p>
+    <p class="sub">Fill this out and the office will confirm your time. No account needed — but please leave a <b>phone number or email</b>, or they have no way to reach you.</p>
     <a id="googleBusinessBtn" class="google" target="_blank" rel="noopener">🗺️ Find us / book on Google ↗</a>
     <form id="form" onsubmit="return submitBooking(event)">
       <label for="doctor">Provider</label>
@@ -129,13 +169,13 @@ var BACKEND_URL = 'https://scrivara-backend.onrender.com';
 var token = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.token) || '';
 
 function show(id){
-  ['loading','inactive','formCard','done'].forEach(function(x){
+  ['loading','reopen','inactive','formCard','done'].forEach(function(x){
     document.getElementById(x).classList.toggle('hide', x !== id);
   });
 }
 
 function init(){
-  if(!token){ show('inactive'); return; }
+  if(!token){ show('reopen'); return; }
   mlsSensitiveFetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token))
     .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
     .then(function(j){

@@ -40,6 +40,26 @@
   .err.warn{background:#fff8e8;border-color:#f0dcae;color:#8a5a00}
   .center{text-align:center}
   .big{font-size:44px}
+
+  /* ---- mls motion kit (b568) ---- */
+  @media (prefers-reduced-motion: no-preference){
+    @keyframes mlsRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    @keyframes mlsPop{0%{transform:scale(.92)}62%{transform:scale(1.04)}100%{transform:scale(1)}}
+    @keyframes mlsBreathe{0%,100%{opacity:1}50%{opacity:.55}}
+    @keyframes mlsSweep{from{background-position:-180% 0}to{background-position:180% 0}}
+    .card,.state{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both}
+    .card:nth-of-type(2){animation-delay:.06s}
+    .card:nth-of-type(3){animation-delay:.12s}
+    .card:nth-of-type(4){animation-delay:.18s}
+    .card:nth-of-type(5){animation-delay:.24s}
+    .btn,button{transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .18s ease,background .18s ease,opacity .18s ease}
+    .btn:active:not(:disabled),button:active:not(:disabled){transform:scale(.972)}
+    input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+    /* The success mark earns a beat - it is the one moment worth celebrating. */
+    .big{animation:mlsPop .52s cubic-bezier(.2,.9,.3,1.25) both}
+    /* "Loading…" should look alive rather than stuck. */
+    #loading{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both,mlsBreathe 1.8s ease-in-out .4s infinite}
+  }
 </style>
 </head>
 <body>
@@ -63,6 +83,16 @@
     <h1>We couldn't reach the office</h1>
     <p class="sub">Your appointment is unchanged and nothing has been cancelled. This is usually a connection problem — please try again.</p>
     <button type="button" class="btn" id="retryLoad" onclick="init()">Try again</button>
+  </div>
+
+  <!-- No token in the URL is NOT an expired link: sensitive-workflow-bootstrap
+       strips it on load, so a refresh, a Back tap, or a phone reloading a
+       backgrounded tab arrives here with a perfectly valid link. Saying
+       "expired or already used" blames the patient for something the page did
+       to itself, and sends them to the office for a link they already have. -->
+  <div id="reopen" class="card hide">
+    <h1>Please open your link again</h1>
+    <p class="sub">For your privacy the link address is removed from the browser bar once the page opens, so a refresh or the Back button loses it. Open the original link again from your text message or email — it still works.</p>
   </div>
 
   <div id="view" class="card hide">
@@ -99,7 +129,7 @@
 <script>
 var BACKEND_URL = 'https://scrivara-backend.onrender.com';
 var ptoken = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.t) || '';
-function show(id){ ['loading','notfound','offline','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
+function show(id){ ['loading','notfound','offline','reopen','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
 
 function render(a){
   document.getElementById('whenText').textContent = a.when || a.date || 'Time to be confirmed';
@@ -126,7 +156,7 @@ function render(a){
    #notfound panel, so a cold backend told the patient their appointment link
    had expired or been used, with no control left to try again. */
 function init(){
-  if(!ptoken){ show('notfound'); return; }
+  if(!ptoken){ show('reopen'); return; }
   show('loading');
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
     .then(function(r){

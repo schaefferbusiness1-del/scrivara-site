@@ -42,7 +42,7 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
-  '#4B564F': 1,   // "b567"
+  '#4B564F': 1,   // "b568"
   '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"
   '#5b7186': 19,  // "b718"

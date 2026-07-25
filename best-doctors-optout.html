@@ -39,6 +39,26 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
 .done{background:#e9f9f4;color:#0d6a5b;border:1px solid #b7ecdf;border-radius:10px;padding:12px 14px;font-size:14px;font-weight:700}
 .bad{background:#fdecec;color:#a12; border:1px solid #f3c4c4;border-radius:10px;padding:12px 14px;font-size:14px}
 .hide{display:none}
+
+  /* ---- mls motion kit (b568) ---- */
+  @media (prefers-reduced-motion: no-preference){
+    @keyframes mlsRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    @keyframes mlsPop{0%{transform:scale(.92)}62%{transform:scale(1.04)}100%{transform:scale(1)}}
+    @keyframes mlsBreathe{0%,100%{opacity:1}50%{opacity:.55}}
+    @keyframes mlsSweep{from{background-position:-180% 0}to{background-position:180% 0}}
+    .card,.state{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both}
+    .card:nth-of-type(2){animation-delay:.06s}
+    .card:nth-of-type(3){animation-delay:.12s}
+    .card:nth-of-type(4){animation-delay:.18s}
+    .card:nth-of-type(5){animation-delay:.24s}
+    .btn,button{transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .18s ease,background .18s ease,opacity .18s ease}
+    .btn:active:not(:disabled),button:active:not(:disabled){transform:scale(.972)}
+    input,select,textarea{transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+    /* The success mark earns a beat - it is the one moment worth celebrating. */
+    .big{animation:mlsPop .52s cubic-bezier(.2,.9,.3,1.25) both}
+    /* "Loading…" should look alive rather than stuck. */
+    #loading{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both,mlsBreathe 1.8s ease-in-out .4s infinite}
+  }
 </style>
 </head>
 <body>
