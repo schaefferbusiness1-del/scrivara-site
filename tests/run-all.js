@@ -281,6 +281,7 @@ const tests = [
   'site-audit-regressions.test.js',
   'site-continuity-contract.test.js',
   'loading-states-contract.test.js',
+  'visit-single-quick-tools-surface.test.js',
   'study-natural-request-comparison.test.js',
   'study-natural-request-identity-adversarial.test.js',
   'study-natural-request-inmemory-contract.test.js',

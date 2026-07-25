@@ -6125,6 +6125,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        ENGINE's duplicate transcript card yields instead. CSS-class hide,
        never node removal (see the fl-1.5.0 flash note). */
     '#mlsEz3Body.ez3fl-top-owns .ez3-transcript-card{display:none!important}',
+    /* dqt-1.0.0: the SAME yield, for the same reason, one row lower.
+       b582 left both quick-tools rows rendering at once, so the visit screen
+       showed two chips reading '\uD83E\uDDF0 Visit shortcuts' 62px apart
+       (#ez3flToolsToggle in the lane, #ez3QToolsToggle in the engine), and with
+       Tools OPEN it was seven duplicate pairs, not one. The two rows carry the
+       same seven tools - Copilot Voice, MLS Assistant, Dictate, Paste, Phone,
+       AVS, Orders - so while the lane owns the top the engine's row is pure
+       duplication. Measured on the live page at b582/b583/b584: laneRow and
+       engineRow both visible, 'Show tools' x2. b581 measured zero duplicate
+       visible labels, so this is a b582 regression, not old debt.
+       Both toggles must keep EXISTING - tests/loading-states-contract.test.js
+       requires each surface to carry its own single chip sharing one
+       ez3ToolsOpen preference - so this hides the duplicate SURFACE by class
+       and never removes a node, exactly like the transcript card above. Drop
+       the lane and the engine's row is back on its own. */
+    '#mlsEz3Body.ez3fl-top-owns #ez3QuickTools{display:none!important}',
     '#mlsEz3 .ez3fl-txhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px;color:#1A211C;font-size:13px;font-weight:700;}',
     '#mlsEz3 .ez3fl-txhead span{color:#79837C;font-size:11.5px;font-weight:600;}',
     '#mlsEz3 .ez3fl-tx{display:block;width:100%;min-height:126px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #D9DFD9!important;border-radius:10px;padding:11px 12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;}',
@@ -33161,7 +33177,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b587';
+  window.__MLS_AV = window.__MLS_AV || 'b588';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33471,7 +33487,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b587';
+  var MLS_APP_BUILD='2026-07-25-b588';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
