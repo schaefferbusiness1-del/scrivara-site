@@ -238,7 +238,35 @@ read with no intervening write          median  0ms
 > patient directory is the visible screen while they happen*. 700 × 16ms = 11.2s,
 > against the measured foreground TBT of 10,929ms.
 >
-> ### ⚠️ THE A/B FOR THIS FIX IS NOT TRUSTWORTHY IN AN AUTOMATION TAB
+> ## ✅ SHIPPED AND VERIFIED LIVE — b610 (ptc-2.1.0)
+>
+> ```
+> #patientsView .pt-item{content-visibility:auto;contain-intrinsic-size:78px}
+> ```
+> in `feat_mls_ptcard_contain.js`. Verified on the running page at b611 by a
+> REVERSE A/B — disabling the shipped rule brings the cost straight back:
+>
+> ```
+> rule live in a real stylesheet   true      computed content-visibility: auto
+> with the fix                     7.2ms
+> fix disabled                    17.7ms     -> 59% improvement
+> restored                         5.3ms
+> #ptList.scrollHeight            17,734     3% over true (17,222), by design
+> row textContent                  works
+> ```
+>
+> **The detail that made this take four attempts:** `contain-intrinsic-size` is a
+> FIXED 78px, deliberately not `auto`. `auto` makes each row remember its rendered
+> size, permanently moving `scrollHeight` to 25,084 where it *stays* after the rule
+> is removed — so every later baseline is measured against a page the probe already
+> changed. That is how the same A/B produced −32%, +63% and −82% in one session.
+> 78px was chosen by sweeping 127/114/100/88/78: all cut layout ~60%, only 78 keeps
+> the scrollbar within 3% of true.
+>
+> The section below is the record of getting there, kept because the failure mode
+> is more reusable than the fix.
+>
+> ### ⚠️ Why the A/B was untrustworthy until the fixed size was used
 >
 > Three runs of the same `content-visibility: auto` A/B on `.pt-item`, same page,
 > same session, gave three different verdicts:
