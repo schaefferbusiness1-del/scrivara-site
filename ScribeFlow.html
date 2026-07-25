@@ -27661,10 +27661,15 @@ function initTooltips(){
   function find(t){ var hops=0; while(t && t.nodeType===1 && t!==document.body && hops<6){ var tx=(t.getAttribute('data-tip')||t.getAttribute('title')); if(tx && tx.trim()) return [t,tx.trim()]; t=t.parentNode; hops++; } return null; }
   function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6)); tip.style.left=Math.round(x)+'px'; tip.style.top=Math.round(y)+'px'; }
   var hoverTimer=null, hoverOwner=null;
+  /* ph-tip-1.0.0: a long-press has JUST opened the tip, so the click that
+     inevitably follows the press must not immediately close it again. */
+  var _lpGuardUntil=0;
   function hideTip(){
+    if(_lpGuardUntil && Date.now()<_lpGuardUntil) return;
     try{ if(hoverTimer) clearTimeout(hoverTimer); }catch(e){}
     hoverTimer=null; hoverOwner=null; tip.style.display='none';
   }
+  function _forceHideTip(){ _lpGuardUntil=0; hideTip(); }
   document.addEventListener('mouseover',function(e){
     var r=find(e.target); if(!r) return;
     var el=r[0];
@@ -27685,6 +27690,56 @@ function initTooltips(){
   document.addEventListener('click',hideTip,true);
   document.addEventListener('keydown',hideTip,true);
   window.addEventListener('scroll',hideTip,true);
+
+  /* ===== ph-tip-1.0.0 — explanations reachable by touch (2026-07-25) ========
+   * Every `title` in this app is converted to data-tip above, specifically so
+   * the browser's native tooltip cannot double up. The consequence on a phone
+   * is that the NATIVE long-press tooltip is gone too — and the replacement is
+   * hover-only, with `pointerdown` hiding it in capture phase four lines up.
+   * Net effect: on touch, icon-only controls had NO explanation by any route.
+   * The app's own "drag to reschedule" hint lived exclusively in a `title`,
+   * i.e. in the attribute that gets deleted.
+   *
+   * Long-press is the touch equivalent of a deliberate hover pause, so it uses
+   * the SAME 550ms intent threshold. It is cancelled by movement (that is a
+   * scroll, not a question) and by an early lift (that is a tap, i.e. use the
+   * control).
+   *
+   * The click that follows a long-press is SUPPRESSED. Without that, holding a
+   * destructive control to ask what it does would also press it — long-pressing
+   * "Delete" would delete. Registered in capture AFTER the hideTip listener
+   * above so it can stopImmediatePropagation once that has run harmlessly
+   * (harmless because _lpGuardUntil makes hideTip a no-op inside the window). */
+  var lpTimer=null, lpX=0, lpY=0, lpEl=null, lpText='', lpShown=false, lpAuto=null;
+  function lpCancel(){ try{ if(lpTimer) clearTimeout(lpTimer); }catch(e){} lpTimer=null; lpEl=null; }
+  document.addEventListener('pointerdown',function(e){
+    if(e.pointerType!=='touch'&&e.pointerType!=='pen') return;
+    lpShown=false;
+    var r=find(e.target); if(!r) return;
+    lpEl=r[0]; lpText=r[1]; lpX=e.clientX; lpY=e.clientY;
+    lpTimer=setTimeout(function(){
+      lpTimer=null;
+      if(!lpEl) return;
+      tip.textContent=lpText; tip.style.display='block'; place(lpEl);
+      lpShown=true; _lpGuardUntil=Date.now()+900;
+      try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){}
+      try{ if(lpAuto) clearTimeout(lpAuto); }catch(e){}
+      lpAuto=setTimeout(_forceHideTip,3500);
+    },550);
+  },false);
+  document.addEventListener('pointermove',function(e){
+    if(!lpTimer) return;
+    if(Math.abs(e.clientX-lpX)>10||Math.abs(e.clientY-lpY)>10) lpCancel();
+  },{passive:true});
+  document.addEventListener('pointerup',function(){ lpCancel(); },false);
+  document.addEventListener('pointercancel',function(){ lpCancel(); _forceHideTip(); },false);
+  document.addEventListener('click',function(e){
+    if(!lpShown) return;
+    lpShown=false;
+    /* the hold was a question about this control, not a press of it */
+    try{ e.stopImmediatePropagation(); }catch(x){}
+    try{ e.preventDefault(); }catch(x){}
+  },true);
 }
 window.addEventListener('DOMContentLoaded',()=>{
   const _authHandoff=window.__mlsAuthHandoff||{};

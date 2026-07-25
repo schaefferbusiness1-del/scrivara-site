@@ -980,6 +980,71 @@ async function addPatient(page, name, dob) {
     try { await pp.close(); } catch (e) {}
   }
 
+  await step('phone: a long press explains a control, and a tap still just uses it', async () => {
+    const tp = await newPhonePage(PHONE_VIEWPORTS[0]);
+    try {
+      const cdp = await tp.createCDPSession();
+      const target = await tp.evaluate(() => {
+        const vis = (el) => {
+          const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 8 && r.height > 8
+            && r.top > 0 && r.bottom < innerHeight;
+        };
+        const el = [...document.querySelectorAll('[data-tip]')].find(vis);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+                 tip: el.getAttribute('data-tip'), id: el.id || el.tagName };
+      });
+      assert(target, 'no visible [data-tip] control to long-press');
+
+      const tipState = () => tp.evaluate(() => {
+        const t = document.getElementById('mlsTip');
+        return t ? { display: getComputedStyle(t).display, text: (t.textContent || '').trim() } : { display: 'absent', text: '' };
+      });
+      const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
+        type: type,
+        touchPoints: type === 'touchEnd' ? [] : [{ x: x, y: y, radiusX: 12, radiusY: 12, force: 1 }]
+      });
+
+      /* 1) A SHORT TAP must not summon an explanation — that would put a
+            bubble over the UI every time a clinician uses anything. */
+      await touch('touchStart', target.x, target.y);
+      await sleep(120);
+      await touch('touchEnd', target.x, target.y);
+      await sleep(250);
+      const afterTap = await tipState();
+      assert.notStrictEqual(afterTap.display, 'block',
+        'a short tap raised a tooltip: "' + afterTap.text + '"');
+
+      /* 2) A LONG PRESS must explain it. */
+      await touch('touchStart', target.x, target.y);
+      await sleep(800);
+      const held = await tipState();
+      assert.strictEqual(held.display, 'block',
+        'long-pressing ' + target.id + ' showed no explanation — on touch there is no other route, ' +
+        'because every title is stripped and the hover tip is cancelled by pointerdown');
+      assert(held.text && target.tip.indexOf(held.text.slice(0, 20)) === 0,
+        'the explanation did not match the control: shown="' + held.text + '" expected="' + target.tip + '"');
+
+      /* 3) Lifting must not ALSO press the control. Holding a destructive
+            control to ask what it does must never perform it. */
+      const clicksBefore = await tp.evaluate(() => {
+        window.__lpClicks = 0;
+        document.addEventListener('click', () => { window.__lpClicks++; }, false);
+        return window.__lpClicks;
+      });
+      await touch('touchEnd', target.x, target.y);
+      await sleep(300);
+      const clicksAfter = await tp.evaluate(() => window.__lpClicks);
+      assert.strictEqual(clicksAfter, clicksBefore,
+        'the long press ALSO activated the control (' + clicksAfter + ' click(s) reached the page) — ' +
+        'holding "Delete" to ask what it does would delete');
+    } finally {
+      try { await tp.close(); } catch (e) {}
+    }
+  });
+
   await step('phone: the on-screen keyboard cannot hide the dock (and its Ask box)', async () => {
     const kp = await newPhonePage(PHONE_VIEWPORTS[0]);
     try {
