@@ -222,6 +222,29 @@
     'body.mls-calm #mlsCopVoiceBtn,body.mls-calm #mlsAsstFab,',
     'body.mls-calm #mlsDaDock{display:none!important}',
     'body.mls-calm #mls-ask-btn{display:none!important}',
+    /* vis-1.0.0 - the Visit screen was 1307px tall before anything below it.
+       Measured on the live page: an empty transcript panel spending 252px to
+       say "0 words captured", and a 56px bar showing the current time on a
+       device that already shows the time. Neither is a control; both sit
+       between the doctor and the record button. The transcript comes back the
+       instant it has a word, so nothing is lost - it just stops reserving a
+       quarter of the screen to report that it is empty. */
+    'body.mls-calm .ez3-clockbar{display:none!important}',
+    'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
+    /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
+       patient. The single largest duplication is the prep summary. prepRows()
+       already parses it into compact labelled rows and inserts them ABOVE the
+       box, and then the raw 499px body renders again underneath - the same
+       content twice, the second copy unreadable. The raw body folds away once
+       the rows exist; the rows carry the full text in title=, and the box
+       keeps its own Copy control. Nothing is lost, ~500px is.
+       The problem list is capped rather than folded - it is the one block a
+       doctor scans mid-visit, so it stays visible and scrolls internally
+       instead of pushing everything below it off the screen. */
+    'body.mls-calm #mlsEpSummaryBox .body.mls-dup{display:none!important}',
+    'body.mls-calm .prof-grid{max-height:340px;overflow:auto;-webkit-overflow-scrolling:touch}',
+    'body.mls-calm .prof-grid::-webkit-scrollbar{width:6px}',
+    'body.mls-calm .prof-grid::-webkit-scrollbar-thumb{background:rgba(32,64,52,.18);border-radius:3px}',
     '#mlsDock #mlsDockCopilot{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;',
     'gap:2px;min-width:64px;padding:8px 12px 7px;border:0;background:transparent;border-radius:16px;cursor:pointer;',
     'font:500 11.5px/1.1 inherit;color:#5B6B62;',
@@ -686,7 +709,7 @@
           });
         }
       }
-      if (available(el) && textOf(el)) out.push({ el: el, label: spec.as || textOf(el) });
+      if (available(el) && textOf(el)) out.push({ el: el, label: spec.as || controlLabel(el) });
     });
     return out;
   }
@@ -1095,6 +1118,11 @@
       box.parentNode.insertBefore(host, box);
     }
     host.setAttribute('data-sig', sig);
+    /* The rows now carry this content in a readable shape, so the raw block
+       underneath is the same text a second time - about 500px of it. Marked
+       rather than removed: the box keeps its own Copy control, the rows keep
+       the full text in title=, and teardown drops the class with the shell. */
+    if (found.length) box.classList.add('mls-dup');
     host.innerHTML = found.map(function (f) {
       var empty = PREP_EMPTY.test(f.value);
       var val = empty
@@ -1404,7 +1432,7 @@
     qsa('button,.navtab,[onclick]').forEach(function (el) {
       if (el.closest && el.closest('#mlsDock,#mlsRightNow,#mlsAskResults,#mlsToolsMenu')) return;
       if (!visible(el)) return;
-      var label = textOf(el);
+      var label = controlLabel(el);
       if (!label || label.length > 70) return;
       var key = label.toLowerCase();
       if (byLabel[key]) { byLabel[key].count++; return; }
@@ -1535,6 +1563,7 @@
       var el = qs(s);
       if (el && el.parentNode) el.parentNode.removeChild(el);
     });
+    qsa('.mls-dup').forEach(function (b) { b.classList.remove('mls-dup'); });
     safe(dropIdentityCards);
     if (observer) safe(function () { observer.disconnect(); });
     if (idleTimer) clearTimeout(idleTimer);
@@ -1769,6 +1798,20 @@
     });
   }
 
+  /* Hide the transcript only while it is genuinely empty. Re-evaluated every
+     pass, so the first captured word brings it straight back. */
+  function visitCalm() {
+    if (!W.__mlsCalmShell.active) return;
+    qsa('.ez3fl-transcript').forEach(function (t) {
+      /* NOT \b0 words\b - textContent welds the block children together, so
+         the live node reads "...transcript0 words captured" with no word
+         boundary before the 0; measured against the real element, the \b form
+         never matched. And NOT a bare /0 words/, which also matches
+         "10 words" and would hide a transcript that has content. */
+      t.classList.toggle('mls-empty', /(?:^|\D)0\s*words/i.test(textOf(t)));
+    });
+  }
+
   /* render() runs one pass SYNCHRONOUSLY, bypassing schedule()'s
      requestAnimationFrame. Not decoration: rAF does not fire in a tab that is
      not compositing, so in any headless or background verification context every
@@ -1783,6 +1826,7 @@
     safe(patientScreen);
     safe(contextBar);
     safe(identityCards);
+    safe(visitCalm);
   }
 
   W.__mlsCalmShell = {
