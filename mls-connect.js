@@ -17653,11 +17653,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        While the caret is inside this host, cosmetic ordering loses to not
        destroying the doctor's typing. Every other case is unchanged, so the
        host still gets restored to first position whenever nobody is typing. */
-    if (host && host.parentElement === vv) {
-      var _a = null;
-      try { _a = document.activeElement; } catch (eA) {}
-      if (_a && _a !== document.body && host.contains(_a)) return true;
-    }
+    /* txf-1.3.0: b619 guarded this on "the caret is inside the host", which
+       fixed typing (4 -> 63 of 63 chars) and left the READING case untouched:
+       with nobody typing, mount() still re-inserted the host and still called
+       render(), so setWrapHtml rewrote the whole subtree every interval tick.
+       The owner reported the visit page glitching every ~5 seconds after b619,
+       and an unfocused probe reproduced it - setWrapHtml <- renderHome firing
+       repeatedly with the box untouched.
+       A host that is ALREADY a child of visitView does not need re-inserting.
+       The only thing the old first-child test bought was cosmetic ordering, and
+       it paid for it with a full subtree re-parse of the busiest screen in the
+       app, forever. Ordering still happens on the first real mount and whenever
+       the host is genuinely absent or reparented. */
+    if (host && host.parentElement === vv) return true;
     if (!host || !host.parentElement) { if (!host) buildHost(); }
     try { vv.insertBefore(host, vv.firstChild); } catch (e) { return false; }
     render();
@@ -33329,7 +33337,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b623';
+  window.__MLS_AV = window.__MLS_AV || 'b624';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33639,7 +33647,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b623';
+  var MLS_APP_BUILD='2026-07-25-b624';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
