@@ -164,6 +164,7 @@ const tests = [
   'patient-scale-perf-contract.test.js',
   'patient-card-contrast-contract.test.js',
   'patient-surface-design-language.test.js',
+  'analysis-scope-chip-fits-a-phone.test.js',
   'patient-store-compression-runtime.test.js',
   'patient-store-batch-runtime.test.js',
   'patient-store-sync-rollback-runtime.test.js',

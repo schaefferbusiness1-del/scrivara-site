@@ -12756,6 +12756,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;'
       + 'letter-spacing:.03em;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;'
       + 'white-space:nowrap;line-height:1.7;text-transform:uppercase}'
+      // On a phone this chip is the label that says WHOSE numbers these are,
+      // and at 375px it ran to 515px and was clipped by body{overflow-x:hidden}.
+      // min-width:0 is the operative part: a flex item defaults to
+      // min-width:auto, which forbids shrinking below its content width.
+      + '@media (max-width:760px){.mls-anaclar-chip{white-space:normal;min-width:0;max-width:100%}}'
       + '.mls-anaclar-chip.pw{background:#EAF1EE;color:#2E6A4B;border:1px solid #EAF1EE}'
       + '.mls-anaclar-chip.prov{background:#e7f5ee;color:#12734b;border:1px solid #b7e0cb}'
       + '.mls-anaclar-chip.split{background:#f3eefb;color:#2E6A4B;border:1px solid #EAF1EE}'
@@ -33358,7 +33363,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b647';
+  window.__MLS_AV = window.__MLS_AV || 'b648';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33668,7 +33673,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b647';
+  var MLS_APP_BUILD='2026-07-25-b648';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
