@@ -1322,67 +1322,90 @@
      them says "Edit, Edit, Edit, Edit", and not one had an aria-label or a
      title. The short visible text is deliberate and stays; only the ACCESSIBLE
      name changes, so there is no visual change at all. */
-  /* DELIBERATELY SCOPED TO #profileCard. Do not generalise this pass to the
-     whole app without re-running the measurement below — it was tried, against
-     the live DOM, and BOTH candidate heuristics regress somewhere:
+  /* Widened from #profileCard to the whole visible view after two narrower
+     heuristics were tried and rejected against the live DOM. Recorded because
+     the rejected ones look reasonable and will be proposed again:
 
-       subtraction-first (this one)  #profileCard 9/9 correct
-                                     #visitView   picks the sibling BUTTON, so
-                                                  Copy/Print rows name each
-                                                  other: "Copy — Print",
-                                                  "Print — Copy", and one
-                                                  "Copy — PF-RUN-20260725-96375"
+       subtract only the control's OWN words   #profileCard 9/9 right
+                                               #visitView   names controls after
+                                                            the sibling BUTTON:
+                                                            "Copy — Print",
+                                                            "Print — Copy"
+       prefer an inert sibling ELEMENT         #visitView   readable
+                                               #profileCard 8 of 9 WORSE, and it
+                                                            lifted patient data
+                                                            into the name:
+                                                            "Edit — Sample
+                                                            medication 10 mg
+                                                            daily"
 
-       heading/inert-first           #visitView   good: "Copy — Clinical note
-                                                  Draft", "Print — (dx + CPT
-                                                  for billing)"
-                                     #profileCard 8 of 9 WORSE — sections
-                                                  collapse onto "Visit context",
-                                                  and it lifts patient data into
-                                                  the accessible name:
-                                                  "Edit — Sample medication
-                                                  10 mg daily"
+     What actually works is subtracting EVERY control's text from the container,
+     because the two regions differ only in where the buttons sit: the patient
+     card puts them beside the heading, the visit screen puts them INSIDE it
+     ("<h3>Patient after-visit summary Copy Print</h3>"). Removing all control
+     text leaves the heading's own words in both shapes. The inert-sibling walk
+     survives as a fallback for rows that are nothing but controls.
 
-     The second failure is the disqualifying one: an aria-label REPLACES the
-     visible text for a screen reader, so a wrong one is worse than a generic
-     one, and clinical detail does not belong in a control name. The two regions
-     have genuinely different DOM shapes — the card is heading+control rows, the
-     visit screen is control rows inside titled cards — and one heuristic cannot
-     read both. Measured cost, for whoever revisits this: scoped to the visible
-     view a generic-label scan is 0.19ms against a 3.27ms render pass; document
-     wide it is 2.1ms. Cost was never the blocker. Correctness was.
-     Guarded by tests/calm-shell-generic-naming-scope.test.js. */
-  var GENERIC_LABEL = /^(edit|copy|clear|add|remove|open|view|more|refresh)$/i;
+     An aria-label REPLACES the visible text for a screen reader, so a wrong
+     name is worse than a generic one and clinical detail must never reach one —
+     that is why this was measured on the running page before shipping rather
+     than reasoned about. Guarded by
+     tests/calm-shell-generic-naming-scope.test.js. */
+  var GENERIC_LABEL = /^(edit|copy|clear|add|remove|open|view|more|refresh|print|save|delete)$/i;
 
   /* Read the section from the row the control sits in, by subtracting the
      control's own words from its container's. Hunting a heading ELEMENT fails
      here: several of these rows title themselves with a bare text node, and
      the ones that do use an element put the button inside the same heading. */
+  var CTRL_SEL = 'button,a[href],input,select,textarea,[role="button"]';
+
+  /* 3..60 chars, and never an opaque identifier — a run id like
+     PF-RUN-20260725-96375 is a worse name than none. */
+  function usableName(t) {
+    return t.length >= 3 && t.length <= 60 && !/^[A-Z0-9-]{8,}$/.test(t);
+  }
+
+  /* The container's text with EVERY control's text removed, which leaves the
+     heading's own words whether the buttons sit beside the heading (patient
+     card) or inside it (visit screen). Capped by usableName, because one level
+     above the row textContent becomes the whole card. */
+  function inertText(node) {
+    var t = normLabel(node.textContent || '');
+    if (!t) return '';
+    var ctrls = node.querySelectorAll ? node.querySelectorAll(CTRL_SEL) : [];
+    for (var i = 0; i < ctrls.length; i++) {
+      var ct = normLabel(ctrls[i].textContent || '');
+      if (ct) t = t.split(ct).join(' ');
+    }
+    return t.replace(/\s+/g, ' ').trim();
+  }
+
+  /* Fallback for a row that is nothing BUT controls, where the subtraction
+     above empties the string: the nearest sibling that carries no control. */
+  function inertSibling(node, el) {
+    var kids = node.children || [];
+    for (var i = 0; i < kids.length; i++) {
+      var kid = kids[i];
+      if (kid === el || kid.contains(el)) continue;
+      if (kid.matches && kid.matches(CTRL_SEL)) continue;
+      if (kid.querySelector && kid.querySelector(CTRL_SEL)) continue;
+      var t = normLabel(kid.textContent || '');
+      if (usableName(t)) return t;
+    }
+    return '';
+  }
+
   function sectionNameFor(el) {
-    var own = normLabel(el.textContent || '');
     var node = el.parentElement;
-    for (var i = 0; i < 4 && node; i++) {
-      /* Prefer a sibling title ELEMENT before subtracting text. Subtraction
-         alone cannot name the Visit context row, whose container holds the
-         heading AND the body: removing "Edit" from it leaves 84 characters
-         reading "Reason for visit / chief complaintNo visit reason is
-         included..." — and textContent welds block children with no
-         separator, so there is no boundary left to cut on. Verified on the
-         running page at b589 that this changes none of the eight names
-         subtraction already got right. */
-      var kids = node.children || [];
-      for (var k = 0; k < kids.length; k++) {
-        var kid = kids[k];
-        if (kid === el || kid.contains(el)) continue;
-        var kt = normLabel(kid.textContent || '');
-        if (kt.length >= 3 && kt.length <= 60) return kt;
-      }
-      var whole = normLabel(node.textContent || '');
-      if (whole && whole.length > own.length) {
-        var rest = whole.replace(own, ' ').replace(/\s+/g, ' ').trim();
-        /* Capped: past the row, textContent is the whole card. */
-        if (rest.length >= 3 && rest.length <= 60) return rest;
-      }
+    for (var i = 0; i < 5 && node; i++) {
+      var t = inertText(node);
+      if (usableName(t)) return t;
+      node = node.parentElement;
+    }
+    node = el.parentElement;
+    for (var j = 0; j < 5 && node; j++) {
+      var s = inertSibling(node, el);
+      if (s) return s;
       node = node.parentElement;
     }
     return '';
@@ -1393,12 +1416,37 @@
     if (!GENERIC_LABEL.test(flat)) return;
     /* Never overwrite a name the APP chose; only one this pass wrote. */
     if (b.getAttribute('aria-label') && !b.getAttribute('data-mls-secname')) return;
+    /* sectionNameFor walks up to five ancestors reading textContent, so it is
+       the expensive half. Skip it for a control already named for this label —
+       a re-rendered node is a NEW node and carries no flag, so a card that
+       rebuilds still gets re-derived. */
+    if (b.__mlsSecSig === flat && b.getAttribute('data-mls-secname')) return;
+    b.__mlsSecSig = flat;
     var section = sectionNameFor(b);
     if (!section) return;
     var name = flat + ' — ' + section;
     if (b.getAttribute('aria-label') === name) return;
     b.setAttribute('aria-label', name);
     b.setAttribute('data-mls-secname', '1');
+  }
+
+  /* Scoped to the ONE visible view, not the document. Measured at b599: a
+     generic-label scan costs 0.19ms inside the visible view against 2.1ms
+     document-wide, on a 3.27ms render pass — and controls in hidden views are
+     not something a doctor can meet anyway, which is the same rule Ask already
+     follows. Named regardless of the control's own visibility inside that view,
+     so a collapsed card is already correct the instant it opens rather than
+     announcing a bare "Copy" until the next render lands. */
+  function nameGenericInView() {
+    if (!W.__mlsCalmShell.active) return;
+    var view = qsa('#appWrap > div').filter(function (el) {
+      return /View$/.test(el.id || '') && visible(el);
+    })[0];
+    if (!view) return;
+    qsa('button,[role="button"]', view).forEach(function (b) {
+      if (b.closest && b.closest('#mlsDock,#mlsRightNow,#mlsToolsMenu,#mlsAskResults,#mlsPrepRows')) return;
+      nameIfGeneric(b);
+    });
   }
 
   function patientScreen() {
@@ -2219,6 +2267,7 @@
        splits, and nameControls must see the finished markup so it neither
        overwrites that name nor re-derives one from a label mid-rewrite. */
     safe(nameControls);
+    safe(nameGenericInView);
     safe(visitCalm);
   }
 
