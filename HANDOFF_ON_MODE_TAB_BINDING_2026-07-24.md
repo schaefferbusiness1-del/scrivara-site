@@ -727,3 +727,83 @@ extension->page hop - a diagnostic attached to the gate object is silently
 dropped, which cost a full run to discover. Never quote a progress line as a
 result: "3 of 5 charts finished" counts attempts, while the receipt said
 `coverageComplete: 0`.
+
+---
+
+## THE OTHER TWO OPEN DEFECTS (owner-visible, diagnosed, not fixed)
+
+### 1. "Login is way too slow" is not login
+
+Owner: *"IT TOOK WEAY TO LONG TO LOGUIN LIKE HAST SHOULD BE FAST"*.
+
+Measured on the live tab at b564, three ways:
+
+| | cold | warm |
+|---|---|---|
+| `domInteractive` | 182ms | **164ms** |
+| `loadEventEnd` | 682ms | **664ms** |
+| last resource finishes | ~80s | **~26s** |
+| resources over 5s | - | **191 of 250** |
+
+Breakdown of the feature-script set:
+
+```
+152 feat_mls_*.js - ALL have workerStart>0 (service worker)
+151 of 152 transferSize === 0 (already cached)
+average responseStart-requestStart: 4ms
+all 152 requested inside the SAME 1-second window
+```
+
+**Not network, not server, not cache, not authentication.** Every file is
+already local and arrives in 4ms. Each still reports ~24s duration because 152
+separate requests fire at once, each round-trips the service worker, and each is
+then parsed and executed on the main thread. The measured duration is queueing
+behind the main thread.
+
+`ScribeFlow.html` carries only **4** script tags. The fan-out lives in
+`mls-connect.js`, which names **164** feature files. Nothing in the gate watched
+that number, which is how boot reached 26s without anyone shipping a visibly
+slow change.
+
+**Now measurable:** `tests/boot-script-budget.test.js` (main, c5e02d3) pins it
+two-sided - over the ceiling fails so a new unbundled feature is a deliberate
+decision, and UNDER the floor also fails, because that means bundling or
+deferral landed and the pin must be lowered to lock the win in. The second arm
+is the point: it confirms the fix worked rather than only preventing regression.
+
+**Suggested order: defer before bundling.** Loading only what the first screen
+needs and letting the rest arrive after first paint is reversible and does not
+change what any file contains. Bundling changes bytes and interacts with the SW
+cache and the publication inventory. The test measures either equally. The boot
+path is the highest blast radius in the product - a broken loader is a dead app,
+so run the full gate and verify on a live tab, never blind.
+
+### 2. The patient banner
+
+Owner: *"i ahte this patient banner like wtf is this its aweful and also like if
+Im on a paietn the patient banner sohuld be up there"*.
+
+Live DOM:
+
+```html
+🎙 Start Recording — Linda S Bledsoe<small>9:40 AM · DOB 07/31/1951</small>
+```
+
+Two separate defects:
+
+1. The surname collides with the time ("Bledsoe9:40 AM", "Salimi7:30 AM").
+   **Do NOT add a separator to the string.** Source
+   (`mls-connect.js:18794` and siblings) omits it deliberately - `<small>` is
+   block-styled in the ez3 shell and renders correctly on its own line there.
+   The Calm Shell right-now bar re-renders the same button **inline** without
+   inheriting that CSS. The fix is CSS scoping in the Calm Shell.
+2. A DOM query for a patient header returns **nothing**. Identity exists only as
+   label text inside a button, because the right-now bar is reusing a control
+   built for a different shell. That is the stronger argument for a real patient
+   header than for restyling the borrowed button - the next shell to reuse
+   `ez3Rec` hits this again.
+
+A control-coverage test cannot catch either: the control is present and
+reachable. It just renders the patient's name wrong and puts identity in the
+wrong structural place. Worth a contract that patient identity renders in a
+header region rather than only inside a control label.
