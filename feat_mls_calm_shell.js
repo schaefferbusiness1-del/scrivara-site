@@ -244,6 +244,18 @@
        class and the controls keep no inline display. Day nav and the pull
        action stay exactly where they are. */
     'body.mls-calm #mlsDsStrip > #mlsPdpWrap,body.mls-calm #mlsDsStrip > #mlsDsVisitTgl{display:none!important}',
+    /* Two visible controls on the Visit screen carried the SAME label,
+       'Advanced visit workspace': .ez3fl-openws inside the record block, and
+       #ez3Adv in its own row. They are not two features - openWorkspace()
+       literally does adv.click() on #ez3Adv and then focuses the note card, so
+       the standalone row is a second door to the same room, 44px tall, sitting
+       under a duplicate name.
+       The ROW is hidden, not the button: openWorkspace() still calls
+       #ez3Adv.click() programmatically, which works on a CSS-hidden element,
+       and hiding by class (never inline) keeps available() true so nothing
+       loses its reach. The richer control - the one that also brings the note
+       card into view - is the one that stays visible. */
+    'body.mls-calm .ez3-advrow{display:none!important}',
     'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
     /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
        patient. The single largest duplication is the prep summary. prepRows()

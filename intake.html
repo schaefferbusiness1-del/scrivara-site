@@ -53,7 +53,7 @@
   .hide{display:none!important}
   .lock{color:var(--muted);font-size:12px;text-align:center;margin-top:18px}
 
-  /* ---- mls motion kit (b577) ---- */
+  /* ---- mls motion kit (b578) ---- */
   @media (prefers-reduced-motion: no-preference){
     @keyframes mlsRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
     @keyframes mlsPop{0%{transform:scale(.92)}62%{transform:scale(1.04)}100%{transform:scale(1)}}
@@ -197,7 +197,7 @@
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
       .then(function(r){
         if(!r || (r.status >= 500)) { show('offline'); return null; }   /* server fault: unknown, not invalid */
-        /* b577: an unreadable body is NOT a server "no". It used to be coerced
+        /* b578: an unreadable body is NOT a server "no". It used to be coerced
            to {ok:false}, which rendered the permanent "this pre-visit link is
            not valid" verdict for a truncated response or an HTML error page
            served with a 2xx - both transient. Only a body we could actually

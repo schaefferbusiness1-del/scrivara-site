@@ -5,10 +5,10 @@
  *
  * Why this test exists. The shell shipped for six consecutive builds - b565
  * identity cards, b568 modal motion, b571 the folded Ask bubble, b572 the
- * transcript fold, b577 the patient-page density cut - and NONE of it reached a
+ * transcript fold, b578 the patient-page density cut - and NONE of it reached a
  * browser. The loader pinned `?v=20260724calm116`, the service worker serves
  * versioned asset urls cache-first, and so every visitor kept the copy cached
- * under that token. Measured live at b577: app-version.json said b577 while the
+ * under that token. Measured live at b578: app-version.json said b578 while the
  * page was still running the b564-era module, and the injected stylesheet
  * contained none of the five changes above.
  *
@@ -43,7 +43,7 @@ for (const asset of MUST_AUTOBUST) {
     asset + ' must load with ?v=\' + (window.__MLS_AV || Date.now()).\n' +
     'A frozen ?v= token is served cache-first by the service worker, so every\n' +
     'change to this file would ship to the server and never reach a browser -\n' +
-    'which is exactly what happened for six builds (b565-b577).');
+    'which is exactly what happened for six builds (b565-b578).');
 
   const frozen = new RegExp(asset.replace(/\./g, '\\.') + "\\?v=[0-9a-z]+'", 'i');
   assert(!frozen.test(connect),
