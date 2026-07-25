@@ -1112,6 +1112,7 @@
         var s = D.createElement('button');
         s.type = 'button';
         s.className = 'segbtn' + (tab.classList.contains('on') ? ' on' : '');
+        s.setAttribute('data-mls-proxy', '1');
         s.setAttribute('role', 'tab');
         s.setAttribute('aria-selected', tab.classList.contains('on') ? 'true' : 'false');
         s.textContent = controlLabel(tab).replace(/\s*\d+$/, '');
@@ -1140,6 +1141,11 @@
     picked.forEach(function (p, i) {
       var b = D.createElement('button');
       b.type = 'button';
+      /* This button is a REFERENCE to p.el, not the control. Decorators that match
+         controls by label must not treat it as one - feat_athena_clarity.js did,
+         and appended a visible sub-label paragraph and a READ-ONLY chip into the
+         toolbar, which is the welding the owner actually saw. */
+      b.setAttribute('data-mls-proxy', '1');
       b.textContent = p.as || controlLabel(p.el);
       /* controlLabel, not textOf: `as` re-labels the button, and this tooltip is
          the only place the doctor is told which real control it runs. textOf

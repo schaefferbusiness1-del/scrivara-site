@@ -175,4 +175,58 @@ assert.ok(
   'the re-render signature must not use textOf() while the button uses controlLabel()'
 );
 
-console.log('shell-label-authority-contract: OK (' + displaySites.length + ' display sites + 6 derivation cases)');
+/* ------------------------------------- 3. a proxy is not the control ----- */
+
+/* The label derivation was already correct and the bar STILL rendered prose.
+ * Measured on the running page at b586, the right-now button's text node was
+ * exactly "Pull from Athena" - controlLabel() had done its job - and
+ * feat_athena_clarity.js had then appended a VISIBLE 300px .mlsac-sub paragraph,
+ * a <br> and a READ-ONLY chip INTO the shell's button, because decorateOne()
+ * matches any control whose textContent starts with a catalog label.
+ *
+ * This arm exists because the label layer CANNOT fix that, and the next person
+ * will be tempted to try. Here is the proof: when the decorator's sub-label is
+ * visible (which it is inside the bar - the display:none only applies on the
+ * real control's own surface), controlLabel correctly includes it, because a
+ * visible child IS part of what the button reads. */
+const decoratedProxy = el('button', {
+  attrs: { 'data-mls-proxy': '1' },
+  children: [
+    text('Pull from Athena'),
+    el('span', { style: { display: 'block' }, children: [text(TIP)] }),   // .mlsac-sub, VISIBLE here
+    el('br'),
+    el('span', { style: { display: 'block' }, children: [text('READ-ONLY')] })
+  ]
+});
+assert.ok(
+  controlLabel(decoratedProxy).indexOf(TIP) > -1,
+  'sanity: once the decorator has injected a VISIBLE sub-label, no label function can drop it - ' +
+  'which is why the fix belongs in the decorator, not here'
+);
+
+const shell = src;
+const clarity = fs.readFileSync(path.join(root, 'feat_athena_clarity.js'), 'utf8');
+
+assert.ok(
+  shell.indexOf("b.setAttribute('data-mls-proxy', '1');") > -1,
+  'the right-now bar must mark its synthesised buttons as proxies'
+);
+assert.ok(
+  shell.indexOf("s.setAttribute('data-mls-proxy', '1');") > -1,
+  'the segmented view tabs must mark their synthesised buttons as proxies'
+);
+assert.ok(
+  clarity.indexOf("btn.closest('[data-mls-proxy]')") > -1,
+  'feat_athena_clarity must refuse to decorate a shell proxy - it matches controls by ' +
+  'textContent PREFIX, so it decorated the toolbar reference as if it were the real control'
+);
+
+/* The guard has to run before the catalog match, otherwise a proxy still gets
+ * data-mlsac stamped on it and reads as decorated to everything downstream. */
+const decorateStart = clarity.indexOf('function decorateOne(btn)');
+const guardAt = clarity.indexOf("btn.closest('[data-mls-proxy]')", decorateStart);
+const matchAt = clarity.indexOf('matchEntry(btn)', decorateStart);
+assert.ok(decorateStart > -1 && guardAt > -1 && matchAt > guardAt,
+  'the proxy guard must run before matchEntry() stamps the control as decorated');
+
+console.log('shell-label-authority-contract: OK (' + displaySites.length + ' display sites, 7 derivation cases, proxy guard)');

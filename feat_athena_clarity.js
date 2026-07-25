@@ -102,6 +102,14 @@
        catalog normalization/text matching so unrelated UI mutations stay
        essentially free. */
     if (!btn || btn.getAttribute(ATTR)) return false;
+    /* Never decorate a shell proxy. matchEntry() matches on a textContent
+       PREFIX, so the calm shell's right-now button labelled "Pull from Athena"
+       matched the real control's catalog entry and got a 300px sub-label
+       paragraph, a <br> and a READ-ONLY chip appended into it - measured on the
+       running page at b586. The explanation belongs on the control itself; on a
+       compact toolbar reference it turns a button into three lines of prose and
+       welds into any label read from textContent. */
+    if (safe(function () { return !!(btn.closest && btn.closest('[data-mls-proxy]')); })) return false;
     var e = matchEntry(btn);
     if (!e) return false;
     btn.setAttribute(ATTR, e.tag);
