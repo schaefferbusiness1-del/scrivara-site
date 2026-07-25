@@ -883,6 +883,7 @@
     var input = document.createElement('input');
     input.type = 'text'; input.className = 'mls-intake-question';
     input.placeholder = 'Add a question patients should answer';
+    input.setAttribute('aria-label', 'New intake question');
     input.value = value || '';
     input.addEventListener('input', function () { syncIntakeQuestions(editor); });
     var remove = document.createElement('button');

@@ -14598,6 +14598,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var lbl = document.createElement("span"); lbl.className = "opnf-lbl"; lbl.textContent = "+ Add to op note:";
     var inp = document.createElement("input");
     inp.type = "text"; inp.placeholder = "type any word, phrase or line...";
+    /* The row's visible "+ Add to op note:" label is a span, so it names
+       nothing. A placeholder is not a name either - it vanishes on the first
+       keystroke, which is exactly when this field matters. */
+    inp.setAttribute("aria-label", "Text to add to the op note");
     var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Add";
     function go() {
       var box = null; try { box = resolveBox(); } catch (e) {}
@@ -33337,7 +33341,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b630';
+  window.__MLS_AV = window.__MLS_AV || 'b631';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33647,7 +33651,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b630';
+  var MLS_APP_BUILD='2026-07-25-b631';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

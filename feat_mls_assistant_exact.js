@@ -1088,7 +1088,7 @@
           '<div class="as-thread"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="as-input" hidden><textarea placeholder="Message the assistant..." rows="1"></textarea>' +
+      '<div class="as-input" hidden><textarea placeholder="Message the assistant..." aria-label="Message the assistant" rows="1"></textarea>' +
         '<button type="button" class="as-send">Send</button></div>' +
       '<div class="as-foot">Reads your own practice data. Never writes or signs a chart on its own.</div>';
     document.body.appendChild(p);
