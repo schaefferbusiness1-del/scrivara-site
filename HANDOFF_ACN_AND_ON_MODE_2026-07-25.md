@@ -641,3 +641,58 @@ late. Those are different changes and the evidence distinguishes them. But the
 
 Doing (2) without (1) is not a risk any more. It is a known regression with a
 date on it.
+
+---
+
+## No agent session can take this reading — proven, not assumed
+
+Worth writing down so nobody spends a session rediscovering it. The remaining
+step is not owner-gated by policy or preference. It is gated by the environment.
+
+Taking the reading requires the 3.0.17 diagnostic loaded as an unpacked
+extension, which requires interacting with `chrome://extensions`. Both routes
+are closed:
+
+| route | result |
+|---|---|
+| browser MCP `navigate('chrome://extensions')` | rewritten to `https://chrome://extensions`, lands on `chrome-error://chromewebdata/`. Verified 2026-07-25 |
+| desktop computer-use | browsers are granted at tier **"read"** — visible in screenshots, clicks and typing **blocked**. "Load unpacked" needs exactly those |
+
+So the sequence "load unpacked → run one pull → read `enum=`" cannot be
+performed by an agent in this environment at all, whatever it decides about
+driving a live EMR. The staged folder, its README and the passive console
+listener exist because that is the entire remaining surface an agent *can*
+prepare.
+
+If a future session is tempted to try: the answer is no, and this is why. Spend
+the time on the two candidate gates instead — the analysis above narrows which
+one to expect and what each answer implies.
+
+---
+
+## Defect 1b: final state
+
+**Fixed, no reading required.**
+
+| | build |
+|---|---|
+| the inbox could supply the encounter index, set `receipt.expected`, and END the retry loop | 3.0.14 |
+| evidence never crossed the hop — attached to a local nothing returned | 3.0.16 |
+| refusals dropped their numbers; reasons truncated to 22 chars | 3.0.15 / 3.0.17 |
+| 47 retries (~165s) on an answer that could not change | 3.0.17 |
+| the branch itself was red and could not be certified at all | rebased onto main |
+
+**Narrowed by measurement.** Three gates → two. Gate 1 is recorded *passing* on
+the landing pane (2026-07-21 acceptance artifact), so it is the least likely to
+be refusing and it demonstrably cannot carry the discrimination alone.
+
+**Not fixed, and deliberately not guessed.** Which of
+`visits-total-not-readable` and `visits-list-still-rendering` loses its
+completeness proof, and whether the declared total is unreachable or merely
+late. Those are different changes. The failure mode of guessing is not a broken
+build — it is a chart reporting success with 2 of a patient's 22 encounters,
+silently, which is the exact regression the 2026-07-21 artifact records.
+
+The reader currently refuses honestly and saves nothing. That is the correct
+behaviour for a reader that cannot prove completeness, and it is why this is a
+defect to fix rather than an incident to contain.
