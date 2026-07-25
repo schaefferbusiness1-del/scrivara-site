@@ -84,10 +84,26 @@ const ROOT = path.resolve(__dirname, '..');
 const LOADER = 'mls-connect.js';
 
 /* arm A - request count */
-const CEILING = 234;   // TRUE fan-out, measured b590. The old 164 watched feat_mls_ only.
+/* 234 -> 235 at b651, deliberately, for feat_mls_voice_cluster.js.
+ *
+ * Raised rather than dodged, and here is the why this file asks for:
+ *   - It is the FIRST module in this loader that is NOT eager. It loads on
+ *     requestIdleCallback with a 4s timeout, so it costs nothing at first paint
+ *     — which is the cost this ceiling actually guards (the post-login burst on
+ *     a main thread 234 modules already compete for), not the ~0.83ms download.
+ *   - It REMOVES interface rather than adding it: three bottom-left controls
+ *     (Copilot Voice, MLS Assistant, Dictate) become one bubble that expands.
+ *     Net chrome goes down; net boot work goes down.
+ *   - It could have been folded into an existing feat file to keep the count
+ *     flat. That would have been the dishonest version: this slot's established
+ *     pattern (feat_mls_copilot_voice_v2.js) is a separately revertible
+ *     satellite, and merging three voice controls is exactly the change you
+ *     want to be able to back out on its own. */
+const CEILING = 235;
 const FLOOR = 200;
 
-/* arm B - deferral. All 234 are eager today. */
+/* arm B - deferral. 234 of the 235 are eager; the voice cluster is the first
+   deferred one, so EAGER_CEILING deliberately does NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;
 
