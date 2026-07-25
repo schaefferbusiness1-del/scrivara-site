@@ -928,3 +928,119 @@ be moved in step — worth knowing before the next token bump.
   **not reproduce** on the owner's tab at b629 — `_visitDirty` read `false`,
   transcript empty, and no `beforeunload` handler was registered. Not fixed, not
   confirmed; needs the exact sequence that produced it.
+
+---
+
+## Addendum 10 — correction, and the writer that no measurement could see (b641→b645)
+
+### I shipped a wrong mechanism, then measured it
+
+Addendum 9 and the b632/b635/b638 commits assert that
+`classList.toggle(name, force)` re-commits the class attribute when the state
+already matches. **It does not.** Measured on the live page, on `document.body`,
+page-originated calls counted separately, zero-call control:
+
+| 50 identical calls | attribute records |
+|---|---|
+| `toggle(present, force=true)` | **0** |
+| `toggle(absent, force=false)` | **0** |
+| `add(alreadyPresent)` | **50** |
+| `remove(notPresent)` | **50** |
+| `setAttribute('class', same)` | 50 |
+| `className = same` | 50 |
+
+The spec agrees: `toggle` with a force argument returns early without running the
+update steps. `add`/`remove` run them unconditionally.
+
+**Still true:** the churn was real, and came from `add()`/`remove()` —
+`add('mls-has-easy-advanced-trigger')` 54×, `remove('mls-pvu-rich')` 14×,
+`remove('mls-has-active-pt')` 5×. That is 73 of the 86 records, and all three are
+guarded.
+
+**False:** b638's "three whole-document style invalidations per character typed."
+Those three calls are toggles and cost nothing. I inferred the number from the
+bad premise and never observed it. Likewise "68 writes" from
+`syncPrimaryVoiceTools` was a call count, not a write count.
+
+Corrected in b641: both false source comments, the test header, every per-writer
+attribution, and the assertion text. **The repo-wide "no unguarded
+toggle-with-force" rule was removed** — it enforced a non-issue across 273 files
+and would have cost future contributors real effort for nothing. The ten toggle
+guards are kept (semantically identical, skip a call) but the code now says they
+are belt-and-braces, not the fix.
+
+### The writer that could not be measured here (b644)
+
+A 19-agent read-only audit re-enumerated every `<body>` class write three ways —
+direct regex, **alias-following** (catches `var bcl = document.body.classList`,
+invisible to the plain pattern), and escape-hatch search for `body.className` /
+`setAttribute('class')` / `querySelector('body')`. 63 sites in 12 files.
+
+    mls-connect.js  applyDoctorRestrictions()
+    document.body.classList.add('mls-lite');     setInterval(tick, 1500)
+
+~40 no-op whole-document style invalidations per minute, for the whole session.
+It never appeared in any measurement because the function returns early unless
+`isLiteUser()`, which is false for admin and Premium accounts. **Confirmed live:
+the owner's account reports `isLiteAccount: false`.** Every probe in this work
+ran on that account and recorded zero regardless of tab, focus or foreground.
+Same defect as the original, on the one population nobody sampled.
+
+*Measuring one account is not measuring the product.*
+
+### The foreground objection is closed
+
+The audit checked every trigger a hidden tab would not run: `transitionend` /
+`animationend` (zero repo-wide), `matchMedia` change listeners (7 calls, all
+synchronous `.matches` reads, zero listeners), `ResizeObserver` (zero
+instantiations), `IntersectionObserver` (one, on `.reveal`, never `<body>`),
+scroll/resize/mousemove. **No unguarded body-class writer among them.** The one
+rAF-driven path, `scheduleLaneSync`, was already guarded in b632.
+
+Independently, guard-evaluation counting is throttle-independent by construction:
+throttling changes how often a pass runs, not whether a pass that ran declined to
+write. At b645: **87 guard evaluations, 0 writes** in 30s.
+
+### Also fixed: a correctness bug, not just churn
+
+The agenda chip wrote `chip.title`. A MutationObserver on `[title]` strips title
+to `data-tip` and removes it — so **no guard on `title` can ever hold** (the
+attribute is always absent by the next tick), and the stripper seeds `data-tip`
+only when it is absent. The hover bubble therefore **froze at its boot-time text
+and showed a stale "N of M seen" all session**. Now writes `data-tip` directly
+with a compare.
+
+Three no-op attribute writes per tick on `#mlsB39SgHead` (`type`,
+`aria-controls`, `aria-expanded`) also guarded; verified 0 records at b645. The
+`aria-expanded` write inside `head.onclick` is deliberately left unguarded — the
+class was toggled on the line above, so it always changes.
+
+### Not verified live, and why
+
+- **`mls-lite`** — unobservable on an admin account by construction. Verified by
+  code inspection, the audit's refutation pass, and the test suite only.
+- **agenda chip `data-tip`** — `#mlsAgendaChip` was not present on the screen
+  under test. Same status.
+- **`feat_mls_visit_useactivept.js:154-155`** — two more `title` writers on
+  `setInterval(1200)` with the same frozen-tooltip bug, plus an unguarded
+  same-value `setAttribute('disabled','disabled')` per tick. **Not fixed** —
+  identified but left for a follow-up.
+- **`mls-connect.js:33210/33211/33213`** — the `if (e && !e.title)` form, a guard
+  that can never fire, driven by `setInterval(2500)` **and** a rAF-coalesced
+  subtree observer while the EMR modal is open. **Not fixed.** Note the audit's
+  cost caveat: there is no CSS `[title]` selector in the repo, so these cost two
+  observer wakeups per write, not a document-wide recalc — a lower cost class
+  than the body-class writes.
+
+### Process failure worth recording
+
+I ran `git stash` on a clean tree (stashing nothing), then `git stash pop`, which
+applied a **stale b624-era stash**, conflicted, and I committed the result under
+a message beginning `docs:` without reading the diff. Raw `<<<<<<<` markers
+reached production in `feat_mls_calm_shell.js` — a SyntaxError that stopped the
+whole calm-shell module parsing — and the same stash silently deleted the new
+suite's registration from `run-all.js`. Live for ~11 minutes; caught on the
+`--stat`, confirmed by fetching the served file, fixed in b640. Another lane has
+since added a gate that gets conflict markers before they are served.
+Check `git stash list` before pairing stash/pop, and read `--stat` before every
+push — especially when the message says "docs".
