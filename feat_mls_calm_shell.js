@@ -589,7 +589,17 @@
     { id: 'day', label: 'Day', targets: ['nav_calendar'] },
     { id: 'patient', label: 'Patient', targets: ['nav_patients', 'nav_history'], count: 'navPtCount' },
     { id: 'visit', label: 'Visit', targets: ['nav_visit'] },
-    { id: 'review', label: 'Review', targets: ['nav_orders', 'nav_recs'], count: 'navOrdCount' },
+    /* `extra` enriches the segmented row WITHOUT changing where the destination
+       lands or whether it survives. The owner's words: "actually make Review
+       review, not just orders." It was named Review and went to Orders, while
+       the stage bar two rows up uses Review to mean review-the-note — the same
+       word meaning two things in one screen.
+       The note is reached through nav_visit, so it must NOT be a real target:
+       as a target it would become the landing tab (duplicating the Visit dock
+       item) and would keep Review alive on accounts that have neither orders
+       nor recommendations. As `extra` it is a segment and nothing more. */
+    { id: 'review', label: 'Review', targets: ['nav_orders', 'nav_recs'],
+      extra: ['nav_visit'], as: { nav_visit: 'The note' }, count: 'navOrdCount' },
     { id: 'tools', label: 'Tools', targets: ['nav_studio'], menu: true }
   ];
 
@@ -606,6 +616,23 @@
   function destTarget(d) {
     return destTargets(d)[0] || null;
   }
+
+  /* What the segmented row offers: the destination's real targets, plus any
+     `extra` the app still offers. Deliberately NOT used by destTarget() or by
+     dock visibility — an extra must never decide where a destination lands, nor
+     keep a destination alive by itself. Review with no orders and no
+     recommendations is still an empty Review, and hides. */
+  function destSegments(d) {
+    if (!d) return [];
+    var real = destTargets(d);
+    if (!real.length || !d.extra) return real;
+    var seen = {};
+    real.forEach(function (t) { seen[t.id] = 1; });
+    return real.concat((d.extra || []).map(function (id) {
+      return seen[id] ? null : D.getElementById(id);
+    }).filter(function (el) { return el && available(el); }));
+  }
+
 
   /* Which rail tabs each destination covers — used to light the right dock item
      when navigation happens from somewhere else (a link, Ask, a module). */
@@ -1118,7 +1145,7 @@
 
     var destDef = null;
     DEST.forEach(function (x) { if (x.id === dest) destDef = x; });
-    var sibs = destDef ? destTargets(destDef) : [];
+    var sibs = destSegments(destDef);
 
     /* Re-render only when the bar would actually change. The visit view mutates
        continuously while a transcript streams in, and rebuilding on every one of
@@ -1158,7 +1185,13 @@
         s.setAttribute('data-mls-proxy', '1');
         s.setAttribute('role', 'tab');
         s.setAttribute('aria-selected', tab.classList.contains('on') ? 'true' : 'false');
-        s.textContent = controlLabel(tab).replace(/\s*\d+$/, '');
+        /* Same idiom the right-now buttons already use for an aliased control:
+           show the alias, and DISCLOSE the real control in the title. A segment
+           that silently renamed a rail tab would be the shell claiming
+           authorship of a control it only proxies. */
+        var alias = (destDef && destDef.as) ? (destDef.as[tab.id] || '') : '';
+        s.textContent = alias || controlLabel(tab).replace(/\s*\d+$/, '');
+        if (alias) s.title = 'Opens "' + controlLabel(tab).replace(/\s*\d+$/, '') + '"';
         s.addEventListener('click', function () {
           tab.click();
           markViewEnter();

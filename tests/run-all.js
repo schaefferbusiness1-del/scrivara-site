@@ -323,6 +323,7 @@ const tests = [
   'calm-shell-generic-naming-scope.test.js',
   'settings-preview-commit-contract.test.js',
   'calm-shell-return-path.test.js',
+  'review-is-a-review-not-just-orders.test.js',
   'phone-capture-survival.test.js',
   'phone-install-contract.test.js'
 ];

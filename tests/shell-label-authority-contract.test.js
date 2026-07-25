@@ -149,9 +149,23 @@ const displaySites = [
     what: 'right-now alias tooltip',
     line: 'if (p.as) b.title = \'Runs "\' + controlLabel(p.el) + \'" on this screen\';'
   },
+  /* Moved deliberately at b649. A segment may now carry an alias, for the same
+   * reason a right-now button may: the rail tab it proxies can mean something
+   * different from where it is shown. nav_visit is "Today" in its own row and
+   * "The note" inside Review.
+   *
+   * The authority rule is UNCHANGED and is what these two lines pin together:
+   * the fallback is still controlLabel(), and an aliased segment must DISCLOSE
+   * the control it opens in its title — exactly as the right-now alias tooltip
+   * above does. An alias without disclosure would be the shell claiming
+   * authorship of a control it only proxies. */
   {
     what: 'segmented view tab label',
-    line: "s.textContent = controlLabel(tab).replace(/\\s*\\d+$/, '');"
+    line: "s.textContent = alias || controlLabel(tab).replace(/\\s*\\d+$/, '');"
+  },
+  {
+    what: 'segmented alias disclosure',
+    line: "if (alias) s.title = 'Opens \"' + controlLabel(tab).replace(/\\s*\\d+$/, '') + '\"';"
   },
   {
     what: 'right-now re-render signature',
