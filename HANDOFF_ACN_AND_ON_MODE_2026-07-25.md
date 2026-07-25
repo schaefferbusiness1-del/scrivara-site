@@ -418,3 +418,74 @@ of a patient's twenty-two encounters is worse than one that honestly refuses.
 | `visits-list-still-rendering[22/38;…;sameFor=67s]` | declared 38, rendered 22, not moving | the declared total counts non-encounters. Compare against encounter rows, or drop to stability — after gate 1 |
 | `noise-frames-excluded:N` present | 3.0.14 working: the inbox is no longer offered as the index | nothing; confirmation only |
 | nothing printed | the pull never reached the chart | check the Athena session first — expired session has been the #1 blocker |
+
+---
+
+## Correction: "only the reason string survives the hop" is wrong
+
+This is the most-cited rule in the ON-mode work — method note 3 of the
+2026-07-24 handoff, quoted in three commit messages and obeyed by four builds
+including two of mine. It is a misdiagnosis, and it has been degrading the one
+diagnostic the owner's single live pull depends on.
+
+**The observation was real. The cause was not the boundary.** 3.0.11 attached
+the frame table to `gate.frames` and never saw it on the page — and `gate` is a
+**local variable**. Nothing returns it; there is no `gate: gate` anywhere in
+`background.js`. `gate.frames` could not have arrived no matter what the
+boundary does. A code-path bug, read as a platform limit.
+
+**Objects cross fine, and the proof was already in the shipped code:**
+
+```
+content.js:1710    var out = {}; for (var k in res) out[k] = res[k];
+                   window.postMessage(out, origin)        <- structured clone
+mls-connect.js     reads r.identity.name off that very message
+```
+
+`identity` is a nested object on the same response, read in production today. If
+objects were dropped, chart-identity display could never have worked — and the
+handoff itself reports reading a patient banner out of exactly that field. The
+later commit `5586d6d` ("the body-failure instrumentation already exists —
+`receipt.expected/parsed/failedIndexes` — capture it, do not build it") says the
+same thing from the other direction: `receipt` is an object, and it arrives.
+
+**What it cost.** Evidence squeezed into truncated strings — four frames of
+twelve, URLs cut to 26 characters, gate reasons to 22 — on a defect whose whole
+remaining question is *which gate refused and with what numbers*, and where a
+live pull on the owner's signed-in session is scarce. One pull should not come
+back abbreviated.
+
+**Fixed in ext 3.0.16.** Both refusals now return the full table as `enumDiag`:
+every frame, untruncated URLs, scores, drop reasons, the answered-frame list,
+the noise-dropped count, the row count, the selector. The `enum=` summary stops
+truncating at twelve.
+
+**The string encoding stays.** It is proven to arrive, it costs nothing, and
+betting a scarce live pull on my being right about the boundary would be the
+same mistake pointing the other way.
+
+`tests/enumerate-evidence-crosses-the-hop.test.js` pins the correction *at the
+cause*: any new field hung on the local `gate` fails the suite by name, with the
+explanation. It also pins the bridge's copy-every-key relay, because if that
+ever narrows to a whitelist the field silently stops arriving and the string
+becomes load-bearing again.
+
+**Two of its seven arms caught bugs in the suite itself**, which is the argument
+for negative-testing every assertion: an unscoped regex passed while the visits
+bridge had been replaced by a whitelist (that copy line appears twice in
+`content.js`), and the slice bound I picked ended *before* the line it asserted
+on, so it failed against correct code. Measure the instrument.
+
+### Restated for the next session
+
+> Objects, arrays and nested fields **do** survive the extension→page hop —
+> `content.js` copies every key and `postMessage` structured-clones it. What
+> does not survive is anything you attach to a variable that is never returned.
+> Before concluding the boundary ate your evidence, check that the object you
+> decorated is the object you sent.
+
+The staged build is now
+`C:\Users\Micha\Downloads\MLS_Assist_3.0.16_ONMODE_DIAGNOSTIC\` (20 files,
+byte-verified, gate 299/299); the 3.0.15 folder has been removed so there is
+only one to load. Its README captures both `enumDiag` and the strings, so the
+reading is complete whichever turns out to be right.
