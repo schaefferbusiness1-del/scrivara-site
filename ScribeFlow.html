@@ -1316,6 +1316,27 @@
   /* Row actions (history delete, and the same pattern elsewhere). */
   html body .del, html body button.del{ min-width:44px; }
 }
+
+/* ===== ph-deadend-1.0.0 — N5: remove the Pull button that cannot work =======
+ * ScribeFlow.html:1965 is a second button labelled "📥 Pull today's patients &
+ * their history". It calls pullScheduleViaAssist(), which talks to the Chrome
+ * EXTENSION and, with no extension present, dead-ends at ScribeFlow.html:15313:
+ *     "MLS Assist isn't responding. Install/enable it and open your Athena tab"
+ * A phone can never install a Chrome extension or open an Athena tab, so that
+ * is an instruction naming a route that does not exist — the same defect class
+ * as an "upgrade in Settings" message pointing at a Settings screen with no
+ * upgrade control.
+ *
+ * Meanwhile the day strip's own Pull already routes through the relay on a
+ * phone (mls-connect.js shouldRelay() -> __mlsRelayLink.pullDay) and works. So
+ * the phone was being shown TWO identically-purposed buttons, one that works
+ * and one that lies.
+ *
+ * Hidden by CSS rather than removed: the control still exists for desktop, the
+ * ui-control-manifest fingerprint (file|kind|view|gated|label) is unchanged —
+ * it carries no geometry — and the change is reversible by deleting this rule.
+ * Scoped to body.mls-phone, so ONLY the phone shell is affected. */
+html body.mls-phone [onclick*="pullScheduleViaAssist"]{ display:none !important; }
 </style>
 <!-- Networked legal intake, public-expert editing/review, file exchange, messaging,
      billing, and testimony are held until separately released. -->
@@ -27958,7 +27979,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b633';
+  window.__MLS_AV='b634';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

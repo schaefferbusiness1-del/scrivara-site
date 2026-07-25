@@ -33346,7 +33346,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b633';
+  window.__MLS_AV = window.__MLS_AV || 'b634';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33656,7 +33656,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b633';
+  var MLS_APP_BUILD='2026-07-25-b634';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -43970,10 +43970,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            a server hiccup ever re-hands it */
         if (executedJobs[job.id]) { agentBusy = false; return; }
         executedJobs[job.id] = 1;
+        /* rl-2.0.1 S1 (2026-07-25, phone lane): EXPLICIT dispatch, and refuse
+           anything unrecognised. This was:
+               job.kind === 'pullDay' ? runPullDay(job) : runPullChart(job)
+           — so ANY unknown kind silently fell through to a CHART READ of a real
+           patient. The server is the intended gate ("ORDERS/writes are not
+           relay kinds — server rejects them, phase 1"), but the client must not
+           be the weaker half of a PHI boundary: with a fall-through default, a
+           future server-side regression becomes a real disclosure instead of a
+           refusal. Refuse first, announce second — the old order toasted
+           "running it here" before deciding what "it" was. */
+        var RELAY_RUNNERS = { pullDay: runPullDay, pullChart: runPullChart };
+        var relayRunner = Object.prototype.hasOwnProperty.call(RELAY_RUNNERS, job.kind)
+          ? RELAY_RUNNERS[job.kind] : null;
+        if (typeof relayRunner !== 'function') {
+          postResult(job.id, false, null, 'unsupported relay kind: ' + String(job.kind))
+            .then(function () { agentBusy = false; }, function () { agentBusy = false; });
+          toast('📱 Phone request refused — this computer does not run "' + String(job.kind) + '" jobs.', 'err');
+          return;
+        }
         api.agentRuns++;
         lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : 'read a chart…'));
         toast('📱 Phone request received — running it here (' + job.kind + ').', '');
-        var run = job.kind === 'pullDay' ? runPullDay(job) : runPullChart(job);
+        var run = relayRunner(job);
         run.then(function (out) {
           lb(false);
           postResult(job.id, out.ok, out.data, out.error).then(function () { agentBusy = false; });
@@ -43982,7 +44001,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       })
       .catch(function () { agentBusy = false; });
   }
-  var agentIv = setInterval(function () { try { agentTick(); } catch (e) { agentBusy = false; } }, 4000);
+  /* rl-2.0.1 N3 (2026-07-25, phone lane): the office agent's poll must survive
+     BACKGROUNDING, because backgrounded is the office tab's normal state — the
+     doctor is looking at athenaOne, not at MLS.
+     MEASURED on the owner's live signed-in tab at b624:
+       foreground, 54s window : 13 requests to /api/relay/jobs/next,
+                                median gap 4002ms — exactly the interval
+       hidden  >~270s         : the page collapsed to bursts of ~47-50 events
+                                once per MINUTE, with empty 15s buckets between
+     That is Chrome's intensive throttling (onset ~5 min hidden) clamping
+     main-thread timers to ~1/min. The phone gives up after 30s
+     (queuedPolls > 12 on a 2500ms poll), so the doctor is told "your office
+     computer never picked the request up — it may have gone to sleep" while
+     the office may still run the full Athena pull minutes later with nobody
+     watching. A dishonest failure on top of a real one.
+     A Worker's timers are NOT subject to that clamp, and this repo already
+     established the pattern (feat_mls_b121_pack.js:1170, the b95 fix:
+     "App-side loop timers must run on a Web-Worker timer"). setInterval is kept
+     as the fallback for any environment where Worker construction fails (CSP,
+     old browser) — a throttled poll is still far better than none. */
+  var agentIv = null, relayWk = null, relayWkUrl = null;
+  try {
+    relayWkUrl = URL.createObjectURL(new Blob(
+      ['onmessage=function(e){setInterval(function(){postMessage(1)},e.data)}'],
+      { type: 'application/javascript' }));
+    relayWk = new Worker(relayWkUrl);
+    relayWk.onmessage = function () { try { agentTick(); } catch (e) { agentBusy = false; } };
+    relayWk.postMessage(4000);
+  } catch (e) {
+    try { if (relayWk) relayWk.terminate(); } catch (e2) {}
+    relayWk = null;
+  }
+  if (!relayWk) agentIv = setInterval(function () { try { agentTick(); } catch (e) { agentBusy = false; } }, 4000);
+  api.agentTimer = function () { return relayWk ? 'worker' : 'interval'; };
   /* b259: presence beacon - lets a PHONE say honestly whether this office
      computer is reachable before the doctor relies on it. 45s, fetch-driven. */
   function beacon() {
@@ -44106,6 +44157,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               if (pulled && date && pulled !== date) { done(false, 'The office computer answered with a different day (' + pulled + ' instead of ' + date + '). Nothing was assumed — pull again.'); return; }
               stat('Pulled — syncing to this phone…');
               try { if (typeof window.loadPatientsFromServer === 'function') window.loadPatientsFromServer(); } catch (e) {}
+              /* rl-2.0.1 N1 (2026-07-25, phone lane): also re-read the CALENDAR.
+                 Only loadPatientsFromServer() ran here, but the office computer
+                 creates the day's appointments via POST /api/appointments — and
+                 nothing re-read them into _calAppts on the phone. The result was
+                 a toast saying "<date> pulled on <computer> — synced here" over
+                 a day list still showing the pre-pull state: the success message
+                 was true and the screen contradicted it. That is the same class
+                 as a toast announcing a save over a silent refusal, which this
+                 product has already been burned by once. */
+              try { if (typeof window.loadCalendar === 'function') window.loadCalendar({ fresh: true }); } catch (e) {}
               setTimeout(function () { done(true, date + ' pulled on ' + who + ' — synced here.'); }, 2500);
             } else { done(false, who + ' reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
           }
@@ -44285,6 +44346,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   api.revert = function () {
     try { clearInterval(agentIv); clearInterval(cardIv); clearInterval(beaconIv); clearInterval(phoneIv); } catch (e) {}
+    /* N3: the poll may be Worker-driven; clearInterval alone would leave it
+       running after revert(), which is exactly the kind of orphan this module
+       is careful about elsewhere. */
+    try { if (relayWk) { relayWk.terminate(); relayWk = null; } } catch (e) {}
+    try { if (relayWkUrl) { URL.revokeObjectURL(relayWkUrl); relayWkUrl = null; } } catch (e) {}
     try { var c = $('mlsRlCard'); if (c) c.remove(); var pb = $('mlsRlPhoneBar'); if (pb) pb.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsRelayLink;
   };
