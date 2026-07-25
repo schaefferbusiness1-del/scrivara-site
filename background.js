@@ -9553,6 +9553,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
           ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : ''), identity: {}, visits: [], diag: diag,
+          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '' },
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
         };
@@ -9630,7 +9631,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             /* 3.0.12: frames that answered enumerate this pass. Few ids means
                the injection never reached the nested chart frame; many ids
                with no '+' means it was reached and judged not-ok. */
-            gate.reason += '|enum=' + enrSeen.slice(0, 12).join(',');
+            gate.reason += '|enum=' + enrSeen.join(',');
           }
         } catch (e) {}
       }
@@ -9661,6 +9662,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!gate.ok) {
         return {
           ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
+          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: total, selector: (enumRes && enumRes.selector) || '' },
           receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false },
           error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
         };
