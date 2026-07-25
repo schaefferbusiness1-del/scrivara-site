@@ -10,6 +10,59 @@ try{
 }catch(e){}
 try { window.__mlsManualToursOnly = true; } catch (e) {}
 
+/* ===== txm-1.0.0 - the transcript mirrors must not erase live dictation =====
+   Both visit shells show the doctor a MIRROR of the real #transcript, and both
+   deliberately skip the hidden->visible copy while the caret is in the mirror
+   so that typing never yanks the caret. The price of that (correct) choice is
+   that the mirror goes stale by exactly the words recognised since focus - and
+   both shells then wrote the stale mirror straight back over #transcript on the
+   next keystroke, which also rewound finalText, so the recogniser rebuilt from
+   the truncated prefix and the speech was gone for good. Measured on the live
+   b581 page: six spoken words destroyed by one keystroke.
+   feat_mls_easy_4fixes.js already solved this for #mlsProtoScratch by carrying
+   the tail forward. This is that merge, shared, so a third mirror cannot
+   reintroduce the defect by copying the wrong one. */
+;(function () {
+  'use strict';
+  try { if (window.__mlsTxMirror && window.__mlsTxMirror.version === 'txm-1.0.0') return; } catch (e0) { return; }
+  function baseOf(el) { try { return (el && typeof el.__mlsTxBase === 'string') ? el.__mlsTxBase : null; } catch (e) { return null; } }
+  function setBase(el, v) { try { if (el) el.__mlsTxBase = String(v == null ? '' : v); } catch (e) {} }
+  window.__mlsTxMirror = {
+    version: 'txm-1.0.0',
+    baseOf: baseOf,
+    setBase: setBase,
+    /* What belongs in the real transcript once the doctor has edited the
+       mirror: their edit, plus whatever the real box gained since the mirror
+       last agreed with it. Returns the typed value untouched whenever that
+       relationship cannot be established - the pre-txm behaviour, not a guess. */
+    merge: function (el, typed, real) {
+      typed = typed == null ? '' : String(typed);
+      real = real == null ? '' : String(real);
+      var base = baseOf(el);
+      if (base == null || !real || real === typed) return typed;
+      var b = base.replace(/\s+$/, '');
+      if (real.length <= b.length || real.slice(0, b.length) !== b) return typed;
+      var tail = real.slice(b.length).replace(/^\s+/, '');
+      if (!tail || typed.indexOf(tail) > -1) return typed;
+      var head = typed.replace(/\s+$/, '');
+      return head ? (head + ' ' + tail) : tail;
+    },
+    /* Write the mirror without moving the caret or the scroll position - the
+       reason the naive copy had to be skipped while focused at all. */
+    set: function (el, value) {
+      if (!el) return;
+      value = value == null ? '' : String(value);
+      setBase(el, value);
+      if (el.value === value) return;
+      var focused = false, s = null, e2 = null, sc = 0;
+      try { focused = (document.activeElement === el); } catch (e) {}
+      try { sc = el.scrollTop; if (focused) { s = el.selectionStart; e2 = el.selectionEnd; } } catch (e) {}
+      el.value = value;
+      try { if (focused && s != null) el.setSelectionRange(s, e2); el.scrollTop = sc; } catch (e) {}
+    }
+  };
+})();
+
 /* A hot bundle refresh is allowed to reload this tab only when the clinical
  * workspace is provably idle. This gate is shared by opaque inline-owner
  * upgrades (Easy and the speech hub). If any visit/editor/microphone state is
@@ -6277,8 +6330,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function syncRealTranscript(value) {
     var tx = $('transcript'); if (!tx) return;
-    tx.value = value;
-    try { if (typeof finalText !== 'undefined') finalText = value ? value + ' ' : ''; } catch (e) {}
+    /* txm-1.0.0: carry forward anything recognised while the caret sat in the
+       mirror. Writing the mirror straight through erased it AND rewound
+       finalText, so the recogniser rebuilt from the truncated prefix. */
+    var topMirror = $('ez3flTranscript');
+    var mirror = window.__mlsTxMirror;
+    var merged = (mirror && topMirror) ? mirror.merge(topMirror, value, tx.value || '') : value;
+    tx.value = merged;
+    if (mirror && topMirror) mirror.set(topMirror, merged);
+    try { if (typeof finalText !== 'undefined') finalText = merged ? merged + ' ' : ''; } catch (e) {}
     try { tx.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
   }
   function toggleTopRecording() {
@@ -6470,7 +6530,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'Transcript added. Record to add more, or generate one note from every segment.') :
         'Records locally and drafts the note here - nothing goes to Athena until you review and send it.')));
     }
-    if (topTx && tx && document.activeElement !== topTx && topTx.value !== text) topTx.value = text;
+    /* txm-1.0.0: a PURE APPEND (which is what live dictation is) is now taken
+       even while the caret is in the box, caret and scroll preserved, so the
+       doctor watches their words arrive instead of the box sitting frozen until
+       they click away. Anything that is not a clean append is left alone and
+       reconciled by the merge on their next keystroke. */
+    if (topTx && tx && topTx.value !== text) {
+      var txMirror = window.__mlsTxMirror;
+      if (document.activeElement !== topTx) { if (txMirror) txMirror.set(topTx, text); else topTx.value = text; }
+      else if (txMirror && text.length > topTx.value.length && text.slice(0, topTx.value.length) === topTx.value) txMirror.set(topTx, text);
+    }
     if (count) { var words = text.trim() ? text.trim().split(/\s+/).length : 0; setLaneText(count, words + ' word' + (words === 1 ? '' : 's') + ' captured'); }
     setLaneHidden(noteWrap, !noteText.trim());
     if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
@@ -18883,10 +18952,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     var txTop = $('ez3Transcript'), txReal = $('transcript');
     if (txTop && txReal) {
-      txTop.value = txReal.value || '';
+      /* txm-1.0.0: same mirror contract as the ez3fl lane - the doctor's edit
+         must not erase speech recognised while their caret was in the box. */
+      if (window.__mlsTxMirror) window.__mlsTxMirror.set(txTop, txReal.value || '');
+      else txTop.value = txReal.value || '';
       txTop.oninput = function () {
-        txReal.value = txTop.value;
-        try { if (typeof finalText !== 'undefined') finalText = txReal.value ? (txReal.value + ' ') : ''; } catch (e) {}
+        var mirror = window.__mlsTxMirror;
+        var merged = mirror ? mirror.merge(txTop, txTop.value, txReal.value || '') : txTop.value;
+        txReal.value = merged;
+        if (mirror) mirror.set(txTop, merged);
+        try { if (typeof finalText !== 'undefined') finalText = merged ? (merged + ' ') : ''; } catch (e) {}
         try { txReal.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
         syncTx();
       };
@@ -18909,7 +18984,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!t) return;
     var v = t.value || '';
     if (box) { box.textContent = v ? ('…' + v.slice(-500)) : 'Listening — the live transcript preview appears here.'; box.scrollTop = box.scrollHeight; }
-    if (edit && document.activeElement !== edit && edit.value !== v) { edit.value = v; edit.scrollTop = edit.scrollHeight; }
+    /* txm-1.0.0: take pure appends while focused too (caret preserved), so the
+       editable transcript stays live during dictation instead of freezing. */
+    if (edit && edit.value !== v) {
+      var editMirror = window.__mlsTxMirror;
+      var editFocused = (document.activeElement === edit);
+      if (!editFocused) { if (editMirror) editMirror.set(edit, v); else edit.value = v; edit.scrollTop = edit.scrollHeight; }
+      else if (editMirror && v.length > edit.value.length && v.slice(0, edit.value.length) === edit.value) editMirror.set(edit, v);
+    }
     if (count) { var words = v.trim() ? v.trim().split(/\s+/).length : 0; count.textContent = words + ' word' + (words === 1 ? '' : 's') + ' captured'; }
   }
 
@@ -33079,7 +33161,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b582';
+  window.__MLS_AV = window.__MLS_AV || 'b583';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33389,7 +33471,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-24-b582';
+  var MLS_APP_BUILD='2026-07-24-b583';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
