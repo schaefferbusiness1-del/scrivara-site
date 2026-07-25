@@ -69,6 +69,7 @@ const tests = [
   'interaction-performance-contract.test.js',
   'immutable-satellite-loader-cache-contract.test.js',
   'calm-shell-cache-bust.test.js',
+  'shell-hidden-controls-keep-reach.test.js',
   'scribeflow-inline-syntax.test.js',
   'startup-hydration-contract.test.js',
   'hosted-login-usability-runtime.test.js',
