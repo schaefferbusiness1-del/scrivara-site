@@ -55,6 +55,32 @@ short version:
    rail, a bar that could sit empty forever) passed a green 283-suite gate and
    were only caught in a real browser.
 5. **Legal and safety surfaces are not cosmetic.** See "Reverted deliberately".
+6. **VERIFY THE RUNNING PAGE, NEVER THE SERVED FILE.** This is the most
+   expensive lesson of the whole rework. `feat_mls_calm_shell.js` loaded on a
+   frozen `?v=20260724calm116`, and the service worker serves versioned asset
+   URLs cache-first — so **six consecutive builds (b565–b573) shipped correctly
+   to the server and reached no browser at all**. The owner kept reporting the
+   same UI problems while we kept reporting them fixed. `curl` of the asset
+   showed the new code every time; the URL was wrong and nothing looked at it.
+   Read `document.getElementById('mlsCalmShellCss').textContent` and assert your
+   change is *in it*, and check `script[data-mls-asset="…"]`'s real `src`.
+   Fixed in b574: the shell now loads `?v=' + (window.__MLS_AV || Date.now())`,
+   guarded by `tests/calm-shell-cache-bust.test.js`. A frozen token is correct
+   ONLY for assets deliberately pinned by the immutable-loader contract.
+7. **"The rule is in the stylesheet" ≠ "the rule is winning."** `mlsRdStyle`
+   declares `body.mls-redesign #ez3Wrap > .ez3-clockbar{display:flex!important}`
+   at (1,2,1); a shell rule at (0,2,1) is parsed, matches the element, carries
+   `!important`, and still loses. Adding another `!important` changes nothing —
+   **out-specify**. Diagnose by walking `document.styleSheets`, testing
+   `el.matches(rule.selectorText)` and reading `getPropertyPriority`.
+8. **Hide by CSS class, never inline.** `available()` in the shell tests only
+   the control's *inline* `display`, so a class-hide keeps a control reachable
+   in Tools while an inline hide silently removes the feature.
+9. **rAF does not fire in a non-compositing tab.** `schedule()` coalesces to
+   `requestAnimationFrame`, so in any headless or background pane the renderers
+   never run and a healthy screen reads as completely inert. Call
+   `__mlsCalmShell.render()` explicitly when probing, and never report
+   "nothing applied" from such a tab as a product defect.
 
 ## Build ledger (all live)
 
@@ -121,6 +147,48 @@ token to assert the old URL is unreachable), `day-progress-responsive-layout`,
 and `scoped-lifecycle-watchers`. Updating one turned the gate red on the second;
 only a repo-wide grep for the old token found the third. **After any token move,
 grep the whole repo for the retired token before gating.**
+
+## Density campaign (b572-b577) - the numbers, measured on the running page
+
+Owner, after five builds: "everything is still so messy... not so amnyt buttons
+evrywhere". The method that finally worked: measure each screen (height AND
+visible control count via computed style, never querySelectorAll - the Patients
+header's 16 controls are already collapsed behind "More"), then cut the largest
+blocks and verify on the running page.
+
+    patient card    4005px -> 1664px
+    patients view   4930px -> 2589px
+    visit #mlsEz3   1307px -> ~1231px
+    day strip        243px ->  167px
+    visible off-dock controls  12 -> 7
+
+What the cuts actually were, since "too busy" was never a taste problem:
+
+- **The patient card rendered the same content twice.** prepRows() parses the
+  prep summary into compact labelled rows AND the raw ~500px body rendered
+  underneath. The body is now marked by prepRows() itself (it holds the exact
+  node - a CSS sibling selector cannot reach it, they are not siblings).
+- **Problem list capped, not folded** (689 -> 340px, internal scroll). It is the
+  one block scanned mid-visit, so it stays visible.
+- **An empty transcript panel spent 252px** to say "0 words captured". Folds
+  until it has words. NB the emptiness test is `(?:^|\D)0\s*words`. A
+  word-boundary form never matches, because textContent welds the block children
+  into "…transcript0 words captured" and there is no boundary before the `0`;
+  and a bare `/0 words/` would also match "10 words" and hide a transcript that
+  HAS content. Both wrong forms were written before the right one — test any
+  such rule against "10 words" and "100 words" before shipping it.
+- **A 56px clock** on a device that shows the time (needed the specificity fix).
+- **Two settings** ("Where pulls run", "Full visit notes") moved out of the day
+  strip into Tools - configured once, they were sitting above every screenful.
+- **Two controls both called "Tools"** doing different things: the dock opens the
+  Tools MENU, the visit chip only shows/hides its own shortcut row. The chips
+  are now "Visit shortcuts".
+
+STILL TO CUT: #mlsEz3 is ~1231px; the .ez3fl-quick row still shows Copilot
+Voice / Assistant / Dictate inline although the dock Copilot button now owns all
+three (they are disabled in ?preview=1, so a fold cannot be verified there -
+do it against a real session). PT_KEEP_OPEN still pins mlsEpTopBox,
+mlsEpRisksBox, mlsEpSummaryBox and the Problem list open.
 
 ## Audit findings whose stated CAUSE was wrong
 
