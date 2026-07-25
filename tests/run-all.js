@@ -78,6 +78,7 @@ const tests = [
   'deterministic-cache-token-contract.test.js',
   'calm-shell-cache-bust.test.js',
   'body-class-writes-only-on-change.test.js',
+  'visit-orders-write-on-change.test.js',
   'shell-passes-write-only-on-change.test.js',
   'control-accessible-name-runtime.test.js',
   'shell-hidden-controls-keep-reach.test.js',

@@ -19388,8 +19388,20 @@ function _athenaOrderPlacementCapabilityReady(){
     function onPong(e){
       var d=e&&e.data;
       if(!d||d.source!=='mls-ext'||d.type!=='mlsPong')return;
-      window.__mlsExtensionHandshake=Object.freeze({seen:true,version:String(d.version||'')});
-      if(d.capabilities&&d.capabilities.supervisedOrderPlacementV2===true){
+      /* The extension pongs roughly every 4 seconds, forever. This is a CAPABILITY
+         HANDSHAKE - the version and the supervisedOrderPlacementV2 flag change at
+         most once per session - but it re-rendered both order lists on every
+         heartbeat. Measured live at b645 with the Advanced workspace open: 15
+         rebuilds of the VISIBLE #visitOrdersBody in 105s, median gap 5008ms, one
+         distinct content hash across all 15. Re-render only when the handshake
+         actually changed. */
+      var _hsVer=String(d.version||'');
+      var _hsCap=!!(d.capabilities&&d.capabilities.supervisedOrderPlacementV2===true);
+      var _hsSig=_hsVer+'|'+_hsCap;
+      if(window.__mlsExtensionHandshakeSig===_hsSig)return;
+      window.__mlsExtensionHandshakeSig=_hsSig;
+      window.__mlsExtensionHandshake=Object.freeze({seen:true,version:_hsVer});
+      if(_hsCap){
         window.__mlsExtensionCapabilities=Object.freeze({supervisedOrderPlacementV2:true});
       }
       try{if(typeof renderVisitOrders==='function')renderVisitOrders();}catch(_e1){}
@@ -19482,14 +19494,22 @@ function renderVisitOrders(){
   try{
     var card=document.getElementById('visitOrdersCard'); var box=document.getElementById('visitOrdersBody'); if(!card||!box) return;
     var ords=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
-    card.style.display='block';
-    if(!ords.length){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">No reviewed order drafts yet. AI proposals stay suggestion-only until you add and review one.</span>'; return; }
-    box.innerHTML=ords.map(function(o){
+    /* Rebuilt every ~5s by a caller upstream and re-writing BYTE-IDENTICAL markup
+       each time: measured live at b645 with the Advanced workspace open, 15 rebuilds
+       in 105s, median gap 5008ms, ONE distinct content hash across all 15. That is
+       the owner's "the whole visit page glitches out every 5 seconds", and it is a
+       visible 524x50 region inside the note card. innerHTML= tears down and recreates
+       every child even when the string is unchanged, so build the markup first and
+       only commit it when it actually differs. */
+    if(card.style.display!=='block') card.style.display='block';
+    var _voHtml;
+    if(!ords.length){ _voHtml='<span style="font-size:12.5px;color:var(--muted)">No reviewed order drafts yet. AI proposals stay suggestion-only until you add and review one.</span>'; } else { _voHtml=ords.map(function(o){
       var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{};
       var label=o._src||((def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''));
       var icon=def.icon||'•';
       return '<div style="display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap;background:#fff;border:1px solid #d2e4fb;border-radius:12px;padding:6px 8px 6px 12px;margin:0 7px 7px 0;font-size:12.5px"><span>'+icon+' '+esc(label)+(o._ai?' <span style="font-size:9.5px;color:var(--brand);font-weight:800;letter-spacing:.3px">AI</span>':'')+'</span>'+_athenaOrderPlacementControl(o)+' <button onclick="removeVisitOrder(\''+o.id+'\')" title="Remove this order" aria-label="Remove order" style="background:none;border:0;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px;line-height:1">✕</button></div>';
-    }).join('');
+    }).join(''); }
+    if(box.innerHTML!==_voHtml) box.innerHTML=_voHtml;
   }catch(e){}
 }
 function removeVisitOrder(id){
@@ -27981,7 +28001,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b648';
+  window.__MLS_AV='b649';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
