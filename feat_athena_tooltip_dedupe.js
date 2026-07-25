@@ -709,7 +709,8 @@
       if (document.body) document.body.classList.remove('mls-has-easy-advanced-trigger');
       return false;
     }
-    document.body.classList.add('mls-has-easy-advanced-trigger');
+    /* add() on a class already present still rewrites the attribute. */
+    if (!document.body.classList.contains('mls-has-easy-advanced-trigger')) document.body.classList.add('mls-has-easy-advanced-trigger');
     if (trigger.getAttribute('data-mls-advanced-owner') !== '1') {
       trigger.setAttribute('data-mls-advanced-owner', '1');
       trigger.addEventListener('click', easyAdvancedClick, true);
@@ -732,7 +733,8 @@
   function reconcilePortalOwner() {
     if (!document.body) return;
     var exact = byId('mlsPortalInviteBtn');
-    document.body.classList.toggle('mls-has-exact-portal-action', !!(exact && exact.isConnected));
+    var wantPortal = !!(exact && exact.isConnected);
+    if (document.body.classList.contains('mls-has-exact-portal-action') !== wantPortal) document.body.classList.toggle('mls-has-exact-portal-action', wantPortal);
   }
 
   function isSignupMode() {
@@ -1244,7 +1246,7 @@
     var sections = directSettingsSections();
     if (!sections.length) return false;
     var open = modal.classList.contains('show');
-    if (document.body) document.body.classList.toggle('mls-settings-open', open);
+    if (document.body && document.body.classList.contains('mls-settings-open') !== open) document.body.classList.toggle('mls-settings-open', open);
     rearrangeSettingsFields(sections);
     var bar = byId('settingsTabBar');
     if (bar && (!bar.querySelector('[data-mls-settings-group]') || bar.querySelectorAll('[data-mls-settings-group]').length !== SETTINGS_GROUPS.filter(function (group) {

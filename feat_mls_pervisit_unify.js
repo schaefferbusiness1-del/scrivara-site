@@ -77,8 +77,9 @@
     var cls = safe(function () { return document.body && document.body.classList; });
     if (!cls) return;
     // Flag drives the CSS above: base flat list hides only when rich timeline exists.
-    if (rich && base) cls.add("mls-pvu-rich");
-    else cls.remove("mls-pvu-rich");
+    /* remove() of a class that is not there still rewrites the attribute. */
+    var pvuWant = !!(rich && base);
+    if (cls.contains("mls-pvu-rich") !== pvuWant) cls.toggle("mls-pvu-rich", pvuWant);
   }
 
   /* ---- 2) same-model verification (read-only diagnostic) ---- */
