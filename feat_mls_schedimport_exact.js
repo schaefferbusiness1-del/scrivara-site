@@ -2134,6 +2134,21 @@
        encounter body (much faster day prep). Default ON (full visits). Read
        once per batch so one mid-batch toggle flip cannot split semantics. */
     var pullVisitBodies = safe(function () {
+      /* N4 (2026-07-25, phone lane): an EXPLICIT per-pull choice outranks this
+         device's own stored preference.
+         This read is the whole reason the phone's "Full visit notes" checkbox
+         did nothing. A relay pull is COMMANDED BY THE PHONE but EXECUTED on the
+         office computer, and this line reads the EXECUTING device's
+         localStorage — so the office machine's checkbox silently decided how
+         much of the patient's record came back, no matter what the clinician
+         chose on the phone in their hand.
+         Scoped override rather than threading a parameter: sweepOpts does not
+         reach here on either main call path (2 of 3 call sites pass nothing),
+         so plumbing it would mean editing a recursive batch in a large
+         PHI-scope module. pull() sets this for the duration of one pull and
+         always clears it, so behaviour is IDENTICAL unless a caller explicitly
+         asked. */
+      if (typeof _pullBodiesOverride === "boolean") return _pullBodiesOverride;
       var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
       var v = k ? localStorage.getItem(k) : null;
       /* default OFF (owner 2026-07-21): bodies are the slow fragile lane;
@@ -3238,8 +3253,17 @@
     return !!(at && Date.now() - at < 90000);
   }
 
+  /* N4: an explicit per-pull "Full visit notes" choice, in force for exactly one
+     pull. null = no override, use this device's stored preference (the previous
+     and still-default behaviour). Never persisted — a remote request must not
+     rewrite the office computer's own saved setting. */
+  var _pullBodiesOverride = null;
+
   function pull(opts) {
     opts = opts || {};
+    /* Only an explicit boolean overrides; anything else leaves the device
+       preference in charge, so a caller that says nothing changes nothing. */
+    _pullBodiesOverride = (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null;
     var __resumeDate = String(opts.date || "");
     if (__resumeDate) {
       var __prev = resumeGet();
@@ -3263,11 +3287,17 @@
         ? "Another MLS tab is already running an explicit pull. Nothing else was started."
         : "Another explicit pull is still running in this MLS tab.", includeHistory: opts.includeHistory !== false, retry: {} };
     }).then(function (value) {
+      _pullBodiesOverride = null;          /* one pull only */
       lastPullResult = value || null;
       /* Clear the intent only when the day is genuinely finished. An honest
          partial keeps it, so the next load continues instead of forgetting. */
       if (__resumeDate && value && value.complete === true) resumeClear();
       return value;
+    }, function (err) {
+      /* A failed pull must not leave a remote caller's choice in force for the
+         NEXT one, which could be a local pull by the doctor at that desk. */
+      _pullBodiesOverride = null;
+      throw err;
     });
   }
 

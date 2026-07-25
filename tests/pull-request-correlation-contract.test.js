@@ -180,8 +180,19 @@ assert(rl.includes('targetDeviceId: targetDeviceId'), 'phone jobs are not target
 assert(rl.includes('(presence && presence.officeId)'), 'phone does not take the target from presence.officeId');
 /* frozen date/provider + requestId travel; the phone verifies the echo */
 assert(rl.includes("dedupeKey: 'pullDay|' + date + '|'"), 'duplicate commands are not deduped server-side');
-assert(rl.includes('payload: { date: date, provider: provider, requestId: requestId }'),
+/* Pin moved deliberately at b655 (rl-2.0.2 N4), not relaxed. The frozen trio is
+   still asserted verbatim; it simply became a named object so the requesting
+   device's "Full visit notes" choice could be added WITHOUT it. That choice has
+   to travel because the importer otherwise reads pullVisitBodies from the
+   EXECUTING device's localStorage — so the office computer's checkbox silently
+   decided how much of the record a phone-commanded pull returned. */
+assert(rl.includes('var jobPayload = { date: date, provider: provider, requestId: requestId }'),
   'job payload does not freeze date/provider/requestId');
+assert(rl.includes('payload: jobPayload'), 'the queued job does not send the frozen payload');
+assert(rl.includes('jobPayload.pullVisitBodies = !!_bt.checked'),
+  'the requesting device\'s Full visit notes choice must travel with the job');
+assert(rl.includes("if (_bt && typeof _bt.checked === 'boolean')"),
+  'an absent control must send NOTHING, leaving the executing device in charge');
 assert(rl.includes('pulled !== date'), 'phone does not verify the pulled-day echo before claiming success');
 assert(rl.includes('requestedDate: date'), 'agent result does not echo the requested date');
 /* honest disconnects + reload recovery + progress mirroring */

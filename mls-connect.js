@@ -43918,6 +43918,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            same all-providers day pull the desktop button runs */
         if (pl.provider) opts.provider = pl.provider;
         if (pl.includeHistory === false) opts.includeHistory = false;
+        /* rl-2.0.2 N4: carry the REQUESTING device's "Full visit notes" choice.
+           Without this the importer read pullVisitBodies from THIS (office)
+           machine's localStorage, so the office checkbox silently decided how
+           much of the record a phone-commanded pull returned. Only an explicit
+           boolean travels; a payload that says nothing leaves this device's own
+           preference in charge, exactly as before. */
+        if (typeof pl.pullVisitBodies === 'boolean') opts.pullVisitBodies = pl.pullVisitBodies;
         var p = si.pull(opts);
         if (p && typeof p.then === 'function') {
           p.then(function (r) {
@@ -44251,14 +44258,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var requestId = 'rlq-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
       var provider = hooks.provider || null;
       stat('Asking ' + officeWho + ' to pull ' + date + '…');
+      /* frozen identity: date/provider/requestId travel exactly as chosen here */
+      var jobPayload = { date: date, provider: provider, requestId: requestId };
+      /* rl-2.0.2 N4: the REQUESTING device's "Full visit notes" choice travels
+         with the job. Without it the importer read pullVisitBodies from the
+         EXECUTING (office) machine's localStorage, so the office checkbox
+         silently decided how much of the record a phone-commanded pull
+         returned. Read from the live control, so the value is whatever the
+         clinician is actually looking at. If the control is not mounted we send
+         NOTHING and the executing device keeps deciding — the previous
+         behaviour, rather than a guess. */
+      try {
+        var _bt = document.getElementById('mlsDsVisitBodies');
+        if (_bt && typeof _bt.checked === 'boolean') jobPayload.pullVisitBodies = !!_bt.checked;
+      } catch (e) {}
       fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({
         kind: 'pullDay',
-        payload: { date: date, provider: provider, requestId: requestId },
+        payload: jobPayload,
         requestId: requestId,
         targetDeviceId: targetDeviceId,
         /* server-side idempotency: a delayed duplicate of this exact command
            (retry tap, flaky network resubmit) coalesces onto the SAME job */
+        /* rl-2.0.2 N4: the body-notes choice is part of the request IDENTITY.
+           Without it in the key, asking for the same day with "Full visit notes"
+           ON coalesces onto an earlier OFF job and silently returns the smaller
+           result as a success — the toast would say done while the notes the
+           clinician asked for were never fetched. */
         dedupeKey: 'pullDay|' + date + '|' + (provider && (provider.stableKey || provider.name) || 'all')
+          + '|b' + (function () {
+              try { var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0'; }
+              catch (e) { return '0'; }
+            })()
       }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
