@@ -34,13 +34,41 @@
   .login-card p.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
   label{display:block;font-size:12.5px;font-weight:700;color:var(--blue-d);margin:14px 0 5px}
   input{width:100%;padding:12px 13px;border:1px solid #E4E1D8;border-radius:10px;font-size:15px;background:#FCFBF8;color:var(--ink)}
-  input::placeholder{color:#A6AEA6}
+  input::placeholder{color:#656A65}
   input:focus{outline:none;border-color:#2E6A4B;box-shadow:0 0 0 3px rgba(46,106,75,.12)}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:10px;
     background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:12px 16px;cursor:pointer;width:100%;margin-top:18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
   .btn:hover{background:#28503f}
   .btn[disabled]{opacity:.6;cursor:default}
   .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px;box-shadow:none}
+
+  /* ---- sign-in surface, reworked to the reference the owner sent ----------
+     The direction: a conversational, roomy screen where one action is
+     obviously the action — pill fields, a single full-width primary, and the
+     secondary ways out grouped quietly underneath instead of competing.
+     Scoped to #login so the signed-in portal below is untouched.
+     Nothing is removed: every field, the error region, Show password, the
+     recovery line, the sample-data preview and the privacy note all stay. */
+  #login .login-card{max-width:440px;padding:34px 30px}
+  /* The headline and the paragraph used to stack as a wall of type. Same
+     words, presented as the clinic saying them. */
+  #login h1{margin:16px 0 10px;font-size:23px}
+  #login p.sub{background:#F4F6F4;border:1px solid #E7EAE6;border-radius:16px 16px 16px 5px;
+    padding:13px 16px;margin:0 0 24px;font-size:14.5px;line-height:1.5;color:#3C4A42}
+  #login label{font-size:13px;margin:18px 0 7px;color:#3C4A42}
+  #login input:not([type=checkbox]){padding:15px 16px;border-radius:14px;font-size:15.5px;
+    background:#F7F8F7;border:1px solid #E2E6E2;transition:border-color .15s linear,box-shadow .15s linear}
+  #login input:not([type=checkbox]):focus{background:#fff;border-color:#2E6A4B;
+    box-shadow:0 0 0 3px rgba(46,106,75,.14)}
+  /* One primary, unmistakable: full width, pill, and the only saturated thing
+     on the screen. 52px tall clears the 44px touch target with room. */
+  #login .btn{border-radius:999px;padding:16px 20px;font-size:16px;margin-top:26px;min-height:52px}
+  /* The remaining ways forward are real and stay reachable — they simply stop
+     competing with signing in. */
+  #login .btn.ghost{border-radius:999px;padding:13px 18px;font-size:14.5px;min-height:46px;
+    margin-top:14px;background:#F4F6F4;border:1px solid #E7EAE6}
+  #login .privacy{font-size:12.5px;line-height:1.55}
+  #login form + .privacy{margin-top:18px;padding-top:16px;border-top:1px solid #EDEFEC}
   .err{background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:10px 12px;font-size:13.5px;margin-top:14px}
   .privacy{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
 
