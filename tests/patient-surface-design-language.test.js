@@ -123,5 +123,36 @@ assert.deepStrictEqual(
   );
 }
 
+/* ---- 4. the checkbox rows a patient taps one-handed ----
+ * Measured live at 375px: the "Show password" checkbox renders 13x13. It is
+ * wrapped by its <label>, so the label is the real tap target — but the label
+ * is a flex row with no min-height and settled at 20px, under the WCAG 2.5.8
+ * (AA) 24x24 floor. It appears three times: sign-in, set-password modal, and
+ * claim-account modal — and it is exactly the control someone fumbling a
+ * password on a phone needs to hit.
+ *
+ * The raw checkbox is left alone deliberately; growing the LABEL is what
+ * changes the hit area, and a flex row with align-items:center grows without
+ * moving the text. */
+{
+  const src = fs.readFileSync(path.join(root, 'patient-portal.html'), 'utf8');
+  const rows = src.match(/<label[^>]*display:flex[^>]*>\s*<input type="checkbox"/g) || [];
+  assert.ok(
+    rows.length >= 3,
+    'expected at least 3 checkbox rows in patient-portal.html, found ' + rows.length +
+    ' — if the markup moved, this guard is measuring nothing'
+  );
+  const undersized = rows.filter(row => {
+    const mh = /min-height:(\d+)px/.exec(row);
+    return !mh || parseInt(mh[1], 10) < 44;
+  });
+  assert.deepStrictEqual(
+    undersized, [],
+    'checkbox row(s) with no 44px min-height — the label IS the tap target, and ' +
+    'without it the row settles at ~20px:\n  ' + undersized.join('\n  ')
+  );
+}
+
 console.log('PASS patient-surface-design-language: ' + PAGES.length +
-  ' patient surfaces share one field/button language, inline styles included');
+  ' patient surfaces share one field/button language, inline styles included, ' +
+  'and every checkbox row clears 44px');
