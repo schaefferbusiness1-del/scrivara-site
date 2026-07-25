@@ -9517,6 +9517,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          observation retries - every identity gate is unchanged. */
       var ehStableCount = -1;
       var enrSeen = [];
+      var ehStuckKey = '', ehStuckPasses = 0;
+      var EH_STUCK_LIMIT = 16;            /* ~56s of a chart that is not moving */
       for (var ehPass = 0; ehPass < 48; ehPass++) {
       var enR = await exec(emrId, null, ['enumerate', cfg]);
       /* 3.0.12: which frames actually answered, and did any hold an index. */
@@ -9530,7 +9532,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              enumerate op can say no and they need opposite fixes. The reason
              is trimmed of its 'visits-' prefix only to fit the budget. */
           var why = String((res && res.reason) || (res ? 'ok-false-no-reason' : 'no-result'));
-          return id + '-' + why.replace(/^visits-/, '').slice(0, 22);
+          return id + '-' + why.replace(/^visits-/, '').slice(0, 90);
         });
       } catch (e) { enrSeen = ['(capture-failed)']; }
       /* One definition of a noise surface, shared with the candidate walk below.
@@ -9550,10 +9552,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       enumRes = eb.result; listFrame = eb.frameId;
       var authoritativeEmptyIndex = !!(enumRes && enumRes.ok && enumRes.count === 0 && enumRes.indexComplete === true && enumRes.authoritativeEmpty === true);
       if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
-        if (ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
+        /* Volatile counters out, everything that reflects the chart in. */
+        var ehKey = enrSeen.join(',').replace(/;?n=[0-9]+/g, '').replace(/;?sameFor=[0-9]+s/g, '');
+        if (ehKey && ehKey === ehStuckKey) ehStuckPasses++; else { ehStuckKey = ehKey; ehStuckPasses = 1; }
+        var ehStuck = ehStuckPasses >= EH_STUCK_LIMIT;
+        if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
-          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : ''), identity: {}, visits: [], diag: diag,
-          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '' },
+          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : ''), identity: {}, visits: [], diag: diag,
+          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
         };

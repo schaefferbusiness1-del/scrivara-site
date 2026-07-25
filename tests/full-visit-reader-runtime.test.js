@@ -228,7 +228,20 @@ function makeReader(options = {}) {
   const unknownZero = makeReader({ rows: [] });
   const unknownEmpty = await unknownZero.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
   assert.strictEqual(unknownEmpty.ok, false, 'an unexplained zero-row visit surface was reported complete');
-  assert.strictEqual(unknownEmpty.reason, 'encounter-index-incomplete');
+  /* Pin updated in 3.0.17, deliberately, because the BEHAVIOUR this fixture
+     exercises changed for the better. A surface that never becomes a complete
+     index used to be retried 47 times at 3.5s — ~165s — before reporting. It
+     now stops once the answer is provably fixed: same gate, same row and child
+     counts, 16 passes running. The verdict is identical; it just arrives about
+     110 seconds sooner, which is most of the "burns 93-160s per patient" in the
+     2026-07-24 handoff.
+     The refusal is asserted by PREFIX plus the early-exit marker, so this pin
+     still fails if the verdict ever changes, and separately records that the
+     fixture is taking the early path rather than timing out. */
+  assert(unknownEmpty.reason.indexOf('encounter-index-incomplete') === 0,
+    'the verdict must still be encounter-index-incomplete, got: ' + unknownEmpty.reason);
+  assert(/\[unchanged-for-\d+-passes;gave-up-early\]/.test(unknownEmpty.reason),
+    'a surface that never changes must stop early and say so, not exhaust 47 passes: ' + unknownEmpty.reason);
 
   const provenZero = makeReader({ rows: [], authoritativeEmpty: true });
   const empty = await provenZero.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });

@@ -217,6 +217,7 @@ const tests = [
   'enumerate-noise-surface-exclusion.test.js',
   'enumerate-refusal-evidence.test.js',
   'enumerate-evidence-crosses-the-hop.test.js',
+  'enumerate-gives-up-when-provably-stuck.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',
