@@ -20,15 +20,21 @@ h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em
 .ver,.tag{display:inline-block;background:#2e6a4b;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:3px 9px;vertical-align:middle}
 .ver{margin-left:6px}.tag{margin:3px 0 11px;letter-spacing:.2px}
 .sub{color:var(--muted);margin:0 0 20px;font-size:14.5px}
-.store,button{display:block;width:100%;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;text-align:center}
-.store{background:var(--brand);color:#fff;text-decoration:none;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
-.store:hover{background:var(--brand-dk)}
+.store{display:block;width:100%;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;text-align:center;background:var(--brand);color:#fff;text-decoration:none;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);transition:background .18s ease,transform .18s ease}
+.store:hover{background:var(--brand-dk);transform:translateY(-1px)}
+.store:active{transform:translateY(0)}
 .store:focus-visible{outline:3px solid #8fd8be;outline-offset:3px}
 .store-sub{display:block;font-weight:600;font-size:12px;opacity:.9;margin-top:3px}
+/* Manual install is the fallback path, so it is deliberately quieter than the
+ * store button above. Two equally loud buttons left the reader with no
+ * recommended route while the note underneath claimed there was one. */
+.store.quiet{background:#fff;color:var(--brand);border:1.5px solid var(--line);box-shadow:none;font-size:14.5px;padding:12px 20px}
+.store.quiet:hover{background:#f7f6f1;border-color:#d9d6cd}
+.store.quiet .store-sub{opacity:1;color:var(--muted);font-weight:500}
 .divider{display:flex;align-items:center;color:#79837c;font-size:11.5px;font-weight:700;margin:24px 0 14px;text-transform:uppercase;letter-spacing:.5px}
 .divider:before,.divider:after{content:"";flex:1;height:1px;background:var(--line)}
 .divider span{padding:0 12px}
-button{background:#f4f2ec;color:#55605a;border:1.5px solid #d9d6cd;cursor:not-allowed}
+@media (prefers-reduced-motion:reduce){.store{transition:none}.store:hover{transform:none}}
 #status{margin:14px 0 0;font-size:13.5px;color:var(--muted);text-align:left}
 .note{margin-top:18px;background:#fcf8ef;border:1px solid #efe4ce;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5527}
 </style>
@@ -42,7 +48,7 @@ button{background:#f4f2ec;color:#55605a;border:1.5px solid #d9d6cd;cursor:not-al
     <span class="tag">Published channel</span>
     <a class="store" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer">Open MLS Assist in the Chrome Web Store<span class="store-sub">Chrome manages installation and published updates</span></a>
     <div class="divider"><span>Manual installation</span></div>
-    <a id="dl" class="store" href="MLS_Assist_v3.0.6.zip" download="MLS_Assist_v3.0.6.zip" aria-describedby="status" style="background:#2e6a4b">Download MLS Assist v3.0.4 (ZIP)<span class="store-sub">Exact released package · 365&nbsp;KB · same bytes as the Web Store build</span></a>
+    <a id="dl" class="store quiet" href="MLS_Assist_v3.0.6.zip" download="MLS_Assist_v3.0.6.zip" aria-describedby="status">Download the released package <span id="dlVer">v3.0.6</span> (ZIP)<span class="store-sub">Confirm the digest below before you load or upload it</span></a>
     <div id="status" role="status">Released package SHA-256 digest: <code style="word-break:break-all;font-size:12px">4d41e3e6bccaed72ce136bff7e8bca73084c0bec66bf82006a71e799dadd7479</code>. Verify the digest after downloading before you load or upload the package. Only this exact stamped release is distributed — loose source files and unstamped candidate ZIPs never are.</div>
     <div class="note">Prefer the Chrome Web Store install above so Chrome manages updates. The ZIP exists for a Chrome Web Store upload or an offline install of this exact reviewed version.</div>
   </section>
@@ -50,6 +56,20 @@ button{background:#f4f2ec;color:#55605a;border:1.5px solid #d9d6cd;cursor:not-al
 <script>
 (function(){
   'use strict';
+
+  /* The download label is derived from the file the link actually points at,
+   * never hand-typed and never taken from the version feed. A hand-typed label
+   * had already drifted: it read "v3.0.4" while the href served
+   * MLS_Assist_v3.0.6.zip, so the page named a version the reader would not
+   * receive. Reading it back off the href makes that class of drift
+   * structurally impossible, and needs no network. */
+  try {
+    var dl = document.getElementById('dl');
+    var slot = document.getElementById('dlVer');
+    var named = dl && String(dl.getAttribute('href') || '').match(/MLS_Assist_v(\d+(?:\.\d+){0,3})\.zip$/i);
+    if (slot && named) slot.textContent = 'v' + named[1];
+  } catch (e) { /* Static label already matches the committed href. */ }
+
   fetch('/extension-version.json?t='+Date.now(),{cache:'no-store',credentials:'same-origin',referrerPolicy:'no-referrer'})
     .then(function(response){ return response.ok ? response.json() : null; })
     .then(function(release){

@@ -50,7 +50,7 @@
  *      per-site "Open" + paste-a-page capture still works with no extension.
  *
  * Output: ONE dataset in the /api/reviews/find response shape (+ verified,
- * unconfirmed, sourceUrl, foundOnPage), cached in localStorage.mlsRFScrapeCache
+ * unconfirmed, sourceUrl, foundOnPage), cached in localStorage.mlsRFScrapeCache2
  * (24h), broadcast via document CustomEvent 'mls-reviews-data'.
  *
  * Guard: window.__mlsRepScrape. Revert: window.__mlsRepScrape.revert().

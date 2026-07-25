@@ -33,4 +33,30 @@ for (const source of [page, app]) {
   assert(/referrerPolicy:\s*['"]no-referrer['"]/.test(source), 'review requests must suppress referrers');
 }
 
-console.log('PASS review finder security boundary: explicit scans, POST/no-store, safe HTTPS review links, inert pasted text');
+/* The scraper's cache key is a correctness boundary, not a naming detail.
+ * v1.4.1 moved it from mlsRFScrapeCache to mlsRFScrapeCache2 specifically to
+ * abandon v1.4.0 payloads, which can carry a verified:true left behind by a
+ * confirm-then-undo and would keep counting an unconfirmed listing toward the
+ * headline. The writer moved and five reading surfaces did not, so they read a
+ * key nothing writes - and on any browser still holding one, exactly the stale
+ * format the rename existed to quarantine. Readers must name the live key, and
+ * must not "fall back" to the retired one, which would re-admit those payloads.
+ * clinical-state-purge.js is the sole exception: it must keep naming both so a
+ * browser holding the retired key still gets it cleared. */
+{
+  const root = path.resolve(__dirname, '..');
+  const retired = /mlsRFScrapeCache(?!2)/;
+  const offenders = [];
+  for (const file of fs.readdirSync(root)) {
+    if (!/\.(?:js|html)$/.test(file) || file === 'clinical-state-purge.js') continue;
+    if (retired.test(fs.readFileSync(path.join(root, file), 'utf8'))) offenders.push(file);
+  }
+  assert.deepStrictEqual(offenders, [], `these surfaces name the retired review-scrape cache key: ${offenders.join(', ')}`);
+
+  const writer = fs.readFileSync(path.join(root, 'mls_reviews_scrape_app.js'), 'utf8');
+  assert(/CACHE_KEY\s*=\s*'mlsRFScrapeCache2'/.test(writer), 'the scraper must still own the live cache key this guard is anchored to');
+  const purge = fs.readFileSync(path.join(root, 'clinical-state-purge.js'), 'utf8');
+  assert(/'mlsRFScrapeCache'/.test(purge) && /'mlsRFScrapeCache2'/.test(purge), 'the purge list must clear both the live and the retired key');
+}
+
+console.log('PASS review finder security boundary: explicit scans, POST/no-store, safe HTTPS review links, inert pasted text, single live scrape-cache key');

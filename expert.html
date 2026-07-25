@@ -385,7 +385,15 @@ function render(e){
   document.getElementById('loadState').style.display='none';
   document.title = e.name + ' — Public physician profile | MLS';
   var sel=document.getElementById('stateSel');
-  if(sel) sel.addEventListener('change', function(){ const v=this.value; const u=new URL(location.href); if(v) u.searchParams.set('state',v); else u.searchParams.delete('state'); location.href=u.toString(); });
+  /* Changing your state used to reload the whole page and re-fetch the profile.
+     Update the URL in place and re-render; nothing about the profile depends on
+     a fresh document. */
+  if(sel) sel.addEventListener('change', function(){
+    const v=this.value; const u=new URL(location.href);
+    if(v) u.searchParams.set('state',v); else u.searchParams.delete('state');
+    try{ history.replaceState(null,'',u.toString()); }catch(e){ location.href=u.toString(); return; }
+    try{ load(); }catch(e){ location.href=u.toString(); }
+  });
 }
 
 async function load(){
@@ -400,7 +408,22 @@ async function load(){
     if(d.released!==true||!isReleasedProfile(d.expert)){ showHeldProfile(); return; }
     render(d.expert);
   }catch(e){
-    showHeldProfile();
+    /* A transport failure is not a release decision. Reporting "this profile is
+       not released" for a timeout tells an attorney something we do not know.
+       Still FAILS CLOSED - no expert data is rendered on this path, which is
+       what expert-public-release-boundary requires - it just says the true
+       thing and offers a retry. */
+    const ls=document.getElementById('loadState');
+    if(ls){
+      ls.className='load-error';
+      ls.setAttribute('aria-busy','false');
+      ls.innerHTML='<h2>We couldn\'t load this profile</h2>'+
+        '<p>We couldn\'t reach the directory just now. This does not mean the profile is unavailable — please try again.</p>'+
+        '<p><button type="button" class="btn" onclick="load()">Try again</button> '+
+        '<a href="lawyers.html#directory">Back to the directory</a></p>';
+    } else {
+      showHeldProfile();
+    }
   }
 }
 load();

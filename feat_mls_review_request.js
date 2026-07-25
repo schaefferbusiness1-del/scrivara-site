@@ -75,7 +75,7 @@
   /* doctor's own review destinations, from the reputation tools */
   function reviewLinks() {
     var out = {}, i;
-    var sc = jget('mlsRFScrapeCache');
+    var sc = jget('mlsRFScrapeCache2');
     if (sc && sc.payload && sc.payload.listings) {
       for (i = 0; i < sc.payload.listings.length; i++) {
         var L = sc.payload.listings[i];

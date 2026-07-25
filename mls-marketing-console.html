@@ -35,7 +35,7 @@
     GET/POST /api/marketing/campaigns          -> campaign config
     GET  /api/reviews/requests                 -> auto-review status dashboard
   AI drafting reuses POST /api/widget/ai (Bearer sf_bk_token).
-  Reads local: mlsRF (doctor details), mlsRFScrapeCache (scraped reviews).
+  Reads local: mlsRF (doctor details), mlsRFScrapeCache2 (scraped reviews).
   Writes local: mlsMktSettings (mirror). No PHI, no Athena.
 =========================================================================== -->
 <style>
@@ -410,7 +410,7 @@ a{color:var(--blue)}
 
   /* -------- 1 - listing optimization KPIs (from scraped reviews) -------- */
   function loadListing(){
-    var sc=jget('mlsRFScrapeCache'); var p=sc&&sc.payload;
+    var sc=jget('mlsRFScrapeCache2'); var p=sc&&sc.payload;
     var rating='—', reviews='—', listings='—';
     if(p){
       if(p.summary&&p.summary.doctor&&p.summary.doctor.rating!=null){ rating=p.summary.doctor.rating+'★'; }
@@ -472,7 +472,7 @@ a{color:var(--blue)}
 
   /* -------- 3 - reply queue -------- */
   function recentReviews(){
-    var sc=jget('mlsRFScrapeCache'); var out=[];
+    var sc=jget('mlsRFScrapeCache2'); var out=[];
     if(sc&&sc.payload&&sc.payload.reviews){ var r=sc.payload.reviews,i; for(i=0;i<r.length && out.length<6;i++){ if(r[i].text) out.push(r[i]); } }
     return out;
   }
@@ -640,7 +640,7 @@ a{color:var(--blue)}
 
   /* -------- 1 - listing audit -------- */
   function listingSummary(){
-    var sc=jget('mlsRFScrapeCache'); var p=sc&&sc.payload; var w=who();
+    var sc=jget('mlsRFScrapeCache2'); var p=sc&&sc.payload; var w=who();
     var sum={ name:w.practice||w.doctor||'', city:w.city||'', specialty:(jget('mlsRF')&&jget('mlsRF').doc&&jget('mlsRF').doc.specialty)||'' };
     if(p){
       if(p.summary&&p.summary.doctor){ sum.rating=p.summary.doctor.rating; sum.reviewCount=(p.summary.doctor.reviewCount||0)+((p.summary.practice&&p.summary.practice.reviewCount)||0); }

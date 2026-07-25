@@ -17,6 +17,7 @@ const tests = [
   'public-release-preflight.test.js',
   'expert-public-release-boundary.test.js',
   'sensitive-public-workflows-boundary.test.js',
+  'optout-failure-recovery.test.js',
   'sensitive-session-boundary.test.js',
   'same-tab-session-ui-isolation-runtime.test.js',
   'same-tab-owner-upgrade-runtime.test.js',

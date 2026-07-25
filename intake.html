@@ -82,16 +82,16 @@
       <div class="card sec">
         <h3>👤 About you</h3>
         <div class="grid2">
-          <div class="field"><label>Full name <span class="req">*</span></label><input id="name" required></div>
-          <div class="field"><label>Date of birth <span class="req">*</span></label><input id="dob" type="date" required></div>
-          <div class="field"><label>Sex</label>
+          <div class="field"><label for="name">Full name <span class="req">*</span></label><input id="name" required></div>
+          <div class="field"><label for="dob">Date of birth <span class="req">*</span></label><input id="dob" type="date" required></div>
+          <div class="field"><label for="sex">Sex</label>
             <select id="sex"><option value=""></option><option>Female</option><option>Male</option><option>Other</option></select>
           </div>
-          <div class="field"><label>Phone</label><input id="phone" type="tel"></div>
-          <div class="field"><label>Email</label><input id="email" type="email"></div>
-          <div class="field"><label>Preferred pharmacy</label><input id="pharmacy"></div>
+          <div class="field"><label for="phone">Phone</label><input id="phone" type="tel"></div>
+          <div class="field"><label for="email">Email</label><input id="email" type="email"></div>
+          <div class="field"><label for="pharmacy">Preferred pharmacy</label><input id="pharmacy"></div>
         </div>
-        <div class="field"><label>Referring physician (who sent you to us?)</label><input id="referrer"></div>
+        <div class="field"><label for="referrer">Referring physician (who sent you to us?)</label><input id="referrer"></div>
         <div class="field">
           <label>Your photo <span style="font-weight:400;color:var(--muted)">(optional — helps your care team recognize you)</span></label>
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
@@ -105,30 +105,33 @@
 
       <div class="card sec">
         <h3>🩺 Why you're coming in</h3>
-        <div class="field"><label>Main reason for your visit <span class="req">*</span></label><textarea id="chief" required placeholder="e.g. low back pain radiating down my right leg"></textarea></div>
+        <div class="field"><label for="chief">Main reason for your visit <span class="req">*</span></label><textarea id="chief" required placeholder="e.g. low back pain radiating down my right leg"></textarea></div>
         <div class="field">
           <label>Current pain level (0 = none, 10 = worst)</label>
-          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" oninput="document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">0</span></div>
+          <!-- Untouched, this used to submit 0 - "no pain" - as if the patient
+               had said it. A slider at rest is an unanswered question, not an
+               answer of zero. It reads "—" until the patient actually moves it. -->
+          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" data-touched="0" aria-describedby="painVal" oninput="this.setAttribute('data-touched','1');document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">—</span></div>
         </div>
-        <div class="field"><label>Where is the pain / problem?</label><input id="painLoc" placeholder="e.g. lower back, right leg"></div>
+        <div class="field"><label for="painLoc">Where is the pain / problem?</label><input id="painLoc" placeholder="e.g. lower back, right leg"></div>
         <div class="grid2">
-          <div class="field"><label>When did it start?</label><input id="onset" placeholder="e.g. 3 months ago"></div>
-          <div class="field"><label>How disabling is it? (0–100%)</label><input id="odi" type="number" min="0" max="100" placeholder="optional"></div>
+          <div class="field"><label for="onset">When did it start?</label><input id="onset" placeholder="e.g. 3 months ago"></div>
+          <div class="field"><label for="odi">How disabling is it? (0–100%)</label><input id="odi" type="number" min="0" max="100" placeholder="optional"></div>
         </div>
         <div class="grid2">
-          <div class="field"><label>What makes it better?</label><input id="better"></div>
-          <div class="field"><label>What makes it worse?</label><input id="worse"></div>
+          <div class="field"><label for="better">What makes it better?</label><input id="better"></div>
+          <div class="field"><label for="worse">What makes it worse?</label><input id="worse"></div>
         </div>
-        <div class="field"><label>What have you already tried? (PT, injections, medications, surgery…)</label><textarea id="priorTx"></textarea></div>
+        <div class="field"><label for="priorTx">What have you already tried? (PT, injections, medications, surgery…)</label><textarea id="priorTx"></textarea></div>
       </div>
 
       <div class="card sec">
         <h3>📋 Your health</h3>
-        <div class="field"><label>Medical conditions</label><textarea id="conditions" placeholder="e.g. diabetes, high blood pressure"></textarea></div>
-        <div class="field"><label>Prior surgeries</label><textarea id="surgeries"></textarea></div>
+        <div class="field"><label for="conditions">Medical conditions</label><textarea id="conditions" placeholder="e.g. diabetes, high blood pressure"></textarea></div>
+        <div class="field"><label for="surgeries">Prior surgeries</label><textarea id="surgeries"></textarea></div>
         <div class="grid2">
-          <div class="field"><label>Current medications</label><textarea id="meds"></textarea></div>
-          <div class="field"><label>Allergies</label><textarea id="allergies"></textarea></div>
+          <div class="field"><label for="meds">Current medications</label><textarea id="meds"></textarea></div>
+          <div class="field"><label for="allergies">Allergies</label><textarea id="allergies"></textarea></div>
         </div>
       </div>
 
@@ -212,7 +215,11 @@
     if(!dob){ $('formErr').textContent='Please enter your date of birth.'; return; }
     if(!chief){ $('formErr').textContent='Please tell us the main reason for your visit.'; return; }
     $('formErr').textContent='';
-    var painNum=parseInt(val('pain'),10); if(isNaN(painNum)) painNum=null;
+    /* Only send a pain score the patient actually gave. An untouched slider is
+       no answer, and a fabricated 0 is a clinical claim nobody made. */
+    var painEl=$('pain');
+    var painNum=(painEl&&painEl.getAttribute('data-touched')==='1')?parseInt(painEl.value,10):NaN;
+    if(isNaN(painNum)) painNum=null;
     var odiNum=val('odi')===''?null:Math.max(0,Math.min(100,parseInt(val('odi'),10)||0));
     var data={
       source:'previsit-link', submittedAt:new Date().toISOString(),

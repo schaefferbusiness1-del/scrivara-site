@@ -413,6 +413,36 @@ Credit where it is due: this was found because the Athena session wrote up
 *why* its "Record on phone" chips were dead (phn-1.0.1) rather than just fixing
 them. The same class of bug was sitting in the foundation of this shell.
 
+## b563 — the public pages stop lying when something goes wrong
+
+The charter's prime directive is about the app. These are the pages a *patient*
+or an *attorney* meets, and the same standard applies: never claim more than is
+known, and never leave someone with nothing to press.
+
+**Failure states are a design surface, not an afterthought.** Four public pages
+reported "we could not reach the server" as "your link is invalid" and then
+replaced the whole panel, removing the only control. Fixed in `intake.html`,
+`expert.html`, `phone.html` and — most seriously — `best-doctors-optout.html`,
+where the visitor is a patient withdrawing consent and the dead end meant a
+dropped request silently left their visit counting toward the rating. The rule
+is now: **only the server may declare a link dead**; anything transient stays
+retryable, and a failed write says what did *not* happen. Enforced behaviourally
+by `tests/optout-failure-recovery.test.js`.
+
+**One primary action per screen.** `get-extension.html` had two full-width
+identical-weight buttons while the note underneath said to prefer one of them.
+The Web Store link is now the single primary and manual install is a quiet
+secondary. Same principle as the dock: if everything is emphasised, nothing is.
+
+**A number a human maintains will drift.** That page's download button read
+"Download MLS Assist v3.0.4" while the link served `MLS_Assist_v3.0.6.zip` — and
+the page told the reader to verify the SHA-256, which would not have matched the
+version they thought they were getting. The label is now derived from the href
+at runtime, so the drift is structurally impossible, and
+`tests/public-release-truth-boundary.test.js` fails any hard-coded version in
+that control. It also dropped "same bytes as the Web Store build", a claim the
+page cannot verify from where it stands.
+
 ## FOR THE SESSIONS PICKING THIS UP
 
 - Repo: `dispatch-work/claude-commercial-20260717` (site + app).

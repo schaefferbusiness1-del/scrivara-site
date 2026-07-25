@@ -21,7 +21,7 @@
   says so on screen.
 
   DATA IT READS (all local): localStorage mlsRF (review-finder details),
-  mlsEasyBook (office contact), mlsRFScrapeCache (scraped reviews from
+  mlsEasyBook (office contact), mlsRFScrapeCache2 (scraped reviews from
   __mlsRepScrape), sf_bk_token (only for the AI-writing step).
   DATA IT WRITES: localStorage mlsGbpGuide (wizard progress) only.
   BACKEND: POST /api/widget/ai (existing, Bearer) for the AI step — nothing else.
@@ -109,7 +109,7 @@ a{color:var(--blue)}
   /* prefill from review-finder + easy-book + scrape cache */
   function prefill() {
     if (S.f.__seeded) return;
-    var rf = jget('mlsRF'); var eb = jget('mlsEasyBook'); var sc = jget('mlsRFScrapeCache');
+    var rf = jget('mlsRF'); var eb = jget('mlsEasyBook'); var sc = jget('mlsRFScrapeCache2');
     var d = (rf && rf.doc) || {};
     S.f.doctor = S.f.doctor || d.name || '';
     S.f.practice = S.f.practice || d.practice || '';
@@ -122,7 +122,7 @@ a{color:var(--blue)}
     if (sc && sc.payload) S.scrape = { at: sc.at };
     S.f.__seeded = true; save();
   }
-  function scrapeData() { var sc = jget('mlsRFScrapeCache'); return sc && sc.payload ? sc.payload : null; }
+  function scrapeData() { var sc = jget('mlsRFScrapeCache2'); return sc && sc.payload ? sc.payload : null; }
 
   var CATS = ['Pain management physician', 'Orthopedic surgeon', 'Physiatrist (Physical Medicine & Rehabilitation)', 'Sports medicine physician', 'Neurosurgeon', 'Family practice physician', 'Internist', 'Chiropractor', 'Medical clinic (practice-wide listing)'];
 
@@ -241,9 +241,13 @@ a{color:var(--blue)}
   function step4() {
     return '<div class="card"><h2>5 · Your listing text, written by MLS</h2>' +
       /* Only claim review grounding when the review data is actually present.
-         Nothing currently writes mlsRFScrapeCache, so this promised "real
-         scraped reviews" on every run while the prompt silently went out with
-         no ratings and no excerpts - the output looked informed and was not. */
+         This used to promise "real scraped reviews" on every run while the
+         prompt silently went out with no ratings and no excerpts - the output
+         looked informed and was not. The cause was a key rename: the scraper
+         moved its cache to mlsRFScrapeCache2 and this page kept reading the
+         retired name, so scrapeData() could only ever answer null. Both halves
+         are fixed - the read is on the live key, and the claim is still made
+         only when data is genuinely loaded. */
       (scrapeData()
         ? '<div class="note">MLS writes the profile description, services and first post from your <b>real scraped reviews</b> plus your resume/CV — truthful, compliant, and it will <b>never</b> present a practice-wide rating as your personal one.</div>'
         : '<div class="note" style="border-left:3px solid var(--sub);padding-left:10px">No verified review data is loaded, so this will be written from the details you entered and your resume/CV only — no ratings and no review excerpts. Run Review Finder first if you want it grounded in your real reviews. It stays truthful either way, and will <b>never</b> present a practice-wide rating as your personal one.</div>') +

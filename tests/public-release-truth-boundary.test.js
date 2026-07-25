@@ -47,6 +47,28 @@ assert(/MLS_Assist_v3\.0\.6\.zip/.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
+
+/* The page must never name a version other than the one the link serves.
+ * It did: the label read "Download MLS Assist v3.0.4" while the href pointed
+ * at MLS_Assist_v3.0.6.zip, because the label was hand-maintained and the
+ * release lane only moved the href, the download attribute and the digest.
+ * A reader following the printed instruction to verify the digest would have
+ * found a mismatch against the version they thought they were getting.
+ * So: no hard-coded vN.N.N may appear in the download control's own markup -
+ * it is filled at runtime from the href - and any version string elsewhere on
+ * the page must match the offered file. */
+const dlAnchor = download.match(/<a\s+id=["']dl["'][\s\S]*?<\/a>/i);
+assert(dlAnchor, 'download control must be a single anchor with id="dl"');
+const offered = download.match(/href=["']MLS_Assist_v(\d+(?:\.\d+){0,3})\.zip["']/i);
+assert(offered, 'download control must serve a stamped MLS_Assist_vN.zip');
+for (const stated of dlAnchor[0].match(/\bv\d+(?:\.\d+){1,3}\b/g) || []) {
+  assert.strictEqual(stated, 'v' + offered[1],
+    `download control names ${stated} but serves v${offered[1]} - the label must be derived from the href, not typed`);
+}
+assert(/getAttribute\(['"]href['"]\)[\s\S]{0,200}MLS_Assist_v/.test(download),
+  'the version label must be derived from the href at runtime so it cannot drift again');
+assert(!/same bytes as the Web Store build/i.test(download),
+  'the page must not assert ZIP/Web-Store byte equality it cannot verify from here');
 const feed = JSON.parse(read('extension-version.json'));
 /* 3.0.5 released 2026-07-24 (swap-settle pre-gate, one-pill fold, midnight nav); 3.0.4 released 2026-07-21 (label-only delta on the 3.0.0 core): accepted 2.9.43 core (identical core digest,
    816d57a6…) + version bump + the narrow backend host permission that fixes

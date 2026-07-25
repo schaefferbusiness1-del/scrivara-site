@@ -333,7 +333,7 @@ textarea{min-height:84px;line-height:1.5}
   /* pull the review-finder cache (public reviews) and publish DOCTOR-scoped highlights */
   $('reviewsBtn').onclick = function () {
     if (!tok()) return;
-    var sc = null; try { sc = JSON.parse(localStorage.getItem('mlsRFScrapeCache') || 'null'); } catch (e) {}
+    var sc = null; try { sc = JSON.parse(localStorage.getItem('mlsRFScrapeCache2') || 'null'); } catch (e) {}
     var payload = sc && sc.payload ? sc.payload : null;
     if (!payload) { $('saveNote').textContent = 'Run the Review Finder in MLS first, then click this.'; return; }
     var summary = (payload.summary && payload.summary.doctor) ? { rating: payload.summary.doctor.rating, count: payload.summary.doctor.reviewCount } : {};
