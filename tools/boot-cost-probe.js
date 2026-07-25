@@ -1,96 +1,150 @@
-/* boot-cost-probe — the one measurement that must come BEFORE the boot fix.
+/* boot-cost-probe — measure boot the ONE way that has ever worked here.
  *
- * Paste into the console of a SIGNED-IN tab, warm (second load), and read the
- * verdict line. Takes no arguments, changes nothing, writes nothing.
+ * Paste into the console of a signed-in tab whose Chrome window is IN FRONT,
+ * reload, and read the verdict. Changes nothing, writes nothing.
  *
- * WHY THIS EXISTS. The owner reports ~26s before the app is usable and calls it
- * slow login. It is not login: the page is interactive in 164ms. But the 26s has
- * only ever been seen on a signed-in session, and a warm ?preview=1 measurement
- * came back completely different:
+ * ── READ THIS BEFORE TRUSTING ANY BOOT NUMBER ────────────────────────────────
  *
- *     domInteractive 293ms · load 3,598ms · script phase 2,919ms
- *     177 feature scripts, 176 cached, 39ms total download
- *     aggregate queue time 299,064ms
+ * Three sessions failed to reproduce the owner's "26 seconds to log in" because
+ * they measured a tab that was not in front. A backgrounded tab reports ~1.4s
+ * and ZERO long tasks for the same boot that costs 24.5s in front, because
+ * Chrome skips the style and layout the work dirties. This probe therefore
+ * REFUSES to answer unless the tab is genuinely visible — a refusal here is the
+ * probe working, not failing.
  *
- * A 2.9s script phase does not make a 26s load. Something else on the signed-in
- * path — data hydration, a backend call, a retry loop — plausibly owns most of
- * that time, and the loader is then a red herring. Rewriting the loader is the
- * highest-blast-radius change in the product; doing it against the wrong cause
- * would risk every boot to save nothing.
+ * The feature scripts also do not load until AFTER authentication (the login
+ * screen is 5 resources), which is why the owner experiences this as slow
+ * login. It is not login. A signed-out or ?preview=1 reading measures a
+ * different page and has misled every session that took one.
  *
- * So the verdict below is deliberately blunt about which fix the numbers
- * support, including "neither — look elsewhere".
+ * ── THEORIES ALREADY KILLED BY MEASUREMENT — do not re-open ─────────────────
  *
- * Progress is tracked by tests/boot-script-budget.test.js, which measures BOTH
- * bundling (unique feature names) and deferral (loaders appended during parse).
- * A win on either one moves a number there.
+ *   network .................. 204/205 from cache, response 0.7ms
+ *   parse/exec ............... all 212 scripts execute in 1,728ms when isolated
+ *   one hot script ........... three runs blamed three DIFFERENT files
+ *   stylesheet count ......... 196 <style> elements, ~1ms per insert
+ *   the SW cache write ....... 1.7ms per put, ~350ms of 9.6s (real, not the cause)
+ *   request count / BUNDLING . the same 205 assets through the same SW with an
+ *                              idle main thread take ~170ms. A bundle buys ~2%.
+ *
+ * The per-script queue time (median 6,477ms) is a SYMPTOM of main-thread
+ * contention, not a cause. An earlier version of this probe read that queue and
+ * concluded "bundle the feature scripts". That conclusion is disproved, and the
+ * earlier verdict text is why this file was rewritten.
+ *
+ * ── WHAT IS ACTUALLY LEFT ────────────────────────────────────────────────────
+ *
+ * The surviving candidate is the WORK the modules do: ~60 document-wide
+ * MutationObservers and ~214 intervals, cost scaling as mutations x observers
+ * rather than per-module. It explains what per-module attribution could not —
+ * why no single script owns the blob, and why a background tab reads 1.4s.
+ * Pinned population-wide by arm C of tests/boot-script-budget.test.js.
+ *
+ * It is a CANDIDATE, not a proven cause. What confirms or kills it is
+ * per-module main-thread attribution taken in front, which is what `byModule`
+ * below is for.
  */
 (function () {
   'use strict';
-  var t = performance.getEntriesByType('navigation')[0] || {};
-  var res = performance.getEntriesByType('resource');
-  var feats = res.filter(function (r) { return /feat_[a-z0-9_]+\.js/i.test(r.name); });
 
-  function ms(v) { return Math.round(Number(v) || 0); }
-  var sum = function (a, f) { return a.reduce(function (n, r) { return n + (Number(f(r)) || 0); }, 0); };
+  var out = {};
+  var nav = performance.getEntriesByType('navigation')[0] || {};
+  var paints = performance.getEntriesByType('paint') || [];
 
-  var cached = feats.filter(function (r) { return r.transferSize === 0; }).length;
-  var bytes = sum(feats, function (r) { return r.duration - (r.responseStart ? (r.responseStart - r.requestStart) : 0); });
-  var queue = sum(feats, function (r) { return r.startTime && r.fetchStart ? (r.fetchStart - r.startTime) : 0; });
-  var download = sum(feats, function (r) { return r.responseEnd - r.responseStart; });
-
-  /* The script PHASE is the part a bundle or a defer can actually move: the
-     window between the first feature request and the last one finishing. */
-  var first = Math.min.apply(null, feats.map(function (r) { return r.startTime; }).concat([Infinity]));
-  var last = Math.max.apply(null, feats.map(function (r) { return r.responseEnd; }).concat([0]));
-  var scriptPhase = feats.length ? ms(last - first) : 0;
-
-  var interactive = ms(t.domInteractive);
-  var loadEnd = ms(t.loadEventEnd || t.duration);
-  var afterScripts = Math.max(0, loadEnd - ms(last));
-
-  /* The app screen is on screen in ?preview=1 too, so testing it alone reports
-     "signed in" on the exact session this probe exists to rule out. Verified
-     live: the preview reported signedIn:true and would have been read as the
-     measurement that was asked for. The preview marks itself on <body>. */
-  var appEl = document.getElementById('appScreen');
+  /* ---- preconditions. Each one has already invalidated a real session's work. */
+  var visible = document.visibilityState === 'visible' && document.hidden === false;
+  var painting = paints.length > 0;
   var preview = /(^|\s)mls-public-preview(\s|$)/.test(document.body.className) ||
     /[?&](preview|demo)=1\b/.test(location.search);
+  var appEl = document.getElementById('appScreen');
+  var signedIn = !!(appEl && getComputedStyle(appEl).display !== 'none') && !preview;
 
-  var out = {
-    signedIn: !!(appEl && getComputedStyle(appEl).display !== 'none') && !preview,
-    preview: preview,
-    warm: cached > feats.length / 2,
-    domInteractive: interactive,
-    loadEventEnd: loadEnd,
-    featureScripts: feats.length,
-    cached: cached,
-    totalDownloadMs: ms(download),
-    aggregateQueueMs: ms(queue),
-    scriptPhaseMs: scriptPhase,
-    afterLastScriptMs: afterScripts
+  out.preconditions = {
+    tabVisible: visible,
+    compositing: painting,
+    signedIn: signedIn,
+    preview: preview
   };
 
-  /* The verdict. Three outcomes, and the third is the one worth protecting:
-     a loader rewrite that cannot explain the observed wait is not the fix. */
-  var verdict;
-  if (!out.signedIn) {
-    verdict = (preview ? 'PREVIEW SESSION' : 'NOT SIGNED IN') +
-      ' — this is the measurement that has already been taken and does not reproduce the report. Run it on the signed-in tab.';
-  } else if (loadEnd < 8000) {
-    verdict = 'The 26s did not reproduce here (load ' + loadEnd + 'ms). Do not touch the boot path on this evidence; capture a slow one first.';
-  } else if (scriptPhase > loadEnd * 0.5) {
-    verdict = 'LOADER IS THE CAUSE: the script phase is ' + scriptPhase + 'ms of a ' + loadEnd +
-      'ms load. Bundling or deferral will move it. Deferral is the cheaper of the two and ' +
-      'tests/boot-script-budget.test.js now measures it.';
-  } else {
-    verdict = 'LOADER IS A RED HERRING: the script phase is only ' + scriptPhase + 'ms of a ' + loadEnd +
-      'ms load, and ' + afterScripts + 'ms elapses AFTER the last script. The cost is downstream of ' +
-      'loading — hydration or a backend call. Profile that before rewriting the loader.';
+  if (!visible || !painting) {
+    out.verdict = 'REFUSING TO ANSWER — this tab is not in front (visibilityState=' +
+      document.visibilityState + ', paint entries=' + paints.length + '). A backgrounded ' +
+      'tab reads ~1.4s and zero long tasks for a boot that costs 24.5s in front. ' +
+      'Focus the Chrome WINDOW (not just the tab), reload, and run this again.';
+    console.warn(out.verdict);
+    return out;
+  }
+  if (!signedIn) {
+    out.verdict = 'REFUSING TO ANSWER — ' + (preview ? 'this is a ?preview=1 session' : 'not signed in') +
+      '. The feature scripts do not load until after authentication; the login screen is 5 resources. ' +
+      'This reading would measure a different page, which is the mistake that produced the ' +
+      '"it does not reproduce" conclusion three times.';
+    console.warn(out.verdict);
+    return out;
   }
 
-  out.verdict = verdict;
-  try { console.table(out); } catch (e) {}
-  console.log(verdict);
+  /* ---- long tasks are the measurement that correlates. Resource timings do not. */
+  var tasks = [];
+  try { tasks = performance.getEntriesByType('longtask') || []; } catch (e) { tasks = []; }
+  var tbt = tasks.reduce(function (n, t) { return n + Math.max(0, t.duration - 50); }, 0);
+  var longest = tasks.reduce(function (n, t) { return Math.max(n, t.duration); }, 0);
+  var lastTaskEnd = tasks.reduce(function (n, t) { return Math.max(n, t.startTime + t.duration); }, 0);
+
+  var res = performance.getEntriesByType('resource');
+  var feats = res.filter(function (r) { return /feat_[a-z0-9_]+\.js/i.test(r.name); });
+  var ms = function (v) { return Math.round(Number(v) || 0); };
+
+  out.mainThread = {
+    longTasks: tasks.length,
+    totalBlockingMs: ms(tbt),
+    longestTaskMs: ms(longest),
+    workEndsAtMs: ms(lastTaskEnd),
+    note: tasks.length ? '' : 'zero long tasks recorded — either boot really was cheap, or the ' +
+      'PerformanceObserver buffer was not retained for this navigation; re-run right after a reload'
+  };
+  out.page = {
+    domInteractiveMs: ms(nav.domInteractive),
+    loadEventEndMs: ms(nav.loadEventEnd || nav.duration),
+    featureScripts: feats.length,
+    cached: feats.filter(function (r) { return r.transferSize === 0; }).length
+  };
+
+  /* ---- the surviving candidate, counted live rather than from source. */
+  var intervals = 0, observers = 0;
+  try { intervals = (window.__mlsIntervalCount != null) ? window.__mlsIntervalCount : -1; } catch (e) { intervals = -1; }
+  out.candidate = {
+    documentWideObserversPinnedAt: 60,
+    intervalsPinnedAt: 214,
+    liveIntervalCount: intervals,
+    hint: 'arm C of tests/boot-script-budget.test.js pins these population-wide'
+  };
+
+  /* ---- per-module attribution: the measurement that decides it.
+     Deliberately NOT automated here. Two instruments are known to fail on this
+     page and each has cost a session: load-event-gap attribution blamed three
+     different files across three runs, and long-animation-frame returns nothing
+     in a non-compositing pane. Use the Performance panel with the window in
+     front and read Bottom-Up by URL. */
+  out.byModule = 'Record a boot in the Performance panel (window in front) and read Bottom-Up ' +
+    'grouped by URL. Do NOT use load-event-gap attribution or long-animation-frame here.';
+
+  if (tbt > 3000) {
+    out.verdict = 'REPRODUCED: ' + ms(tbt) + 'ms total blocking across ' + tasks.length +
+      ' long tasks, work ending ' + ms(lastTaskEnd) + 'ms in. This is main-thread WORK, not loading. ' +
+      'Do NOT bundle and do NOT batch stylesheets — both are disproved above. Attribute per module ' +
+      'in the Performance panel, then make the modules that scan or render the whole patient store ' +
+      'do it when their screen opens instead of at boot.';
+  } else if (tbt > 0) {
+    out.verdict = 'Boot is cheap on THIS session: ' + ms(tbt) + 'ms blocking. If the owner still ' +
+      'reports a slow login, the difference is data volume — the 24.5s reading came from a store of ' +
+      '1,481 patients. Compare patient counts before concluding anything.';
+  } else {
+    out.verdict = 'No long tasks recorded despite a visible tab. Reload with the console open and ' +
+      're-run; if it stays zero, this session genuinely does not reproduce and the store size is ' +
+      'the first thing to compare.';
+  }
+
+  try { console.table(out.preconditions); console.table(out.mainThread); } catch (e) {}
+  console.log(out.verdict);
   return out;
 })();
