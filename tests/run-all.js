@@ -36,6 +36,7 @@ const tests = [
   'athena-confirmation-runtime.test.js',
   'sign-claim-requires-receipt.test.js',
   'refusal-is-not-a-save.test.js',
+  'staging-stamp-follows-production.test.js',
   'autosave-draft-owner.test.js',
   'athena-unified-manifest-contract.test.js',
   'athena-final-action-truth-contract.test.js',
