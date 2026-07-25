@@ -251,3 +251,102 @@ every boot to save nothing. The probe says which, in one line.
   cache entry — the frozen-token failure from §2 of the overnight handoff, one
   build deep. Nothing pins that pair; worth a test if it drifts again.
 - Everything the previous handoff listed as landed and safe is untouched.
+
+---
+
+## Addendum — corrections to this document, same day
+
+Written after the boot lane published measurements that retire two things this
+document said. Both corrections are mine to make: one of them is about code I
+shipped.
+
+### Boot is no longer blocked on the owner, and my probe was wrong
+
+Section 5 above said "run the probe on the signed-in tab before touching the
+loader" and treated that as blocking. The boot lane has since taken it, in
+front, and the answer arrived: **the loader is not the cause and bundling will
+not fix it.** Same 205 cached assets, same service worker, idle main thread:
+~170ms. A bundle buys ~2%. The 6,477ms median per-script queue is a *symptom* of
+main-thread contention.
+
+`tools/boot-cost-probe.js`, which I shipped in b591, read exactly that queue and
+concluded "LOADER IS THE CAUSE". It would have sent the next reader straight at
+the disproved fix. Rewritten (b603) to:
+
+- **refuse when the tab is not in front** — a backgrounded tab reports ~1.4s and
+  zero long tasks for a boot that costs 24.5s in front, which is why three
+  sessions failed to reproduce this. It checks `visibilityState` *and* that
+  paint entries exist, and says which precondition failed.
+- **refuse on signed-out or `?preview=1`** — the feature scripts do not load
+  until after authentication (the login screen is 5 resources), which is both
+  why the owner calls it slow login and why preview readings mislead.
+- measure **long tasks and total blocking time** instead of resource timings.
+- list every killed theory with its number: network, parse/exec, one hot script,
+  stylesheet count, the SW cache write, request count/bundling, and observers.
+
+Live-verified: it refuses the preview tab it previously answered.
+
+### My naming pass left the boot path
+
+The boot lane measured 5,576 forced-layout reads during boot, **1,633 of them
+(29%) in `feat_mls_calm_shell.js`**, and named read/write interleaving as the
+strongest surviving lead. `nameControls` reads layout once per composite control
+and computed style once per child.
+
+Measured at b598: steady state costs **zero** extra layout reads and **zero**
+`getComputedStyle` — the text signature short-circuits first — but a cold epoch
+touched all 95 composites on that screen. Small against 5,576, and it buys
+nothing before first paint, so it now runs from `requestIdleCallback` with a
+1,200ms timeout, coalesced. `__mlsCalmShell.render()` stays synchronous, because
+that is the entry point verification uses and a deferred answer there reads as a
+missing name.
+
+### Two aria-label writers now share this file
+
+The other lane added `nameIfGeneric`, deliberately scoped to `#profileCard`
+because a global version pulled patient data ("Sample medication 10 mg daily")
+into accessible names. That is a different operation from this one — it
+*synthesises* a name for a generically-labelled control, whereas `nameControls`
+only re-punctuates text that was already the accessible name — so the scoping
+difference is correct and not an inconsistency.
+
+They can still collide on one element. The stamp now records the **value**
+written rather than a flag, and a control whose `aria-label` no longer matches
+what this pass wrote is released to its new owner. Without that, a control
+renamed by the other pass would be silently overwritten on the next render, and
+a name that flips between two correct-looking values by render order is worse
+than either.
+
+### ON mode: ext 3.0.15
+
+3.0.14 fixed the safety item. **3.0.15** closes the instrument gap that would
+have cost a second live pull: the gate-3 refusal carried `declaredEvents` and
+`renderedListItems` as *object fields*, which are dropped at the
+extension→page hop, so the receipt named the gate but not the numbers. All three
+refusals now carry theirs in the string, plus row-count stability across passes:
+
+```
+visits-panel-not-open[rows=22;up=8]
+visits-total-not-readable[rows=22;kids=22;n=19;sameFor=67s]
+visits-list-still-rendering[22/38;rows=22;n=19;sameFor=67s]
+```
+
+`sameFor` is the reading that separates "still rendering, wait longer" from
+"this rule can never be satisfied on this chart" — the distinction the whole
+remaining question turns on, and nothing recorded it before.
+
+Deliberately observe-only: acceptance is unchanged, and the suite asserts the
+stability figure is *not* wired into it, so nobody promotes it without the
+reading. One pull still settles it.
+
+**Two fixes I talked myself into and then measured out of:**
+
+- *"Gate 3 compares the wrong things."* `listKids` is `g.parent.children.length`,
+  paired with an All-Events total that legitimately counts appointments and
+  vitals alongside encounters. Narrowing it to matched encounter rows would have
+  made the gate refuse **more** and broken charts that work today. The pairing is
+  correct as written.
+- *"A stability window should replace the mandatory total."* Plausible, and still
+  possibly right — but the landing pane the mandatory total exists to reject can
+  also sit stable, so swapping one for the other without the live reading trades
+  a known refusal for an unknown false accept in a clinical read path.
