@@ -224,7 +224,7 @@ read with no intervening write          median  0ms
 >
 > | screen | ms per forced layout |
 > |---|---|
-> | **Patients** (the screen the app boots into) | **16.3 – 16.7** |
+> | **Patients** (see the correction below — NOT always the boot screen) | **16.3 – 16.7** |
 > | Day | 6.1 |
 > | Visit | 3.2 |
 > | Review | **2.4** |
@@ -256,6 +256,34 @@ read with no intervening write          median  0ms
 > the caveat that also makes this test incomplete: a hidden tab has nothing
 > on-screen, so `content-visibility` has nothing to skip. It could still help in a
 > foreground window — but it must be proven there first, not assumed.
+>
+> ### CORRECTION — "the screen the app boots into" is USER STATE, not a fact
+>
+> The app restores the last-used view. My own earlier probe clicks had left that
+> tab on Patients, so every "as booted" reading after that measured Patients
+> because *I* put it there — a probe that changed what it measured, for the second
+> time this session. Verified on a fresh load with no clicks: the only visible
+> view was `patientsView`, and the owner's own screenshots earlier in the day show
+> the **Day** screen (6.1ms), not Patients.
+>
+> So the honest claim is narrower and still worth acting on: **whichever view a
+> doctor last used is the one they pay for on every boot**, and Patients is ~3×
+> the cost of Day and ~7× Review. A doctor who works from the patient directory
+> pays the worst case every single time — which also explains why this has been
+> reported inconsistently.
+>
+> ### Why `content-visibility` is still the right idea despite the failed test
+>
+> Measured on the same fresh load: `#ptList` is **833px tall** and holds **151
+> rows of 157px each**. That is an internal scroller in which roughly **146 of
+> 151 rows are off-screen and still being laid out** — exactly the case
+> `content-visibility: auto` exists for.
+>
+> The 32%-worse result above was measured in a **hidden tab**, where the browser
+> skips rendering entirely and containment bookkeeping is pure overhead with
+> nothing to skip. That test inverts the effect it was meant to measure. Re-run it
+> in a **foreground window** before concluding anything; the mechanism genuinely
+> applies here, and the earlier negative is not evidence against it.
 >
 > ### Read the per-screen numbers as a RANKING, not as absolutes
 >
