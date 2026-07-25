@@ -16,10 +16,14 @@
  * element in this app has that blast radius. 86 in 44 seconds is ~1.4
  * whole-page style recalculations per second, every one of them for nothing.
  *
- * classList.add / remove / toggle each re-commit the class attribute even when
- * the class is already in the requested state. toggle(name, force) is the most
- * deceptive of the three: it reads like a conditional, and it is not. The force
- * argument selects WHICH state to commit, never WHETHER to commit.
+ * classList.add() and remove() re-commit the class attribute even when the token
+ * set does not change: both run the DOM update steps unconditionally, which
+ * re-serialises and re-sets the attribute.
+ *
+ * toggle(name, force) does NOT — see the measurement under rule 3. It returns
+ * early when presence already matches force. An earlier version of this file
+ * claimed otherwise and that claim was wrong; the guards on toggle sites are
+ * harmless belt-and-braces, not the fix.
  *
  * WHY THIS SURVIVED SO LONG. The obvious instrumentation cannot see it. Hooking
  * body.className, or Element.prototype.setAttribute, catches NOTHING here -
@@ -37,11 +41,11 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
-/* Rule 3 below scans EVERY published file, not a hand-written list. Three
-   rounds of this fix each found another writer in a file the previous round had
-   not thought to look at: seven in three files, then an eighth in ScribeFlow.html,
-   then three more in feat_mls_redesign.js. A rule scoped to the files you already
-   suspect is a rule that keeps missing the next one. */
+/* Enumerated so the count tripwire below covers every published file, not a
+   hand-written list. Three rounds of this fix each found another writer in a file
+   the previous round had not opened: seven in three files, then an eighth in
+   ScribeFlow.html, then three more in feat_mls_redesign.js. A rule scoped to the
+   files you already suspect is a rule that keeps missing the next one. */
 const PUBLISHED = (() => {
   const inv = JSON.parse(read('pages-publication-inventory.json'));
   const all = new Set();
@@ -69,11 +73,11 @@ const PUBLISHED = (() => {
  */
 
 const GUARDED = [
-  ['mls-connect.js', 'syncPrimaryVoiceTools', '68 measured',
+  ['mls-connect.js', 'syncPrimaryVoiceTools', 'toggle — belt-and-braces, 0 records',
     "if (document.body.classList.contains('mls-top-voice-tools') !== !!visible) document.body.classList.toggle('mls-top-voice-tools', visible);"],
-  ['feat_athena_tooltip_dedupe.js', 'reconcileAdvanced', '54 measured',
+  ['feat_athena_tooltip_dedupe.js', 'reconcileAdvanced', 'add() — 54 REAL re-commits',
     "if (!document.body.classList.contains('mls-has-easy-advanced-trigger')) document.body.classList.add('mls-has-easy-advanced-trigger');"],
-  ['feat_mls_pervisit_unify.js', 'per-visit unify', '14 measured',
+  ['feat_mls_pervisit_unify.js', 'per-visit unify', 'add/remove — 14 REAL re-commits',
     'if (cls.contains("mls-pvu-rich") !== pvuWant) cls.toggle("mls-pvu-rich", pvuWant);'],
   ['mls-connect.js', 'render() — the second writer of the same class', 'unsampled',
     "if (document.body.classList.contains('mls-top-voice-tools') !== wantTvt) document.body.classList.toggle('mls-top-voice-tools', wantTvt);"],
@@ -83,27 +87,31 @@ const GUARDED = [
     "if (document.body.classList.contains('mls-has-exact-portal-action') !== wantPortal) document.body.classList.toggle('mls-has-exact-portal-action', wantPortal);"],
   ['feat_athena_tooltip_dedupe.js', 'settings reconcile', 'unsampled',
     "if (document.body && document.body.classList.contains('mls-settings-open') !== open) document.body.classList.toggle('mls-settings-open', open);"],
-  ['ScribeFlow.html', 'ctx-bar build(), remove arm', '5 measured live at b632',
+  ['ScribeFlow.html', 'ctx-bar build(), remove arm', 'remove() — 5 REAL re-commits, live at b632',
     'safe(function(){ if (document.body.classList.contains(BODY_CLS)) document.body.classList.remove(BODY_CLS); });'],
-  ['ScribeFlow.html', 'ctx-bar build(), add arm', '5 measured live at b632',
+  ['ScribeFlow.html', 'ctx-bar build(), add arm', 'add() — 5 REAL re-commits, live at b632',
     'safe(function(){ if (!document.body.classList.contains(BODY_CLS)) document.body.classList.add(BODY_CLS); });'],
   ['ScribeFlow.html', 'renderProfile()', 'unsampled',
     "if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta);"],
-  /* The worst of the set, and invisible to every idle measurement: this runs
-     from a CAPTURE-phase 'input' listener on document, so it fired on every
-     keystroke in the note editor and wrote THREE body classes per character. */
-  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+  /* Runs from a CAPTURE-phase 'input' listener on document, so it makes three
+     classList calls per character typed. They are toggle(name, force), which is
+     already conditional, so they re-committed NOTHING. An earlier version of this
+     file claimed three style invalidations per keystroke; that was inferred from a
+     wrong premise and never measured. Guards kept: comparing beats calling on a
+     per-keystroke path. */
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', 'toggle — belt-and-braces',
     "if(bcl.contains('mls-has-active-patient')!==wantHas) bcl.toggle('mls-has-active-patient',wantHas);"],
-  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', 'toggle — belt-and-braces',
     "if(bcl.contains('mls-no-active-patient')!==wantNone) bcl.toggle('mls-no-active-patient',wantNone);"],
-  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', '3 writes per character typed',
+  ['feat_mls_redesign.js', 'syncClinicalSurfaceState, per keystroke', 'toggle — belt-and-braces',
     "if(bcl.contains('mls-has-note-draft')!==wantDraft) bcl.toggle('mls-has-note-draft',wantDraft);"]
 ];
 
 for (const [file, fn, volume, guard] of GUARDED) {
   assert(read(file).includes(guard),
-    file + ': ' + fn + ' (' + volume + ') must compare before it commits — an unchanged ' +
-    'body class still invalidates style for the whole document. Expected:\n    ' + guard);
+    file + ': ' + fn + ' (' + volume + ') must compare before it commits. For add()/remove() ' +
+    'an unchanged body class is still re-serialised and re-set, invalidating style for the whole ' +
+    'document; for toggle() the guard is belt-and-braces. Expected:\n    ' + guard);
 }
 
 /* ---- 2. the unguarded forms are actually gone, not merely shadowed ------- */
@@ -127,44 +135,50 @@ for (const [file, snippet] of BANNED) {
     file + ' still contains the unguarded write:\n    ' + snippet.trim());
 }
 
-/* ---- 3. the rule, enforced on every toggle-with-force in these files -----
+/* ---- 3. WHICH FORMS ACTUALLY RE-COMMIT — the correction ------------------
  *
- * Rather than pin a count, encode the actual principle: an unguarded
- * toggle(name, force) on <body> is permitted ONLY where the caller has just
- * flipped the state it is committing, so the value provably always changes.
- * The four `toggle('ez3adv', S.advOpen)` sites are exactly that — each is a
- * click handler whose previous statement is `S.advOpen = !S.advOpen`. Guarding
- * those would never once be false; it would imply churn that does not exist.
- * Guard what repeats, not everything that could be guarded.
+ * An earlier version of this suite enforced "no unguarded toggle(name, force)
+ * on <body>" across every published file. That rule guarded a non-issue, and
+ * this comment exists so nobody reinstates it.
+ *
+ * Measured on the live page, on document.body, with page-originated calls
+ * counted separately and a zero-call control:
+ *
+ *     50x toggle(present, force=true)    ->   0 attribute records
+ *     50x toggle(absent,  force=false)   ->   0
+ *     50x add(alreadyPresent)            ->  50
+ *     50x remove(notPresent)             ->  50
+ *     50x setAttribute('class', same)    ->  50
+ *     50x className = same               ->  50
+ *     toggle causing a REAL change       ->   1 per change (correct)
+ *
+ * The DOM spec agrees: toggle with a force argument returns early when the
+ * token's presence already matches force, WITHOUT running the update steps.
+ * add() and remove() run the update steps unconditionally, so they re-serialise
+ * and re-set the attribute even when the token set did not change.
+ *
+ * So the churn measured on the owner's screen came from add() and remove():
+ *   54x add('mls-has-easy-advanced-trigger')   feat_athena_tooltip_dedupe.js
+ *   14x remove('mls-pvu-rich')                 feat_mls_pervisit_unify.js
+ *    5x remove('mls-has-active-pt')            ScribeFlow.html ctx-bar build()
+ * which is the large majority of the 86 records seen in 44s. The toggle guards
+ * in the GUARDED list above are belt-and-braces: semantically identical, they
+ * skip a call, and they remove no style invalidation. They are kept, but they
+ * are not the fix and must not be cited as one.
+ *
+ * There is no static rule here for add/remove, deliberately. 30 unguarded
+ * add/remove sites exist across the published files and most are one-shot mount
+ * or teardown paths, which are not churn. "Runs on a repeating pass" is not
+ * decidable from the source line, so the count tripwire below is the guard: any
+ * new site forces a human to open this file and read the measurement.
  */
 
-const TOGGLE_FORCE = /(?:document\.body|\bbody)\.classList\.toggle\(\s*['"]([\w-]+)['"]\s*,/;
-const FLIPS_FIRST = /(\w+(?:\.\w+)*)\s*=\s*!\1\s*;/; /* x.y = !x.y — a real flip */
+const scanned = PUBLISHED.length;
 
-let scanned = 0;
-for (const file of PUBLISHED) {
-  scanned++;
-  const lines = read(file).split('\n');
-  lines.forEach((line, i) => {
-    const m = TOGGLE_FORCE.exec(line);
-    if (!m || /\.contains\(/.test(line)) return;
-    const preceding = lines.slice(Math.max(0, i - 2), i).join('\n');
-    assert(FLIPS_FIRST.test(preceding),
-      file + ':' + (i + 1) + ' toggles body class "' + m[1] + '" with a force argument and ' +
-      'neither compares first nor follows a statement that flips the value. toggle(name, force) ' +
-      'commits the class attribute unconditionally — on a repeating pass that is a whole-document ' +
-      'style invalidation per call. Either guard it:\n' +
-      '    if (document.body.classList.contains("' + m[1] + '") !== want) document.body.classList.toggle("' + m[1] + '", want);\n' +
-      'or, if the value provably changes on every call, flip it on the line above.\n' +
-      '  line: ' + line.trim());
-  });
-}
-
-/* A count tripwire on top of the rule, so that a new unguarded add()/remove()
-   on a repeating pass — which rule 3 cannot see — still forces someone to open
-   this file and read the measurement above. All sites at these counts have been
-   read by hand; one-shot init and teardown paths are included and are not
-   churn. */
+/* A count tripwire, so that a new unguarded add()/remove() on a repeating pass
+   forces someone to open this file and read the measurement above. All sites at
+   these counts have been read by hand; one-shot init and teardown paths are
+   included and are not churn. */
 const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
@@ -187,7 +201,7 @@ const connect = read('mls-connect.js');
 for (const [asset, token, retired] of [
   ['feat_athena_tooltip_dedupe.js', '20260725ui124', '20260724ui123'],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
-  ['feat_mls_redesign.js', '20260725rd324', '20260724rd323']
+  ['feat_mls_redesign.js', '20260725rd325', '20260725rd324']
 ]) {
   /* The loaders build the URL from a variable — s.src = A + '?v=' + token — so
      the literal "asset.js?v=token" never appears in the source. Assert on the
@@ -202,4 +216,4 @@ for (const [asset, token, retired] of [
     asset + ' still exposes the retired cache token ' + retired + ' somewhere in the loader bundle');
 }
 
-console.log('PASS body-class churn: 13 writers on repeating passes compare before committing (3 measured at 68+54+14 no-op whole-document style invalidations in 44s, 4 more found by reading every site, 3 more in a fourth file found by re-measuring live after the first fix, 3 more that fired on EVERY KEYSTROKE found by scanning all 273 published files), every remaining unguarded toggle across ' + scanned + ' published files provably flips first, and all three changed satellites ship under moved cache tokens');
+console.log('PASS body-class churn: the 3 measured add()/remove() writers (54+14+5 no-op attribute re-commits) now compare first, 10 further toggle sites carry belt-and-braces guards, and all three changed satellites ship under moved cache tokens (' + scanned + ' published files scanned)');

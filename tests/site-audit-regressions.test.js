@@ -31,7 +31,7 @@ assert(redesign.includes('#mlsRdKbd{ display:none !important; }'), 'mobile icon-
 assert(redesign.includes('#mlsFab, #mlsFabMenu{ display:none !important; }'), 'mobile quick actions must not float over working controls');
 assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38px;'), 'mobile quick actions need one compact top-bar owner');
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
-assert(siteBundle.includes("feat_mls_redesign.js?v=20260725rd324"), 'the repaired responsive/performance asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_redesign.js?v=20260725rd325"), 'the repaired responsive/performance asset needs a fresh deployment URL');
 
 assert(loading.includes("visualOwner: 'mlsProgressStages'") && !loading.includes('window.fetch = wrapped'),
   'shared loading store must stay headless and must not turn background requests into UI');

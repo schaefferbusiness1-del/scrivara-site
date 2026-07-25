@@ -1126,9 +1126,12 @@
       var noteText='';
       try{ noteText=String(note&&(note.value!=null?note.value:note.textContent)||'').trim(); }catch(e2){}
       /* This runs from a CAPTURE-phase 'input' listener on document, so it fires
-         on every keystroke in the note editor. Unguarded, that was THREE whole-
-         document style invalidations per character typed, none of which changed
-         a value: while you dictate, hasPatient and noteText do not vary. */
+         on every keystroke in the note editor - 3 classList calls per character.
+         They were toggle(name, force), which is already conditional, so they did
+         NOT rewrite the attribute and cost no style invalidation. (An earlier
+         version of this comment claimed they did; that was wrong and unmeasured.)
+         The guards below are kept because comparing is cheaper than calling on a
+         per-keystroke path, not because they fix churn. */
       var wantHas=!!hasPatient, wantNone=!hasPatient, wantDraft=!!(hasPatient&&noteText);
       var bcl=document.body.classList;
       if(bcl.contains('mls-has-active-patient')!==wantHas) bcl.toggle('mls-has-active-patient',wantHas);
