@@ -555,7 +555,7 @@
       safe(function () { if (c && isFn(c.check)) c.check(); });
       return;
     }
-    if (!(si && isFn(si.pullMonth))) { addAi("The month pull isn't available right now. Open the Calendar's \"Pull a month from Athena\" card instead."); return; }
+    if (!(si && isFn(si.pullMonth))) { addAi("The month pull isn't available right now. Open Menu -> Staff prep & Athena month pull and use the \"Pull a month from Athena\" card."); return; }
     var mk = monthKeyFor(intent.scope);
     addAi("On it -- pulling your " + (intent.scope === "this" ? "current" : "last") + " month (" + mk + ") from athenaOne now, read-only. Already-saved appointments are skipped, never doubled; the month card shows live day-by-day progress.");
     safe(function () {

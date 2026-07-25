@@ -30349,7 +30349,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'studio ai custom tool widget builder', name:'AI Studio and custom tools', where:'Top navigation -> AI Studio', how:'Use the simple builder at the top to ask Copilot, build a custom tool, or run a study.', route:'view:studio', common:true },
     { k:'study cohort research outcomes custom study build procedure 30 page report', name:'Build and run a custom study', where:'AI Studio -> natural-language study builder at the top', how:'Type the cohort, question, and date range in plain language and press Enter. MLS uses stored evidence to create a limited-data draft, scrubs common direct identifiers where detectable, and expands only to the evidence-supported length (up to 30 pages); clinician and privacy review are still required.', route:'study' },
     { k:'custom widget card tool build', name:'Build a custom widget', where:'Menu -> Custom widget (also at the top of AI Studio)', how:'Describe the tool, review the generated widget, then pin it if useful.', route:'widget' },
-    { k:'calendar schedule appointment new booking', name:'Calendar and appointments', where:'Calendar tab (enable it in Settings -> App tabs if hidden)', how:'View the schedule or create a new appointment.', route:'view:calendar' },
+    { k:'calendar schedule appointment new booking', name:'Calendar and appointments', where:'Calendar tab - your front desk turns this on for the practice; there is no doctor-side switch', how:'View the schedule or create a new appointment.', route:'view:calendar' },
     { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
     { k:'reviews reputation google business profile', name:'Reviews and reputation', where:'Left navigation -> Reviews', how:'Use the sidebar for the full Reviews workspace. Context actions open the same live surface in a compact dialog with an Open full screen button.', route:'reach:reviews' },
     { k:'settings account access api key name specialty', name:'Account and access settings', where:'Settings -> Account & security -> Account & access', how:'Manage account identity and AI access in the first Settings section.', route:'settings:account' },
@@ -30363,7 +30363,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'app tabs navigation enable calendar analysis admin', name:'App tab settings', where:'Settings -> Features & navigation -> App tabs', how:'Choose which released advanced navigation tabs are visible.', route:'settings:features' },
     { k:'security privacy password change two factor 2fa logout idle', name:'Security and privacy', where:'Settings -> Account & security -> Security & privacy', how:'Change password, manage two-factor authentication, logout confirmation, and idle timeout.', route:'settings:account', common:true },
     { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
-    { k:'analysis reports productivity outcomes metrics', name:'Practice analysis', where:'Analysis tab (enable it in Settings -> App tabs if hidden)', how:'Review the available analysis cards with the displayed data scope.', route:'view:analysis' },
+    { k:'analysis reports productivity outcomes metrics', name:'Practice analysis', where:'Analysis tab - appears automatically for clinician accounts; there is no user toggle', how:'Review the available analysis cards with the displayed data scope.', route:'view:analysis' },
     { k:'phone microphone qr mobile recording', name:'Phone microphone', where:'Visit easy recorder -> phone microphone option', how:'Open the QR code, scan it with the phone, and keep recording bound to the same patient visit.', route:'view:visit' },
     { k:'dot phrases shortcuts normal exam ros precautions', name:'Dot phrases', where:'Visit easy recorder -> transcript -> Dot phrases', how:'Insert or manage reusable phrases while recording or editing the transcript.', route:'view:visit' },
     { k:'outcomes pain function odi score trend', name:'Patient outcomes', where:'Visit tab -> Outcomes card below the note', how:'Save pain and function measures to the selected patient and follow them over time.', route:'view:visit' }
@@ -33276,7 +33276,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b604';
+  window.__MLS_AV = window.__MLS_AV || 'b605';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33586,7 +33586,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b604';
+  var MLS_APP_BUILD='2026-07-25-b605';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
