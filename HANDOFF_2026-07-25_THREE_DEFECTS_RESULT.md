@@ -111,10 +111,14 @@ login screen is 5 resources. That is why the owner experiences this as slow logi
 | one hot script | three runs blamed three *different* files (2.0s / 2.2s / 3.7s). The blob floats; load-event-gap attribution is unreliable here |
 | stylesheet count | 196 `<style>` elements, but one insert + forced layout is **1ms**. 179 of them is ~179ms, not nine seconds. **Do not attempt a style-batching refactor** |
 | the SW cache write | **1.7ms** per put, ~350ms of 9.6s. Real waste, fixed, but not the cause |
+| **the request count / bundling** | same 205 assets, same SW, idle main thread: **~170ms total**. See below — this one killed my own conclusion |
 
-### The actual cause
+### The request count is not the cause either — and bundling will not fix this
 
-205 separately-fetched, strictly-ordered (`s.async=false`) scripts.
+This is the correction that matters most. Both the 2026-07-24 handoff and my own
+first conclusion said "bundle the feature scripts". **Both are wrong.**
+
+The boot numbers look damning for the request count:
 
 ```
 median per-script QUEUE time (startTime -> fetchStart):  6,477ms
@@ -122,16 +126,25 @@ aggregate queue:                                     1,274,056ms
 wall span:                                               9,592ms
 ```
 
-Serving each asset is instant; **waiting for a turn is not**. The dispatch is
-paced by a main thread that is hydrating a real clinic's data at the same time.
-The fix is to reduce the **request count**.
+So I re-fetched the **same 205 cached assets** through the **same service
+worker** on the **same page**, with the main thread idle:
 
-> **The handoff's proposed fix would not have worked for the stated reason.** It
-> said the cost is 152 scripts "parsed and executed serially on the main thread".
-> Parse and execute is 1.7s of it. Bundling is still the right fix, but because
-> it removes 204 dispatch turns, not because it removes parse cost — and that
-> distinction decides whether *deferral* (which does not reduce the count) counts
-> as progress.
+```
+150 in parallel     124ms total, 0.83ms per request
+sequential          3.11ms per request
+projected for 205   ~170ms
+```
+
+Same URLs, same worker, same cache: **56×**. Fetching all 205 costs ~170ms. The
+other ~9.4s is main-thread contention that the requests are merely **queued
+behind**. The 6,477ms queue is a *symptom*, not the cause.
+
+> **Bundling 205 → 1 buys ~170ms of ~9,500ms.** It is the highest-blast-radius
+> refactor in the product for a ~2% win, and a bundle still executes the same
+> code on the same thread. Do not do it on this evidence.
+
+The 0-byte/2-second signature that looks like serialization cost is scripts
+*waiting* for a busy main thread, not paying for their own transfer.
 
 ### What shipped
 
@@ -149,13 +162,41 @@ The fix is to reduce the **request count**.
   or `requestIdleCallback` — 164 eager, 0 deferred today. Both arms two-sided,
   both negative-tested.
 
-### What to do next
+### What is actually left, and what to do next
 
-Bundle. 205 requests → 1. Every feature script is an idempotence-guarded IIFE and
-`async=false` already guarantees sequential execution, so concatenation in loader
-order is semantically what happens today. Highest blast radius in the product:
-full gate plus a **foreground** live measurement, and re-pin both arms of the
-budget test afterwards.
+The cost is the **work each module does at boot**, over a real store:
+
+```
+1,481 patients · 2,166 visits · 471KB store · 1.74MB localStorage · 8,154 DOM nodes
+```
+
+`getPatients()` is memoized (0.1ms first call, 0ms after), so it is **not**
+repeated store parsing. It is what 234 modules each *do* with that data while the
+first screen is trying to paint.
+
+**Next measurement, and it has to come before any fix.** Attribute main-thread
+time *per module* with the tab genuinely in **front**. Two instruments are known
+not to work here and will waste a session each:
+
+- load-event-gap attribution — three runs blamed three different files
+- `long-animation-frame` — returns nothing in a non-compositing pane, and the
+  Chrome automation tab is frequently not the active tab (`document.hidden`
+  true). Check `document.hidden === false` and that `paint` entries are non-empty
+  before believing any boot reading.
+
+The likely shape of the fix is *doing less at boot* — modules that scan or render
+the whole patient store should do it when their screen opens, not on load. The
+budget test's arm B (`window.__mlsDeferAsset()` / `requestIdleCallback`) exists to
+make that visible, because a deferral win leaves every filename in place.
+
+### Budget test blind spot — fixed
+
+`tests/boot-script-budget.test.js` matched `/feat_mls_[a-z0-9_]+\.js/` and so
+watched **164 of the 234** scripts the loader names, missing 70 — the whole
+`feat_athena_*` family (24), plus `feat_visit*`, `feat_opnote_*`,
+`feat_autosave`, `feat_save_verify`, `feat_task3_*`. A ceiling with a 30% blind
+spot cannot do the job its own header claims. Widened to `/feat_[a-z0-9_]+\.js/`
+and re-pinned to 234/200 on both arms. Caught by the QA lane, not by me.
 
 ---
 
