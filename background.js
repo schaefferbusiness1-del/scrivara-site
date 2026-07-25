@@ -9577,7 +9577,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         touchVisitLease();
       }
       }
-      if (!(gate && gate.ok) && ecSeen.length) { try { gate.frames = ecSeen.slice(0, 8); } catch (e) {} }
+      if (!(gate && gate.ok) && ecSeen.length) {
+        try {
+          gate.frames = ecSeen.slice(0, 8);
+          /* 3.0.11: the object does not survive the boundary - only `reason`
+             does - so the evidence goes in the string or it does not arrive. */
+          if (String(gate.reason || '') === 'no-chart-frame-candidate') {
+            gate.reason = 'no-chart-frame-candidate[' + ecSeen.slice(0, 4).map(function (f) {
+              var tail = String(f.url || '?').split('?')[0].split('/').pop() || '?';
+              return tail.slice(0, 26) + '~' + f.score + '~' + f.drop;
+            }).join(';') + ']';
+          }
+        } catch (e) {}
+      }
       if (gate && gate.ok) {
         /* Accept only a STABLE index: the same rendered row count on two
            consecutive passes (the progressive panel grows between polls). */
