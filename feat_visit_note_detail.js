@@ -297,8 +297,15 @@
         D.applyEdit(visit, parsed);
         var ok = persistVisit(patient, note, visit, inModel);
         ed.status.className = "mlsvd-status " + (ok ? "ok" : "err");
-        ed.status.textContent = ok ? "Saved ✓" : "Saved locally (sync unavailable)";
-        setTimeout(function () { renderRead(true); }, 650);
+        ed.status.textContent = ok ? "Saved ✓" : "Not saved - nothing was written. Copy your changes before leaving this form.";
+        /* vnd-1.0.0: persistVisit() returns false when the edit reached NOTHING -
+           upsertPatient absent or throwing, or no note to overlay. Calling that
+           "Saved locally (sync unavailable)" told the doctor their edit was safe
+           on this device and only the cloud was behind. It was not saved anywhere.
+           The 650ms auto-return then closed the form and took the text with it,
+           so the one copy that existed was destroyed by the success animation.
+           On failure the form now stays open so the edit can be copied out. */
+        if (ok) setTimeout(function () { renderRead(true); }, 650);
       });
       setTimeout(function () {
         var first = focusables(ed.form || ed.body)[0];
@@ -312,9 +319,13 @@
       status.textContent = "Generating…";
       regenerateSummary(patient, visit).then(function (txt) {
         if (txt) visit.aiSummary = txt;
-        persistVisit(patient, note, visit, inModel);
-        status.className = "mlsvd-status ok";
+        var okRegen = persistVisit(patient, note, visit, inModel);
+        status.className = "mlsvd-status " + (okRegen ? "ok" : "err");
         status.textContent = "Updated ✓";
+        /* vnd-1.0.0: same rule - the regenerated summary is in memory and on
+           screen, but saying "Updated" when the write returned false claims a
+           persistence that did not happen. */
+        if (!okRegen) status.textContent = "Regenerated on screen but NOT saved - nothing was written.";
         btn.disabled = false;
         var ai = host.querySelector(".mlsvd-ai");
         if (ai) { ai.className = "mlsvd-ai"; ai.textContent = visit.aiSummary || ""; }

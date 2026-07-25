@@ -16116,18 +16116,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      using the app's OWN save mechanism (same one a manual "save draft" click
      would use) — must run BEFORE the active id changes, since saveDraft()'s
      noteRecordFromState() tags patientId from the CURRENTLY active patient. */
+  /* psv-1.0.0: saveDraft() returns FALSE when it REFUSED - a bound-editor
+     refusal (_athenaGuardBoundEditor: routeBlocked / identityConflict /
+     compromised), or upsertNote throwing, which a plain localStorage
+     QuotaExceededError is enough to cause. That boolean was discarded,
+     api.preserved counted every attempt as a success so the module's own
+     receipt lied, and the finally below reset the visit regardless: newVisit()
+     blanks #transcript AND _wipeVisitDraft()s the sessionStorage recovery slot.
+     The content the refusal toast had just told the doctor to copy elsewhere
+     was destroyed before they could copy it.
+     We still CLEAR the box on a refusal - leaving the previous patient's
+     transcript on screen underneath a newly selected patient would be a worse
+     defect than losing it - but we keep the recovery slot, so the text survives
+     the switch and can be restored instead of being silently discarded.
+     undefined is NOT a refusal: saveDraft returns it when the engine had
+     nothing to save, in which case there is nothing to protect. */
+  var _preserveRefused = false;
   function preserveBeforeSwitch() {
+    _preserveRefused = false;
     safe(function () {
       if (hasUnsavedVisitContent() && typeof window.saveDraft === 'function') {
-        window.saveDraft();
-        api.preserved++;
+        var r = window.saveDraft();
+        if (r === false) { _preserveRefused = true; return; }
+        if (r === true) api.preserved++;
       }
     });
   }
 
-  function forceFreshVisitForNewPatient() {
+  function forceFreshVisitForNewPatient(keepRecovery) {
     safe(function () {
-      if (typeof window.newVisit === 'function') { window.newVisit(); }
+      /* newVisit(opts) does opts=opts||{}, so both shapes are safe. */
+      if (typeof window.newVisit === 'function') { window.newVisit(keepRecovery ? { preserveRecovery: true } : {}); }
     });
     safe(function () {
       if (typeof window.prefillContextFromProfile === 'function') { window.prefillContextFromProfile(); }
@@ -16155,7 +16174,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           r = orig.apply(this, arguments);
         } finally {
           if (switching) {
-            forceFreshVisitForNewPatient();
+            forceFreshVisitForNewPatient(_preserveRefused);
             switchDepth--;
           }
         }
@@ -33257,7 +33276,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b593';
+  window.__MLS_AV = window.__MLS_AV || 'b594';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33567,7 +33586,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b593';
+  var MLS_APP_BUILD='2026-07-25-b594';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
