@@ -44197,7 +44197,53 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                  as a toast announcing a save over a silent refusal, which this
                  product has already been burned by once. */
               try { if (typeof window.loadCalendar === 'function') window.loadCalendar({ fresh: true }); } catch (e) {}
-              setTimeout(function () { done(true, date + ' pulled on ' + who + ' — synced here.'); }, 2500);
+              /* rl-2.0.3 N2 (2026-07-25, phone lane): CLAIM ONLY WHAT THIS PHONE
+                 CAN SEE.
+                 The authoritative record of "this day was pulled" is the import
+                 ledger in the OFFICE computer's own localStorage, written under
+                 a per-browser namespace — a phone structurally cannot read it.
+                 So "<date> pulled on <computer> — synced here" was a relayed
+                 assertion repeated as fact: the phone had a message, not a
+                 receipt, and this product has already been burned by a toast
+                 that announced success over a silent refusal.
+                 What the phone CAN do, now that N1 re-reads the calendar, is
+                 count what actually arrived and report that instead — a claim
+                 backed by local evidence.
+                 Server-side receipt persistence is deliberately NOT added here:
+                 the relay queue is in-memory BY DESIGN ("No DB, no migration…
+                 No PHI is stored beyond the job payload/result … in RAM",
+                 scrivara-backend src/routes/relay.js). Reversing that is a
+                 decision about persisting clinical activity server-side — an
+                 architecture and privacy call for the owner, not a bug fix. */
+              setTimeout(function () {
+                var onDay = null, monthLoaded = false;
+                try {
+                  var list = (window._calAppts || []);
+                  if (Array.isArray(list) && date) {
+                    var month = String(date).slice(0, 7);
+                    onDay = 0;
+                    for (var i = 0; i < list.length; i++) {
+                      var when = String((list[i] && (list[i].start_at || list[i].start_local)) || '');
+                      if (when.slice(0, 10) === date) onDay++;
+                      if (when.slice(0, 7) === month) monthLoaded = true;
+                    }
+                  }
+                } catch (e) { onDay = null; }
+
+                if (onDay === null) {
+                  done(true, date + ' pulled on ' + who + '. This phone could not confirm what arrived — open the day to check.');
+                } else if (onDay > 0) {
+                  done(true, date + ' pulled on ' + who + ' — ' + onDay + ' appointment' + (onDay === 1 ? '' : 's') + ' now on this phone.');
+                } else if (monthLoaded) {
+                  /* The month IS loaded and the day is empty: say so plainly
+                     rather than call an empty day a completed import. */
+                  done(false, date + ' ran on ' + who + ', but no appointments for that day have reached this phone. It may still be syncing — reopen the day before relying on it.');
+                } else {
+                  /* The month is not loaded here, so an empty count proves
+                     nothing. Never turn "I cannot see it" into "it failed". */
+                  done(true, date + ' pulled on ' + who + '. This phone has not loaded that month, so open the day to confirm what arrived.');
+                }
+              }, 2500);
             } else { done(false, who + ' reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
           }
         }).catch(function () {});

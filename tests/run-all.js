@@ -328,7 +328,8 @@ const tests = [
   'review-is-a-review-not-just-orders.test.js',
   'phone-capture-survival.test.js',
   'phone-install-contract.test.js',
-  'relay-full-notes-choice-travels.test.js'
+  'relay-full-notes-choice-travels.test.js',
+  'relay-phone-claims-only-what-it-sees.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
