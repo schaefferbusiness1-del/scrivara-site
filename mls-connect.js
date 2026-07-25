@@ -18943,7 +18943,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3Sign', function () {
       var sb = signBtn();
       if (!sb || sb.disabled) { toast('Sign is not available yet — generate the note first.'); return; }
-      sb.click(); S.signedAt = Date.now();
+      sb.click();
+      /* sgn-1.0.0: assert from the RECEIPT, never from the fact that we clicked.
+         signNote() is synchronous and refuses in four places that only toast and
+         return - already signed, a patient-binding refusal, unresolved
+         placeholders, and a save that did not return true (where it un-signs
+         itself). Claiming success regardless put a green 'Note signed & saved in
+         MLS' on #ez3Toast directly above the engine's red refusal on #toast, and
+         set S.signedAt - the workspace's ONLY signed flag - so the card painted
+         'Signed & saved in MLS' and swapped the Sign button for Send to Athena /
+         Next patient on a note that was never signed. On the saveCurrentNote
+         branch that note is not merely unsigned, it is unsaved. This is the b569
+         Athena-toast defect in a second place.
+         Two receipts, both maintained by signNote itself and agreeing on every
+         path: the visible signature line, and the engine's signed flag (setBadge
+         writes it, and the save-failure branch calls setBadge(false)). */
+      var line = $('signLine');
+      var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
+      var flagSigned = false;
+      try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
+      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     });
     on('ez3SkipSign', function () { S.signedAt = -1; render(); }); /* -1 = user chose to skip */
@@ -23644,7 +23664,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3Sign', function () {
       var sb = signBtn();
       if (!sb || sb.disabled) { toast('Sign is not available yet — generate the note first.'); return; }
-      sb.click(); S.signedAt = Date.now();
+      sb.click();
+      /* sgn-1.0.0: assert from the RECEIPT, never from the fact that we clicked.
+         signNote() is synchronous and refuses in four places that only toast and
+         return - already signed, a patient-binding refusal, unresolved
+         placeholders, and a save that did not return true (where it un-signs
+         itself). Claiming success regardless put a green 'Note signed & saved in
+         MLS' on #ez3Toast directly above the engine's red refusal on #toast, and
+         set S.signedAt - the workspace's ONLY signed flag - so the card painted
+         'Signed & saved in MLS' and swapped the Sign button for Send to Athena /
+         Next patient on a note that was never signed. On the saveCurrentNote
+         branch that note is not merely unsigned, it is unsaved. This is the b569
+         Athena-toast defect in a second place.
+         Two receipts, both maintained by signNote itself and agreeing on every
+         path: the visible signature line, and the engine's signed flag (setBadge
+         writes it, and the save-failure branch calls setBadge(false)). */
+      var line = $('signLine');
+      var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
+      var flagSigned = false;
+      try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
+      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     });
     on('ez3SkipSign', function () { S.signedAt = -1; render(); }); /* -1 = user chose to skip */
@@ -25624,7 +25664,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((b = $('ez3Sign'))) b.onclick = function () {
       var sb = signBtn();
       if (!sb || sb.disabled) { toast('Sign is not available yet — generate the note first.'); return; }
-      sb.click(); S.signedAt = Date.now();
+      sb.click();
+      /* sgn-1.0.0: assert from the RECEIPT, never from the fact that we clicked.
+         signNote() is synchronous and refuses in four places that only toast and
+         return - already signed, a patient-binding refusal, unresolved
+         placeholders, and a save that did not return true (where it un-signs
+         itself). Claiming success regardless put a green 'Note signed & saved in
+         MLS' on #ez3Toast directly above the engine's red refusal on #toast, and
+         set S.signedAt - the workspace's ONLY signed flag - so the card painted
+         'Signed & saved in MLS' and swapped the Sign button for Send to Athena /
+         Next patient on a note that was never signed. On the saveCurrentNote
+         branch that note is not merely unsigned, it is unsaved. This is the b569
+         Athena-toast defect in a second place.
+         Two receipts, both maintained by signNote itself and agreeing on every
+         path: the visible signature line, and the engine's signed flag (setBadge
+         writes it, and the save-failure branch calls setBadge(false)). */
+      var line = $('signLine');
+      var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
+      var flagSigned = false;
+      try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
+      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     };
     if ((b = $('ez3SkipSign'))) b.onclick = function () { S.signedAt = -1; render(); }; /* -1 = user chose to skip */
@@ -27134,7 +27194,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((b = $('ez3Sign'))) b.onclick = function () {
       var sb = signBtn();
       if (!sb || sb.disabled) { toast('Sign is not available yet — generate the note first.'); return; }
-      sb.click(); S.signedAt = Date.now();
+      sb.click();
+      /* sgn-1.0.0: assert from the RECEIPT, never from the fact that we clicked.
+         signNote() is synchronous and refuses in four places that only toast and
+         return - already signed, a patient-binding refusal, unresolved
+         placeholders, and a save that did not return true (where it un-signs
+         itself). Claiming success regardless put a green 'Note signed & saved in
+         MLS' on #ez3Toast directly above the engine's red refusal on #toast, and
+         set S.signedAt - the workspace's ONLY signed flag - so the card painted
+         'Signed & saved in MLS' and swapped the Sign button for Send to Athena /
+         Next patient on a note that was never signed. On the saveCurrentNote
+         branch that note is not merely unsigned, it is unsaved. This is the b569
+         Athena-toast defect in a second place.
+         Two receipts, both maintained by signNote itself and agreeing on every
+         path: the visible signature line, and the engine's signed flag (setBadge
+         writes it, and the save-failure branch calls setBadge(false)). */
+      var line = $('signLine');
+      var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
+      var flagSigned = false;
+      try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
+      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     };
     if ((b = $('ez3SkipSign'))) b.onclick = function () { S.signedAt = -1; render(); }; /* -1 = user chose to skip */
@@ -33177,7 +33257,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b591';
+  window.__MLS_AV = window.__MLS_AV || 'b592';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33487,7 +33567,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b591';
+  var MLS_APP_BUILD='2026-07-25-b592';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

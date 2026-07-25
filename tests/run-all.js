@@ -34,6 +34,7 @@ const tests = [
   'athena-write-contract.test.js',
   'athena-action-contract.test.js',
   'athena-confirmation-runtime.test.js',
+  'sign-claim-requires-receipt.test.js',
   'athena-unified-manifest-contract.test.js',
   'athena-final-action-truth-contract.test.js',
   'orders-unified-review-contract.test.js',
