@@ -397,6 +397,28 @@ individually reasonable.
 **Superseded as a cause** by the 444ms measurement above — keep the pin, drop the
 theory.
 
+### The channel limitation, stated once so nobody re-tries it
+
+Automation could not obtain a foreground page through the Chrome extension
+channel. Everything below was tried:
+
+- fronting a tab with a screenshot — captures fine, does not front
+- `tabs_create_mcp` — the new tab reports `hidden:true`, `paintEntries:0`
+- the owner focusing Chrome — **worked**, the athenaNet tab went
+  `hidden:false, hasFocus:true`, but the MLS tabs in the automation group stayed
+  hidden, so the selected tab is not one this channel can change
+- a self-arming `visibilitychange` probe — armed, never fired
+
+`paintEntries: 0` is the reliable tell that a reading is void. A probe is left
+armed on the MLS tab writing to `localStorage['__mls_cv_probe_result']`; it will
+fire and record the content-visibility A/B the first time a human opens that tab
+normally. Read it with:
+
+```js
+JSON.parse(localStorage.getItem('__mls_cv_probe_result'))
+// -> {layoutBefore, layoutWithCV, layoutAfterRevert, deltaPct, verdict}
+```
+
 ### What is still unmeasured
 
 How many of the 5,576 reads actually follow a write **in the foreground**. In a
