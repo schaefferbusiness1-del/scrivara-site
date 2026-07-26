@@ -288,6 +288,21 @@
     if (!fab) return;
     var on = enabled;
     var active = on && listening && !appCapturing();
+    /* Everything painted here is a pure function of (on, active, SR) — micSvg()
+     * returns a constant string per `on`. This ran unconditionally on a 1200ms
+     * tick, so it destroyed and rebuilt the <svg> subtree ~50 times a minute
+     * FOREVER, on a FAB that mls-connect.js retires with
+     * `#mlsVoiceFab{display:none!important}` (the floating mic was folded into
+     * the one chat). Nobody could see any of it.
+     *
+     * Measured at b672, 20s settled idle, foregrounded, #ez3Clock witness live:
+     * a body-subtree childList observer saw an ELEMENT insertion every 685ms
+     * (median), and this was one of the two writers responsible.
+     *
+     * Repaint only when the state actually changes — or when the subtree is
+     * missing, so a wipe by anything else still self-heals. */
+    var sig = (on ? '1' : '0') + (active ? '1' : '0') + (SR ? '1' : '0');
+    if (fab.getAttribute('data-vc-paint') === sig && fab.firstChild) return;
     fab.innerHTML = micSvg(on);
     fab.style.background = on ? 'linear-gradient(135deg,#2E6A4B,#204034)' : '#e8eef7';
     fab.title = !SR
@@ -296,6 +311,7 @@
             : 'Turn on voice commands (uses your microphone)');
     fab.style.outline = active ? '3px solid rgba(31,122,224,.35)' : 'none';
     fab.style.opacity = SR ? '1' : '.5';
+    fab.setAttribute('data-vc-paint', sig);
   }
 
   /* ----- inject a toggle row into the Add-patient modal = the "+ menu" ----- */
