@@ -411,6 +411,62 @@
       proofAgeMs: (sp.proofAgeMs == null ? null : Number(sp.proofAgeMs))
     };
   }
+  /* prs-1.0.0 PROVIDER-SCOPE DISCLOSURE ---------------------------------------
+     "All providers" has never meant all providers. Both roster receipts in
+     background.js derive `complete` from the athenaOne Day grid that happened
+     to be PAINTED: observed>0, the horizontal sweep reached its end, bounds
+     stable, scroll restored. Measured on the owner's tab 2026-07-26 (b688):
+     `{complete:true, expectedCount:1, observedCount:1, providerMode:"all"}`
+     over a ONE-column grid, while the app's own calendar listed 18 providers.
+     So an "all providers" day pull silently covered one clinician and reported
+     day-complete.
+
+     Same three rules the staleness notice follows, for the same reasons:
+       1. It NEVER refuses and NEVER touches `complete`. The pull works; it just
+          stops implying a coverage it did not measure.
+       2. An ABSENT roster module reads as "not stated", never as "all".
+       3. It says only what is known: how many providers MLS knows of, how many
+          athenaOne actually painted, and that athenaOne's own provider list has
+          not been enumerated. "You are missing 17 providers" would be a guess. */
+  function providerScope() {
+    return safe(function () {
+      var api = window.__mlsProviderRoster;
+      return api && isFn(api.getScope) ? api.getScope() : null;
+    }, null);
+  }
+  function providerScopeNotice(providerMode) {
+    if (providerMode !== "all") return "";
+    var sc = providerScope();
+    if (!sc) return "";                    /* older page bundle: say nothing rather than "all" */
+    if (sc.scopeComplete === true) return "";
+    var known = Number(sc.knownCount || 0), painted = Number(sc.gridSweptCount || 0);
+    if (known > painted && painted > 0) {
+      return " Note on coverage: athenaOne's Day view showed " + painted + " provider"
+        + (painted === 1 ? "" : "s") + " and that is who this pull covered, but MLS knows of "
+        + known + " provider" + (known === 1 ? "" : "s") + " in this practice. To pull the others, "
+        + "switch athenaOne's Day view to show them (or pick each one in Choose a provider) and pull again.";
+    }
+    return " Note on coverage: this covered the " + (painted || known) + " provider"
+      + ((painted || known) === 1 ? "" : "s") + " athenaOne's Day view had on screen. MLS has never read "
+      + "athenaOne's own provider list, so it cannot confirm that is everyone.";
+  }
+  function providerScopeReceipt(providerMode) {
+    var sc = providerScope();
+    if (!sc) return { stated: false, scope: "not-reported", knownCount: null, paintedCount: null, athenaListEnumerated: null, coversPractice: null };
+    return {
+      stated: true,
+      scope: String(sc.scope || "painted-day-grid"),
+      requestedMode: String(providerMode || ""),
+      knownCount: Number(sc.knownCount || 0),
+      paintedCount: Number(sc.gridSweptCount || 0),
+      rosterVerifiedCount: Number(sc.rosterVerifiedCount || 0),
+      athenaListEnumerated: sc.athenaListEnumerated === true,
+      /* the only field a "we pulled everyone" claim may be built on */
+      coversPractice: sc.scopeComplete === true,
+      sources: sc.sources || {},
+      statement: String(sc.statement || "")
+    };
+  }
   function scopeProviderRows(rows, rawProvider, resp) {
     rows = Array.isArray(rows) ? rows.slice() : [];
     resp = resp || null;
@@ -3177,6 +3233,10 @@
                  read is still a complete read, and conflating the two would
                  fail pulls that work today. */
               scheduleFreshness: freshnessReceipt(r),
+              /* prs-1.0.0: WHOSE day this was. Recorded beside completeness, never
+                 folded into it - a one-provider day is still a complete read of
+                 that provider. */
+              providerScope: providerScopeReceipt(selectedProvider.mode),
               attempted: attempted, accounted: accounted, mapped: mappings.length,
               uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length,
               rowFailuresAbsent: rowFailuresAbsent, dateComplete: dateComplete,
@@ -3202,7 +3262,7 @@
             }
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
             else if (res.reason === "provider-empty" && selectedProvider.mode === "selected" && calendarReceipt.snapshotPublished) onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
-            else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments." + freshnessNotice(r), "ok");
+            else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
             else onStatus("No verified patients could be imported for " + date + ".", "err");
             var historyReceipt = includeHistory
               ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus)
@@ -3283,8 +3343,8 @@
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : ""), "err");
-            else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r), "ok");
-            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r), "ok");
+            else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
+            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
             return res;
           });
           });

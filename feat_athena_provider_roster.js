@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '2.2.2';
+  var VERSION = '2.3.0';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -534,11 +534,97 @@
       root._calProviders = out;
     });
   }
+  /* prs-1.0.0: providers OBSERVED on appointments MLS has already pulled.
+     This is real evidence of a real clinician and it was being thrown away:
+     the canonical roster only ever learned from the painted Day grid and the
+     backend calendar list, so a provider whose patients are sitting in the
+     app's own calendar could still be absent from the "Choose a provider"
+     dropdown. PHI: only `provider` is read off each row - never the patient
+     name, DOB or reason - and nothing here is persisted beyond the clinician
+     string the roster already stores. */
+  /* PRE-FILTERED on purpose. mergeEntries() sets `_cacheSanitized` whenever an
+     INCOMING row carrying a provider signal is rejected, and a sanitized cache
+     DOWNGRADES a complete receipt — which would fail selected-provider pulls
+     that work today. Appointment rows carry plenty of junk provider strings
+     ("Provider undefined", a location, an empty label), so candidates are run
+     through makeEntry HERE and only survivors are offered to the merge. This is
+     additive discovery; it must not be able to revoke anything. */
+  function observedApptProviders() {
+    return safe(function () {
+      var rows = Array.isArray(root._calAppts) ? root._calAppts : [], seen = {}, out = [];
+      for (var i = 0; i < rows.length && out.length < 240; i++) {
+        var a = rows[i]; if (!a) continue;
+        var raw = clean(a.provider || a.provider_name || a.providerName || a.doctor_name || '');
+        if (!raw) continue;
+        var k = raw.toLowerCase();
+        if (seen[k]) continue;
+        seen[k] = 1;
+        var e = makeEntry(raw, 'observed-appointments');
+        if (e) out.push(e);
+      }
+      return out;
+    }, []) || [];
+  }
   function syncCalendarProviders() {
     var cal = safe(function () { return Array.isArray(root._calProviders) ? root._calProviders.slice() : []; }, []);
-    if (cal.length) return mergeEntries(cal, 'backend-calendar');
+    var merged = null;
+    if (cal.length) merged = mergeEntries(cal, 'backend-calendar');
+    /* Only merge observed providers that are genuinely NEW — an unconditional
+       second merge would rewrite the cache on every getReceipt() call, and this
+       module sits behind a gate that runs on every provider selection. */
+    var observed = observedApptProviders();
+    if (observed.length) {
+      var haveKeys = {};
+      (merged || storedEntries()).forEach(function (e) {
+        if (e && e.stableKey) haveKeys[e.stableKey] = 1;
+        if (e && e.equivalentKey) haveKeys['eq:' + e.equivalentKey] = 1;
+      });
+      var fresh = observed.filter(function (e) {
+        return !haveKeys[e.stableKey] && !haveKeys['eq:' + e.equivalentKey];
+      });
+      if (fresh.length) return mergeEntries(fresh, 'observed-appointments');
+    }
+    if (merged) return merged;
     mergeIntoCalendar(storedEntries());
     return storedEntries();
+  }
+  /* The honest answer to "did we get everyone?" — which, before prs-1.0.0, the
+     receipt answered `complete:true` from a one-column grid. */
+  function rosterScope() {
+    var entries = safe(function () { return listEntries(); }, []) || [];
+    var bySource = {}, verified = 0;
+    entries.forEach(function (e) {
+      var src = clean(e && e.source) || 'unknown';
+      bySource[src] = (bySource[src] || 0) + 1;
+      if (e && e.rosterVerified === true) verified++;
+    });
+    var gridSwept = Number((lastReceipt && lastReceipt.observedCount) || 0);
+    var listEnumerated = !!(lastReceipt && lastReceipt.athenaListEnumerated === true);
+    var known = entries.length;
+    var statement;
+    if (listEnumerated) {
+      statement = known + ' provider' + (known === 1 ? '' : 's') + ' known, and athenaOne’s own provider list was enumerated — this is all of them.';
+    } else if (known > gridSwept) {
+      statement = known + ' providers known to MLS, but athenaOne’s Day view painted only '
+        + gridSwept + ' of them and athenaOne’s own provider list has never been enumerated. '
+        + 'An “all providers” pull covers the ' + gridSwept + ' painted column'
+        + (gridSwept === 1 ? '' : 's') + ', not the practice.';
+    } else {
+      statement = known + ' provider' + (known === 1 ? '' : 's') + ' known, all from athenaOne’s painted Day grid. '
+        + 'athenaOne’s full provider list has never been enumerated, so MLS cannot say this is everyone.';
+    }
+    return {
+      scope: ROSTER_SCOPE,
+      knownCount: known,
+      gridSweptCount: gridSwept,
+      rosterVerifiedCount: verified,
+      athenaListEnumerated: listEnumerated,
+      /* NEVER true while athenaOne's own list is unenumerated. This is the flag
+         any "we covered every provider" claim must be built on. */
+      scopeComplete: listEnumerated && known > 0,
+      sources: bySource,
+      statement: statement
+    };
   }
   function cachedCount() { return storedEntries().length; }
   function mergeProviders(list) { return mergeEntries(list, 'legacy-structured'); }
@@ -620,6 +706,36 @@
       requestedProviderStableKey: typeof r.requestedProviderStableKey === 'string' ? r.requestedProviderStableKey : ''
     });
   }
+  /* ==== prs-1.0.0  WHAT "complete" ACTUALLY MEANS ==========================
+     Measured on the owner's tab, 2026-07-26 (b688 / ext 3.0.21):
+
+       mlsProviderRosterReceiptV2 = {complete:true, expectedCount:1,
+                                     observedCount:1, providerMode:"all"}
+       mlsProviderRosterV2        = ["Matthew Schaeffer, MD"]        <- ONE
+       the app's own calendar      = 18 providers with appointment counts
+
+     Both producers of this receipt in background.js derive `complete` from the
+     PAINTED DAY GRID and nothing else: observed>0 AND the horizontal sweep
+     reached its end AND bounds were stable AND scroll was restored. That is a
+     true statement about the sweep and a FALSE one about the practice. His
+     athenaOne Day view paints one provider column, so a sweep that reads every
+     column reads one provider — and then declares the roster complete.
+
+     Everything downstream believed it: an "all providers" day pull is silently
+     bounded to whatever columns Athena happened to paint, and the month pull's
+     "Choose a provider" starves on a one-entry dropdown.
+
+     The earlier design note ("an ALL-provider day pull needs no roster and
+     BUILDS it") assumed the grid paints every provider. It does not, and that
+     assumption is superseded here.
+
+     `complete` is NOT redefined — the same rule sfp-1.0.0 followed: a signal
+     that can fail a pull that works today is a regression traded for a
+     disclosure. Instead the receipt now STATES ITS SCOPE, and a separate
+     `scopeComplete` (which requires athenaOne's own provider list to have been
+     enumerated, and nothing does that yet) is what any "we covered everyone"
+     claim must be built on. */
+  var ROSTER_SCOPE = 'painted-day-grid';
   function normalizeReceipt(receipt, observed, reason, operation) {
     var r = receipt && typeof receipt === 'object' ? receipt : {};
     var op = operation && typeof operation === 'object' ? normalizeOperation(operation) : null;
@@ -630,6 +746,12 @@
     return {
       complete: complete,
       partial: !complete,
+      /* provenance of the completeness claim above. `complete` means "every
+         column athenaOne PAINTED was swept" and never "this is every provider
+         in the practice". */
+      scope: ROSTER_SCOPE,
+      athenaListEnumerated: r.athenaListEnumerated === true,
+      scopeComplete: complete && r.athenaListEnumerated === true,
       reason: clean(r.reason || reason || (complete ? 'complete' : 'legacy-unverified')),
       expectedCount: r.expectedCount == null ? (fullSweep ? observedCount : null) : Number(r.expectedCount),
       observedCount: observedCount,
@@ -670,6 +792,10 @@
     var entries=listEntries(),keys=[],seen={};
     entries.forEach(function(entry){var key=clean(entry&&entry.stableKey);if(key&&!seen[key]){seen[key]=1;keys.push(key);}});
     keys.sort();out.listedCount=entries.length;out.identityKeys=keys;
+    /* prs-1.0.0: every consumer of this receipt gets the SCOPE with it, so a
+       `complete:true` derived from one painted grid column can no longer be
+       read as "the roster is the practice". */
+    out.rosterScope=rosterScope();
     return out;
   }
   function resolveProvider(ref) {
@@ -932,6 +1058,7 @@
     resolve: resolveProvider,
     beginOperation: beginOperation,
     getReceipt: receiptSnapshot,
+    getScope: rosterScope,
     getDiag: function () { return lastDiag; },
     getIngestStats: function () { return { processed: _ingestStats.processed, deduped: _ingestStats.deduped }; },
     notify: function () { notifyRosterUpdated(listEntries(), lastReceipt); },

@@ -7975,7 +7975,19 @@ async function mlsSchedDomInline(doc, CFG){
           }
           wrote.push({ section: seg.section, targetLabel: last.targetLabel || seg.section, chosenLabel: last.chosenLabel || '', confirmed: !!last.confirmed, written: !!last.ok, notfound: !!last.notfound, method: last.method || '' });
         }
-        sendResponse({ ok: true, forced: force, patientStatus: match.status, match: match, patient: patient, wrote: wrote });
+        /* wrt-1.0.0: this reported ok:true over a `wrote[]` in which every
+           entry could be {confirmed:false, written:false, notfound:true}. It is
+           unreachable today (the legacy-segment-writer kill switch returns
+           above), but it is the same success-shape-over-a-refusal defect the
+           live paths were just cleared of, and it would come back with the
+           switch. The verdict is derived from the receipt it already builds. */
+        var __confirmedWrites = wrote.filter(function (w) { return !!(w && w.confirmed); }).length;
+        if (!__confirmedWrites) {
+          sendResponse({ ok: false, error: 'nothing-confirmed', forced: force, patientStatus: match.status, match: match, patient: patient, wrote: wrote,
+            reason: 'No destination in the open chart confirmed the text. Nothing was written.' });
+          return;
+        }
+        sendResponse({ ok: true, partial: __confirmedWrites < wrote.length, confirmedCount: __confirmedWrites, forced: force, patientStatus: match.status, match: match, patient: patient, wrote: wrote });
       } catch (e) { sendResponse({ ok: false, error: 'Verified write failed: ' + e.message }); }
     })();
     return true;
