@@ -186,7 +186,54 @@ assert.ok(
   });
 }
 
-/* ---- 7. the guard can fail ---- */
+/* ---- 7. the SUCCESS path must have a visible effect too ----
+ *
+ * Section 1 fixed the case where the route is unavailable. This is the case
+ * where everything WORKS and the doctor still cannot tell.
+ *
+ * openReviewStep opened the Advanced workspace and called
+ * .focus({preventScroll:true}) on #pushAllEmrBtn — deliberately, per an owner
+ * decision on 2026-07-16 that jumping the page down to "Advanced tools" was
+ * disorienting. That decision was right and is preserved. But its effect was
+ * that pressing "Next: Review & send to Athena" moved focus to a control the
+ * doctor could not see and did nothing else — indistinguishable from a broken
+ * button, on the last human gate before Athena.
+ *
+ * The distinction being pinned: do not JUMP, but do not be INVISIBLE either. */
+{
+  assert.ok(
+    /flowToast\('Ready to review/.test(fn[0]),
+    'the success path must give feedback. Focus alone is not feedback — a doctor ' +
+    'who did not happen to see the focus ring move has no way to know the click ' +
+    'registered at all.'
+  );
+  assert.ok(
+    /press Enter, or use "Review Athena actions"/.test(fn[0]),
+    'the feedback must name the REAL next control and the real next action. ' +
+    '"the instruction points nowhere" is a documented defect class in this repo.'
+  );
+
+  /* the 2026-07-16 decision survives: never move the page unless we must */
+  assert.ok(
+    /var offscreen = r\.bottom <= 0 \|\| r\.top >= vh;/.test(fn[0]) &&
+    /if \(offscreen && send\.scrollIntoView\)/.test(fn[0]),
+    'scrolling must be CONDITIONAL on the control being off-screen. An ' +
+    'unconditional scroll re-creates the viewport jump the owner rejected on ' +
+    '2026-07-16.'
+  );
+  assert.ok(
+    /block: 'nearest'/.test(fn[0]) && !/block: 'center'/.test(fn[0]),
+    "scroll must use block:'nearest' — the minimum distance that reveals the " +
+    "control. 'center' drags the page further than needed and is the jump again."
+  );
+  assert.ok(
+    /focus\(\{ preventScroll: true \}\)/.test(fn[0]),
+    'focus must keep preventScroll:true, so focus itself never moves the page — ' +
+    'the conditional scroll above is the only thing allowed to.'
+  );
+}
+
+/* ---- 8. the guard can fail ---- */
 {
   const broken = "function openReviewStep() {\n    var note = $('noteBox');\n  }";
   assert.ok(

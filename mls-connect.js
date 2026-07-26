@@ -6453,7 +6453,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        Enter-to-send working from where the doctor already is. */
     if (!wasOpen) { try { window.__mlsAdvQuietOpen = true; var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
     setTimeout(function () {
-      try { var send = $('pushAllEmrBtn'); if (send) send.focus({ preventScroll: true }); } catch (e) {}
+      try {
+        var send = $('pushAllEmrBtn');
+        if (send) {
+          /* The 2026-07-16 decision above was against JUMPING the page down to
+             "Advanced tools". It was NOT a decision that this click should have
+             no visible effect — but that is what it became: the doctor pressed
+             "Next: Review & send to Athena" and the only thing that happened was
+             focus landing on a control they could not see. Indistinguishable
+             from a broken button.
+
+             So scroll ONLY if the control is genuinely off-screen, and only far
+             enough to bring it into view ('nearest', never 'center'). If it is
+             already visible nothing moves at all, which is the case the owner
+             was protecting. */
+          var r = send.getBoundingClientRect();
+          var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+          var offscreen = r.bottom <= 0 || r.top >= vh;
+          if (offscreen && send.scrollIntoView) {
+            try { send.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e2) { send.scrollIntoView(false); }
+          }
+          send.focus({ preventScroll: true });
+          /* Name the real control and the real next step. Focus alone is not
+             feedback — a doctor who did not see the highlight move has no way to
+             know the click registered, and this is the last gate before Athena. */
+          flowToast('Ready to review — press Enter, or use "Review Athena actions", to see exactly what will be sent.', '');
+        }
+      } catch (e) {}
       window.__mlsAdvQuietOpen = false;
     }, wasOpen ? 100 : 700);
   }
@@ -33392,7 +33418,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b665';
+  window.__MLS_AV = window.__MLS_AV || 'b666';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33702,7 +33728,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b665';
+  var MLS_APP_BUILD='2026-07-25-b666';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
