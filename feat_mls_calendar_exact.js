@@ -310,19 +310,32 @@
     } catch (e) {}
   }
 
+  /* THE SUB-LINE NEVER REPEATS THE YEAR. It sits directly under #calMonthLabel,
+     and that label already carries the year in every mode the calendar has.
+     Measured on a running page (old sub-line on the right):
+
+       month  "July 2026"                     was  "2026 - 621 appointments this month"
+       day    "Sunday, July 26, 2026"         was  "2026 - 3 appointments scheduled"
+       week   "Week of Jul 26 - Aug 1, 2026"  was  "2026 - whole-practice schedule"
+
+     The lead saw the month case on the owner's tab: the header reads
+     "July 2026" and the line beneath it opens by saying 2026 again. A subtitle
+     exists to add what the title does not say; the leading year added nothing
+     in any of the three modes and pushed the only real information - the count
+     - into second place. The year is not lost, it is one line up. */
   function subtitleText() {
     var y = gv("_calYear", null); if (y == null) y = new Date().getFullYear();
     var mode = String(gv("_calMode", "month")).toLowerCase();
     if (mode === "month") {
       var ym = y + "-" + pad((gv("_calMonth", new Date().getMonth())) + 1);
       var n = 0; try { var a = gv("_calAppts", []) || []; for (var i = 0; i < a.length; i++) { if (apptDate(a[i]).slice(0, 7) === ym) n++; } } catch (e) {}
-      return y + " \u00B7 " + n + (n === 1 ? " appointment" : " appointments") + " this month";
+      return n + (n === 1 ? " appointment" : " appointments") + " this month";
     }
     if (mode === "day") {
       var key = activeKey(), c = 0; try { var ap = gv("_calAppts", []) || []; for (var j = 0; j < ap.length; j++) { if (apptDate(ap[j]) === key) c++; } } catch (e) {}
-      return y + " \u00B7 " + c + (c === 1 ? " appointment" : " appointments") + " scheduled";
+      return c + (c === 1 ? " appointment" : " appointments") + " scheduled";
     }
-    return y + " \u00B7 whole-practice schedule";
+    return "Whole-practice schedule";
   }
 
   function styleAgenda(card) {
