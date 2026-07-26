@@ -146,12 +146,29 @@ const LOADER = 'mls-connect.js';
  *     re-parents #analysisView and wraps showView — two things you want to be
  *     able to back out on their own, at 2am, from one call, without also
  *     reverting the calendar and history layouts that live in that file. */
-const CEILING = 239;
+/* 238 -> 239 at the 2026-07-26 voice lane, for feat_mls_voice_copilot.js
+ * (vcp-1.0.0). The three questions, answered:
+ *   - It is DEFERRED (requestIdleCallback, 4s timeout). Nobody can speak to the
+ *     app before it is interactive, so a voice router has no business in the
+ *     post-login burst. EAGER_CEILING below does not move.
+ *   - It carries NO setInterval. It has two one-shot jobs and uses a bounded
+ *     setTimeout ladder (25 tries, then inert), so INTERVAL_CEILING does not
+ *     move either — deliberately, given what the interval pin below records.
+ *   - It could have been folded into feat_mls_copilot_voice_v2.js to keep the
+ *     count flat, and that would have been the dishonest version. This module
+ *     is the thing that has to be revertible ON ITS OWN: it is the seam between
+ *     four microphone surfaces and the Copilot thread, and if the routing is
+ *     ever wrong at 2am the fix is one revert() that puts every surface back on
+ *     its old path without touching any recognizer. Folding it into a
+ *     recognizer-owning module would make backing out the routing mean backing
+ *     out a microphone owner. */
+const CEILING = 240;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 239 are eager; the voice cluster was the first
+/* arm B - deferral. 234 of the 240 are eager; the voice cluster was the first
    deferred one, the calm views the second, vf-1.0.0 / vo-1.0.0 the third and
-   fourth, and the studio merge the fifth, so EAGER_CEILING deliberately does
+   fourth, and the studio merge and the voice router the fifth and sixth, so
+   EAGER_CEILING deliberately does
    NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;

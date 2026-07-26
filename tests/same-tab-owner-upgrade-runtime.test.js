@@ -320,7 +320,7 @@ function exerciseLoader({ asset, version, token, globalName, speech }) {
 }
 
 [
-  { asset: 'feat_mls_copilot_voice_v2.js', version: 'cv2-1.2.1', token: '20260723cv2121', globalName: '__mlsCopilotVoiceV2', speech: true },
+  { asset: 'feat_mls_copilot_voice_v2.js', version: 'cv2-1.3.0', token: '20260726cv2130', globalName: '__mlsCopilotVoiceV2', speech: true },
   { asset: 'feat_mls_voice_ai.js', version: '1.1.2', token: '20260719vaihot112', globalName: '__mlsVoiceAI', speech: true },
   { asset: 'feat_mls_dictate_anywhere.js', version: 'da-1.1.1', token: '20260719da111h1', globalName: '__mlsDictateAnywhere', speech: true },
   { asset: 'feat_mls_loading_calm.js', version: 'lb-2.1.0', token: '20260719lb204', globalName: '__mlsLoadingCalm', speech: false },
@@ -355,7 +355,7 @@ function ownerPrelude(file, version, endToken, globalName, legacyIds) {
   assert.strictEqual(currentContext[globalName], current, `${file} self-guard replaced the exact owner`);
 }
 
-ownerPrelude('feat_mls_copilot_voice_v2.js', 'cv2-1.2.1', '/* cv2-1.1.0', '__mlsCopilotVoiceV2', ['mlsCopVoiceBtn', 'mlsVoiceV2Style']);
+ownerPrelude('feat_mls_copilot_voice_v2.js', 'cv2-1.3.0', '/* cv2-1.1.0', '__mlsCopilotVoiceV2', ['mlsCopVoiceBtn', 'mlsVoiceV2Style']);
 ownerPrelude('feat_mls_voice_ai.js', '1.1.2', "var ASSET = 'feat_mls_voice_ai.js'", '__mlsVoiceAI', ['mlsVoiceAiToast', 'mlsVoiceAiStyle']);
 ownerPrelude('feat_mls_dictate_anywhere.js', 'da-1.1.1', 'var SR = window.SpeechRecognition', '__mlsDictateAnywhere', ['mlsDaChip', 'mlsDaDock', 'mlsDaCss']);
 

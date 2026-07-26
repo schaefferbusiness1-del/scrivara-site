@@ -86,7 +86,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'cv2-1.2.1';
+  var VERSION = 'cv2-1.3.0';
   var previous = null;
   try { previous = window.__mlsCopilotVoiceV2; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -119,6 +119,15 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
+  /* cv2-1.3.0 (2026-07-26, voice lane): every recognised utterance now leaves this
+   *   module through the ONE voice router (window.__mlsVoiceCopilot.route), so the
+   *   DOCTOR'S OWN WORDS land in the Copilot thread as a user bubble before the
+   *   answer does. Since cv2-1.2.1 the deterministic legs ran locally and appended
+   *   nothing, so the thread showed replies with no questions above them. The
+   *   handler itself is unchanged and is now public as .handle(text) — the router
+   *   calls it, and falls back to it directly if the router is absent. This module
+   *   still owns exactly one recognizer, still registers it with the hub, and still
+   *   refuses sign/order/submit shapes before anything else runs. */
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -378,7 +387,7 @@
           if (!enabled || instance !== rec || sessionEpoch !== recSessionEpoch) break;
           if (!ev.results[i].isFinal) continue;
           var said = S(ev.results[i][0] && ev.results[i][0].transcript).trim();
-          if (said) handleSaid(said);
+          if (said) dispatchSaid(said);
         }
       } catch (e) {}
     };
@@ -464,6 +473,18 @@
       toast(canceled ? 'Voice control off. The queued assistant command was canceled before anything ran.' : 'Voice control off.');
     }
     paintBtn(btn);
+  }
+
+  /* cv2-1.3.0: one door out of the recognizer. The router's only job before
+     handleSaid is to put the doctor's words in the Copilot thread; when it is
+     not installed the behaviour is byte-for-byte what it was. */
+  function dispatchSaid(text) {
+    var routed = safe(function () {
+      var vcp = window.__mlsVoiceCopilot;
+      return (vcp && vcp.installed === true && isFn(vcp.route)) ? vcp.route(text, 'copilot-voice') : null;
+    }, null);
+    if (routed) return routed;
+    return handleSaid(text);
   }
 
   function handleSaid(text) {
@@ -957,8 +978,13 @@
     version: VERSION,
     asset: ASSET,
     _muted: false,
+    /* cv2-1.3.0: the deterministic-then-assistant handler, public. This is the
+       Copilot brain every microphone surface reaches through
+       window.__mlsVoiceCopilot.route(); it is NOT a second registry. */
+    handle: handleSaid,
     _testHandle: handleSaid,
     _test: {
+      dispatchSaid: dispatchSaid,
       runLeg: runLeg,
       runVoiceChain: runVoiceChain,
       findPatientsSmart: findPatientsSmart,
