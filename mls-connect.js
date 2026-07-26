@@ -42294,6 +42294,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          soak and instant-rollback standing by. */
       var settingsOpen = false;
       try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
+      /* THE 2026-07-21 ORDER ABOVE HAS BEEN SUPERSEDED, and until b678 this
+         block was still enforcing it.
+         Owner, 2026-07-26: "REMOVE THE BOTTOM LEFT BUBBLES." b676 shipped
+         vc-2.0.0, which retires all three with a CSS class-hide. MEASURED on
+         the running page at b677 with that retirement fully active
+         (body.mls-voice-cluster set, window.__mlsVoiceCluster = vc-2.0.0), all
+         three pills were position:fixed and VISIBLE - 207x41, 149x35, 89x33 -
+         floating over the visit transcript at z-index 2147483600, with
+         `inset: auto auto 14px <x>px !important` pinning them to the corner.
+         The reason is this line: an INLINE !important declaration outranks an
+         author !important stylesheet rule, so all FOUR of the hides that match
+         these ids (mls-top-voice-tools, mls-redesign, mls-calm, and b676's own
+         mls-voice-cluster) lose to it. The bubbles were never retired. The
+         owner has been looking at them, over his transcript, ever since - and
+         nothing failed, which is why nobody caught it.
+         An inline-important write is the only deterministic hide; it is also
+         the only thing that can beat one. So when the newer order is in force
+         this one stands down and RELEASES its declaration rather than fighting
+         a stylesheet it will always win against. */
+      var bubblesRetired = false;
+      try { bubblesRetired = document.body.classList.contains('mls-voice-cluster'); } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
         try {
           var el3 = $(id); if (!el3 || el3.__ftHidden) return;
@@ -42303,7 +42324,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               if (savedControls.showVoice === false) return;
             } catch (e) {}
           }
-          if (settingsOpen) {
+          if (settingsOpen || bubblesRetired) {
             if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
             return;
           }
