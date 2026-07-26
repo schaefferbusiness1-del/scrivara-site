@@ -3972,7 +3972,7 @@
 })();
 
 /* =========================================================================
- * MODULE 7 - CHART-SECTION CLEANER  (__mlsCleanSections)  v1.1.0  2026-07-10
+ * MODULE 7 - CHART-SECTION CLEANER  (__mlsCleanSections)  v1.2.0  2026-07-26
  * Problems/meds/allergies pulled from athenaOne carry the page's UI chrome
  * ("View problems from other sources", "Move Multiple", "11 problems",
  * "Onset Date: ...", "Loading...", counts, group headers) mixed between real
@@ -3987,6 +3987,20 @@
  * Deterministic, additive, reversible: __mlsCleanSections.revert() unhooks;
  * __mlsCleanSections.restore('ALL'|patientId) puts the stashed originals back.
  * No setInterval on the MLS tab: Blob-Worker timer + capture-phase listeners.
+ *
+ * v1.2.0 (2026-07-26) - CLINICAL-TRUTH TRIAGE. Measured live at b685: the
+ * Medications panel rendered a grid HEADER ROW ("Name", "Date"), a row action
+ * link ("check now") and a PRESCRIBER'S NAME as medications; the Problem list
+ * rendered note-section labels ("Discussion Notes") and an order line as
+ * problems. meds/problems now classify each row three ways - drop (whole-line
+ * grid furniture), keep (plausible medication/problem), or UNSORTED (kept in
+ * _mlsUnsortedMeds / _mlsUnsortedProblems and rendered under "Unsorted from
+ * chart", never as a clinical fact). Rows that used to be silently DELETED by
+ * the keep-test now land in the unsorted fold, so the cleaner can no longer
+ * lose a row it did not understand. A sig row that names no drug ("SHAMPOO 3
+ * TIMES WEEKLY") re-attaches to the medication above it instead of becoming
+ * one. Athena receipts (athenaProfileCoverage / athenaChartSnapshot) are
+ * computed before this hook runs and are never touched here.
  * ========================================================================= */
 (function () {
   'use strict';
@@ -4088,6 +4102,91 @@
   function keepMed(t) { return DOSE.test(t) || (t.length <= 80 && looksName(t, 8)); }
   function keepAllergy(t) { return t.length <= 60 && looksName(t, 6); }
 
+  /* ------------------------------------------------------------------------
+   * v1.2.0 CLINICAL-TRUTH TRIAGE  (2026-07-26)
+   *
+   * Measured live at b685 on a real signed-in chart: the Medications panel
+   * rendered an athenaOne TABLE HEADER ("Name", "Date"), a row action link
+   * ("check now") and a PRESCRIBER'S NAME ("Deborah Hendricks") as
+   * medications, and the Problem list rendered note-section labels
+   * ("Discussion", "Discussion Notes") and an order line ("Ordered sacroiliac
+   * joint injection (PROC)") as problems. Every one of those passed
+   * keepMed/keepProblem, because both accept ANY short line containing one
+   * 4+ letter word. The card was asserting things-as-medications that are not
+   * medications - a clinical-truth defect, not cosmetics.
+   *
+   * Two changes, deliberately in OPPOSITE directions, because the old code was
+   * wrong both ways:
+   *   DROP     - provably non-clinical page furniture. WHOLE-LINE exact
+   *              matches only (column headers, row action links), so this can
+   *              never eat a drug name or a diagnosis.
+   *   UNSORTED - a line that is neither recognised furniture nor a plausible
+   *              medication / problem is KEPT, out of the clinical list, and
+   *              surfaced under "Unsorted from chart". cleanList used to
+   *              silently DELETE these: a list that quietly loses rows is not
+   *              a chart either. Nothing clinical is hidden, and nothing
+   *              non-clinical impersonates a medication.
+   *
+   * MERGE - athenaOne's meds grid emits the sig on its own row ("SHAMPOO 3
+   *   TIMES WEEKLY..."), which then rendered as a separate "medication". A sig
+   *   line that names no drug is re-attached to the row above it instead.
+   * ---------------------------------------------------------------------- */
+
+  /* athenaOne med/problem grid COLUMN HEADERS and row action links. Anchored
+     whole-line (optional trailing ':' / '.') so "Route: topical" or a real drug
+     called anything is never matched. */
+  var TABLE_CHROME = [
+    /^(?:name|date|sig|route|frequency|freq|quantity|qty|refills?|prescriber|prescribing provider|ordering provider|provider|pharmacy|strength|form|class|directions?|comments?|notes?|indication|duration|units?|days? supply|ndc|rx|rx ?#|dispense|substitution|written|approved|renewed|entered by|entered|structured sig|last filled|filled|first name|last name|full name|dob|mrn|age|sex|gender|type|source|order|orders|action|actions|select|checked?)\s*[:.]?$/i,
+    /^(?:start|stop|end|last|next|order|written|fill|refill)\s+date\s*[:.]?$/i,
+    /^check(?:\s+(?:now|interactions?|for interactions?|drug interactions?))?\s*[:.]?$/i,
+    /^(?:select|deselect|clear|expand|collapse|check|uncheck)\s+all\s*[:.]?$/i,
+    /^(?:show|hide)\s+(?:more|less|all|details?|inactive|historical)\s*[:.]?$/i,
+    /^(?:not\s+reviewed|mark(?:\s+as)?\s+reviewed|needs?\s+review|no\s+action|more|less|done|ok|cancel|apply|undo|copy|print|close|back|next|previous)\s*[:.]?$/i
+  ];
+  function isTableChrome(t) { for (var i = 0; i < TABLE_CHROME.length; i++) { if (TABLE_CHROME[i].test(t)) return true; } return false; }
+
+  /* ---- plausible-medication shape (any ONE signal is enough) ---- */
+  var MED_STRENGTH = /\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|ug|g|gm|kg|ml|cc|meq|mmol|units?|iu|%|mg\/ml|mcg\/ml|mg\/dl|mg\/kg)(?![a-z])/i;
+  var MED_FORM = /\b(?:tablets?|tabs?|capsules?|caps?|patch(?:es)?|cream|ointment|lotion|shampoo|solution|suspension|syrup|elixir|spray|inhalers?|inhalation|nebuli[sz]er|injection|gel|foam|drops?|lozenges?|suppositor(?:y|ies)|powder|granules?|pens?|vials?|syringes?|pills?|liquid|oil|chewable|sublingual|troche|film|wafer|implant|cartridge|kit|ampule|enema|paste)\b/i;
+  var MED_SIGNAL = /\b(?:po|iv|im|sq|subq|subcutaneous(?:ly)?|intramuscular(?:ly)?|intravenous(?:ly)?|sl|sublingual(?:ly)?|topical(?:ly)?|oral(?:ly)?|by mouth|daily|nightly|weekly|monthly|bid|tid|qid|prn|qhs|qam|qpm|qd|qod|q\s?\d+\s?h(?:ours?)?|once (?:a )?(?:day|daily|week|weekly)|twice (?:a )?(?:day|daily|week|weekly)|three times|four times|every \d+|at bedtime|as needed|as directed|with meals|before meals|after meals)\b/i;
+  var DRUG_MORPH = /[a-z]{2}(?:cillin|mycin|micin|cycline|azole|oxacin|pril|sartan|statin|olol|dipine|zepam|zolam|tidine|prazole|parin|triptan|profen|codone|morphone|caine|asone|onide|terol|tropium|formin|gliptin|flozin|setron|thiazide|barbital|phylline|ridone|apine|azine|pramine|oxetine|opram|afil|clovir|amivir|navir|tinib|ciclib|zumab|ximab|umab|dronate|semide|olone|sone|pentin|platin|rubicin|taxel)\b/i;
+  var DRUG_SALT = /\b(?:hcl|hydrochloride|sulfate|sulphate|citrate|carbonate|bicarbonate|chloride|phosphate|gluconate|succinate|tartrate|bitartrate|maleate|fumarate|besylate|mesylate|nitrate|acetate|propionate|valerate|dipropionate|furoate|monohydrate|extended release|delayed release|immediate release|er|xr|sr|dr)\b/i;
+  var SUPPLEMENT = /\b(?:vitamins?|multivitamins?|calcium|magnesium|potassium|iron|zinc|folic|folate|biotin|melatonin|probiotics?|glucosamine|chondroitin|turmeric|curcumin|coq10|co-?q-?10|omega|fish oil|krill|flaxseed|collagen|creatine|ginkgo|ginseng|echinacea|elderberry|aspirin|acetaminophen|ibuprofen|naproxen|insulin|oxygen|saline|epinephrine|nicotine|caffeine)\b/i;
+  /* one-word lines that are English/chart words, never a drug name */
+  var MED_STOPWORD = /^(?:the|and|for|with|from|other|none|see|per|new|old|test|patient|history|current|active|list|chart|visit|today|yesterday|unknown|pending|updated|added|removed|changed|continue|continued|discussed|reported|denies|reports|taking|takes|took|stopped|started|held|holds|home|other|misc|blank|empty)$/i;
+  function looksLikeMedication(t) {
+    if (MED_STRENGTH.test(t) || MED_FORM.test(t) || MED_SIGNAL.test(t)) return true;   /* dose / route / frequency signal */
+    if (DRUG_MORPH.test(t) || SUPPLEMENT.test(t)) return true;                          /* drug-like token */
+    var w = t.split(/\s+/);
+    /* a bare one-word drug name we do not carry ("Eliquis", "Xarelto") - kept,
+       because demoting an unknown brand would be the same defect facing the
+       other way. Grid headers are already gone above. */
+    if (w.length === 1 && /^[A-Za-z][A-Za-z'\-]{3,}$/.test(w[0]) && !MED_STOPWORD.test(w[0])) return true;
+    if (w.length <= 3 && DRUG_SALT.test(t)) return true;                                /* "warfarin sodium", "metoprolol ER" */
+    return false;
+  }
+
+  /* A sig row from the grid ("SHAMPOO 3 TIMES WEEKLY", "1 TABLET BY MOUTH
+     DAILY") names no drug - it belongs to the row above, not to itself. */
+  var SIG_LEAD = /^(?:apply|applies|take|takes|use|uses|inject|instill|inhale|shampoo|rinse|wash|swallow|chew|spray|place|dissolve|insert|rub|massage|drink|mix|give|administer|dispense|sig|directions?|as directed|disp)\b/i;
+  function isSigContinuation(t) {
+    if (DRUG_MORPH.test(t) || SUPPLEMENT.test(t)) return false;   /* it names a drug -> it is its own row */
+    if (SIG_LEAD.test(t)) return true;
+    if (/^\d/.test(t) && (MED_STRENGTH.test(t) || MED_FORM.test(t) || MED_SIGNAL.test(t))) return true;
+    return false;
+  }
+
+  /* ---- plausible-problem shape ---- */
+  var NOTE_SECTION = /^(?:discussion|discussion notes?|subjective|objective|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|hpi|history of present illness|ros|review of systems|physical exam(?:ination)?|exam|impression|procedures?|procedure note|attestation|addendum|addenda|chief complaint|interval history|medical decision making|mdm|patient instructions?|instructions?|follow[\s-]?up|return precautions|signature|electronically signed|signed|notes?|comments?|counseling|education)\s*[:.]?$/i;
+  var PLAN_LEAD = /^(?:ordered|order for|orders? placed|scheduled|referred|referral|recommended|recommend|discussed|advised|instructed|administered|performed|injected|counseled|educated|continue|continued|plan to|plan:)\b/i;
+  function looksLikeProblem(t) {
+    if (ICD.test(t)) return true;                         /* "M75.102 Unspecified rotator cuff tear" */
+    if (ICD_ANY.test(t) && looksName(t, 14)) return true; /* "Rotator cuff tear (M75.101)" */
+    if (NOTE_SECTION.test(t) || PLAN_LEAD.test(t)) return false;  /* note furniture / plan text -> unsorted */
+    if (api.mode === 'strict') return false;              /* strict: code required */
+    return looksName(t, 12);                              /* balanced: name-only dx kept */
+  }
+
   /* ---------- core cleaner ---------- */
   function splitSegs(v) {
     if (Array.isArray(v)) { var o = []; for (var i = 0; i < v.length; i++) { S(v[i]).split(/\r?\n|;/).forEach(function (s) { o.push(s); }); } return o; }
@@ -4105,6 +4204,38 @@
     }
     return out;
   }
+  /* THREE outcomes per line - drop (furniture), keep (clinical), unsorted
+     (kept, never rendered as a clinical fact). Deterministic: re-running over
+     its own output is a no-op, which is what lets the upsert hook be idempotent. */
+  var UNSORTED_CAP = 40;
+  function triageList(v, kind, cap) {
+    var segs = splitSegs(v), keep = [], unsorted = [], seenK = {}, seenU = {};
+    var isMeds = (kind === 'meds'), lastWasKeep = false;
+    for (var i = 0; i < segs.length; i++) {
+      var t = trim(S(segs[i]).replace(LEAD_RE, '')).replace(/\s+/g, ' ');
+      if (!t || t.length < 2) continue;
+      if (isJunk(t)) continue;                              /* v1.1.0 chrome - unchanged */
+      if (isMeds && isTableChrome(t)) continue;             /* grid header row / action link */
+      if (isMeds && lastWasKeep && keep.length && isSigContinuation(t)) {
+        var j = keep.length - 1;
+        try { delete seenK[low(keep[j])]; } catch (e) { seenK[low(keep[j])] = 0; }
+        keep[j] = (keep[j] + ' — ' + t).slice(0, 240);
+        seenK[low(keep[j])] = 1;
+        continue;
+      }
+      var ok = isMeds ? looksLikeMedication(t) : looksLikeProblem(t);
+      var k = low(t);
+      if (ok) {
+        if (keep.length < cap && !seenK[k]) { seenK[k] = 1; keep.push(t.slice(0, 160)); }
+        lastWasKeep = true;
+      } else {
+        if (unsorted.length < UNSORTED_CAP && !seenU[k]) { seenU[k] = 1; unsorted.push(t.slice(0, 160)); }
+        lastWasKeep = false;
+      }
+    }
+    return { keep: keep, unsorted: unsorted };
+  }
+
   function cleanAllergies(v) {
     var joined = low(splitSegs(v).join(' '));
     /* NB: no trailing \b after the 'allerg' prefix alternatives - a trailing \b
@@ -4127,6 +4258,45 @@
     if (p[rawKey] == null) { var raw = Array.isArray(cur) ? cur.join('\n') : S(cur); p[rawKey] = raw.slice(0, 60000); }
     p[key] = neu;
     return true;
+  }
+  /* v1.2.0 - meds/problems take the triage path instead of cleanField, because
+     they now produce TWO outputs.
+
+     The field itself is the ONLY input. Re-reading the _raw* stash was tried
+     and rejected: it would resurrect a medication the clinician had just
+     deleted in the inline editor, every time they saved.
+
+     The fold is therefore STICKY and additive - a row set aside on an earlier
+     pass is no longer in the field, so recomputing it from the field alone
+     would silently erase it, which is the exact failure this module exists to
+     stop. Sticky NEVER puts a row back into the clinical list, so a deletion
+     the clinician made stays deleted; and a row that later becomes a real
+     medication drops out of the fold instead of showing twice. */
+  var UNSORTED_KEY = { meds: '_mlsUnsortedMeds', problems: '_mlsUnsortedProblems' };
+  function triageField(p, key, rawKey, cap) {
+    var cur = p[key], curStr = Array.isArray(cur) ? cur.join('\n') : S(cur);
+    var uKey = UNSORTED_KEY[key], curU = Array.isArray(p[uKey]) ? p[uKey] : [];
+    if (!trim(curStr) && !curU.length) return false;
+    var r = triageList(curStr, key, cap), changed = false;
+    var neu = Array.isArray(cur) ? r.keep : r.keep.join('\n');
+    var same = Array.isArray(cur) ? (JSON.stringify(cur) === JSON.stringify(neu)) : (curStr === neu);
+    if (!same) {
+      if (p[rawKey] == null) p[rawKey] = curStr.slice(0, 60000);
+      p[key] = neu; changed = true;
+    }
+    var seen = {}, next = [];
+    r.keep.forEach(function (x) { seen[low(x)] = 1; });
+    curU.concat(r.unsorted).forEach(function (x) {
+      var t = trim(S(x)); if (!t) return;
+      var k = low(t);
+      if (seen[k] || next.length >= UNSORTED_CAP) return;
+      seen[k] = 1; next.push(t.slice(0, 160));
+    });
+    if (JSON.stringify(next) !== JSON.stringify(curU)) {
+      if (next.length) p[uKey] = next; else { try { delete p[uKey]; } catch (e) { p[uKey] = null; } }
+      changed = true;
+    }
+    return changed;
   }
   function cleanSummary(p) {
     var s = S(p.summary); if (!s) return false;
@@ -4154,8 +4324,8 @@
   function cleanPatient(p) {
     if (!p || typeof p !== 'object') return false;
     var c = false;
-    try { if (cleanField(p, 'problems', function (v) { return cleanList(v, keepProblem, 100); }, '_rawProblems')) c = true; } catch (e) {}
-    try { if (cleanField(p, 'meds', function (v) { return cleanList(v, keepMed, 60); }, '_rawMeds')) c = true; } catch (e) {}
+    try { if (triageField(p, 'problems', '_rawProblems', 100)) c = true; } catch (e) {}
+    try { if (triageField(p, 'meds', '_rawMeds', 60)) c = true; } catch (e) {}
     try { if (cleanField(p, 'allergies', cleanAllergies, '_rawAllergies')) c = true; } catch (e) {}
     try { if (cleanSummary(p)) c = true; } catch (e) {}
     if (c) { p._mlsCleanV1 = Date.now(); STATS.cleaned++; }
@@ -4223,7 +4393,7 @@
       }
       STATS.migrated += n;
       if (n) {
-        try { console.log('[MLS clean-sections v1.1.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary'); } catch (e) {}
+        try { console.log('[MLS clean-sections v1.2.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary; unclassified rows under _mlsUnsortedMeds/_mlsUnsortedProblems'); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
       }
@@ -4254,12 +4424,17 @@
 
   /* ---------- public API ---------- */
   var api = {
-    version: '1.1.0',
+    version: '1.2.0',
     mode: 'balanced',            /* 'balanced' (code-or-name) | 'strict' (ICD code required) */
     stats: STATS,
     cleanPatient: cleanPatient,
-    cleanProblems: function (v) { return cleanList(v, keepProblem, 100); },
-    cleanMeds: function (v) { return cleanList(v, keepMed, 60); },
+    /* v1.2.0: these still return ONLY the clinical rows, so every existing
+       caller reads the same shape. triage*() exposes what was set aside. */
+    cleanProblems: function (v) { return triageList(v, 'problems', 100).keep; },
+    cleanMeds: function (v) { return triageList(v, 'meds', 60).keep; },
+    triageProblems: function (v) { return triageList(v, 'problems', 100); },
+    triageMeds: function (v) { return triageList(v, 'meds', 60); },
+    unsortedOf: function (p, key) { var u = p && p[UNSORTED_KEY[key]]; return Array.isArray(u) ? u.slice() : []; },
     cleanAllergies: cleanAllergies,
     migrateNow: function () { return migrate(true); },
     restore: function (idOrAll) {
@@ -4275,6 +4450,9 @@
         if (p._rawSummary != null) { p.summary = p._rawSummary; did = true; }
         if (did) {
           try { delete p._rawProblems; delete p._rawMeds; delete p._rawAllergies; delete p._rawSummary; delete p._mlsCleanV1; } catch (e) {}
+          /* the unsorted folds are DERIVED - restoring the originals must not
+             leave a stale copy of rows that are back in the field itself */
+          try { delete p._mlsUnsortedMeds; delete p._mlsUnsortedProblems; } catch (e) {}
           DISABLED = true;
           try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } finally { DISABLED = false; }
           n++;
@@ -4299,10 +4477,28 @@
       var got = api.cleanProblems(raw);
       var medsGot = api.cleanMeds('Add medication\n3 medications\nLast Prescribed: 05/01/2026\nmetformin 1000 mg tablet BID\nlisinopril');
       var algGot = api.cleanAllergies('Add allergy\nreviewed 01/2026\nNo known drug allergies');
+      /* v1.2.0 - the exact b685 live shape: an athenaOne meds GRID whose header
+         row, action link and prescriber column were rendering as medications. */
+      var gridT = api.triageMeds(['Name', 'Date', 'check now', 'calcium',
+        'Deborah Hendricks', 'Fish Oil', 'ketoconazole 2 % shampoo',
+        'SHAMPOO 3 TIMES WEEKLY AS DIRECTED'].join('\n'));
+      var gridFlat = gridT.keep.join(' | ');
+      var gridPass =
+        !/\b(?:Name|Date|check now)\b/.test(gridFlat) &&                    /* grid furniture never a med */
+        gridT.unsorted.indexOf('Name') < 0 && gridT.unsorted.indexOf('check now') < 0 &&
+        gridFlat.indexOf('calcium') >= 0 && gridFlat.indexOf('Fish Oil') >= 0 &&
+        gridFlat.indexOf('ketoconazole 2 % shampoo') >= 0 &&
+        gridFlat.indexOf('SHAMPOO 3 TIMES WEEKLY') >= 0 &&                  /* sig merged, not lost */
+        gridT.keep.indexOf('Deborah Hendricks') < 0 &&                      /* a person is not a drug */
+        gridT.unsorted.indexOf('Deborah Hendricks') >= 0;                   /* ...and is not deleted either */
+      var probT = api.triageProblems(['Discussion', 'Discussion Notes',
+        'Ordered sacroiliac joint injection (PROC)', 'Cervical spondylosis'].join('\n'));
+      var probPass = JSON.stringify(probT.keep) === JSON.stringify(['Cervical spondylosis']) &&
+        probT.unsorted.length === 3;
       var pass = JSON.stringify(got) === JSON.stringify(want) &&
         JSON.stringify(medsGot) === JSON.stringify(['metformin 1000 mg tablet BID', 'lisinopril']) &&
-        JSON.stringify(algGot) === JSON.stringify(['NKDA']);
-      return { pass: pass, problems: got, meds: medsGot, allergies: algGot };
+        JSON.stringify(algGot) === JSON.stringify(['NKDA']) && gridPass && probPass;
+      return { pass: pass, problems: got, meds: medsGot, allergies: algGot, grid: gridT, problemTriage: probT };
     },
     revert: function () {
       DISABLED = true; _scans = MAX_SCANS + 1;
