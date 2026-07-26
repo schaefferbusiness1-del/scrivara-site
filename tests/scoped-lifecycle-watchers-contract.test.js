@@ -72,7 +72,9 @@ assert(settingsWb.includes("window.addEventListener('mls:settings-reconciled', o
 assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Settings writeback row must unsubscribe on revert');
 
 [
-  'feat_mls_patients_exact.js?v=20260716px120',
+  /* patients_exact advanced to 20260726dkn1 at b681 (theme-token pass on the
+     imp() literals) — the pin moves WITH the deliberate token bump. */
+  'feat_mls_patients_exact.js?v=20260726dkn1',
   'feat_mls_studio_exact.js?v=20260716sx240',
   'feat_mls_patientpick.js?v=20260716pick161',
   'feat_mls_simple_exact.js?v=20260719simx142'
