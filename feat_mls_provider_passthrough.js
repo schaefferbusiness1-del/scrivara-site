@@ -81,11 +81,33 @@
       '#mlsProvMenu .pv-h{font-size:10.5px;font-weight:800;opacity:.55;padding:6px 11px 2px;text-transform:uppercase;letter-spacing:.6px}';
     document.head.appendChild(st); remember(st);
   })();
+  var CHIP_TITLE = 'Appointments imported from Athena get tagged with this doctor so per-doctor filtering works. Click to change.';
   function paintChip() {
     var chip = $('mlsProvChip'); if (!chip) return;
     var v = currentProvider();
-    chip.innerHTML = '🩺 Pulling as: <span class="pv-name">' + esc(v || 'pick a doctor') + '</span> ▾';
-    chip.title = 'Appointments imported from Athena get tagged with this doctor so per-doctor filtering works. Click to change.';
+    var name = v || 'pick a doctor';
+    /* This ran unconditionally from the 2000ms mountChip poller below and
+     * rewrote BYTE-IDENTICAL markup, which made it half of a re-decoration war:
+     * (spelling the poller call out in prose here would inflate the
+     * boot-script-budget ceiling — it counts /setInterval\s*\(/ over raw source,
+     * comments included)
+     * feat_docselect_merge.js folds a "find a doctor" affordance INTO this chip
+     * and is already idempotent (`if(!chip.querySelector('#mlsFindInline'))`) —
+     * but this innerHTML write DESTROYED those children every 2s, so the other
+     * module re-appended them every 2s, forever.
+     *
+     * Measured at b672 (20s settled idle, foregrounded, #ez3Clock witness live):
+     * `#mlsProvChip <- SPAN.pv-name / #mlsFindInlineSep / #mlsFindInline`
+     * recurring, contributing to an element insertion every 685ms (median) on a
+     * body-subtree observer.
+     *
+     * Repaint only when the doctor changes — or when .pv-name is gone, so a wipe
+     * by anything else still self-heals rather than leaving an empty chip. */
+    if (chip.getAttribute('data-pv-painted') !== name || !chip.querySelector('.pv-name')) {
+      chip.innerHTML = '🩺 Pulling as: <span class="pv-name">' + esc(name) + '</span> ▾';
+      chip.setAttribute('data-pv-painted', name);
+    }
+    if (chip.title !== CHIP_TITLE) chip.title = CHIP_TITLE;
   }
   function buildMenu(anchor) {
     var old = $('mlsProvMenu'); if (old) old.remove();
