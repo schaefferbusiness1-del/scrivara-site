@@ -501,16 +501,24 @@
      bubble a prospect could not open, which hides the feature instead of
      disclosing that it is read-only. */
   function rewriteVoiceCluster() {
-    var face = document.getElementById('mlsVcFace'); if (!face) return;
-    face.removeAttribute('data-mls-preview-blocked');
-    face.setAttribute('aria-disabled', 'false');
-    try { face.disabled = false; } catch (e) {}
-    face.setAttribute('data-mls-preview-action', 'voice-cluster');
-    face.setAttribute('data-tip', 'Opens the voice and assistant tools. In this sample workspace they are read-only.');
+    /* #mlsVcFace was the retired floating cluster (vc-2.0.0 builds nothing);
+       #mlsVoiceOneFace is the in-visit merged control that replaced it
+       (vo-1.0.0). Both are DISCLOSURES, and both are handled here for the same
+       reason: blocking a disclosure leaves a prospect with one inert chip and
+       no way to learn the three tools exist, which hides the feature instead of
+       disclosing that it is read-only. The three tools inside stay blocked. */
+    ['mlsVcFace', 'mlsVoiceOneFace'].forEach(function (id) {
+      var face = document.getElementById(id); if (!face) return;
+      face.removeAttribute('data-mls-preview-blocked');
+      face.setAttribute('aria-disabled', 'false');
+      try { face.disabled = false; } catch (e) {}
+      face.setAttribute('data-mls-preview-action', 'voice-cluster');
+      face.setAttribute('data-tip', 'Opens the voice and assistant tools. In this sample workspace they are read-only.');
+    });
   }
 
   function openVoiceCluster(target) {
-    var api = window.__mlsVoiceCluster;
+    var api = window.__mlsVisitVoiceOne || window.__mlsVoiceCluster;
     if (!api || typeof api.toggle !== 'function') { explain('Voice tools are still loading.'); return; }
     var open = api.toggle();
     if (target) target.setAttribute('aria-expanded', open ? 'true' : 'false');

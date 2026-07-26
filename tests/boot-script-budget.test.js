@@ -110,12 +110,31 @@ const LOADER = 'mls-connect.js';
  *     cross-screen navigation and is the one module you must never have to
  *     revert to undo a per-view layout opinion. These are separately
  *     revertible on purpose (window.__mlsCalmViews.revert()). */
-const CEILING = 236;
+/* 236 -> 238 at b679 (merge of Workers D and E), for feat_mls_visit_focus.js
+ * (vf-1.0.0) and feat_mls_visit_voice_one.js (vo-1.0.0). Both are DEFERRED,
+ * so EAGER_CEILING below does not move — the cost this ceiling actually
+ * guards (the post-login burst) is unchanged, and arm B proves it rather
+ * than asserting it.
+ *
+ * Why they were not folded into an existing feat file to keep the count flat:
+ * that is the dishonest version, for the same reason recorded above the voice
+ * cluster. Both are presentation-only satellites with their own revert(), and
+ * both change what a doctor sees on the two clinical screens — which is exactly
+ * the kind of change you want to be able to back out on its own, at 2am, from
+ * one call, without disturbing anything else in the file it was hiding in.
+ *
+ * What they buy, measured on the running page (isolated Chrome, 1280x800,
+ * animations finished before every sample), visible interactive controls:
+ *   patients, patient open   36 -> 22   and the PRIMARY went 2,405px^2 -> 42,656
+ *   visit, visit locked      28 ->  9
+ *   visit, note ready        43 ->  8
+ * Net interface goes down hard; net boot work does not go up. */
+const CEILING = 238;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 236 are eager; the voice cluster and the calm
-   views are the deferred ones, so EAGER_CEILING deliberately does NOT move
-   with CEILING. */
+/* arm B - deferral. 234 of the 238 are eager; the voice cluster was the first
+   deferred one, the calm views the second, and vf-1.0.0 / vo-1.0.0 the third
+   and fourth, so EAGER_CEILING deliberately does NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;
 
