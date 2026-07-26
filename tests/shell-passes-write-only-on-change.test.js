@@ -77,7 +77,17 @@ assert(/if \(el && el\.style\.display !== 'none'\) el\.style\.display = 'none';/
   'the stages strip hid itself unconditionally on every pass, before the lastStage guard could return');
 assert(/if \(el\.style\.display !== 'flex'\) el\.style\.display = 'flex';/.test(renderStages),
   'the stages strip showed itself unconditionally on every pass');
-assert(/if \(now === lastStage && el\.childNodes\.length\) return;/.test(renderStages),
+/* The guard's SUBSTANCE is pinned in two halves rather than as one literal
+   string. `el.childNodes.length` is now derived into `built`, because the same
+   fact also decides whether the rail needs building at all — the rail is built
+   once and thereafter only repainted, so that its transitions have a previous
+   value to run from. Both halves are required: pinning only the `if` would let
+   `built` be re-derived from something that is always true, which reinstates
+   the unconditional repaint this suite exists to prevent. */
+assert(/var built = el\.childNodes\.length > 0;/.test(renderStages),
+  'renderStages must still decide "already built" from the DOM — ensureStages hands ' +
+  'back an EMPTY div when the rail was removed, so lastStage alone cannot know');
+assert(/if \(now === lastStage && built\) return;/.test(renderStages),
   'the lastStage guard must remain — the conditional writes above it are not a substitute');
 
 /* ---- no unguarded setAttribute survives in a per-pass function ------------ */
