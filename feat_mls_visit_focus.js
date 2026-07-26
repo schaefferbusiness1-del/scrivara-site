@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * MLS -- Visit & Patients focus  (feat_mls_visit_focus.js -> window.__mlsVisitFocus, vf-1.0.0)
+ * MLS -- Visit & Patients focus  (feat_mls_visit_focus.js -> window.__mlsVisitFocus, vf-1.1.0)
  *
  * The owner's brief, verbatim: "i LOVE THE NAVIGATER BUT I BASICALLY HATE HOW
  * MANY BUTTONS EVERY SINGLE UI ANYTHING HAS ... I WANT IT TO FREE DOCTORS FROM
@@ -38,28 +38,45 @@
  *      available() and silently removes a feature -- this file contains no
  *      element.style writes at all, and the gate asserts that.
  *
- * ZERO RUNTIME COST. The visit rules are pure CSS, keyed on :has() against the
- * app's own state markers (#ez3Change means "a visit is locked"; .wd-starter
- * means "the widget deck has nothing but adverts"). There is no timer, no
- * MutationObserver and no poll in this file. Where :has() is unsupported the
- * rules simply do not match and the screen renders exactly as it does today --
- * degradation is to the status quo, never to a broken surface.
+ * vf-1.1.0 RETIRES THE ADVANCED VISIT WORKSPACE (owner, 2026-07-26: "get rid
+ * of and completely rework the advanced visit workspace from scratch and make
+ * sure the op notes button is easily accessible"). See the CSS section for the
+ * measurements; the short version is that one button hid a 3,143px note card
+ * from a doctor who had just generated the note, and the door was never
+ * load-bearing for the send path it appeared to guard.
  *
- * The only JS is two disclosure MIRRORS, because a CSS rule cannot read another
- * element's inline display or a localStorage key:
- *   body.vf-ptmore  <- #ptMore is open   (the existing "... More" chip)
- *   body.vf-tools   <- ez3ToolsOpen='1'  (the existing "Visit shortcuts" chip)
- * Both are driven by ONE delegated click listener and one function wrap. Both
- * use classList.toggle(name, want), which -- unlike add/remove -- does not
- * re-commit when the value is unchanged, so a no-op sync costs no style recalc.
+ * NEAR-ZERO RUNTIME COST. Every visit rule is pure CSS, keyed on :has() against
+ * the app's own state markers (#ez3Change means "a visit is locked";
+ * .wd-starter means "the widget deck has nothing but adverts"). No timer, no
+ * poll. Where :has() is unsupported the rules simply do not match and the
+ * screen renders as it does today -- degradation is to the status quo, never to
+ * a broken surface.
+ *
+ * The JS is three MIRRORS, because a CSS rule cannot read another element's
+ * inline display, a localStorage key, or a textarea's value:
+ *   body.vf-ptmore     <- #ptMore is open      (the existing "... More" chip)
+ *   body.vf-tools      <- ez3ToolsOpen='1'     (the existing "Visit shortcuts" chip)
+ *   body.mls-note-live <- #noteBox has a note  (vf-1.1.0; replaces the door)
+ * The first two ride ONE delegated click listener and one function wrap. The
+ * third needs a MutationObserver -- exactly one, on exactly one element,
+ * attributes only -- because a note arrives without a click and setting a
+ * textarea's .value mutates no DOM. All three use classList.toggle(name, want),
+ * which -- unlike add/remove -- does not re-commit when the value is unchanged,
+ * so a no-op sync costs no style recalc.
  *
  * Reversible: window.__mlsVisitFocus.revert().
  * ES5. No dependencies. Loads after feat_mls_calm_shell.js so its rules win on
  * order where specificity ties.
  * ========================================================================== */
 (function () {
-  var VER = 'vf-1.0.0';
+  var VER = 'vf-1.1.0';
   var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus', PTMORE = 'vf-ptmore', TOOLS = 'vf-tools';
+  /* vf-1.1.0: the state that replaced the Advanced-visit-workspace door. It is
+     a FACT about the document - #noteBox holds a real note - never a claim
+     something set when it believed a note had arrived. The whole reason the
+     door had to go is that the app already knows this; it was just refusing to
+     act on it without a click. */
+  var NOTE = 'mls-note-live';
 
   var prior = null;
   try { prior = window.__mlsVisitFocus || null; } catch (e0) {}
@@ -103,9 +120,12 @@
     { sel: '#visitView #mlsWdDeck .wd-head .wd-btn',
       route: 'dock > Tools > AI Studio (#customWidgetHdrBtn opens the widget builder)',
       why: 'authoring controls on a clinical screen; the widgets themselves stay' },
-    { sel: '#visitView #mlsEz3Body .ez3-row2',
+    { sel: '#visitView #mlsEz3Body .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2))',
       route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
-      why: 'up to twelve same-size chips flat against the state primary' },
+      why: 'up to twelve same-size chips flat against the state primary. The :not(:has()) is an OWNER ORDER (2026-07-26, "make sure the op notes button is easily accessible"): the row that carries the op-note chip survives the fold' },
+    { sel: '#visitView #mlsEz3Body .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2)',
+      route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
+      why: 'inside the surviving row, everything except the op-note chip still folds - the exemption is for op notes, not for the row' },
     { sel: '#visitView #ez3StyleChips',
       route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
       why: 'eight note-format chips offered after the note exists, competing with Review & Sign' },
@@ -114,7 +134,25 @@
       why: 'the owner measured two identical transcript boxes on one screen at b677; a second place to type the same visit is not a feature to keep a route to' },
     { sel: '#visitView #mlsEz3Body:has(#ez3Change) #mlsDsStrip',
       route: 'the visit home screen -- press "< Patients" and the day strip is there',
-      why: 'the :has(#ez3Change) is the whole point - hidden ONLY once a visit is locked; inside the room the day is already decided and every control on that strip is a way to leave the patient in front of you' }
+      why: 'the :has(#ez3Change) is the whole point - hidden ONLY once a visit is locked; inside the room the day is already decided and every control on that strip is a way to leave the patient in front of you' },
+
+    { sel: '#visitView #mlsEz3Body .ez3-row2::before',
+      route: 'none is needed and the gate is right to ask - this is a ::before CAPTION, not a control. It said "GET THE DAY READY" over a group that the fold reduced to one button, and a heading over a single button is chrome explaining chrome',
+      why: 'the button it captions already says what it does' },
+
+    /* ---- the retired Advanced visit workspace (vf-1.1.0) ---- */
+    { sel: '#visitView #mlsEz3 .ez3fl-openws',
+      route: 'nothing needs it any more - the note it used to hide now surfaces on state, and the two consoles it also hid are named below',
+      why: 'owner 2026-07-26: "get rid of and completely rework the advanced visit workspace from scratch". This was the one visible door (feat_athena_tooltip_dedupe makes it the owner and hides .ez3-advrow as its duplicate)' },
+    { sel: '#visitView #mlsEz3 .ez3-advrow',
+      route: 'nothing needs it any more - same retirement, and this one was already hidden as the duplicate door',
+      why: 'the second door with the same label, which is the b581 defect the owner named weeks ago' },
+    { sel: '#visitView #emrCard',
+      route: 'dock > Tools - and the same structured fields ride the Review destination, which reads the send path own plan (#mlsReviewPanel)',
+      why: 'a read-only paste-into-your-EMR table is not part of writing or sending this note; measured 390x423 behind the door' },
+    { sel: '#visitView #outcomesCard',
+      route: 'dock > Tools - pain and function scores are per-visit data entry, not a step in the note',
+      why: 'measured 1216x253 behind the door; nothing in the record/generate/review/sign/send ladder needs it' }
   ];
 
   /* ------------------------------------------------------------------ CSS --
@@ -280,9 +318,40 @@
     'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3Change) #mlsDsStrip{display:none!important}',
 
     /* The secondary chip row and the note-format chips answer to the "Visit
-       shortcuts" chip the engine already renders. */
-    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2,' +
+       shortcuts" chip the engine already renders.
+       ONE EXCEPTION, and it is an owner order (2026-07-26): "make sure the op
+       notes button is easily accessible." vf-1.0.0 folded the whole .ez3-row2,
+       and the op-note control lives in it - so shipping that fold put op notes
+       two actions away on every visit state. It now stays OUT of the fold: the
+       row survives only when it carries the op-note chip, and inside that row
+       only the op-note chip is shown. Everything else still folds. */
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2)),' +
     'body.' + BODY + ':not(.' + TOOLS + ') #visitView #ez3StyleChips{display:none!important}',
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2){display:none!important}',
+    /* ...and it is unmissable rather than merely present. Bigger than the quiet
+       chips beside it, under the state hero, never competing with it. */
+    'body.' + BODY + ' #visitView #ez3Prep,' +
+    'body.' + BODY + ' #visitView #ez3Prep2{display:inline-flex!important;align-items:center;gap:8px;' +
+      'min-height:44px!important;padding:11px 18px!important;font-size:14px!important;font-weight:700!important;' +
+      'opacity:1!important;' +
+      /* CAUGHT IN THE DARK SCREENSHOT, NOT IN THE NUMBERS. The census said
+         149x44 and rendering, which is true and was not the question the owner
+         asked: in dark theme the chip drew as a faint outline on a dark card -
+         present, correctly sized, and effectively invisible. "Easily
+         accessible" is not a rect. Both themes now get an explicit surface,
+         through the tokens b681 introduced rather than literals. */
+      'background:var(--card,#fff)!important;color:var(--ink,#1A211C)!important;' +
+      'border:1px solid var(--line,#D9D6CD)!important;' +
+      'box-shadow:0 1px 2px rgba(20,33,28,.06)!important}',
+    'body.' + BODY + ' #visitView #ez3Prep:hover,' +
+    'body.' + BODY + ' #visitView #ez3Prep2:hover{background:var(--soft,#F4F2EC)!important}',
+
+    /* The calm shell captions the secondary row "GET THE DAY READY" through a
+       ::before on .ez3-row2:has(#ez3Change). With the fold in place that row
+       now carries ONE control - the op-note chip - so the caption describes a
+       group that is not there any more. A heading over a single button is
+       chrome explaining chrome; the button already says what it does. */
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2::before{content:""!important;display:none!important}',
 
     /* The shortcuts chip is the route back, so it is never the thing that
        disappears -- and it reads as the quiet secondary it is. */
@@ -294,7 +363,49 @@
     /* The canonical in-visit routes (Copilot Voice / MLS Assistant / Dictate)
        stay exactly where the owner put them -- quiet chips that never compete
        with the hero. This only guarantees they cannot grow into it. */
-    'body.' + BODY + ' #visitView .ez3fl-quick .ez3fl-qchip{font-size:12.5px;font-weight:600;box-shadow:none}'
+    'body.' + BODY + ' #visitView .ez3fl-quick .ez3fl-qchip{font-size:12.5px;font-weight:600;box-shadow:none}',
+
+    /* ================= THE ADVANCED VISIT WORKSPACE IS RETIRED =============
+     *
+     * Owner, 2026-07-26: "get rid of and completely rework the advanced visit
+     * workspace from scratch."
+     *
+     * WHAT IT WAS. One button - "Advanced visit workspace" - opened a hidden
+     * second screen holding #noteCard, #emrCard and #outcomesCard. MEASURED on
+     * the running page with a REAL note loaded through loadRecordIntoEditor
+     * (the state this repo's own memory records as never having been measured):
+     *
+     *   #noteCard        390x3143      <- three thousand pixels behind a door
+     *   #emrCard         390x423
+     *   #outcomesCard   1216x253
+     *   #pushAllEmrBtn   192x37        <- the send control, inside #noteCard
+     *
+     * The pattern has been wrong for weeks in ways that were each fixed
+     * separately: two doors with the same label (b581), five sessions measuring
+     * the city behind it at rect 0x0 and calling it dead weight, and the review
+     * control coming to rest under the corner bubble (b669). The defect none of
+     * those fixed is the door itself. A doctor with a generated note is not
+     * doing something "advanced"; the note IS the state.
+     *
+     * WHAT IT IS NOW. There is no door and no second screen.
+     *   - #noteCard surfaces on STATE - a real note exists - so it arrives as
+     *     the primary content of the state the doctor is already in.
+     *   - #emrCard and #outcomesCard leave the visit entirely and answer to
+     *     Tools, because neither is part of writing or sending this note.
+     *   - #captureCard stays hidden unconditionally, exactly as before. That
+     *     was never an "advanced" surface, it is the duplicate raw record and
+     *     generate lane, and the clinical-action gate exists to keep it closed.
+     *
+     * NOTHING ABOUT THE SEND PATH MOVES. #pushAllEmrBtn lives inside
+     * #noteCard, and openReviewStep's own precondition is that #noteBox has
+     * text - which is exactly the condition that reveals #noteCard here. The
+     * door was never load-bearing for it; it only ever hid it. The gates,
+     * the Lite refusal, the b669 clearance and every confirm are untouched. */
+    'body.' + BODY + ' #visitView #mlsEz3 .ez3fl-openws,' +
+    'body.' + BODY + ' #visitView #mlsEz3 .ez3-advrow{display:none!important}',
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard{display:block!important}',
+    'body.' + BODY + ' #visitView #emrCard,' +
+    'body.' + BODY + ' #visitView #outcomesCard{display:none!important}'
   ].join('\n');
 
   function installCss() {
@@ -322,10 +433,53 @@
       return localStorage.getItem(key) === '1';
     }, false);
   }
+  /* A REAL note, read off the canonical field the send path itself reads.
+     openReviewStep refuses unless #noteBox has text; this is the same test, so
+     "the note is on screen" and "the note can be sent" can never disagree. */
+  function noteLive() {
+    var nb = $('noteBox');
+    return !!(nb && String(nb.value || '').trim().length);
+  }
   function sync() {
     var b = document.body; if (!b) return;
     b.classList.toggle(PTMORE, ptMoreOpen());
     b.classList.toggle(TOOLS, toolsOpen());
+    b.classList.toggle(NOTE, noteLive());
+  }
+
+  /* The note arrives without a click, so the two disclosure listeners cannot
+     see it. #noteBox is a textarea: setting .value mutates no DOM, so there is
+     nothing to observe on the value itself. What the app DOES write is
+     #noteBox's inline style - it ships display:none in the markup and is
+     revealed when a note is really generated - and that IS an attribute
+     mutation. MEASURED with loadRecordIntoEditor: the style attribute is
+     rewritten ("display: none; box-sizing: border-box; max-height: 560px;
+     height: 120px; overflow-y: hidden") on the same turn the value lands.
+     So: one observer, on ONE element, attributes only, coalesced into a frame,
+     plus the ordinary input event for hand edits. No timer. */
+  var noteObs = null, noteFrame = 0;
+  function scheduleSync() {
+    if (noteFrame) return;
+    noteFrame = safe(function () {
+      return window.requestAnimationFrame(function () { noteFrame = 0; safe(sync); });
+    }, 0);
+    if (!noteFrame) safe(sync);
+  }
+  function watchNote() {
+    if (noteObs) return;
+    var nb = $('noteBox'); if (!nb) return;
+    noteObs = safe(function () {
+      var o = new MutationObserver(scheduleSync);
+      o.observe(nb, { attributes: true, attributeFilter: ['style', 'class'] });
+      return o;
+    }, null);
+  }
+  function onNoteInput(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.id) return;
+    /* #noteBox is the canonical field; #ez3Note and #ez3flNote mirror into it */
+    if (t.id !== 'noteBox' && t.id !== 'ez3Note' && t.id !== 'ez3flNote') return;
+    scheduleSync();
   }
 
   /* ONE delegated listener. The three chips that own these two disclosures all
@@ -382,7 +536,12 @@
     wrapToggle();
     markPrimary();
     sync();
-    if (!listening) { document.addEventListener('click', onDocClick, true); listening = true; }
+    if (!listening) {
+      document.addEventListener('click', onDocClick, true);
+      document.addEventListener('input', onNoteInput, true);
+      listening = true;
+    }
+    watchNote();
   }
 
   /* renderProfile() rebuilds the patient header, so the primary marker has to
@@ -414,7 +573,18 @@
         document.body.classList.toggle(PTMORE, false);
         document.body.classList.toggle(TOOLS, false);
       } catch (e) {}
-      try { if (listening) { document.removeEventListener('click', onDocClick, true); listening = false; } } catch (e) {}
+      try {
+        if (listening) {
+          document.removeEventListener('click', onDocClick, true);
+          document.removeEventListener('input', onNoteInput, true);
+          listening = false;
+        }
+      } catch (e) {}
+      try { if (noteObs) noteObs.disconnect(); } catch (e) {}
+      noteObs = null;
+      try { if (noteFrame) window.cancelAnimationFrame(noteFrame); } catch (e) {}
+      noteFrame = 0;
+      try { document.body.classList.toggle(NOTE, false); } catch (e) {}
       try { if (wrapped && window.togglePtMore === wrapped) window.togglePtMore = origToggle; } catch (e) {}
       try {
         if (origRenderProfile && window.renderProfile && window.renderProfile.__vfWrapped) window.renderProfile = origRenderProfile;
@@ -440,7 +610,7 @@
   /* The app installs renderProfile and togglePtMore with the post-auth module
      train, which lands after this file. Three bounded retries, then done --
      never a standing interval. */
-  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); }, 1500);
-  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); }, 4000);
-  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); }, 9000);
+  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); watchNote(); sync(); }, 1500);
+  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); watchNote(); sync(); }, 4000);
+  setTimeout(function () { wrapToggle(); wrapRenderProfile(); markPrimary(); watchNote(); sync(); }, 9000);
 })();
