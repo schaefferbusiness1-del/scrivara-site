@@ -4854,7 +4854,7 @@
         if (node && node.parentNode) { try { node.parentNode.removeChild(node); api.writes++; } catch (e) {} }
         continue;
       }
-      var sig = rows.join('');
+      var sig = rows.join('\u0001');   /* a separator that cannot occur in chart text: joining on the empty string would give [ab,c] and [a,bc] ONE signature and skip a real repaint */
       /* no-op guard: an unconditional rebuild here would recalc the whole card
          on every renderProfile, which is exactly the churn class b624/b640 spent
          a night removing */
