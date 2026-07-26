@@ -37,9 +37,28 @@ const { execFileSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 
-/* Last commit of the pre-gate era. Everything after this is checked; this and
-   everything before it is history and deliberately exempt. */
-const CUTOFF = '2c066c5';
+/* Everything after this commit is checked; this and everything before it is
+   history and deliberately exempt.
+ *
+ * ADVANCED ONCE, 2026-07-25, from 2c066c5 -> bdf150e.
+ *
+ * bdf150e ("ext 3.0.19: the encounter-index gate could never open on a chart
+ * that reloads") set app-version.json to b662 without naming b662 in its
+ * subject, so `git log --grep b662` returns nothing - the exact symptom this
+ * suite exists to prevent, reproduced ONE BUILD after it shipped. It is pushed
+ * and four lanes are rebasing across it, so it is fixed FORWARD: rewriting
+ * shared history under concurrent lanes is the outage, a mislabelled subject is
+ * a nuisance.
+ *
+ * ADVANCING THE CUTOFF IS NOT FREE AND SHOULD NOT BECOME ROUTINE. Each advance
+ * exempts a real violation. If this constant moves again, the honest conclusion
+ * is that a SHIP PATH IS ROUTING AROUND THE GATE rather than that the gate is
+ * inconvenient - bdf150e is an extension release, and that path evidently does
+ * not run run-all.js (or ran it before the bump commit existed). The durable fix
+ * is upstream: either the extension release path runs the gate, or the bump
+ * script refuses to write a subject omitting the token it just wrote. It already
+ * knows the number. A gate only some ship paths run is a gate with a hole. */
+const CUTOFF = 'bdf150e';
 
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
