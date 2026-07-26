@@ -8677,8 +8677,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              consecutive identical observations of BOTH counts spanning 20s+,
              with an openVisits re-drive between each. The measured settle was
              immediate and held 53s, so this is ~3x conservative. */
-          if (!(stabN >= 6 && stabMs >= 20000)) {
-          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ']', declaredEvents: evTotal, renderedListItems: listKids };
+          /* Frame-local OR orchestrator-supplied, whichever is stronger. The
+             frame counter resets whenever openVisits re-renders this frame,
+             which the caller does between every pass - so on a chart that
+             reloads, only the outer count ever grows. */
+          var effStabN = Math.max(Number(stabN) || 0, Number(cfg && cfg.outerStableN) || 0);
+          var effStabMs = Math.max(Number(stabMs) || 0, Number(cfg && cfg.outerStableMs) || 0);
+          if (!(effStabN >= 6 && effStabMs >= 20000)) {
+          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ';outerN=' + (Number(cfg && cfg.outerStableN) || 0) + ';outerMs=' + (Number(cfg && cfg.outerStableMs) || 0) + ']', declaredEvents: evTotal, renderedListItems: listKids };
           }
           acceptedOnStability = true;
         }
@@ -9450,6 +9456,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var readStartedAt = Date.now();
     var readBudgetMs = Math.max(30000, Math.min(180000, Number(cfg.maxReadMs || 165000)));
     var readDeadline = readStartedAt + readBudgetMs;
+    /* The encounter-index wait may not spend the whole read. Without this it
+       retries until 7s before readDeadline, so a list whose shape keeps
+       jittering burns all 165s and the body phase is admitted with nothing
+       left - which is how a 14-encounter patient came back
+       visits-time-budget-exceeded on the owner's chart. 40% of the budget is
+       ~66s, and a healthy index settles in ~20-25s (six stable passes). */
+    var indexPhaseDeadline = readStartedAt + Math.min(70000, Math.max(20000, Math.round(readBudgetMs * 0.4)));
     var frozenCallerDeadline = Number(callerDeadlineAt || 0);
     /* The app/content bridge may have less time remaining than this reader's
        normal ceiling (for example near the end of the whole-day batch). Never
@@ -9566,10 +9579,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          observation retries - every identity gate is unchanged. */
       var ehStableCount = -1;
       var enrSeen = [];
-      var ehStuckKey = '', ehStuckPasses = 0;
+      var ehStuckKey = '', ehStuckPasses = 0, ehStuckFirstAt = 0;
       var EH_STUCK_LIMIT = 16;            /* ~56s of a chart that is not moving */
       for (var ehPass = 0; ehPass < 48; ehPass++) {
-      var enR = await exec(emrId, null, ['enumerate', cfg]);
+      /* The frame-local stability counter is destroyed by the openVisits
+         re-drive below, so it can never reach six. Carry the orchestrator's
+         own count, which survives the reload, into the op. */
+      var enumCfg = cfg;
+      try {
+        enumCfg = Object.assign({}, cfg, {
+          outerStableN: ehStuckPasses,
+          outerStableMs: ehStuckFirstAt ? Math.max(0, Date.now() - ehStuckFirstAt) : 0
+        });
+      } catch (eCfg) { enumCfg = cfg; }
+      var enR = await exec(emrId, null, ['enumerate', enumCfg]);
       /* 3.0.12: which frames actually answered, and did any hold an index. */
       try {
         enrSeen = (enR || []).map(function (r) {
@@ -9603,9 +9626,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
         /* Volatile counters out, everything that reflects the chart in. */
         var ehKey = enrSeen.join(',').replace(/;?n=[0-9]+/g, '').replace(/;?sameFor=[0-9]+s/g, '');
-        if (ehKey && ehKey === ehStuckKey) ehStuckPasses++; else { ehStuckKey = ehKey; ehStuckPasses = 1; }
+        if (ehKey && ehKey === ehStuckKey) ehStuckPasses++; else { ehStuckKey = ehKey; ehStuckPasses = 1; ehStuckFirstAt = Date.now(); }
         var ehStuck = ehStuckPasses >= EH_STUCK_LIMIT;
-        if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
+        if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
           ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : ''), identity: {}, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },

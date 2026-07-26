@@ -24,7 +24,7 @@
  *    built; it says nothing about whether they were right.
  *
  * 2. A CHANGED FILE BEHIND A FROZEN TOKEN. feat_mls_checker.js had
- *    SERVER_EXT_VERSION moved 3.0.6 -> 3.0.18, but its immutable loader token
+ *    SERVER_EXT_VERSION moved 3.0.6 -> 3.0.19, but its immutable loader token
  *    stayed 20260724chk306r1. The service worker serves versioned asset URLs
  *    cache-first, so every browser would have kept the OLD checker and gone on
  *    believing the published version was 3.0.6 — on the one file whose entire

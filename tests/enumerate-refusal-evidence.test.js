@@ -93,8 +93,15 @@ assert(/if \(evTotal <= 0\) \{/.test(gates), 'the mandatory-total rule must stil
  *
  * What survives here is the half that is still true: the mandatory total must
  * remain, because its PRESENCE is the landing-pane discriminator. */
-assert(/stabN >= 6 && stabMs >= 20000/.test(gates),
-  'stability is now an acceptance condition and must stay bounded by both a pass count and a dwell');
+/* 3.0.19: the counts are now the STRONGER of the frame-local pair and the
+   orchestrator-supplied pair. The frame-local counter alone could never reach
+   six, because the openVisits re-drive between passes re-renders the frame and
+   destroys it - measured 5/5 patients refusing after 16 identical passes. The
+   bound itself is unchanged: six passes AND a 20s dwell. */
+assert(/effStabN >= 6 && effStabMs >= 20000/.test(gates),
+  'stability is an acceptance condition and must stay bounded by both a pass count and a dwell');
+assert(/Math.max(Number(stabN) || 0, Number(cfg && cfg.outerStableN) || 0)/.test(gates),
+  'the dwell must be measured where it survives the frame reload, not only inside the frame');
 
 /* ---- the stability counter is real code; run it. --------------------------- */
 

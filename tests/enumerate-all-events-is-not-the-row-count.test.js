@@ -61,8 +61,15 @@ assert(/visits-panel-not-open/.test(gates), 'gate 1 must remain');
 
 /* ---- the arithmetic no longer refuses a settled list ---------------------- */
 
-assert(/if \(!\(stabN >= 6 && stabMs >= 20000\)\) \{/.test(gates),
+/* 3.0.19: same bound, measured where it survives. The frame-local counter is
+   destroyed by the openVisits re-drive the caller performs between every pass,
+   so stabN alone could never reach 6 and this acceptance could never fire —
+   5/5 patients refused after 16 identical passes on the owner's live chart.
+   The orchestrator's own count is carried in and the stronger of the two wins. */
+assert(/if \(!\(effStabN >= 6 && effStabMs >= 20000\)\) \{/.test(gates),
   'a list whose counts are below the declared total must be accepted only once BOTH counts have been stable across >=6 passes and >=20s');
+assert(/var effStabN = Math\.max\(Number\(stabN\) \|\| 0, Number\(cfg && cfg\.outerStableN\) \|\| 0\);/.test(gates),
+  'the stability evidence must include the orchestrator count, which survives the frame re-render');
 assert(/acceptedOnStability = true;/.test(gates),
   'acceptance by stability must be recorded, not silent');
 assert(/var shape = listKids \+ ':' \+ g\.rows\.length;/.test(gates),
