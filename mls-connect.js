@@ -6417,6 +6417,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
+  /* b676: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+     bottom-left bubbles), so every lookup now resolves null and the computed
+     clearance is 0. That is CORRECT: nothing floats over the bottom-left any
+     more, so there is nothing to clear. The list and the covered-scroll
+     mechanism stay armed for whatever fixed furniture ships next — add its id
+     here THE DAY it ships, or the b668 defect (a control the doctor is told
+     to press, parked under floating chrome) returns silently. */
   var REVIEW_FIXED_FURNITURE = ['mlsVoiceCluster', 'mlsCopVoiceBtn'];
   function openReviewStep() {
     var note = $('noteBox');
@@ -6632,7 +6639,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      setLaneHidden(rb, !!noteText.trim() && !live);
+      /* b676 (owner 2026-07-26: "get rid of the top start recording extra
+         button its so annoying"). Idle, this pill read "Start recording —
+         <name>" directly above the big taught hero (#ez3Nxt) that says the
+         SAME thing — two identical offers on one screen. The pill's real jobs
+         are the ones the hero does not do: ⏸ Pause while live, 🎤 Resume when
+         a stopped session has transcript. So it now shows ONLY in those two
+         states and the hero owns starting, exactly as onboarding teaches.
+         (Pause/resume reachability is pinned by easy-pause-resume-runtime.) */
+      var rbResumable = !!(text.trim() && _recSessionSeen) && !noteText.trim();
+      setLaneHidden(rb, !live && !rbResumable);
       if (rb.classList.contains('live') !== live) rb.classList.toggle('live', live);
       var rbLabel = rb.querySelector('.ez3fl-rblabel');
       if (!rbLabel) {
@@ -33461,7 +33477,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b675';
+  window.__MLS_AV = window.__MLS_AV || 'b676';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33771,7 +33787,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b675';
+  var MLS_APP_BUILD='2026-07-25-b676';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
