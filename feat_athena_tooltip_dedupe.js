@@ -1558,6 +1558,11 @@
       '#copilotDockBody #copilotInputRow{box-sizing:border-box;order:5;flex:0 0 auto!important;display:grid!important;grid-template-columns:minmax(0,1fr) 46px 46px;align-items:end;gap:8px;width:100%;margin:0!important;padding:10px 12px 12px!important;border-top:1px solid #E7E5DD;background:#fff;}',
       '#copilotDockBody #copilotInput{box-sizing:border-box;width:100%!important;min-width:0!important;margin:0!important;}',
       '#copilotDockBody #copilotMicBtn,#copilotDockBody #copilotSendBtn{box-sizing:border-box;width:46px!important;height:46px!important;margin:0!important;padding:0!important;}',
+      /* cvd-1.0.0: anything injected into #copilotCard without an explicit order
+         defaults to order:0 and jumps ABOVE the hero in this flex column. Both
+         the no-patient hint and the dock recovery box did exactly that, so the
+         first thing in the drawer was a caption for a thread further down. */
+      '#copilotDockBody #mlsCopilotDockState,#copilotDockBody #mlsCopilotNoPtA{order:1;flex:0 0 auto}',
       '.mls-qtp-overlay{position:fixed;inset:0;z-index:2147483200;background:rgba(20,31,25,.48);display:flex;align-items:center;justify-content:center;padding:20px;}',
       '.mls-qtp-card{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;background:#fff;color:#1A211C;border:1px solid #DCE4DE;border-radius:18px;box-shadow:0 24px 70px rgba(17,35,25,.28);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}',
       '.mls-qtp-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 13px;border-bottom:1px solid #E6ECE8;}',

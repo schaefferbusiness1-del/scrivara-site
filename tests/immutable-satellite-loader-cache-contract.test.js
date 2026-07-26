@@ -13,7 +13,7 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
  * would deterministically replay stale code for an existing clinician. */
 const assets = [
   ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
-  ['feat_athena_tooltip_dedupe.js', '20260725ui124', '20260724ui123'],
+  ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
   ['feat_b18_qa.js', '20260719b18v9', '20260719b18v8'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260723asst144', '20260719asst143'],
@@ -34,6 +34,8 @@ const assets = [
   ['feat_mls_copilot_voice_v2.js', '20260726cv2130', '20260723cv2121'],
   ['feat_mls_voice_commands.js', '20260726vc110', '20260625vc1c1'],
   ['feat_mls_voice_ai_micbridge.js', '20260726mb110', '20260625mb1c1'],
+  ['feat_mls_copilot_request_safety.js', '20260726crs120', '20260718crs111'],
+  ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
   ['feat_mls_voice_ai.js', '20260719vaihot112', '20260719vai112'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],

@@ -3661,9 +3661,9 @@
   },
   {
    "id": "copilotMicBtn",
-   "label": "Speak your question",
-   "accessibleName": "Speak your question",
-   "title": "Speak your question",
+   "label": "Speak your question — it types into the box, then you send it",
+   "accessibleName": "Speak your question — it types into the box, then you send it",
+   "title": "Speak your question — it types into the box, then you send it",
    "kind": "button",
    "tag": "button",
    "domId": "copilotMicBtn",

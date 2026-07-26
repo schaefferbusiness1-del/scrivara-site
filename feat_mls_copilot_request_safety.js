@@ -8,7 +8,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.1.1";
+  var NS = "__mlsCopilotRequestSafety", VERSION = "crs-1.2.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -66,17 +66,33 @@
       artifact: data && data.artifact && typeof data.artifact === "object" ? data.artifact : null };
   }
   var requestSeq = 0, activeRequest = null, ownerEvents = [];
+  function resetEpoch() { return safe(function () { return Number(window._copilotResetEpoch || 0); }, 0); }
+  /* No timeout at all meant one hung /api/copilot bricked the card until a
+     reload: the three-dot bubble stayed forever, the chips row stayed empty,
+     _copilotBusy stayed true, and Enter plus every chip became dead. */
+  var REQUEST_TIMEOUT_MS = 45000;
   function capture() {
     reconcile("copilot-send");
     return {
       id: ++requestSeq,
       activeId: activeId(), ownerId: ownerId(), bindingId: bindingId(), epoch: bindingEpoch(),
+      /* crs-1.2.0: staleness is decided by history ARRAY IDENTITY, and
+         copilotReset() replaces the array. So pressing "New chat" mid-request
+         made the token stale and the finally block toasted "The patient or
+         visit changed" when nothing of the kind had happened. Record the reset
+         counter so the two causes can be told apart and named correctly. */
+      resetEpoch: resetEpoch(),
       history: historyNow(), context: null, controller: (typeof AbortController === "function") ? new AbortController() : null,
       stale: false, reverted: false
     };
   }
   function stillCurrent(t) {
     return !!(t && historyNow() === t.history && activeId() === t.activeId && ownerId() === t.ownerId
+      && bindingId() === t.bindingId && bindingEpoch() === t.epoch);
+  }
+  /* Was the ONLY thing that changed the doctor pressing New chat? */
+  function clearedByReset(t) {
+    return !!(t && resetEpoch() !== t.resetEpoch && activeId() === t.activeId && ownerId() === t.ownerId
       && bindingId() === t.bindingId && bindingEpoch() === t.epoch);
   }
   function dropPending(arr, pending) {
@@ -158,7 +174,18 @@
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + window.bkToken() },
         body: JSON.stringify({ question: q, context: context, history: hist.slice(0, -1) })
       };
-      if (token.controller) options.signal = token.controller.signal;
+      if (token.controller) {
+        options.signal = token.controller.signal;
+        /* typeof-guarded: the contract harness runs this module in a bare vm
+           context with no timers, and an unguarded reference threw BEFORE the
+           fetch — the request simply never went out. A safety net must never be
+           the thing that stops the request it is protecting. */
+        token.timeoutT = (typeof setTimeout === "function") && setTimeout(function () {
+          if (activeRequest !== token) return;
+          token.timedOut = true;
+          safe(function () { token.controller.abort(); });
+        }, REQUEST_TIMEOUT_MS);
+      }
       var response = await fetch(window.bkBase() + "/api/copilot", options);
       var data = await response.json().catch(function () { return {}; });
       if (!stillCurrent(token)) { aborted = true; return false; }
@@ -182,11 +209,13 @@
       if (stillCurrent(token)) {
         dropPending(ownerHistory, pending);
         token.pending = null;
-        if (!(e1 && e1.name === "AbortError")) ownerHistory.push({ role: "ai", text: "Network error reaching Copilot. Nothing was run; check your connection and try again.", requestId: token.id });
+        if (token.timedOut) ownerHistory.push({ role: "ai", text: "Copilot did not answer within 45 seconds, so the request was stopped. Nothing was run — ask again, or use the schedule and patient commands, which work without it.", requestId: token.id });
+        else if (!(e1 && e1.name === "AbortError")) ownerHistory.push({ role: "ai", text: "Network error reaching Copilot. Nothing was run; check your connection and try again.", requestId: token.id });
         else aborted = true;
       } else aborted = true;
       return false;
     } finally {
+      safe(function () { if (token.timeoutT && typeof clearTimeout === "function") { clearTimeout(token.timeoutT); token.timeoutT = 0; } });
       dropPending(ownerHistory, pending);
       token.pending = null;
       if (activeRequest === token) {
@@ -197,7 +226,13 @@
       }
       reconcile("copilot-finished");
       repaint();
-      if (aborted && !token.reverted) safe(function () { if (isFn(window.toast)) window.toast("The patient or visit changed, so that Copilot answer was discarded.", ""); });
+      if (aborted && !token.reverted) safe(function () {
+        if (!isFn(window.toast)) return;
+        if (token.timedOut) return;   /* already said, in the thread, with the reason */
+        window.toast(clearedByReset(token)
+          ? "Started a new chat, so that Copilot answer was discarded."
+          : "The patient or visit changed, so that Copilot answer was discarded.", "");
+      });
     }
   }
 
