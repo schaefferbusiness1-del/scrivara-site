@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_voice_ai_micbridge.js  ->  window.__mlsVoiceMicBridge   (mb-1.0.0)
+ * feat_mls_voice_ai_micbridge.js  ->  window.__mlsVoiceMicBridge   (mb-1.1.0)
  * ---------------------------------------------------------------------------
  * ITEM 24: Make the EXISTING on-screen mic button hands-free for CHAINED,
  * natural-language commands by bridging its speech transcripts into the new
@@ -63,7 +63,7 @@
   'use strict';
   try { if (window.__mlsVoiceMicBridge && window.__mlsVoiceMicBridge.installed) return; } catch (e) { return; }
 
-  var VERSION = 'mb-1.0.0';
+  var VERSION = 'mb-1.1.0';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -152,11 +152,34 @@
   }
 
   /* ===================== THE TAP (result listener) ===================== */
+  /* mb-1.1.0 (2026-07-26, voice lane) — STAND DOWN WHEN THE ROUTER IS PRESENT.
+   *
+   * This bridge exists for exactly one reason: __mlsVoice's transcripts used to
+   * reach only __mlsVoice's own three regexes, so chained natural language was
+   * dropped. As of vc-1.1.0 __mlsVoice routes every FINAL transcript through
+   * window.__mlsVoiceCopilot.route() to the one Copilot brain — and this tap
+   * listens on the SAME recognizer. Left alive, one spoken sentence would be
+   * acted on twice: once by the router and once here. That is a double-fire on
+   * clinical actions, not a cosmetic duplicate.
+   *
+   * The two capabilities only __mlsVoiceAI implements (save-draft and
+   * pull-patient-from-Athena) are not lost: the router registers them into the
+   * shared intent registry as `voice-ai-delegate`, which calls __mlsVoiceAI's
+   * OWN parser and executor. So they still work by voice, and now work by typing
+   * too. __mlsVoiceAI itself is untouched and still usable directly. */
+  function routerOwnsRouting() {
+    return safe(function () {
+      var v = window.__mlsVoiceCopilot;
+      return !!(v && v.installed === true && typeof v.route === 'function');
+    }, false);
+  }
+
   function onResultTap(e) {
     safe(function () {
       if (!window.__mlsVoiceMicBridge || !window.__mlsVoiceMicBridge.installed) return;
       // gate: only when the command mic is the active owner (not dictation)
       if (!window.__mlsVoiceMicBridge._testForce) {
+        if (routerOwnsRouting()) return;   /* the router already carried this utterance */
         if (appCapturing()) return;
         if (!oldListening()) return;
       }

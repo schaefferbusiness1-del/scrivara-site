@@ -22,13 +22,35 @@
  * and resumes only after dictation ends (watched via the #captureBtn 'recording'
  * class, since 'capturing' is lexically scoped and not on window).
  *
+ * vc-1.1.0 (2026-07-26, voice lane) — TWO REAL DEFECTS CLOSED:
+ *
+ *   1. THIS MODULE WAS OUTSIDE THE ONE-RECOGNIZER TRUCE. Watching the
+ *      #captureBtn class is not a microphone lease: it only sees the VISIT
+ *      recorder, so Copilot Voice, field Dictate and this recognizer could all
+ *      be live at once, and none of them would know. Worse, the mic FAB this
+ *      module paints is retired by `#mlsVoiceFab{display:none!important}`
+ *      (mls-connect.js) while the opt-in persists in
+ *      localStorage['mlsVoiceEnabled'] — so any doctor who ever switched it on
+ *      got an INVISIBLE recognizer on every later page load, with no control to
+ *      turn it off and no entry in the hub. It now registers with
+ *      mlsSpeechHub() like every other owner: it claims before starting,
+ *      releases on stop, and yields the microphone when another owner claims it.
+ *
+ *   2. IT WAS A SECOND BRAIN. Three private regexes decided what a spoken
+ *      sentence meant, and answered nowhere the doctor was looking. Final
+ *      transcripts now leave through window.__mlsVoiceCopilot.route() — the one
+ *      voice router — so they reach the SAME Copilot intelligence as typed chat
+ *      and are answered in the Copilot thread. The legacy matcher below is kept
+ *      only as the fallback for a page where the router did not load; it is no
+ *      longer the path a doctor normally travels.
+ *
  * Additive, idempotent, reversible (window.__mlsVoice.revert()), ASCII-only.
  * ==========================================================================*/
 (function () {
   'use strict';
   try { if (window.__mlsVoice && window.__mlsVoice.installed) return; } catch (e) { return; }
 
-  var VERSION = 'vc-1.0.0';
+  var VERSION = 'vc-1.1.0';
   var LS_KEY = 'mlsVoiceEnabled';
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -42,6 +64,7 @@
   var bufClearT = 0;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function isFn(f) { return typeof f === 'function'; }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
   function lsGet(k) { return safe(function () { return localStorage.getItem(k); }, null); }
   function lsSet(k, v) { safe(function () { localStorage.setItem(k, v); }); }
@@ -141,6 +164,55 @@
     }, 500);
   }
 
+  /* ===================== ONE-RECOGNIZER TRUCE (vc-1.1.0) =====================
+   * mlsSpeechHub() is the app's single microphone registry (ScribeFlow.html).
+   * Registering costs one callback; NOT registering is what let this module run
+   * a hidden recognizer alongside the visit recorder. The stop callback returns
+   * hub.waitForEnd(...) so the next owner cannot start until the browser has
+   * really released the microphone — the same contract the visit recorder,
+   * Copilot Voice and the voice-AI layer already honour. */
+  var unregisterSpeech = null;
+  function speechHub() {
+    return safe(function () {
+      if (isFn(window.mlsSpeechHub)) return window.mlsSpeechHub();
+      if (window.__mlsSpeechHub && isFn(window.__mlsSpeechHub.claim)) return window.__mlsSpeechHub;
+      return null;
+    }, null);
+  }
+  function registerSpeech() {
+    var h = speechHub();
+    if (!h || unregisterSpeech || !isFn(h.register)) return h;
+    unregisterSpeech = h.register('voice-commands', 'Voice commands', function (handoff) {
+      var previous = rec;
+      var stopNow = function () {
+        /* Another owner took the microphone. Stay OFF until it gives it back —
+           auto-restart here is exactly how two live recognizers happen. */
+        yielding = true;
+        stopRec();
+        paintFab();
+      };
+      if (handoff && handoff.pending) { stopNow(); return; }
+      if (previous && isFn(h.waitForEnd)) return h.waitForEnd(previous, stopNow);
+      stopNow();
+    });
+    return h;
+  }
+  function releaseSpeech() { safe(function () { var h = speechHub(); if (h && isFn(h.release)) h.release('voice-commands'); }); }
+
+  /* ===================== ONE BRAIN (vc-1.1.0) =====================
+   * Route a FINAL transcript to the app's single Copilot brain. Returns true
+   * when the router took it, false when this page has no router and the legacy
+   * matcher below must answer instead. Interim results are never routed — a
+   * half-heard sentence must not run an action. */
+  function routeToCopilot(said) {
+    return safe(function () {
+      var vcp = window.__mlsVoiceCopilot;
+      if (!vcp || vcp.installed !== true || !isFn(vcp.route)) return false;
+      var r = vcp.route(said, 'voice-commands');
+      return !!(r && r.ok);
+    }, false);
+  }
+
   /* ===================== COMMAND MATCHING ===================== */
   function normalize(s) {
     return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -166,11 +238,26 @@
     else if (cmd === 'record') doStartRecording();
   }
 
+  var lastRouted = { text: '', at: 0 };
   function onResult(e) {
-    var chunk = '';
+    var chunk = '', fin = '';
     for (var i = e.resultIndex; i < e.results.length; i++) {
-      chunk += e.results[i][0].transcript + ' ';
+      var t = e.results[i][0].transcript;
+      chunk += t + ' ';
+      if (e.results[i].isFinal) fin += t + ' ';
     }
+    fin = fin.trim();
+
+    /* vc-1.1.0: a completed sentence goes to the ONE Copilot brain. */
+    if (fin) {
+      var now = Date.now();
+      if (!(fin === lastRouted.text && (now - lastRouted.at) < 3500)) {
+        lastRouted = { text: fin, at: now };
+        if (routeToCopilot(fin)) { buf = ''; clearTimeout(bufClearT); return; }
+      }
+    }
+
+    /* Fallback ONLY: no router on this page. Legacy rolling-buffer matcher. */
     buf = (buf + ' ' + chunk).slice(-200);
     // rolling buffer clears if no speech for a bit (avoids stale stitching)
     clearTimeout(bufClearT);
@@ -210,11 +297,27 @@
     if (appCapturing()) return; // never fight dictation for the mic
     if (!rec) rec = buildRec();
     if (!rec) return;
-    try { rec.start(); listening = true; }
-    catch (e) { listening = false; } // start() throws if already started; ignore
+    /* vc-1.1.0: claim the microphone through the hub, and start only once the
+       previous owner's recognizer has really ended. Two recognizers overlapping
+       for even a moment is the exact failure the truce exists to prevent. */
+    var h = registerSpeech();
+    var lease = h && isFn(h.claim) ? h.claim('voice-commands') : null;
+    if (lease && lease.ok === false) { listening = false; return; }
+    if (lease && lease.previous) {
+      toast('Stopped ' + lease.previous.label + ' so voice commands can use the microphone.', '');
+    }
+    var instance = rec;
+    var begin = function () {
+      if (rec !== instance || listening) return;
+      try { rec.start(); listening = true; }
+      catch (e) { listening = false; releaseSpeech(); } // start() throws if already started
+    };
+    if (lease && isFn(lease.whenReady)) { if (!lease.whenReady(begin)) { listening = false; releaseSpeech(); } }
+    else begin();
   }
 
   function stopRec() {
+    releaseSpeech();
     if (!rec) { listening = false; return; }
     try { rec.stop(); } catch (e) {}
     try { rec.abort(); } catch (e) {}
@@ -363,6 +466,8 @@
   function revert() {
     safe(function () { clearInterval(tickT); });
     setEnabledSilent(false);
+    safe(function () { if (isFn(unregisterSpeech)) unregisterSpeech(); });
+    unregisterSpeech = null;
     safe(function () { if (fab && fab.parentNode) fab.parentNode.removeChild(fab); });
     safe(function () { var r = gid('mlsVoiceModalRow'); if (r && r.parentNode) r.parentNode.removeChild(r); });
     safe(function () { window.removeEventListener('resize', positionFab); });
@@ -380,6 +485,15 @@
     isListening: function () { return listening; },
     test: function (phrase) { var c = matchCommand(phrase); if (c) fire(c); return c; },
     supported: !!SR,
+    /* vc-1.1.0 diagnostics — read-only, asserts nothing it has not looked at. */
+    inSpeechHub: function () { return !!unregisterSpeech; },
+    routesToCopilot: function () {
+      return safe(function () {
+        var v = window.__mlsVoiceCopilot;
+        return !!(v && v.installed === true && typeof v.route === 'function');
+      }, false);
+    },
+    _routeToCopilot: routeToCopilot,
     revert: revert
   };
 
