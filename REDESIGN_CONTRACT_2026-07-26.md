@@ -44,6 +44,23 @@ Owner's words, verbatim, the entire brief:
     cannot back ("—", not "None"); success is asserted only on receipts;
     errors name a route that exists.
 
+## Owner amendments (2026-07-26, mid-build — all briefed to workers)
+
+11. **Combine the three visit chips into ONE control** — expands to the three
+    named tools, never guesses (two are different recognizers); inline, never
+    floating; a closed control never hides a hot mic. (Worker D)
+12. **Teams comes back, under Tools, made better.** nav_team's stray inline
+    hide becomes doctrine-compliant; Tools offers it again. (Worker E)
+13. **Labeling law is app-wide**: verb+object buttons, ≤3-word headers, no two
+    controls share a label unless identical action. (D + E)
+14. **One shared motion system** (Worker F): tokens for duration/easing,
+    transform/opacity only, ≤250ms interactions, reduced-motion respected,
+    animations that always complete — subtle, Apple-restrained, everywhere.
+15. **Continuity errors are release blockers**: never two text surfaces for the
+    same content visible at once (measured live at b677: #ez3flTranscript AND
+    #ez3Transcript together); state carries across views; gate it. (D, swept
+    app-wide at integration)
+
 ## Non-negotiable mechanics (each has bitten)
 
 - Verify on the RUNNING page. CSS is concatenated — grep can't see resolved
