@@ -3944,7 +3944,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="card" id="studioResultCard" style="display:none">
       <h2 aria-labelledby="studioResultTitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1;min-width:140px">Your widget</span>
         <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="studioFullscreen()" title="Open this tool full-screen">⛶ Fullscreen</button>
-        <button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="saveStudioWidget()">💾 Save it</button>
+        <button class="btn-green" id="studioSaveBtn" style="font-size:13px;padding:7px 12px" onclick="saveStudioWidget()">💾 Save it</button>
         <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="closeStudioResult()">✕ Close</button>
       </h2>
       <div id="studioRefineRow" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap">
@@ -3956,7 +3956,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="note" style="margin-top:6px">Runs sandboxed — it reads your data snapshot and can export locally or prepare an EMR review route. Email sending is unavailable; copy a reviewed draft into your approved email system.</p>
     </div>
     <div class="card">
-      <h2><span class="ic">📁</span> My creations</h2>
+      <h2><span class="ic">📁</span> My creations <span id="studioSavedCount" style="font-weight:500;font-size:13px;color:var(--muted)"></span></h2>
+      <div id="studioSavedBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
+        <input id="studioSavedFilter" placeholder="Filter your tools…" oninput="renderStudioSaved()" style="flex:1;min-width:180px;max-width:320px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink)">
+        <span id="studioSavedMeter" class="mini" style="color:var(--muted)"></span>
+      </div>
       <div id="studioSaved" style="display:flex;gap:10px;flex-wrap:wrap"><div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div></div>
     </div>
   </div>
@@ -6398,6 +6402,12 @@ function refreshMe(opts){
           try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
           try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){}
           try{ renderDocPrefs(); }catch(e){}
+          /* Login is the moment saved tools come back from the account (logout
+             purges the whole namespace on shared workstations). Render the
+             gallery AND the pinned tabs now — this path passes deferRender, so
+             the render inside loadPrefsFromServer is deliberately skipped. */
+          try{ if(typeof renderStudioSaved==='function') renderStudioSaved(); }catch(e){}
+          try{ if(typeof _renderPinnedTabs==='function') _renderPinnedTabs(); }catch(e){}
         }
         try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
         if((changed[0]||changed[1])&&currentView==='patients'){ renderPatients(); renderProfile(); }
@@ -7645,21 +7655,56 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','googleBusinessUrl','defaultFormat','noteStyle',
   'featMME','featSurgical','featUR','featCost',
-  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1'];
+  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1',
+  'studio_widgets'];
+/* A tool the doctor built and saved is their work product — it must survive a new
+   laptop, a cleared cache, or a reinstall, not just live in one browser. It rides
+   this same encrypted per-user blob. The blob is capped server-side at 500,000
+   chars for EVERYTHING, and one generated tool can be 90,000, so the creations
+   key is trimmed to its own budget here (pinned + most recent first) instead of
+   being allowed to 413 the whole sync and take settings and templates down with it. */
+function _studioPrefsValue(budget){
+  try{
+    const raw=localStorage.getItem(uns('studio_widgets'));
+    if(raw===null) return null;
+    const cap=Math.max(0, Number(budget)||STUDIO_CLOUD_BUDGET);
+    const arr=JSON.parse(raw||'[]');
+    if(!Array.isArray(arr)||!arr.length) return raw;
+    if(raw.length<=cap) return raw;
+    return JSON.stringify(_studioCloudPlan(arr,cap).list);
+  }catch(e){ return null; }
+}
 function syncPrefsToServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return;   // hosted mode only
   try{
     const prefs={};
     PREF_SYNC_KEYS.forEach(k=>{
+      if(k==='studio_widgets') return;      // sized last, against what is left
       const v=localStorage.getItem(uns(k));
-      if(v!==null) prefs[k]=v;             // store raw string values as-is
+      if(v!==null) prefs[k]=v;              // store raw string values as-is
     });
+    /* Settings and templates come FIRST and are never sacrificed for creations.
+       Whatever room is left under the server's 500,000-char cap (kept to 460,000
+       for the JSON envelope and growth) is what the creations copy may use — so
+       a doctor with heavy templates syncs fewer tools rather than 413-ing the
+       whole blob and silently losing settings sync for everything. */
+    let usedByOthers=0; try{ usedByOthers=JSON.stringify(prefs).length; }catch(e){ usedByOthers=0; }
+    const wv=_studioPrefsValue(Math.min(STUDIO_CLOUD_BUDGET, 460000-usedByOthers));
+    let wids=null;
+    if(wv!==null){ prefs['studio_widgets']=wv; try{ wids=JSON.parse(wv).map(w=>w.id); }catch(e){ wids=null; } }
     fetch(bkBase()+'/api/prefs',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({prefs:prefs})
     }).then(r=>{
+      /* Only the SERVER's acceptance may light the "☁ in your account" badge on a
+         creation card. An optimistic badge would be exactly the lie this whole
+         rewrite exists to remove. */
+      if(r.ok&&wids){
+        window.__studioCloudIds=wids;
+        try{ if(typeof renderStudioSaved==='function'&&currentView==='studio') renderStudioSaved(); }catch(e){}
+      }
       if(!r.ok&&opts.notify) toast('Saved on this device — cloud sync failed ('+r.status+'); it will retry on your next save.','warn');
     }).catch(()=>{ /* offline / transient — next save retries */
       if(opts.notify) toast('Saved on this device — cloud sync unreachable; it will retry on your next save.','warn');
@@ -7682,6 +7727,7 @@ async function loadPrefsFromServer(opts){
       if(!Object.prototype.hasOwnProperty.call(prefs,k)) return;
       const sv=prefs[k];
       if(typeof sv!=='string') return;     // blob stores raw strings only
+      if(k==='studio_widgets'){ if(_studioMergeFromCloud(sv)) changed=true; return; }  // union by id, not gap-fill
       const local=localStorage.getItem(uns(k));
       if(local===null||local===''){ localStorage.setItem(uns(k),sv); changed=true; } // server fills gaps; local wins
     });
@@ -7690,6 +7736,10 @@ async function loadPrefsFromServer(opts){
       try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
       try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
       try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){}
+      // Creations restored from the account must appear NOW — both in the gallery
+      // and as their pinned nav tabs, not on the next manual visit to Studio.
+      try{ if(typeof renderStudioSaved==='function') renderStudioSaved(); }catch(e){}
+      try{ if(typeof _renderPinnedTabs==='function') _renderPinnedTabs(); }catch(e){}
     }
     // Templates often arrive here (from the server) AFTER first paint → refresh the Specialty-template dropdown now.
     if(!opts.deferRender){ try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} }
@@ -12449,12 +12499,16 @@ function _renderPinnedTabs(){
     });
   }catch(e){}
 }
-function togglePinWidget(i){
-  var a=studioGetSaved(); if(!a[i]) return;
-  if(!a[i].id) a[i].id='w'+(a[i].ts||Date.now());
-  if(!a[i].pinned){ var cnt=a.filter(function(x){return x.pinned;}).length; if(cnt>=6){ try{ toast('You can pin up to 6 tabs.',''); }catch(e){} return; } }
-  a[i].pinned=!a[i].pinned; studioSetSaved(a); renderStudioSaved(); _renderPinnedTabs();
-  try{ toast(a[i].pinned?('📌 Pinned “'+(a[i].title||'tool')+'” as a tab.'):'Unpinned.','ok'); }catch(e){}
+function togglePinWidget(id){
+  var a=studioGetSaved(), w=null;
+  for(var i=0;i<a.length;i++){ if(a[i].id===id||('w'+a[i].ts)===id){ w=a[i]; break; } }
+  if(!w){ renderStudioSaved(); return; }
+  if(!w.pinned){ var cnt=a.filter(function(x){return x.pinned;}).length; if(cnt>=6){ try{ toast('You can pin up to 6 tabs.',''); }catch(e){} return; } }
+  w.pinned=!w.pinned; w.updatedAt=Date.now();
+  var res=studioSetSaved(a);
+  if(!res.ok){ studioFail(res.error); return; }
+  renderStudioSaved(); _renderPinnedTabs(); studioSyncCreations();
+  try{ toast(w.pinned?('📌 Pinned “'+(w.title||'tool')+'” as a tab — it is in your top nav now.'):'Unpinned.','ok'); }catch(e){}
 }
 async function _studioHandleRpc(req, source, nonce){
   function reply(ok, data, error){ try{ source && source.postMessage({__mlsNonce:String(nonce||''),__mlsRes:{id:req.id, ok:ok, data:data, error:error}}, '*'); }catch(e){} }
@@ -12541,34 +12595,348 @@ function renderStudioWidget(html, title, quality){
   }
   studioLastHtml=String(html||''); studioLastPrompt=title||'Your widget';
 }
-function closeStudioResult(){ var c=document.getElementById('studioResultCard'); if(c) c.style.display='none'; }
-function studioGetSaved(){ try{ return JSON.parse(localStorage.getItem('sf_studio_widgets')||'[]')||[]; }catch(e){ return []; } }
-function studioSetSaved(a){ try{ localStorage.setItem('sf_studio_widgets', JSON.stringify(a.slice(0,40))); }catch(e){} }
+function closeStudioResult(){
+  /* Closing used to throw the build away silently. If it was never saved, say so
+     — the tool cost a model call and ~25s of the doctor's time. */
+  var c=document.getElementById('studioResultCard'); if(!c) return;
+  if(studioLastHtml && !_studioIsSaved(studioLastHtml)){
+    mlsConfirm('Close without saving this tool?\n\nIt is not in “My creations” yet, so it will be gone.',{okLabel:'Discard it',cancelLabel:'Keep it open',danger:true}).then(function(yes){
+      if(yes){ c.style.display='none'; studioStatus(''); }
+    });
+    return;
+  }
+  c.style.display='none'; studioStatus('');
+}
+/* ============================================================================
+   MY CREATIONS — durable, per-account storage for built tools.
+
+   Every defect below was MEASURED on the owner's live signed-in tab (2026-07-26)
+   before this was rewritten:
+     • the key was the global 'sf_studio_widgets', while 175 other keys in this
+       app are uns()-scoped — so on a shared workstation one clinician's tools
+       appeared in another's account (the stale 'sf_u::undefined::notes' key on
+       that same profile is what this class of bug leaves behind).
+     • studioSetSaved swallowed EVERY exception. Forcing a QuotaExceededError
+       proved the result: nothing persisted, and the user was still shown a green
+       "Saved to “My creations”." toast. A save that lies is worse than no save.
+       That profile was already at 1.86 MB with ~2.9 MB of headroom, and one
+       generated tool may be up to 90,000 chars — so this was reachable, not
+       theoretical.
+     • .slice(0,40) dropped the 41st creation with no message.
+     • open/delete addressed items by ARRAY INDEX, so anything that reordered the
+       list (a second tab, a pin, a cloud merge) made Delete remove a DIFFERENT
+       tool than the one whose button was clicked.
+   ============================================================================ */
+var STUDIO_KEY_LEGACY='sf_studio_widgets';
+/* Local budget for creations. Measured headroom on a real loaded account is
+   ~2.9 MB and the calendar cache alone is 833 KB, so creations are capped well
+   short of it: a doctor's tools must never be able to starve the writes that
+   matter (patients, notes). */
+var STUDIO_LOCAL_BUDGET=1200000;
+/* The cloud copy rides the existing per-user prefs blob, which the server caps
+   at 500,000 chars for EVERYTHING (settings, templates, intake questions). */
+var STUDIO_CLOUD_BUDGET=250000;
+function studioKey(){ try{ return uns('studio_widgets'); }catch(e){ return STUDIO_KEY_LEGACY; } }
+function _studioNewId(){ return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+/* An id is written into an onclick attribute, and _ce() does not escape the
+   single quote that delimits it. Ids can arrive from the account copy or from
+   pre-namespacing local data, so anything outside this charset is replaced
+   rather than trusted. */
+function _studioSafeId(id){ return /^[A-Za-z0-9_-]{1,48}$/.test(String(id==null?'':id))?String(id):''; }
+function studioGetSaved(){
+  var k=studioKey(), raw=null;
+  try{ raw=localStorage.getItem(k); }catch(e){}
+  if(raw==null){
+    // One-time migration off the pre-account global key — nothing already saved is lost.
+    try{
+      var old=localStorage.getItem(STUDIO_KEY_LEGACY);
+      if(old && old!=='[]'){ localStorage.setItem(k,old); raw=old; try{ localStorage.removeItem(STUDIO_KEY_LEGACY); }catch(_){} }
+    }catch(e){}
+  }
+  var arr=[]; try{ arr=JSON.parse(raw||'[]'); }catch(e){ arr=[]; }
+  if(!Array.isArray(arr)) arr=[];
+  arr=arr.filter(function(w){ return w && typeof w==='object' && typeof w.html==='string' && w.html; });
+  // Backfill stable ids so every button addresses a TOOL, never a row number.
+  var dirty=false;
+  arr.forEach(function(w){ if(!_studioSafeId(w.id)){ w.id=_studioNewId(); dirty=true; } });
+  if(dirty){ try{ localStorage.setItem(k, JSON.stringify(arr)); }catch(e){} }
+  return arr;
+}
+/* studioSetSaved is the ONE door every writer goes through — this file's Save,
+   the auto-save wrapper in mls-connect.js (b39 "toolUpgrades", which unshifts a
+   raw {title: the whole request, html, ts, auto:true} after every successful
+   build), and that file's separate de-duplication wrapper. Normalising and
+   de-duplicating HERE means a creation is well-formed no matter who wrote it,
+   instead of each writer having to remember the rules. */
+function _studioNormalize(w){
+  if(!w||typeof w!=='object'||typeof w.html!=='string'||!w.html) return null;
+  if(!_studioSafeId(w.id)) w.id=_studioNewId();
+  var ts=Number(w.ts)||Date.now(); w.ts=ts;
+  if(!w.createdAt) w.createdAt=ts;
+  if(!w.updatedAt) w.updatedAt=ts;
+  var t=String(w.title||'').trim();
+  if(!w.named){                                  // a title the doctor typed is never rewritten
+    if(!w.prompt && t) w.prompt=t;               // the auto-saver's "title" is really the request
+    if(!t || w.auto || t.length>52) w.title=studioTitleFrom(w.prompt||t);
+    w.auto=false;
+  }
+  w.title=String(w.title||'Untitled tool').slice(0,60);
+  return w;
+}
+function _studioDedupe(list){
+  var out=[], seen={};
+  (list||[]).forEach(function(w){
+    var k=String(w.html||''); if(!k) return;
+    if(!(k in seen)){ seen[k]=out.length; out.push(w); return; }
+    // Same tool saved twice (Save pressed twice, or auto-save re-firing when a
+    // saved tool is re-opened). Keep ONE, and keep the richest of the two.
+    var s=out[seen[k]];
+    s.pinned=!!(s.pinned||w.pinned);
+    if(!s.prompt&&w.prompt) s.prompt=w.prompt;
+    if(!s.named&&w.named){ s.title=w.title; s.named=true; }
+    var sc=Number(s.createdAt||s.ts)||0, wc=Number(w.createdAt||w.ts)||0;
+    if(wc&&(!sc||wc<sc)){ s.createdAt=wc; if(w.id) s.id=w.id; }   // keep the ORIGINAL identity, so a pinned tab survives
+    s.updatedAt=Math.max(Number(s.updatedAt||s.ts)||0,Number(w.updatedAt||w.ts)||0);
+  });
+  return out;
+}
+/* Returns {ok, evicted, error}. NEVER silent: the caller must tell the truth. */
+function studioSetSaved(a){
+  var k=studioKey(), evicted=0;
+  var list=_studioDedupe(((a||[]).map(_studioNormalize)).filter(Boolean));
+  for(;;){
+    var json;
+    try{ json=JSON.stringify(list); }catch(e){ return {ok:false,evicted:evicted,error:'This tool could not be stored.'}; }
+    if(json.length<=STUDIO_LOCAL_BUDGET){
+      try{ localStorage.setItem(k,json); return {ok:true,evicted:evicted}; }catch(e){ /* real quota — evict below */ }
+    }
+    // Make room by dropping the OLDEST unpinned creation. A pinned tool is a tab
+    // the doctor put in their nav on purpose; it is never evicted automatically.
+    var victim=-1;
+    for(var i=list.length-1;i>=0;i--){ if(!list[i].pinned){ victim=i; break; } }
+    if(victim<0 || list.length<=1){
+      try{ localStorage.setItem(k, JSON.stringify(list)); return {ok:true,evicted:evicted}; }catch(e2){}
+      return {ok:false,evicted:evicted,error:'Your browser storage is full, so this tool was NOT saved.'};
+    }
+    list.splice(victim,1); evicted++;
+  }
+}
+function _studioIsSaved(html){
+  if(!html) return false;
+  return studioGetSaved().some(function(w){ return w.html===String(html); });
+}
+/* Push the creations list to the account. Debounced — pinning three tools in a
+   row is one upload, not three. */
+var _studioSyncTimer=null;
+function studioSyncCreations(immediate){
+  if(typeof syncPrefsToServer!=='function') return;
+  if(_studioSyncTimer){ clearTimeout(_studioSyncTimer); _studioSyncTimer=null; }
+  /* A DELETION must leave immediately. Debounced, a doctor who deletes a tool and
+     closes the tab within the window leaves the account copy holding it — and the
+     next sign-in merges the tool back in. A deleted tool that returns reads as the
+     app ignoring them, which is the same broken promise as a save that lies. */
+  if(immediate){ try{ syncPrefsToServer(); }catch(e){} return; }
+  _studioSyncTimer=setTimeout(function(){ _studioSyncTimer=null; try{ syncPrefsToServer(); }catch(e){} },1200);
+}
+/* Merge the account's copy INTO this device: union by id, newest wins per tool,
+   and a tool deleted here does not come back unless the account copy is newer.
+   Gap-fill (the rule for settings) would be wrong here — a device with one saved
+   tool would silently ignore the other nine on the account. */
+function _studioMergeFromCloud(serverJson){
+  try{
+    var incoming=JSON.parse(serverJson||'[]');
+    if(!Array.isArray(incoming)||!incoming.length) return false;
+    var local=studioGetSaved(), byId={}, order=[];
+    local.forEach(function(w){ byId[w.id]=w; order.push(w.id); });
+    var added=0, updated=0;
+    incoming.forEach(function(w){
+      if(!w||typeof w!=='object'||typeof w.html!=='string'||!w.html) return;
+      if(!w.id) w.id=_studioNewId();
+      var mine=byId[w.id];
+      if(!mine){ byId[w.id]=w; order.push(w.id); added++; return; }
+      if((Number(w.updatedAt||w.ts)||0)>(Number(mine.updatedAt||mine.ts)||0)){ byId[w.id]=w; updated++; }
+    });
+    if(!added&&!updated) return false;
+    var merged=order.map(function(id){ return byId[id]; }).filter(Boolean)
+      .sort(function(a,b){ return (Number(b.ts)||0)-(Number(a.ts)||0); });
+    var res=studioSetSaved(merged);
+    if(!res.ok) return false;
+    if(added){ try{ toast(added+' saved tool'+(added===1?'':'s')+' restored from your account.','ok'); }catch(e){} }
+    return true;
+  }catch(e){ return false; }
+}
+/* Turn a request sentence into something that reads like a NAME. The old code
+   used the raw prompt sliced at 80 chars, which cut mid-word ("…and the b"). */
+function studioTitleFrom(p){
+  var s=String(p||'').replace(/\s+/g,' ').trim();
+  if(!s) return 'Untitled tool';
+  s=s.replace(/^(please\s+)?(build|make|create|give|show)\s+(me\s+)?/i,'').replace(/^(a|an|the|my)\s+/i,'');
+  var cut=s.split(/[,.;:\n]|\bwith\b|\bthat\b|\bshowing\b|\bsorted\b|\bwhere\b/i)[0].trim();
+  if(cut.length<6) cut=s;
+  if(cut.length>46) cut=cut.slice(0,46).replace(/\s+\S*$/,'')+'…';
+  return cut.charAt(0).toUpperCase()+cut.slice(1);
+}
+function _studioBytes(n){ n=Number(n)||0; return n<1024?(n+' B'):(n<1048576?(Math.round(n/102.4)/10+' KB'):(Math.round(n/104857.6)/10+' MB')); }
+function _studioAgo(ts){
+  var s=Math.max(0,Math.round((Date.now()-(Number(ts)||0))/1000));
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+' min ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  if(s<604800) return Math.floor(s/86400)+'d ago';
+  try{ return new Date(Number(ts)).toLocaleDateString(); }catch(e){ return ''; }
+}
 function saveStudioWidget(){
-  if(!studioLastHtml){ studioStatus('Build a widget first.','#b4231e'); return; }
-  var arr=studioGetSaved();
-  arr.unshift({ title:(studioLastPrompt||'Widget').slice(0,80), html:studioLastHtml, ts:Date.now() });
-  studioSetSaved(arr); renderStudioSaved();
-  try{ toast('Saved to “My creations”.','ok'); }catch(e){}
+  if(!studioLastHtml){ studioFail('Build a tool first — then “Save it” keeps it in My creations.'); return; }
+  var arr=studioGetSaved(), html=String(studioLastHtml), now=Date.now();
+  // Pressing Save twice used to make two identical cards. Same HTML = same tool.
+  var existing=null;
+  for(var i=0;i<arr.length;i++){ if(arr[i].html===html){ existing=arr[i]; break; } }
+  var title;
+  if(existing){
+    existing.updatedAt=now; existing.ts=now; title=existing.title;
+    arr.splice(arr.indexOf(existing),1); arr.unshift(existing);
+  }else{
+    title=studioTitleFrom(studioLastPrompt);
+    arr.unshift({ id:_studioNewId(), title:title, prompt:String(studioLastPrompt||''), html:html, ts:now, createdAt:now, updatedAt:now });
+  }
+  var res=studioSetSaved(arr);
+  if(!res.ok){
+    // Tell the truth, then rescue the work — the doctor still gets the file.
+    studioFail(res.error+' Download it instead so the work is not lost.');
+    _studioOfferRescue(title,html);
+    return;
+  }
+  renderStudioSaved(); _renderPinnedTabs(); studioSyncCreations();
+  var msg=existing ? ('Already saved — refreshed “'+title+'”.') : ('Saved “'+title+'” to My creations.');
+  if(res.evicted) msg+=' (Made room by removing '+res.evicted+' older unpinned tool'+(res.evicted===1?'':'s')+'.)';
+  studioStatus(msg,'#1c7a43');
+  try{ toast(msg,'ok'); }catch(e){}
+  var b=document.getElementById('studioSaveBtn'); if(b){ b.textContent='✓ Saved'; setTimeout(_studioSyncSaveBtn,2600); }
+}
+/* The button must describe the TRUTH about this tool. mls-connect.js auto-saves
+   every successful build, so "Save it" on an already-saved tool invites a doctor
+   to press a button that has nothing to do — and to wonder whether it worked. */
+function _studioSyncSaveBtn(){
+  var b=document.getElementById('studioSaveBtn'); if(!b) return;
+  if(studioLastHtml && _studioIsSaved(studioLastHtml)){
+    b.innerHTML='✓ In My creations';
+    b.title='Already saved. Refining it and pressing this keeps the new version.';
+  }else{
+    b.innerHTML='💾 Save it';
+    b.title='Keep this tool in My creations';
+  }
+}
+function _studioOfferRescue(title,html){
+  try{
+    var blob=new Blob([String(html||'')],{type:'text/html'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url;
+    a.download=String(title||'tool').replace(/[\/\\<>:"|?*]/g,'_').slice(0,60)+'.html';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); a.remove(); }catch(e){} },300);
+  }catch(e){}
+}
+function downloadStudioSaved(id){
+  var w=_pinnedFindById(id); if(!w){ try{ toast('That tool was removed.',''); }catch(e){} return; }
+  _studioOfferRescue(w.title,w.html);
+  try{ toast('Downloaded “'+w.title+'” as an HTML file.','ok'); }catch(e){}
+}
+function renameStudioSaved(id){
+  var w=_pinnedFindById(id); if(!w) return Promise.resolve(false);
+  return mlsPrompt('Name this tool',w.title||'',{okLabel:'Rename'}).then(function(v){
+    if(v==null) return;
+    v=String(v).replace(/\s+/g,' ').trim().slice(0,60);
+    if(!v) return;
+    var arr=studioGetSaved(), t=arr.filter(function(x){ return x.id===w.id; })[0];
+    if(!t) return;
+    t.title=v; t.named=true; t.updatedAt=Date.now();
+    var res=studioSetSaved(arr);
+    if(!res.ok){ studioFail(res.error); return; }
+    renderStudioSaved(); _renderPinnedTabs(); studioSyncCreations();
+    try{ toast('Renamed to “'+v+'”.','ok'); }catch(e){}
+  });
+}
+/* Which creations fit in the cloud copy, newest-and-pinned first. Deterministic,
+   so a card can honestly show whether THIS tool is backed up to the account. */
+function _studioCloudPlan(arr,budget){
+  var cap=Math.max(0, Number(budget)||STUDIO_CLOUD_BUDGET);
+  var ranked=(arr||[]).slice().sort(function(a,b){
+    if(!!b.pinned!==!!a.pinned) return (b.pinned?1:0)-(a.pinned?1:0);
+    return (Number(b.ts)||0)-(Number(a.ts)||0);
+  });
+  var out=[], used=0;
+  ranked.forEach(function(w){
+    var n=0; try{ n=JSON.stringify(w).length+2; }catch(e){ n=1e9; }
+    if(used+n<=cap){ out.push(w); used+=n; }
+  });
+  return {list:out, used:used, ids:out.map(function(w){ return w.id; })};
 }
 function renderStudioSaved(){
   var box=document.getElementById('studioSaved'); if(!box) return;
   var arr=studioGetSaved();
+  var bar=document.getElementById('studioSavedBar');
+  var cnt=document.getElementById('studioSavedCount');
+  var filterEl=document.getElementById('studioSavedFilter');
+  var q=String((filterEl&&filterEl.value)||'').trim().toLowerCase();
+  if(cnt) cnt.textContent=arr.length?('· '+arr.length+' tool'+(arr.length===1?'':'s')):'';
+  if(bar) bar.style.display=(arr.length>=5?'flex':'none');
+  // What the account actually holds if a sync has come back; otherwise the plan.
+  var confirmed=window.__studioCloudIds, cloudIds={};
+  (Array.isArray(confirmed)?confirmed:_studioCloudPlan(arr).ids).forEach(function(id){ cloudIds[id]=1; });
+  var meter=document.getElementById('studioSavedMeter');
+  if(meter){
+    var bytes=0; try{ bytes=JSON.stringify(arr).length; }catch(e){}
+    var pct=Math.min(100,Math.round(bytes/STUDIO_LOCAL_BUDGET*100));
+    meter.textContent=_studioBytes(bytes)+' used'+(pct>=70?(' — '+pct+'% of the space for tools; the oldest unpinned ones make room automatically'):'');
+    meter.style.color=pct>=70?'#8a5a00':'var(--muted)';
+  }
+  try{ _studioSyncSaveBtn(); }catch(e){}
   if(!arr.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div>'; return; }
-  box.innerHTML=arr.map(function(w,i){
-    var t=String(w.title||'Widget').replace(/[<>&]/g,''); if(t.length>=80)t=t.slice(0,79)+'…';
-    var pinned=!!w.pinned;
-    return '<div style="border:1px solid '+(pinned?'var(--brand)':'var(--line)')+';border-radius:10px;padding:11px 13px;min-width:210px;max-width:270px;background:var(--card,#fff)">'
-      +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px;line-height:1.35">🧩 '+t+(pinned?' <span style="font-size:11px;font-weight:700;color:var(--brand)">📌 tab</span>':'')+'</div>'
+  var shown=q?arr.filter(function(w){ return (String(w.title||'')+' '+String(w.prompt||'')).toLowerCase().indexOf(q)>=0; }):arr;
+  if(!shown.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">No saved tool matches “'+_ce(q)+'”.</div>'; return; }
+  box.innerHTML=shown.map(function(w){
+    var t=_ce(String(w.title||'Tool')), id=_ce(String(w.id||'')), pinned=!!w.pinned;
+    var synced=!!cloudIds[w.id];
+    var meta=_studioAgo(w.updatedAt||w.ts)+' · '+_studioBytes((w.html||'').length);
+    var lnk='cursor:pointer;font-size:12px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:2px 0;font-family:inherit';
+    return '<div style="border:1px solid '+(pinned?'var(--brand)':'var(--line)')+';border-radius:10px;padding:11px 13px;min-width:216px;max-width:280px;background:var(--card,#fff);display:flex;flex-direction:column;gap:7px">'
+      +'<div style="font-weight:600;font-size:13.5px;line-height:1.35">🧩 '+t+(pinned?' <span style="font-size:11px;font-weight:700;color:var(--brand)">📌 tab</span>':'')+'</div>'
+      +'<div class="mini" style="color:var(--muted);font-size:11.5px">'+_ce(meta)+' · <span title="'+(synced?'Backed up to your MLS account — it follows you to any device you sign in on.':'Saved on this device only. Pin it or remove older tools to back it up to your account.')+'">'+(synced?'☁ in your account':'💻 this device only')+'</span></div>'
       +'<div class="row" style="gap:6px;flex-wrap:wrap">'
-      +'<button class="btn-green" style="font-size:12px;padding:6px 10px" onclick="openStudioSaved('+i+')">Open</button>'
-      +'<button class="'+(pinned?'btn-primary':'btn-ghost')+'" style="font-size:12px;padding:6px 10px" onclick="togglePinWidget('+i+')">'+(pinned?'📌 Unpin':'📌 Pin as tab')+'</button>'
-      +'<button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="deleteStudioSaved('+i+')">Delete</button>'
+      +'<button class="btn-green" style="font-size:12px;padding:6px 10px" onclick="openStudioSaved(\''+id+'\')">Open</button>'
+      +'<button class="'+(pinned?'btn-primary':'btn-ghost')+'" style="font-size:12px;padding:6px 10px" onclick="togglePinWidget(\''+id+'\')">'+(pinned?'📌 Unpin':'📌 Pin as tab')+'</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:11px;flex-wrap:wrap;align-items:center">'
+      +'<button style="'+lnk+'" onclick="openStudioSavedFullscreen(\''+id+'\')">Fullscreen</button>'
+      +'<button style="'+lnk+'" onclick="renameStudioSaved(\''+id+'\')">Rename</button>'
+      +'<button style="'+lnk+'" onclick="downloadStudioSaved(\''+id+'\')">Download</button>'
+      +'<button style="'+lnk+';color:#b4231e" onclick="deleteStudioSaved(\''+id+'\')">Delete</button>'
       +'</div></div>';
   }).join('');
 }
-function openStudioSaved(i){ var w=studioGetSaved()[i]; if(w) renderStudioWidget(w.html, w.title); }
-function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); _renderPinnedTabs(); }
+function openStudioSaved(id){
+  var w=_pinnedFindById(id);
+  if(!w){ try{ toast('That tool was removed.',''); }catch(e){} renderStudioSaved(); return; }
+  // Carry the ORIGINAL request back so "Refine" has the real context, not a title.
+  renderStudioWidget(w.html, w.title, {});
+  studioLastPrompt=w.prompt||w.title||'Your tool';
+}
+function openStudioSavedFullscreen(id){
+  var w=_pinnedFindById(id); if(!w){ try{ toast('That tool was removed.',''); }catch(e){} return; }
+  _openFullscreenWidget(w.html, w.title);
+}
+function deleteStudioSaved(id){
+  var w=_pinnedFindById(id); if(!w){ renderStudioSaved(); return Promise.resolve(false); }
+  // Deleting used to be one unconfirmed click on an INDEX — the wrong tool could go.
+  return mlsConfirm('Delete “'+(w.title||'this tool')+'”?\n\nThis cannot be undone. Download it first if you want to keep a copy.',{okLabel:'Delete it',danger:true}).then(function(yes){
+    if(!yes) return false;
+    var arr=studioGetSaved().filter(function(x){ return x.id!==w.id; });
+    var res=studioSetSaved(arr);
+    if(!res.ok){ studioFail(res.error); return; }
+    renderStudioSaved(); _renderPinnedTabs(); studioSyncCreations(true);
+    try{ toast('Deleted “'+(w.title||'tool')+'”.','ok'); }catch(e){}
+  });
+}
 var STUDIO_TEMPLATES=[
   ['🎙️ Start-a-visit launcher','A clean grid of my patients (from MLS.data.patients), each as a card showing name + last visit, with a big "🎙️ Start visit" button that calls MLS.startVisit(patient.id) to jump straight into the visit form for that patient, and a small "Open chart" button calling MLS.openPatient(patient.id). Include a search box to filter the patients.'],
   ['🟢 Today\'s visit board','A board of today\'s scheduled patients from MLS.getSchedule() (today\'s date), grouped by status, each row with a "🎙️ Start visit" button that calls MLS.startVisit(name) to open the visit form and an "Open chart" button (MLS.openPatient).'],
@@ -24276,7 +24644,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b695: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b696: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24411,7 +24779,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b695 — THE LOADING SCREEN MUST ALWAYS END.
+/* b696 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29116,7 +29484,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b695';
+  window.__MLS_AV='b696';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

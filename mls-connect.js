@@ -6436,7 +6436,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b695: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b696: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6658,7 +6658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b695 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b696 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -33605,7 +33605,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b695';
+  window.__MLS_AV = window.__MLS_AV || 'b696';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33935,7 +33935,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b695';
+  var MLS_APP_BUILD='2026-07-25-b696';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38789,7 +38789,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b695+b695 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b696+b696 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -43685,7 +43685,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b695: `safe` was never defined in this IIFE, so the moment
+      /* b696: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a
