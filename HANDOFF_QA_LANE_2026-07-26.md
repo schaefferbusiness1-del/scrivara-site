@@ -1,4 +1,4 @@
-# HANDOFF — QA / release-quality lane, 2026-07-26 (b667)
+# HANDOFF — QA / release-quality lane, 2026-07-26 (b669)
 
 Written by the QA lane at context exhaustion. **Everything below is either measured or
 explicitly marked unverified.** Where I was wrong tonight I have said so, because three
@@ -86,11 +86,18 @@ says only that none of it changed what the user sees **while idle**. Do not quot
 Probe: `scratchpad/probe-timers.js` (hooks `setInterval` via `evaluateOnNewDocument`, attributes
 each fire to an owner file + period, times every callback, and counts fires that mutate nothing).
 
-### 2.2 🔵 Review rebuild — IN PROGRESS (UI lane)
+### 2.2 🔴 Review rebuild — NOT IN PROGRESS. NO LANE OWNS IT.
+
+**Corrected 2026-07-26.** This section used to say "IN PROGRESS (UI lane)". That is false: the
+UI/design lane is stopped, and **`#mlsReviewPanel` exists in no worktree on this machine.** It
+was never produced. Anyone resuming should treat this as unstarted work with no owner, not as
+something in flight.
 
 Owner's words: *"the review tab sucks and needs to be completely reworked from scratch"* — a
-design verdict, not a bug report. Stage 1 shipped as b666 (*"pressing Review did nothing you
-could see"*).
+design verdict, not a bug report. What has actually shipped against it is **b650** (Review offers
+the note, orders and recommendations rather than being a renamed Orders), **b666** (*"pressing
+Review did nothing you could see"*), and **b669** (the control b666 reveals is now actually
+clickable — see §8). All three are verified. **None of them is the rebuild he asked for.**
 
 **⚠️ MY ORIGINAL HANDOFF ON THIS WAS WRONG, and the correction matters:**
 
