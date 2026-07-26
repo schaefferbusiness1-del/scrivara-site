@@ -550,6 +550,12 @@
     var jb = byId('mlsCvPtJump');
     if (jb) jb.onclick = function () {
       var d = st.next; if (!d) return;
+      /* Set the calendar's own reference date FIRST. calJump's renderCalendar
+         re-opens _calRefDate when the calendar is in day mode, and that
+         deferred re-open lands AFTER a synchronous calOpenDay — measured
+         live: jump to the 27th, panel settled on the stale 28th. With the ref
+         set, every path renderCalendar takes opens the day we asked for. */
+      safe(function () { W._calRefDate = d; });
       safe(function () { if (typeof W.calJump === 'function') W.calJump(d.slice(0, 7)); });
       safe(function () { if (typeof W.calOpenDay === 'function') W.calOpenDay(d); });
     };
