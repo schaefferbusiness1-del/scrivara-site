@@ -6436,7 +6436,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b700: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b701: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6658,7 +6658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b700 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b701 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -33605,7 +33605,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b700';
+  window.__MLS_AV = window.__MLS_AV || 'b701';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33935,7 +33935,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b700';
+  var MLS_APP_BUILD='2026-07-25-b701';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38789,7 +38789,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b700+b700 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b701+b701 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -41109,7 +41109,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1c1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260719wi3';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260726dl1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260725asst217';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.16 - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
@@ -43685,7 +43685,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b700: `safe` was never defined in this IIFE, so the moment
+      /* b701: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a

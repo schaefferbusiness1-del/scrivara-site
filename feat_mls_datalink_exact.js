@@ -126,9 +126,18 @@
   }
 
   /* ---------- focus the Calendar on a given day (real app globals + handler) ---------- */
+  /* Every caller of this function is AUTOMATIC (post-pull jump, selection
+     mirror). Owner continuity law (2026-07-26): the machine must never
+     out-rank the doctor's own choice - measured live, the continuity strip's
+     "Jump to it" opened the right day and this module's deferred post-pull
+     jump repainted the stale pulled day ~1s later, so the doctor's FIRST
+     click always lost. An explicit user day-choice (window.__mlsCalUserDayAt,
+     stamped by the user-gesture jump paths) wins for 5 minutes. */
   function focusCalDay(key) {
     if (!key) return;
     try {
+      var userAt = Number(window.__mlsCalUserDayAt || 0);
+      if (userAt && (Date.now() - userAt) < 300000 && String(window._calSelDay || "") !== String(key)) return;
       if (String(window._calSelDay || "") === String(key)) return;   /* already there: no-op (no flicker) */
       window._calSelDay = key; window._calRefDate = key;
       var p = String(key).split("-");

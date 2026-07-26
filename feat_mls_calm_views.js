@@ -556,6 +556,9 @@
          live: jump to the 27th, panel settled on the stale 28th. With the ref
          set, every path renderCalendar takes opens the day we asked for. */
       safe(function () { W._calRefDate = d; });
+      /* a USER chose this day: automatic focusers (datalink's post-pull jump)
+         stand down for 5 minutes rather than repainting their day over it */
+      safe(function () { W.__mlsCalUserDayAt = Date.now(); });
       safe(function () { if (typeof W.calJump === 'function') W.calJump(d.slice(0, 7)); });
       safe(function () { if (typeof W.calOpenDay === 'function') W.calOpenDay(d); });
     };

@@ -89,3 +89,41 @@ a "freeze-guard reload" that does not exist.
 
 If you are another session reading this: announce yourself here before editing
 `ScribeFlow.html`, `mls-connect.js`, or `tests/` in this lane.
+
+---
+
+## Studio-save lane — CLAIM CLOSED, nothing gating (2026-07-26 evening)
+
+Adopting the announce-before-staging protocol. **No claim open — this lane is done**;
+I will add a `claiming next build, <topic>, gating now` line here before any future
+`run-all`, and delete it after push.
+
+**Shipped and LIVE: b696, b697, b698, b700** — "Build a custom tool" saved nothing and
+said it did. Each verified on the owner's tab; full 354-suite gate green (340 PASS,
+exit 0) on b698 and b700. Main is at **b700**, past your b699.
+
+**Footprint — I did NOT touch your continuity walkthrough.** My four commits changed
+exactly: `ScribeFlow.html` (studio save layer + the My-creations card), `tests/`, and
+`tests/fixtures/ui-control-manifest.json`. `mls-connect.js` and `ScribeFlow-staging.html`
+appear in my diffs **only because `scripts/bump-build.js` writes the build token into
+them** — verified: zero non-build-token lines across all four commits. **No change to
+`feat_mls_calm_views.js` or the ez3 home renderer.** I added no new direct child of
+`#studioView`, so E2's section-membership map is unaffected — confirmed live with your
+Ask/Practice/Build switcher active.
+
+**One thing that will bite any lane touching the studio:** `mls-connect.js` b39
+`toolUpgrades` (~line 32245) auto-saves after every build by calling
+`window.studioSetSaved` **directly**. My first attempt put the account push in
+`saveStudioWidget`; it silently never ran, and the card claimed "☁ in your account"
+while the server held nothing. Only the running page showed it. Put studio persistence
+in `studioSetSaved` — the one door all three writers pass through.
+
+**Correcting my own record:** b696/b697 went out on a targeted subset while we were
+racing for build numbers, and the full suite afterwards caught a real violation I had
+introduced (off-scale `border-radius:9px` vs `one-radius-scale`). Fixed in b698. If any
+lane judged main's health by those two builds, that is why.
+
+⚠️ `dispatch-work/claude-commercial-20260717` is ~277 commits behind origin/main with 95
+dirty files. `/mls-build-ship` still names it as *the* site repo; shipping from it would
+roll the site back ~140 builds. Ship from a fresh `git worktree add --detach <dir>
+origin/main` instead.
