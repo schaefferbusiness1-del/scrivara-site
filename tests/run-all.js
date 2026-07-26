@@ -97,6 +97,7 @@ const tests = [
   'easy-transcript-continuity.test.js',
   'transcript-mirror-merge-runtime.test.js',
   'no-merge-conflict-markers-in-shipped-assets.test.js',
+  'build-bump-names-its-build.test.js',
   'transcript-focus-survives-rebuild.test.js',
   'visit-host-never-moves-under-a-typing-doctor.test.js',
   'easy-lane-engine-rewrite-runtime.test.js',
