@@ -18560,7 +18560,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on ' + (visitIsToday() ? 'today’s' : (esc(visitDayName()) + '’s')) + ' schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
-         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          portalActionHtml() +
          '</div>';
@@ -19116,7 +19116,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-row2" style="margin-top:6px">' +
          '<button type="button" class="ez3-sm" id="ez3Change">👥 Wrong patient? Switch</button>' +
          (a && a.id != null && isFn(window.calPullChartFor) ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
-         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     /* v3.5: the AI/visit widgets live HERE, always visible and labeled —
@@ -23480,7 +23480,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on today’s schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
-         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
@@ -23855,7 +23855,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-row2" style="margin-top:6px">' +
          '<button type="button" class="ez3-sm" id="ez3Change">👥 Wrong patient? Switch</button>' +
          (a && a.id != null && isFn(window.calPullChartFor) ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
-         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
@@ -25458,7 +25458,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            '<small>' + (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on today’s schedule'); })() + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
-         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
@@ -25872,7 +25872,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-row2" style="margin-top:6px">' +
          '<button type="button" class="ez3-sm" id="ez3Change">👥 Change patient</button>' +
          (a && a.id != null && isFn(window.calPullChartFor) ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
-         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
@@ -27227,7 +27227,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<button type="button" class="ez3-big ok" id="ez3Choose">👥 Choose patient' +
          (rows.length ? '<small>' + rows.length + ' on today’s schedule</small>' : '') + '</button>';
     h += '<div class="ez3-row2">' +
-         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
@@ -27402,7 +27402,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-row2" style="margin-top:6px">' +
          '<button type="button" class="ez3-sm" id="ez3Change">👥 Change patient</button>' +
          (a && isFn(window.calPullChartFor) ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
-         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         (a && isFn(window.openOpPrepForPatient) ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
@@ -28787,7 +28787,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          (rows.length ? '<small>' + rows.length + ' on today’s schedule</small>' : '') + '</button>';
     h += '<div class="ez3-row2">' +
          (findBtnByText(/pull today.?s patients/i) ? '<button type="button" class="ez3-sm" id="ez3PullToday">📥 Pull today’s patients</button>' : '') +
-         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
@@ -28949,7 +28949,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-row2" style="margin-top:6px">' +
          '<button type="button" class="ez3-sm" id="ez3Change">👥 Change patient</button>' +
          (a && typeof window.calPullChartFor === 'function' ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
-         (a && typeof window.openOpPrepForPatient === 'function' ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         (a && typeof window.openOpPrepForPatient === 'function' ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     wrap().innerHTML = h;
