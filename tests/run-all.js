@@ -297,6 +297,7 @@ const tests = [
   'orders-required-fields-runtime.test.js',
   'intake-kiosk-navigation-contract.test.js',
   'settings-analytics-truth-contract.test.js',
+  'extension-badge-never-claims-currency.test.js',
   'opnote-draft-quarantine-contract.test.js',
   'freeze-resistance-contract.test.js',
   'no-native-dialogs-contract.test.js',

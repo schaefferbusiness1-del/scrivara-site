@@ -38584,27 +38584,69 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- FIX 2: dynamic extension-version badge in Settings ---- */
   try {
     var VER = null;
-    function applyBadge(){
+    /* Numeric compare, same shape as feat_mls_checker's compareVersions, so the
+       Settings badge and the checker can never disagree about which is newer. */
+    function verCmp(a, b) {
+      var L = String(a || '').replace(/^v/i, '').split('.'), R = String(b || '').replace(/^v/i, '').split('.');
+      if (!/^\d/.test(L[0] || '') || !/^\d/.test(R[0] || '')) return null;   // unparseable -> no verdict
+      for (var i = 0; i < Math.max(L.length, R.length); i++) {
+        var d = (Number(L[i]) || 0) - (Number(R[i]) || 0);
+        if (d) return d < 0 ? -1 : 1;
+      }
+      return 0;
+    }
+    /* The badge's ONLY job is to state what is true right now.
+       It shipped as a hardcoded green "Latest version" — a currency claim made
+       before anything had asked the extension anything, and the text that stayed
+       on screen whenever the version feed was unreachable. Then the dynamic
+       writer replaced it with "Installed: v2.9.5" in the same green pill, which
+       reads as a pass on a build eleven releases old, because it compared
+       nothing. So:
+         - "up to date" is said ONLY when the extension itself answered AND its
+           version is >= the published channel;
+         - an older install names both versions and the update path;
+         - no answer from the extension is reported as no answer, never as a
+           version;
+         - unparseable versions get both numbers and no verdict.
+       Published version = /extension-version.json, the same stable-channel feed
+       feat_mls_checker's SERVER_EXT_VERSION is pinned to by
+       tests/extension-package.test.js. */
+    function badgeState(){
       /* Truth fix: ONLY a version the extension itself announced counts as
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      if (!VER && !loaded) return false;
-      // b88: show the INSTALLED extension version (what the doctor actually loaded) when it
-      // is known via the handshake; fall back to latest-available from extension-version.json.
-      var want = loaded ? ('Installed: v' + String(loaded).replace(/^v/i, '')) : ('Latest: v' + VER);
+      loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
+      if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
+      if (!loaded) return { text: 'Not detected here · published v' + VER, tone: 'idle' };
+      if (!VER) return { text: 'Installed v' + loaded, tone: 'idle' };
+      var cmp = verCmp(loaded, VER);
+      if (cmp === null) return { text: 'Installed v' + loaded + ' · published v' + VER, tone: 'idle' };
+      if (cmp < 0) return { text: 'Installed v' + loaded + ' · update to v' + VER, tone: 'warn' };
+      return { text: 'Installed v' + loaded + ' · up to date', tone: 'ok' };
+    }
+    var BADGE_TONE = {
+      ok:   'background:#127a55;color:#fff;border:1px solid #127a55',
+      warn: 'background:#fff7e6;color:#7a5a16;border:1px solid #f0d79a',
+      idle: 'background:#eef2f0;color:#204034;border:1px solid #d7e6dc'
+    };
+    function applyBadge(){
+      var st = badgeState();
+      if (!st) return false;
       var spans = document.getElementsByTagName('span'), did = false;
       for (var i = 0; i < spans.length; i++) {
         var s = spans[i], t = (s.textContent || '').trim();
         var marked = s.getAttribute('data-mls-extension-version') === '1';
-        if (!marked && !/^(?:Latest|Installed):\s*v?\d/i.test(t)) continue;   // version badge or its no-number fallback
+        if (!marked && !/^(?:Latest|Installed|Not detected)\b/i.test(t)) continue;   // version badge or its no-number fallback
         var p = s, ok = false;                            // confirm it's the MLS Assist extension card
         for (var j = 0; j < 4 && p && p !== document.body && p !== document.documentElement; j++) {
           if (/MLS Assist browser extension/i.test(p.textContent || '')) { ok = true; break; }
           p = p.parentElement;
         }
         if (!ok) continue;
-        if (s.textContent !== want) s.textContent = want;
+        if (s.textContent !== st.text) s.textContent = st.text;
+        var tone = BADGE_TONE[st.tone] + ';font-size:11.5px;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle';
+        if (s.getAttribute('data-mls-ext-tone') !== st.tone) { s.setAttribute('data-mls-ext-tone', st.tone); s.style.cssText = tone; }
         did = true;
       }
       return did;
@@ -38617,11 +38659,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     function start(){
       fetchVer();
-      // The badge is in static markup inside the Settings modal; re-apply a few
-      // times in case VER arrives before the node is ready, then stop.
-      var tries = 0, iv = setInterval(function(){ tries++; if (applyBadge() || tries > 40) clearInterval(iv); }, 500);
+      /* The badge is in static markup inside the Settings modal; re-apply until
+         the state can no longer improve.
+         STOPPING ON THE FIRST SUCCESSFUL WRITE WAS WRONG once the badge started
+         reporting the handshake: the feed answers in milliseconds and the
+         extension's mlsExtVersion postMessage is re-asked at 6s, so the first
+         write is almost always the no-handshake state — and freezing there
+         leaves "Not detected here" on a browser that answered a moment later.
+         A pong-backed verdict (ok/warn) is the only terminal state; otherwise
+         keep looking for 60s, which covers the 6s re-ask and a cold extension. */
+      var tries = 0, iv = setInterval(function(){
+        tries++;
+        applyBadge();
+        var settled = false;
+        try { settled = !!window.__mlsExtReportedVersion && !!VER; } catch (e) {}
+        if (settled || tries > 120) clearInterval(iv);
+      }, 500);
       // Refresh periodically so a newly published version appears without a reload.
-      setInterval(fetchVer, 5 * 60 * 1000);
+      setInterval(function(){ fetchVer(); applyBadge(); }, 5 * 60 * 1000);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();
