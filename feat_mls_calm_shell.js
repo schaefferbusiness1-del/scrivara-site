@@ -1087,6 +1087,38 @@
     return found;
   }
 
+  /* The name of the destination the dock is standing on, for the ONE other
+     surface that has to agree with it: the top-left title.
+
+     Measured at b685 on a running page, the title read "MLS Scribe" on Review.
+     Its owner (syncTitle in feat_mls_redesign.js) reads
+     `#mlsRdNav .navtab.on` — SCOPED TO THE RAIL — and #nav_orders is not in
+     the rail. It has been relocated into the overflow panel:
+
+       #nav_orders.navtab.nav-feat-off < #mlsTbMenuPanel < #mlsTbMenu
+         < #mlsRdMenuSlot < #mlsRdTop < #appHeader
+
+     so the tab carries `.on` and the rail query returns ZERO rows. That is not
+     a Review bug; it is every destination whose tab is not in the rail, and it
+     fails by rendering the product name, which looks deliberate.
+
+     Deliberately NOT `return DEST.label` for whatever currentDest() reports.
+     Destinations cover more than one tab (Patient covers History, AI Studio
+     covers Practice), and borrowing the destination's name for those would put
+     "Patient" over the History list. So this answers only when the tab that is
+     ON is the destination's own LANDING target — the tab go() actually clicks.
+     Anything reached past that keeps its own name, via the rail fallback. */
+  function activeDestLabel() {
+    var id = currentDest();
+    if (!id) return '';
+    var d = null;
+    DEST.forEach(function (x) { if (x.id === id) d = x; });
+    if (!d) return '';
+    var landing = destTarget(d);
+    if (!landing || landing.id !== currentTabId()) return '';
+    return d.label || '';
+  }
+
   function syncDock() {
     if (!dockEl) return;
     var active = currentDest();
@@ -2509,7 +2541,13 @@
        child of a display:none subtree, which is exactly what decides here.
          __mlsCalmShell.label(document.getElementById('ptPullAthenaBtn'))
        must read "Pull from Athena · READ-ONLY", never the tooltip. */
-    label: controlLabel
+    label: controlLabel,
+    /* The dock's active destination, by name, for the top-left title. Computed
+       live from the DOM on every call rather than read off the dock's rendered
+       .on class, because the title updates on showView (setTimeout 0) and
+       syncDock runs a rAF later - a title reading a not-yet-painted dock would
+       be one screen behind on every navigation. See activeDestLabel(). */
+    destLabel: activeDestLabel
   };
 
   /* The app screen appears after auth; poll cheaply until it does, then stop.

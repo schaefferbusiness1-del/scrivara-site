@@ -582,15 +582,43 @@
     el.style.display='inline-flex'; el.style.alignItems='center';
     return txt;
   }
+  /* The last .on tab ANYWHERE, not only in the rail. Overlays (Reviews) mark
+     their tab .on without clearing the view's, so the LAST one is the most
+     recently activated surface - but the rail is no longer the only place a
+     .navtab lives. Modules relocate tabs out of it: #nav_orders now sits in
+     #mlsTbMenuPanel (the overflow panel), so a rail-scoped query returns zero
+     rows on Review and the title fell through to the product name. */
+  function onTabLabel(scope){
+    try{
+      var ons=document.querySelectorAll(scope?(scope+' .navtab.on'):'.navtab.on');
+      var on=ons.length?ons[ons.length-1]:null;
+      if(!on) return '';
+      return navLabelOf(on).replace(/^[^A-Za-z0-9]+\s*/,'');   /* "⭐ Reviews" -> "Reviews" */
+    }catch(e){ return ''; }
+  }
+  /* THE TITLE NAMES THE DESTINATION, and the dock is the destination.
+     Measured at b685: pressing Review left the title reading "MLS Scribe" -
+     the product name, which reads like a deliberate home screen rather than a
+     surface that failed to name itself.
+     Order of preference, each one strictly more specific than the next:
+       1. the dock's active destination, but ONLY where that destination owns
+          the tab that is on (the calm shell decides this - see
+          activeDestLabel there). This is what makes Review say "Review".
+       2. the rail's own .on tab. Views reached PAST a destination keep their
+          own name this way: History under Patient stays "History".
+       3. any .on tab, wherever a module has relocated it. Covers the classic
+          layout, where there is no dock to ask.
+       4. the product name, only when nothing at all is marked active. */
   function syncTitle(){
     try{ var el=$('mlsRdTitle'); if(!el) return;
       var txtEl=ensureTitleBrand(el);
-      /* overlays (Reviews) mark their tab .on without clearing the view's —
-         the LAST .on is the most recently activated surface */
-      var ons=document.querySelectorAll('#mlsRdNav .navtab.on');
-      var on=ons.length?ons[ons.length-1]:null;
-      var t=on?navLabelOf(on):'';
-      t=t.replace(/^[^A-Za-z0-9]+\s*/,'');   /* "⭐ Reviews" -> "Reviews" */
+      var t='';
+      try{
+        var shell=window.__mlsCalmShell;
+        if(shell&&shell.active&&typeof shell.destLabel==='function') t=String(shell.destLabel()||'');
+      }catch(e0){}
+      if(!t) t=onTabLabel('#mlsRdNav');
+      if(!t) t=onTabLabel('');
       if(!t) t='MLS Scribe';
       if(txtEl.textContent!==t) txtEl.textContent=t;
     }catch(e){}
