@@ -26,7 +26,13 @@ const connect = fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'utf8');
 
 /* ---------- 1. base logical-store memo ---------- */
 assert(app.includes('var __mlsPtsMemo=null;'), 'getPatients raw-identity memo was removed');
-assert(app.includes('if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsMemo.arr.slice();'),
+/* PIN WIDENED AT b672, DELIBERATELY: pts-rowguard-2.0.0 stamps every array
+   getPatients() returns with its read generation (__mlsPtsStampRead — a
+   non-enumerable property, never persisted, no extra parse). The memo hit
+   path itself is unchanged: same key+raw identity check, same .slice(), no
+   decode. What this pin protects — repeated reads never re-decode — still
+   holds and is still asserted. */
+assert(app.includes('if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsStampRead(__mlsPtsMemo.arr.slice());'),
   'getPatients no longer memoizes the exact legacy raw identity');
 assert(app.includes('var arr=JSON.parse(_mlsPtsDecode(raw))||[];'),
   'getPatients no longer reads the rollback-compatible legacy store');

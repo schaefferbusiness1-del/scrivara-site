@@ -140,11 +140,52 @@ function carryForwardNeverDuplicates(api) {
   assert.deepStrictEqual(ids, ['p_fresh'], 'repeated stale writes must not duplicate the carried row');
 }
 
+/* 6. THE 2026-07-26 DEFEAT — rowguard 2.0's generation rule. A pull saves one
+      patient every ~10s, so its earliest rows are older than the 12s clock
+      window long before it finishes; under 1.0 a bulk writer holding a
+      pre-pull roster then deleted them "legitimately", again and again, which
+      is why even the automatic re-save lost (owner screenshot: "already
+      re-saved them automatically and checked again — still missing").
+      A stamped caller may only drop rows its read generation could have seen
+      — the clock no longer matters, and repeats never win. */
+function clockExpiredRowsSurviveStampedStaleWriter(api) {
+  api.savePatients([{ id: 'p_old', name: 'Existing Patient', updated: Date.now() - 600000 }]);
+  const staleSnapshot = api.getPatients(); // render loop materializes here...
+  const aged = Date.now() - 60000;         // ...pull rows land, then AGE past 12s
+  api.savePatients(api.getPatients().concat(
+    [['p_s1', 'Row One'], ['p_s2', 'Row Two'], ['p_s3', 'Row Three']]
+      .map(([id, name]) => ({ id, name, source: 'athena-schedule', updated: aged }))));
+  for (let pass = 0; pass < 3; pass++) api.savePatients(staleSnapshot);
+  assert.deepStrictEqual(names(api.getPatients()),
+    ['Existing Patient', 'Row One', 'Row Three', 'Row Two'],
+    'rows the stale writer\'s snapshot predates must survive EVERY repeat, ' +
+    'no matter how old their updated stamp is (the 12s clock was the defeat)');
+}
+
+/* 7. The pull shield: while a managed pull runs, even an UNSTAMPED writer
+      dropping a clock-settled row is refused — and the same write succeeds
+      again the moment the pull ends (1.0 semantics restored). */
+function pullShieldBlocksAllUnauthorizedRemovals(api) {
+  const old = Date.now() - 600000;
+  api.savePatients([{ id: 'p_a', name: 'Alpha', updated: old }, { id: 'p_b', name: 'Beta', updated: old }]);
+  api.win.__mlsDayHistoryPull = { state: { running: true } };
+  api.savePatients([{ id: 'p_a', name: 'Alpha', updated: old }]); // fresh-built: unstamped
+  assert.deepStrictEqual(names(api.getPatients()), ['Alpha', 'Beta'],
+    'mid-pull, an unauthorized removal must be refused even for settled rows');
+  api.win.__mlsDayHistoryPull = { state: { running: false } };
+  api.savePatients([{ id: 'p_a', name: 'Alpha', updated: old }]);
+  assert.deepStrictEqual(names(api.getPatients()), ['Alpha'],
+    'after the pull, the identical write must remove the settled row again — ' +
+    'the shield is a pull-time rule, not a new permanent restriction');
+}
+
 const liveApi = buildStore('ScribeFlow.html');
 staleBulkWriteKeepsFreshRows(liveApi);
 authorizedRemovalStillRemoves(buildStore('ScribeFlow.html'));
 settledRowsRemainRemovable(buildStore('ScribeFlow.html'));
 carryForwardNeverDuplicates(buildStore('ScribeFlow.html'));
+clockExpiredRowsSurviveStampedStaleWriter(buildStore('ScribeFlow.html'));
+pullShieldBlocksAllUnauthorizedRemovals(buildStore('ScribeFlow.html'));
 
 /* 5. The staging shell is an inert dev snapshot — it must keep refusing to
       overwrite the production packed key (it has no batch/row-guard layer). */

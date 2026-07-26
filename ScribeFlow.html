@@ -7726,12 +7726,12 @@ function __mlsPtsForeignBatch(key){
 function getPatients(){
   try{
     var key=uns('patients'),batch=__mlsPtsBatchByKey[key];
-    if(batch&&batch.depth>0&&Array.isArray(batch.arr))return batch.arr.slice();
+    if(batch&&batch.depth>0&&Array.isArray(batch.arr))return __mlsPtsStampRead(batch.arr.slice());
     var raw=localStorage.getItem(key);
-    if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsMemo.arr.slice();
+    if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsStampRead(__mlsPtsMemo.arr.slice());
     var arr=JSON.parse(_mlsPtsDecode(raw))||[];
     if(Array.isArray(arr))__mlsPtsMemo={key:key,raw:raw,arr:arr};
-    return Array.isArray(arr)?arr.slice():arr;
+    return Array.isArray(arr)?__mlsPtsStampRead(arr.slice()):arr;
   }catch(e){return [];}
 }
 var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null,__mlsPtsLastSavedKey='';
@@ -7778,6 +7778,39 @@ function __mlsAthenaProofGuard(key,arr){
    is removed again by the next authorized pass, but a lost chart is
    unrecoverable. */
 var __MLS_PTS_ROWGUARD_MS=12000;
+/* pts-rowguard-2.0.0 — owner 2026-07-26, screenshot: "6 saves not confirmed …
+   MLS already re-saved them automatically and checked again — still missing."
+   So 1.0's clock window was being DEFEATED: a pull saves one patient every
+   ~10s, so its earliest rows are older than 12s long before it finishes, and
+   any bulk writer holding a pre-pull roster deletes them "legitimately" —
+   again and again, which is why even the automatic re-save lost.
+   Two additions, both strictly protective:
+   1. GENERATION RULE. Every array getPatients() hands out is stamped (non-
+      enumerable, never persisted) with the store generation it was read at;
+      every successful write bumps the generation and records the generation
+      at which each id was ADDED. "Could plausibly have seen" then stops being
+      a guess about clocks: a stamped caller may drop a row only if its read
+      generation is >= the row's add generation. Unstamped arrays (built by
+      filter/map/concat, or from another tab) keep 1.0's clock rule exactly,
+      so no existing dedupe/merge path changes behaviour.
+   2. PULL SHIELD. While a managed pull is running, NO unauthorized removal at
+      all — the pull is the one window where fresh rows and long-lived stale
+      rosters are guaranteed to coexist. purge/delete still pass
+      {allowRemovals:true}; b121's organize already refuses to merge during a
+      pull, so nothing legitimate is deferred. Worst case of a wedged running
+      flag is rows that cannot be silently removed until reload — the safe
+      direction. */
+var __mlsPtsGen=1,__mlsPtsRowGenByKey=Object.create(null);
+function __mlsPtsStampRead(a){
+  try{Object.defineProperty(a,'__mlsReadGen',{value:__mlsPtsGen,configurable:true});}catch(e){}
+  return a;
+}
+function __mlsPtsPullActive(){
+  try{var D=window.__mlsDayHistoryPull;if(D&&D.state&&D.state.running)return true;}catch(e){}
+  try{var M=window.__mlsProvMonthPull;if(M&&M.running)return true;}catch(e){}
+  try{var E=window.__mlsEasyV32;if(E&&typeof E.state==='function'){var s=E.state();if(s&&s.pull&&s.pull.running)return true;}}catch(e){}
+  return false;
+}
 function __mlsPtsRowGuard(key,arr,opts){
   if(!Array.isArray(arr))return arr;
   if(opts&&opts.allowRemovals===true)return arr;
@@ -7786,18 +7819,30 @@ function __mlsPtsRowGuard(key,arr,opts){
   if(!Array.isArray(cur)||!cur.length)return arr;
   var have=Object.create(null),i,r;
   for(i=0;i<arr.length;i++){ r=arr[i]; if(r&&r.id!=null)have[String(r.id)]=1; }
+  var gens=__mlsPtsRowGenByKey[key];
+  var callerGen=(typeof arr.__mlsReadGen==='number')?arr.__mlsReadGen:-1;
+  var pull=__mlsPtsPullActive();
   var now=Date.now(),carried=null;
   for(i=0;i<cur.length;i++){
     r=cur[i];
     if(!r||r.id==null||have[String(r.id)])continue;
-    var at=Number(r.updated||r.created||0);
-    if(!(at>0)||(now-at)>__MLS_PTS_ROWGUARD_MS)continue; /* settled — an intended removal */
+    var keep;
+    var g=gens?gens[String(r.id)]:undefined;
+    if(pull){
+      keep=true; /* pull shield: nothing unauthorized leaves mid-pull */
+    }else if(typeof g==='number'&&callerGen>=0){
+      keep=callerGen<g; /* precise: the caller's snapshot predates this row */
+    }else{
+      var at=Number(r.updated||r.created||0);
+      keep=(at>0)&&(now-at)<=__MLS_PTS_ROWGUARD_MS; /* 1.0 clock rule */
+    }
+    if(!keep)continue; /* settled — an intended removal */
     (carried||(carried=[])).push(r);
   }
   if(!carried)return arr;
   try{
     var log=window.__mlsPtsRowGuardLog=window.__mlsPtsRowGuardLog||[];
-    log.push({at:now,kept:carried.length,ids:carried.map(function(x){return String(x.id).slice(0,24);}).slice(0,8)});
+    log.push({at:now,kept:carried.length,pull:pull,callerGen:callerGen,ids:carried.map(function(x){return String(x.id).slice(0,24);}).slice(0,8)});
     if(log.length>60)log.splice(0,log.length-60);
   }catch(e){}
   return carried.concat(arr);
@@ -7842,6 +7887,17 @@ function savePatients(arr,__storageKey,__opts){
       throw e2;
     }
   }
+  /* pts-rowguard-2.0.0 bookkeeping — reached only after a setItem SUCCEEDED
+     (either path above). Bump the generation, record the add-generation of
+     every id new to this write, forget ids that authorized removals dropped
+     (a re-add later earns a fresh generation). */
+  __mlsPtsGen++;
+  try{
+    var __gens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
+    var __present=Object.create(null),__gi,__gr,__gid;
+    for(__gi=0;__gi<arr.length;__gi++){ __gr=arr[__gi]; if(__gr&&__gr.id!=null){ __gid=String(__gr.id); __present[__gid]=1; if(__gens[__gid]===undefined)__gens[__gid]=__mlsPtsGen; } }
+    for(__gid in __gens){ if(!__present[__gid])delete __gens[__gid]; }
+  }catch(e){}
   var __batch=__mlsPtsBatchByKey[__key];
   if(__batch&&__batch.depth>0&&!__batch.flushing){
     __batch.arr=Array.isArray(arr)?arr.slice():[];
@@ -23378,7 +23434,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b671: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b672: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -23513,7 +23569,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b671 — THE LOADING SCREEN MUST ALWAYS END.
+/* b672 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -28218,7 +28274,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b671';
+  window.__MLS_AV='b672';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

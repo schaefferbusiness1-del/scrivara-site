@@ -597,8 +597,15 @@
   function resaveOnce(p) {
     if (!p || p.id == null) return null;
     var key = patientId(p);
-    if (_resaveAttempted[key]) return null;
-    _resaveAttempted[key] = 1;
+    /* sv-1.1.1 (owner screenshot 2026-07-26: the "already re-saved …
+       still missing" card while rows kept vanishing). Once-per-SESSION meant
+       a patient whose first failure was healed early in the day got NO retry
+       on a later, unrelated failure — and the card still claimed one had
+       happened. A 60s cooldown keeps the no-tight-loop property (the reason
+       "once" existed) while making the card's claim true every time. */
+    var last = Number(_resaveAttempted[key] || 0);
+    if (last && (Date.now() - last) < 60000) return null;
+    _resaveAttempted[key] = Date.now();
     var up = fn('upsertPatient');
     if (!up) return null;
     try { (up.__mlsOrig || up).call(window, p); } catch (e) { return null; }

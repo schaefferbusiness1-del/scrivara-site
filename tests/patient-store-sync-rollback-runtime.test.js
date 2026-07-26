@@ -37,7 +37,18 @@ function patientStoreBlock(file) {
    within the recent window unless the caller passes {allowRemovals:true}
    (purge / delete patient). Still fully synchronous, same MLSZ1 single-key
    writer; behaviour is pinned by tests/patient-row-loss-guard.test.js. */
-const B448_PATIENT_STORE_SHA256 = '9e222d0b9a56fb096b3617c4093f1940b9a250be450d1bf7ea404ffac0a82cb5';
+/* b672 re-pin (owner 2026-07-26, screenshot: "6 saves not confirmed … MLS
+   already re-saved them automatically and checked again — still missing"):
+   pts-rowguard-2.0.0. The 12s clock window was being defeated by bulk
+   writers holding pre-pull rosters — a pull's earliest rows outlive the
+   window before the pull ends. getPatients() now stamps each returned array
+   with its read generation (non-enumerable, never serialized); savePatients
+   records each id's add-generation after a successful write; a stamped
+   caller may only drop rows its generation could have seen, and NO
+   unauthorized removal happens while a managed pull runs. Same synchronous
+   MLSZ1 single-key writer, no sidecars, no journal; behaviour pinned by
+   tests/patient-row-loss-guard.test.js scenarios 6-7. */
+const B448_PATIENT_STORE_SHA256 = 'ed629f78b86f9f8c93fc59e3b84f75b1cb682e7fb225b198a5d5fcf813470f08';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),
