@@ -337,6 +337,7 @@ const tests = [
   'motion-system-costs-no-layout.test.js',
   'dark-theme-reaches-every-panel.test.js',
   'one-heading-system.test.js',
+  'one-radius-scale.test.js',
   'motion-tokens-are-page-level-and-cannot-strand.test.js',
   'voice-cluster-expands-never-decides.test.js',
   'review-is-a-review-not-just-orders.test.js',
