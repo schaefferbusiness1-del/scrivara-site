@@ -366,13 +366,27 @@ zip forms (`MLS_Assist_v3\.0\.21\.zip`) in `extension-package`,
 `public-publication-boundary` and `public-release-truth-boundary`; a plain `3.0.21` grep does not
 find them.
 
-### 6.2 Pins moved deliberately
+### 6.2 This branch straddles BOTH release trains — they must ship together
+
+| file | ships via |
+|---|---|
+| `background.js`, `mls-popup.js` | **extension zip** (core digest, `mls-extension-release`, 3.0.22) |
+| `mls-connect.js`, `feat_mls_status_center.js`, `feat_save_verify.js`, `feat_athena_provider_roster.js`, `feat_mls_schedimport_exact.js` | **site build** (`mls-build-ship`, app-version bump) |
+
+`feat_mls_status_center.js`'s `writeVerdict` reads `resp.note.confirmedCount`, which only the new
+`background.js` emits. **If the site ships first**, the status row falls to its honest default —
+*"Write-back returned no destination receipt — open athenaOne and verify what landed"* — which is
+degraded but not a lie, so that ordering is safe. **If the extension ships first**, the old status
+row still paints `!resp.error` green, so the wrong-patient refusal stays green until the site
+catches up. **Ship the site first, or ship them together.**
+
+### 6.3 Pins moved deliberately
 
 - `tests/provider-roster-machine-echo-collapse.test.js` — roster satellite version `2.2.2` →
   `2.3.0`. Sole pin; nothing else in the tree references that number.
 - `tests/run-all.js` — two new suites registered.
 
-### 6.3 Both new gates were proven in both directions
+### 6.4 Both new gates were proven in both directions
 
 Per the b669 rule (*prove a new gate FAILS on the real regression AND PASSES on the real tree*),
 each mutation restores the **pre-fix expression verbatim** and is run against the real tree:
