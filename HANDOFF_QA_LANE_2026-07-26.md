@@ -1,4 +1,4 @@
-# HANDOFF — QA / release-quality lane, 2026-07-26 (b669)
+# HANDOFF — QA / release-quality lane, 2026-07-26 (b670)
 
 Written by the QA lane at context exhaustion. **Everything below is either measured or
 explicitly marked unverified.** Where I was wrong tonight I have said so, because three
@@ -28,13 +28,13 @@ assignment predated the fix:
 ## 1. STATE AT HANDOFF
 
 ```
-origin/main   3d24f5e   b669
-live          b669                       (mlsscribe.com/app-version.json, __MLS_AV=b669)
-gate          333 suites green
+origin/main   5345e0c   b670
+live          b670                       (mlsscribe.com/app-version.json)
+gate          334 suites green
 E2E           30 steps, 0 failed         (real Chrome; grown 17 -> 30 tonight)
 ```
 
-**All five gates I shipped are green at the tip.**
+**All six gates I shipped are green at the tip.**
 
 **⚠️ EVERY OTHER LANE IS STOPPED.** Checked 2026-07-26: all sessions report
 `isRunning:false` — the design/UI lane last moved 02:27, defects 03:36. There is
@@ -86,18 +86,18 @@ says only that none of it changed what the user sees **while idle**. Do not quot
 Probe: `scratchpad/probe-timers.js` (hooks `setInterval` via `evaluateOnNewDocument`, attributes
 each fire to an owner file + period, times every callback, and counts fires that mutate nothing).
 
-### 2.2 🔴 Review rebuild — NOT IN PROGRESS. NO LANE OWNS IT.
+### 2.2 ✅ Review rebuild — BUILT AND SHIPPED as b670 (rvp-1.0.0). See §9.
 
-**Corrected 2026-07-26.** This section used to say "IN PROGRESS (UI lane)". That is false: the
-UI/design lane is stopped, and **`#mlsReviewPanel` exists in no worktree on this machine.** It
-was never produced. Anyone resuming should treat this as unstarted work with no owner, not as
-something in flight.
+**This section has now been wrong in both directions, which is worth recording.** It first said
+"IN PROGRESS (UI lane)" — false, that lane was stopped and `#mlsReviewPanel` existed in no
+worktree. It was then corrected to "no lane owns it" — true at the time, and it stayed true, so
+the QA lane built it rather than leave it unowned. **Do not read either earlier claim as history.**
 
 Owner's words: *"the review tab sucks and needs to be completely reworked from scratch"* — a
-design verdict, not a bug report. What has actually shipped against it is **b650** (Review offers
-the note, orders and recommendations rather than being a renamed Orders), **b666** (*"pressing
-Review did nothing you could see"*), and **b669** (the control b666 reveals is now actually
-clickable — see §8). All three are verified. **None of them is the rebuild he asked for.**
+design verdict, not a bug report. The full chain against it: **b650** (Review offers the note,
+orders and recommendations rather than being a renamed Orders), **b666** (*"pressing Review did
+nothing you could see"*), **b669** (the control b666 reveals is actually clickable — §8), and
+**b670** (the panel itself — §9).
 
 **⚠️ MY ORIGINAL HANDOFF ON THIS WAS WRONG, and the correction matters:**
 
@@ -310,3 +310,56 @@ behavioural re-measurement.** The harness cannot get past auth on the live site,
 and creating an account or entering credentials there is a hard stop. Someone with
 a real signed-in session should press Review once and confirm the button is
 clickable where it lands.
+
+---
+
+## 9. b670 — the Review rebuild (rvp-1.0.0)
+
+`#mlsReviewPanel` fronts `ordersView`, the view Review actually lands on. Three rules,
+each enforced by a test because each fails **silently**:
+
+1. **Gaps render FIRST, above the list.** A review showing only what IS there teaches
+   skimming. Missing diagnoses, missing charges, order drafts with empty required
+   fields, unreviewed AI suggestions, and the billing codes `_athenaCanonicalBilling`
+   already flags as invalid or contradictory — all above the inventory.
+2. **It reads the send path's own plan** (`_athenaBuildPlan()`), so it cannot drift
+   from what actually leaves.
+3. **It contains NO controls at all.** Not a disabled send, not a confirm. Looking is
+   free by construction, not by care.
+
+**Measured on a running page** (real Chrome): empty visit → 1 gap, "no note yet".
+Loaded visit → 0 gaps, 3 groups: `Note — 22 words`, `Diagnoses — 2 codes`,
+`Charges — 2 items (E/M 99213, CPT 73562)`, each with its real Athena destination.
+Note-but-no-coding → **gaps=2 groups=1 gapsAboveList=TRUE** (the ordering claim, measured
+in the only state where both exist). Phone 390×844 → 351px wide, no horizontal overflow.
+30 forced rebuild passes → **0 DOM mutations**. Safety → 0 controls, 0 Athena writes.
+
+**Two silent bugs it found in itself before shipping:**
+
+- **`window.currentSoap` / `window.currentCoding` are permanently undefined.** They are
+  declared as a top-level `let` in ScribeFlow.html, and a top-level `let` is NOT a window
+  property. The panel would have shipped stuck on "No note has been generated yet" on
+  every visit, rendering perfectly. The giveaway was a second number disagreeing: the
+  plan said `Note — 0 words` for a note that had words. **Read through function
+  declarations** (`_athenaBuildPlan`, `activePatient`, `loadRecordIntoEditor`) — those
+  ARE on window.
+- **`_athenaCanonicalBilling` returns `{emCode, cptCodes, invalid}`, not `{em, cpt}`.**
+  Reading `bd.cpt` dropped every CPT charge while the E/M still rendered.
+
+**Probe note:** driving this state needs `loadRecordIntoEditor(record)`. Setting
+`window.currentSoap` proves nothing (different property), and writing `#noteBox` fails
+too — the app forces it back to `display:none` within ~300ms until a note is really
+generated, so `emrReadyText()` never sees it.
+
+**Instrument trap #9:** the mobile run reported 30 `classList` null errors that the
+desktop run did not. They were **mine** — the churn arm dispatches 30 synthetic
+`MouseEvent` clicks, and an app click handler does not tolerate a targetless synthetic
+event. Two controls settled it: panel removed → 0 errors; panel present, clicks removed
+→ 0 errors. Not a product defect.
+
+**Bump-script correction shipped here too.** The b669 script bumped `mls-connect.js` by
+counting tokens, and two of them were prose — it rewrote "Measured at b668" to "Measured
+at b669", pointing the next reader at a build where that defect no longer existed. Exact
+counts caught nothing because the count was still right. `bump-b670.js` bumps
+`mls-connect.js` by **anchor**, asserts each pin matches exactly once, and fails if the
+b668 measurement record moves.
