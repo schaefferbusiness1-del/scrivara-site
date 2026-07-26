@@ -6481,7 +6481,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              margin below it measured exactly 0px. That is the one place it must
              not land: the merged Copilot bubble is position:fixed in that corner.
 
-             Measured at b669, 1400x900, bubble in its CLOSED resting state:
+             Measured at b668, 1400x900, bubble in its CLOSED resting state:
              7 of 9 sample points across this 192px button were owned by
              #mlsCopVoiceBtn, and a real trusted click at its centre (316,880)
              was received by the bubble, not by this button. So b666 revealed the
@@ -33461,7 +33461,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b669';
+  window.__MLS_AV = window.__MLS_AV || 'b670';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33771,7 +33771,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b669';
+  var MLS_APP_BUILD='2026-07-25-b670';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -45372,3 +45372,232 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(document.body)paint(n,CORE.length);
   }catch(e2){try{clearInterval(iv)}catch(e3){}gone();}},400);
 }catch(e){}})();
+
+/* ===== REVIEW PANEL (rvp-1.0.0) — "make Review a review" =========================
+   Owner: "the review tab sucks and needs to be completely reworked from scratch."
+
+   WHAT WAS WRONG. There is no reviewView. Review is a dock destination whose
+   first available target is ordersView, so pressing Review landed the doctor in
+   the ORDER BUILDER: diagnosis pull, a new-order form, a chip tray. That is a
+   place to CREATE things. Review is the last human gate before anything reaches
+   Athena, and the screen opened with data entry instead of an answer to the only
+   question that matters there: what is about to leave, and what is missing.
+
+   THREE RULES THIS PANEL IS BUILT ON.
+
+   1. GAPS RENDER FIRST, ABOVE THE LIST. A review that shows only what IS there
+      teaches skimming — everything present looks complete. What is absent is the
+      part a doctor cannot see by looking, so it goes on top.
+
+   2. IT READS THE SEND PATH'S OWN PLAN. The contents come from
+      _athenaBuildPlan(), the exact function pushEntireVisitToAthena() uses. A
+      review assembled from its own second copy of the rules drifts, and a review
+      that disagrees with what actually leaves is worse than none.
+
+   3. IT CONTAINS NO CONTROLS AT ALL. Not a disabled send, not a confirm — none.
+      Looking is free and sending costs exactly what it always cost, by
+      construction rather than by care. This codebase has documented history of
+      handOff() toasting "note sent to Athena" over seven silent refusals, and a
+      prettier Review that is easier to click THROUGH is a worse Review.
+
+   No timer. Renders on view change and on edits inside Orders, and a render whose
+   content signature is unchanged touches no DOM at all — this app has already
+   paid for no-op rewrites (86 body-class writes in 44s, an #ordersBody rebuilt
+   every 5008ms), and a review panel that repaints under the doctor would be one
+   more. =============================================================== */
+(function () {
+  'use strict';
+  var ROOT_ID = 'mlsReviewPanel', STYLE_ID = 'mlsReviewPanelCss', _sched = null;
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function css() {
+    if ($(STYLE_ID)) return;
+    var s = document.createElement('style'); s.id = STYLE_ID;
+    s.textContent =
+      '#' + ROOT_ID + '{border:1px solid var(--line,#d8e0da);border-radius:14px;background:var(--card,#fff);padding:16px 18px;margin:0 0 14px}' +
+      '#' + ROOT_ID + ' .rvp-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 2px}' +
+      '#' + ROOT_ID + ' .rvp-h b{font-size:17px;font-weight:800}' +
+      '#' + ROOT_ID + ' .rvp-sub{font-size:13px;color:var(--muted,#6b7770);margin:0 0 12px}' +
+      '#' + ROOT_ID + ' .rvp-who{font-size:13px;font-weight:700;padding:6px 10px;border-radius:8px;background:var(--soft,#f2f6f3);display:inline-block;margin:0 0 12px}' +
+      '#' + ROOT_ID + ' .rvp-sec{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#6b7770);margin:14px 0 7px}' +
+      '#' + ROOT_ID + ' .rvp-gaps{margin:0;padding:0;list-style:none}' +
+      '#' + ROOT_ID + ' .rvp-gaps li{display:flex;gap:9px;align-items:flex-start;padding:8px 11px;border-radius:9px;background:#fdf4e7;border:1px solid #f0dcc0;margin:0 0 6px;font-size:13.5px;line-height:1.45}' +
+      '#' + ROOT_ID + ' .rvp-gaps li .rvp-i{flex:0 0 auto;line-height:1.45}' +
+      '#' + ROOT_ID + ' .rvp-ok{padding:8px 11px;border-radius:9px;background:#eef7f0;border:1px solid #cfe6d6;font-size:13.5px}' +
+      '#' + ROOT_ID + ' .rvp-list{margin:0;padding:0;list-style:none}' +
+      '#' + ROOT_ID + ' .rvp-list li{padding:9px 0;border-top:1px solid var(--line,#e6ebe8)}' +
+      '#' + ROOT_ID + ' .rvp-list li:first-child{border-top:0}' +
+      '#' + ROOT_ID + ' .rvp-t{font-size:14px;font-weight:700}' +
+      '#' + ROOT_ID + ' .rvp-d{font-size:12.5px;color:var(--muted,#6b7770);margin-top:2px}' +
+      '#' + ROOT_ID + ' .rvp-items{margin:5px 0 0;padding:0 0 0 16px;font-size:13px;line-height:1.5}' +
+      '#' + ROOT_ID + ' .rvp-foot{margin-top:13px;padding-top:11px;border-top:1px solid var(--line,#e6ebe8);font-size:12.5px;color:var(--muted,#6b7770)}' +
+      '@media (max-width:640px){#' + ROOT_ID + '{padding:13px 13px}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* Everything the panel shows, derived ONCE. */
+  function collect() {
+    var out = { who: '', gaps: [], groups: [], ok: false };
+    var pt = null;
+    try { pt = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
+    if (pt) {
+      var bits = [pt.name || 'Unnamed patient'];
+      if (pt.dob) bits.push('DOB ' + pt.dob);
+      if (pt.mrn) bits.push('MRN ' + pt.mrn);
+      out.who = bits.join('  ·  ');
+    } else {
+      out.gaps.push(['👤', 'No patient is bound to this visit. Nothing can be reviewed until one is.']);
+    }
+
+    /* EVERYTHING below comes from the plan, and NOTHING from a bare global.
+       The first cut of this panel read window.currentSoap and window.currentCoding.
+       Those are declared `let currentSoap='', currentInsurance='', currentCoding=null`
+       at top level in ScribeFlow.html, and a top-level `let` does NOT become a
+       property of window — so both reads were permanently undefined and the panel
+       would have shipped stuck on "No note has been generated yet" forever, on
+       every visit. It looked correct in a probe only because the probe had set
+       window.currentSoap itself, and the giveaway was the plan reporting
+       "Note - 0 words" for a note that plainly had words.
+       Function DECLARATIONS (_athenaBuildPlan, activePatient, emrReadyText) do
+       become window properties, which is why reading through the plan works. */
+    var built = null;
+    try {
+      var binding = window._athenaBindingForCurrentVisit('review-panel');
+      built = window._athenaBuildPlan(binding);
+    } catch (e) { built = null; }
+    if (!built || !built.plan) {
+      out.gaps.push(['⚠️', 'The review plan could not be read from this visit. Open the visit workspace and generate the note again.']);
+      return out;
+    }
+
+    var noteText = String(built.noteText || '');
+    if (!noteText.trim()) {
+      out.gaps.push(['📝', 'No note has been generated yet. Review has nothing to show until there is one.']);
+      return out;
+    }
+
+    var byKind = {}; built.plan.forEach(function (p) { if (p && p.kind) byKind[p.kind] = p; });
+    var S = window.ATHENA_SECTIONS || {};
+    function sec(k) { return S[k] || {}; }
+    /* dx and orders bodies list their items as "• item" lines; read them back
+       rather than keeping a second copy of the formatting rules here. */
+    function bullets(p) {
+      if (!p) return [];
+      return String(p.body || '').split('\n').map(function (l) { return l.trim(); })
+        .filter(function (l) { return l.indexOf('•') === 0; })
+        .map(function (l) { return l.replace(/^•\s*/, '').trim(); })
+        .filter(Boolean);
+    }
+
+    var words = noteText.split(/\s+/).filter(Boolean).length;
+    out.groups.push({ icon: sec('note').icon || '📝', title: 'Note', dest: sec('note').dest || '', meta: words + ' word' + (words === 1 ? '' : 's'), items: [] });
+
+    var icd = bullets(byKind.dx);
+    if (icd.length) out.groups.push({ icon: sec('dx').icon || '🩺', title: 'Diagnoses', dest: sec('dx').dest || '', meta: icd.length + ' code' + (icd.length === 1 ? '' : 's'), items: icd.slice(0, 8) });
+    else out.gaps.push(['🩺', 'No ICD-10 diagnoses are coded on this note.']);
+
+    var bill = byKind.billing;
+    if (bill) {
+      /* _athenaCanonicalBilling returns {emCode, cptCodes, invalid} — NOT
+         {em, cpt}. Reading bd.cpt silently dropped every CPT charge while the
+         E/M still appeared, so the panel under-reported what was about to leave
+         and looked entirely healthy doing it. */
+      var bi = [], bd = bill.billing || {};
+      var em = bd.emCode || bd.em || '';
+      if (em) bi.push('E/M ' + em);
+      var cptList = Array.isArray(bd.cptCodes) ? bd.cptCodes : (Array.isArray(bd.cpt) ? bd.cpt : []);
+      cptList.forEach(function (x) { bi.push('CPT ' + x); });
+      if (!bi.length) bi = bullets(bill);
+      out.groups.push({ icon: sec('billing').icon || '💲', title: 'Charges', dest: sec('billing').dest || '', meta: bi.length + ' item' + (bi.length === 1 ? '' : 's'), items: bi.slice(0, 8) });
+
+      /* The canonical builder already knows which codes are unusable or
+         contradictory. That is exactly what the last gate before Athena should
+         be showing, so surface it rather than letting it leave silently. */
+      (Array.isArray(bd.invalid) ? bd.invalid : []).slice(0, 4).forEach(function (msg) {
+        out.gaps.push(['💲', String(msg)]);
+      });
+    } else {
+      out.gaps.push(['💲', 'No E/M level and no CPT charges. This visit would leave with nothing billable attached.']);
+    }
+
+    var od = byKind.orders;
+    if (od) {
+      var drafts = od.orderDrafts || [], sugg = od.orderSuggestions || [];
+      if (drafts.length) out.groups.push({ icon: sec('orders').icon || '📋', title: 'Orders', dest: sec('orders').dest || '', meta: drafts.length + ' reviewed draft' + (drafts.length === 1 ? '' : 's'), items: drafts.map(function (d) { return d.summary; }).slice(0, 8) });
+      var incomplete = drafts.filter(function (d) { return d && d.complete === false; });
+      if (incomplete.length) out.gaps.push(['📋', incomplete.length + ' order draft' + (incomplete.length === 1 ? '' : 's') + ' still ' + (incomplete.length === 1 ? 'has' : 'have') + ' empty required fields.']);
+      if (sugg.length) out.gaps.push(['✨', sugg.length + ' AI suggestion' + (sugg.length === 1 ? '' : 's') + ' ' + (sugg.length === 1 ? 'has' : 'have') + ' not been reviewed. ' + (sugg.length === 1 ? 'It leaves' : 'They leave') + ' marked "do not execute" — nobody will act on ' + (sugg.length === 1 ? 'it' : 'them') + '.']);
+    }
+
+    out.ok = out.gaps.length === 0;
+    return out;
+  }
+
+  function html(d) {
+    var h = '<div class="rvp-h"><b>Review</b></div>' +
+      '<p class="rvp-sub">Everything below is what will leave this visit for Athena. Nothing on this panel sends it.</p>';
+    if (d.who) h += '<div class="rvp-who">' + esc(d.who) + '</div>';
+    h += '<div class="rvp-sec">Needs your attention</div>';
+    if (d.gaps.length) {
+      h += '<ul class="rvp-gaps">' + d.gaps.map(function (g) {
+        return '<li><span class="rvp-i" aria-hidden="true">' + esc(g[0]) + '</span><span>' + esc(g[1]) + '</span></li>';
+      }).join('') + '</ul>';
+    } else {
+      h += '<div class="rvp-ok">Nothing missing. Every part of this visit has something in it.</div>';
+    }
+    if (d.groups.length) {
+      h += '<div class="rvp-sec">What will leave</div><ul class="rvp-list">' + d.groups.map(function (g) {
+        return '<li><div class="rvp-t">' + esc(g.icon) + ' ' + esc(g.title) + ' <span style="font-weight:400;color:var(--muted,#6b7770)">— ' + esc(g.meta) + '</span></div>' +
+          (g.dest ? '<div class="rvp-d">' + esc(g.dest) + '</div>' : '') +
+          (g.items && g.items.length ? '<ul class="rvp-items">' + g.items.map(function (i) { return '<li>' + esc(i) + '</li>'; }).join('') + '</ul>' : '') +
+          '</li>';
+      }).join('') + '</ul>';
+    }
+    h += '<div class="rvp-foot">Reading this changes nothing. Sending stays where it was — "Review Athena actions" in the visit workspace — and still asks you to confirm.</div>';
+    return h;
+  }
+
+  function build() {
+    var host = $('ordersView'); if (!host) return;
+    if (host.style.display === 'none') return;          /* Review is not on screen */
+    css();
+    var d; try { d = collect(); } catch (e) { return; }
+    var sig; try { sig = JSON.stringify(d); } catch (e) { return; }
+
+    var el = $(ROOT_ID);
+    if (el && el.getAttribute('data-rvp-sig') === sig) return;   /* nothing changed: touch NOTHING */
+    if (!el) {
+      el = document.createElement('section');
+      el.id = ROOT_ID;
+      el.setAttribute('aria-label', 'Review — what will leave this visit');
+      host.insertBefore(el, host.firstChild);
+    }
+    el.innerHTML = html(d);
+    el.setAttribute('data-rvp-sig', sig);
+  }
+
+  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; try { build(); } catch (e) {} }, 120); }
+
+  function boot() {
+    try {
+      if (typeof window.showView === 'function' && !window.__mlsRvpHook) {
+        window.__mlsRvpHook = 1;
+        var _o = window.showView;
+        window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; };
+      }
+    } catch (e) {}
+    /* Orders are added and removed by controls inside this view; refresh after
+       one, not on a clock. The signature guard makes a redundant pass free. */
+    try {
+      var host = $('ordersView');
+      if (host && !host.__rvpBound) { host.__rvpBound = 1; host.addEventListener('click', schedule, true); host.addEventListener('change', schedule, true); }
+    } catch (e) {}
+    schedule();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  setTimeout(boot, 1500);
+  setTimeout(boot, 4000);
+})();
