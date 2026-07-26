@@ -495,6 +495,43 @@
   .disclaim{font-size:13px;color:var(--amber);background:#fffaf0;border:1px solid #ffe9c2;
     border-radius:9px;padding:9px 13px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
   footer{max-width:1180px;margin:18px auto 40px;padding:0 22px;color:var(--muted);font-size:13.5px;text-align:center;line-height:1.6}
+  /* ===== ONE HEADING SYSTEM =====
+     Measured at b676 on the running app, ten views: 33 visible headings in TWO
+     competing systems. 31 were Public Sans at weight 700 across five sizes
+     (15/18/20px, plus 23 and 28), and 2 — Analysis and AI Studio — were a bare
+     Newsreader h1 at weight 500. The owner picked the calm one.
+
+     So there are three ranks and nothing else:
+       h1  the page's subject      serif, 500, 28px
+       h2  a section of that page  sans,  600, 20px
+       h3  a block inside it       sans,  600, 15px
+
+     Weight 700 is the thing being retired: at 15px it is the loudest text on a
+     screen whose primary action is supposed to be the biggest thing on it.
+
+     !important, deliberately: the *_exact.js modules set heading type per view
+     with their own !important, so a polite rule here would leave the app in
+     exactly the two-system state this replaces. Type only — nothing here moves
+     an element or changes a colour. */
+  h1,h2,h3{ letter-spacing:-.01em!important; }
+  h1{ font-family:var(--serif)!important; font-weight:500!important; font-size:28px!important; letter-spacing:-.02em!important; }
+  h2{ font-family:var(--sans)!important; font-weight:600!important; font-size:20px!important; }
+  h3{ font-family:var(--sans)!important; font-weight:600!important; font-size:15px!important; }
+  /* Eight headings still rendered at 700 after the block above, and the reason
+     is worth writing down: the *_exact.js view modules declare heading type at
+     (2,0,1) specificity WITH !important — "#ordersView #ordersCard > h2" —
+     which no bare "h2{...!important}" can reach. Prefixing "html body" puts
+     these at (2,0,3) and (2,1,2), one step above each, which is the smallest
+     thing that works.
+
+     This couples four selectors to modules Worker E owns. The durable fix is
+     for those modules to stop declaring heading weight at all; until then a
+     heading rendering at 700 is measurable, and the gate says so. */
+  html body #ordersView #ordersCard > h2,
+  html body #historyView #historyCard > h2,
+  html body #recsView #recsCard > h2,
+  html body #studioView #copilotHero h2{ font-family:var(--sans)!important; font-weight:600!important; font-size:20px!important; }
+  html body #ordersView .extra-card h3{ font-family:var(--sans)!important; font-weight:600!important; font-size:15px!important; }
   /* modal */
   .modal-bg{position:fixed;inset:0;background:rgba(16,40,70,.55);backdrop-filter:blur(2px);
     display:none;align-items:center;justify-content:center;padding:20px;z-index:9400}
@@ -778,7 +815,7 @@
   .wrap{ padding-bottom:60px; }
   .card{ border-radius:18px; padding:24px; box-shadow:0 1px 2px rgba(20,40,70,.04),0 10px 30px rgba(20,40,70,.05); }
   .card + .card{ margin-top:20px; }
-  .card h2{ font-size:18px; letter-spacing:-.4px; font-weight:700; }
+  .card h2{ letter-spacing:-.01em; }
   .card .sub{ line-height:1.55; }
   button{ border-radius:11px; }
   .btn-primary,.btn-ghost,.btn-green,.btn-red,.btn-gold,.btn-white{ border-radius:11px; }
