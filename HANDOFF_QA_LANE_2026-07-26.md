@@ -40,19 +40,44 @@ E2E           30 steps, 0 failed         (real Chrome; grown 17 -> 30 tonight)
 
 ## 2. WHAT IS ACTUALLY LEFT
 
-### 2.1 🔴 The 215-timer fleet — NOT STARTED, needs a session
+### 2.1 🟡 The timer fleet — NOW MEASURED. It is a 2.4% idle tax that does nothing.
 
-The only item where the blocker is a **decision**, not work. The owner has been asked twice
-and has not answered.
+**Step one is done. Do not inherit the old framing — the COUNT badly overstated the COST.**
+
+Measured at b667, 20s settled idle, foregrounded, liveness witness alive (clock 29 ticks):
 
 ```
-215 setInterval registrations under 10s, across 95 files
-~204 timer fires per second, sustained, on an idle app
+setInterval registrations     264        (not 215 — more than reported)
+   periods                    <1s: 76    1-5s: 154    5-10s: 8    >=10s: 26
+fires in 20s                  3,582      = 179/sec   (reported ~204, close enough)
+MAIN-THREAD TIME consumed     484ms of 20,000ms      = 2.42% of the window
+fires causing NO DOM mutation 3,582 of 3,582         = 100%
+
+most expensive owners (main-thread ms):
+   mls-connect.js @2000ms   fires=200   211.9ms   noop=200    <- 1.06ms per fire, the worst
+   mls-connect.js @1200ms   fires=400    94.3ms   noop=400
+   mls-connect.js @1500ms   fires=587    53.0ms   noop=587
+   mls-connect.js  @500ms   fires=296    20.2ms   noop=296
 ```
 
-Related to the boot cost b581 filed as *"the work 234 modules do"* — but **unlike boot, it never
-stops**. Nobody has measured how much of it is real work vs no-op churn. That measurement is
-step one; do not assume the count implies the cost.
+**What this changes.** "215 timers, 204 fires/sec" reads like an emergency. It is not: the whole
+fleet costs **2.42% of the main thread** while idle. That is worth reclaiming but it is not the
+boot problem and it will not feel like one. **Anyone who ships a 264-timer refactor expecting a
+visible speed-up will be disappointed** — and a refactor that large on a clinical bundle is a
+poor trade for 2.4%.
+
+**What is genuinely damning is the other number: 100% of 3,582 fires caused no DOM mutation.**
+Every single wake-up during idle did nothing observable. So the target is not "fewer timers", it
+is **the four `mls-connect.js` intervals at the top of that list**, which alone are ~380ms of the
+484ms. Fixing those four is a small, bounded change with most of the benefit.
+
+**Caveat, stated honestly:** "no DOM mutation" is not "no work" — a callback may poll, compute or
+touch storage without changing the page. The 484ms is the real main-thread cost; the 100% figure
+says only that none of it changed what the user sees **while idle**. Do not quote the 100% as
+"they do nothing" without that qualifier.
+
+Probe: `scratchpad/probe-timers.js` (hooks `setInterval` via `evaluateOnNewDocument`, attributes
+each fire to an owner file + period, times every callback, and counts fires that mutate nothing).
 
 ### 2.2 🔵 Review rebuild — IN PROGRESS (UI lane)
 
