@@ -559,8 +559,23 @@
       return true;
     }catch(e){ return false; }
   }
+  /* Owner 2026-07-26: "add my logo to the top left and a click on it takes u
+     home / to visit." The title is now [brand mark][view name], one control,
+     and the whole thing keeps the existing click-home. The text lives in its
+     own span so this updater can never wipe the mark. */
+  function ensureTitleBrand(el){
+    if(el.querySelector('.rd-brandmark')) return el.querySelector('.rd-titletext');
+    el.textContent='';
+    var mark=mk('span','width:26px;height:26px;border-radius:7px;background:#204034;display:inline-flex;align-items:center;justify-content:center;flex:none;margin-right:9px;vertical-align:middle',LOGO_SVG);
+    mark.className='rd-brandmark';
+    var txt=mk('span'); txt.className='rd-titletext';
+    el.appendChild(mark); el.appendChild(txt);
+    el.style.display='inline-flex'; el.style.alignItems='center';
+    return txt;
+  }
   function syncTitle(){
     try{ var el=$('mlsRdTitle'); if(!el) return;
+      var txtEl=ensureTitleBrand(el);
       /* overlays (Reviews) mark their tab .on without clearing the view's —
          the LAST .on is the most recently activated surface */
       var ons=document.querySelectorAll('#mlsRdNav .navtab.on');
@@ -568,7 +583,7 @@
       var t=on?navLabelOf(on):'';
       t=t.replace(/^[^A-Za-z0-9]+\s*/,'');   /* "⭐ Reviews" -> "Reviews" */
       if(!t) t='MLS Scribe';
-      if(el.textContent!==t) el.textContent=t;
+      if(txtEl.textContent!==t) txtEl.textContent=t;
     }catch(e){}
   }
 
