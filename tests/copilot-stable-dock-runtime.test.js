@@ -75,7 +75,7 @@ const context = {
 context.window = context;
 vm.runInNewContext(source, context, { filename: 'feat_mls_copilot_dock_fix.js' });
 
-assert.strictEqual(context.__mlsCopilotDockFix.version, 'cdf-2.0.0');
+assert.strictEqual(context.__mlsCopilotDockFix.version, 'cdf-2.1.0');
 assert(card.contains(thread) && card.contains(chips) && card.contains(inputRow), 'canonical chat nodes were not claimed by #copilotCard');
 assert(document.getElementById('mlsCopilotStableProxy'), 'Assistant section did not receive a stable Copilot proxy');
 assert.strictEqual(context.__mlsCopilotDockFix.state(), 'ready');

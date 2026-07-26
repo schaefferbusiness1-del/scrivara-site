@@ -87,7 +87,7 @@ function makeHarness(prompt = 'summarize this patient') {
   assert(stale.toasts.some(t => /discarded/i.test(t)), 'patient switch did not produce an honest discarded-result notice');
 
   const stable = makeHarness();
-  assert.strictEqual(stable.context.__mlsCopilotRequestSafety.version, 'crs-1.1.1');
+  assert.strictEqual(stable.context.__mlsCopilotRequestSafety.version, 'crs-1.2.0');
   const stableRun = stable.context.copilotAsk();
   stable.request.resolve({ ok: true, status: 200, json: () => Promise.resolve({
     reply: 'Safe answer',

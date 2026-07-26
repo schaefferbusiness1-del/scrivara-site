@@ -146,12 +146,54 @@ const LOADER = 'mls-connect.js';
  *     re-parents #analysisView and wraps showView — two things you want to be
  *     able to back out on their own, at 2am, from one call, without also
  *     reverting the calendar and history layouts that live in that file. */
-const CEILING = 239;
+/* 238 -> 239 at the 2026-07-26 voice lane, for feat_mls_voice_copilot.js
+ * (vcp-1.0.0). The three questions, answered:
+ *   - It is DEFERRED (requestIdleCallback, 4s timeout). Nobody can speak to the
+ *     app before it is interactive, so a voice router has no business in the
+ *     post-login burst. EAGER_CEILING below does not move.
+ *   - It carries NO setInterval. It has two one-shot jobs and uses a bounded
+ *     setTimeout ladder (25 tries, then inert), so INTERVAL_CEILING does not
+ *     move either — deliberately, given what the interval pin below records.
+ *   - It could have been folded into feat_mls_copilot_voice_v2.js to keep the
+ *     count flat, and that would have been the dishonest version. This module
+ *     is the thing that has to be revertible ON ITS OWN: it is the seam between
+ *     four microphone surfaces and the Copilot thread, and if the routing is
+ *     ever wrong at 2am the fix is one revert() that puts every surface back on
+ *     its old path without touching any recognizer. Folding it into a
+ *     recognizer-owning module would make backing out the routing mean backing
+ *     out a microphone owner. */
+/* 240 -> 241 at the same 2026-07-26 voice lane, for feat_mls_audio_capture.js
+ * (ac-1.0.0). The three questions again:
+ *   - DEFERRED (requestIdleCallback). Its first caller is a microphone the
+ *     doctor opens by hand, minutes after boot. EAGER_CEILING does not move.
+ *   - No setInterval, no observer, no DOM. It is a pure policy object: it opens
+ *     nothing on its own and is called only by code that already had a reason to
+ *     open the microphone.
+ *   - Not folded into a caller, because it has TWO callers with nothing else in
+ *     common (feat_mls_record_backup.js and the recording guard inside
+ *     mls-connect.js) and the whole point is that they stop disagreeing about
+ *     what the microphone should be doing. Putting the policy inside one of them
+ *     recreates the split it exists to close. */
+/* 241 -> 242 at the same 2026-07-26 voice lane, for feat_mls_turn_labels.js
+ * (tn-1.0.0), the who-said-what engine. Answered:
+ *   - DEFERRED (requestIdleCallback). It cannot matter until a recording is
+ *     running, which is minutes after boot. EAGER_CEILING does not move.
+ *   - No setInterval. Its one observer is scoped to a SINGLE element
+ *     (#captureBtn, attributeFilter class), not a document subtree, so it does
+ *     not join the multiplicative population the observer ceiling guards. It
+ *     repaints only on a real change signature.
+ *   - Not folded into the visit lane, deliberately and by instruction: the visit
+ *     workspace is being rebuilt by another lane in this same rebuild, and a
+ *     turn engine welded into a layout file could not be reverted without
+ *     reverting that layout. It is a headless engine with a clean API plus one
+ *     inline row, and revert() removes both. */
+const CEILING = 242;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 239 are eager; the voice cluster was the first
+/* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
    deferred one, the calm views the second, vf-1.0.0 / vo-1.0.0 the third and
-   fourth, and the studio merge the fifth, so EAGER_CEILING deliberately does
+   fourth, and the studio merge and the voice router the fifth and sixth, so
+   EAGER_CEILING deliberately does
    NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;

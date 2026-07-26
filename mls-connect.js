@@ -21219,7 +21219,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     dbPrune();
     safe(function () {
       if (!navigator.mediaDevices || !isFn(navigator.mediaDevices.getUserMedia) || typeof MediaRecorder === 'undefined') return;
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      /* ac-1.0.0: same reason as the backup recorder. This stream feeds BOTH the
+         rescue recording and the voice-activity analyser below, and the analyser
+         is what decides whether the stall watchdog trusts a VAD-confirmed 30s or
+         falls back to a degraded 90s — so a suppressor that gates a distant
+         voice does not just lose audio, it loses the evidence that anyone spoke.
+         Falls back to the previous constraints if the policy did not load. */
+      var gsConstraints = { audio: true };
+      safe(function () {
+        var pol = window.__mlsAudioCapture;
+        if (pol && pol.installed === true && isFn(pol.constraints)) gsConstraints = pol.constraints('ambient');
+      });
+      navigator.mediaDevices.getUserMedia(gsConstraints).then(function (stream) {
         if (!RG.on) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
         RG.stream = stream;
         try {
@@ -32499,27 +32510,91 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return;
       }
       setState("idle");
+      /* amc-1.1.0 (2026-07-26, voice lane) — THE FRAGMENT BUG, AT SOURCE.
+       *
+       * Owner, live on b683: "the ui for mls assistant does notr listen and does
+       * not tell u about your visit". His thread contains a user bubble of
+       * exactly "how is a" and a reply "It seems your question was cut off."
+       *
+       * This handler produced both halves of that with one behaviour:
+       *   rec.continuous = false   -> the recognizer ENDS at the first pause
+       *   rec.onend -> _handleSend -> the fragment is AUTO-SUBMITTED as a question
+       * So a breath in the middle of "how is a patient doing" ended recognition,
+       * sent "how is a" to Copilot, and stopped listening. "Does not listen" is
+       * literally true: after one pause it was off, with no error and no state
+       * change a doctor would read as a failure.
+       *
+       * Three changes, and the third is the important one:
+       *   1. continuous. A pause is part of speech, not the end of it.
+       *   2. it joins the one-recognizer truce. This was the SIXTH recognizer in
+       *      the app and the third with no hub lease.
+       *   3. IT NEVER SUBMITS BY ITSELF. Speech composes the question in the
+       *      textarea, visibly and editably; the doctor sends it. A machine that
+       *      guesses when a clinician has finished a sentence will guess wrong,
+       *      and the cost of guessing wrong here was a question the doctor never
+       *      asked being sent and answered.
+       * Anything already typed is preserved as a prefix — the old handler
+       * assigned over ta.value and silently destroyed it. */
+      var micRelease = null;
+      function micHub() {
+        try { if (typeof window.mlsSpeechHub === "function") return window.mlsSpeechHub(); } catch (e) {}
+        try { if (window.__mlsSpeechHub && typeof window.__mlsSpeechHub.claim === "function") return window.__mlsSpeechHub; } catch (e2) {}
+        return null;
+      }
+      function micStop(quiet) {
+        var old = rec;
+        recOn = false; rec = null;
+        try { if (old) { old.onend = null; old.stop(); } } catch (e) {}
+        try { var h = micHub(); if (h && typeof h.release === "function") h.release("assistant-mic"); } catch (e) {}
+        setState("idle");
+        if (!quiet) { /* the composed text stays in the box on purpose */ }
+      }
       b.onclick = function () {
         try {
-          if (recOn) { try { rec.stop(); } catch (e) {} return; }
-          rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
-          var finalTxt = "";
+          if (recOn) { micStop(); return; }
+          var h = micHub();
+          if (h && !micRelease && typeof h.register === "function") {
+            micRelease = h.register("assistant-mic", "Assistant dictation", function (handoff) {
+              var previous = rec;
+              var stopNow = function () { micStop(true); };
+              if (handoff && handoff.pending) { stopNow(); return; }
+              if (previous && typeof h.waitForEnd === "function") return h.waitForEnd(previous, stopNow);
+              stopNow();
+            });
+          }
+          var lease = h ? h.claim("assistant-mic") : { ok: true, previous: null };
+          if (!lease || lease.ok === false) { asstMicToast("The microphone is busy. Try the assistant mic again in a moment."); return; }
+          if (lease.previous) asstMicToast("Stopped " + lease.previous.label + " so the assistant can listen. Anything already captured is safe.");
+          rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true;
+          var instance = rec;
+          var base = String(ta.value || "").replace(/\s+$/, "");
           rec.onstart = function () { if (recOn) setState("listening"); };
           rec.onresult = function (ev) {
+            if (instance !== rec) return;
             var t = ""; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
-            ta.value = t; try { ta.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
-            if (ev.results[ev.results.length - 1].isFinal) finalTxt = t;
+            t = t.replace(/^\s+/, "");
+            ta.value = base ? (base + " " + t) : t;
+            try { ta.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
           };
           rec.onend = function () {
-            recOn = false;
-            if (b.getAttribute("data-mic-state") === "listening" || b.getAttribute("data-mic-state") === "requesting") setState("idle");
-            if (finalTxt.trim()) {
-              /* send through the assistant's own pipeline */
-              try { if (window.__mlsAsstFix && typeof window.__mlsAsstFix._handleSend === "function") { window.__mlsAsstFix._handleSend(finalTxt.trim()); ta.value = ""; } } catch (e) {}
+            if (instance !== rec) return;
+            /* A pause can still end the session on some builds even with
+               continuous:true. While the doctor has the mic ON, restart — do not
+               silently stop, and never submit what was heard so far. */
+            if (recOn) {
+              setTimeout(function () {
+                if (instance !== rec || !recOn) return;
+                try { instance.start(); }
+                catch (e) { micStop(true); asstMicToast("The assistant mic stopped. Click it to listen again — your text is still in the box."); }
+              }, 250);
+              return;
             }
+            micStop(true);
           };
           rec.onerror = function (ev) {
-            recOn = false;
+            if (instance !== rec) return;
+            if (ev && ev.error === "no-speech") return;   /* normal; keep listening */
+            micStop(true);
             var code = (ev && ev.error) || "";
             if (code === "not-allowed" || code === "service-not-allowed") {
               setState("blocked");
@@ -32534,7 +32609,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               asstMicToast("Assistant dictation stopped (" + (code || "unknown error") + "). Click the mic to retry, or type your question.");
             }
           };
-          recOn = true; setState("requesting"); rec.start();
+          recOn = true; setState("requesting");
+          var begin = function () {
+            if (instance !== rec || !recOn) return;
+            try { instance.start(); }
+            catch (e2) {
+              micStop(true);
+              asstMicToast("The microphone is still busy. Wait a moment, then click the assistant mic again.");
+            }
+          };
+          /* stop() releases the device asynchronously, so the previous owner's
+             recognizer must really have ended before this one starts. */
+          if (lease && typeof lease.whenReady === "function") { if (!lease.whenReady(begin)) micStop(true); }
+          else begin();
         } catch (e) {
           recOn = false; setState("idle");
           asstMicToast("Assistant dictation could not start. Click the mic to retry, or type your question.");
@@ -33673,12 +33760,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var inputRow=document.getElementById('copilotInputRow');
       var chips=document.getElementById('copilotChips');
       if(!thread||!inputRow) return;
-      if(card.contains(thread)&&card.contains(inputRow)) return;
-      var host=document.getElementById('mlsCopInlineHost');
-      if(!host){ host=document.createElement('div'); host.id='mlsCopInlineHost'; host.style.cssText='margin-top:10px'; card.appendChild(host); }
-      host.appendChild(thread);
-      if(chips) host.appendChild(chips);
-      host.appendChild(inputRow);
+      /* cvd-1.0.0 (2026-07-26) — THIS WRAPPER WAS THE "BROKEN WHEN OPENED".
+       *
+       * The dock lays the card out as an ORDER-BASED FLEX COLUMN
+       * (feat_athena_tooltip_dedupe.js: #copilotDockBody>#copilotCard{display:flex}
+       * with hero order:1, thread order:2 flex:1 1 auto, chips 3, note 4, input 5).
+       * `order` and `flex` bind to DIRECT flex children only. Nesting the three
+       * nodes inside #mlsCopInlineHost made every one of those declarations
+       * inert: the thread stopped being the flex-grow scroller and the composer
+       * stopped being pinned to the bottom — inside a card that is
+       * `overflow:hidden!important; height:100%`, so everything below the fold
+       * became unreachable WITH NO SCROLLBAR. Nothing threw.
+       *
+       * And the repair could never fire: feat_mls_copilot_dock_fix.js tested
+       * card.contains(node), which is TRUE for a node nested one level deeper,
+       * so it reported "ready" and never flattened. A containment test cannot
+       * detect a parentage bug.
+       *
+       * Mount as DIRECT children, and stay out of the way entirely while the
+       * drawer owns the card. */
+      if(thread.parentNode===card&&inputRow.parentNode===card) return;
+      if(window._copilotDockOpen) return;
+      card.appendChild(thread);
+      if(chips) card.appendChild(chips);
+      card.appendChild(inputRow);
+      /* retire the wrapper if a previous build left one behind */
+      try{ var oldHost=document.getElementById('mlsCopInlineHost'); if(oldHost&&!oldHost.children.length&&oldHost.parentNode) oldHost.parentNode.removeChild(oldHost); }catch(e2){}
     }catch(e){}
   }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',mount); }
@@ -35010,6 +35117,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   if(window.__mlsAsstCopilotMerge) return; window.__mlsAsstCopilotMerge=true;
   function merge(){
     try{
+      /* cvd-1.0.0 (2026-07-26) — RETIRED, and the reason is in this same file.
+       *
+       * #mls-assist-panel (hyphenated) is the EXTENSION's Athena-side panel id.
+       * mls-connect.js already records that at the b35 mic ("that id is the
+       * EXTENSION's panel, not the app assistant (#mlsAsstPanel)") and this file
+       * HIDES it on the app page:
+       *     html:not(.uc1-show-ext) #mls-assist-panel{display:none!important}
+       * So on a good day this selector found nothing. On a bad day — extension
+       * installed, panel injected — it MOVED #copilotThread, #copilotChips and
+       * #copilotInputRow out of the Copilot card and into a display:none
+       * container, leaving the card as a hero and a disclaimer with NO CHAT AT
+       * ALL. That is the owner's "broken when opened", and it recovered only if
+       * the dock-fix module happened to still be polling.
+       *
+       * Standing it down rather than deleting it keeps the revert story intact
+       * and leaves the proxy button feat_mls_copilot_dock_fix.js installs in
+       * that section as the honest route back to the conversation. */
+      if(!(window.__mlsAsstCopilotMergeForce===true)) return true;
       var body=document.querySelector('#mls-assist-panel .body');
       var thread=document.getElementById('copilotThread'),
           chips=document.getElementById('copilotChips'),
@@ -35784,10 +35909,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var n=activeName();
       DRAFTS.forEach(function(d){
         var chip;
-        if(model && model.cloneNode){ chip=model.cloneNode(true); chip.removeAttribute('id'); chip.textContent=d.label; }
+        /* cvd-1.0.0: the clone carried the model chip's INLINE
+           onclick="copilotChip(this)" — only `id` was stripped. That handler is
+           registered at clone time, so it ran FIRST and asked Copilot the chip's
+           own label ("✍️ Draft op note") while stopPropagation (not
+           stopImmediatePropagation) failed to cancel it. The real prompt then
+           arrived 60ms later into `if(_copilotBusy) return` and was swallowed.
+           The doctor got an answer to the button's caption. */
+        if(model && model.cloneNode){ chip=model.cloneNode(true); chip.removeAttribute('id'); chip.removeAttribute('onclick'); chip.onclick=null; chip.textContent=d.label; }
         else { chip=document.createElement('button'); chip.textContent=d.label; chip.style.cssText='font-size:12.5px;border:1px solid #cfe0f3;background:#fff;color:#204034;border-radius:999px;padding:6px 11px;cursor:pointer;margin:3px'; }
         chip.setAttribute('data-mlsdraft','1');
-        chip.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); if(d.native && d.native()) return; sendPrompt(d.prompt(activeName())); }, true);
+        chip.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopImmediatePropagation(); if(d.native && d.native()) return; sendPrompt(d.prompt(activeName())); }, true);
         wrap.appendChild(chip);
       });
     }catch(e){}
@@ -40912,7 +41044,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 ;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623c1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
 
-;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260725ui124';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260726ui125';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260716vt102';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -40974,7 +41106,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_apptabs_menu.js"]'))return;var s=document.createElement('script');s.src='feat_mls_apptabs_menu.js?v=20260624tm1c1';s.setAttribute('data-mls-asset','feat_mls_apptabs_menu.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item3b: App-tab OFF -> Menu dropdown row (additive, reversible) */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_clinicaltools_scroll.js"]'))return;var s=document.createElement('script');s.src='feat_mls_clinicaltools_scroll.js?v=20260625cts2c1';s.setAttribute('data-mls-asset','feat_mls_clinicaltools_scroll.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item4: Clinical tools auto-scroll (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_commands.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_commands.js?v=20260625vc1c1';s.setAttribute('data-mls-asset','feat_mls_voice_commands.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item5: Alexa-style voice commands (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_commands.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_commands.js?v=20260726vc110';s.setAttribute('data-mls-asset','feat_mls_voice_commands.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item5: Alexa-style voice commands (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260720cf1c2';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_clean.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_clean.js?v=20260625lc2c1';s.setAttribute('data-mls-asset','feat_mls_login_clean.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item7: login shows only login UI (gate app chrome pre-login, additive reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1c1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item8: visit timeline includes visits referenced in the summary (additive reversible) */
@@ -40996,14 +41128,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260723asst144';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260726p2c4';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260722ca204';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting */
-;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_copilot_voice_v2.js',V='cv2-1.2.1',api=window.__mlsCopilotVoiceV2,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260723cv2121';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware MLS Copilot Voice v2; stale microphone owner is stopped before replacement. */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_copilot_voice_v2.js',V='cv2-1.3.0',api=window.__mlsCopilotVoiceV2,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260726cv2130';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware MLS Copilot Voice v2; stale microphone owner is stopped before replacement. */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260726chk3021r1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3c1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_voice_ai.js',V='1.1.2',api=window.__mlsVoiceAI,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719vaihot112';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware voice AI command layer: stale mic owner is stopped before replacement. */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A='feat_mls_voice_copilot.js',V='vcp-1.0.0',api=window.__mlsVoiceCopilot,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260726vcp100';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* vcp-1.0.0: ONE route from any microphone to the ONE Copilot brain. Owns no recognizer, no lease, no patterns, no UI - it picks an EXISTING brain (Copilot Voice -> assistant -> Copilot card) and guarantees the doctor's own words reach the Copilot thread exactly once. Reversible: window.__mlsVoiceCopilot.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_audio_capture.js"]'))return;var s=document.createElement('script');s.src='feat_mls_audio_capture.js?v=20260726ac100';s.setAttribute('data-mls-asset','feat_mls_audio_capture.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* ac-1.0.0: ONE deliberate audio policy for AMBIENT exam-room capture (echoCancellation/noiseSuppression OFF, autoGainControl ON - a call-tuned suppressor gates the patient across the room). Applies to the audio THIS APP records; SpeechRecognition accepts no constraints and is explicitly out of scope. Headless - no UI. Reversible: window.__mlsAudioCapture.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_turn_labels.js"]'))return;var s=document.createElement('script');s.src='feat_mls_turn_labels.js?v=20260726tn100';s.setAttribute('data-mls-asset','feat_mls_turn_labels.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* tn-1.0.0: WHO SAID WHAT as a HYPOTHESIS. The browser speech API has NO diarization; turns are PAUSE boundaries and labels are suggestions the doctor corrects with one tap. The raw unlabelled transcript is always recoverable, and labels are only written to the box when the recorder is not writing it. Reversible: window.__mlsTurns.revert() */
 
-;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625mb1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
+;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260726mb110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
 
 ;(function(){try{var A='feat_mls_upnow_activeselect.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625uas2c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item25: align active patient with auto-pulled up-now patient on load so header/Outcomes/After-visit match the banner/NEXT UP highlight (guarded: skips during capture/recording and deliberate chart switch) -- additive, reversible (window.__mlsUpNowActiveSelect.revert()) */
 
@@ -42279,7 +42414,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11c1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1c1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260718crs111';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260726crs120';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260713rs111';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260722ne112';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=20260717wbs110-b356';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
@@ -42314,7 +42449,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_label.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_label.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_label.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE canonical provider-name resolver (window.__mlsProviderLabel) + normalizes _calProviders so every dropdown shows real names instead of "Provider undefined"/"[object Object]"/"Provider N" (plbl-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_dock_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_dock_fix.js?v=20260716cdf200';s.async=false;s.setAttribute('data-mls-asset','feat_mls_copilot_dock_fix.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* stable MLS Copilot dock: one canonical node home, bounded recovery, no blank shuttle race */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_dock_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_dock_fix.js?v=20260726cdf210';s.async=false;s.setAttribute('data-mls-asset','feat_mls_copilot_dock_fix.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* stable MLS Copilot dock: one canonical node home, bounded recovery, no blank shuttle race */
 
 /* =============================================================================
  * __mlsFabTidy  ft-1.0.0   (2026-07-13 bottom-corner cleanup, owner directive)

@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_copilot_dock_fix.js -> window.__mlsCopilotDockFix  (cdf-2.0.0)
+ * feat_mls_copilot_dock_fix.js -> window.__mlsCopilotDockFix  (cdf-2.1.0)
  * -----------------------------------------------------------------------------
  * Gives MLS Copilot one stable DOM home.  Older integration code moved the live
  * thread/chips/composer into the Assistant section and the previous fix moved
@@ -15,7 +15,7 @@
  * ===========================================================================*/
 (function () {
   'use strict';
-  var NS = '__mlsCopilotDockFix', VERSION = 'cdf-2.0.0';
+  var NS = '__mlsCopilotDockFix', VERSION = 'cdf-2.1.0';
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   var CHAT_IDS = ['copilotThread', 'copilotChips', 'copilotInputRow'];
@@ -87,7 +87,13 @@
     if (!card) return false;
     for (var i = 0; i < CHAT_IDS.length; i++) {
       var node = byId(CHAT_IDS[i]);
-      if (!node || !card.contains(node)) return false;
+      /* cvd-1.0.0: PARENTAGE, not containment. card.contains(node) is true for a
+         node nested one level deeper, so when __mlsCopilotInline wrapped the three
+         chat nodes in #mlsCopInlineHost this reported "ready" and never flattened —
+         while the dock's order-based flex layout, which binds only to DIRECT
+         children, silently stopped applying. A containment test cannot see a
+         parentage bug. */
+      if (!node || node.parentNode !== card) return false;
     }
     return true;
   }
@@ -102,7 +108,7 @@
     for (var i = 0; i < CHAT_IDS.length; i++) {
       var node = byId(CHAT_IDS[i]);
       if (!node) { complete = false; continue; }
-      if (!card.contains(node)) {
+      if (node.parentNode !== card) {
         try { if (note) card.insertBefore(node, note); else card.appendChild(node); } catch (e) { complete = false; }
       }
     }

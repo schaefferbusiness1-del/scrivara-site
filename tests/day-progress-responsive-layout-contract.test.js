@@ -48,7 +48,7 @@ assert(
   'active-patient Recent control can still shrink or clip'
 );
 
-assert(connect.includes("A+'?v=20260725ui124'"), 'compact active-bar CSS is not cache-busted');
+assert(connect.includes("A+'?v=20260726ui125'"), 'compact active-bar CSS is not cache-busted');
 assert(connect.includes('A+"?v=20260716ag-stable4"'), 'compact legacy-bar CSS is not cache-busted');
 
 console.log('PASS day-progress responsive layout: compact progress pill and readable Recent control on desktop/mobile');

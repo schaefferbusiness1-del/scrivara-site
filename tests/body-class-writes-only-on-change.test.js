@@ -208,7 +208,7 @@ for (const [file, expected] of Object.entries(SITES)) {
 
 const connect = read('mls-connect.js');
 for (const [asset, token, retired] of [
-  ['feat_athena_tooltip_dedupe.js', '20260725ui124', '20260724ui123'],
+  ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_redesign.js', '20260726rd326', '20260725rd325']
 ]) {

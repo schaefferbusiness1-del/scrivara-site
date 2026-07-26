@@ -1226,17 +1226,33 @@
   #copilotHero{ margin:-4px -2px 14px; padding:16px 16px 14px; border-radius:16px;
     background:linear-gradient(135deg, #eef4ff 0%, #f3ecff 55%, #eafaf3 100%);
     border:1px solid #EAF1EE; }
+  /* cvd-1.0.0: both gradient stops were the same pale sage (#C9DCD2) under a
+     white glyph — a flat blank square with an invisible ✦. feat_mls_studio_exact
+     repainted it, but ONLY under #studioView, so in the dock the orb was blank.
+     The working gradient moves into the base rule. */
   #copilotOrb{ width:42px;height:42px;flex:0 0 42px;border-radius:16px;display:flex;align-items:center;justify-content:center;
-    font-size:21px;color:#fff;background:linear-gradient(135deg,#C9DCD2,#C9DCD2);box-shadow:0 6px 16px rgba(80,90,230,.35);
+    font-size:21px;color:#fff;background:linear-gradient(135deg,#7A5CC0,#2E6A4B);box-shadow:0 6px 16px rgba(80,90,230,.35);
     animation:copilotPulse 3.4s ease-in-out infinite; }
   @keyframes copilotPulse{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-3px) } }
-  #copilotThread{ display:flex;flex-direction:column;gap:11px;max-height:460px;overflow-y:auto;padding:4px 2px 2px; }
+  /* cvg-1.0.0 (2026-07-26): the thread carries its OWN horizontal inset.
+     #copilotThread is fought over by four owners (openCopilotDock, the inline
+     host, the assistant merge, and the dock-fix that yanks it back), so any
+     padding that lives on an ancestor is padding that can disappear when a
+     different owner wins. 12px here is the floor a right-aligned bubble can
+     never sit inside, whichever parent it currently has. */
+  #copilotThread{ display:flex;flex-direction:column;gap:11px;max-height:460px;overflow-y:auto;padding:4px 12px 2px; }
   .copilot-empty{ text-align:center;color:var(--muted);font-size:14px;padding:26px 14px;line-height:1.55; }
-  .cmsg{ display:flex; }
+  .cmsg{ display:flex;min-width:0; }
   .cmsg-user{ justify-content:flex-end; }
   .cmsg-ai{ justify-content:flex-start; }
+  /* overflow-wrap: a long code, URL or drug name used to blow past max-width and
+     be CLIPPED by #copilotCard{overflow:hidden} — the text was gone, not wrapped. */
   .cbubble{ max-width:82%;padding:11px 14px;border-radius:16px;font-size:14px;line-height:1.5;
-    background:linear-gradient(135deg,#2E6A4B,#C9DCD2);color:#fff;border-bottom-right-radius:10px;box-shadow:0 2px 8px rgba(60,90,220,.22); }
+    overflow-wrap:anywhere;word-break:break-word;min-width:0;
+    /* the gradient used to END on #C9DCD2 — pale sage under white text, about
+       1.4:1 — so the right-hand half of every question the doctor asked was
+       effectively blank. Both stops now carry white. */
+    background:linear-gradient(135deg,#2E6A4B,#245C42);color:#fff;border-bottom-right-radius:10px;box-shadow:0 2px 8px rgba(60,90,220,.22); }
   .cbubble-ai{ background:var(--soft,#f1f5fb);color:var(--ink);border:1px solid var(--line);border-bottom-right-radius:16px;border-bottom-left-radius:10px;box-shadow:none; }
   .cactions{ display:flex;flex-wrap:wrap;gap:7px;margin-top:10px; }
   .cact-btn{ font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:10px;border:1px solid var(--brand,#2E6A4B);
@@ -1277,7 +1293,10 @@
   .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#FCFBF8); }
   .c-art-tweak input{ flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
   .c-art-tweak input:focus{ outline:none;border-color:var(--brand,#2E6A4B); }
-  .cactions{ padding:0 11px 11px; }
+  /* cvd-1.0.0: the unscoped copy of this rule also hit the .cactions rendered
+     INSIDE .cbubble-ai, adding 11px of indent on top of the bubble's own 14px
+     and 11px of dead space under every answer. The scoped rule below is the one
+     that was meant. */
   .c-artifact .cactions{ padding:0 11px 11px; }
   body.theme-dark .c-art-head{ background:linear-gradient(135deg,#1E2B24,#1E2B24); }
   /* Email composer modal */
@@ -3888,7 +3907,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div id="copilotOrb">✦</div>
           <div style="flex:1">
             <h2 style="margin:0;border:0;padding:0">MLS Copilot</h2>
-            <p class="sub" style="margin:2px 0 0">Ask anything about your practice — who's overdue, how busy tomorrow is, who's trending worse — and I can open the chart, start the visit, or build you a tool on the spot.</p>
+            <p class="sub" style="margin:2px 0 0">Ask about the visit you have open, or about your practice — who's overdue, how busy tomorrow is, who's trending worse. I can open a chart, start a visit, or build you a tool.</p>
           </div>
           <button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="copilotReset()" title="Start a fresh conversation">↺ New chat</button>
         </div>
@@ -3896,11 +3915,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="copilotThread"></div>
       <div id="copilotChips" class="copilot-chips"></div>
       <div id="copilotInputRow">
-        <textarea id="copilotInput" aria-label="Ask your practice" rows="1" placeholder="Ask your practice anything…  (e.g. Who hasn't been seen in 90 days?)" oninput="_copilotAutogrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();copilotAsk();}"></textarea>
-        <button class="btn-ghost" id="copilotMicBtn" onclick="copilotMic()" title="Speak your question">🎤</button>
+        <textarea id="copilotInput" aria-label="Ask about this visit or your practice" rows="1" placeholder="Ask about this visit, or your practice…  (e.g. What did we capture so far?)" oninput="_copilotAutogrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();copilotAsk();}"></textarea>
+        <button class="btn-ghost" id="copilotMicBtn" onclick="copilotMic()" title="Speak your question — it types into the box, then you send it">🎤</button>
         <button class="btn-primary" id="copilotSendBtn" onclick="copilotAsk()" title="Ask (Enter)">➤</button>
       </div>
-      <div class="note" style="margin:8px 2px 0">Copilot reads a private snapshot of your own data to answer. It suggests; you decide. Not a substitute for clinical judgment.</div>
+      <div class="note" style="margin:8px 2px 0">Copilot reads a private snapshot of your own data — your panel, your schedule, and the visit you have open — to answer. It suggests; you decide. Not a substitute for clinical judgment.</div>
     </div>
 
     <div class="card">
@@ -12684,6 +12703,46 @@ function copilotSnapshot(){
     appointments:(snap.appointments||[]).slice(0,120), patients:pts };
   // The chart the user currently has open — so "draft a follow-up for this patient" just works.
   try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap){ res.activePatient = pts.find(function(x){return String(x.id)===String(ap.id);}) || {id:ap.id, name:String(ap.name||'')}; } }catch(e){}
+  /* cvx-1.0.0 (2026-07-26) — THE VISIT IN FRONT OF THE DOCTOR.
+     Owner, live on b683: Copilot "does not tell u about your visit". It was
+     true: this snapshot described the PANEL (every patient, every appointment)
+     and said nothing at all about the encounter actually open on screen, so
+     "how is the visit going" or "what did we capture" had nothing to answer
+     from and the model filled the gap from the panel.
+     Everything below is read from state this same script owns, which is why it
+     can be trusted: `capturing`, `currentSoap` and `currentCoding` are top-level
+     `let`s — NOT window properties — so an outside module physically cannot see
+     them and any satellite that tried would have reported `undefined` while
+     rendering perfectly. Every field is a measurement, never an assertion:
+     counts are counted, presence is checked, and nothing is claimed for a field
+     that is empty. */
+  try{
+    var vp=(typeof activePatient==='function')?activePatient():null;
+    var txEl=document.getElementById('transcript');
+    var tx=String((txEl&&txEl.value)||'').trim();
+    var words=function(s){ s=String(s||'').trim(); return s?s.split(/\s+/).length:0; };
+    var soap=(typeof currentSoap==='string')?currentSoap:'';
+    var coding=(typeof currentCoding!=='undefined')?currentCoding:null;
+    var rec=false; try{ rec=(typeof capturing!=='undefined'&&!!capturing); }catch(_r){}
+    var av={
+      patient: vp?{ id:vp.id, name:String(vp.name||'') }:null,
+      recording: rec,
+      transcriptWords: words(tx),
+      /* Bounded tail: enough for "what did we just capture", small enough that
+         the context pack stays inside its budget. The FULL transcript already
+         goes to note generation over the same authenticated channel. */
+      transcriptTail: tx?tx.slice(-1800):'',
+      noteGenerated: !!String(soap||'').trim(),
+      noteWords: words(soap),
+      codesSuggested: !!(coding&&((coding.icd10&&coding.icd10.length)||(coding.cpt&&coding.cpt.length)||coding.em)),
+      /* The one thing a doctor must never be told wrongly: what stage this is at.
+         Derived, not remembered. */
+      stage: rec?'recording':(String(soap||'').trim()?'note drafted':(tx?'transcript captured, no note yet':'nothing captured yet'))
+    };
+    /* Only publish the visit when there is a visit. An empty object here would
+       invite the model to describe an encounter that is not open. */
+    if(av.patient||av.transcriptWords||av.noteGenerated||av.recording) res.activeVisit=av;
+  }catch(e){}
   return res;
 }
 var COPILOT_STARTERS = [
@@ -12717,23 +12776,116 @@ function _copilotSlash(raw){
 /* Persist the Copilot conversation so it survives a reload (per signed-in user). */
 function _copilotSaveHist(){ try{ var keep=_copilotHistory.filter(function(m){return m.role!=='pending';}).slice(-30); localStorage.setItem(uns('copilotHist'), JSON.stringify(keep)); }catch(e){} }
 function _copilotLoadHist(){ try{ var raw=localStorage.getItem(uns('copilotHist')); if(raw){ var a=JSON.parse(raw); if(Array.isArray(a)) _copilotHistory=a; } }catch(e){} }
-function copilotReset(){ _copilotHistory=[]; try{ localStorage.removeItem(uns('copilotHist')); }catch(e){} _copilotRenderThread(); _copilotRenderChips(); var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); } }
-/* Voice input — dictate your question. Uses the browser's speech recognition;
-   its own instance so it never clashes with visit dictation. */
-var _copilotRecog=null, _copilotListening=false;
+/* cvd-1.0.0: "↺ New chat" is titled "Start a fresh conversation" and cleared
+   four things out of eight. It left a LIVE MICROPHONE running with the mic
+   button still showing ⏹, left #copilotSendBtn disabled if a request was in
+   flight, left the email-draft overlay open, and never touched
+   __mlsCopilotConvo — so the floating Assistant kept showing the conversation
+   the doctor had just cleared, directly contradicting that module's "ONE shared
+   Copilot conversation" contract.
+   _copilotResetEpoch exists so the request-safety layer can tell "the doctor
+   pressed New chat" apart from "the patient or visit changed" — it decides
+   staleness by comparing the history ARRAY IDENTITY, which this function
+   replaces, so a reset mid-request produced a toast blaming a patient change
+   that never happened. */
+var _copilotResetEpoch=0;
+function copilotReset(){
+  _copilotResetEpoch++;
+  try{ if(typeof _copilotMicStop==='function'&&_copilotListening) _copilotMicStop(); }catch(e){}
+  try{ if(typeof _copilotCloseEmail==='function') _copilotCloseEmail(); }catch(e){}
+  _copilotHistory=[];
+  try{ localStorage.removeItem(uns('copilotHist')); }catch(e){}
+  _copilotBusy=false;
+  try{ var s=document.getElementById('copilotSendBtn'); if(s){ s.disabled=false; s.removeAttribute('aria-busy'); } }catch(e){}
+  try{ if(window.__mlsCopilotConvo&&typeof window.__mlsCopilotConvo.reset==='function') window.__mlsCopilotConvo.reset(); }catch(e){}
+  _copilotRenderThread(); _copilotRenderChips();
+  var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); }
+}
+/* Voice input — dictate your question into the Copilot box.
+   cvm-1.0.0 (2026-07-26, voice lane): this used to say "its own instance so it
+   never clashes with visit dictation", and construct a recognizer WITHOUT
+   registering it with mlsSpeechHub(). A second live recognizer IS the clash —
+   that claim is exactly what the one-recognizer truce exists to disprove.
+   Tapping this mic while a visit was recording put two recognizers on one
+   microphone, and neither knew about the other. It now claims the hub like every
+   other owner, starts only after the previous owner's recognizer has really
+   ended, and yields when someone else claims.
+   Its failures were also silent: onerror reset the button and said NOTHING, so a
+   blocked microphone looked identical to "no speech yet". Every failure now
+   names what happened and a route that exists. */
+var _copilotRecog=null, _copilotListening=false, _copilotMicRelease=null;
+function _copilotMicPaint(on){
+  var b=document.getElementById('copilotMicBtn'); if(!b) return;
+  if(on){ b.classList.add('mic-live'); b.textContent='⏹'; }
+  else { b.classList.remove('mic-live'); b.textContent='🎤'; }
+}
+function _copilotMicStop(){
+  var old=_copilotRecog;
+  _copilotListening=false; _copilotRecog=null;
+  try{ if(old) old.stop(); }catch(e){}
+  try{ mlsSpeechHub().release('copilot-card'); }catch(e){}
+  _copilotMicPaint(false);
+}
 function copilotMic(){
   var SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SRC){ try{ toast('Voice input isn’t supported in this browser.',''); }catch(e){} return; }
-  if(_copilotListening){ try{ _copilotRecog&&_copilotRecog.stop(); }catch(e){} return; }
-  try{
-    _copilotRecog=new SRC(); _copilotRecog.continuous=true; _copilotRecog.interimResults=true; _copilotRecog.lang='en-US';
-    var inp=document.getElementById('copilotInput'); var base=(inp&&inp.value)||'';
-    _copilotRecog.onresult=function(e){ var fin=''; for(var i=e.resultIndex;i<e.results.length;i++){ if(e.results[i].isFinal) fin+=e.results[i][0].transcript; } if(fin){ var x=document.getElementById('copilotInput'); if(x){ x.value=(base?base.replace(/\s*$/,'')+' ':'')+fin.trim(); base=x.value; _copilotAutogrow(x); } } };
-    _copilotRecog.onend=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
-    _copilotRecog.onerror=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
-    _copilotRecog.start(); _copilotListening=true; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.add('mic-live'); b.textContent='⏹'; }
-    try{ toast('Listening… tap the mic again to stop.','ok'); }catch(e){}
-  }catch(e){ try{ toast('Could not start voice input.','err'); }catch(_){} }
+  if(!SRC){ try{ toast('Voice input isn’t available in this browser. Type your question in the Copilot box instead.',''); }catch(e){} return; }
+  if(_copilotListening){ _copilotMicStop(); return; }
+  var hub;
+  try{ hub=mlsSpeechHub(); }catch(e){ hub=null; }
+  if(hub && !_copilotMicRelease){
+    _copilotMicRelease=hub.register('copilot-card','Copilot question mic',function(handoff){
+      var previous=_copilotRecog;
+      var stopNow=function(){ _copilotMicStop(); };
+      if(handoff&&handoff.pending){ stopNow(); return; }
+      if(previous&&typeof hub.waitForEnd==='function') return hub.waitForEnd(previous,stopNow);
+      stopNow();
+    });
+  }
+  var lease=hub?hub.claim('copilot-card'):{ok:true,previous:null};
+  if(!lease||lease.ok===false){ try{ toast('The microphone is busy. Try the Copilot mic again in a moment.','err'); }catch(e){} return; }
+  if(lease.previous){ try{ toast('Stopped '+lease.previous.label+' so the Copilot mic can listen. Anything already captured is safe.',''); }catch(e){} }
+  var instance;
+  try{ instance=new SRC(); }
+  catch(e){ try{ if(hub) hub.release('copilot-card'); }catch(_){} try{ toast('Could not start voice input. Type your question instead.','err'); }catch(_){} return; }
+  _copilotRecog=instance; instance.continuous=true; instance.interimResults=true; instance.lang='en-US';
+  var inp=document.getElementById('copilotInput'); var base=(inp&&inp.value)||'';
+  /* cvm-1.0.0: show the words AS THEY ARE HEARD, not only when the recognizer
+     finalises. "It does not listen" was partly literal and partly this: with
+     finals-only the box stayed empty through a whole sentence, so there was no
+     evidence anything was working. Interim text is rendered too and is fully
+     editable; nothing here ever submits — the doctor presses Enter or ➤. */
+  instance.onresult=function(e){
+    if(instance!==_copilotRecog) return;
+    var fin='', interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) fin+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    var x=document.getElementById('copilotInput'); if(!x) return;
+    if(fin){ base=(base?base.replace(/\s*$/,'')+' ':'')+fin.trim(); }
+    var shown=(base?base.replace(/\s*$/,''):'')+(interim?(base?' ':'')+interim.trim():'');
+    x.value=shown; _copilotAutogrow(x);
+  };
+  instance.onend=function(){ if(instance!==_copilotRecog) return; _copilotMicStop(); };
+  instance.onerror=function(ev){
+    if(instance!==_copilotRecog) return;
+    var err=(ev&&ev.error)||'';
+    if(err==='no-speech'){ return; }   /* normal; onend follows and says nothing false */
+    _copilotMicStop();
+    var msg=(err==='not-allowed'||err==='service-not-allowed')
+      ? 'Microphone access is blocked for this site. Allow it in your browser, then tap the mic again — or just type your question.'
+      : (err==='audio-capture'
+        ? 'No microphone was found. Check your input device, then tap the mic again — or just type your question.'
+        : 'Voice input stopped before it heard anything. Tap the mic again, or type your question.');
+    try{ toast(msg,'err'); }catch(e){}
+  };
+  var begin=function(){
+    if(instance!==_copilotRecog) return;
+    try{ instance.start(); _copilotListening=true; _copilotMicPaint(true); try{ toast('Listening… tap the mic again to stop.','ok'); }catch(e){} }
+    catch(e){ _copilotMicStop(); try{ toast('The microphone is still busy. Wait a moment, then tap the mic again.','err'); }catch(_){} }
+  };
+  if(lease&&typeof lease.whenReady==='function'){ if(!lease.whenReady(begin)) _copilotMicStop(); }
+  else begin();
 }
 function _copilotRenderChips(){
   var box=document.getElementById('copilotChips'); if(!box) return;
@@ -12746,8 +12898,17 @@ function _copilotRenderChips(){
   html+=chips.map(function(c){ return '<button class="copilot-chip" onclick="copilotChip(this)">'+_ce(c)+'</button>'; }).join('');
   box.innerHTML=html;
 }
-function copilotChip(btn){ var i=document.getElementById('copilotInput'); if(i){ i.value=btn.textContent; } copilotAsk(); }
-function copilotChipText(t){ var i=document.getElementById('copilotInput'); if(i){ i.value=t; } copilotAsk(); }
+/* cvd-1.0.0: both of these wrote into the box and called copilotAsk(), which
+   returns instantly while a request is in flight — so a tapped chip dumped its
+   text into the composer and NOTHING happened, with no feedback at all. Say so.
+   The text is left in the box on purpose: it is one keypress from being sent. */
+function _copilotRefuseWhileBusy(){
+  if(!_copilotBusy) return false;
+  try{ toast('Copilot is still answering the last question. This one is in the box — send it when that finishes.',''); }catch(e){}
+  return true;
+}
+function copilotChip(btn){ var i=document.getElementById('copilotInput'); if(i){ i.value=btn.textContent; _copilotAutogrow(i); } if(_copilotRefuseWhileBusy()) return; copilotAsk(); }
+function copilotChipText(t){ var i=document.getElementById('copilotInput'); if(i){ i.value=t; _copilotAutogrow(i); } if(_copilotRefuseWhileBusy()) return; copilotAsk(); }
 /* Local analytics may satisfy visit-count questions before /api/copilot reaches
    the backend. Normalize the canonical action client-side as the final response
    boundary so both local and AI answers expose the same working route. */
@@ -12768,16 +12929,32 @@ function _copilotNormalizeActions(question, actions){
 function _copilotRenderThread(){
   var box=document.getElementById('copilotThread'); if(!box) return;
   if(!_copilotHistory.length){
-    box.innerHTML='<div class="copilot-empty">👋 Ask me about your patients, your schedule, or have me build you a tool. Tap a suggestion below to start.</div>';
+    box.innerHTML='<div class="copilot-empty">👋 Ask about the visit you have open, your patients, or your schedule — or have me build you a tool. Tap a suggestion below to start.</div>';
     return;
   }
   box.innerHTML=_copilotHistory.map(function(m,i){
-    if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text)+'</div></div>';
+    /* The AI bubble converted newlines and the user bubble did not, so a
+       dictated or pasted multi-line question rendered as one run-on blob. */
+    if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text).replace(/\n/g,'<br>')+'</div></div>';
     if(m.role==='pending') return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai"><span class="cdots"><i></i><i></i><i></i></span></div></div>';
     var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+_ce(JSON.stringify(a.kind))+','+_ce(JSON.stringify(a.arg))+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
     return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+'</div></div>'+_copilotArtifactHtml(m,i);
   }).join('');
-  box.scrollTop=box.scrollHeight;
+  _copilotScrollToLatest(box);
+}
+/* cvd-1.0.0: #copilotThread is only the scroller when something bounds its
+   height. In the dock that comes from ONE injected stylesheet
+   (feat_athena_tooltip_dedupe: flex:1 1 auto; overflow-y:auto) — and the base
+   rule right here sets `#copilotDockBody #copilotThread{max-height:none}`. If
+   that asset is slow or blocked, scrollHeight === clientHeight, the assignment
+   is a silent no-op, and the answer the doctor just asked for lands below the
+   fold with no movement at all. Find the element that actually scrolls. */
+function _copilotScrollToLatest(box){
+  try{
+    var sc=box, guard=0;
+    while(sc && guard++<8 && sc.scrollHeight<=sc.clientHeight+1) sc=sc.parentElement;
+    if(sc) sc.scrollTop=sc.scrollHeight;
+  }catch(e){ try{ box.scrollTop=box.scrollHeight; }catch(_){} }
 }
 /* ===== Copilot ARTIFACT canvas: an editable draft (email/letter/summary/plan)
    the user can tweak in place — no full regenerate — then copy or send. ===== */
@@ -18338,6 +18515,8 @@ async function callOpenAI(transcript,key){
   const sys=`You are an expert clinical documentation and medical-coding assistant for physicians. Convert the raw doctor-patient visit transcript into a clean, professional medical note AND suggest accurate billing codes. ${specLine}
 
 TRANSCRIPT FORMAT — IMPORTANT: The transcript is a NATURAL conversation, usually from live ambient microphone transcription. It typically has NO speaker labels — no "Doctor:" or "Patient:" prefixes — and may be one continuous run of unpunctuated or loosely punctuated speech where the clinician's questions and the patient's answers are interleaved. INFER from context who is speaking (clinician = asks history questions, states exam findings/vitals, gives the assessment and plan; patient = describes symptoms, history, and answers). Do NOT require or expect speaker labels. If labels happen to be present, use them; if not, work entirely from context. Produce the same high-quality note either way.
+
+SPEAKER LABELS ARE UNVERIFIED HYPOTHESES, NOT FACTS. If lines are prefixed with "Dr:", "Patient:" or similar, they were added by this app from PAUSES in the recording — the browser's speech engine performs no speaker identification whatsoever, and the clinician may not have corrected every line. Treat each label as a hint of the same weight as any other contextual clue, and CONTENT ALWAYS WINS: if a line labelled "Patient:" states an exam finding, an assessment or a plan, it is the clinician speaking; if a line labelled "Dr:" describes symptoms in the first person, it is the patient. Never attribute a symptom, a history item or a decision to a person on the strength of a label alone, and never write a label into the note as though speaker identity were established.
 
 NOTE STYLE: ${styleLine}${lengthLine?('\n'+lengthLine):''}
 

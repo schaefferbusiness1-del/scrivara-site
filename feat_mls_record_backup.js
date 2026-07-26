@@ -135,7 +135,18 @@
     var requestEpoch = ++backupRequestEpoch;
     pendingBackupEpoch = requestEpoch;
     var micRequest;
-    try { micRequest = navigator.mediaDevices.getUserMedia({ audio: true }); }
+    /* ac-1.0.0: `{audio:true}` accepts the browser's CALL defaults — echo
+       cancellation and noise suppression tuned for one near talker. In an exam
+       room the suppressor gates the patient across the room, which is the voice
+       the note is made of. Ask for the ambient policy instead, and fall back to
+       the old constraints if the policy module did not load so a missing
+       satellite can never cost a backup recording. */
+    var micConstraints = { audio: true };
+    try {
+      var pol = window.__mlsAudioCapture;
+      if (pol && pol.installed === true && isFn(pol.constraints)) micConstraints = pol.constraints('ambient');
+    } catch (ePol) {}
+    try { micRequest = navigator.mediaDevices.getUserMedia(micConstraints); }
     catch (e) {
       if (pendingBackupEpoch === requestEpoch) pendingBackupEpoch = 0;
       chip("Backup mic unavailable — dictation still works normally.", true);
