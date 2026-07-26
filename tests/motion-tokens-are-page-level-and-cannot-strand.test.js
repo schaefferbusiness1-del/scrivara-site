@@ -80,6 +80,24 @@ for (const t of TOKENS) {
     'speed with the shell and another without it, and nothing would report it.');
 }
 
+/* ---- 2b. the legacy four are ALIASES, never literals again ----
+ * --mls-fast/base/slow/spring predate the token system and 23 rules still use
+ * them. They were a SECOND vocabulary until they were pointed at the canonical
+ * tokens; re-pinning a literal here re-forks the app's timing with nothing to
+ * show for it, and the only visible symptom would be that two surfaces move at
+ * slightly different speeds. The old numbers are allowed only as the var()
+ * FALLBACK, which is what makes the aliasing safe. */
+[['--mls-spring', '--mls-ease-out'], ['--mls-fast', '--mls-dur-2'],
+ ['--mls-base', '--mls-dur-3'], ['--mls-slow', '--mls-dur-4']].forEach(([legacy, canon]) => {
+  const m = new RegExp(legacy.replace(/-/g, '\\-') + "\\s*:\\s*([^;'}]+)").exec(shell);
+  assert.ok(m, 'feat_mls_calm_shell.js no longer declares ' + legacy +
+    ' — 23 rules in that file still reference it');
+  assert.ok(m[1].includes('var(' + canon),
+    legacy + ' is a literal again (' + m[1].trim() + '). It must alias ' + canon +
+    ', with the old number only as the var() fallback, or the app has two ' +
+    'vocabularies and nothing reports it.');
+});
+
 /* ---- 3. no entrance may strand a surface invisible ---- */
 /* Collect every @keyframes whose 0%/from sets opacity:0, then check that no
  * `animation:` shorthand naming one of them carries a backwards-applying fill. */
@@ -102,11 +120,30 @@ function stranding(src, label) {
   return { fadeIn, bad };
 }
 
-const checked = [
-  ['ScribeFlow.html', read('ScribeFlow.html')],
-  ['ScribeFlow-staging.html', read('ScribeFlow-staging.html')],
-  ['feat_mls_calm_shell.js', shell]
-];
+/* EVERY SHIPPED ASSET, not three files.
+ *
+ * The three-file scan set was this suite's blind spot and it cost a real
+ * defect: feat_mls_visit_voice_one.js shipped
+ *   @keyframes mlsVoIn{from{opacity:0;...}}  ...  animation:mlsVoIn .18s ... both
+ * — the exact regression this file exists to prevent — and the gate was green
+ * the whole time, because that file was not in the list. A named list of files
+ * is a promise that nobody will ever add motion anywhere else, and this repo
+ * has ~230 feature modules that each inject their own stylesheet.
+ *
+ * So the haystack is now derived, not enumerated: every shipped .js and .html
+ * at the repo root that contains an @keyframes. Retired dev-zone pages (_dz_*),
+ * the unpublished test shell and the tests themselves are excluded, and the
+ * count is asserted to be well above three so a future refactor cannot quietly
+ * shrink it back. */
+const SKIP = /^(_dz_|_ps_|_compare|ScribeFlow_test|node_modules)/;
+const checked = fs.readdirSync(ROOT)
+  .filter((f) => /.(js|html)$/.test(f) && !SKIP.test(f))
+  .map((f) => [f, read(f)])
+  .filter(([, src]) => /@keyframes/.test(src));
+assert.ok(checked.length >= 12,
+  'only ' + checked.length + ' shipped assets declare @keyframes. That is far fewer ' +
+  'than the ~30 this app ships, so the file discovery is broken, not the code — ' +
+  'and a broken haystack passes everything.');
 let totalFadeIn = 0;
 const allBad = [];
 for (const [label, src] of checked) {
@@ -114,9 +151,9 @@ for (const [label, src] of checked) {
   totalFadeIn += r.fadeIn.size;
   allBad.push(...r.bad);
 }
-assert.ok(totalFadeIn > 0,
-  'the detector found NO fade-in keyframes at all across three files — it is broken, ' +
-  'not the code, and it would pass whatever anyone shipped');
+assert.ok(totalFadeIn >= 10,
+  'the detector found only ' + totalFadeIn + ' fade-in keyframes across ' + checked.length +
+  ' assets — it is broken, not the code, and it would pass whatever anyone shipped');
 assert.deepStrictEqual(allBad, [],
   'an entrance animation applies its opacity:0 keyframe BEFORE it runs:\n  ' +
   allBad.join('\n  ') +
@@ -158,5 +195,5 @@ assert.ok(/animation:none!important/.test(modalBlock[0]) && /transition:none!imp
 
 console.log('PASS motion-tokens-are-page-level-and-cannot-strand: 7 tokens declared in ' +
   pages.length + ' page(s) and agreeing with the shell copy, ' + totalFadeIn +
-  ' fade-in keyframes carry no backwards fill, modal entrance is transform/opacity ' +
-  'only and clears under prefers-reduced-motion');
+  ' fade-in keyframes across ' + checked.length + ' shipped assets carry no backwards ' +
+  'fill, modal entrance is transform/opacity only and clears under prefers-reduced-motion');

@@ -47,7 +47,7 @@
     @keyframes mlsPop{0%{transform:scale(.92)}62%{transform:scale(1.04)}100%{transform:scale(1)}}
     @keyframes mlsBreathe{0%,100%{opacity:1}50%{opacity:.55}}
     @keyframes mlsSweep{from{background-position:-180% 0}to{background-position:180% 0}}
-    .card,.state{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both}
+    .card,.state{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1)}
     .card:nth-of-type(2){animation-delay:.06s}
     .card:nth-of-type(3){animation-delay:.12s}
     .card:nth-of-type(4){animation-delay:.18s}
@@ -58,7 +58,7 @@
     /* The success mark earns a beat - it is the one moment worth celebrating. */
     .big{animation:mlsPop .52s cubic-bezier(.2,.9,.3,1.25) both}
     /* "Loading…" should look alive rather than stuck. */
-    #loading{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1) both,mlsBreathe 1.8s ease-in-out .4s infinite}
+    #loading{animation:mlsRise .4s cubic-bezier(.2,.7,.3,1),mlsBreathe 1.8s ease-in-out .4s infinite}
   }
 </style>
 </head>
