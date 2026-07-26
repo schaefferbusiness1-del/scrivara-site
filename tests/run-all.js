@@ -335,6 +335,7 @@ const tests = [
   'review-step-never-fails-silently.test.js',
   'modal-focus-goes-in-and-comes-back.test.js',
   'motion-system-costs-no-layout.test.js',
+  'motion-tokens-are-page-level-and-cannot-strand.test.js',
   'voice-cluster-expands-never-decides.test.js',
   'review-is-a-review-not-just-orders.test.js',
   'phone-capture-survival.test.js',

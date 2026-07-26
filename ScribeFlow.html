@@ -367,6 +367,23 @@
     --surface:#ffffff; --field-bg:#FCFBF8; --soft2:#F6FBF8;
     --serif:'Newsreader',Georgia,serif;
     --sans:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+
+    /* ===== MOTION TOKENS (one vocabulary, page-level) =====
+       The motion system was defined at :root inside feat_mls_calm_shell.js,
+       which means it does not exist until that module loads and disappears
+       entirely under ?ui=classic — so any rule elsewhere written as
+       transition:transform var(--mls-dur-2) silently degrades to the initial
+       value and the motion just stops. Declared here it is unconditional and
+       available before the first module runs. The calm shell still declares
+       the same seven names and MUST agree with these values; whichever loads
+       later wins and a fork is silent (the --muted lesson).
+
+       dur-1 press/hover  dur-2 state change  dur-3 entrance  dur-4 view
+       ease-out arriving  ease-inout moving in place  ease-spring summoned */
+    --mls-dur-1:120ms; --mls-dur-2:200ms; --mls-dur-3:300ms; --mls-dur-4:420ms;
+    --mls-ease-out:cubic-bezier(.2,.7,.3,1);
+    --mls-ease-inout:cubic-bezier(.4,0,.2,1);
+    --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
   /* ===== QoL: DARK MODE (MLS) — overrides the color variables above ===== */
@@ -782,8 +799,26 @@
   .modal-x{float:right;background:none;color:var(--muted);font-size:22px;padding:0;line-height:1}
   .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(80px);
     background:var(--ink);color:#fff;padding:13px 22px;border-radius:12px;font-size:15px;
-    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.3s;z-index:99999;max-width:90vw}
+    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;z-index:99999;max-width:90vw;
+    transition:transform var(--mls-dur-3) var(--mls-ease-spring),opacity var(--mls-dur-2) var(--mls-ease-out)}
   .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  /* ===== ENTRANCE, AND WHY IT CANNOT STRAND =====
+     No animation-fill-mode. "both" and "backwards" apply the FROM keyframe
+     before the animation starts, so a surface whose from-state is opacity:0
+     is invisible for as long as the animation has not run — and entrance
+     animations frozen at currentTime:0 have already cost this repo whole
+     measurement sessions. With no fill the resting state is the element's
+     own, which is the visible one: if the animation never runs, never
+     finishes, or is switched off, the modal is simply there.
+     Transform and opacity only; a modal is created on open and never
+     rebuilt on a timer, so this cannot become a flicker. */
+  @keyframes mlsMoModalIn{from{opacity:0}to{opacity:1}}
+  @keyframes mlsMoModalLift{from{opacity:0;transform:translate3d(0,10px,0) scale(.985)}to{opacity:1;transform:none}}
+  .modal-bg.show{animation:mlsMoModalIn var(--mls-dur-2) var(--mls-ease-out)}
+  .modal-bg.show>.modal{animation:mlsMoModalLift var(--mls-dur-3) var(--mls-ease-out)}
+  @media (prefers-reduced-motion: reduce){
+    .modal-bg.show,.modal-bg.show>.modal,.toast{animation:none!important;transition:none!important}
+  }
   .toast.err{background:var(--red)}
   .toast.ok{background:var(--green-dk)}
   #mlsMobileNoticeShelf{display:none}
