@@ -1,5 +1,5 @@
 /* ===== MLS b121 pack — 2026-07-10 (day shift) ==============================
- * ONE satellite carrying NINE additive, individually-revertible modules.
+ * ONE satellite carrying TEN additive, individually-revertible modules.
  * Loaded by a single loader line in mls-connect.js (build 2026-07-10-b121),
  * inserted after the feat_mls_asst_fix.js loader anchor.
  *
@@ -23,8 +23,12 @@
  *   8. __mlsDobEverywhere       — store DOB -> _calAppts join so every card
  *                                 shows DOB.
  *   9. __mlsHeaderDateGate      — hero/auto-pull date gate.
+ *  10. __mlsUnsortedFold       — renders the chart rows module 7 could not
+ *                                classify, under "Unsorted from chart", so a
+ *                                row is never silently lost OR passed off as
+ *                                a medication. Zero controls.
  *
- * Revert (console): __mlsHeaderDateGate.revert(); __mlsDobEverywhere.revert();
+ * Revert (console): __mlsUnsortedFold.revert(); __mlsHeaderDateGate.revert(); __mlsDobEverywhere.revert();
  *   __mlsCleanSections_revert(); __mlsPullAnyDay.revert(); __mlsVisitsBackfill.revert();
  *   __mlsDedupById.revert(); __mlsDayKeyFix.revert();
  *   __mlsAddVisitCycleGuard.revert();
@@ -4775,4 +4779,178 @@
     try { delete window.__mlsHeaderDateGate; } catch (e) {}
   };
   window.__mlsHeaderDateGate = api;
+})();
+
+/* =========================================================================
+ * MODULE 10 - UNSORTED-FROM-CHART FOLD  (__mlsUnsortedFold)  v1.0.0  2026-07-26
+ *
+ * The render half of module 7's clinical-truth triage.
+ *
+ * Module 7 stops a grid header, a row action link and a prescriber's name from
+ * being rendered AS medications. On its own that only moves the defect: rows it
+ * cannot classify would leave the card with nothing to show for them, which is
+ * the same silent deletion in a different coat. This module renders those rows
+ * - visibly, and plainly labelled as NOT clinical facts.
+ *
+ * Three deliberate properties:
+ *   1. ZERO CONTROLS. No button, no toggle, no <summary>. The button-liberation
+ *      contract aside, a fold behind a click is a place clinical text can hide;
+ *      this one is always on screen when it has anything in it.
+ *   2. It is a SIBLING of #profMeds / #profProblems, not a child. editProfField
+ *      replaces those nodes' innerHTML, so a child would vanish the moment the
+ *      doctor pressed Edit and reappear only on re-render.
+ *   3. It writes only when the content actually changed (data-sig compare), so
+ *      it adds no idle churn to a card that was measured loud at b624.
+ *
+ * Text is set with textContent, never innerHTML - these rows are unparsed chart
+ * text and must never be interpreted as markup.
+ *
+ * Colours are theme tokens only (var(--muted), var(--line)); nothing here can
+ * strand in dark mode.
+ *
+ * Kill switch: window.__mlsUnsortedFold.revert()
+ * ========================================================================= */
+;(function () {
+  'use strict';
+  if (window.__mlsUnsortedFold) return;
+
+  var STYLE_ID = 'mlsUnsortedFoldCss';
+  var FIELDS = [
+    { bodyId: 'profMeds', store: '_mlsUnsortedMeds', foldId: 'mlsUnsortedMeds', noun: 'medications' },
+    { bodyId: 'profProblems', store: '_mlsUnsortedProblems', foldId: 'mlsUnsortedProblems', noun: 'problems' }
+  ];
+
+  var api = { version: '1.0.0', rendered: 0, writes: 0, revert: revert };
+  window.__mlsUnsortedFold = api;
+
+  function css() {
+    try {
+      if (document.getElementById(STYLE_ID)) return;
+      var s = document.createElement('style');
+      s.id = STYLE_ID;
+      s.textContent =
+        '.mls-uns{margin:10px 0 0;padding:9px 0 0;border-top:1px solid var(--line)}' +
+        '.mls-uns-h{font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.01em}' +
+        '.mls-uns-s{font-size:11.5px;color:var(--muted);margin:2px 0 5px;line-height:1.45}' +
+        '.mls-uns-l{margin:0;padding:0 0 0 16px;font-size:12.5px;color:var(--muted);line-height:1.55}' +
+        '.mls-uns-l li{margin:0 0 1px;overflow-wrap:anywhere}';
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {}
+  }
+
+  function activeP() {
+    try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; }
+  }
+
+  function sync() {
+    var p = activeP();
+    for (var i = 0; i < FIELDS.length; i++) {
+      var f = FIELDS[i];
+      var body = null, node = null;
+      try { body = document.getElementById(f.bodyId); node = document.getElementById(f.foldId); } catch (e) { continue; }
+      var box = body && body.parentNode;
+      var rows = (p && Object.prototype.toString.call(p[f.store]) === '[object Array]') ? p[f.store] : [];
+      if (!box || !rows.length) {
+        if (node && node.parentNode) { try { node.parentNode.removeChild(node); api.writes++; } catch (e) {} }
+        continue;
+      }
+      var sig = rows.join('');
+      /* no-op guard: an unconditional rebuild here would recalc the whole card
+         on every renderProfile, which is exactly the churn class b624/b640 spent
+         a night removing */
+      if (node && node.parentNode === box && node.getAttribute('data-sig') === sig) continue;
+      css();
+      if (!node) { node = document.createElement('div'); node.id = f.foldId; node.className = 'mls-uns'; }
+      node.setAttribute('data-sig', sig);
+      while (node.firstChild) node.removeChild(node.firstChild);
+      var h = document.createElement('div'); h.className = 'mls-uns-h';
+      h.textContent = 'Unsorted from chart';
+      var s = document.createElement('div'); s.className = 'mls-uns-s';
+      s.textContent = rows.length + ' line' + (rows.length === 1 ? '' : 's') + ' from the Athena chart that MLS could not read as ' +
+        f.noun + '. Kept here so nothing is lost - not treated as clinical facts.';
+      var ul = document.createElement('ul'); ul.className = 'mls-uns-l';
+      for (var j = 0; j < rows.length; j++) {
+        var li = document.createElement('li');
+        li.textContent = String(rows[j] == null ? '' : rows[j]);
+        ul.appendChild(li);
+      }
+      node.appendChild(h); node.appendChild(s); node.appendChild(ul);
+      if (node.parentNode !== box) box.appendChild(node);
+      api.writes++; api.rendered = rows.length;
+    }
+  }
+
+  /* Wrap renderProfile - a top-level function declaration in ScribeFlow.html IS
+     a window property, and every bare renderProfile() call resolves through it.
+     -----------------------------------------------------------------------
+     TWO RULES HERE, AND BOTH WERE EARNED IN REAL CHROME, NOT REASONED ABOUT.
+     The first build of this module re-armed on every click and blew the stack:
+     "Maximum call stack size exceeded", frames alternating between
+     feat_mls_visit_focus.js and this file. Four modules wrap renderProfile
+     (visit_focus, visit_timeline, easy-prep and outside-records in
+     mls-connect.js), and visit_focus is re-entrant by construction:
+
+        var origRenderProfile = null;                       // MODULE-LEVEL
+        function wrapRenderProfile() {
+          if (window.renderProfile.__vfWrapped) return;     // guard is on the
+          origRenderProfile = window.renderProfile;         // FUNCTION, not a
+          var w = function(){ return origRenderProfile.apply(...) };  // flag
+          window.renderProfile = w;                         // + it re-runs at
+        }                                                   // 1.5s / 4s / 9s
+
+     Its wrapper reads origRenderProfile at CALL time. So the moment anything
+     puts an unmarked function on window.renderProfile, its next timed retry
+     re-points that shared variable at OUR wrapper - and our wrapper calls its
+     old one, which now calls ours. A closed loop, from two changes that are
+     each correct alone. Same defect family as module 1's addVisit cycle guard.
+
+     1. WRAP AT MOST ONCE, EVER (the `installed` flag, not a check of what is
+        currently on window). If someone wraps after us we stay in the chain as
+        their orig; re-wrapping to get back on top is what builds the cycle.
+     2. CARRY THE OTHER MODULES' HEAD MARKERS FORWARD, so neither of them sees
+        an unmarked function and re-wraps. Module 7's wrapUpsert already does
+        exactly this with __mlsDedupWrapped - it is the idiom here, not a hack.
+     ----------------------------------------------------------------------- */
+  var CARRY = ['__vfWrapped', '__vtlWrapped', '__vtlOrig'];
+  var installed = false;
+  function wrap() {
+    try {
+      if (installed) return false;
+      var f = window.renderProfile;
+      if (typeof f !== 'function' || f.__mlsUnsFoldWrap) return false;
+      var w = function () {
+        var r = f.apply(this, arguments);
+        try { sync(); } catch (e) {}
+        return r;
+      };
+      w.__mlsUnsFoldWrap = 1; w.__mlsUnsFoldOrig = f;
+      for (var i = 0; i < CARRY.length; i++) {
+        try { if (f[CARRY[i]] !== undefined) w[CARRY[i]] = f[CARRY[i]]; } catch (e) {}
+      }
+      window.renderProfile = w;
+      installed = true;
+      api.wrappedOver = CARRY.filter(function (k) { return w[k] !== undefined; }).join(',');
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /* No standing interval (the pack's own timer census, WORKER_C b673). Three
+     bounded retries only, for the case where the app's post-auth module train
+     has not installed renderProfile yet - and each is a no-op once wrapped. */
+  function arm() { if (api.killed) return; try { wrap(); } catch (e) {} try { sync(); } catch (e) {} }
+  arm();
+  try { setTimeout(arm, 400); setTimeout(arm, 2000); setTimeout(arm, 6000); } catch (e) {}
+
+  function revert() {
+    api.killed = true;
+    /* only unwrap when we are still the head - pulling ourselves out from
+       under someone else's wrapper would strand THEIR orig pointer */
+    try { if (window.renderProfile && window.renderProfile.__mlsUnsFoldWrap) window.renderProfile = window.renderProfile.__mlsUnsFoldOrig; } catch (e) {}
+    for (var i = 0; i < FIELDS.length; i++) {
+      try { var n = document.getElementById(FIELDS[i].foldId); if (n && n.parentNode) n.parentNode.removeChild(n); } catch (e) {}
+    }
+    try { var st = document.getElementById(STYLE_ID); if (st && st.parentNode) st.parentNode.removeChild(st); } catch (e) {}
+    try { delete window.__mlsUnsortedFold; } catch (e) { window.__mlsUnsortedFold = undefined; }
+    return 'reverted (stored _mlsUnsorted* rows stay on the record)';
+  }
 })();
