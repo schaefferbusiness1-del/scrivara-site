@@ -341,7 +341,8 @@ const tests = [
   'phone-install-contract.test.js',
   'relay-full-notes-choice-travels.test.js',
   'relay-phone-claims-only-what-it-sees.test.js',
-  'secondary-text-is-a-theme-token.test.js'
+  'secondary-text-is-a-theme-token.test.js',
+  'headings-do-not-swallow-their-controls.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

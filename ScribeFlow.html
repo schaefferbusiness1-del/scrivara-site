@@ -1889,7 +1889,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div id="patientsView" style="display:none">
     <div id="ptSplitWrap">
     <div class="card">
-      <h2 style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
+      <h2 aria-label="Patients" style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
         <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" title="Opens this patient’s chart in your signed-in Athena tab (read-only) and pulls their name, DOB and past visits into MLS.">📥 Pull from Athena</button>
@@ -1959,7 +1959,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- ACTIVE PATIENT PROFILE -->
     <div class="card" id="profileCard" style="margin-top:20px;display:none">
-      <h2 style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
+      <h2 aria-labelledby="profName" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book an appointment for this patient">📅 Schedule</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
@@ -2072,7 +2072,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="grid">
     <!-- CAPTURE -->
     <div class="card" id="captureCard">
-      <h2><span class="ic">🎙️</span> Capture the visit
+      <h2 aria-label="Capture the visit"><span class="ic">🎙️</span> Capture the visit
         <button class="btn-ghost" style="margin-left:auto;font-size:13px;padding:7px 12px" onclick="newVisit()">＋ New visit</button>
       </h2>
       <p class="sub">Press start and just talk naturally with your patient. The conversation appears below.</p>
@@ -2651,7 +2651,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div id="historyView" style="display:none">
   <!-- HISTORY -->
   <div class="card" id="historyCard">
-    <h2 style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">📚</span> Visit history
+    <h2 aria-label="Visit history" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">📚</span> Visit history
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button>
@@ -2692,7 +2692,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ RECOMMENDATIONS VIEW ============ -->
   <div id="recsView" style="display:none">
   <div class="card" id="recsCard">
-    <h2><span class="ic">💡</span> Recommendations for the provider
+    <h2 aria-label="Recommendations for the provider"><span class="ic">💡</span> Recommendations for the provider
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="genRecsBtn" onclick="generateRecommendations()">✨ Generate Recommendations</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('orders')" title="Turn these into orders">📋 Orders</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Back to the visit">🎙️ Visit</button>
@@ -2721,7 +2721,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ ORDERS VIEW ============ -->
   <div id="ordersView" style="display:none">
   <div class="card" id="ordersCard">
-    <h2><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span>
+    <h2 aria-label="Orders — scripts, referrals, DME, imaging, injections"><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span>
       <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Return to the visit you're documenting">🎙️ Back to visit</button></h2>
     <p class="sub">Build orders for the active patient. Pull the diagnosis from the current note, accept AI-style suggestions, then print or copy a clean order sheet to hand to the patient.</p>
     <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🖊 Orders are drafted for the provider to review and sign. Final orders are the provider's responsibility.</div>
@@ -2847,7 +2847,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ ADMIN VIEW (owner only) ============ -->
   <div id="adminView" style="display:none">
     <div class="card">
-      <h2><span class="ic">🛡️</span> Admin — Users
+      <h2 aria-label="Admin — Users"><span class="ic">🛡️</span> Admin — Users
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh</button>
       </h2>
       <p class="sub">Manage who can generate notes. Grant a comp (forever) account, a timed trial, or block access.</p>
@@ -2866,7 +2866,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
 
     <div class="card">
-      <h2><span class="ic">💳</span> Admin — Billing &amp; plans
+      <h2 aria-label="Admin — Billing and plans"><span class="ic">💳</span> Admin — Billing &amp; plans
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBilling()">🔄 Refresh</button>
       </h2>
       <p class="sub">Plans and paid access are separate from roles. <b>Access source</b> shows exactly why each account has access: role, subscription, trial, grant, or admin override. Granting a plan applies an admin override without touching Stripe; clearing it returns the account to normal billing (an active Stripe subscription keeps access, otherwise access ends).</p>
@@ -2897,7 +2897,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
 
     <div class="card">
-      <h2><span class="ic">🎟️</span> Admin — Access codes
+      <h2 aria-label="Admin — Access codes"><span class="ic">🎟️</span> Admin — Access codes
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminCodes()">🔄 Refresh</button>
       </h2>
       <p class="sub">Generate an access code to hand out. "Forever" unlocks permanently; "Trial" grants a set number of days.</p>
@@ -2939,7 +2939,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- Admin — Backups -->
     <div class="card">
-      <h2><span class="ic">💾</span> Admin — Backups
+      <h2 aria-label="Admin — Backups"><span class="ic">💾</span> Admin — Backups
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBackups()">🔄 Refresh</button>
       </h2>
       <p class="sub">Create and download encrypted snapshots of the server database.</p>
@@ -2961,7 +2961,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- Admin — Audit log -->
     <div class="card">
-      <h2><span class="ic">📜</span> Admin — Audit log
+      <h2 aria-label="Admin — Audit log"><span class="ic">📜</span> Admin — Audit log
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminAudit()">🔄 Load recent</button>
       </h2>
       <p class="sub">Tamper-evident record of admin and account actions. No patient data is recorded here.</p>
@@ -3003,7 +3003,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ TEAM VIEW (head doctor only — read-only) ============ -->
   <div id="teamView" style="display:none">
     <div class="card">
-      <h2><span class="ic">👥</span> Team — your doctors' patients
+      <h2 aria-label="Team — your doctors' patients"><span class="ic">👥</span> Team — your doctors' patients
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="generateEfficiencyReport()">📊 Efficiency report</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="teamToStudio()" title="Build a team dashboard or analytics tool in AI Studio">✨ Build a team tool</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openCopilotDock('Summarize my team — who is busiest and where the documentation gaps are.')" title="Ask the Copilot about your team">✦ Ask Copilot</button>
@@ -3031,7 +3031,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ CALENDAR VIEW ============ -->
   <div id="calendarView" style="display:none">
     <div class="card">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ic">📅</span> Calendar
+      <h2 aria-label="Calendar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ic">📅</span> Calendar
         <span id="calCheckinWrap" style="margin-left:auto;display:none;align-items:center;gap:8px;flex-wrap:wrap"></span>
       </h2>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
@@ -3078,7 +3078,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 📣 OUTCOMES → MARKETING — turn real outcomes into shareable proof -->
     <div class="card" id="anaOutcomes">
-      <h2><span class="ic">📣</span> Outcomes &amp; marketing
+      <h2 aria-label="Outcomes and marketing"><span class="ic">📣</span> Outcomes &amp; marketing
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">Your real results, turned into proof you can publish. Measured from first vs. latest visit per patient — fully de-identified, no names ever leave your practice. Use it on your website, in referral packets, and with patients.</p>
@@ -3087,7 +3087,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 🔬 RESEARCH / RWE REGISTRY -->
     <div class="card" id="anaRwe">
-      <h2><span class="ic">🔬</span> Research registry (de-identified)
+      <h2 aria-label="Research registry — de-identified"><span class="ic">🔬</span> Research registry (de-identified)
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="exportRegistryCsv()">⬇ Export de-identified CSV</button>
       </h2>
       <p class="sub">A de-identified, aggregate registry of your outcomes by procedure — the foundation for real-world-evidence studies, MIPS/quality reporting, and device/pharma data partnerships. No patient names or PHI are included.</p>
@@ -3130,7 +3130,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 📈 BASELINE METRICS — server-side aggregates over your visit records -->
     <div class="card" id="anaBaseline">
-      <h2><span class="ic">📈</span> Baseline metrics
+      <h2 aria-label="Baseline metrics"><span class="ic">📈</span> Baseline metrics
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">Practice aggregates computed on the clinic server from non-PHI visit metadata available to your account.</p>
@@ -3138,7 +3138,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
 
     <div class="card" id="anaDoctorReview" hidden aria-hidden="true" style="display:none">
-      <h2><span class="ic">📊</span> Doctor analysis &amp; review
+      <h2 aria-label="Doctor analysis and review"><span class="ic">📊</span> Doctor analysis &amp; review
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh data</button>
       </h2>
       <p class="sub">Review a doctor on your team — or yourself. Generates an activity summary and an AI performance/documentation analysis with constructive feedback.</p>
@@ -3163,7 +3163,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 🌟 TEAM PATIENT-EXPERIENCE — head doctor sees each doctor's AI grade per visit -->
     <div class="card" id="anaTeamGrades" hidden aria-hidden="true" style="display:none">
-      <h2><span class="ic">🌟</span> Team patient-experience ratings
+      <h2 aria-label="Team patient-experience ratings"><span class="ic">🌟</span> Team patient-experience ratings
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">How your doctors are doing with patients — an AI grade (1–5) of the patient experience on each visit, from the visit conversation. Averages and the most recent visits per doctor. No patient data — dates and scores only.</p>
@@ -3205,7 +3205,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <!-- ============ LEGAL REQUESTS INBOX (clinician — incoming attorney requests) ============ -->
   <div id="legalReqView" style="display:none">
     <div class="card">
-      <h2><span class="ic">⚖️</span> Legal requests
+      <h2 aria-label="Legal requests"><span class="ic">⚖️</span> Legal requests
         <button class="btn-primary" type="button" disabled aria-disabled="true" style="margin-left:auto;font-size:14px;padding:9px 15px">Request intake unavailable</button>
         <button class="btn-ghost" type="button" disabled aria-disabled="true" style="margin-left:8px;font-size:14px;padding:9px 15px">Legal network unavailable</button>
       </h2>
@@ -3271,7 +3271,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
     </div>
     <div class="card" id="studioResultCard" style="display:none">
-      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1;min-width:140px">Your widget</span>
+      <h2 aria-labelledby="studioResultTitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1;min-width:140px">Your widget</span>
         <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="studioFullscreen()" title="Open this tool full-screen">⛶ Fullscreen</button>
         <button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="saveStudioWidget()">💾 Save it</button>
         <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="closeStudioResult()">✕ Close</button>
@@ -3379,7 +3379,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   </div>
 
   <div class="card" style="margin-top:20px" id="lawExpertCard">
-    <h2><span class="ic">🧑‍⚖️</span> Released expert profiles
+    <h2 aria-label="Released expert profiles"><span class="ic">🧑‍⚖️</span> Released expert profiles
       <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadExpertsBrowse()">🔄 Refresh</button>
     </h2>
     <p class="sub">Only profiles that completed independent publication review can appear here. This synthetic evaluation does not confirm availability and cannot start case intake. Do not enter patient or case information.</p>
@@ -3388,7 +3388,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   </div>
 
   <div class="card" style="margin-top:20px">
-    <h2><span class="ic">📚</span> My requests
+    <h2 aria-label="My requests"><span class="ic">📚</span> My requests
       <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadLawyerRequests()">🔄 Refresh</button>
     </h2>
     <p class="sub">Synthetic request drafts only. Signed reports cannot be released, delivered, purchased, or downloaded in this build.</p>
@@ -11725,7 +11725,7 @@ function _hideAllStandardViews(){
 function _ensurePinnedView(){
   var pv=document.getElementById('pinnedView'); if(pv) return pv;
   pv=document.createElement('div'); pv.id='pinnedView'; pv.style.display='none';
-  pv.innerHTML='<div class="card"><h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span><span id="pinnedTitle" style="flex:1;min-width:120px">Tool</span>'
+  pv.innerHTML='<div class="card"><h2 aria-labelledby="pinnedTitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span><span id="pinnedTitle" style="flex:1;min-width:120px">Tool</span>'
     +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="pinnedRefresh()" title="Reload with the latest data">↻ Refresh</button>'
     +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="pinnedFullscreen()">⛶ Fullscreen</button>'
     +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'studio\')">✦ Studio</button></h2>'
