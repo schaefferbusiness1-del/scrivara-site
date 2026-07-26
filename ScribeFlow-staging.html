@@ -915,6 +915,433 @@
     #calSplitWrap:has(#calDayPanel[style*="block"]) #calDayPanel{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 96px); overflow:auto; }
   }
 </style>
+<script id="mlsThemeParityBoot">
+/* ===== THEME PARITY (tp-1.0.0) — the dark theme reaches the whole app =====
+ *
+ * Dark mode was only ever a token swap on ScribeFlow's own components. The
+ * ~230 feature modules each inject their own stylesheet with literal light
+ * backgrounds and no .theme-dark branch, so measured at b676 across ten views
+ * at 1440x900 the dark app carried 170 opaque light panels and 163 WCAG-AA
+ * text failures against light mode's 26. Worker A measured 98 panels and 89
+ * failures with a stricter panel threshold; both counts describe the same
+ * defect.
+ *
+ * Nothing static can fix it. Those selectors are built by string
+ * concatenation ('#'+ROOT_ID+' .x{...}'), so grep cannot resolve them, and
+ * there are 199 distinct light literals across 645 rules — a hand-written
+ * override block would be stale the first time anyone adds a card. The only
+ * instrument that can see the resolved selector is document.styleSheets on
+ * the running page, which is what this walks.
+ *
+ * For every rule that paints an opaque light surface, or dark text that the
+ * dark palette would bury, it emits ONE correction into a sheet of its own:
+ *
+ *     :where(html body.theme-dark) <that exact selector> { background: <token> }
+ *
+ * EQUAL specificity, not higher — :where() contributes zero — and the parity
+ * sheet is kept last in <head> so the tie goes to the correction. The version
+ * that prefixed a real "html body.theme-dark" outranked the overrides too, and
+ * put near-black text on #204034 in all ten views. Declaration importance is
+ * mirrored from the source for the same reason.
+ *
+ * Light mode pays nothing: nothing runs until body.theme-dark exists.
+ *
+ * Known residue, measured not assumed: 12 panels and 1 text failure survive,
+ * every one of them an inline !important written by the imp() helper in the
+ * *_exact.js modules. An inline !important outranks every author stylesheet by
+ * definition, so no CSS can reach them; the fix is at those call sites
+ * (imp(el,'background','#fff') -> a token), which are not this layer's.
+ *
+ * window.__mlsThemeParity — {version, sheetsSeen, rules, passes, refresh(),
+ * activate(), revert()}.
+ */
+(function(){
+  'use strict';
+  var SHEET_ID='mlsThemeParity', sheet=null, seen=null, pending=false, obs=[], armed=false;
+  var SKIP=/#mlsDock|(^|[\s,>+~])option\b|agSigPad|\bcanvas\b|mlsf-note|::-webkit-|::selection|(^|[\s,>+~])(html|:root|head)$/i;
+  var FIELD=/\b(input|textarea|select)\b|\.sf-select|\.field\b/i;
+  var ROOTISH=/^(:root|html|body)[\s.:#\[]?/i;
+  var RESERVED=/^--(bg|card|ink|muted|line|brand|brand-dk|green|green-dk|amber|red|soft|soft2|surface|field-bg|gold|gold-bg|header|header-line|shadow|shadow-soft|ring|serif|sans|r-card|r-ctl)$/;
+  var DARK_INK='#0F1A15';
+  var varMap={};
+
+  function lum(c){function f(x){x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4);}
+    return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b);}
+  function ratio(a,b){var l1=lum(a),l2=lum(b);return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);}
+  function rgb(v){
+    var s=String(v||'').trim(), m=s.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if(m){var h=m[1]; if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      return {r:parseInt(h.slice(0,2),16),g:parseInt(h.slice(2,4),16),b:parseInt(h.slice(4,6),16),a:1};}
+    m=s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,\/]\s*([\d.]+))?\s*\)$/i);
+    if(m) return {r:+m[1],g:+m[2],b:+m[3],a:m[4]===undefined?1:+m[4]};
+    if(/^white$/i.test(s)) return {r:255,g:255,b:255,a:1};
+    if(/^black$/i.test(s)) return {r:0,g:0,b:0,a:1};
+    return null;
+  }
+  /* var(--x) is not a colour until something resolves it, and half the app's
+     text is painted through module-scoped tokens (--stp-ink, --anp-mini, ...)
+     that live on a view container and so are invisible to a lookup on <body>.
+     Resolve against the map built while walking, then fall back to the live
+     computed value, then to the declared fallback. */
+  function resolve(v,depth){
+    var s=String(v||'').trim();
+    var m=s.match(/^var\(\s*(--[a-z0-9-]+)\s*(?:,([\s\S]*))?\)$/i);
+    if(!m) return rgb(s);
+    if((depth||0)>4) return null;
+    var name=m[1];
+    if(name in varMap){ var got=resolve(varMap[name],(depth||0)+1); if(got) return got; }
+    var live=''; try{ live=getComputedStyle(document.body).getPropertyValue(name).trim(); }catch(e){}
+    if(live){ var lc=resolve(live,(depth||0)+1); if(lc) return lc; }
+    return m[2]?resolve(m[2].trim(),(depth||0)+1):null;
+  }
+  /* CHROMA, not HSL saturation. #FCFBF8 is a near-white neutral, but its HSL
+     saturation is 0.40 because saturation explodes as lightness approaches 1,
+     which classified the app's own field background as "gold". Chroma
+     (max-min) has no such failure mode. */
+  function hue(c){
+    var r=c.r/255,g=c.g/255,b=c.b/255,mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+    if(!d) return {h:0,c:0};
+    var h; if(mx===r) h=60*(((g-b)/d)%6); else if(mx===g) h=60*((b-r)/d+2); else h=60*((r-g)/d+4);
+    if(h<0) h+=360;
+    return {h:h,c:d};
+  }
+  /* A light surface keeps its MEANING, not its lightness: a neutral card
+     becomes the card token, a mint "all good" tint becomes a green tint, a
+     gold caution stays gold, a red alert stays red. */
+  function bgToken(c,isField){
+    var hs=hue(c), L=lum(c);
+    if(hs.c<0.045) return L>=0.93?(isField?'var(--field-bg)':'var(--surface)'):'var(--soft)';
+    if(hs.h>=20&&hs.h<70) return 'var(--gold-bg)';
+    if(hs.h>=70&&hs.h<175) return '#1B2E24';
+    if(hs.h>=175&&hs.h<255) return 'var(--soft)';
+    if(hs.h>=255&&hs.h<320) return '#241F31';
+    return '#2E1F21';
+  }
+  /* Text keeps its RANK as well as its meaning: near-black is a title and
+     becomes --ink, a mid grey is secondary and becomes --muted. Collapsing
+     both onto --ink is what makes a dark theme shout. */
+  function fgToken(c){
+    var hs=hue(c), L=lum(c);
+    if(hs.c>=0.045){
+      if(hs.h>=20&&hs.h<70) return 'var(--gold)';
+      if(hs.h>=70&&hs.h<175) return 'var(--green)';
+      if(hs.h>=320||hs.h<20) return 'var(--red)';
+    }
+    return L<0.045?'var(--ink)':'var(--muted)';
+  }
+  function firstColour(v){
+    var m=String(v||'').match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|\bwhite\b/);
+    return m?rgb(m[0]):null;
+  }
+  /* Split a selector list on TOP-LEVEL commas only: ":is(a,b)" and
+     "[data-x='a,b']" are one part, not three. */
+  function parts(sel){
+    var out=[],d=0,q=0,cur='';
+    for(var i=0;i<sel.length;i++){
+      var ch=sel[i];
+      if(q){ if(ch===q&&sel[i-1]!=='\\') q=0; cur+=ch; continue; }
+      if(ch==='"'||ch==="'"){ q=ch; cur+=ch; continue; }
+      if(ch==='('||ch==='[') d++;
+      else if(ch===')'||ch===']') d--;
+      if(ch===','&&d===0){ out.push(cur.trim()); cur=''; continue; }
+      cur+=ch;
+    }
+    if(cur.trim()) out.push(cur.trim());
+    return out;
+  }
+  /* The whole mechanism in one line: the override is the SOURCE SELECTOR with
+     a zero-specificity theme scope in front of it, so it has EXACTLY the
+     source rule's specificity, and the parity sheet is kept last in <head> so
+     the tie goes to the correction.
+
+     Equal, not higher — and that distinction is the whole design. A version
+     that prefixed a real "html body.theme-dark" outranked every rule in the
+     app, including the ones that OVERRIDE the rule being corrected: it read
+     "#mlsCtxBar .mlsctx-av{color:#fff;background:var(--brand)}", concluded
+     white would fail on dark's mint, and painted near-black text over the
+     #204034 that body.mls-redesign actually paints there — 20 identical
+     failures across every view. At equal specificity that override still
+     wins, and it gets its own parity pass on its own terms. */
+  function scope(part){
+    if(/^html\b/i.test(part)){
+      if(/\bbody\b/.test(part)) return part.replace(/\bbody\b/,'body:where(.theme-dark)');
+      return 'html :where(body.theme-dark) '+part.replace(/^html\b/i,'').trim();
+    }
+    if(/^:root\b/i.test(part)) return ':root :where(body.theme-dark) '+part.replace(/^:root\b/i,'').trim();
+    if(/^body\b/i.test(part)) return part.replace(/^body\b/i,'body:where(.theme-dark)');
+    return ':where(html body.theme-dark) '+part;
+  }
+
+  function ruleFor(r,surface){
+    var st=r.style, sel=r.selectorText;
+    if(/theme-dark/.test(sel)) return '';
+    var decl=[];
+
+    /* 0. Module-scoped design tokens. Not the app's own theme variables on
+       :root/body — those already have a dark branch and rewriting them here
+       would clobber it. A module that REDEFINES one of the app's names on its
+       own container (#calendarView{--ink:#1A211C}) is a different thing: it
+       shadows the dark value for that whole subtree, so hand it straight back
+       with "inherit" rather than guessing a replacement. */
+    if(!ROOTISH.test(sel)){
+      for(var i=0;i<st.length;i++){
+        var p=st[i];
+        if(p.slice(0,2)!=='--') continue;
+        var pv=rgb(st.getPropertyValue(p).trim());
+        if(!pv||pv.a<0.85) continue;
+        if(RESERVED.test(p)){ decl.push(p+':inherit'); continue; }
+        var pl=lum(pv);
+        if(pl>=0.55) decl.push(p+':'+bgToken(pv,false));
+        else if(pl<=0.24) decl.push(p+':'+fgToken(pv));
+      }
+    }
+
+    /* Mirror the SOURCE declaration's importance instead of always shouting.
+       A correction that adds !important to a rule that did not have it jumps
+       into the important layer, where it outranks the very override that beats
+       the source in the real cascade — which is exactly how "Switch patient"
+       ended up near-black on #204034 in all ten views. */
+    var impBg=(st.getPropertyPriority('background-color')||st.getPropertyPriority('background'))?'!important':'';
+    var impFg=st.getPropertyPriority('color')?'!important':'';
+    var impBd=(st.getPropertyPriority('border-color')||st.getPropertyPriority('border'))?'!important':'';
+    var rawBg=st.getPropertyValue('background-color')||st.getPropertyValue('background');
+    var rawFg=st.getPropertyValue('color');
+    if(rawBg&&/gradient|url\(/i.test(rawBg)) rawBg='';
+    var bg=rawBg?resolve(rawBg.trim()):null;
+    var fg=rawFg?resolve(rawFg.trim()):null;
+
+    /* 1. An OPAQUE LIGHT surface is the defect: 164 of them sat in a dark app.
+       A translucent white is a HIGHLIGHT, not a surface — it lightens whatever
+       is under it and reads correctly on dark, so it is left alone. */
+    var flipped=false;
+    if(bg&&bg.a>=0.85&&lum(bg)>=0.55){
+      decl.push('background:'+bgToken(bg,FIELD.test(sel))+impBg);
+      flipped=true;
+    }
+
+    /* 2. Text is judged against the surface it will ACTUALLY sit on: the one
+       this rule paints (after step 1), or the app surface if it paints none.
+       Once every light island follows the theme, "the background is dark" is a
+       safe default rather than a guess.
+
+       Only a rule that declares BOTH is corrected. A generalisation that also
+       set the text colour from a background-only rule was built, measured, and
+       thrown away: rule-level reasoning silently assumes the rule wins the
+       cascade, and where a MORE specific rule owned the real background it put
+       near-black text on #204034 — 20 new failures to buy 0. The pair has to
+       come from one declaration block to be trustworthy. */
+    if(fg&&fg.a>=0.85){
+      var under = flipped ? surface : (bg&&bg.a>=0.85 ? bg : surface);
+      if(ratio(fg,under)<4.5) decl.push('color:'+(lum(under)>=0.18?DARK_INK:fgToken(fg))+impFg);
+    }
+
+    /* 3. A light hairline is a bright outline on dark; --line is what every
+       themed border already uses. */
+    if(flipped){
+      var bd=st.getPropertyValue('border-color')||st.getPropertyValue('border');
+      if(bd&&!/var\(/.test(bd)){
+        var bc=firstColour(bd);
+        if(bc&&bc.a>=0.85&&lum(bc)>=0.55) decl.push('border-color:var(--line)'+impBd);
+      }
+    }
+
+    if(!decl.length) return '';
+    var ps=parts(sel).filter(function(p){ return p && !SKIP.test(p); });
+    if(!ps.length) return '';
+    return ps.map(scope).join(',')+'{'+decl.join(';')+'}';
+  }
+
+  function collectVars(list){
+    for(var i=0;i<list.length;i++){
+      var r=list[i];
+      if(r.cssRules&&!r.selectorText){ collectVars(r.cssRules); continue; }
+      if(!r.style) continue;
+      for(var j=0;j<r.style.length;j++){
+        var p=r.style[j];
+        if(p.slice(0,2)==='--') varMap[p]=r.style.getPropertyValue(p).trim();
+      }
+    }
+  }
+
+  function walk(list,css,inPrint,surface){
+    for(var i=0;i<list.length;i++){
+      var r=list[i];
+      if(r.cssRules&&!r.selectorText){
+        var pr=inPrint||!!(r.media&&/print/i.test(r.media.mediaText||''));
+        walk(r.cssRules,css,pr,surface); continue;
+      }
+      if(inPrint||!r.selectorText||!r.style) continue;
+      var out=ruleFor(r,surface); if(out) css.push(out);
+    }
+  }
+
+  /* Inline styles have no selector to key an override off — so key it off the
+     style attribute itself. One rule per distinct literal covers every element
+     that carries it, INCLUDING ones built later, which is why this needs no
+     observer on the app subtree.
+     Both serialisations are emitted on purpose: assigning to .style
+     re-serialises "#EAF1EE" as "rgb(234, 241, 238)", and a rule written for
+     only one of the two silently stops matching the moment JS touches the
+     element (the documented b471 trap). */
+  var inlineSeen={};
+  function inlineRules(css,surface){
+    var els=document.querySelectorAll('#appScreen [style]');
+    for(var i=0;i<els.length;i++){
+      var el=els[i], raw=el.getAttribute('style')||'';
+      if(!/background|color/i.test(raw)) continue;
+      var m, bgLit='', fgLit='';
+      var reBg=/(?:^|;)\s*background(?:-color)?\s*:\s*([^;!]+?)\s*(!important)?\s*(?:;|$)/i;
+      if((m=reBg.exec(raw))) bgLit=m[1].trim();
+      var reFg=/(?:^|;)\s*color\s*:\s*([^;!]+?)\s*(!important)?\s*(?:;|$)/i;
+      if((m=reFg.exec(raw))) fgLit=m[1].trim();
+      var c=bgLit?resolve(bgLit):null, f=fgLit?rgb(fgLit):null;
+      var flipped=false;
+      if(c&&c.a>=0.85&&lum(c)>=0.55&&rgb(bgLit)){
+        emitInline(css,'background',bgLit,bgToken(c,false)+'!important');
+        flipped=true;
+      }
+      if(f&&f.a>=0.85){
+        if(flipped||!c||c.a<0.85){
+          if(ratio(f,surface)<4.5) emitInline(css,'color',fgLit,fgToken(f)+'!important');
+        }else if(ratio(f,c)<4.5){
+          /* The pair is what fails, not either literal on its own: white is
+             fine everywhere except on dark's mint --brand. Key the correction
+             on BOTH declarations so it cannot leak onto white text elsewhere. */
+          emitPair(css,bgLit,fgLit,(lum(c)>=0.18?DARK_INK:fgToken(f))+'!important');
+        }
+      }
+    }
+  }
+  function styleForms(prop,literal){
+    var lit=String(literal).replace(/"/g,''), forms=[lit], c=rgb(lit);
+    if(c){
+      var ser=c.a>=1?('rgb('+Math.round(c.r)+', '+Math.round(c.g)+', '+Math.round(c.b)+')')
+                    :('rgba('+Math.round(c.r)+', '+Math.round(c.g)+', '+Math.round(c.b)+', '+c.a+')');
+      if(forms.indexOf(ser)<0) forms.push(ser);
+    }
+    var atts=[];
+    forms.forEach(function(f){
+      atts.push('[style^="'+prop+':'+f+'" i]','[style^="'+prop+': '+f+'" i]',
+                '[style*=";'+prop+':'+f+'" i]','[style*="; '+prop+': '+f+'" i]',
+                '[style*=";'+prop+': '+f+'" i]');
+    });
+    return atts;
+  }
+  function emitPair(css,bgLit,fgLit,value){
+    var key='pair|'+bgLit+'|'+fgLit;
+    if(inlineSeen[key]) return; inlineSeen[key]=1;
+    var bgs=styleForms('background',bgLit), fgs=styleForms('color',fgLit), sels=[];
+    for(var a=0;a<bgs.length;a++) for(var b=0;b<fgs.length;b++)
+      sels.push('html body.theme-dark :not(canvas)'+bgs[a]+fgs[b]);
+    css.push(sels.join(',')+'{color:'+value+'}');
+  }
+  function emitInline(css,prop,literal,value){
+    var key=prop+'|'+literal;
+    if(inlineSeen[key]) return; inlineSeen[key]=1;
+    var sels=styleForms(prop,literal).map(function(att){
+      return 'html body.theme-dark :not(canvas)'+att;
+    });
+    css.push(sels.join(',')+'{'+prop+':'+value+'}');
+  }
+
+  function scan(){
+    pending=false;
+    var api=window.__mlsThemeParity;
+    if(!document.body||!document.body.classList.contains('theme-dark')) return 0;
+    if(!sheet){
+      sheet=document.createElement('style'); sheet.id=SHEET_ID;
+      /* A form control with no author colour inherits the USER-AGENT default —
+         black on a white button face. That was invisible while every surface
+         was white and is invisible again now that they are not. :where() has
+         zero specificity, so this beats the UA default and loses to every
+         author rule, including .btn-primary's white-on-brand. */
+      sheet.appendChild(document.createTextNode(
+        ':where(html body.theme-dark) button,:where(html body.theme-dark) input,'+
+        ':where(html body.theme-dark) select,:where(html body.theme-dark) textarea'+
+        '{color:var(--ink);background-color:var(--field-bg)}\n'));
+      (document.head||document.documentElement).appendChild(sheet);
+      seen=new WeakSet();
+    }
+    var sheets=document.styleSheets,css=[],n=0,i,s,list;
+    for(i=0;i<sheets.length;i++){
+      s=sheets[i]; if(!s||s.ownerNode===sheet) continue;
+      try{ list=s.cssRules; }catch(e){ continue; }
+      if(list) collectVars(list);
+    }
+    var surface=resolve('var(--surface)')||{r:28,g:35,b:30,a:1};
+    for(i=0;i<sheets.length;i++){
+      s=sheets[i]; if(!s||s.ownerNode===sheet||seen.has(s)) continue;
+      try{ list=s.cssRules; }catch(e){ seen.add(s); continue; }
+      seen.add(s); if(!list) continue;
+      n++; walk(list,css,false,surface);
+    }
+    inlineRules(css,surface);
+    if(css.length) sheet.appendChild(document.createTextNode(css.join('\n')+'\n'));
+    /* Overrides carry the source rule's specificity, so ties are broken by
+       document order: the parity sheet has to stay last. Only when a sheet was
+       actually consumed, or this re-append would retrigger the head observer
+       for ever. */
+    if(n&&sheet.parentNode) sheet.parentNode.appendChild(sheet);
+    if(api){ api.sheetsSeen+=n; api.rules+=css.length; api.passes++; }
+    return css.length;
+  }
+  function schedule(){ if(pending) return; pending=true;
+    (window.requestAnimationFrame||setTimeout)(function(){ try{ scan(); }catch(e){} },0); }
+
+  function arm(){
+    if(armed) return; armed=true;
+    [document.head,document.body].forEach(function(root){
+      if(!root) return;
+      try{
+        /* childList only, NOT subtree: a <style> is appended directly to head
+           or body, so this fires once per injected sheet and never on the
+           document-wide mutation storm every other module makes at boot. */
+        var o=new MutationObserver(function(recs){
+          for(var i=0;i<recs.length;i++){
+            var a=recs[i].addedNodes;
+            for(var j=0;j<a.length;j++){
+              var t=a[j].tagName;
+              if(t==='STYLE'||t==='LINK'){ schedule(); return; }
+            }
+          }
+        });
+        o.observe(root,{childList:true});
+        obs.push(o);
+      }catch(e){}
+    });
+    /* Bounded catch-up for sheets that land between arming and the last lazy
+       module: five timeouts, never an interval. */
+    [0,300,1200,4000,10000].forEach(function(ms){ setTimeout(schedule,ms); });
+  }
+
+  window.__mlsThemeParity={
+    version:'tp-1.0.0', sheetsSeen:0, rules:0, passes:0,
+    refresh:function(){ return scan(); },
+    activate:function(){ arm(); return scan(); },
+    revert:function(){
+      try{ obs.forEach(function(o){ o.disconnect(); }); }catch(e){}
+      obs=[]; armed=false;
+      try{ if(sheet&&sheet.parentNode) sheet.parentNode.removeChild(sheet); }catch(e){}
+      sheet=null; seen=null; inlineSeen={}; varMap={};
+    }
+  };
+
+  /* Nothing runs in light mode. The class flip is the only trigger, and one
+     attribute observer on <body> costs one callback per body-class write. */
+  function boot(){
+    if(!document.body){ setTimeout(boot,0); return; }
+    try{
+      var bo=new MutationObserver(function(){
+        if(document.body.classList.contains('theme-dark')){ arm(); schedule(); }
+      });
+      bo.observe(document.body,{attributes:true,attributeFilter:['class']});
+      obs.push(bo);
+    }catch(e){}
+    if(document.body.classList.contains('theme-dark')){ arm(); schedule(); }
+  }
+  boot();
+})();
+</script>
 <!-- Pinned same-origin PDF.js module; used only to extract text from uploaded PDFs in-browser. -->
 <style id="mls-redesign">
 #visitView .mls-more-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:2px 0 12px;padding:11px 14px;cursor:pointer;background:var(--soft);border:1.5px dashed var(--line);color:var(--brand-dk);font-weight:700;font-size:14px;border-radius:11px}
