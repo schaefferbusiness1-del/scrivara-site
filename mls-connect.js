@@ -5500,7 +5500,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function ensureHead(v) {
     var sxTitle = v.querySelector(".sx-title");
-    if (sxTitle) { consolidateSxSubtitle(sxTitle); return; }
+    if (sxTitle) {
+      consolidateSxSubtitle(sxTitle);
+      /* v1.0.2 -- the LOSING HALF OF THE SAME RACE the v1.0.1 note above
+         describes. That fix stopped this module appending a second header
+         WHEN sx's title already existed. It does nothing when the order is
+         reversed: this module runs first, finds no .sx-title, and inserts its
+         own .stp-head; sx renders its title a moment later; and from then on
+         the branch above returns early forever, so both survive.
+         Measured on a running page at 1280x800: AI Studio rendered "AI Studio
+         / Ask Copilot, build a custom tool, or run a study - everything for
+         exploring your practice, in one place." TWICE, stacked, before any
+         content. Header budget is three words; this was thirty-eight, said
+         twice.
+         The stp-head is this module's own node (data-mls-stdpolish="1"), so
+         withdrawing it when sx's real title exists is safe and idempotent --
+         and it is the right way round: sx owns the view's title. */
+      var mine = v.querySelector('.stp-head[data-mls-stdpolish="1"]');
+      if (mine && mine.parentElement) mine.parentElement.removeChild(mine);
+      return;
+    }
     if (v.querySelector(".stp-head")) return; // unscoped on purpose -- matches at any depth
     var h = mk("div", "stp-head");
     h.setAttribute("data-mls-stdpolish", "1");

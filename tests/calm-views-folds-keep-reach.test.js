@@ -75,10 +75,18 @@ assert(!/\.style\.display\s*=\s*'none'/.test(src),
 
 /* ---- 3. the runtime invariant is present ----------------------------------- */
 const mountMore = src.slice(src.indexOf('function mountMore('), src.indexOf('function isOpen('));
-assert(/if \(!visible\(b\) && !isOpen\(v\)\)/.test(mountMore),
+assert(/var shown = visible\(b\)/.test(mountMore) && /if \(!shown && !isOpen\(v\)\)/.test(mountMore),
   'the "a fold whose disclosure is not visible unfolds itself" guard is gone. Existence checks pass on a rect-0x0 button; only a rect read catches an anchor that a view rebuild has replaced.');
 assert(/classList\.add\('mls-cv-open-' \+ v\.key\)/.test(mountMore),
   'the invisible-disclosure guard no longer actually unfolds the view');
+/* and it must be able to UN-fire. A one-way safety valve is a defect wearing a
+   safety valve's clothes: a disclosure that is briefly unrendered (a narrow
+   viewport, a mid-render frame) latched AI Studio permanently open at 33
+   controls where the fold measures 17. */
+assert(/else if \(shown && autoOpened\[v\.key\]\)/.test(mountMore) && /classList\.remove\('mls-cv-open-' \+ v\.key\)/.test(mountMore),
+  'the invisible-disclosure guard is one-way again — once it opens a view nothing re-folds it');
+assert(/autoOpened\[v\.key\] = false;\s*\/\* an explicit press is the doctor's/.test(src),
+  'the auto-open withdrawal no longer distinguishes its own open from a press by the doctor, so it will re-fold a view the doctor deliberately opened');
 
 /* ---- 4. the escape hatch survives ------------------------------------------ */
 assert(/ui=classic/.test(src), 'the ?ui=classic escape hatch is gone');

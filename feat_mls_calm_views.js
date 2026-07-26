@@ -351,21 +351,39 @@
        hid a control and left no way to it. Every check that asserts "the
        disclosure exists" passes on that. Assert that it RENDERS.
        Cost is one rect read per reconcile of a mounted view. */
-    if (!visible(b) && !isOpen(v)) {
+    var shown = visible(b);
+    if (!shown && !isOpen(v)) {
+      autoOpened[v.key] = true;
       safe(function () { D.body.classList.add('mls-cv-open-' + v.key); });
       safe(function () {
         if (W.console && W.console.warn) {
           W.console.warn('[MLS calm views] ' + v.key + ': the More disclosure is not visible, so nothing is folded on this screen. Its anchor (' + v.more.anchor + ') no longer resolves to a rendered node.');
         }
       });
+    } else if (shown && autoOpened[v.key]) {
+      /* AND IT MUST BE REVERSIBLE, which the first version was not.
+         Measured: a census that resized to 390x844 and back left AI Studio
+         permanently unfolded — 33 controls where the fold had measured 17 —
+         because the disclosure was briefly unrendered at the narrow width and
+         the one-way guard latched open forever. A safety valve that cannot
+         re-close is a defect wearing a safety valve's clothes. Only an
+         AUTO-open is withdrawn; a doctor who pressed the button keeps it. */
+      autoOpened[v.key] = false;
+      safe(function () { D.body.classList.remove('mls-cv-open-' + v.key); });
     }
   }
+
+  /* Which views this module opened ITSELF (because their disclosure was not
+     rendered), as opposed to opened by the doctor. Only the former is
+     withdrawn automatically. */
+  var autoOpened = Object.create(null);
 
   function isOpen(v) {
     return safe(function () { return D.body.classList.contains('mls-cv-open-' + v.key); }, false);
   }
   function toggleOpen(v) {
     var open = !isOpen(v);
+    autoOpened[v.key] = false;   /* an explicit press is the doctor's, not ours */
     safe(function () { D.body.classList.toggle('mls-cv-open-' + v.key, open); });
     var b = byId('mlsCvMore_' + v.key);
     if (b) {
