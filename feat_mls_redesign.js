@@ -427,14 +427,23 @@
      buttons"): History leaves the rail. Its list stays one tap away — Today's
      "View completed notes", every patient chart, the command palette, and
      showView('history') all still open it. */
+  /* Studio merge (owner 2026-07-26: "add the analysis tab to the ai studio tab
+     smartly"): nav_analysis LEAVES the lead routes. Analysis is no longer a
+     destination — it is AI Studio's "Practice" section — so a rail tab labelled
+     Practice sitting beside a rail tab labelled Tools, both landing on the same
+     screen, is two routes to one place. That is the duplication the whole
+     rebuild is removing.
+     It is FOLDED, not deleted: showView('analysis') still works and lands on
+     the merged surface with Practice open, and the Calm Shell's Tools menu
+     offers it as "Practice trends (AI Studio)". nav_studio keeps the label
+     "Tools" it already had; renaming it is a separate decision. */
   var PRIMARY_NAV=[
     {id:'nav_visit',label:'Today'},
     {id:'nav_patients',label:'Patients'},
     {id:'nav_calendar',label:'Calendar'},
-    {id:'nav_analysis',label:'Practice'},
     {id:'nav_studio',label:'Tools'}
   ];
-  var FOLDED_NAV=['nav_history'];
+  var FOLDED_NAV=['nav_history','nav_analysis'];
   var SECONDARY_NAV=['nav_staffpull','mlsPtab_reviews','mlsPtab_send','nav_help'];
   function navDirectText(tab){
     try{ for(var i=0;i<tab.childNodes.length;i++) if(tab.childNodes[i].nodeType===3) return tab.childNodes[i]; }catch(e){}

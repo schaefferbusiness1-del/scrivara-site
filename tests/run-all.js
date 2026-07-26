@@ -86,6 +86,7 @@ const tests = [
   'control-accessible-name-runtime.test.js',
   'shell-hidden-controls-keep-reach.test.js',
   'calm-views-folds-keep-reach.test.js',
+  'studio-merge-keeps-every-route.test.js',
   'team-tab-reach-under-tools.test.js',
   'shell-label-authority-contract.test.js',
   'scribeflow-inline-syntax.test.js',
