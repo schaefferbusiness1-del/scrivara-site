@@ -522,7 +522,14 @@
       var type = d.type || d.kind || '';
       if (type !== 'mlsAppAllVisitsResult' && type !== 'mlsAppReadAllVisitsResult') return;
       var visits = d.visits || (d.result && d.result.visits) || (d.payload && d.payload.visits) || [];
-      var ok = (d.ok != null) ? !!d.ok : (d.result ? !!d.result.ok : true);
+      /* wrt-1.0.0: the trailing `: true` was a FAIL-OPEN default on a receipt
+         field — a message carrying neither `ok` nor `result.ok` was counted as a
+         successful pull purely because nothing said otherwise. Every real
+         emitter (content.js `mlsAppAllVisitsResult`, every _driveRequest lane)
+         always sets `ok`, so this branch is only reached by a legacy or
+         malformed message, and the sole evidence such a message carries is
+         whether it actually delivered visits. Silence is no longer success. */
+      var ok = (d.ok != null) ? !!d.ok : (d.result ? !!d.result.ok : (arr(visits).length > 0));
       var ref = fn('activePatient') ? safe(fn('activePatient')) : null;
       _lastPull = { visits: arr(visits), ok: ok, ts: Date.now(), ref: ref, handled: false };
       if (isManagedHistoryBatchResult(d)) {

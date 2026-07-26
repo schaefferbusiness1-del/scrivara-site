@@ -3465,10 +3465,14 @@ async function mlsArmKeepAlive(tabId, force, verifiedHealth) {
     var health = verifiedHealth && typeof verifiedHealth === 'object' ? verifiedHealth : await mlsAthPing(tabId, 1500);
     if (!health || !health.alive || health.signedOut) return { armed: false, signedOut: !!(health && health.signedOut) };
     var last = self.__mlsKaArmAt[tabId] || 0;
-    if (!force && Date.now() - last < 8000) return { armed: true, deduped: true }; /* dedupe the load+pageshow hello burst; arming is idempotent ('already'), so stay aggressive - a 60s throttle left KA dead after back-to-back navs (live: CSRF-Continue right after a reload) */
+    if (!force && Date.now() - last < 8000) return { armed: false, disabled: 'athena-session-policy', deduped: true }; /* dedupe the load+pageshow hello burst; arming is idempotent ('already'), so stay aggressive - a 60s throttle left KA dead after back-to-back navs (live: CSRF-Continue right after a reload) */
     self.__mlsKaArmAt[tabId] = Date.now();
     await mlsExecTO({ target: { tabId: tabId }, world: 'MAIN', func: mlsKeepAlivePageFn }, 5000);
-    return { armed: true };
+    /* wrt-1.0.0: mlsKeepAlivePageFn installs an INERT marker
+       ({armed:false, disabled:'athena-session-policy'}). Reporting armed:true
+       over it told four callers a session was being held open when nothing in
+       this extension prevents an inactivity logout. Report what was installed. */
+    return { armed: false, disabled: 'athena-session-policy', marked: true };
   } catch (e) { return { armed: false }; }
 }
 /* ===================== end v1.59 helpers ===================== */
@@ -4330,9 +4334,13 @@ self.__mlsPickAthenaTab = mlsPickAthenaTab; /* console/diag handle */
 /* ===================== v1.99 ATHENA TAB PIN (tab-picker backend) ==============
  * The user hands MLS an already-open athena tab from the in-app picker chip.
  * Pinned tab: wins every pick only after a fresh all-frame session check;
- * keep-alive is armed only after that proof and re-checked by a
- * 5-minute alarm (idempotent, gentle - the same 55s Worker keep-alive, never
- * setInterval, no heavy scans); never navigated except during a pull the user
+ * the pin is re-checked by a
+ * 5-minute alarm (idempotent, gentle, never
+ * setInterval, no heavy scans). AUTOMATIC KEEP-ALIVE IS DISABLED BY POLICY:
+ * mlsKeepAlivePageFn installs an inert marker, so nothing here holds an
+ * athenaOne session open and an inactivity logout mid-pull is possible - which
+ * is exactly what the sfp-1.0.0 staleness receipt exists to disclose.
+ * The tab is never navigated except during a pull the user
  * started; if its session drops (login page) athena-side work pauses and the
  * picker shows 'signed out' - NEVER re-auth. Exact child-frame timeout/login
  * evidence clears the pin. Survives SW restarts (storage.session). */
@@ -11032,12 +11040,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           /* v1.91 (§2.9): athena reliably freezes after ~5-9 rapid chart opens+reads,
              and the findpatient-first flow never goes Home, so the go-home chunker
              (>=6) no longer runs on bulk pulls. Chunk HERE at the same natural
-             boundary: reload-recover the tab BEFORE the next open once enough reads
+             boundary: run the SESSION-SAFE recovery before the next open once enough reads
+             accumulated. It does NOT reload (mlsRecoverAthenaTab re-probes the
+             session and leaves the tab and URL untouched);
              accumulated. Live 07-10 repro this prevents: alternating open-failures
              (Zakorchemny / Boyle / Pownall) with the tab CDP-frozen afterward. */
           if (__mlsReadsSinceReload >= 5 && !msg.noReload) {
             if (openExpired()) { failOpenDeadline('freeze-guard recovery'); return; }
-            if (senderTab) progress(senderTab, 'Giving athenaOne a breather (freeze-guard reload)…', openGuard.token);
+            if (senderTab) progress(senderTab, 'Pausing on athenaOne to let it catch up - your tab is left untouched…', openGuard.token);
             await mlsRecoverAthenaTab(tab.id);
             /* Reload recovery returns Athena to its default/current day. An
                exact appointment-id bootstrap for a non-today or month route
@@ -11154,7 +11164,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  clicks are proven to navigate (the Adam chart open). */
               /* v1.91 (§2.9): a frozen/hung athena renderer surfaces here as an
                  injection timeout or a load/render failure. Recover the tab
-                 (reload + Continue-clear) and retry this SAME patient once, so a
+                 (session-safe: re-probe only, NO reload) and retry this SAME patient once, so a
                  freeze costs a pause instead of an open-failure. Honest refusals
                  (ambiguous / no-results / no-name-match) never trigger a retry. */
               var fx = null;
@@ -11166,7 +11176,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 var rzn = (findRes && findRes.reason) || '';
                 var retryable = !findRes || !!(findRes && findRes.error) || /^(findpatient-no-load|results-timeout|fill-not-sticking|no-content-frame|rows-not-rendered|blank-error|no-find-button)$/.test(rzn); /* v1.98: no-find-button = findpatient rendered inside an odd view layout (live: dept-calendar-parked tab) - a reload recovery restores the normal frameset */
                 if (fpTry === 0 && retryable && !msg.noReload) {
-                  if (senderTab) progress(senderTab, 'athenaOne stopped responding — reloading it and retrying “' + (msg.name || '') + '”…', openGuard.token);
+                  if (senderTab) progress(senderTab, 'athenaOne stopped responding — waiting for it to recover and retrying “' + (msg.name || '') + '”…', openGuard.token);
                   if (openExpired()) { failOpenDeadline('find-patient recovery'); return; }
                   var retryRecovery = await mlsRecoverAthenaTab(tab.id);
                   if (!retryRecovery || retryRecovery.reason === 'open-deadline-exceeded' || responseSent) return;
@@ -11438,6 +11448,40 @@ async function mlsAthenaSignSave(mode) {
     return String(t || '');
   }
 
+  /* ---- wrt-1.0.0 RECEIPT TALLY ---------------------------------------
+     The canonical false-success defect in this codebase is a save path that
+     reports the SHAPE of success while every destination refused. The paster
+     already knew the truth per section; nothing counted it, so a bag of
+     sections each {written:false, confirmed:false} and no `.error` reached
+     callers as the success shape. ONE tally, computed once, is the only
+     thing any surface may render a verdict from. */
+  function mlsWriteTally(sections) {
+    var list = Array.isArray(sections) ? sections : [];
+    var confirmed = [], wroteUnconfirmed = [], failed = [];
+    list.forEach(function (x) {
+      var label = String((x && x.section) || 'the note field');
+      if (x && x.confirmed) confirmed.push(label);
+      else if (x && x.written) wroteUnconfirmed.push(label);
+      else failed.push(label);
+    });
+    return {
+      sectionCount: list.length,
+      confirmedCount: confirmed.length,
+      writtenCount: confirmed.length + wroteUnconfirmed.length,
+      notFoundCount: list.filter(function (x) { return !!(x && x.notfound); }).length,
+      confirmedSections: confirmed,
+      unconfirmedSections: wroteUnconfirmed,
+      failedSections: failed
+    };
+  }
+  function mlsPasteVerdict(sections) {
+    var t = mlsWriteTally(sections);
+    return {
+      sections: sections, ok: t.confirmedCount > 0,
+      sectionCount: t.sectionCount, confirmedCount: t.confirmedCount,
+      writtenCount: t.writtenCount, notFoundCount: t.notFoundCount
+    };
+  }
   // verified, frame-scored paste of the note (PATIENT GATE already enforced by
   // doWriteBack). Reuses the proven mlsFieldScanner + mlsNotePaster path. Never signs.
   function overlayPasteNote(arg) {
@@ -11452,7 +11496,7 @@ async function mlsAthenaSignSave(mode) {
       var sections = [];
       var i = 0;
       function step() {
-        if (i >= segs.length) return { sections: sections };
+        if (i >= segs.length) return mlsPasteVerdict(sections);
         var seg = segs[i];
         var last = { ok: false };
         var attempt = 0;
@@ -11470,11 +11514,11 @@ async function mlsAthenaSignSave(mode) {
         }
         function loop() {
           if (attempt >= 2 || (last.ok && last.confirmed)) {
-            sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: !!last.confirmed, written: !!last.ok });
+            sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: !!last.confirmed, written: !!last.ok, notfound: !!last.notfound });
             i++; return step();
           }
           attempt++;
-          return tryOnce().then(function () { if (last.ok && last.confirmed) { sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: true, written: true }); i++; return step(); } return new Promise(function (r) { setTimeout(r, 380); }).then(loop); });
+          return tryOnce().then(function () { if (last.ok && last.confirmed) { sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: true, written: true, notfound: false }); i++; return step(); } return new Promise(function (r) { setTimeout(r, 380); }).then(loop); });
         }
         return loop();
       }
@@ -11932,7 +11976,9 @@ async function mlsAthenaSignSave(mode) {
         var matchTarget = locked || null;
         var confident = matchTarget && chartId && identitiesMatch(matchTarget, chartId);
         if (!confident) {
-          return { blocked: true, mlsIdentity: matchTarget, chartIdentity: chartId };
+          return { ok: false, blocked: true, error: 'patient-gate-failed', signed: false, wrote: 0,
+                   message: 'Patient gate failed (name + DOB) - refusing to write to this chart. Nothing was written.',
+                   mlsIdentity: matchTarget, chartIdentity: chartId };
         }
         // ---- write the NOTE (segmented router handled inside pasteNote) ----
         progress(tabId, '✓ Confirmed — writing the note…', 'ok');
@@ -11940,13 +11986,33 @@ async function mlsAthenaSignSave(mode) {
           resp = resp || {};
           var sections = (resp.sections) ? resp.sections : [{
             section: resp.chosenSection || resp.into || 'note field',
-            confirmed: !!resp.confirmed
+            confirmed: !!resp.confirmed,
+            written: !!(resp.written || resp.ok),
+            notfound: !!resp.notfound
           }];
-          if (resp.error) return { error: resp.error, message: resp.error };
+          var tally = mlsWriteTally(sections);
+          var noteReceipt = {
+            sections: sections, sectionCount: tally.sectionCount,
+            confirmedCount: tally.confirmedCount, writtenCount: tally.writtenCount,
+            notFoundCount: tally.notFoundCount, failedSections: tally.failedSections,
+            unconfirmedSections: tally.unconfirmedSections, confirmedSections: tally.confirmedSections
+          };
+          if (resp.error) return { ok: false, error: resp.error, message: resp.error, wrote: 0, note: noteReceipt };
+          /* wrt-1.0.0 THE RECEIPT GATE. Every section refused means NOTHING
+             reached the chart, and this is the exact line where that used to be
+             laundered into the success shape. Callers now get an explicit
+             failure they cannot mistake for a write, naming what refused. */
+          if (tally.confirmedCount === 0) {
+            var where = tally.failedSections.concat(tally.unconfirmedSections).slice(0, 4).join(', ') || 'the note field';
+            progress(tabId, 'Nothing reached the chart - athenaOne confirmed no destination.', 'fail');
+            return { ok: false, error: 'nothing-confirmed', notConfirmed: true, wrote: 0, note: noteReceipt,
+                     message: 'Nothing was written. MLS could not confirm a single destination in athenaOne (' + where + '). Open the encounter in athenaOne with the note field visible, then write again.' };
+          }
           // ---- write CODES (flag-gated) ----
           return writeCodes(tabId, msg.codes || (msg.note && { icd10: msg.note.icd10, cpt: msg.note.cpt, em_level: msg.note.em_level }))
             .then(function (codeRes) {
-              return { note: { sections: sections }, codes: codeRes };
+              return { ok: true, partial: tally.confirmedCount < tally.sectionCount,
+                       wrote: tally.confirmedCount, note: noteReceipt, codes: codeRes };
             });
         });
       });
@@ -12712,7 +12778,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
         var fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [want, String(msg.dob || ''), String(msg.athenaId || '')], func: mlsReadVisitsPaneDriverFn }, 90000);
         if (fx.timeout) {
           /* v1.91 (§2.9): a 90s hang means the renderer is frozen — recover it NOW
-             (reload + Continue-clear) so the caller's retry finds a live tab,
+             (session-safe: re-probe only, NO reload) so the caller's retry finds a live tab,
              instead of leaving every subsequent open/read to fail on the frozen one. */
           try { await mlsRecoverAthenaTab(tab.id); } catch (eRc) {}
           sendResponse({ ok: false, reason: 'visits-timeout', version: V, error: 'athenaOne did not finish the visits read within 90s. MLS Assist left the Athena tab untouched; check it, then retry.' });
