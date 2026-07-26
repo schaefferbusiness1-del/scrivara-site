@@ -51,6 +51,19 @@ cycles. **A claim that work exists is not the work.** Re-derive from the tip.
 
 ### 2.1 🟡 The timer fleet — NOW MEASURED. It is a 2.4% idle tax that does nothing.
 
+**⚠️ CORRECTED 2026-07-26 (Worker C, b673): the per-owner table below is an INSTRUMENT
+ARTIFACT and the prescribed fix is disproven. Do not dispatch work from this section.**
+Every `setInterval` in the app funnels through mls-connect.js's own wrapper shim
+(~11855/16420/33530), so stack attribution charges the whole product to one file:
+the "four mls-connect.js intervals" are 260 real sites across many files, each regs=1.
+The observer/idempotence conversion was BUILT, gated green, measured (203.7 → 222.2ms,
+zero improvement), and REVERTED — a body-subtree observer here is dirty every 685ms
+median, so a dirty-flag guard on a 1200–2000ms poller can never skip a fire. What DID
+move the needle: killing the two byte-identical innerHTML rewriters
+(feat_mls_voice_commands paintFab, feat_mls_provider_passthrough paintChip) — idle
+element-inserting mutation batches 29 → 2 per 20s. Full method in
+WORKER_C_QA_REPORT_2026-07-26.md. The 2.42%/484ms headline below remains honest.
+
 **Step one is done. Do not inherit the old framing — the COUNT badly overstated the COST.**
 
 Measured at b667, 20s settled idle, foregrounded, liveness witness alive (clock 29 ticks):

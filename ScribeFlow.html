@@ -23434,7 +23434,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b674: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b675: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -23569,7 +23569,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b674 — THE LOADING SCREEN MUST ALWAYS END.
+/* b675 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -28274,7 +28274,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b674';
+  window.__MLS_AV='b675';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
