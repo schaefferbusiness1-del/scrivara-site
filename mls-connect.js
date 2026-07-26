@@ -6417,7 +6417,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b676: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b677: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6639,7 +6639,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b676 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b677 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -33477,7 +33477,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b676';
+  window.__MLS_AV = window.__MLS_AV || 'b677';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33787,7 +33787,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b676';
+  var MLS_APP_BUILD='2026-07-25-b677';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38590,9 +38590,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
       if (!VER && !loaded) return false;
-      // b88: show the INSTALLED extension version (what the doctor actually loaded) when it
-      // is known via the handshake; fall back to latest-available from extension-version.json.
-      var want = loaded ? ('Installed: v' + String(loaded).replace(/^v/i, '')) : ('Latest: v' + VER);
+      /* b677 (owner: "fix text and badge"): the badge now COMPARES. It used to
+         print "Installed: v3.0.18" in the same green chip it uses for current —
+         accurate, and still a lie by omission: the doctor could not tell they
+         were three releases behind. States, in honesty order:
+           installed == channel  -> green  "Installed: vX — up to date"
+           installed <  channel  -> amber  "Installed: vX — update available (vY)"
+           installed, no feed    ->        "Installed: vX"
+           feed only (no pong)   ->        "Latest: vY — not detected in this tab" */
+      var lv = loaded ? String(loaded).replace(/^v/i, '') : null;
+      var want, tone = '';
+      if (lv && VER && lv === VER) { want = 'Installed: v' + lv + ' — up to date'; tone = 'ok'; }
+      else if (lv && VER) { want = 'Installed: v' + lv + ' — update available (v' + VER + ')'; tone = 'warn'; }
+      else if (lv) { want = 'Installed: v' + lv; }
+      else { want = 'Latest: v' + VER + ' — not detected in this tab'; }
       var spans = document.getElementsByTagName('span'), did = false;
       for (var i = 0; i < spans.length; i++) {
         var s = spans[i], t = (s.textContent || '').trim();
@@ -38605,6 +38616,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
         if (!ok) continue;
         if (s.textContent !== want) s.textContent = want;
+        if (tone === 'warn' && s.style.background !== '#b45309') s.style.background = '#b45309';
+        else if (tone === 'ok' && s.style.background !== '#127a55') s.style.background = '#127a55';
         did = true;
       }
       return did;

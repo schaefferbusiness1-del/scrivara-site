@@ -3859,7 +3859,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <b style="font-size:14px">🩺 MLS Assist browser extension <span data-mls-extension-version="1" style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest version</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
-          <b>Already installed it before?</b> Update to the latest version: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still can't read your EMR, remove it and <b>Load unpacked</b> the freshly-downloaded <code>mls-assist-extension</code> folder.
+          <b>Already installed?</b> Updates are automatic — MLS refreshes MLS Assist on this computer when a new version ships, and the badge above tells you the moment you're up to date. If a pull ever looks stuck, open <code>chrome://extensions</code> and press <b>↻</b> on MLS Assist.
         </div>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.21.zip" download="MLS_Assist_v3.0.21.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:9px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.21 ZIP)</a>
@@ -23434,7 +23434,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b676: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b677: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -23569,7 +23569,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b676 — THE LOADING SCREEN MUST ALWAYS END.
+/* b677 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -28274,7 +28274,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b676';
+  window.__MLS_AV='b677';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

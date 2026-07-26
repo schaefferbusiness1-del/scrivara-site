@@ -1,5 +1,5 @@
 {
   "version": "3.0.21",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "Published stable channel. Newer candidate bytes remain isolated and are not offered until their exact package and SHA-256 digest pass the complete release gate."
+  "notes": "v3.0.21 — schedule pulls now tell you when athenaOne's grid may be out of date, and a signed-out athenaOne is named plainly instead of reported as a timeout."
 }
