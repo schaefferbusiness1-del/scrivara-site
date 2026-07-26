@@ -6412,6 +6412,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
     syncTopLane(document.querySelector('.ez3fl-record'));
   }
+  /* Fixed furniture that can come to rest on top of the review control. Named
+     rather than "every position:fixed element that overlaps", because a generic
+     scan also catches transient things — toasts above all — and would size the
+     scroll clearance from something that is about to disappear. If none of these
+     exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
+  var REVIEW_FIXED_FURNITURE = ['mlsVoiceCluster', 'mlsCopVoiceBtn'];
   function openReviewStep() {
     var note = $('noteBox');
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
@@ -6469,8 +6475,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              was protecting. */
           var r = send.getBoundingClientRect();
           var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+
+          /* b669: 'nearest' is by definition the MINIMUM scroll, so a control
+             below the fold lands with its bottom FLUSH to the viewport bottom —
+             margin below it measured exactly 0px. That is the one place it must
+             not land: the merged Copilot bubble is position:fixed in that corner.
+
+             Measured at b669, 1400x900, bubble in its CLOSED resting state:
+             7 of 9 sample points across this 192px button were owned by
+             #mlsCopVoiceBtn, and a real trusted click at its centre (316,880)
+             was received by the bubble, not by this button. So b666 revealed the
+             control and told the doctor to press it, and the mouse could not.
+             (Keyboard was fine throughout — focus lands here, so Enter worked.)
+
+             Reserve the overlapping fixed furniture as scroll clearance instead
+             of scrolling to the bare minimum. scroll-margin-bottom is exactly
+             this: it changes where 'nearest' comes to rest, and nothing else.
+             Every earlier decision survives — still the minimum scroll, still
+             never 'center', and still nothing moves at all when the control is
+             already clickable. */
+          var clearance = 0;
+          try {
+            for (var bi = 0; bi < REVIEW_FIXED_FURNITURE.length; bi++) {
+              var bub = $(REVIEW_FIXED_FURNITURE[bi]); if (!bub) continue;
+              var bcs = getComputedStyle(bub);
+              if (bcs.position !== 'fixed' || bcs.display === 'none' || bcs.visibility === 'hidden' || +bcs.opacity < 0.05) continue;
+              var br = bub.getBoundingClientRect();
+              if (br.width <= 0 || br.height <= 0) continue;
+              if (br.right <= r.left || br.left >= r.right) continue;   /* no horizontal overlap: cannot cover it */
+              clearance = Math.max(clearance, vh - br.top + 8);
+            }
+            if (clearance > 0) send.style.scrollMarginBottom = Math.round(clearance) + 'px';
+          } catch (e3) {}
+
+          /* "off-screen" was the right test when nothing could sit on top of it.
+             Being covered is the same failure to the doctor — the button is on
+             screen and still unpressable — so it earns the same scroll. */
           var offscreen = r.bottom <= 0 || r.top >= vh;
-          if (offscreen && send.scrollIntoView) {
+          var covered = clearance > 0 && r.bottom > vh - clearance;
+          if ((offscreen || covered) && send.scrollIntoView) {
             try { send.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e2) { send.scrollIntoView(false); }
           }
           send.focus({ preventScroll: true });
@@ -33418,7 +33461,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b668';
+  window.__MLS_AV = window.__MLS_AV || 'b669';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33728,7 +33771,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b668';
+  var MLS_APP_BUILD='2026-07-25-b669';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

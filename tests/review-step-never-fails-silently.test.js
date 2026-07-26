@@ -213,13 +213,42 @@ assert.ok(
     '"the instruction points nowhere" is a documented defect class in this repo.'
   );
 
-  /* the 2026-07-16 decision survives: never move the page unless we must */
+  /* the 2026-07-16 decision survives: never move the page unless we must.
+   *
+   * PIN WIDENED AT b669, DELIBERATELY. It used to require the exact source text
+   * `if (offscreen && send.scrollIntoView)`. The intent it was protecting is
+   * "conditional, never unconditional" — and that intent is untouched here. What
+   * changed is that off-screen turned out not to be the only way this control can
+   * be unpressable.
+   *
+   * Measured at b668 in real Chrome, 1400x900, after pressing Review:
+   * #pushAllEmrBtn landed at top=860 bottom=900 with 0px below it, because
+   * block:'nearest' is BY DEFINITION the minimum scroll — so a control below the
+   * fold comes to rest flush with the bottom edge, which is exactly where the
+   * fixed Copilot bubble sits. 7 of 9 sample points across the button were owned
+   * by #mlsCopVoiceBtn, and a real trusted click at its centre was received by
+   * the bubble. On screen, focused, and unreachable by mouse.
+   *
+   * So `covered` earns the same scroll as `offscreen`: to a doctor they are the
+   * same failure. The pin now requires BOTH conditions and still forbids an
+   * unconditional scroll — it is strictly stronger than what it replaced.
+   * See tests/review-control-clears-fixed-furniture.test.js. */
   assert.ok(
-    /var offscreen = r\.bottom <= 0 \|\| r\.top >= vh;/.test(fn[0]) &&
-    /if \(offscreen && send\.scrollIntoView\)/.test(fn[0]),
-    'scrolling must be CONDITIONAL on the control being off-screen. An ' +
+    /var offscreen = r\.bottom <= 0 \|\| r\.top >= vh;/.test(fn[0]),
+    'the off-screen test must survive — it is the original reason to scroll at all.'
+  );
+  assert.ok(
+    /var covered = /.test(fn[0]),
+    'the COVERED test must survive. Without it a control that is on screen but ' +
+    'underneath the floating bubble never earns a scroll, which is the measured ' +
+    'b668 defect: focused, visible, and unclickable by mouse.'
+  );
+  assert.ok(
+    /if \(\(offscreen \|\| covered\) && send\.scrollIntoView\)/.test(fn[0]),
+    'scrolling must be CONDITIONAL on the control being off-screen OR covered. An ' +
     'unconditional scroll re-creates the viewport jump the owner rejected on ' +
-    '2026-07-16.'
+    '2026-07-16; dropping either condition re-creates a control the doctor is told ' +
+    'to press and cannot.'
   );
   assert.ok(
     /block: 'nearest'/.test(fn[0]) && !/block: 'center'/.test(fn[0]),
