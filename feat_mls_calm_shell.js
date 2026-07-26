@@ -600,6 +600,21 @@
        another locale. The connectors are decoration — the dots already carry
        done/now — and a connector spanning a line break is worse than none. */
     '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:12px}',
+    /* Connectors are decoration on a phone — the dots already carry done/now,
+       and a connector spanning a line break is worse than none.
+       THIS LINE CLOSES @media (max-width:760px). It used to sit at the very
+       END of the array, which meant everything below — the whole motion
+       system, mlsMoRise, the .mls-mo standing prohibition and the
+       reduced-motion kill — was nested inside the phone query and could never
+       apply on a desktop, where every doctor actually works.
+       Measured on the running page through document.styleSheets, before:
+         143 shell rules, 121 page-level, 14 trapped at max-width:760px
+         5 of the trapped 14 were motion rules
+         #mlsRightNow at 1440px -> animation-name: none
+       After: animation-name mlsMoRise, 0.3s. Grep cannot see this — the
+       selectors are built by string concatenation and only the CSSOM
+       resolves where a rule actually lives. */
+    '#mlsStages .bar{display:none}}',
 
     /* ---------------- motion system (mls-motion-system) ----------------
        One vocabulary, four durations, three easings. Adopted here and by the
@@ -665,8 +680,7 @@
     '@media (prefers-reduced-motion: reduce){'+
       'body.mls-calm [class*="mls-mo"],#mlsRightNow:not(.empty),'+
       '#mlsDock button,#mlsRightNow button,#mlsStages button'+
-      '{animation:none!important;transition:none!important;transform:none!important}}',
-    '#mlsStages .bar{display:none}}'
+      '{animation:none!important;transition:none!important;transform:none!important}}'
   ].join('');
 
   function injectCss() {
