@@ -191,6 +191,58 @@ assert.ok(
     'waiting to happen — teach both rules about it, or do not add it.');
 }
 
+/* ---- 3c. retiring the door must not weaken a single clinical gate ------- */
+
+/* Owner, 2026-07-26: "get rid of and completely rework the advanced visit
+ * workspace from scratch and make sure the op notes button is easily
+ * accessible."
+ *
+ * Everything the door used to guard is a safety property that has its own
+ * history, so each is pinned here against the NEW mechanism. Deleting a door is
+ * the easiest way to accidentally open a room. */
+assert(!/#captureCard\{display:block/.test(src) && !new RegExp('NOTE[^\\n]*#captureCard').test(src),
+  'the state class reveals #captureCard. That card is the duplicate RAW record ' +
+  'and generate lane — the one surface the clinical-action gate has always kept ' +
+  'closed, in every state, door open or shut. "A note exists" is not a reason ' +
+  'to open it.');
+assert(!/#pushAllEmrBtn[^\n]*display\s*:\s*none/.test(src),
+  'the module hides the supervised Athena review control. It lives INSIDE ' +
+  '#noteCard, which is exactly why retiring the door costs the send path ' +
+  'nothing — hiding it would cost the send path everything.');
+assert(/function noteLive\(\)[\s\S]{0,220}?\$\('noteBox'\)/.test(src),
+  'the state class must be read from #noteBox — the same field openReviewStep ' +
+  'itself tests before it will offer the review. Reading anything else lets ' +
+  '"the note is on screen" and "the note can be sent" disagree, silently.');
+assert(!/setInterval/.test(src),
+  'the module polls. The note-live mirror is an observer on ONE element, ' +
+  'attributes only, coalesced into a frame — a timer here would tax the busiest ' +
+  'screen in the product for a state that changes twice a visit.');
+assert(/attributeFilter:\s*\['style', 'class'\]/.test(src),
+  'the note observer is unfiltered. Observing #noteBox broadly on the visit ' +
+  'screen is a churn defect waiting to happen; only its style/class matter, ' +
+  'because setting a textarea .value mutates no DOM at all.');
+
+/* the op-note exemption is an owner order, so it is pinned as one */
+assert(/\.ez3-row2:not\(:has\(#ez3Prep\)\):not\(:has\(#ez3Prep2\)\)/.test(src) &&
+       /\.ez3-row2 > \*:not\(#ez3Prep\):not\(#ez3Prep2\)/.test(src),
+  'the op-note chip is back inside the folded row. vf-1.0.0 folded the whole ' +
+  '.ez3-row2, which put op notes two actions away on every visit state — the ' +
+  'exact thing the owner then asked to be fixed. The row survives the fold only ' +
+  'when it carries the op-note chip, and only that chip shows inside it.');
+assert(/#visitView #ez3Prep,[\s\S]{0,120}#visitView #ez3Prep2\{display:inline-flex!important/.test(src),
+  'the op-note chip is not force-shown. "Easily accessible" is a measurement, ' +
+  'not an intention: it must render, at a real size, in the states where it ' +
+  'exists.');
+{
+  /* and the labels must still say what they do */
+  assert(/id="ez3Prep"[^>]*>&#128137; Draft op notes|id="ez3Prep"[^>]*>💉 Draft op notes/.test(connect),
+    'the visit-home op-note control lost its label. The owner asked for an ' +
+    'obviously-labelled op notes button; "Prep notes" was neither verb+object ' +
+    'nor the words he used.');
+  assert(/id="ez3Prep2"[^>]*>💉 Draft op note/.test(connect),
+    'the in-visit op-note control lost its label.');
+}
+
 /* ---- 4. it stays inside its two views ----------------------------------- */
 
 const strayScope = [];

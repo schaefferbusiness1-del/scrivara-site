@@ -30,7 +30,37 @@ assert(doctor.includes('Resume recording'), 'primary visit surface needs an expl
 assert(doctor.includes('Generate one note'), 'primary visit surface needs note generation');
 assert(doctor.includes('Every recording segment is combined'), 'primary surface must explain segment merging');
 assert(doctor.indexOf('id="ez3Transcript"') < doctor.lastIndexOf('advRowHtml()'), 'primary transcript must appear before the optional workspace control');
-assert(connect.includes('Advanced visit workspace'), 'optional workspace must use the requested label');
+
+/* THE ADVANCED VISIT WORKSPACE IS RETIRED — owner, 2026-07-26, verbatim:
+ *   "get rid of and completely rework the advanced visit workspace from
+ *    scratch and make sure the op notes button is easily accessible."
+ *
+ * This line used to read:
+ *   assert(connect.includes('Advanced visit workspace'),
+ *          'optional workspace must use the requested label')
+ * i.e. it required the label to EXIST. It is inverted rather than deleted,
+ * because the requirement genuinely reversed and the reversal is the point:
+ * the door is gone, and what it hid now arrives on state.
+ *
+ * The two builders still exist in this file and are still wired — retiring a
+ * door is a presentation change, and leaving the machinery reachable is what
+ * keeps revert() a single call. What must be true is that NO DOCTOR CAN SEE
+ * ONE, which is a property of feat_mls_visit_focus.js, so that is where this
+ * asserts. MEASURED on the running page at b681+vf-1.1.0: both doors compute
+ * 0x0 in every visit state, and #noteCard surfaces at 390x4200 the moment a
+ * real note exists, with #pushAllEmrBtn inside it 5/5 reachable by real mouse. */
+{
+  const focus = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
+  assert(/#visitView #mlsEz3 \.ez3fl-openws,[\s\S]{0,120}?#visitView #mlsEz3 \.ez3-advrow\{display:none!important\}/.test(focus),
+    'the Advanced visit workspace door is back on the surface. Both builders — ' +
+    'the flow-lane .ez3fl-openws (which feat_athena_tooltip_dedupe adopts as the ' +
+    'single owner) and its .ez3-advrow duplicate — must be class-hidden.');
+  assert(focus.includes("var NOTE = 'mls-note-live'") &&
+         focus.includes("+ NOTE + ' #visitView #noteCard{display:block!important}'"),
+    'the note no longer surfaces on state. Retiring the door without replacing ' +
+    'it with the state that opens the note would DELETE the note editor, not ' +
+    'declutter it.');
+}
 assert(!connect.includes('send-portal-invite.html'), 'primary workflow still opens the retired synthetic portal sender');
 assert(connect.includes('id="ez3Portal"') && connect.includes("var button = $('mlsPortalInviteBtn')"), 'primary patient area must delegate to the one exact-active-patient portal owner');
 

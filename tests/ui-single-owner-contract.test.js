@@ -15,7 +15,22 @@ assert(start >= 0, 'single-owner UI module is missing');
 const ui = source.slice(start);
 
 assert(ui.includes("body.mls-has-easy-advanced-trigger #mlsEz3 .ez3-advrow{display:none!important;}"), 'duplicate Advanced toggle must be hidden only when the easy owner exists');
+/* This module's Advanced-trigger machinery is intact and still equality-guarded,
+ * and both assertions below still protect that. What CHANGED at vf-1.1.0 is
+ * that the trigger it owns is no longer on screen at all — owner, 2026-07-26:
+ * "get rid of and completely rework the advanced visit workspace from scratch."
+ * The machinery stays because it is what makes the retirement revertible in one
+ * call, and because this module's real job here is to guarantee there was never
+ * MORE than one such trigger (the b581 two-identical-doors defect). Zero is a
+ * valid answer to "how many doors"; two never was. */
 assert(ui.includes("var nextLabel = open ? 'Hide advanced workspace' : 'Advanced visit workspace'") && ui.includes('if (trigger.textContent !== nextLabel) trigger.textContent = nextLabel'), 'easy Advanced trigger must expose open/close state without redundant observer writes');
+{
+  const focus = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
+  assert(focus.includes('.ez3fl-openws') && focus.includes('.ez3-advrow'),
+    'feat_mls_visit_focus.js no longer names both Advanced triggers. This module ' +
+    'keeps exactly one alive in the DOM; the retirement is what keeps it off the ' +
+    'screen. If the retirement stops naming them, the door is back.');
+}
 assert(ui.includes('initialAdvancedSettled') && ui.includes('owner.click()'), 'stale Advanced state must collapse once on entry');
 assert(ui.includes("body.mls-has-exact-portal-action #mlsEz3 .ez3-portal{display:none!important;}"), 'generic portal link must yield to the exact active-patient action');
 assert(ui.includes("document.body.classList.toggle('mls-has-exact-portal-action'"), 'portal ownership must reconcile as patients change');
