@@ -34,7 +34,9 @@ move at slightly different speeds — which is why the gate fails on it.
 
 ---
 
-## The four laws
+## The laws
+
+(Law 5 — *a declaration is not motion* — is below, with the three ways declared motion dies.)
 
 1. **transform and opacity only.** Nothing else. Boot's TBT here is already dominated by forced
    layout, and an animated `width`/`height`/`top` is a reflow every frame.
@@ -82,7 +84,9 @@ pages — `booking.html`, `intake.html`, `patient-portal.html`, `appointment.htm
 | toast, arriving | 14px rise | `--mls-dur-3` `--mls-ease-spring` |
 | toast, leaving | quicker fade down | `--mls-dur-2` `--mls-ease-inout`, opacity `--mls-dur-1` |
 | right-now bar | rise on summon | `--mls-dur-3` `--mls-ease-spring` |
-| stage dots | scale + colour as the stage advances | `--mls-base` `--mls-spring` |
+| stage dot | scale + colour + ring bloom as the stage advances | `--mls-dur-3` `--mls-ease-spring`, colour linear |
+| stage connector | fills `scaleX(0→1)` from the left edge | `--mls-dur-4` `--mls-ease-out` |
+| Copilot drawer, FIRST open | same slide+fade as every later open | see "a declaration is not motion" |
 
 ### The press rule, and its three exclusions
 
@@ -106,8 +110,51 @@ Do not add one. `feat_mls_calm_shell.js` records that b653 shipped one and it wa
 navigation feel like a screen-level pop."* Re-adding it re-ships a rejected design over a
 documented revert.
 
+---
+
+## Law 5 — a declaration is not motion
+
+Added after three defects on 2026-07-26 that were all **correctly declared and could never
+run**. Every motion suite was green the whole time, because every motion suite read
+declarations. If you add motion, prove it MOVED on the running page — sample
+`document.getAnimations()` or the computed value across the change. "The CSS is right" is not
+evidence.
+
+The three ways declared motion dies, all found live, all now gated by
+`tests/motion-that-cannot-run-is-not-motion.test.js`:
+
+**1. The host rebuilds its children.** A transition needs the SAME element present when the
+value changes. `renderStages()` did `el.innerHTML = parts.join('')` on every stage change, so
+all nine rail nodes were replaced with their final classes already applied. Measured across a
+real Prep→Review move: **0 animations, 0 of 9 nodes surviving.** Build once, then move only
+classes and inline transforms — and guard both writes, because this runs on the shell tick and
+`classList.add`/`remove` re-commit unconditionally (`toggle(name, force)` does not).
+
+**2. The element is created and classed in one task.** `openCopilotDock()` appended the drawer
+and added `.open` in the same synchronous block, so there was no computed starting style.
+Measured: **first open 1 distinct position, second open 22.** Every open but the first was
+perfect. Force one style read (`void el.offsetWidth`) before the class, gated on first build.
+**Never `requestAnimationFrame`** — it does not fire in an occluded tab, so the panel would stay
+*shut* rather than merely un-animated. The class must land synchronously so that "never
+animated" and "finished" end in the same place.
+
+**3. The rule is trapped in a media query.** The whole motion block sat inside
+`@media (max-width:760px)` because the phone query's closing brace was the LAST line of the CSS
+array and everything added since had landed above it. Measured through `document.styleSheets`:
+**121 of 143 shell rules page-level, 14 trapped, 5 of them motion** — including `mlsMoRise` and
+the `.mls-mo` safety prohibition, which therefore protected only phones. Grep cannot see this;
+the selectors are built by string concatenation and only the CSSOM resolves where a rule lives.
+
 ## Known nit, not fixed
 
-`#mlsStages .bar i` transitions `width` — a layout property, against law 1. It is dead code
-(nothing sets that width), which is why it has never been seen. Converting it to
-`transform:scaleX()` needs the writer that does not exist yet.
+Nothing outstanding on the stage rail. (An earlier revision of this document called
+`#mlsStages .bar i` "dead code (nothing sets that width)". That was wrong — `renderStages` wrote
+`style="width:N%"` inline on every rebuild. It was never *seen* for reason 1 above, not because
+nothing wrote it. The layout-property violation and the missing motion were one bug wearing two
+faces, and both are fixed.)
+
+**391 literal timings survive across 88 files** (`mls-connect.js` 115, `ScribeFlow.html` 41,
+`feat_mls_redesign.js` 21, the six patient pages ~5 each). They are not forked *tokens* — they
+are pre-token bespoke curves. Rewriting them blind across files four lanes are editing buys no
+behavioural change and guarantees conflicts, so the standing rule stays: **nothing NEW invents a
+timing.** If one of those surfaces is being touched for another reason, move it onto tokens then.
