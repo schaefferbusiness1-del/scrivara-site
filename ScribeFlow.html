@@ -2848,7 +2848,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div id="adminView" style="display:none">
     <div class="card">
       <h2 aria-label="Admin — Users"><span class="ic">🛡️</span> Admin — Users
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh users</button>
       </h2>
       <p class="sub">Manage who can generate notes. Grant a comp (forever) account, a timed trial, or block access.</p>
       <div id="adminUsersEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load users.</div>
@@ -2867,7 +2867,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <div class="card">
       <h2 aria-label="Admin — Billing and plans"><span class="ic">💳</span> Admin — Billing &amp; plans
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBilling()">🔄 Refresh</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBilling()">🔄 Refresh billing</button>
       </h2>
       <p class="sub">Plans and paid access are separate from roles. <b>Access source</b> shows exactly why each account has access: role, subscription, trial, grant, or admin override. Granting a plan applies an admin override without touching Stripe; clearing it returns the account to normal billing (an active Stripe subscription keeps access, otherwise access ends).</p>
       <div id="adminBillingStatus" class="empty"><span class="big">💳</span>Press <b>Refresh</b> to load billing state.</div>
@@ -2898,7 +2898,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <div class="card">
       <h2 aria-label="Admin — Access codes"><span class="ic">🎟️</span> Admin — Access codes
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminCodes()">🔄 Refresh</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminCodes()">🔄 Refresh codes</button>
       </h2>
       <p class="sub">Generate an access code to hand out. "Forever" unlocks permanently; "Trial" grants a set number of days.</p>
       <div class="row tight" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
@@ -2940,7 +2940,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- Admin — Backups -->
     <div class="card">
       <h2 aria-label="Admin — Backups"><span class="ic">💾</span> Admin — Backups
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBackups()">🔄 Refresh</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBackups()">🔄 Refresh backups</button>
       </h2>
       <p class="sub">Create and download encrypted snapshots of the server database.</p>
       <p class="note" style="background:#eef4fc;color:var(--brand-dk);border:1px solid #cfe2f8">🔐 Backups are AES-256 encrypted — store a copy somewhere safe; you control the key.</p>
@@ -3139,7 +3139,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <div class="card" id="anaDoctorReview" hidden aria-hidden="true" style="display:none">
       <h2 aria-label="Doctor analysis and review"><span class="ic">📊</span> Doctor analysis &amp; review
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh data</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh team data</button>
       </h2>
       <p class="sub">Review a doctor on your team — or yourself. Generates an activity summary and an AI performance/documentation analysis with constructive feedback.</p>
       <div class="field" style="max-width:480px">
@@ -3856,7 +3856,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span data-mls-extension-version="1" style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest version</span></b>
+        <!-- The badge starts UNKNOWN and stays unknown until the extension itself
+             answers. It used to ship the literal words "Latest version" in a green
+             pill: a claim that what you have is current, made before anything had
+             asked the extension a single question, and the one that survived when
+             the version feed was unreachable. Never state a negative — or a
+             positive — the system cannot back. -->
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span data-mls-extension-version="1" style="font-size:11.5px;background:#eef2f0;color:#204034;border:1px solid #d7e6dc;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Checking this browser…</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed?</b> Updates are automatic — MLS refreshes MLS Assist on this computer when a new version ships, and the badge above tells you the moment you're up to date. If a pull ever looks stuck, open <code>chrome://extensions</code> and press <b>↻</b> on MLS Assist.
@@ -11895,7 +11901,7 @@ var STUDIO_TEMPLATES=[
   ['📈 Pain trend board','A dashboard showing each patient’s latest pain score with a sparkline of their pain over time, flagging anyone trending worse, with a button to open each chart.'],
   ['🗓️ Today at a glance','A clean view of today’s schedule from MLS.getSchedule(), grouped by status, with check-in counts and a one-tap Start visit on each appointment.'],
   ['💊 Opioid MME calculator','An opioid MME calculator with inputs for drug, dose in mg, and doses per day, showing total daily MME with a color-coded risk level.'],
-  ['🧮 Visits per month','A bar chart of visits per month over the last 12 months with the total and the busiest month called out.'],
+  ['🧮 Visits-per-month chart','A bar chart of visits per month over the last 12 months with the total and the busiest month called out.'],
   ['🤖 AI panel summary','A one-button tool that calls MLS.ai to write a 4-bullet summary of my whole panel from MLS.data, shown in a clean card.'],
   ['📊 Top diagnoses','A horizontal bar chart of my most common problems/diagnoses across the panel, with counts.'],
   ['✉️ Reminder drafter','Pick a patient from a dropdown, then a button that uses MLS.ai to draft a friendly appointment-reminder email and MLS.copy to copy the reviewed draft. Do not send anything from the widget.']

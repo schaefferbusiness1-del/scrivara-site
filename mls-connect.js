@@ -5500,7 +5500,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function ensureHead(v) {
     var sxTitle = v.querySelector(".sx-title");
-    if (sxTitle) { consolidateSxSubtitle(sxTitle); return; }
+    if (sxTitle) {
+      consolidateSxSubtitle(sxTitle);
+      /* v1.0.2 -- the LOSING HALF OF THE SAME RACE the v1.0.1 note above
+         describes. That fix stopped this module appending a second header
+         WHEN sx's title already existed. It does nothing when the order is
+         reversed: this module runs first, finds no .sx-title, and inserts its
+         own .stp-head; sx renders its title a moment later; and from then on
+         the branch above returns early forever, so both survive.
+         Measured on a running page at 1280x800: AI Studio rendered "AI Studio
+         / Ask Copilot, build a custom tool, or run a study - everything for
+         exploring your practice, in one place." TWICE, stacked, before any
+         content. Header budget is three words; this was thirty-eight, said
+         twice.
+         The stp-head is this module's own node (data-mls-stdpolish="1"), so
+         withdrawing it when sx's real title exists is safe and idempotent --
+         and it is the right way round: sx owns the view's title. */
+      var mine = v.querySelector('.stp-head[data-mls-stdpolish="1"]');
+      if (mine && mine.parentElement) mine.parentElement.removeChild(mine);
+      return;
+    }
     if (v.querySelector(".stp-head")) return; // unscoped on purpose -- matches at any depth
     var h = mk("div", "stp-head");
     h.setAttribute("data-mls-stdpolish", "1");
@@ -38584,40 +38603,71 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- FIX 2: dynamic extension-version badge in Settings ---- */
   try {
     var VER = null;
-    function applyBadge(){
+    /* Numeric compare, same shape as feat_mls_checker's compareVersions, so the
+       Settings badge and the checker can never disagree about which is newer. */
+    function verCmp(a, b) {
+      var L = String(a || '').replace(/^v/i, '').split('.'), R = String(b || '').replace(/^v/i, '').split('.');
+      if (!/^\d/.test(L[0] || '') || !/^\d/.test(R[0] || '')) return null;   // unparseable -> no verdict
+      for (var i = 0; i < Math.max(L.length, R.length); i++) {
+        var d = (Number(L[i]) || 0) - (Number(R[i]) || 0);
+        if (d) return d < 0 ? -1 : 1;
+      }
+      return 0;
+    }
+    /* The badge's ONLY job is to state what is true right now.
+       It shipped as a hardcoded green "Latest version" — a currency claim made
+       before anything had asked the extension anything, and the text that stayed
+       on screen whenever the version feed was unreachable. Then the dynamic
+       writer replaced it with "Installed: v2.9.5" in the same green pill, which
+       reads as a pass on a build eleven releases old, because it compared
+       nothing. So:
+         - "up to date" is said ONLY when the extension itself answered AND its
+           version is >= the published channel;
+         - an older install names both versions and the update path;
+         - no answer from the extension is reported as no answer, never as a
+           version;
+         - unparseable versions get both numbers and no verdict.
+       Published version = /extension-version.json, the same stable-channel feed
+       feat_mls_checker's SERVER_EXT_VERSION is pinned to by
+       tests/extension-package.test.js. */
+    function badgeState(){
       /* Truth fix: ONLY a version the extension itself announced counts as
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      if (!VER && !loaded) return false;
-      /* b677 (owner: "fix text and badge"): the badge now COMPARES. It used to
-         print "Installed: v3.0.18" in the same green chip it uses for current —
-         accurate, and still a lie by omission: the doctor could not tell they
-         were three releases behind. States, in honesty order:
-           installed == channel  -> green  "Installed: vX — up to date"
-           installed <  channel  -> amber  "Installed: vX — update available (vY)"
-           installed, no feed    ->        "Installed: vX"
-           feed only (no pong)   ->        "Latest: vY — not detected in this tab" */
-      var lv = loaded ? String(loaded).replace(/^v/i, '') : null;
-      var want, tone = '';
-      if (lv && VER && lv === VER) { want = 'Installed: v' + lv + ' — up to date'; tone = 'ok'; }
-      else if (lv && VER) { want = 'Installed: v' + lv + ' — update available (v' + VER + ')'; tone = 'warn'; }
-      else if (lv) { want = 'Installed: v' + lv; }
-      else { want = 'Latest: v' + VER + ' — not detected in this tab'; }
+      /* b677+b678 (owner: "fix text and badge"): the badge COMPARES, and only
+         a version the extension itself announced counts as installed. */
+      loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
+      if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
+      if (!loaded) return { text: 'Not detected here · published v' + VER, tone: 'idle' };
+      if (!VER) return { text: 'Installed v' + loaded, tone: 'idle' };
+      var cmp = verCmp(loaded, VER);
+      if (cmp === null) return { text: 'Installed v' + loaded + ' · published v' + VER, tone: 'idle' };
+      if (cmp < 0) return { text: 'Installed v' + loaded + ' · update to v' + VER, tone: 'warn' };
+      return { text: 'Installed v' + loaded + ' · up to date', tone: 'ok' };
+    }
+    var BADGE_TONE = {
+      ok:   'background:#127a55;color:#fff;border:1px solid #127a55',
+      warn: 'background:#fff7e6;color:#7a5a16;border:1px solid #f0d79a',
+      idle: 'background:#eef2f0;color:#204034;border:1px solid #d7e6dc'
+    };
+    function applyBadge(){
+      var st = badgeState();
+      if (!st) return false;
       var spans = document.getElementsByTagName('span'), did = false;
       for (var i = 0; i < spans.length; i++) {
         var s = spans[i], t = (s.textContent || '').trim();
         var marked = s.getAttribute('data-mls-extension-version') === '1';
-        if (!marked && !/^(?:Latest|Installed):\s*v?\d/i.test(t)) continue;   // version badge or its no-number fallback
+        if (!marked && !/^(?:Latest|Installed|Not detected)\b/i.test(t)) continue;   // version badge or its no-number fallback
         var p = s, ok = false;                            // confirm it's the MLS Assist extension card
         for (var j = 0; j < 4 && p && p !== document.body && p !== document.documentElement; j++) {
           if (/MLS Assist browser extension/i.test(p.textContent || '')) { ok = true; break; }
           p = p.parentElement;
         }
         if (!ok) continue;
-        if (s.textContent !== want) s.textContent = want;
-        if (tone === 'warn' && s.style.background !== '#b45309') s.style.background = '#b45309';
-        else if (tone === 'ok' && s.style.background !== '#127a55') s.style.background = '#127a55';
+        if (s.textContent !== st.text) s.textContent = st.text;
+        var tone = BADGE_TONE[st.tone] + ';font-size:11.5px;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle';
+        if (s.getAttribute('data-mls-ext-tone') !== st.tone) { s.setAttribute('data-mls-ext-tone', st.tone); s.style.cssText = tone; }
         did = true;
       }
       return did;
@@ -38630,11 +38680,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     function start(){
       fetchVer();
-      // The badge is in static markup inside the Settings modal; re-apply a few
-      // times in case VER arrives before the node is ready, then stop.
-      var tries = 0, iv = setInterval(function(){ tries++; if (applyBadge() || tries > 40) clearInterval(iv); }, 500);
+      /* The badge is in static markup inside the Settings modal; re-apply until
+         the state can no longer improve.
+         STOPPING ON THE FIRST SUCCESSFUL WRITE WAS WRONG once the badge started
+         reporting the handshake: the feed answers in milliseconds and the
+         extension's mlsExtVersion postMessage is re-asked at 6s, so the first
+         write is almost always the no-handshake state — and freezing there
+         leaves "Not detected here" on a browser that answered a moment later.
+         A pong-backed verdict (ok/warn) is the only terminal state; otherwise
+         keep looking for 60s, which covers the 6s re-ask and a cold extension. */
+      var tries = 0, iv = setInterval(function(){
+        tries++;
+        applyBadge();
+        var settled = false;
+        try { settled = !!window.__mlsExtReportedVersion && !!VER; } catch (e) {}
+        if (settled || tries > 120) clearInterval(iv);
+      }, 500);
       // Refresh periodically so a newly published version appears without a reload.
-      setInterval(fetchVer, 5 * 60 * 1000);
+      setInterval(function(){ fetchVer(); applyBadge(); }, 5 * 60 * 1000);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();
@@ -42239,6 +42302,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260719wd110';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Calm Shell: dock + right-now bar + visit stages + heads-down + Ask over the existing controls, ?ui=classic escape hatch (window.__mlsCalmShell calm-1.0.0; revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260723onf2100';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
@@ -42263,7 +42327,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.1.3', installed: true };
+  var api = { version: 'ft-1.1.4', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -42283,29 +42347,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
       });
-      /* ft-1.1.3 (owner order 2026-07-21): desktop force-show
-         of the three bottom-left bubbles. The b473 wedge was most plausibly a
-         native dialog freeze, not this write (the 'flex' echo that looked
-         like a competing writer is just position:fixed blockifying
-         inline-flex). Deterministic inline-important, write-only-on-change,
-         never while Settings is open; deployed WITH a live responsiveness
-         soak and instant-rollback standing by. */
-      var settingsOpen = false;
-      try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
+      /* ft-1.1.4 (2026-07-26): the ft-1.1.3 desktop FORCE-SHOW of the three
+         bottom-left bubbles is REMOVED, and any inline display it already
+         wrote is cleared so a warm tab heals without a reload.
+         WHY, because deleting an explicit owner order needs a reason on the
+         record. The 2026-07-21 order was "put the three bubbles back on
+         desktop" and it was implemented as an inline `display:inline-flex
+         !important`, which is the only thing that can beat a stylesheet
+         !important rule. On 2026-07-26 the owner retired those bubbles
+         (vc-2.0.0, b676). The retirement was written as CSS — FIVE
+         independent `display:none!important` rules now match each pill
+         (mlsVcStyle, mlsCalmShellCss, mlsRdStyle x2, mlsEz3GradientCss) —
+         and an inline important declaration outranks every one of them. So
+         the newer order lost to the older one at CSS precedence, silently,
+         and tests/voice-cluster-*.test.js kept passing because the CSS it
+         asserts really is there.
+         It is not cosmetic. Measured on a running page, real Chrome, real
+         trusted mouse clicks, at the tip of this branch:
+           1400x900  a click at the CENTRE of the dock's "Patient" button was
+                     received by #mlsCopVoiceBtn
+           390x844   the same click was received by #mlsDaDock ("Dictate")
+           1280x800  Patient/Visit own 6 of 9 sample points; the rest belong
+                     to the pills
+         The dock is the whole navigation story and its first destination was
+         being eaten. Nothing is lost: all three capabilities keep their
+         routes in the Calm Shell's Tools menu (Copilot Voice / MLS Assistant
+         / Dictate) and in the FAB menu on phones. */
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
         try {
           var el3 = $(id); if (!el3 || el3.__ftHidden) return;
-          if (id === 'mlsCopVoiceBtn') {
-            try {
-              var savedControls = JSON.parse(localStorage.getItem('mls_ctl_v1') || '{}');
-              if (savedControls.showVoice === false) return;
-            } catch (e) {}
-          }
-          if (settingsOpen) {
-            if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
-            return;
-          }
-          if (el3.style.getPropertyValue('display') !== 'inline-flex') el3.style.setProperty('display', 'inline-flex', 'important');
+          if (el3.style.getPropertyValue('display') === 'inline-flex') el3.style.removeProperty('display');
         } catch (e) {}
       });
     }
