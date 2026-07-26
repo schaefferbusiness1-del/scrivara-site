@@ -47,7 +47,31 @@ setDisplay(el, false);
 assert.strictEqual(values.display, undefined, 'legacy helper did not remove its own hidden display');
 assert(!attrs.has('data-mls-r44-display-owner'), 'legacy display ownership marker was not cleared');
 
-assert(connect.includes("version: 'ft-1.1.3'"), 'desktop visibility owner was not bumped');
-assert(connect.includes("savedControls.showVoice === false"), 'desktop visibility owner ignores the saved hide preference');
+/* PIN UPDATED 2026-07-26, deliberately, and inverted.
+ *
+ * It used to require the ft-1.1.3 desktop FORCE-SHOW of the three bottom-left
+ * pills — an owner order from 2026-07-21, implemented as an inline
+ * `display:inline-flex !important` because that is the only declaration that
+ * can beat a stylesheet !important rule.
+ *
+ * On 2026-07-26 the owner retired those pills (vc-2.0.0, b676) and the
+ * retirement was written as CSS. FIVE independent `display:none!important`
+ * rules now match each pill (mlsVcStyle, mlsCalmShellCss, mlsRdStyle x2,
+ * mlsEz3GradientCss) and the surviving inline declaration outranked every one
+ * of them, so the newer order lost to the older one at CSS precedence and
+ * every CSS-reading test still passed.
+ *
+ * Measured on a running page, real Chrome, real trusted mouse clicks:
+ *   1400x900  a click at the CENTRE of the dock's "Patient" button was
+ *             received by #mlsCopVoiceBtn
+ *   390x844   the same click was received by #mlsDaDock
+ * So this is now the opposite assertion: nothing may force these three
+ * retired controls back on screen with an inline declaration. Their routes
+ * live in the Calm Shell's Tools menu and (on phones) the FAB menu. */
+assert(connect.includes("version: 'ft-1.1.4'"), 'desktop visibility owner was not bumped for the pill retirement');
+assert(!/setProperty\('display', 'inline-flex', 'important'\)/.test(connect),
+  'something force-shows a retired bottom-left pill with an inline !important display again — that outranks all five stylesheet retirements and puts the pill back on top of the dock');
+assert(/mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'\]\.forEach[\s\S]{0,400}removeProperty\('display'\)/.test(connect),
+  'the healing pass that clears an already-written inline display is gone, so a warm tab keeps the pills until it is reloaded');
 
-console.log('PASS voice pill persistence: legacy settings cannot erase the desktop visibility owner');
+console.log('PASS voice pill persistence: legacy settings cannot erase another owner\'s display, and nothing force-shows the retired bottom-left pills over the dock');

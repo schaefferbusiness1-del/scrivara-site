@@ -252,6 +252,22 @@
       '  border:1px solid #D9D6CD;border-radius:999px;background:transparent;color:#41606d;',
       '  font:inherit;font-size:13px;font-weight:600;cursor:pointer}',
       '.mls-cv-more:hover{background:#F1F5F2}',
+      /* THE TOAST WAS EATING DOCK CLICKS WHILE INVISIBLE, which is the more
+         interesting half of this rule.
+         `.toast` is `display:block` at all times; hiding it is `opacity:0`
+         plus `transform:translateY(80px)`. That transform parks the empty
+         46x28 element at y 735..763 — inside the dock's 697..782 — and
+         opacity has no effect on hit-testing, so an element nobody can see
+         was intercepting clicks aimed at "AI Studio" and "Tools". A census
+         that filters on opacity:0 (mine did, at first) reports it as absent.
+         A toast has no interactive content, so pointer-events:none is
+         strictly correct and covers the shown state too.
+         The lift is the visual half: `.toast{bottom:96px}` and
+         `body.mls-calm{padding-bottom:96px}` agree with each other and both
+         disagree with the dock, which is 85px tall at bottom:18px and so
+         occupies 18..103px. It is MEASURED from the dock (see liftToast)
+         rather than guessed, so it stays right if the dock changes height. */
+      'body.' + BODY_CLASS + ' .toast{bottom:var(--mls-toast-lift,96px);pointer-events:none}',
       /* AI Studio's primary is a PROMOTION, not an addition: the ask box the
          app already ships becomes the biggest thing on the screen. */
       'body.' + BODY_CLASS + ' #studioView #copilotInput{min-height:62px;font-size:16.5px;padding:14px 16px;border-radius:14px}',
@@ -404,12 +420,30 @@
     return m ? m[1] : '';
   }
 
+  /* Lift the toast clear of the dock. Read the dock's real rect; write only on
+     change (a no-op write of a custom property still invalidates style for the
+     whole document — b640). Called on install and on resize, never on a timer. */
+  function liftToast() {
+    var dock = byId('mlsDock');
+    if (!dock) return;
+    var r = safe(function () { return dock.getBoundingClientRect(); });
+    if (!r || !(r.height > 0)) return;
+    var lift = Math.round(W.innerHeight - r.top + 14);   /* dock top, plus a gap */
+    if (!(lift > 0) || lift > 400) return;               /* nonsense reading: leave the default */
+    var want = lift + 'px';
+    var root = D.documentElement;
+    if (safe(function () { return root.style.getPropertyValue('--mls-toast-lift'); }) !== want) {
+      safe(function () { root.style.setProperty('--mls-toast-lift', want); });
+    }
+  }
+
   function reconcile() {
     if (classic()) { teardown(); return; }
     safe(function () {
       if (!D.body.classList.contains(BODY_CLASS)) D.body.classList.add(BODY_CLASS);
     });
     installCss();
+    liftToast();
     VIEWS.forEach(function (v) {
       var root = byId(v.id);
       if (!root || !visible(root)) return;
@@ -461,12 +495,15 @@
       var m = byId('mlsCvMore_' + v.key); if (m) m.remove();
     });
     var s = byId(STYLE_ID); if (s) s.remove();
+    safe(function () { W.removeEventListener('resize', liftToast); });
+    safe(function () { D.documentElement.style.removeProperty('--mls-toast-lift'); });
   }
 
   function start() {
     if (classic()) return;
     reconcile();
     watch();
+    safe(function () { W.addEventListener('resize', liftToast, { passive: true }); });
     /* View containers can mount after this module (the loader is async), so make
        a bounded number of retries and then stop.
        A CHAIN OF TIMEOUTS, NOT AN INTERVAL, and the distinction is not cosmetic:

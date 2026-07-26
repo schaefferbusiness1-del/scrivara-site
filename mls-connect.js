@@ -42306,7 +42306,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   if (window.__mlsFabTidy) return;
-  var api = { version: 'ft-1.1.3', installed: true };
+  var api = { version: 'ft-1.1.4', installed: true };
   window.__mlsFabTidy = api;
   function $(id) { return document.getElementById(id); }
   var st = document.createElement('style');
@@ -42326,29 +42326,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
         try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
       });
-      /* ft-1.1.3 (owner order 2026-07-21): desktop force-show
-         of the three bottom-left bubbles. The b473 wedge was most plausibly a
-         native dialog freeze, not this write (the 'flex' echo that looked
-         like a competing writer is just position:fixed blockifying
-         inline-flex). Deterministic inline-important, write-only-on-change,
-         never while Settings is open; deployed WITH a live responsiveness
-         soak and instant-rollback standing by. */
-      var settingsOpen = false;
-      try { settingsOpen = document.body.classList.contains('mls-settings-open'); } catch (e) {}
+      /* ft-1.1.4 (2026-07-26): the ft-1.1.3 desktop FORCE-SHOW of the three
+         bottom-left bubbles is REMOVED, and any inline display it already
+         wrote is cleared so a warm tab heals without a reload.
+         WHY, because deleting an explicit owner order needs a reason on the
+         record. The 2026-07-21 order was "put the three bubbles back on
+         desktop" and it was implemented as an inline `display:inline-flex
+         !important`, which is the only thing that can beat a stylesheet
+         !important rule. On 2026-07-26 the owner retired those bubbles
+         (vc-2.0.0, b676). The retirement was written as CSS — FIVE
+         independent `display:none!important` rules now match each pill
+         (mlsVcStyle, mlsCalmShellCss, mlsRdStyle x2, mlsEz3GradientCss) —
+         and an inline important declaration outranks every one of them. So
+         the newer order lost to the older one at CSS precedence, silently,
+         and tests/voice-cluster-*.test.js kept passing because the CSS it
+         asserts really is there.
+         It is not cosmetic. Measured on a running page, real Chrome, real
+         trusted mouse clicks, at the tip of this branch:
+           1400x900  a click at the CENTRE of the dock's "Patient" button was
+                     received by #mlsCopVoiceBtn
+           390x844   the same click was received by #mlsDaDock ("Dictate")
+           1280x800  Patient/Visit own 6 of 9 sample points; the rest belong
+                     to the pills
+         The dock is the whole navigation story and its first destination was
+         being eaten. Nothing is lost: all three capabilities keep their
+         routes in the Calm Shell's Tools menu (Copilot Voice / MLS Assistant
+         / Dictate) and in the FAB menu on phones. */
       ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'].forEach(function (id) {
         try {
           var el3 = $(id); if (!el3 || el3.__ftHidden) return;
-          if (id === 'mlsCopVoiceBtn') {
-            try {
-              var savedControls = JSON.parse(localStorage.getItem('mls_ctl_v1') || '{}');
-              if (savedControls.showVoice === false) return;
-            } catch (e) {}
-          }
-          if (settingsOpen) {
-            if (el3.style.getPropertyPriority('display') === 'important') el3.style.removeProperty('display');
-            return;
-          }
-          if (el3.style.getPropertyValue('display') !== 'inline-flex') el3.style.setProperty('display', 'inline-flex', 'important');
+          if (el3.style.getPropertyValue('display') === 'inline-flex') el3.style.removeProperty('display');
         } catch (e) {}
       });
     }
