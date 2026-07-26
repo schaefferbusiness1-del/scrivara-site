@@ -9462,7 +9462,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
        left - which is how a 14-encounter patient came back
        visits-time-budget-exceeded on the owner's chart. 40% of the budget is
        ~66s, and a healthy index settles in ~20-25s (six stable passes). */
-    var indexPhaseDeadline = readStartedAt + Math.min(70000, Math.max(20000, Math.round(readBudgetMs * 0.4)));
+    /* Set AFTER the caller clamp below, from the EFFECTIVE window. Deriving it
+       from the nominal readBudgetMs here made this guard inert in the one path
+       that needed it: the day pull hands down a deadline well under 165s, so a
+       cap computed as 40% of 165s (~66s) sat PAST the real deadline and the
+       extra condition was always weaker than the readDeadline one it was added
+       beside. Shipped that way in 3.0.19; it protected nothing. */
+    var indexPhaseDeadline = 0;
     var frozenCallerDeadline = Number(callerDeadlineAt || 0);
     /* The app/content bridge may have less time remaining than this reader's
        normal ceiling (for example near the end of the whole-day batch). Never
@@ -9471,6 +9477,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (Number.isFinite(frozenCallerDeadline) && frozenCallerDeadline > 0) {
       readDeadline = Math.min(readDeadline, frozenCallerDeadline);
     }
+    indexPhaseDeadline = readStartedAt + Math.min(70000, Math.max(20000, Math.round((readDeadline - readStartedAt) * 0.4)));
     var visitRequestToken = frozenRequestId || ('mlsvis-' + readStartedAt.toString(36) + '-' + Math.random().toString(36).slice(2, 9));
     var readGuard = Object.freeze({ deadline: readDeadline, token: visitRequestToken });
     try { __visitGuardByHint.set(frozenHint, readGuard); } catch (eGuardHint) {}

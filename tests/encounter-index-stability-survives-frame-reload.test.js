@@ -85,8 +85,39 @@ assert(!/if \(!\(stabN >= 6 && stabMs >= 20000\)\) \{/.test(src),
 
 /* ---- 4. the index wait cannot eat the body budget ------------------------ */
 
-assert(/var indexPhaseDeadline = readStartedAt \+ Math\.min\(70000, Math\.max\(20000, Math\.round\(readBudgetMs \* 0\.4\)\)\);/.test(src),
-  'the index phase must have its own deadline');
+/* 3.0.20: derived from the EFFECTIVE deadline, not the nominal budget.
+ *
+ * 3.0.19 shipped this as 40% of readBudgetMs, computed BEFORE readDeadline is
+ * clamped to the caller's window. The day pull hands down far less than the
+ * nominal 165s, so the cap (~66s) sat PAST the real deadline and the added
+ * condition was always weaker than the readDeadline check standing beside it.
+ * The guard existed, read correctly, and protected nothing — in precisely the
+ * path it was written for. */
+assert(/indexPhaseDeadline = readStartedAt \+ Math\.min\(70000, Math\.max\(20000, Math\.round\(\(readDeadline - readStartedAt\) \* 0\.4\)\)\);/.test(src),
+  'the index-phase deadline must derive from the effective readDeadline, not the nominal budget');
+
+/* Ordering IS the defect: derived before the clamp, the value is stale. */
+{
+  const clampAt = src.indexOf('readDeadline = Math.min(readDeadline, frozenCallerDeadline);');
+  const deriveAt = src.indexOf('indexPhaseDeadline = readStartedAt + Math.min(70000');
+  assert(clampAt > -1, 'the caller-deadline clamp is gone');
+  assert(deriveAt > clampAt,
+    'the index-phase deadline is computed BEFORE the caller clamp, so it is derived from a budget the read will never actually get');
+}
+
+/* And behaviourally: for every plausible window the cap must fall inside it. */
+{
+  const derive = (started, effectiveDeadline) =>
+    started + Math.min(70000, Math.max(20000, Math.round((effectiveDeadline - started) * 0.4)));
+  for (const window of [165000, 100000, 60000, 45000]) {
+    const cap = derive(0, window);
+    assert(cap < window,
+      'with a ' + window + 'ms window the index cap must fall INSIDE it, got ' + cap);
+  }
+  const stale = Math.min(70000, Math.max(20000, Math.round(165000 * 0.4)));
+  assert(stale > 60000,
+    'sanity: the old nominal-budget derivation really did land outside a 60s window — that was the bug');
+}
 assert(/Date\.now\(\) \+ 7000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline/.test(src),
   'the index retry loop must respect the index-phase deadline as well as the read deadline');
 
