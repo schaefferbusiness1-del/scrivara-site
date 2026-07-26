@@ -171,7 +171,18 @@
   /* Apple's standard easing curve. Everything moves on transform/opacity only —
      no layout-animating properties, so a mid-clinic machine never janks. */
   var CSS = [
-    ':root{--mls-spring:cubic-bezier(.32,.72,0,1);--mls-fast:180ms;--mls-base:260ms;--mls-slow:380ms}',
+    /* THE LEGACY FOUR ARE NOW ALIASES, not a second vocabulary. These four
+       names predate the token system and 23 rules in this file still use them;
+       rewriting all 23 would churn a file three other lanes are editing, and
+       leaving them forked is how the app ended up with two spellings of one
+       curve in the first place. Pointing them at the canonical tokens gives one
+       source of truth with no call-site churn. The old literals are the
+       FALLBACKS, so a surface that somehow loads this stylesheet without the
+       page's :root degrades to exactly today's behaviour rather than to none. */
+    ':root{--mls-spring:var(--mls-ease-out,cubic-bezier(.32,.72,0,1));'+
+      '--mls-fast:var(--mls-dur-2,180ms);'+
+      '--mls-base:var(--mls-dur-3,260ms);'+
+      '--mls-slow:var(--mls-dur-4,380ms)}',
     /* feat_mls_redesign.js relocates the rail into #mlsRdNav inside the header and
        pins it with `#mlsRdNav .mainnav{display:flex!important}`. An ID beats two
        classes, so the plain `body.mls-calm .mainnav` rule lost and b533 shipped

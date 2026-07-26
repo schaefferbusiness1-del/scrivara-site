@@ -188,7 +188,7 @@
          The extra 6px is deliberate and is the only way it differs in size
          from the quiet chips beside it. */
       'cursor:pointer;padding:11px 14px;min-height:44px;',
-      'transition:opacity .16s linear,transform .16s cubic-bezier(.2,.8,.3,1);}',
+      'transition:opacity var(--mls-dur-1) linear,transform var(--mls-dur-2) var(--mls-ease-out);}',
       '#' + FACE_ID + ':hover{background:#F4F2EC;}',
       '#' + FACE_ID + ':active{transform:scale(.97);}',
       '#' + FACE_ID + ':focus-visible{outline:2px solid #2E6A4B;outline-offset:2px;}',
@@ -214,7 +214,7 @@
       'background:#fff;border:1px solid #E7E5DD;border-radius:11px;color:#1A211C;',
       'font:600 13px/1.25 system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;padding:11px 13px;min-height:44px;box-sizing:border-box;',
-      'transition:transform .14s cubic-bezier(.2,.8,.3,1),opacity .14s linear;}',
+      'transition:transform var(--mls-dur-1) var(--mls-ease-out),opacity var(--mls-dur-1) linear;}',
       '#' + FAN_ID + ' .vo-item:hover{transform:translateX(2px);}',
       '#' + FAN_ID + ' .vo-item:focus-visible{outline:2px solid #2E6A4B;outline-offset:2px;}',
       '#' + FAN_ID + ' .vo-ic{font-size:16px;line-height:1;flex:0 0 auto;}',
