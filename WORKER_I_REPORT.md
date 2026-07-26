@@ -1,6 +1,6 @@
 # WORKER I — the Medications panel was asserting things that are not medications
 
-Branch `worker-i-parse`, three local commits on `origin/main` (rebased onto `9dad696` / b686).
+Branch `worker-i-parse`, five local commits on `origin/main` (rebased onto `4292175` / b687).
 The lead ships.
 
 ---
@@ -283,9 +283,13 @@ as a finding and not a fix. Someone with a real session should press
 ### Gate
 
 ```
-349 suites green   (347 at branch point + 1 from main's b686 + 1 new)
+349 suites green   (347 at the branch point + 1 that main added while I worked + 1 new)
 tests/chart-noise-never-renders-as-medication.test.js
 ```
+
+Rebased twice while in flight — `c0d9c8f` (b685) → `9dad696` (b686) → `4292175` (b687) — and
+re-gated on each tip. The browser measurements above were re-taken on the b687 tree and
+reproduce identically, including the fold seam in §5.
 
 Five arms: **arm 0 asserts the fixture still reproduces the defect** by running it through the
 retired v1.1.0 keep-tests inlined verbatim — without it, someone could defang the fixture and
