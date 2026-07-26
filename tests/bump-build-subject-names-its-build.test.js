@@ -1,0 +1,100 @@
+'use strict';
+
+/*
+ * A build-bumping commit must name the build it actually wrote.
+ *
+ * bdf150e shipped labelled b661 while app-version.json said b662, and main went
+ * red for every lane running run-all.js. It was not author error: the ship
+ * path hit a build-number collision, re-bumped app-version.json, and pushed the
+ * subject it had already composed. The file moved; the message did not. That
+ * recurs on EVERY collision, and collisions happened repeatedly in one day.
+ *
+ * The build-label gate caught it only after the fact, and its cutoff had to be
+ * advanced to unblock main. The QA lane's note on that exemption is why this
+ * test exists:
+ *
+ *     "ADVANCING THE CUTOFF IS NOT FREE AND SHOULD NOT BECOME ROUTINE. Each
+ *      advance exempts a real violation. If this constant moves again, the
+ *      honest conclusion is that a SHIP PATH IS ROUTING AROUND THE GATE."
+ *
+ * So this pins the behaviour at the WRITER: the step that computes the number
+ * writes it into the subject, and refuses when there is no token to correct.
+ */
+
+const assert = require('assert');
+const path = require('path');
+
+const bump = require(path.resolve(__dirname, '..', 'scripts', 'bump-build.js'));
+const { replaceToken, retargetSubject } = bump;
+
+/* ---- 1. the collision case, which is the one that shipped wrong ---------- */
+
+{
+  /* Author composes for b661. Another lane takes b661. The retry bumps to b662.
+     The subject must follow, in the same step. */
+  const composedFor = 'b661: ext 3.0.19: the encounter-index gate could never open';
+  const corrected = retargetSubject(composedFor, 'b662');
+  assert.strictEqual(corrected,
+    'b662: ext 3.0.19: the encounter-index gate could never open',
+    'the subject must name the build that was actually written after a collision re-bump');
+  assert(!/\bb661\b/.test(corrected), 'the stale token must not survive anywhere in the subject');
+}
+
+/* A second collision in a row must also land. */
+assert.strictEqual(retargetSubject(retargetSubject('b000: x', 'b663'), 'b664'), 'b664: x',
+  'repeated collisions must keep correcting the subject');
+
+/* ---- 2. the negative arm: no token at all must FAIL, not silently pass ---- */
+
+assert.throws(() => retargetSubject('ext 3.0.19: no build token here', 'b665'),
+  /carries no bNNN build token/,
+  'a subject with no build token must be refused loudly, not quietly accepted or silently prefixed');
+
+assert.throws(() => retargetSubject('', 'b665'), /carries no bNNN build token/,
+  'an empty subject must be refused');
+
+/* Two digits is not a build token and must not be mistaken for one. */
+assert.throws(() => retargetSubject('b12: too short to be a build', 'b665'),
+  /carries no bNNN build token/,
+  'a two-digit bNN must not satisfy the token requirement');
+
+/* ---- 3. THE HEX-COLOUR TRAP, which has shipped live in this repo --------- *
+ *
+ * '#6b5518' contains 'b551'. A naive replace corrupts the colour, and that has
+ * reached production here before. The rewrite is boundary-anchored: a token is
+ * replaced only when both neighbours are non-alphanumeric.
+ */
+
+{
+  const src = 'a{color:#6b5518}b{border:1px solid #b551ff} build b551 and (b551) and b5510 and xb551';
+  const r = replaceToken(src, 'b551', 'b552');
+  assert(r.out.includes('#6b5518'), 'the hex colour #6b5518 must survive untouched');
+  assert(r.out.includes('#b551ff'), 'the hex colour #b551ff must survive untouched');
+  assert(r.out.includes('b5510'), 'b5510 is a different, longer token and must not be rewritten');
+  assert(r.out.includes('xb551'), 'a token glued to a letter is not the build token');
+  assert(r.out.includes('build b552'), 'the real token must be rewritten');
+  assert(r.out.includes('(b552)'), 'a bracketed token must be rewritten');
+  assert.strictEqual(r.hits, 2, 'exactly the two isolated tokens should be rewritten, got ' + r.hits);
+}
+
+/* And on a commit subject specifically, since that is the new surface. */
+{
+  const subject = 'b661: fix the #6b5518 swatch';
+  const out = retargetSubject(subject, 'b662');
+  assert.strictEqual(out, 'b662: fix the #6b5518 swatch',
+    'correcting the subject token must not touch a hex colour inside the subject');
+}
+
+/* ---- 4. the token list stays complete ------------------------------------ */
+
+const REQUIRED = ['app-version.json', 'mls-connect.js', 'ScribeFlow.html'];
+for (const f of REQUIRED) {
+  assert(bump.TARGETS.includes(f), 'bump-build must pin ' + f + ' or the build token drifts between files');
+}
+assert(bump.TARGETS.length >= 8,
+  'the bump target list has shrunk to ' + bump.TARGETS.length + ' - a file that pins the build token is ' +
+  'no longer being bumped, which is how a stale token reaches production');
+
+console.log('PASS bump-build subject: a collision re-bump rewrites the subject in the same step (b661->b662, ' +
+  'the case that shipped wrong), a subject with no build token is refused loudly, and the rewrite is ' +
+  'boundary-anchored so #6b5518 survives while b551 and (b551) are corrected');

@@ -1094,7 +1094,7 @@
     if (ui.minimized) d.className = 'sc-mini';
     d.innerHTML =
       '<div class="sc-card">' +
-        '<div class="sc-head" title="MLS status — click to expand/collapse">' +
+        '<div class="sc-head" data-tip="MLS status — click to expand/collapse">' +
           '<span class="sc-dot chk"></span>' +
           '<span class="sc-title">Checking MLS Assist readiness…</span>' +
           '<span class="sc-min">–</span>' +
@@ -1206,8 +1206,8 @@
       else { ic = '·'; cls = ''; }
       html += '<div class="sc-step" data-i="' + i + '">' +
         '<span class="sc-ic ' + cls + '">' + ic + '</span>' +
-        '<span class="sc-lb"><span class="l" title="' + esc(s.label) + '">' + esc(s.label) + '</span>' +
-        (s.detail ? '<span class="d" title="' + esc(s.detail) + '">' + esc(s.detail) + '</span>' : '') + '</span>' +
+        '<span class="sc-lb"><span class="l" data-tip="' + esc(s.label) + '">' + esc(s.label) + '</span>' +
+        (s.detail ? '<span class="d" data-tip="' + esc(s.detail) + '">' + esc(s.detail) + '</span>' : '') + '</span>' +
         ((s.state === 'fail' || s.state === 'retry') && s.retryFn ? '<button type="button" class="sc-rt" data-retry="' + i + '">Retry</button>' : '') +
         '</div>';
     }
@@ -1234,7 +1234,16 @@
     var html = '';
     for (var i = 0; i < SOURCES.length; i++) {
       var k = SOURCES[i][0], lbl = SOURCES[i][1], s = store.sources[k];
-      html += '<div class="sc-src" title="' + esc(lbl + ': ' + s.text) + '"><span class="b ' + esc(s.state) + '"></span><span class="t">' + esc(lbl) + '</span></div>';
+      /* data-tip, not title. This template is the LAST participant in the
+         title tug-of-war: the sig-guard above correctly limits re-renders to
+         real content changes, but every one of those re-renders minted fresh
+         nodes carrying title, which feat_athena_tooltip_dedupe then had to
+         strip and re-emit as data-tip - 30 title writes plus 30 data-tip
+         writes in 41s on the owner's tab at b664, all of them from div.sc-src
+         once the other writers had moved. Emitting data-tip directly means
+         there is nothing to strip; the hover bubble reads data-tip anyway, so
+         the rendered tooltip is unchanged. */
+      html += '<div class="sc-src" data-tip="' + esc(lbl + ': ' + s.text) + '"><span class="b ' + esc(s.state) + '"></span><span class="t">' + esc(lbl) + '</span></div>';
     }
     /* sig-guard (live-caught b414): heartbeat updates re-rendered identical
        HTML ~2x/sec, destroying/recreating every node — visible flicker and
