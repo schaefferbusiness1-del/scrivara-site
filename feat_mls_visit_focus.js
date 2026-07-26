@@ -92,9 +92,9 @@
     { sel: '#patientsView #profileCard .mls-moved',
       route: 'dock > Tools (every one is in the shell TOOLS_SOURCES) and ... More',
       why: 'the Calm Shell already relocated these; they were still drawn at half opacity, competing with the primary' },
-    { sel: '#patientsView #mlsfhpdf-btn',
+    { sel: '#patientsView .mlsfhpdf-btn',
       route: '... More on the Patients card (#ptMoreBtn)',
-      why: 'a chart export is not the reason the patient screen is open' },
+      why: 'a chart export is not the reason the patient screen is open. NOTE: this is a CLASS, not an id - feat_fullhistory_pdf.js styles .mlsfhpdf-btn, and the first version of this rule wrote #mlsfhpdf-btn, matched nothing, and hid nothing. A selector that matches zero elements looks exactly like a fix that shipped.' },
 
     /* ---- visitView ---- */
     { sel: '#visitView #mlsWdDeck:has(.wd-starter)',
@@ -147,7 +147,7 @@
     'body.' + BODY + ':not(.' + PTMORE + ') #patientsView #ptGroupBar,' +
     'body.' + BODY + ':not(.' + PTMORE + ') #patientsView #ptSort,' +
     'body.' + BODY + ':not(.' + PTMORE + ') #patientsView #mlsStudyLaunch,' +
-    'body.' + BODY + ':not(.' + PTMORE + ') #patientsView #mlsfhpdf-btn,' +
+    'body.' + BODY + ':not(.' + PTMORE + ') #patientsView .mlsfhpdf-btn,' +
     'body.' + BODY + ':not(.' + PTMORE + ') #patientsView #profileCard .mls-moved{display:none!important}',
 
     /* Revealed by "... More" at FULL SIZE, not at the half opacity the shell
