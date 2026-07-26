@@ -28,13 +28,20 @@ assignment predated the fix:
 ## 1. STATE AT HANDOFF
 
 ```
-origin/main   199ab5b   b667
-live          b667                       (mlsscribe.com/app-version.json)
+origin/main   3d24f5e   b669
+live          b669                       (mlsscribe.com/app-version.json, __MLS_AV=b669)
 gate          333 suites green
 E2E           30 steps, 0 failed         (real Chrome; grown 17 -> 30 tonight)
 ```
 
-**All four gates I shipped are green at the tip.**
+**All five gates I shipped are green at the tip.**
+
+**⚠️ EVERY OTHER LANE IS STOPPED.** Checked 2026-07-26: all sessions report
+`isRunning:false` — the design/UI lane last moved 02:27, defects 03:36. There is
+nobody to coordinate with. `#mlsReviewPanel`, which the design lane said it had
+built, **exists in no worktree on this machine** (main, claude-goal,
+claude-defects, claude-commercial all checked). It was never produced. Anyone
+resuming should not wait on that symbol.
 
 ---
 
@@ -112,6 +119,8 @@ that is easier to click through is a **worse** Review.
 | **Body-class no-op writes** | b640. **86 → 0** in 20s idle, foregrounded (`visibilityState:visible`), page clock 29 ticks. |
 | **Bubble merge (3 → 1)** | b651 + follow-up b658 (closed bubble ate clicks, opened wrong way). |
 | **Lite-Review dead end** | b661. `'Upgrade in Settings'` = 0; `'See plans on the MLS home page'` = 1 in **both** prod and staging. |
+| **Review, as shipped (b650+b666)** | Verified on a running page at b668: dock offers note/orders/recs; empty note refuses *and says so* without opening the gate; opening Review invokes **no** Athena write (send fns replaced with counters that don't call through). |
+| **Review control unreachable by mouse** | **b669, and the most important find of the night.** See §8. |
 
 **b664 churn result, the real story** (attributes per 8s idle, b624 → b664):
 
@@ -211,3 +220,86 @@ visibility), `probe-title-writer.js` (names writers at write time), `probe-bodyc
 - **latin1 patch scripts must assert exactly-one-match per anchor**, and encode anchors the same
   way the file is read — a UTF-8 em-dash is 3 latin1 chars and silently matches nothing.
 - **Hard stops:** orders, real-patient writes, payment PRs.
+
+---
+
+## 8. b669 — the review control was landing under the bubble (the night's best find)
+
+**A control can be visible, focused, and unreachable by mouse — and every check
+here asserts focus, so all of them passed.**
+
+`scrollIntoView({block:'nearest'})` is **by definition the minimum scroll**. So a
+control below the fold comes to rest with its bottom **FLUSH to the viewport
+bottom** — exactly where the merged Copilot bubble lives, `position:fixed` in the
+bottom-left corner.
+
+Measured at b668, real Chrome, 1400x900, bubble in its **CLOSED resting state**,
+after pressing "Next: Review & send to Athena":
+
+```
+#pushAllEmrBtn   rect top=860 bottom=900   margin below = 0px of 900
+7 of 9 sample points across the 192px button owned by #mlsCopVoiceBtn
+a real TRUSTED mouse click at its centre (316,880) -> received by the BUBBLE
+```
+
+Reproduced at 1400x900, 1280x720, 1280x600. **0px of margin every time**, because
+that is what 'nearest' guarantees.
+
+**It is a SEAM, not a defect in either change.** b666 (make Review's press
+visible) and b651/b658 (merge three bubbles into one) are each correct alone. The
+defect exists only where they meet — which is exactly what no single lane could
+have measured, and the clearest argument in this repo for a QA lane that owns
+cross-lane interactions.
+
+**Fix:** reserve the overlapping fixed furniture as `scroll-margin-bottom` before
+scrolling, so 'nearest' rests clear of it. Every earlier decision survives — still
+the minimum scroll, still never `block:'center'`, still **0px movement when the
+control is already clickable** (re-measured; that is the 2026-07-16 owner decision
+against jumping). After: **9/9 reachable, 231px margin, real click lands on the
+button**, all three viewports.
+
+**⚠️ THE FIX DEGRADES SILENTLY.** Clearance is computed by element-id lookup
+(`REVIEW_FIXED_FURNITURE` in mls-connect.js). Rename the bubble and every lookup
+returns null, clearance falls to 0, and the defect returns **with a green suite
+and no error anywhere**. That is what
+`tests/review-control-clears-fixed-furniture.test.js` exists to make loud.
+
+**That gate got it wrong twice before it was trustworthy, and both failures are
+instructive:**
+
+1. **v1 passed on the exact regression it was written for.** It searched the
+   source with the id list still in it, so a renamed id matched the very line that
+   renamed it. Circular.
+2. **v2 then failed on a perfectly healthy tree** — the haystack was
+   `mls-connect.js + ScribeFlow.html`, but the bubble is built in
+   `feat_mls_voice_cluster.js`. A false alarm like that trains the next person to
+   delete the test rather than read it.
+
+**Rule earned: prove a new gate FAILS on the real regression AND PASSES on the
+real tree before trusting it. Both directions, every time.**
+
+The b666 pin (`review-step-never-fails-silently.test.js`) was **widened
+deliberately, not relaxed**: it required the literal
+`if (offscreen && send.scrollIntoView)`; it now requires **both** `offscreen` and
+`covered` terms and still forbids an unconditional scroll. Strictly stronger.
+
+**Probes** (session scratchpad): `probe-review-shipped.js` (the four assertions
+incl. send-safety), `probe-review-jump.js` (attributes page movement),
+`probe-review-overlap.js` (rect intersection at three viewports),
+`probe-review-clicksteal.js` (**the decisive one** — a real trusted mouse click).
+
+**Instrument trap #8, learned here:** measuring `scrollY` immediately after
+`scrollIntoView({behavior:'smooth'})` reads **0 by construction** — smooth scroll
+is asynchronous. My first attribution charged the movement to "not b666" on that
+basis and was wrong. What settled it was the **complete** scroll-event log: that
+call was the only scroll in the arm, so the movement was its by elimination.
+
+**Live verification, stated honestly.** b669 is served (`__MLS_AV=b669`) and the
+fixed bytes are confirmed on the wire (`REVIEW_FIXED_FURNITURE`,
+`scrollMarginBottom`, and both guard terms all present in the live
+`mls-connect.js`; `mlsVoiceCluster` present in the live
+`feat_mls_voice_cluster.js`, so the clearance resolves). **NOT done: a live
+behavioural re-measurement.** The harness cannot get past auth on the live site,
+and creating an account or entering credentials there is a hard stop. Someone with
+a real signed-in session should press Review once and confirm the button is
+clickable where it lands.
