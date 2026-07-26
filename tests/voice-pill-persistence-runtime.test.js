@@ -71,7 +71,14 @@ assert(!attrs.has('data-mls-r44-display-owner'), 'legacy display ownership marke
 assert(connect.includes("version: 'ft-1.1.4'"), 'desktop visibility owner was not bumped for the pill retirement');
 assert(!/setProperty\('display', 'inline-flex', 'important'\)/.test(connect),
   'something force-shows a retired bottom-left pill with an inline !important display again — that outranks all five stylesheet retirements and puts the pill back on top of the dock');
-assert(/mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'\]\.forEach[\s\S]{0,400}removeProperty\('display'\)/.test(connect),
+/* window widened 400 -> 700 at b679: the merged heal (Workers D + E) carries
+   its own justification comment and clears BOTH shapes the force-show ever
+   wrote (plain inline-flex AND the !important form D measured surviving on a
+   warm tab). The pinned property — the heal exists in the pill forEach — is
+   unchanged and strictly stronger. */
+assert(/mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'\]\.forEach[\s\S]{0,700}removeProperty\('display'\)/.test(connect),
   'the healing pass that clears an already-written inline display is gone, so a warm tab keeps the pills until it is reloaded');
+assert(/getPropertyPriority\('display'\) === 'important'\) el3\.style\.removeProperty/.test(connect),
+  'the heal no longer clears the !important form — D measured exactly that form surviving on a warm tab, and it outranks every stylesheet retirement');
 
 console.log('PASS voice pill persistence: legacy settings cannot erase another owner\'s display, and nothing force-shows the retired bottom-left pills over the dock');
