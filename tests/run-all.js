@@ -85,6 +85,7 @@ const tests = [
   'shell-passes-write-only-on-change.test.js',
   'control-accessible-name-runtime.test.js',
   'shell-hidden-controls-keep-reach.test.js',
+  'calm-views-folds-keep-reach.test.js',
   'shell-label-authority-contract.test.js',
   'scribeflow-inline-syntax.test.js',
   'startup-hydration-contract.test.js',

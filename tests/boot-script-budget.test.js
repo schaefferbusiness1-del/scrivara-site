@@ -99,11 +99,23 @@ const LOADER = 'mls-connect.js';
  *     pattern (feat_mls_copilot_voice_v2.js) is a separately revertible
  *     satellite, and merging three voice controls is exactly the change you
  *     want to be able to back out on its own. */
-const CEILING = 235;
+/* 235 -> 236 at the 2026-07-26 button-liberation rebuild, for
+ * feat_mls_calm_views.js. Same three questions as the entry above, answered:
+ *   - It is DEFERRED (requestIdleCallback, 4s timeout), so it is not in the
+ *     post-login burst this ceiling guards. EAGER_CEILING does not move.
+ *   - It REMOVES interface. Measured on a running page: Calendar 58 visible
+ *     controls -> 20, AI Studio 33 -> 17. Net chrome goes down.
+ *   - It could have been folded into feat_mls_calm_shell.js to keep the count
+ *     flat, and that would have been the dishonest version: the shell owns
+ *     cross-screen navigation and is the one module you must never have to
+ *     revert to undo a per-view layout opinion. These are separately
+ *     revertible on purpose (window.__mlsCalmViews.revert()). */
+const CEILING = 236;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 235 are eager; the voice cluster is the first
-   deferred one, so EAGER_CEILING deliberately does NOT move with CEILING. */
+/* arm B - deferral. 234 of the 236 are eager; the voice cluster and the calm
+   views are the deferred ones, so EAGER_CEILING deliberately does NOT move
+   with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;
 
