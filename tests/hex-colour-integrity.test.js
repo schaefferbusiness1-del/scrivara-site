@@ -42,6 +42,9 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
+  '#2bb673': 1,   // "b673" — calendar-polish green, present since before b600;
+                  //          collided with the live build number on 2026-07-26
+                  //          (git-verified untouched by the b673 bump)
   '#4B564F': 1,   // "b564"
   '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"

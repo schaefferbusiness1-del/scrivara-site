@@ -645,6 +645,7 @@
     patient: '<circle cx="12" cy="8.5" r="3.6"/><path d="M4.8 20a7.4 7.4 0 0114.4 0"/>',
     visit: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3"/>',
     review: '<path d="M6 3.8h9L19 8v12.2H6z"/><path d="M14.6 3.8V8H19M9 12.5h7M9 16h5"/>',
+    studio: '<path d="M12 4l8 4.5-8 4.5-8-4.5z"/><path d="M4 12.5L12 17l8-4.5M4 16.5L12 21l8-4.5"/>',
     tools: '<circle cx="12" cy="12" r="2.6"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4L6 18M18 18l-1.6-1.6M7.6 7.6L6 6"/>'
   };
 
@@ -668,6 +669,11 @@
        nor recommendations. As `extra` it is a segment and nothing more. */
     { id: 'review', label: 'Review', targets: ['nav_orders', 'nav_recs'],
       extra: ['nav_visit'], as: { nav_visit: 'The note' }, count: 'navOrdCount' },
+    /* Owner 2026-07-26: "add AI Studio to bottom tool bar." Tools cannot be
+       that route: go('tools') opens the shortcuts MENU and never navigates, so
+       studioView was reachable from the dock only via a second hop. This is a
+       plain navigation destination; Tools keeps the menu role unchanged. */
+    { id: 'studio', label: 'AI Studio', targets: ['nav_studio'] },
     { id: 'tools', label: 'Tools', targets: ['nav_studio'], menu: true }
   ];
 
@@ -709,7 +715,10 @@
     patient: ['nav_patients', 'nav_history'],
     visit: ['nav_visit'],
     review: ['nav_orders', 'nav_recs'],
-    tools: ['nav_studio', 'nav_analysis', 'nav_team', 'nav_admin', 'nav_legalreq', 'nav_help', 'nav_staffpull']
+    /* nav_studio lights the Studio item, not Tools: currentDest() is
+       last-match-wins over these keys, so it must appear in exactly one. */
+    studio: ['nav_studio'],
+    tools: ['nav_analysis', 'nav_team', 'nav_admin', 'nav_legalreq', 'nav_help', 'nav_staffpull']
   };
 
   /* ------------------------------------------------------------------- dock */
