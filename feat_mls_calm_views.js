@@ -172,6 +172,27 @@
          So the REAL control is made the biggest thing instead (see css()). */
       primary: null
     },
+    {
+      key: 'team',
+      id: 'teamView',
+      /* Team's <h2> was a four-button toolbar and its empty state said "Press
+         Refresh to load your team" — an instruction that points at a button by
+         name, which stops being true the moment that button moves or folds.
+         The empty state now IS the primary action. */
+      fold: ['#teamView .mls-cv-h2tools'],   /* marked at mount */
+      more: { label: 'More team tools', anchor: '#teamView .card' },
+      primary: {
+        anchor: '#teamView .card',
+        label: function () { return teamHasList() ? 'Refresh your team' : 'Load your team'; },
+        sub: 'Read-only. Every chart still belongs to the doctor who owns it.',
+        available: function () { return typeof W.loadTeamPatients === 'function'; },
+        act: function () {
+          if (typeof W.loadTeamPatients !== 'function') return false;
+          W.loadTeamPatients();
+          return true;
+        }
+      }
+    },
     /* analysisView IS NOT LISTED, and the reason is worth keeping.
        It was, with one fold (#t7AxRefresh) and a disclosure anchored at
        "#analysisView .card". Measured on a running page: the disclosure had
@@ -202,6 +223,13 @@
       var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       return { label: DOW[d.getDay()] + ', ' + MON[d.getMonth()] + ' ' + d.getDate() };
     }, null);
+  }
+
+  function teamHasList() {
+    return safe(function () {
+      var host = byId('teamList');
+      return !!host && qsa('*', host).some(visible);
+    }, false);
   }
 
   function historyHasVisits() {
@@ -245,7 +273,18 @@
          (#ez3Nxt) so a doctor who learned that button has learned this one. */
       '.mls-cv-primary{display:block;width:100%;box-sizing:border-box;margin:0 0 14px;padding:16px 20px;border:0;',
       '  border-radius:16px;background:#2E6A4B;color:#fff;text-align:left;cursor:pointer;font:inherit}',
+      /* Motion comes from the shell's shared vocabulary (--mls-dur-* /
+         --mls-ease-*, feat_mls_calm_shell.js "mls-motion-system"), never a
+         curve invented here. Transform and opacity ONLY: anything else costs a
+         reflow, and boot's TBT on this app is already dominated by forced
+         layout. Background is a paint, not a layout, and matches the shell's
+         own control-hover rule. */
+      '.mls-cv-primary,.mls-cv-more{transition:background var(--mls-dur-2,200ms) var(--mls-ease-inout,ease),',
+      '  transform var(--mls-dur-1,120ms) var(--mls-ease-out,ease)}',
       '.mls-cv-primary:hover{background:#25573D}',
+      '.mls-cv-primary:active,.mls-cv-more:active{transform:scale(.985)}',
+      '@media (prefers-reduced-motion:reduce){.mls-cv-primary,.mls-cv-more{transition:none}',
+      '  .mls-cv-primary:active,.mls-cv-more:active{transform:none}}',
       '.mls-cv-primary .mls-cv-big{display:block;font-size:19px;font-weight:800;line-height:1.25}',
       '.mls-cv-primary .mls-cv-sub{display:block;margin-top:4px;font-size:13px;font-weight:500;opacity:.92}',
       '.mls-cv-more{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px;padding:7px 14px;',
@@ -293,6 +332,19 @@
     if (v.key === 'history') {
       var h2 = qs('#historyView h2');
       if (h2) mark(qsa('button', h2), 'mls-cv-h2tools');
+    }
+    if (v.key === 'team') {
+      var th2 = qs('#teamView h2');
+      if (th2) mark(qsa('button', th2), 'mls-cv-h2tools');
+      /* "Press Refresh to load your team" names a control by its label, and a
+         label is the least stable thing on a screen — the moment Refresh folds
+         into More, the sentence points nowhere. The empty state's job is one
+         sentence; the primary above it is the action. */
+      var empty = byId('teamEmpty');
+      if (empty && empty.getAttribute('data-mls-cv-empty') !== '1') {
+        empty.setAttribute('data-mls-cv-empty', '1');
+        empty.innerHTML = '<span class="big">👥</span>Your team\'s charts are not loaded yet.';
+      }
     }
     if (v.key === 'studio') {
       /* The template shelf has no id and is not always rendered, so it is
