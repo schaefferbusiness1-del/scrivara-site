@@ -129,12 +129,30 @@ const LOADER = 'mls-connect.js';
  *   visit, visit locked      28 ->  9
  *   visit, note ready        43 ->  8
  * Net interface goes down hard; net boot work does not go up. */
-const CEILING = 238;
+/* 238 -> 239 at the 2026-07-26 studio merge, for feat_mls_studio_merge.js
+ * (sm-1.0.0). Owner's order, verbatim: "add the analysis tab to the ai studio
+ * tab smartly".
+ *
+ * The three questions this pin exists to force, answered:
+ *   - DEFERRED (requestIdleCallback, 4s timeout), so EAGER_CEILING does not
+ *     move and the post-login burst this ceiling actually guards is unchanged.
+ *     AI Studio is never the first surface a doctor sees.
+ *   - It REMOVES a destination. Analysis stops being a separate tab and
+ *     becomes one of three sections of AI Studio; measured on the running
+ *     page, the merged surface shows 8 controls at rest where the two
+ *     separate tabs showed 18 and 15.
+ *   - It could have been folded into feat_mls_calm_views.js to keep the count
+ *     flat, and that would have been the dishonest version. This module
+ *     re-parents #analysisView and wraps showView — two things you want to be
+ *     able to back out on their own, at 2am, from one call, without also
+ *     reverting the calendar and history layouts that live in that file. */
+const CEILING = 239;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 238 are eager; the voice cluster was the first
-   deferred one, the calm views the second, and vf-1.0.0 / vo-1.0.0 the third
-   and fourth, so EAGER_CEILING deliberately does NOT move with CEILING. */
+/* arm B - deferral. 234 of the 239 are eager; the voice cluster was the first
+   deferred one, the calm views the second, vf-1.0.0 / vo-1.0.0 the third and
+   fourth, and the studio merge the fifth, so EAGER_CEILING deliberately does
+   NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;
 

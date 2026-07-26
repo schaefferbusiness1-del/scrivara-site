@@ -153,31 +153,18 @@
         act: function () { var b = byId('pullChartBtn'); if (!b) return false; b.click(); return true; }
       }
     },
-    {
-      key: 'studio',
-      id: 'studioView',
-      /* 33 controls: a Copilot, a widget builder, a twelve-tile gallery, and a
-         template shelf whose fourth button is "Delete ALL templates" — a
-         destructive act sitting on the open surface of a browsing screen. */
-      /* Measured on a running page: #studioTemplates is an eleven-chip widget
-         gallery, and the template shelf's fourth button is "🗑 Delete ALL
-         templates". The Copilot's own example chips are NOT folded — on an
-         empty Copilot they are the thing that teaches a doctor what to type,
-         which is the one-minute test rather than an obstacle to it. */
-      fold: [
-        '#studioView #studioTemplates',     /* the widget gallery */
-        '#studioView .mls-cv-fold-tpl'      /* marked at mount: the template shelf row */
-      ],
-      more: { label: 'More studio tools', anchor: '#studioView .card' },
-      /* NO primary BUTTON here, on purpose, and this is the one place the
-         contract's "every screen gets its #ez3Nxt" is met by promotion rather
-         than by addition. The next step on AI Studio is to ask a question, and
-         the control for that already exists: #copilotInput. Adding a big green
-         button whose entire job is to focus a text box six pixels below it
-         would be one more button on the screen the owner said has too many.
-         So the REAL control is made the biggest thing instead (see css()). */
-      primary: null
-    },
+    /* studioView IS NO LONGER LISTED HERE, and the reason is one owner per
+       surface — the lesson this repo keeps re-learning.
+       Owner, 2026-07-26: "add the analysis tab to the ai studio tab smartly".
+       AI Studio is now three sections (Ask / Practice / Build) owned by
+       feat_mls_studio_merge.js, which hoists #analysisView into it. This
+       module's studio fold hid #studioTemplates and mounted its disclosure in
+       "#studioView .card" — which after the merge resolves to #copilotCard,
+       in the ASK section, while the thing it folds lives in BUILD. A route
+       back that is in a different section is not a route back. The fold and
+       its disclosure moved into the merge module's Build section, where they
+       are one click from what they hide.
+       Nothing about the ask box's promotion is lost: sm-1.0.0 carries it. */
     {
       key: 'team',
       id: 'teamView',
@@ -313,10 +300,6 @@
          occupies 18..103px. It is MEASURED from the dock (see liftToast)
          rather than guessed, so it stays right if the dock changes height. */
       'body.' + BODY_CLASS + ' .toast{bottom:var(--mls-toast-lift,96px);pointer-events:none}',
-      /* AI Studio's primary is a PROMOTION, not an addition: the ask box the
-         app already ships becomes the biggest thing on the screen. */
-      'body.' + BODY_CLASS + ' #studioView #copilotInput{min-height:62px;font-size:16.5px;padding:14px 16px;border-radius:14px}',
-      'body.' + BODY_CLASS + ' #studioView #copilotSendBtn{min-width:56px;min-height:56px;font-size:19px;border-radius:14px}',
       '@media (max-width:560px){.mls-cv-primary{padding:14px 16px}.mls-cv-primary .mls-cv-big{font-size:17px}}'
     ].join('\n');
   }
@@ -351,19 +334,6 @@
         empty.setAttribute('data-mls-cv-empty', '1');
         empty.innerHTML = '<span class="big">👥</span>Your team\'s charts are not loaded yet.';
       }
-    }
-    if (v.key === 'studio') {
-      /* The template shelf has no id and is not always rendered, so it is
-         identified by the controls it contains, never by a class we hope
-         exists. Its row is marked, not each button, so the shelf's labels go
-         with it. */
-      qsa('#studioView button').forEach(function (b) {
-        var t = String(b.textContent || '');
-        if (/upload templates|upload a folder|starter op-note templates|delete all templates/i.test(t)) {
-          var row = b.parentElement;
-          if (row && row.id !== 'studioView' && row !== byId(v.id)) mark([row], 'mls-cv-fold-tpl');
-        }
-      });
     }
   }
 
