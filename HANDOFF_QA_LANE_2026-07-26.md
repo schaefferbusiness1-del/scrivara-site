@@ -38,10 +38,12 @@ E2E           30 steps, 0 failed         (real Chrome; grown 17 -> 30 tonight)
 
 **⚠️ EVERY OTHER LANE IS STOPPED.** Checked 2026-07-26: all sessions report
 `isRunning:false` — the design/UI lane last moved 02:27, defects 03:36. There is
-nobody to coordinate with. `#mlsReviewPanel`, which the design lane said it had
-built, **exists in no worktree on this machine** (main, claude-goal,
-claude-defects, claude-commercial all checked). It was never produced. Anyone
-resuming should not wait on that symbol.
+nobody to coordinate with, which is why this lane stopped waiting and started building.
+
+`#mlsReviewPanel` **now exists, and it is this lane's** (b670, §9). The design lane
+claimed to have built it and had not: the symbol was in no worktree on this machine
+(main, claude-goal, claude-defects, claude-commercial all checked) after ~100 polling
+cycles. **A claim that work exists is not the work.** Re-derive from the tip.
 
 ---
 
