@@ -575,12 +575,19 @@
 
   function onResize() { liftToast(); schedule(); }
 
+  /* Frame-vs-timer race, the parity engine's occluded-tab lesson (2026-07-26):
+     rAF never fires in an occluded tab, and MLS's normal posture is behind
+     athenaOne. A pending latch reset only inside the rAF callback therefore
+     freezes this module's reconcile the moment the tab is covered — the view
+     observers keep calling schedule(), the latch is up, and nothing ever
+     mounts. Whichever of the frame or the 300ms timer fires first runs;
+     single-flight; timers throttle in background tabs but always fire. */
   function schedule() {
     if (pending) return;
-    pending = (W.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
-      pending = 0;
-      safe(reconcile);
-    });
+    pending = 1;
+    var run = function () { if (!pending) return; pending = 0; safe(reconcile); };
+    if (W.requestAnimationFrame) W.requestAnimationFrame(run);
+    setTimeout(run, 300);
   }
 
   function watch() {
