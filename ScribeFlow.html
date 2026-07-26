@@ -23378,11 +23378,18 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
+/* b671: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+   below, because that bookkeeping is exactly what can strand the loading screen
+   forever — see sfArmGateWatchdog(). */
+var sfGateWatchdog=0;
 /* Owner directive 2026-07-20: first load must feel near-instant. The minimum
    veil is now just long enough to avoid a flash; accounts WITH a local store
    reveal before cloud hydration finishes (it continues behind the app).
    Still bounded: an optional service can slow startup, never trap it. */
 const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=350;
+/* Above BOTH the 32s force release and startSession's 30.2s hydrate deadline, so
+   the watchdog only ever fires when those two have already failed to fire. */
+const SF_GATE_WATCHDOG_MS=40000;
 /* "Ready" is a hand-off signal, not another loading step.  Keep it readable
    for one beat, then reveal the already-stable app in under 200 ms. */
 const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120;
@@ -23506,6 +23513,87 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
+/* b671 — THE LOADING SCREEN MUST ALWAYS END.
+ *
+ * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
+ *
+ * #sfGateLoading is not just an overlay. Showing it puts `mls-secure-loading` on
+ * <html>, and that class carries
+ *     html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}
+ * so while it is set the ENTIRE application is invisible. Removing that class is
+ * therefore the only thing that can ever end the loading screen — and until now
+ * every path that removed it was guarded by the sfGateHideToken bookkeeping,
+ * which has interleavings with NO owner at all:
+ *
+ *   1. sfShowGateLoading() returns early when the gate is already visible, and
+ *      that early return happens BEFORE armGateForce() — so a second show never
+ *      re-arms the 32s force release.
+ *   2. sfHideGateLoading() clears sfGateForceTimer UNCONDITIONALLY at its top,
+ *      so the moment a hide begins, that safety net is already gone.
+ *   3. sfWaitForStableFirstFrame() resolves FALSE when the token moved, and the
+ *      continuation then returns WITHOUT removing the class.
+ *   4. startSession()'s `if(_startupId!==sfSessionStartupId) return;` means a
+ *      superseded startup never calls sfHideGateLoading at all.
+ *
+ * Compose 1+2+4 — a hide in flight, then a fresh startSession that finds the
+ * gate already up — and nothing anywhere is left holding the responsibility to
+ * reveal. <html> keeps `mls-secure-loading`, the body stays visibility:hidden,
+ * and the doctor watches the branded loading screen forever. No timeout helps,
+ * because the only timeout was cancelled in (2).
+ *
+ * This watchdog is deliberately OUTSIDE that bookkeeping: no token can cancel
+ * it, and it is re-armed by BOTH show paths including the early return. It is a
+ * floor, not a schedule — at 40s it is above both the 32s force and the 30.2s
+ * hydrate deadline, so a healthy startup always beats it and it only ever fires
+ * when the normal machinery has already failed.
+ *
+ * It FAILS CLOSED. If this is a backend session whose compliance decision never
+ * arrived, revealing the app would show clinical surfaces the gate exists to
+ * withhold, so it shows the locked agreements screen — which has a Retry button
+ * — instead. A dead end with a way out beats a dead end without one. */
+function sfArmGateWatchdog(){
+  clearTimeout(sfGateWatchdog);
+  sfGateWatchdog=setTimeout(function(){
+    try{
+      const html=document.documentElement;
+      if(!html.classList.contains('mls-secure-loading')&&!html.classList.contains('mls-app-revealing')) return;
+      /* DELIBERATELY NO `if(document.hidden) re-arm`.
+         Every other bound on this screen has one — _armGate (5493), _armDeadline
+         (5536), armGateForce (23571) and three more in the bundle — and that is
+         precisely why the loading screen can last forever. This product's whole
+         posture is MLS in one window with athenaOne IN FRONT, and a fully
+         occluded window reports document.hidden===true on Windows. So the five
+         existing bounds all re-arm forever in exactly the configuration the
+         doctor actually works in, and nothing is left to end the screen.
+         Being unwatched is not a reason to stay unusable: whenever this finally
+         fires, the app must be usable by the time he looks at it. */
+      if(document.getElementById('agreementsGate')&&document.getElementById('agreementsGate').style.display==='block'){
+        sfCancelGateLoading(); return;                    /* already on an actionable screen */
+      }
+      let live=false;
+      try{ live=!!(typeof backendMode==='function'&&backendMode()&&typeof bkToken==='function'&&bkToken()&&typeof bkUser!=='undefined'&&bkUser); }catch(e){}
+      let hosted=false;
+      try{ hosted=!!(typeof backendMode==='function'&&backendMode()); }catch(e){}
+      sfCancelGateLoading();
+      if(hosted&&!live){
+        /* Fail closed on the CLINICAL surface, but never into a dead end.
+           The locked agreements screen (showAgreementsGate) hides #authScreen
+           and offers only Retry — measured: a returning visitor whose /api/me
+           stalls lands there with NO route back to sign-in, which is the
+           literal complaint "I can't even sign in". Sign-in withholds the
+           clinical app just as completely and is something the doctor can act
+           on, so that is where an unresolved session goes. */
+        const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+        const auth=document.getElementById('authScreen'); if(auth) auth.style.display='flex';
+        try{ if(typeof switchAuth==='function') switchAuth('login'); }catch(e){}
+      }
+    }catch(e){
+      /* Last line of defence: whatever else fails, do not leave the body hidden. */
+      try{ document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing'); }catch(e2){}
+    }
+  },SF_GATE_WATCHDOG_MS);
+}
+
 function sfShowGateLoading(){
   let el=document.getElementById('sfGateLoading');
   if(!el){
@@ -23514,6 +23602,9 @@ function sfShowGateLoading(){
     el.setAttribute('aria-busy','true');
     document.body.appendChild(el);
   }
+  /* Armed on BOTH paths, before the early return below. That early return is
+     precisely the case that skipped armGateForce and left no owner. */
+  sfArmGateWatchdog();
   /* startSession can ask for the gate more than once while authentication and
      hydration settle.  A second call must never reset progress or restart the
      minimum clock. */
@@ -23570,7 +23661,7 @@ function sfShowGateLoading(){
 }
 
 function sfCancelGateLoading(){
-  sfGateHideToken++; clearTimeout(sfGateForceTimer);
+  sfGateHideToken++; clearTimeout(sfGateForceTimer); clearTimeout(sfGateWatchdog);
   sfGateLoadingVisible=false; sfClearGateStages();
   const el=document.getElementById('sfGateLoading');
   const app=document.getElementById('appScreen');
@@ -23613,6 +23704,11 @@ function sfHideGateLoading(gated,options){
           if(el){ el.style.display='none'; el.style.opacity='1'; el.classList.remove('mls-gate-progress'); el.setAttribute('aria-busy','false'); }
           document.documentElement.classList.remove('mls-app-revealing');
           if(app) app.removeAttribute('aria-busy');
+          /* The reveal completed for real — stand the watchdog down. Cleared
+             HERE and not at the top of sfHideGateLoading, because a hide that
+             begins is not a hide that finishes: three of its four exits return
+             early, and those are exactly the strandings it exists to catch. */
+          clearTimeout(sfGateWatchdog);
         }
         resolve();
       },fade);
@@ -28122,7 +28218,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b670';
+  window.__MLS_AV='b671';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -72,6 +72,7 @@ const tests = [
   'athena-overlay-lifecycle-contract.test.js',
   'boot-loading-visual-contract.test.js',
   'boot-loading-lifecycle-runtime.test.js',
+  'gate-loading-always-ends.test.js',
   'progress-stages-runtime.test.js',
   'interaction-performance-contract.test.js',
   'immutable-satellite-loader-cache-contract.test.js',
