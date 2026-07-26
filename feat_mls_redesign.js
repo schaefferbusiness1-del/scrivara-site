@@ -1030,7 +1030,15 @@
 "  #mlsRdNav .navtab{ transition:background .15s ease, color .15s ease; }",
 "  body.mls-redesign .modal-bg{ animation:mlsRdFade .18s ease; }",
 "  body.mls-redesign .modal-bg > *{ animation:mlsRdRise .2s ease; }",
-"  body.mls-redesign #toast{ transition:opacity var(--mls-dur-2) var(--mls-ease-out), transform var(--mls-dur-3) var(--mls-ease-spring); }",
+/* THE EXIT AND THE ENTRANCE ARE DIFFERENT MOVES, and this is where the
+   cascade actually decides them. The page stylesheet declares the split on
+   .toast (0,1,0); this rule is body.mls-redesign #toast (1,1,1) and wins on
+   the live shell, so a split written only in the page was dead CSS —
+   measured 0.2s/0.3s on both directions with the page rule in place.
+   Arriving: a soft spring rise. Leaving: a quicker fade down, so a notice
+   announces itself and then gets out of the way. */
+"  body.mls-redesign #toast{ transition:opacity var(--mls-dur-1) linear, transform var(--mls-dur-2) var(--mls-ease-inout); }",
+"  body.mls-redesign #toast.show{ transition:opacity var(--mls-dur-2) var(--mls-ease-out), transform var(--mls-dur-3) var(--mls-ease-spring); }",
 "  body.mls-redesign button:not(.ez3fl-recbtn){ transition:background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .07s ease; }",
 "  #mlsFabMenu button{ animation:mlsRdRise .18s ease backwards; }",
 "  #mlsTbMenuPanel.open{ animation:mlsRdRise .16s ease; }",

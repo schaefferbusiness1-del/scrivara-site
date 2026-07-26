@@ -227,7 +227,12 @@
     '@keyframes mlsDockInD{from{opacity:0;transform:translateX(-50%) translateY(18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#D6E7DC;',
     'box-shadow:0 1px 2px rgba(20,35,28,.14),inset 0 0 0 1px rgba(32,64,52,.10);',
-    'transition:transform var(--mls-base) var(--mls-spring),width var(--mls-base) var(--mls-spring);pointer-events:none;z-index:0}',
+    /* The pill already glided rather than teleported — the brief's premise was
+   wrong and the running page said so. What it did not do was SETTLE: it
+   used the plain deceleration curve, so it stopped dead on arrival.
+   --mls-ease-spring overshoots by ~1% and comes back, which is the whole
+   difference between a highlight that moves and one that lands. */
+    'transition:transform var(--mls-dur-3) var(--mls-ease-spring),width var(--mls-dur-3) var(--mls-ease-spring);pointer-events:none;z-index:0}',
     '#mlsDock button{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:2px;',
     'min-width:64px;padding:8px 12px 7px;border:0;background:transparent;border-radius:16px;cursor:pointer;',
     'font:500 11.5px/1.1 inherit;color:#5B6B62;transition:color var(--mls-fast) var(--mls-spring),transform var(--mls-fast) var(--mls-spring)}',
@@ -235,7 +240,10 @@
     '#mlsDock button:active{transform:scale(.93)}',
     '#mlsDock button.on{color:#173026;font-weight:700}',
     '#mlsDock button svg{transition:transform var(--mls-base) var(--mls-spring)}',
-    '#mlsDock button.on svg{transform:translateY(-1px) scale(1.08)}',
+    /* The icon lift was 1px and 8% on the plain curve — technically animated,
+   not perceptible. The lift itself is unchanged; the CURVE is what makes it
+   read as the item accepting the selection rather than redrawing. */
+    '#mlsDock button.on svg{transform:translateY(-1px) scale(1.08);transition:transform var(--mls-dur-3) var(--mls-ease-spring)}',
     '#mlsDock button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}',
     '#mlsDock .mls-dock-count{position:absolute;top:3px;right:9px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;',
     'background:#2E6A4B;color:#fff;font:500 10px/15px inherit;text-align:center;transform:scale(0);',

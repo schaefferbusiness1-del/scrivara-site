@@ -207,8 +207,16 @@
       'background:#FBFAF7;border:1px solid #E4E1D8;border-radius:14px;padding:8px;',
       'box-shadow:0 1px 2px rgba(20,33,28,.04);}',
       '#' + ROOT_ID + '.open #' + FAN_ID + '{display:flex;',
-      'animation:mlsVoIn .18s cubic-bezier(.2,.8,.3,1) both;}',
-      '@keyframes mlsVoIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}',
+      /* NO FILL. b680 found three entrances that applied their opacity:0 keyframe
+   before running and could strand a surface invisible; this file was outside
+   that gate's three-file scan set and carried a fourth. The to-state is the
+   resting state, so the fill bought nothing. */
+      'transform-origin:top center;animation:mlsVoIn var(--mls-dur-2) var(--mls-ease-spring);}',
+      /* Scale from the trigger, not just a slide: transform-origin sits at the
+   top of the fan, directly under the face that opened it, so the options
+   grow OUT of the control instead of sliding past it. .96 is small enough
+   that no text reflows perceptibly. */
+      '@keyframes mlsVoIn{from{opacity:0;transform:translateY(-4px) scale(.96)}to{opacity:1;transform:none}}',
 
       '#' + FAN_ID + ' .vo-item{display:flex;align-items:center;gap:11px;text-align:left;width:100%;',
       'background:#fff;border:1px solid #E7E5DD;border-radius:11px;color:#1A211C;',
