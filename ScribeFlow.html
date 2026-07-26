@@ -1927,8 +1927,15 @@ html body.mls-phone [onclick*="pullScheduleViaAssist"]{ display:none !important;
     if(api){ api.sheetsSeen+=n; api.rules+=css.length; api.passes++; }
     return css.length;
   }
+  /* b682: `pending` must RESET when the frame fires, or schedule() is a
+     one-shot latch: the first call at boot consumes it forever, every later
+     trigger (the sheet observers, the five catch-up timeouts, the dark-flip
+     observer) returns early, and the engine never scans a page that has
+     actually loaded. Measured on the LIVE signed-in page before this fix (2026-07-26):
+     passes:0, noops:0 - and one manual refresh() derived 1,368 rules and
+     turned the white .mlspk-card islands dark on the spot. */
   function schedule(){ if(pending) return; pending=true;
-    (window.requestAnimationFrame||setTimeout)(function(){ try{ scan(); }catch(e){} },0); }
+    (window.requestAnimationFrame||setTimeout)(function(){ pending=false; try{ scan(); }catch(e){} },0); }
 
   function arm(){
     if(armed) return; armed=true;
@@ -24030,7 +24037,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b681: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b682: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24165,7 +24172,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b681 — THE LOADING SCREEN MUST ALWAYS END.
+/* b682 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -28870,7 +28877,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b681';
+  window.__MLS_AV='b682';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
