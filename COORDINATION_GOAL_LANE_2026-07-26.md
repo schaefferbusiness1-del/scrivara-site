@@ -30,7 +30,21 @@ phone-app lane stopped 10:18 AM. Nobody else is moving.
 | b672 | pts-rowguard-2.0.0 (generation rule + pull shield) + sv-1.1.1 re-save cooldown | LIVE, clean-state verified (Worker C) |
 | b673 | AI Studio dock destination (owner directive) | LIVE, clean-state verified (Worker C) |
 | b674 | ext 3.0.21 (sfp-1.0.0/1.0.1 schedule freshness, Worker B) — zip byte-verified 60cb01b9… | LIVE; NOT yet pong-verified on a running machine |
-| b675 | churn: paintFab/paintChip re-decoration wars end (Worker C); timer-brief corrections | pushed, deploy pending |
+| b675 | churn: paintFab/paintChip re-decoration wars end (Worker C); timer-brief corrections | LIVE |
+| b676 | vc-2.0.0 bubbles retired + record pill Pause/Resume-only + Worker A contrast (2 gates) | LIVE, owner-tab verified |
+| b677 | extension badge compares installed↔channel; texts honest | LIVE, badge verified green |
+| b678 | Worker E: dock owns its clicks (ft-1.1.4 + toast hit-hole), calendar 58→12, Teams ready-but-held | LIVE, 9/9 dock ownership verified |
+| b679 | Worker D: vf-1.0.0 one-primary-per-state + vo-1.0.0 combined voice control, 177→64 controls | LIVE, single-textarea verified |
+| b680 | Worker F: dark 170→12 panels, radius 16→7, headings, motion tokens | LIVE |
+| b681 | exact-modules imp() literals → theme tokens (24 sites, 8 modules, loader tokens bumped) | LIVE ⚠ shipped on a red pin-only gate — recorded |
+| b682 | parity engine pending-latch reset | LIVE (insufficient alone) |
+| b683 | parity schedule races frame vs timer (occluded-tab posture) | LIVE: passes 5, 1487 rules, 0 white cards, owner-tab DARK verified; theme restored light |
+
+## In flight (workers)
+
+- D2: Advanced-visit-workspace retirement + op-notes accessibility (owner directive)
+- E2: Analysis merged into AI Studio (owner directive)
+- G: voice assistant ↔ Copilot unification; recording pickup constraints; honest turn labels (owner directives)
 
 ## The owner's tabs (identified 2026-07-26, owner: "I gave u all needed tabs")
 
