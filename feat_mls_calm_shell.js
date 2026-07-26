@@ -426,6 +426,20 @@
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
     '#mlsToolsMenu .sep{height:1px;margin:5px 8px;background:rgba(0,0,0,.07)}',
     '#mlsToolsMenu .r.classic{color:#68736B}',
+    /* Section captions. Quiet by construction - a caption that competes with
+       the rows under it turns four labels into four more things to read. The
+       rule above each section after the first is what makes the grouping
+       visible at a glance rather than on a second pass.
+       var(--muted), never a literal grey: measured on the running page, a
+       hand-picked #79837C reads 3.93:1 on this menu's near-white background,
+       under AA for 10.5px text, while --muted's light value clears it at
+       5.31:1. That is the rule tests/secondary-text-is-a-theme-token.test.js
+       exists to hold, and the token is also what the dark parity layer already
+       resolves this caption to. */
+    '#mlsToolsMenu .gh{padding:8px 12px 3px;font-weight:800;font-size:10.5px;line-height:1.2;',
+    'letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#636E66);cursor:default;',
+    'user-select:none;-webkit-user-select:none}',
+    '#mlsToolsMenu .grp + .grp{margin-top:4px;padding-top:3px;border-top:1px solid rgba(0,0,0,.06)}',
 
     /* right-now bar */
     '#mlsRightNow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding:10px 12px;',
@@ -553,7 +567,13 @@
     '@keyframes mlsViewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}',
 
     '@media (prefers-reduced-motion: reduce){',
-    '#mlsDock,#mlsRightNow button,#mlsAskResults,body.mls-calm .view-enter{animation-duration:1ms!important}',
+    /* #mlsToolsMenu was missing from this list. Two surfaces in this stylesheet
+       animate with mlsPop - #mlsAskResults and this menu - and only the first
+       was named, so the Tools menu kept springing open for a doctor who asked
+       the OS for less motion. Measured, not assumed: the popped-open menu
+       reported animation-duration 300ms under a reduced-motion emulation. */
+    '#mlsDock,#mlsRightNow button,#mlsAskResults,#mlsToolsMenu,',
+    'body.mls-calm .view-enter{animation-duration:1ms!important}',
     '#mlsBusy i{animation-duration:2s!important}',
     '*{transition-duration:1ms!important}}',
 
@@ -811,58 +831,101 @@
   /* The shell hides the header buttons and the overflow rail tabs. Every one of
      them reappears here, clicking the real control. Without this menu those
      controls would be reachable only by typing their name in Ask, which the
-     charter (and the coverage suite) forbid. */
-  var TOOLS_SOURCES = [
-    { id: 'nav_studio' },
-    /* nav_analysis is KEPT here, relabelled, 2026-07-26. It is no longer a
-       destination of its own — showView('analysis') lands on AI Studio with
-       Practice open — but the Tools row is the one place a doctor who is
-       looking for the word "Practice" can still find it in a menu, and it now
-       says where it goes. Removing it would have been a silent deletion of a
-       route the coverage suite already knows about. */
-    { id: 'nav_analysis', as: 'Practice trends (AI Studio)' },
-    { id: 'nav_team' },
-    { id: 'nav_legalreq' }, { id: 'nav_admin' }, { id: 'nav_staffpull' }, { id: 'nav_help' },
-    /* askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
-       button, and listing it here as well is the duplication we are removing. */
-    /* "Patient intake" and "New patient" are DIFFERENT things and read as the
-       same thing, so a doctor reaching for one lands in the other's UI. Named
-       here for what each actually does; adding a patient stays a single flow,
-       reached from Patients > New patient. */
-    { id: 'mls-ask-btn', as: 'Ask your data' },
-    /* b560 folded three floating pills into the dock's Copilot button and
-       hid #mlsCopVoiceBtn, #mlsAsstFab and #mlsDaDock. That was right about the
-       clutter and wrong about the reach: the dock's Copilot opens
-       askCopilotHdrBtn, which is a DIFFERENT surface from Copilot Voice, the
-       Assistant panel, and dictate-into-the-transcript. Their only remaining
-       route was the ez3 chips on the Visit screen, so on every other screen
-       three capabilities had no reach at all. The coverage suite never caught
-       it because these ids are not in the inventory.
-       Reading the chip handlers is what surfaced this - I had been about to
-       fold the chips as duplicates, which would have stranded all three. */
-    { id: 'mlsCopVoiceBtn', as: 'Copilot Voice' },
-    { id: 'mlsAsstFab', as: 'MLS Assistant' },
-    { id: 'mlsDaDock', as: 'Dictate' },
-    { id: 'mlsPdpSel', as: 'Where pulls run' },
-    { id: 'mlsDsVisitBodies', as: 'Full visit notes' },
-    { id: 'intakeBtn', as: 'Pre-visit intake forms' },
-    { id: 'customWidgetHdrBtn' },
-    { label: /^templates$/i, within: '#appHeader' },
-    { label: /^settings$/i, within: '#appHeader' },
-    { label: /^log out$/i, within: '#appHeader' },
-    /* Relocated off the patient header — see PT_MOVED. */
-    { label: /^schedule$/i, within: '#profileCard' },
-    { label: /^draft op note$/i, within: '#profileCard' },
-    { label: /^share \/ export$/i, within: '#profileCard' },
-    { label: /^export everything for emr$/i, within: '#profileCard' },
-    { label: /^verify saved data$/i, within: '#profileCard' },
-    { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
-    { label: /^add a visit$/i, within: '#profileCard' },
-    /* Only Snapshot is relocated off the context bar — see CTX_MOVED. After-visit
-       summary and Patient portal stay on the bar, so they are deliberately NOT
-       listed here; offering them in both places is the duplication this removes. */
-    { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' }
+     charter (and the coverage suite) forbid.
+
+     FOUR SECTIONS, NOT ONE LIST. Measured on a running page at b685: the menu
+     rendered 17 rows flat in 224x718 of clipped, scrolling column, and the flat
+     order put "Log out" at position 10 - between "Settings" and "Schedule".
+     The one row that ends the session sat in the middle of the practice tools,
+     one slip of the finger from a doctor reaching for Schedule mid-clinic.
+
+     The sections are ordered the way a clinic day runs: what you reach for
+     mid-encounter, then the practice around it, then the record, then the app
+     itself. Log out is last and separated, because it is the only row here
+     that is not about the patient in front of you.
+
+     GROUPING MOVES ROWS. IT NEVER DROPS ONE. Every route that was in the flat
+     list is in a section, including the ones the assignment did not name
+     (nav_*, "Add a visit", "Copy every visit from athenaOne", "Full visit
+     notes"): a menu that quietly loses a row is the feature loss this whole
+     shell is guarding against. */
+  var TOOLS_GROUPS = [
+    { id: 'visit', label: 'During a visit', items: [
+      /* b560 folded three floating pills into the dock's Copilot button and
+         hid #mlsCopVoiceBtn, #mlsAsstFab and #mlsDaDock. That was right about the
+         clutter and wrong about the reach: the dock's Copilot opens
+         askCopilotHdrBtn, which is a DIFFERENT surface from Copilot Voice, the
+         Assistant panel, and dictate-into-the-transcript. Their only remaining
+         route was the ez3 chips on the Visit screen, so on every other screen
+         three capabilities had no reach at all. The coverage suite never caught
+         it because these ids are not in the inventory.
+         Reading the chip handlers is what surfaced this - I had been about to
+         fold the chips as duplicates, which would have stranded all three. */
+      { id: 'mlsDaDock', as: 'Dictate' },
+      { id: 'mlsCopVoiceBtn', as: 'Copilot Voice' },
+      { id: 'mlsAsstFab', as: 'MLS Assistant' },
+      /* Relocated off the patient header — see PT_MOVED. */
+      { label: /^draft op note$/i, within: '#profileCard' },
+      /* Only Snapshot is relocated off the context bar — see CTX_MOVED. After-visit
+         summary and Patient portal stay on the bar, so they are deliberately NOT
+         listed here; offering them in both places is the duplication this removes. */
+      { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' }
+    ] },
+    { id: 'practice', label: 'Practice', items: [
+      { label: /^schedule$/i, within: '#profileCard' },
+      { id: 'intakeBtn', as: 'Pre-visit intake forms' },
+      { label: /^templates$/i, within: '#appHeader' },
+      { id: 'customWidgetHdrBtn' },
+      /* "Patient intake" and "New patient" are DIFFERENT things and read as the
+         same thing, so a doctor reaching for one lands in the other's UI. Named
+         here for what each actually does; adding a patient stays a single flow,
+         reached from Patients > New patient.
+         askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
+         button, and listing it here as well is the duplication we are removing. */
+      { id: 'mls-ask-btn', as: 'Ask your data' },
+      /* "Where pulls run" named a place, not a thing a doctor wants. What they
+         are looking for when they open this is whether the pull is happening
+         and where - so the row says what it shows. */
+      { id: 'mlsPdpSel', as: 'Pull activity' },
+      /* nav_studio is AI Studio. Left unlabelled it derived "Tools · PREMIUM"
+         from the rail tab, so the Tools menu carried a row called Tools that
+         went somewhere else - two controls sharing a label for different
+         actions, which the labeling law forbids. */
+      { id: 'nav_studio', as: 'AI Studio' },
+      /* nav_analysis is KEPT here, relabelled, 2026-07-26. It is no longer a
+         destination of its own — showView('analysis') lands on AI Studio with
+         Practice open — but the Tools row is the one place a doctor who is
+         looking for the word "Practice" can still find it in a menu, and it now
+         says where it goes. Removing it would have been a silent deletion of a
+         route the coverage suite already knows about. */
+      { id: 'nav_analysis', as: 'Practice trends (AI Studio)' },
+      { id: 'nav_team' },
+      { id: 'nav_staffpull' }, { id: 'nav_legalreq' }
+    ] },
+    { id: 'data', label: 'Data', items: [
+      { label: /^verify saved data$/i, within: '#profileCard' },
+      { label: /^share \/ export$/i, within: '#profileCard' },
+      { label: /^export everything for emr$/i, within: '#profileCard' },
+      { id: 'mlsDsVisitBodies', as: 'Full visit notes' },
+      { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
+      { label: /^add a visit$/i, within: '#profileCard' }
+    ] },
+    /* `last: true` pins a row to the end of its section behind a rule, wherever
+       the app happens to offer it. Log out is the only one, and the flag exists
+       so it cannot drift back into the middle the way it already did once. */
+    { id: 'app', label: 'App', items: [
+      { label: /^settings$/i, within: '#appHeader' },
+      { id: 'nav_admin' }, { id: 'nav_help' },
+      { label: /^log out$/i, within: '#appHeader', last: true }
+    ] }
   ];
+
+  /* The flat view of the same specs. Kept because the reach suite and the
+     hidden-controls suite both read this shape, and because "which controls
+     does the shell surface" is a question about the set, not the sections. */
+  var TOOLS_SOURCES = TOOLS_GROUPS.reduce(function (all, g) {
+    return all.concat(g.items);
+  }, []);
 
   /* ------------------------------------------------ trusted-gesture controls */
 
@@ -941,23 +1004,51 @@
     return true;
   }
 
+  function toolsResolve(spec) {
+    var el = null;
+    if (spec.id) {
+      el = D.getElementById(spec.id);
+    } else {
+      var root = qs(spec.within);
+      if (root) {
+        qsa('button,.navtab', root).some(function (b) {
+          if (!available(b) || !spec.label.test(textOf(b))) return false;
+          el = b;
+          return true;
+        });
+      }
+    }
+    if (!available(el) || !textOf(el)) return null;
+    return { el: el, label: spec.as || controlLabel(el), last: !!spec.last };
+  }
+
+  /* Flat, in section order, so the row index used by the click handler is one
+     list however the sections are drawn. Unchanged in what it offers: an absent
+     control is still an absent row. */
   function toolsItems() {
     var out = [];
     TOOLS_SOURCES.forEach(function (spec) {
-      var el = null;
-      if (spec.id) {
-        el = D.getElementById(spec.id);
-      } else {
-        var root = qs(spec.within);
-        if (root) {
-          qsa('button,.navtab', root).some(function (b) {
-            if (!available(b) || !spec.label.test(textOf(b))) return false;
-            el = b;
-            return true;
-          });
-        }
-      }
-      if (available(el) && textOf(el)) out.push({ el: el, label: spec.as || controlLabel(el) });
+      var it = toolsResolve(spec);
+      if (it) out.push(it);
+    });
+    return out;
+  }
+
+  /* The same items, split into the sections they are declared in, with a row
+     marked `last` pushed to the end of its own section. Sections with nothing
+     available are dropped whole - a caption over no rows is chrome describing
+     absence, which is exactly what this menu is being cleaned up to stop. */
+  function toolsSections() {
+    var out = [], flat = 0;
+    TOOLS_GROUPS.forEach(function (g) {
+      var head = [], tail = [];
+      g.items.forEach(function (spec) {
+        var it = toolsResolve(spec);
+        if (!it) return;
+        it.i = flat++;
+        (it.last ? tail : head).push(it);
+      });
+      out.push({ id: g.id, label: g.label, rows: head, tailRows: tail });
     });
     return out;
   }
@@ -974,12 +1065,36 @@
     menu.id = 'mlsToolsMenu';
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', 'Tools');
-    var items = toolsItems();
-    menu.innerHTML = items.map(function (it, i) {
-      return '<div class="r" role="menuitem" tabindex="0" data-i="' + i + '">' +
+    /* ONE resolution pass. toolsSections() and toolsItems() would each walk the
+       live DOM, and a control that appeared between the two calls would shift
+       every row index after it - the click handler reads data-i, so the doctor
+       would press one row and run another. */
+    var sections = toolsSections();
+    var items = [];
+    sections.forEach(function (s) {
+      s.rows.concat(s.tailRows).forEach(function (it) { items[it.i] = it; });
+    });
+    function row(it) {
+      return '<div class="r" role="menuitem" tabindex="0" data-i="' + it.i + '">' +
         it.label.replace(/[<>&]/g, '') + '</div>';
-    }).join('') + '<div class="sep"></div>' +
-      '<div class="r classic" role="menuitem" tabindex="0" data-classic="1">Classic layout</div>';
+    }
+    menu.innerHTML = sections.map(function (s) {
+      var body = s.rows.map(row).join('');
+      var tail = s.tailRows.map(row).join('');
+      /* The escape hatch rides the App section rather than floating under the
+         whole menu: it is an app-level choice like Settings, and a row with no
+         section was the last thing left in the flat list. */
+      if (s.id === 'app') {
+        body += '<div class="r classic" role="menuitem" tabindex="0" data-classic="1">Classic layout</div>';
+      }
+      if (!body && !tail) return '';
+      /* Log out is separated from what precedes it, and only when both exist -
+         a rule under nothing is a line for its own sake. */
+      var sep = (body && tail) ? '<div class="sep"></div>' : '';
+      return '<div class="grp" role="group" aria-label="' + s.label + '">' +
+        '<div class="gh" aria-hidden="true">' + s.label + '</div>' +
+        body + sep + tail + '</div>';
+    }).join('');
     (D.body || D.documentElement).appendChild(menu);
 
     var rect = anchor.getBoundingClientRect();
