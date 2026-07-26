@@ -33418,7 +33418,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b666';
+  window.__MLS_AV = window.__MLS_AV || 'b667';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33728,7 +33728,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b666';
+  var MLS_APP_BUILD='2026-07-25-b667';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42673,15 +42673,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        look like a different page. It now remains in the same position and is
        simply native-disabled while the selected day is already Today. */
     if (tb) {
-      tb.style.display = '';
-      tb.disabled = !!isToday;
-      tb.setAttribute('aria-disabled', isToday ? 'true' : 'false');
-      tb.setAttribute('aria-current', isToday ? 'date' : 'false');
-      tb.title = isToday ? 'Already viewing Today' : 'Go to Today';
+      /* syncStrip runs on every pass, and every line here used to commit
+         unconditionally. The tooltip was the one that got measured -
+         13 writes of 'Already viewing Today', none of them a same-value
+         write, because feat_athena_tooltip_dedupe strips title to data-tip
+         between passes: getAttribute then returns null, so a guard on title
+         can never hold and the write always happens. Writing data-tip
+         directly ends that loop - nothing removes data-tip, so the compare
+         is stable and the hover bubble reads the same channel it always did.
+         The rest are guarded because an unchanged attribute still notifies
+         every observer watching it. */
+      if (tb.style.display !== '') tb.style.display = '';
+      if (tb.disabled !== !!isToday) tb.disabled = !!isToday;
+      var tbDis = isToday ? 'true' : 'false';
+      if (tb.getAttribute('aria-disabled') !== tbDis) tb.setAttribute('aria-disabled', tbDis);
+      var tbCur = isToday ? 'date' : 'false';
+      if (tb.getAttribute('aria-current') !== tbCur) tb.setAttribute('aria-current', tbCur);
+      var tbTip = isToday ? 'Already viewing Today' : 'Go to Today';
+      if (tb.getAttribute('data-tip') !== tbTip) tb.setAttribute('data-tip', tbTip);
     }
     /* The split other-day UI is retired; the native Easy workspace remains
        visible for every selected date. */
-    try { var body = $('mlsEz3Body'); if (body) body.classList.remove('mls-ds-otherday'); } catch (e) {}
+    try { var body = $('mlsEz3Body'); if (body && body.classList.contains('mls-ds-otherday')) body.classList.remove('mls-ds-otherday'); } catch (e) {}
   }
   function setDay(k) {
     k = String(k || '').slice(0, 10);

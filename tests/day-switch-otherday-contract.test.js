@@ -107,9 +107,16 @@ assert(!/tb\.style\.display\s*=\s*isToday\s*\?/.test(syncStripSource),
 {
   const attrs = {};
   const label = { innerHTML: '' };
+  /* getAttribute is part of the contract this double stands in for. syncStrip
+     now compares before it commits — an unchanged attribute still notifies every
+     observer watching it, and the Today tooltip in particular was caught writing
+     13 times with no same-value write, because the tooltip dedupe strips `title`
+     between passes so a guard on it can never hold. A double that implements
+     only the write half cannot exercise a read-before-write writer. */
   const today = {
     style: { display: 'none' }, disabled: false, title: '',
-    setAttribute(name, value) { attrs[name] = String(value); }
+    setAttribute(name, value) { attrs[name] = String(value); },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null; }
   };
   const DS = { day: '2026-07-19' };
   const ctx = {
@@ -126,7 +133,14 @@ assert(!/tb\.style\.display\s*=\s*isToday\s*\?/.test(syncStripSource),
   assert.strictEqual(today.disabled, true, 'Today shortcut is actionable while already on Today');
   assert.strictEqual(attrs['aria-disabled'], 'true');
   assert.strictEqual(attrs['aria-current'], 'date');
-  assert.strictEqual(today.title, 'Already viewing Today');
+  /* The tooltip moved from title to data-tip. feat_athena_tooltip_dedupe strips
+     title to data-tip and REMOVES it, so writing title meant a guard could never
+     hold - getAttribute returns null and the write repeats forever (13 captured
+     on the owner's tab, none a same-value write). data-tip is the channel the
+     hover bubble actually reads and nothing removes it. Still asserting the user
+     gets the words, just on the surviving channel. */
+  assert.strictEqual(attrs['data-tip'], 'Already viewing Today');
+  assert.strictEqual(today.title, '', 'the Today shortcut must not write title - it is stripped between passes');
 
   DS.day = '2026-07-20';
   ctx.syncStrip();
@@ -134,7 +148,8 @@ assert(!/tb\.style\.display\s*=\s*isToday\s*\?/.test(syncStripSource),
   assert.strictEqual(today.disabled, false, 'Today shortcut stayed disabled on another date');
   assert.strictEqual(attrs['aria-disabled'], 'false');
   assert.strictEqual(attrs['aria-current'], 'false');
-  assert.strictEqual(today.title, 'Go to Today');
+  assert.strictEqual(attrs['data-tip'], 'Go to Today');
+  assert.strictEqual(today.title, '', 'the Today shortcut must not write title on either branch');
 }
 
 // The date/row authority is public; consumers must not scrape labels or build

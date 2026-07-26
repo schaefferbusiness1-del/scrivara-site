@@ -119,7 +119,9 @@ assert(syncStripSource.includes('tb.disabled = !!isToday;'),
   const label = { innerHTML: '' }, attrs = {};
   const todayButton = {
     style: { display: 'none' }, disabled: false, title: '',
-    setAttribute(name, value) { attrs[name] = String(value); }
+    setAttribute(name, value) { attrs[name] = String(value); },
+    /* syncStrip compares before it commits, so the double must answer reads too. */
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null; }
   };
   const DS = { day: '2026-07-19' };
   const ctx = {
