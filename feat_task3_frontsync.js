@@ -872,7 +872,7 @@
       '#mlsT3Status .t3s-x{margin-left:auto;cursor:pointer;opacity:.6;font-weight:800;padding:0 4px}',
       /* provider roster pills */
       '#mlsT3Roster{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:2px 0 12px}',
-      '#mlsT3Roster .t3r-cap{font-size:11px;font-weight:800;letter-spacing:.06em;color:#8a9cb2;text-transform:uppercase;margin-right:2px}',
+      '#mlsT3Roster .t3r-cap{font-size:11px;font-weight:800;letter-spacing:.06em;color:#5C6E86;text-transform:uppercase;margin-right:2px}',
       '#mlsT3Roster .t3r-chip{font:600 12.5px/1 system-ui,sans-serif;color:#204034;background:#fff;border:1px solid #d5e2f2;border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}',
       '#mlsT3Roster .t3r-chip b{font-weight:800;margin-left:3px;color:#2E6A4B}',
       '#mlsT3Roster .t3r-chip:hover{border-color:#C9DCD2;background:#f3f8ff}',

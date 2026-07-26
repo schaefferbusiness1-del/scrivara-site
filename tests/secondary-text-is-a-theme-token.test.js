@@ -48,7 +48,15 @@ const ROOT = path.resolve(__dirname, '..');
 const RETIRED = {
   '#A6AEA6': '2.18:1 on #FBFAF7 - Analysis tile subtitles and 12 other modules',
   '#9AA69E': '2.42:1 on #FBFAF7 - the Visit stage label',
-  '#8C978F': '2.97:1 on #FBFDFF - the patient chart key labels, incl. "allergies"'
+  '#8C978F': '2.97:1 on #FBFDFF - the patient chart key labels, incl. "allergies"',
+  /* The blue-grey secondary is a SEPARATE family and was handled differently,
+     on purpose. It belongs to the calendar/pick modules, which carry a blue
+     accent, so folding it into the green-grey --muted would have changed the
+     hue rather than only the lightness. It was darkened within its own family
+     to #5C6E86 (5.21:1 on white, 4.72:1 on the segmented control). That is safe
+     in BOTH themes because - measured - these labels only ever render on panels
+     that stay light when theme-dark is on. */
+  '#8a9cb2': '2.81:1 on #ffffff - "DAY AT A GLANCE", "PROVIDERS", picker reasons'
 };
 
 const appFiles = fs.readdirSync(ROOT)
@@ -132,6 +140,6 @@ assert.deepStrictEqual(failures, [],
   '\nThis token carries the secondary text of the whole app, so a near-miss here is a near-miss everywhere.');
 
 const worst = Math.min(...Object.keys(SURFACES).map(s => contrast(muted, s)));
-console.log('PASS secondary text is a theme token: 3 retired greys absent from ' + appFiles.length +
+console.log('PASS secondary text is a theme token: ' + Object.keys(RETIRED).length + ' retired greys absent from ' + appFiles.length +
   ' app files, light --muted ' + muted + ' agrees across both declarations and clears AA on all ' +
   Object.keys(SURFACES).length + ' app surfaces (worst ' + (Math.round(worst * 100) / 100) + ':1)');

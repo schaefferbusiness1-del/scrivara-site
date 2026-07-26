@@ -126,7 +126,7 @@
     var prov = rail.querySelector(":scope > .cx-prov");
     if (!prov) {
       prov = mk("div", "padding:16px 18px"); prov.className = "cx-card cx-prov";
-      prov.innerHTML = '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#8a9cb2;margin-bottom:12px">PROVIDERS</div><div class="cx-prov-list"></div><div class="cx-prov-slot" style="margin-top:6px"></div>';
+      prov.innerHTML = '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#5C6E86;margin-bottom:12px">PROVIDERS</div><div class="cx-prov-list"></div><div class="cx-prov-slot" style="margin-top:6px"></div>';
       rail.appendChild(prov);
     }
     renderProviders(prov);
@@ -208,7 +208,7 @@
     }
     var html =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">' +
-        '<span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#8a9cb2">DAY AT A GLANCE</span>' +
+        '<span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#5C6E86">DAY AT A GLANCE</span>' +
         '<span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#1f7d5c;background:#eef7f3;border:1px solid #cfe9dd;padding:3px 9px;border-radius:20px"><span style="width:6px;height:6px;border-radius:50%;background:#27b07a"></span>' + nowLbl + '</span>' +
       '</div>' + rows +
       '<div style="border-top:1px solid #F4F2EC;margin-top:6px;padding-top:12px;display:flex;align-items:center;justify-content:space-between">' +

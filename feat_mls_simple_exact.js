@@ -216,7 +216,7 @@
       avatarHTML = E.person;
     }
     var athConn = athenaConnected();
-    var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#E7E5DD") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#8a9cb2") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
+    var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#E7E5DD") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#5C6E86") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
     host.innerHTML =
       '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#EAF1EE" : "#E7E5DD") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,33,28,.04)">' +
         '<span style="width:36px;height:36px;border-radius:10px;background:' + avatarBg + ';color:#2E6A4B;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">' + avatarHTML + '</span>' +
@@ -316,7 +316,7 @@
           '</div>' +
           '<button id="simMUse" style="margin-top:12px;height:42px;padding:0 18px;border-radius:11px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:13.5px;cursor:pointer">Use this patient</button>' +
         '</div>' +
-        '<p style="text-align:center;color:#8a9cb2;font-size:12.5px;margin-top:16px">Not connected? Use the &ldquo;Whose patients?&rdquo; box above to pick a doctor, then pull.</p>';
+        '<p style="text-align:center;color:#5C6E86;font-size:12.5px;margin-top:16px">Not connected? Use the &ldquo;Whose patients?&rdquo; box above to pick a doctor, then pull.</p>';
       $("simPullToday").onclick = function () { _pickScope = "today"; if (athenaConnected()) clickById("mlscpToday"); renderPick("today"); setTimeout(function () { renderPick("today"); }, 1600); };
       (function () { var _spd = $("simPullDate"); if (_spd && !_spd.value) { var _t = new Date(); _spd.value = _t.getFullYear() + "-" + ("0" + (_t.getMonth() + 1)).slice(-2) + "-" + ("0" + _t.getDate()).slice(-2); }
         var _db = $("simPullDay"); if (_db) _db.onclick = function () {

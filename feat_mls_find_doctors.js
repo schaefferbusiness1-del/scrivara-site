@@ -150,7 +150,7 @@
       "#" + MODAL_ID + " .fd-row:hover{border-color:#EAF1EE;background:#f5f9ff}",
       "#" + MODAL_ID + " .fd-row.is-chosen{border-color:#2E6A4B;box-shadow:0 0 0 2px rgba(32,64,52,.16)}",
       "#" + MODAL_ID + " .fd-nm{font-weight:700;font-size:14px;color:#1A211C}",
-      "#" + MODAL_ID + " .fd-sp{font-size:11.5px;color:#8a9cb2;margin-top:1px}"
+      "#" + MODAL_ID + " .fd-sp{font-size:11.5px;color:#5C6E86;margin-top:1px}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(s);
   }
@@ -183,7 +183,7 @@
     var m = ensureModal(); var box = m.querySelector(".fd-list");
     var docs = realDoctors();
     var chosen = (window.__mlsFindDoctors.chosen || {}).raw;
-    if (!docs.length) { box.innerHTML = '<div style="padding:20px;text-align:center;color:#8a9cb2;font-size:13px">No providers discovered yet. Pull a schedule with athenaOne open, then try again.</div>'; return; }
+    if (!docs.length) { box.innerHTML = '<div style="padding:20px;text-align:center;color:#5C6E86;font-size:13px">No providers discovered yet. Pull a schedule with athenaOne open, then try again.</div>'; return; }
     var html = "";
     for (var i = 0; i < docs.length; i++) {
       html += '<button type="button" class="fd-row' + (docs[i].raw === chosen ? " is-chosen" : "") + '" data-i="' + i + '">' +

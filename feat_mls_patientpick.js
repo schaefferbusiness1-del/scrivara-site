@@ -359,7 +359,7 @@
       ".mlspk-info{flex:1;min-width:0;line-height:1.3}",
       ".mlspk-nm{display:block;font-weight:700;font-size:14px;color:#1A211C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mlspk-meta{display:block;color:#79837C;font-size:12px;margin-top:1px}",
-      ".mlspk-reason{display:block;color:#8a9cb2;font-size:11.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".mlspk-reason{display:block;color:#5C6E86;font-size:11.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mlspk-go{flex-shrink:0;font-size:11.5px;font-weight:700;color:#2E6A4B;background:#EAF1EE;border-radius:8px;padding:5px 10px}",
       ".mlspk-card.is-active .mlspk-go{color:#2E6A4B;background:#e7f5ee}",
       /* time pill on the left edge of each card */
@@ -373,7 +373,7 @@
       ".mlspk-more{grid-column:1/-1;margin-top:2px;display:flex;justify-content:center}",
       ".mlspk-more button{height:38px;padding:0 18px;border-radius:11px;border:1px solid #dbe6f6;background:#f5f9ff;color:#2E6A4B;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}",
       ".mlspk-more button:hover{background:#EAF1EC}",
-      ".mlspk-empty{padding:22px 14px;text-align:center;color:#8a9cb2;font-size:13px;border:1px dashed #dde6f0;border-radius:14px;background:#fbfcfe}",
+      ".mlspk-empty{padding:22px 14px;text-align:center;color:#5C6E86;font-size:13px;border:1px dashed #dde6f0;border-radius:14px;background:#fbfcfe}",
       ".mlspk-note{font-size:12px;color:#79837C;margin:0 0 10px}",
       /* inline Complex host */
       "#mlsPickComplexWrap{margin:0 0 18px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;max-width:100%;overflow:hidden;box-sizing:border-box}",
@@ -384,7 +384,7 @@
       "@media(max-width:560px){#mlsPickComplexWrap .mlspk-grid{grid-template-columns:minmax(0,1fr)}}",
       "#mlsPickComplexWrap .mlspk-cx-hd{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}",
       "#mlsPickComplexWrap .mlspk-cx-hd h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;margin:0;color:#1A211C}",
-      "#mlsPickComplexWrap .mlspk-cx-hd span{font-size:12px;color:#8a9cb2}",
+      "#mlsPickComplexWrap .mlspk-cx-hd span{font-size:12px;color:#5C6E86}",
       "html.mls-sv-active #mlsPickComplexWrap{display:none!important}",
       /* modal */
       "#" + MODAL_ID + "{position:fixed;inset:0;z-index:100050;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 16px;background:rgba(8,18,33,.55);font-family:'Plus Jakarta Sans',system-ui,sans-serif}",
@@ -546,7 +546,7 @@
           '<button type="button" class="mlspk-fbtn" data-act="find">' + E.find + ' Find by name</button>' +
           '<button type="button" class="mlspk-fbtn" data-act="athena">' + E.down + ' Pull from athenaOne</button>' +
           '<span style="flex:1"></span>' +
-          '<span class="mlspk-pullstatus" style="color:#8a9cb2;font-size:11.5px"></span>' +
+          '<span class="mlspk-pullstatus" style="color:#5C6E86;font-size:11.5px"></span>' +
         '</div>' +
       '</div>';
     document.body.appendChild(m);
@@ -565,7 +565,7 @@
     return m;
   }
   function pullStatusEl() { var m = $(MODAL_ID); return m ? m.querySelector(".mlspk-pullstatus") : null; }
-  function setPullStatus(msg, ok) { var s = pullStatusEl(); if (s) { s.textContent = msg || ""; s.style.color = ok ? "#2E6A4B" : "#8a9cb2"; } }
+  function setPullStatus(msg, ok) { var s = pullStatusEl(); if (s) { s.textContent = msg || ""; s.style.color = ok ? "#2E6A4B" : "#5C6E86"; } }
   function nowClock() { try { return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch (e) { return "now"; } }
   /* Honest "Pull from athenaOne": gate on the REAL connection truth, show status IN the
      modal (the engine writes to #heroPullStatus which isn't visible here), and repaint the

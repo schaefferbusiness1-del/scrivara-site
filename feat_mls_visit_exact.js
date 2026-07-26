@@ -218,7 +218,7 @@
     var sec = v.querySelector(":scope > .vx-tools");
     if (!sec) {
       sec = mk("div"); sec.className = "vx-tools"; sec.style.cssText = "margin-top:20px";
-      sec.innerHTML = '<div class="vx-tools-lbl" style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#8a9cb2;margin:0 0 10px;display:none">Clinical tools &amp; reports</div>';
+      sec.innerHTML = '<div class="vx-tools-lbl" style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#5C6E86;margin:0 0 10px;display:none">Clinical tools &amp; reports</div>';
       var host = mk("div"); host.className = "vx-tools-host"; host.style.cssText = "display:flex;flex-direction:column;gap:16px";
       sec.appendChild(host);
       var outc = $("outcomesCard");
