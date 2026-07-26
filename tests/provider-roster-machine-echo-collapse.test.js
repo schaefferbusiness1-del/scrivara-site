@@ -24,7 +24,7 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const rosterSrc = fs.readFileSync(path.join(root, 'feat_athena_provider_roster.js'), 'utf8');
 
-assert(rosterSrc.includes("var VERSION = '2.2.2'"), 'roster satellite version must be 2.2.2');
+assert(rosterSrc.includes("var VERSION = '2.3.0'"), 'roster satellite version must be 2.3.0 (prs-1.0.0: the receipt states its scope, and the roster learns from providers observed on already-pulled appointments)');
 
 function browserContext(seedV2) {
   const store = new Map();

@@ -17858,7 +17858,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* proxy a control that opens app-layer UI (modals render above the page —
      nothing to hide anymore; keep the toast for orientation) */
-  function handOff(fn, msg) { try { fn(); } catch (e) {} if (msg) toast(msg); }
+  function handOff(fn, msg) { var __ok = true; try { fn(); } catch (e) { __ok = false; } if (msg) toast(__ok ? msg : 'That didn\u2019t open \u2014 nothing happened. Try again.'); } /* wrt-1.0.0: a thrown handler used to be swallowed and the success toast shown anyway (the handOff defect class: seven silent refusals under one "note sent to Athena"). */
 
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
@@ -17942,7 +17942,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!a) { toast('That row is out of date — refreshing the list.'); render(); return; }
     if (act === 'rec') lockAndStart(a, { record: true });
     else if (act === 'chart') {
-      if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+      if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Pulling chart context (read-only) for ' + (a.name || 'this patient') + '\u2026');
       else toast('Chart-context pull not available on this build.');
     }
     else if (act === 'gen') lockAndStart(a, { generate: true });
@@ -19201,7 +19201,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3NextPt', function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } });
     on('ez3Edit', function () { S.editing = !S.editing; render(); });
     on('ez3Change', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
-    on('ez3Chart2', function () { if (S.appt && S.appt.id != null && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); });
+    on('ez3Chart2', function () { if (S.appt && S.appt.id != null && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Opening the chart (read-only) for ' + (S.appt.name || 'this patient') + '\u2026'); });
     on('ez3Verify', verifyNow);
     on('ez3HistPull', verifyNow); /* same real read-only pull loads history AND verifies identity */
     on('ez3Prep2', function () { if (S.appt) prepForAppt(S.appt); }); /* v3.4: real pid contract */
@@ -23176,7 +23176,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* proxy a control that opens app-layer UI (modals render above the page —
      nothing to hide anymore; keep the toast for orientation) */
-  function handOff(fn, msg) { try { fn(); } catch (e) {} if (msg) toast(msg); }
+  function handOff(fn, msg) { var __ok = true; try { fn(); } catch (e) { __ok = false; } if (msg) toast(__ok ? msg : 'That didn\u2019t open \u2014 nothing happened. Try again.'); } /* wrt-1.0.0: a thrown handler used to be swallowed and the success toast shown anyway (the handOff defect class: seven silent refusals under one "note sent to Athena"). */
 
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
@@ -23241,7 +23241,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!a) { toast('That row is out of date — refreshing the list.'); render(); return; }
     if (act === 'rec') lockAndStart(a, { record: true });
     else if (act === 'chart') {
-      if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+      if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Pulling chart context (read-only) for ' + (a.name || 'this patient') + '\u2026');
       else toast('Chart-context pull not available on this build.');
     }
     else if (act === 'gen') lockAndStart(a, { generate: true });
@@ -23933,7 +23933,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3NextPt', function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } });
     on('ez3Edit', function () { S.editing = !S.editing; render(); });
     on('ez3Change', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
-    on('ez3Chart2', function () { if (S.appt && S.appt.id != null && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); });
+    on('ez3Chart2', function () { if (S.appt && S.appt.id != null && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Opening the chart (read-only) for ' + (S.appt.name || 'this patient') + '\u2026'); });
     on('ez3Prep2', function () { if (S.appt) prepForAppt(S.appt); }); /* v3.4: real pid contract */
     on('ez3Hist2', openHistory);
 
@@ -25282,7 +25282,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* proxy a control that opens app-layer UI (modals render above the page —
      nothing to hide anymore; keep the toast for orientation) */
-  function handOff(fn, msg) { try { fn(); } catch (e) {} if (msg) toast(msg); }
+  function handOff(fn, msg) { var __ok = true; try { fn(); } catch (e) { __ok = false; } if (msg) toast(__ok ? msg : 'That didn\u2019t open \u2014 nothing happened. Try again.'); } /* wrt-1.0.0: a thrown handler used to be swallowed and the success toast shown anyway (the handOff defect class: seven silent refusals under one "note sent to Athena"). */
 
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
@@ -25752,7 +25752,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (act === 'rec') {                                   /* Start Recording */
           lockAndStart(a, { record: true });
         } else if (act === 'chart') {                          /* Pull Chart Context (read-only, THIS patient) */
-          if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+          if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Pulling chart context (read-only) for ' + (a.name || 'this patient') + '\u2026');
           else toast('Chart-context pull not available on this build.');
         } else if (act === 'gen') {                            /* Generate Note (#genBtn, guarded fallback) */
           lockAndStart(a, { generate: true });
@@ -25933,7 +25933,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((b = $('ez3NextPt'))) b.onclick = function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } };
     if ((b = $('ez3Edit'))) b.onclick = function () { S.editing = !S.editing; render(); };
     if ((b = $('ez3Change'))) b.onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); };
-    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); };
+    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Opening the chart (read-only) for ' + (S.appt.name || 'this patient') + '\u2026'); };
     if ((b = $('ez3Prep2'))) b.onclick = function () { if (S.appt) handOff(function () { window.openOpPrepForPatient(S.appt.name); }); };
     if ((b = $('ez3Hist2'))) b.onclick = openHistory;
 
@@ -27119,7 +27119,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* proxy a control that opens app-layer UI (modals render above the page —
      nothing to hide anymore; keep the toast for orientation) */
-  function handOff(fn, msg) { try { fn(); } catch (e) {} if (msg) toast(msg); }
+  function handOff(fn, msg) { var __ok = true; try { fn(); } catch (e) { __ok = false; } if (msg) toast(__ok ? msg : 'That didn\u2019t open \u2014 nothing happened. Try again.'); } /* wrt-1.0.0: a thrown handler used to be swallowed and the success toast shown anyway (the handOff defect class: seven silent refusals under one "note sent to Athena"). */
 
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
@@ -27336,7 +27336,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (act === 'rec') {                                   /* Start Recording */
           lockAndStart(a, { record: true });
         } else if (act === 'chart') {                          /* Pull Chart Context (read-only, THIS patient) */
-          if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+          if (isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(a.id); }, 'Pulling chart context (read-only) for ' + (a.name || 'this patient') + '\u2026');
           else toast('Chart-context pull not available on this build.');
         } else if (act === 'gen') {                            /* Generate Note (#genBtn, guarded fallback) */
           lockAndStart(a, { generate: true });
@@ -27463,7 +27463,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((b = $('ez3NextPt'))) b.onclick = function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } };
     if ((b = $('ez3Edit'))) b.onclick = function () { S.editing = !S.editing; render(); };
     if ((b = $('ez3Change'))) b.onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; render(); };
-    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); };
+    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && isFn(window.calPullChartFor)) handOff(function () { window.calPullChartFor(S.appt.id); }, 'Opening the chart (read-only) for ' + (S.appt.name || 'this patient') + '\u2026'); };
     if ((b = $('ez3Prep2'))) b.onclick = function () { if (S.appt) handOff(function () { window.openOpPrepForPatient(S.appt.name); }); };
     if ((b = $('ez3Hist2'))) b.onclick = openHistory;
 
@@ -28689,7 +28689,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* Proxy an app control that opens app-layer UI: hide the overlay first so the
      app's own modal/picker is visible and usable. */
-  function handOff(fn, msg) { closeOv(); try { fn(); } catch (e) {} if (msg) toast(msg); }
+  function handOff(fn, msg) { closeOv(); var __ok = true; try { fn(); } catch (e) { __ok = false; } if (msg) toast(__ok ? msg : 'That didn\u2019t open \u2014 nothing happened. Try again.'); } /* wrt-1.0.0: see the plain copies. */
 
   /* ---- provider quick-selecter markup (data-sourced) --------------------- */
   function provSelectHtml() {
@@ -28892,7 +28892,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (act === 'rec') {                                   /* Start Recording */
           lockAndStart(a, { record: true });
         } else if (act === 'chart') {                          /* Pull Chart Context (read-only, THIS patient) */
-          if (typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+          if (typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(a.id); }, 'Pulling chart context (read-only) for ' + (a.name || 'this patient') + '\u2026');
           else toast('Chart-context pull not available on this build.');
         } else if (act === 'gen') {                            /* Generate Note (#genBtn, guarded fallback) */
           lockAndStart(a, { generate: true });
@@ -28981,7 +28981,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((b = $('ez3NextPt'))) b.onclick = function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } };
     if ((b = $('ez3Edit'))) b.onclick = function () { S.editing = !S.editing; render(); };
     if ((b = $('ez3Change'))) b.onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; render(); };
-    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); };
+    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(S.appt.id); }, 'Opening the chart (read-only) for ' + (S.appt.name || 'this patient') + '\u2026'); };
     if ((b = $('ez3Prep2'))) b.onclick = function () { if (S.appt) handOff(function () { window.openOpPrepForPatient(S.appt.name); }); };
     if ((b = $('ez3Hist2'))) b.onclick = openHistory;
 

@@ -210,15 +210,39 @@
           setState('review');
           return r;
         }
-        if (r.error) {
+        /* A transport/environment error with NO per-destination receipt: there
+           is nothing to enumerate, so report it and stop. An error that DOES
+           carry a receipt falls through so the doctor sees which destinations
+           were attempted and what each one did. */
+        if (r.error && !(r.note && r.note.sections && r.note.sections.length)) {
           narrate(r.message || 'Write failed.', 'fail'); st.error = r.message || 'write-failed';
-          setState('review'); return r;
+          st.written = null; setState('review'); return r;
         }
-        // ---- note destinations (honest verified/unverified) ----
-        (r.note && r.note.sections || []).forEach(function (s) {
-          if (s.confirmed) narrate('✓ Note → ' + s.section + ' — verified', 'ok');
-          else narrate('⚠ Wrote to ' + s.section + ' but couldn’t confirm — check before signing', 'warn');
+        /* wrt-1.0.0 THREE-STATE RENDER. background.js has always emitted three
+           distinct outcomes per destination (confirmed / typed-but-unconfirmed /
+           never written); this surface rendered TWO, so a destination that was
+           never written at all read as "wrote but couldn't confirm" - a positive
+           claim about a write that provably did not happen. */
+        var __note = (r && r.note) || {};
+        var __sections = __note.sections || [];
+        __sections.forEach(function (s) {
+          if (s.confirmed) narrate('✓ Note → ' + s.section + ' — athenaOne confirmed it', 'ok');
+          else if (s.written) narrate('⚠ Typed into ' + s.section + ' but athenaOne did not confirm it — check it before signing', 'warn');
+          else narrate('⛔ Nothing written to ' + s.section + (s.notfound ? ' — no matching field was found in the open encounter' : ' — the write was refused'), 'fail');
         });
+        var __confirmed = (__note.confirmedCount != null)
+          ? Number(__note.confirmedCount)
+          : __sections.filter(function (s) { return !!(s && s.confirmed); }).length;
+        /* NO GREEN WITHOUT PROOF. A run in which athenaOne confirmed nothing is a
+           failure, whatever shape the reply had. This state used to be reached
+           unconditionally after the loop above. */
+        if (r.error || r.ok === false || __confirmed < 1) {
+          st.written = null;
+          narrate(r.message || 'Nothing was written to the chart.', 'fail');
+          st.error = r.message || r.error || 'nothing-confirmed';
+          setState('review');
+          return r;
+        }
         // ---- codes (flag-gated; may be deferred) ----
         if (r.codes) {
           setState('codeswriting');
@@ -229,11 +253,16 @@
           if (r.codes.deferred) narrate('Codes left for you to add (coding driver not enabled yet).', 'note');
         }
         st.written = {
-          sections: (r.note && r.note.sections) || [],
+          sections: __sections,
+          confirmedCount: __confirmed,
+          sectionCount: (__note.sectionCount != null) ? Number(__note.sectionCount) : __sections.length,
+          partial: __confirmed < ((__note.sectionCount != null) ? Number(__note.sectionCount) : __sections.length),
           codesAdded: (r.codes && r.codes.added) || [],
           codesMissed: (r.codes && r.codes.missed) || []
         };
-        narrate('Draft written (unsigned). MLS did NOT click Save or Sign.', 'note');
+        narrate(st.written.partial
+          ? 'Part of the draft was written (unsigned). MLS did NOT click Save or Sign.'
+          : 'Draft written (unsigned). MLS did NOT click Save or Sign.', 'note');
         setState('written');
         return r;
       });
@@ -533,7 +562,7 @@
           break;
 
         case 'written':
-          body.appendChild(el('h2', 'mlsp-title', '✓ Draft written'));
+          body.appendChild(el('h2', 'mlsp-title', (s.written && s.written.partial) ? '⚠ Partly written' : '✓ Draft written'));
           body.appendChild(el('p', 'mlsp-sub', summaryLine(s)));
           renderNarration(body, s);
           body.appendChild(el('p', 'mlsp-sub', 'The draft is not saved, signed, or attested. Review it in Athena and complete the final action yourself.'));
@@ -681,12 +710,20 @@
     return '';
   }
   function idStr(id) { id = id || {}; return (id.name || '?') + (id.dob ? ' (' + id.dob + ')' : ''); }
+  /* wrt-1.0.0: this listed EVERY destination the run touched, confirmed or
+     not, under a green "Draft written" headline - so a run that wrote nothing
+     named the places it never reached as if it had. Confirmed and unwritten
+     are now separated, and the unwritten ones are named as unwritten. */
   function summaryLine(s) {
     var w = s.written || {}; var parts = [];
-    if ((w.sections || []).length) parts.push('Note → ' + w.sections.map(function (x) { return x.section; }).join(', '));
+    var list = w.sections || [];
+    var done = list.filter(function (x) { return !!(x && x.confirmed); }).map(function (x) { return x.section; });
+    var missed = list.filter(function (x) { return !(x && x.confirmed); }).map(function (x) { return x.section; });
+    if (done.length) parts.push('Confirmed in athenaOne → ' + done.join(', '));
+    if (missed.length) parts.push('NOT written: ' + missed.join(', '));
     if ((w.codesAdded || []).length) parts.push(w.codesAdded.length + ' code(s) added');
     if ((w.codesMissed || []).length) parts.push(w.codesMissed.length + ' to add by hand');
-    return parts.join(' · ') || 'Draft written (unsigned).';
+    return parts.join(' · ') || 'Nothing was confirmed in athenaOne.';
   }
 
   // ---- boot ----

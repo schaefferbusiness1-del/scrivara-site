@@ -653,6 +653,46 @@
     if (hasNext) resetSession(d.nextAccount != null ? d.nextAccount : d.nextEmail, d);
   });
 
+  /* ---- wrt-1.0.0 WRITE VERDICT ----------------------------------------
+     This row used to read `var okW = resp && !resp.error;` and paint GREEN
+     ("Write-back reported success") on anything without an `error` key. Both
+     the extension worker and the content script emit HARD REFUSALS that carry
+     no `.error` at all — most importantly the wrong-patient sign refusal
+     `{blocked:true, signed:false, message:'Patient gate failed (name + DOB) …'}`,
+     which therefore rendered as a successful write-back.
+
+     A verdict is now derived from an explicit allowlist of receipt fields, and
+     the DEFAULT is never success. `blocked`, `ok:false` and `signed:false` are
+     each disqualifying on their own; a green verdict requires either athenaOne's
+     own signed confirmation or a confirmed-destination count greater than zero. */
+  function writeVerdict(resp, isSign) {
+    function say(level, text) { return { level: level, text: String(text).slice(0, 160) }; }
+    if (!resp || typeof resp !== 'object') return say('fail', 'Write-back returned nothing — nothing reached athenaOne');
+    var msg = String(resp.message || resp.error || resp.msg || resp.reason || '').slice(0, 120);
+    if (resp.blocked === true) return say('fail', 'Write-back refused: ' + (msg || 'a safety gate blocked it — nothing was written'));
+    if (resp.error) return say('fail', 'Write-back failed: ' + (msg || 'unknown'));
+    if (resp.ok === false) return say('fail', 'Write-back reported failure: ' + (msg || 'nothing was written'));
+    if (isSign) {
+      if (resp.signed === true) return say('ok', 'athenaOne confirmed the chart was signed and saved');
+      return say('warn', 'Sign & Save was not confirmed by athenaOne: ' + (msg || 'check the chart in athenaOne before relying on it'));
+    }
+    var note = (resp && resp.note && typeof resp.note === 'object') ? resp.note : null;
+    var confirmed = null;
+    if (note && note.confirmedCount != null) confirmed = Number(note.confirmedCount);
+    else if (resp.confirmedCount != null) confirmed = Number(resp.confirmedCount);
+    else if (Array.isArray(resp.sections)) confirmed = resp.sections.filter(function (x) { return !!(x && x.confirmed); }).length;
+    else if (note && Array.isArray(note.sections)) confirmed = note.sections.filter(function (x) { return !!(x && x.confirmed); }).length;
+    else if (Array.isArray(resp.wrote)) confirmed = resp.wrote.filter(function (x) { return !!(x && (x.confirmed || x.ok)); }).length;
+    if (confirmed != null && isFinite(confirmed)) {
+      if (confirmed > 0) return say('ok', 'athenaOne confirmed ' + confirmed + ' destination' + (confirmed === 1 ? '' : 's') + ' (verify before signing)');
+      return say('fail', 'Nothing was confirmed in athenaOne — the note did not reach the chart');
+    }
+    if (resp.confirmed === true) return say('ok', 'athenaOne confirmed the write (verify before signing)');
+    /* No receipt at all. Reporting "success" here is exactly the defect this
+       function exists to remove — say what is actually known. */
+    return say('warn', 'Write-back returned no destination receipt — open athenaOne and verify what landed');
+  }
+
   function srcSet(key, state, text) {
     var s = store.sources[key]; if (!s) return;
     if (s.state === state && s.text === text) return;
@@ -814,9 +854,9 @@
     }
     if (d.type === 'mlsAppPushProgress' || d.type === 'mlsAppPushResult' || d.type === 'mlsAppPasteResult' || d.type === 'mlsAppSignAndSaveResult') {
       // Writeback surfaces (user-initiated elsewhere; we only REPORT here)
-      var okW = resp && !resp.error;
       if (d.type === 'mlsAppPushProgress') { srcSet('emr', 'working', 'Writing into the open encounter…'); return; }
-      srcSet('emr', okW ? 'ok' : 'fail', okW ? 'Write-back reported success (verify in athenaOne)' : ('Write-back failed: ' + String((resp && resp.error) || 'unknown').slice(0, 100)));
+      var vW = writeVerdict(resp, d.type === 'mlsAppSignAndSaveResult');
+      srcSet('emr', vW.level, vW.text);
       return;
     }
   }, true);

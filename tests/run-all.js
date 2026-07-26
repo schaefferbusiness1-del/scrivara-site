@@ -241,6 +241,8 @@ const tests = [
   'extension-manifest-text-integrity.test.js',
   'enumerate-noise-surface-exclusion.test.js',
   'schedule-read-declares-its-freshness.test.js',
+  'write-claims-need-a-receipt.test.js',
+  'all-providers-means-all-providers.test.js',
   'enumerate-refusal-evidence.test.js',
   'enumerate-evidence-crosses-the-hop.test.js',
   'enumerate-gives-up-when-provably-stuck.test.js',
