@@ -517,13 +517,33 @@
     '#mlsStages{display:flex;align-items:center;gap:0;margin:0 0 14px;padding:2px}',
     '#mlsStages .st{display:flex;align-items:center;gap:7px;color:var(--muted);font:500 12.5px inherit}',
     '#mlsStages .st .dot{width:15px;height:15px;border-radius:50%;border:1.6px solid #D6DED9;background:#fff;',
-    'transition:transform var(--mls-base) var(--mls-spring),background var(--mls-base) linear,border-color var(--mls-base) linear}',
+    /* Canonical tokens, and a real spring on the transform: the dot that
+       becomes `now` is the one thing on this rail that was summoned, so it
+       overshoots ~1% and settles rather than easing flat into place. Colour
+       stays linear — a colour that springs reads as a flicker. box-shadow
+       joins the transition so the focus ring BLOOMS with the scale instead of
+       snapping on a frame ahead of it; it is paint-only and costs no layout. */
+    'transition:transform var(--mls-dur-3) var(--mls-ease-spring),',
+    'background var(--mls-dur-3) linear,border-color var(--mls-dur-3) linear,',
+    'box-shadow var(--mls-dur-3) var(--mls-ease-out)}',
     '#mlsStages .st.done .dot{background:#2E6A4B;border-color:#2E6A4B;transform:scale(1.05)}',
     '#mlsStages .st.now .dot{border-color:#2E6A4B;box-shadow:0 0 0 4px rgba(46,106,75,.14);transform:scale(1.15)}',
     '#mlsStages .st.now{color:#204034}',
     '#mlsStages .st.done{color:#4A5B51}',
     '#mlsStages .bar{flex:1;height:1.6px;background:#E7E5DD;margin:0 9px;border-radius:2px;overflow:hidden}',
-    '#mlsStages .bar i{display:block;height:100%;width:0;background:#2E6A4B;transition:width var(--mls-slow) var(--mls-spring)}',
+    /* The connector fills with transform, not width.
+       It used to be `width:0` + an inline `width:100%` and a
+       `transition:width` — a layout property, against law 1, animating a
+       reflow every frame. It was also never seen, because renderStages
+       rebuilt the whole rail with innerHTML on every stage change and a
+       transition needs the SAME element to still be there when the value
+       changes. Both halves are fixed: the nodes now persist (see
+       buildStages/paintStages) and the fill is composited.
+       scaleX from the left edge, so a full connector reads as the progress
+       flowing forward into the next stage. */
+    '#mlsStages .bar i{display:block;height:100%;width:100%;background:#2E6A4B;',
+    'transform:scaleX(0);transform-origin:left center;',
+    'transition:transform var(--mls-dur-4) var(--mls-ease-out)}',
 
     /* activity bar — honest: it shows work in flight, it never claims a result */
     '#mlsBusy{position:fixed;top:0;left:0;right:0;height:2.5px;z-index:960;pointer-events:none;opacity:0;',
@@ -604,16 +624,11 @@
        and a connector spanning a line break is worse than none.
        THIS LINE CLOSES @media (max-width:760px). It used to sit at the very
        END of the array, which meant everything below — the whole motion
-       system, mlsMoRise, the .mls-mo standing prohibition and the
-       reduced-motion kill — was nested inside the phone query and could never
-       apply on a desktop, where every doctor actually works.
-       Measured on the running page through document.styleSheets, before:
-         143 shell rules, 121 page-level, 14 trapped at max-width:760px
-         5 of the trapped 14 were motion rules
-         #mlsRightNow at 1440px -> animation-name: none
-       After: animation-name mlsMoRise, 0.3s. Grep cannot see this — the
-       selectors are built by string concatenation and only the CSSOM
-       resolves where a rule actually lives. */
+       system, mlsMoRise, the .mls-mo prohibition and the reduced-motion kill
+       — was nested inside the phone query and could never apply on a desktop.
+       Measured on the running page via document.styleSheets before the fix:
+       121 of 143 shell rules page-level, 14 trapped at max-width:760px, 5 of
+       them motion. Grep cannot see this; only the CSSOM can. */
     '#mlsStages .bar{display:none}}',
 
     /* ---------------- motion system (mls-motion-system) ----------------
@@ -1950,6 +1965,57 @@
 
   var lastStage = -2;
 
+  /* Build the rail's nodes ONCE.
+     ------------------------------------------------------------------
+     A CSS transition needs the SAME element to still be in the document when
+     the value changes. The old renderStages did
+
+       el.innerHTML = parts.join('')
+
+     on every stage change, which destroyed and recreated all nine nodes with
+     their final classes already applied. Every transition declared on .dot
+     and .bar i was therefore dead CSS — the rail SNAPPED.
+
+     Measured on the running page, driving a real Prep -> Review change and
+     sampling document.getAnimations() every 25ms for three seconds:
+       animations observed on the rail : 0
+       stamped nodes surviving         : 0 of 9  (5 .st + 4 .bar i replaced)
+     A previous report read the declaration and concluded the dots already
+     glided. The declaration was there; the motion never was. Verify on the
+     running page, not the stylesheet.
+
+     So: build once, then only move classes and one transform. */
+  function buildStages(el) {
+    var parts = [];
+    STAGES.forEach(function (name, i) {
+      parts.push('<span class="st"><span class="dot"></span>' + name + '</span>');
+      if (i < STAGES.length - 1) parts.push('<span class="bar"><i></i></span>');
+    });
+    el.innerHTML = parts.join('');
+  }
+
+  /* Move the state onto the existing nodes. Nothing here creates or removes an
+     element, which is the whole point. */
+  function paintStages(el, now) {
+    var sts = el.querySelectorAll('.st');
+    var bars = el.querySelectorAll('.bar i');
+    var i;
+    for (i = 0; i < sts.length; i++) {
+      /* classList.toggle(name, force) does NOT re-commit when the state is
+         already correct; add/remove re-commit unconditionally and this runs on
+         the shell's tick, so add/remove here would be a whole-document style
+         recalculation several times a second for no visual change. */
+      sts[i].classList.toggle('done', i < now);
+      sts[i].classList.toggle('now', i === now);
+    }
+    for (i = 0; i < bars.length; i++) {
+      var want = i < now ? 'scaleX(1)' : 'scaleX(0)';
+      /* Guard the write for the same reason: an identical inline style
+         assignment still dirties the element. */
+      if (bars[i].style.transform !== want) bars[i].style.transform = want;
+    }
+  }
+
   function renderStages() {
     if (!W.__mlsCalmShell.active) return;
     var visit = qs('#visitView');
@@ -1961,18 +2027,17 @@
     if (!el) return;
     if (el.style.display !== 'flex') el.style.display = 'flex';
     var now = stageNow();
-    if (now === lastStage && el.childNodes.length) return;
+    /* ensureStages() hands back an EMPTY div when the rail had been removed, so
+       "already built" is a property of the DOM, not of lastStage. */
+    var built = el.childNodes.length > 0;
+    if (now === lastStage && built) return;
     lastStage = now;
-
-    var parts = [];
-    STAGES.forEach(function (name, i) {
-      var cls = i < now ? 'done' : (i === now ? 'now' : '');
-      parts.push('<span class="st ' + cls + '"><span class="dot"></span>' + name + '</span>');
-      if (i < STAGES.length - 1) {
-        parts.push('<span class="bar"><i style="width:' + (i < now ? 100 : 0) + '%"></i></span>');
-      }
-    });
-    el.innerHTML = parts.join('');
+    if (!built) buildStages(el);
+    /* On the very first paint the nodes were created microseconds ago and have
+       no previous computed value, so this lands instantly — which is correct:
+       opening a visit should show the rail's true state, not replay it. Every
+       LATER change transitions, because the nodes persist. */
+    paintStages(el, now);
     if (now >= 0) el.setAttribute('aria-label', 'Visit progress: ' + STAGES[now]);
   }
 
