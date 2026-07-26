@@ -46,7 +46,13 @@ assert.ok(
  * version of this regex stopped at the first newline after the media query
  * opened, so it never saw the declarations and failed a correctly-installed
  * system — the guard was wrong, not the code. */
-const block = /motion system \(mls-motion-system\)[\s\S]*?transform:none!important\}\}',/.exec(src);
+/* The trailing comma is OPTIONAL because the reduced-motion rule is now the
+ * LAST element of the CSS array. It used to be followed by
+ * '#mlsStages .bar{display:none}}' — and that stray line was the closing brace
+ * of @media (max-width:760px), which meant this entire motion block was nested
+ * inside the phone query and could not apply on a desktop. The close-brace was
+ * moved up to where the phone rules actually end; this anchor moved with it. */
+const block = /motion system \(mls-motion-system\)[\s\S]*?transform:none!important\}\}',?/.exec(src);
 assert.ok(block, 'could not isolate the motion block — it must end with the ' +
   'reduced-motion rule clearing animation, transition and transform');
 const bespoke = block[0].match(/cubic-bezier\([^)]*\)/g) || [];
