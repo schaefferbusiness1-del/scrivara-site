@@ -3484,7 +3484,10 @@
     };
     var result = {
       ok: false, complete: false, reason: "month-partial", month: month, includeHistory: includeHistory,
-      provider: frozenProvider, providerRosterReceipt: gate.receipt || null, days: [],
+      provider: frozenProvider, providerRosterReceipt: gate.receipt || null,
+      /* prs-1.0.0: an ALL-provider MONTH pull inherits exactly the same
+         painted-grid coverage limit as the day pull it repeats. */
+      providerScope: providerScopeReceipt(frozenProvider === "all" ? "all" : "selected"), days: [],
       totals: { days: dates.length, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, created: 0, repaired: 0, skipped: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 },
       retry: { dates: [] }
     };
@@ -3562,7 +3565,7 @@
       result.reason = result.complete ? "complete" : (breaker.tripped ? "month-stopped-systemic" : "month-partial");
       if (breaker.tripped) result.systemicReason = breaker.reason;
       onStatus(result.complete
-        ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0.")
+        ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0." + providerScopeNotice(frozenProvider === "all" ? "all" : "selected"))
         : (breaker.tripped
           ? ("Month pull STOPPED EARLY — every day was failing the same way: " + (SYSTEMIC_TEXT[breaker.reason] || breaker.reason.replace(/-/g, " ")) + (breaker.hint ? " " + breaker.hint : "") + " Fix that first, then use Retry failed days (" + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + " remain; nothing was skipped silently).")
           : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + ".")), result.complete ? "ok" : "err");

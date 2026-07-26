@@ -239,6 +239,10 @@ assert(/Schedule-only complete:[\s\S]{0,160}providerScopeNotice\(selectedProvide
   'and from the schedule-only verdict, which is the path the owner runs by default');
 assert(/has no appointments\." \+ freshnessNotice\(r\) \+ providerScopeNotice\(selectedProvider\.mode\)/.test(si),
   'an EMPTY day is the worst case: "nobody is coming" read off a one-provider grid is a positive clinical claim about seventeen other clinicians');
+assert(/Verified month complete:[\s\S]{0,320}providerScopeNotice\(frozenProvider === "all"/.test(si),
+  'and the MONTH verdict needs it too — an all-provider month pull is the same painted-grid limit repeated thirty times, and "Verified month complete" is the strongest coverage claim this product makes');
+assert(/providerScope: providerScopeReceipt\(frozenProvider === "all" \? "all" : "selected"\)/.test(si),
+  'the month result must carry the coverage receipt as well');
 
 /* and it must be EVIDENCE, not a gate — `complete` must not learn about it. */
 const completeStmt = si.slice(si.indexOf('            var complete = !!(r.receipt.complete'), si.indexOf('\n', si.indexOf('            var complete = !!(r.receipt.complete')));
