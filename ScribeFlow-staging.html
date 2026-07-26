@@ -1448,15 +1448,23 @@
     if(api){ api.sheetsSeen+=n; api.rules+=css.length; api.passes++; }
     return css.length;
   }
-  /* b682: `pending` must RESET when the frame fires, or schedule() is a
+  /* pending-latch fix (2026-07-26): `pending` must RESET when the frame fires, or schedule() is a
      one-shot latch: the first call at boot consumes it forever, every later
      trigger (the sheet observers, the five catch-up timeouts, the dark-flip
      observer) returns early, and the engine never scans a page that has
      actually loaded. Measured on the LIVE signed-in page before this fix (2026-07-26):
      passes:0, noops:0 - and one manual refresh() derived 1,368 rules and
-     turned the white .mlspk-card islands dark on the spot. */
+     turned the white .mlspk-card islands dark on the spot.
+     SECOND lesson, same day: the reset must not live ONLY in the rAF
+     callback, because rAF never fires in an occluded tab - and this
+     product's normal posture is MLS in one window with athenaOne IN FRONT.
+     Probed live: rafFired:false after 1.5s while the app ran. So schedule
+     races the frame against a 250ms timer; whichever fires first scans,
+     single-flight. Timers throttle in background tabs but always fire. */
   function schedule(){ if(pending) return; pending=true;
-    (window.requestAnimationFrame||setTimeout)(function(){ pending=false; try{ scan(); }catch(e){} },0); }
+    var run=function(){ if(!pending) return; pending=false; try{ scan(); }catch(e){} };
+    if(window.requestAnimationFrame) window.requestAnimationFrame(run);
+    setTimeout(run,250); }
 
   function arm(){
     if(armed) return; armed=true;
@@ -23627,6 +23635,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b682';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b683';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
