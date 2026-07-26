@@ -1161,7 +1161,17 @@
     else label = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected';
     if (store.task && !store.task.finishedAt) label = store.task.label + ' — ' + label;
     title.textContent = label;
-    title.title = conn.reason || label;
+    /* data-tip, not title. Three modules were contending for this one attribute
+       at ~1.2 writes/sec: feat_athena_tooltip_dedupe stashes the value and
+       REMOVES title, this line rewrites it, and the dedupe observer re-fires on
+       every write. A read-before-write guard on title cannot settle that -
+       after the strip getAttribute returns null, which never equals the value,
+       so the guard passes and writes anyway. data-tip is the channel the dedupe
+       deliberately skips (its addTip bails when data-tip is already present), so
+       nothing removes it and the compare below is stable. Same move that ended
+       the lane-refresh and agenda-chip contention. */
+    var titleTip = conn.reason || label;
+    if (title.getAttribute('data-tip') !== titleTip) title.setAttribute('data-tip', titleTip);
     srcSet('athena', v === 'connected' ? 'ok' : (v === 'checking' ? 'working' : 'fail'),
       v === 'connected' ? 'MLS Assist ready · Athena tab detected · patient not yet verified' : (v === 'checking' ? 'Checking MLS Assist readiness' : (conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No usable Athena tab detected')));
   }
@@ -1178,7 +1188,7 @@
     if (store.task.date) bits.push('Day: ' + store.task.date);
     bits.push('Source: ' + store.task.source);
     m.textContent = bits.join('  ·  ');
-    m.title = m.textContent;
+    if (m.getAttribute('data-tip') !== m.textContent) m.setAttribute('data-tip', m.textContent);
   }
   function renderSteps() {
     if (!ui.dock) return;
