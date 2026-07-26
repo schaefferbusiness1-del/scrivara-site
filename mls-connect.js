@@ -45527,7 +45527,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '#' + ROOT_ID + ' .rvp-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 2px}' +
       '#' + ROOT_ID + ' .rvp-h b{font-size:17px;font-weight:800}' +
       '#' + ROOT_ID + ' .rvp-sub{font-size:13px;color:var(--muted,#6b7770);margin:0 0 12px}' +
-      '#' + ROOT_ID + ' .rvp-who{font-size:13px;font-weight:700;padding:6px 10px;border-radius:8px;background:var(--soft,#f2f6f3);display:inline-block;margin:0 0 12px}' +
       '#' + ROOT_ID + ' .rvp-sec{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#6b7770);margin:14px 0 7px}' +
       '#' + ROOT_ID + ' .rvp-gaps{margin:0;padding:0;list-style:none}' +
       '#' + ROOT_ID + ' .rvp-gaps li{display:flex;gap:9px;align-items:flex-start;padding:8px 11px;border-radius:9px;background:#fdf4e7;border:1px solid #f0dcc0;margin:0 0 6px;font-size:13.5px;line-height:1.45}' +
@@ -45546,15 +45545,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* Everything the panel shows, derived ONCE. */
   function collect() {
-    var out = { who: '', gaps: [], groups: [], ok: false };
+    var out = { gaps: [], groups: [], ok: false };
     var pt = null;
     try { pt = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
-    if (pt) {
-      var bits = [pt.name || 'Unnamed patient'];
-      if (pt.dob) bits.push('DOB ' + pt.dob);
-      if (pt.mrn) bits.push('MRN ' + pt.mrn);
-      out.who = bits.join('  ·  ');
-    } else {
+    /* THE PANEL DOES NOT NAME THE PATIENT. It used to open with a chip reading
+       "Ada Lovelace  ·  DOB 05/08/1970  ·  MRN WH-1", directly under a
+       persistent banner already saying the same thing. Measured on a running
+       page at b685, Review on screen, 1280x850:
+
+         #mlsCtxBar   1180x123 at y=82   "AL Ada Lovelace ... DOB 05/08/1970
+                                          · MRN WH-1 ..."
+         .rvp-who      296x32  at y=376  "Ada Lovelace · DOB 05/08/1970
+                                          · MRN WH-1"
+
+       Two surfaces, one fact, 294px apart. The banner is the single owner of
+       patient context - it is persistent, it is above every view, and it
+       carries the switcher - so the panel repeating it added no information
+       and cost the gaps section its position at the top of the panel, which is
+       the one thing this panel exists to put first.
+
+       The no-patient GAP stays, and it is not the same claim: "no patient is
+       bound" is a review finding about what would leave, not a restatement of
+       who is on screen. */
+    if (!pt) {
       out.gaps.push(['👤', 'No patient is bound to this visit. Nothing can be reviewed until one is.']);
     }
 
@@ -45645,7 +45658,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function html(d) {
     var h = '<div class="rvp-h"><b>Review</b></div>' +
       '<p class="rvp-sub">Everything below is what will leave this visit for Athena. Nothing on this panel sends it.</p>';
-    if (d.who) h += '<div class="rvp-who">' + esc(d.who) + '</div>';
     h += '<div class="rvp-sec">Needs your attention</div>';
     if (d.gaps.length) {
       h += '<ul class="rvp-gaps">' + d.gaps.map(function (g) {
