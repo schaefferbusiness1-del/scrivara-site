@@ -87,6 +87,26 @@ const TOKEN = /\bb(\d{3,4})\b/;
 const claimed = new Map();   /* token -> [sha, ...] */
 const unnamed = [];
 
+/* The token may appear ANYWHERE in the message, not only the subject.
+ *
+ * The guarantee this suite protects is that `git log --grep <build>` finds the
+ * commit — and --grep searches the body too, so subject-only was tighter than
+ * the property required. It also fought the repo's own conventions: an
+ * extension release that happens to bump the app build is a legitimate shape,
+ * and forcing its subject to lead with "b662:" instead of "ext 3.0.19:" is how
+ * a guard ends up switched off rather than obeyed. Body is enough; nowhere
+ * is not.
+ *
+ * ⚠️ THIS DOES NOT MAKE THE CUTOFF ADVANCE REDUNDANT. bdf150e contains b662
+ * ZERO times in its FULL message — subject and body both checked — so advancing
+ * CUTOFF past it was independently necessary. Anyone reading these as two
+ * spellings of one fix will revert the cutoff and take main red again with no
+ * explanation. They fix different things.
+ *
+ * The durable fix for how bdf150e reached main at all is neither of these: the
+ * extension-release path bumps app-version.json without running run-all.js, so
+ * this gate never got the chance to fire. That belongs to the bump script and
+ * is assigned to the defects lane — a matcher change cannot close it. */
 for (const c of commits) {
   /* did this commit change the version file? */
   let touched = '';
@@ -102,7 +122,9 @@ for (const c of commits) {
   } catch (e) {}
   if (!token) continue;
 
-  if (c.subject.indexOf(token) === -1) unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
+  let message = c.subject;
+  try { message = git(['log', '-1', '--format=%B', c.sha]); } catch (e) {}
+  if (message.indexOf(token) === -1) unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
   const arr = claimed.get(token) || [];
   arr.push(c.sha.slice(0, 7));
   claimed.set(token, arr);
@@ -110,11 +132,11 @@ for (const c of commits) {
 
 /* 1. PRESENCE */
 assert.strictEqual(unnamed.length, 0,
-  'A commit bumped the build without naming it in its subject:\n  ' + unnamed.join('\n  ') + '\n\n' +
+  'A commit bumped the build without naming it anywhere in its message:\n  ' + unnamed.join('\n  ') + '\n\n' +
   'The build number is the only handle that maps a user report to a diff, and four lanes rebase past\n' +
   'each other constantly. If the subject names the previous build, `git log --grep <build>` returns\n' +
   'nothing for the build the owner is actually running. Put the token from app-version.json in the\n' +
-  'commit subject - the bump script already knows it, so take it from there rather than from memory.');
+  'commit message (subject or body) - the bump script already knows it, so take it from there rather than from memory.');
 
 /* 2. UNIQUENESS */
 const dupes = [...claimed.entries()].filter(([, shas]) => shas.length > 1);
@@ -126,4 +148,4 @@ assert.strictEqual(dupes.length, 0,
   'in one afternoon. Re-bump rather than reuse: abandon the NUMBER, never the work.');
 
 console.log('PASS build bump names its build: ' + commits.length + ' commit(s) since ' + CUTOFF +
-  ', ' + claimed.size + ' build bump(s), each named in its own subject and claimed once');
+  ', ' + claimed.size + ' build bump(s), each named in its own message and claimed once');

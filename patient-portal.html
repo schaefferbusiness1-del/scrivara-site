@@ -117,8 +117,16 @@
   li.li-x:active .li-head{background:var(--soft);border-radius:8px}
   .li-chev{color:var(--muted);font-size:13px;transition:transform .18s;flex:none;padding-left:6px}
   li.li-x[data-exp="1"] .li-chev{transform:rotate(90deg)}
-  .li-detail{max-height:0;overflow:hidden;transition:max-height .24s ease}
-  li.li-x[data-exp="1"] .li-detail{max-height:640px}
+  /* No max-height transition. It animates a LAYOUT property — reflowing the
+     record list every frame — and eased over a fixed range rather than the
+     real content height, so a short detail snapped open then sat still. */
+  .li-detail{max-height:0;overflow:hidden}
+  /* max-height:none, NOT a number. At 640px a longer record was clipped with
+     no scrollbar and no affordance, so a patient reading their own
+     medications would conclude that was all of them. The print rule below
+     (max-height:none!important) is the tell that this was already hit once
+     and fixed for paper only. */
+  li.li-x[data-exp="1"] .li-detail{max-height:none}
   .li-detail-in{padding:2px 2px 12px}
   .d-row{display:flex;gap:10px;font-size:13px;padding:5px 0;border-top:1px dashed var(--line)}
   .d-row:first-child{border-top:none}

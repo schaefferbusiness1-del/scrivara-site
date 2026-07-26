@@ -326,6 +326,7 @@ const tests = [
   'calm-shell-generic-naming-scope.test.js',
   'settings-preview-commit-contract.test.js',
   'calm-shell-return-path.test.js',
+  'patient-surfaces-clip-nothing-and-stop-moving.test.js',
   'review-step-never-fails-silently.test.js',
   'modal-focus-goes-in-and-comes-back.test.js',
   'motion-system-costs-no-layout.test.js',
