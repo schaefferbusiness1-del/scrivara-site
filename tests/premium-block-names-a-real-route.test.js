@@ -36,6 +36,35 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const gate = fs.readFileSync(path.join(root, 'feat_mls_premium_gate.js'), 'utf8');
 
+/* ---- the SECOND instance, which this suite could not see ----
+ * This file read feat_mls_premium_gate.js, public-publication-boundary.test.js
+ * and mls-connect.js — and never ScribeFlow.html. So the identical sentence
+ * survived in the app shell itself:
+ *
+ *   ScribeFlow.html:10430        "Upgrade in Settings to unlock the full app."
+ *   ScribeFlow-staging.html:8395  same
+ *
+ * That is the Lite guard in showView(): every Lite user navigating anywhere
+ * outside the visit was sent to a Settings screen measured at b600 as 12,935
+ * characters containing the word "upgrade" zero times and zero upgrade controls.
+ *
+ * Fixing one instance and leaving another is how this defect class survives, so
+ * the suite now checks every shipped surface that can block a user, not just the
+ * one that was caught first. Staging is included deliberately — it drifted from
+ * production seven times in a single day by being forgotten. */
+for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
+  const shell = fs.readFileSync(path.join(root, file), 'utf8');
+  const blocks = shell.match(/toast\('[^']*Lite plan[^']*'/g) || [];
+  assert(blocks.length, file + ': the Lite block message is gone — if the guard was ' +
+    'removed that is fine, but confirm Lite users are not silently redirected instead');
+  for (const b of blocks) {
+    assert(!/\bin Settings\b/i.test(b),
+      file + ': a Lite block still points at Settings, which has no upgrade control.\n  ' + b);
+    assert(/home page|pricing|plans/i.test(b),
+      file + ': a Lite block names no destination at all.\n  ' + b);
+  }
+}
+
 /* Assert on the MESSAGE STRING, never on the file: the fix's own rationale
    comment quotes the old wording to explain it, so a file-wide scan for
    "upgrade … in Settings" matches the comment and fails forever. That is the

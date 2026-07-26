@@ -128,6 +128,118 @@
     } catch (e) {}
   }
 
+  /* ---------- universal modal FOCUS (thm-2.1.0) ----------
+   * This file already owns universal dismiss for every .modal-bg, and that made
+   * a gap: Escape now closes a dialog and leaves focus NOWHERE — on <body>,
+   * with the next Tab starting from the top of the document.
+   *
+   * Audited across ScribeFlow.html: only #patientModal handles focus properly
+   * (stash activeElement, trap Tab, restore on close). #helpModal focuses a
+   * field but never restores. The other TWELVE — settings, teamPt, setup,
+   * opPrep, templates, doc, view, share, legal, countersign, legalFill,
+   * widgetBuilder — are a bare classList.add('show'): a keyboard user opens a
+   * dialog and their focus is still behind it, so Tab walks the page underneath
+   * a modal they cannot see past.
+   *
+   * Fixed HERE rather than at the twelve call sites, for the same reason the
+   * dismiss lives here: one writer, and it covers every modal including ones
+   * nobody has written yet. Editing twelve openers would have missed the
+   * thirteenth.
+   *
+   * Reuses the app's own _patientModalFocusables() when present, so "what counts
+   * as focusable" has exactly one definition. */
+  var focusWired = false;
+  var returnTo = null;
+
+  function focusablesIn(modal) {
+    try {
+      if (typeof window._patientModalFocusables === 'function') {
+        var rows = window._patientModalFocusables(modal);
+        if (rows && rows.length) return rows;
+      }
+    } catch (e) {}
+    try {
+      return [].slice.call(modal.querySelectorAll(
+        'button,a[href],input:not([type=hidden]),select,textarea,[tabindex]:not([tabindex="-1"])'
+      )).filter(function (el) {
+        if (el.disabled || el.getAttribute('aria-hidden') === 'true') return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+    } catch (e) { return []; }
+  }
+
+  function onModalShown(bg) {
+    /* remember where the keyboard was, once — a re-render must not overwrite it
+       with something inside the modal */
+    if (!returnTo) {
+      var a = document.activeElement;
+      returnTo = (a && a !== document.body && a !== document.documentElement && !bg.contains(a)) ? a : null;
+    }
+    if (bg.contains(document.activeElement)) return;   /* already inside */
+    var rows = focusablesIn(bg);
+    try {
+      if (rows.length) rows[0].focus();
+      else { bg.setAttribute('tabindex', '-1'); bg.focus(); }
+    } catch (e) {}
+  }
+
+  function onModalHidden() {
+    var back = returnTo; returnTo = null;
+    /* only if it still exists and is still focusable — a closed modal often
+       destroys the row that opened it */
+    try {
+      if (back && document.contains(back) && back.getBoundingClientRect().width > 0) back.focus();
+    } catch (e) {}
+  }
+
+  /* PER-ELEMENT observers, deliberately NOT a document-wide subtree one.
+   *
+   * The first version used one observer on document.documentElement with
+   * subtree:true, and boot-script-budget rejected it as the 60th such observer
+   * against a ceiling of 59. That guard was right, and raising the ceiling would
+   * have been the lazy read: a document-wide subtree observer watching class and
+   * style fires on EVERY DOM change every other module makes, and this app has
+   * documented idle churn. Watching fourteen elements costs a rounding error;
+   * watching the document costs a callback per mutation forever.
+   *
+   * A modal opening is an attribute change on the modal ITSELF, so subtree was
+   * never needed — it was reach for elements that do not exist yet, and a
+   * childList watch on body (no subtree) covers those far more cheaply. */
+  var watched = new WeakSet();
+  var seen = new WeakMap();
+
+  function watchModal(bg) {
+    if (!bg || watched.has(bg)) return;
+    watched.add(bg);
+    try { seen.set(bg, getComputedStyle(bg).display !== 'none'); } catch (e) {}
+    try {
+      new MutationObserver(function () {
+        var open = false;
+        try { open = getComputedStyle(bg).display !== 'none'; } catch (e) {}
+        if (open === seen.get(bg)) return;      /* no change — never re-focus */
+        seen.set(bg, open);
+        if (open) onModalShown(bg); else onModalHidden();
+      }).observe(bg, { attributes: true, attributeFilter: ['class', 'style'] });
+    } catch (e) {}
+  }
+
+  function scanModals() {
+    try {
+      var els = document.querySelectorAll('.modal-bg');
+      for (var i = 0; i < els.length; i++) watchModal(els[i]);
+    } catch (e) {}
+  }
+
+  function wireFocus() {
+    if (focusWired) return; focusWired = true;
+    scanModals();
+    try {
+      /* modals appended later — body childList only, NO subtree */
+      new MutationObserver(scanModals).observe(document.body, { childList: true });
+    } catch (e) {}
+  }
+
   /* thm-1.1.1 FREEZE LESSON (kept in 2.0.0): never re-append the style node --
      re-inserting a <style> invalidates the ENTIRE document's styles, a heavy
      recurring synchronous hit on a clinic-scale DOM. Insert ONCE; the tick is
@@ -136,6 +248,7 @@
   function boot() {
     css();
     wireDismiss();
+    wireFocus();
   }
   function revert() {
     var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s);

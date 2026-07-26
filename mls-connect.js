@@ -6415,6 +6415,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function openReviewStep() {
     var note = $('noteBox');
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
+
+    /* A Lite account cannot reach this review at all, and until now said nothing.
+       applyLitePortal (ScribeFlow.html) calls mlsRoleHide on
+       button[onclick*="pushEntireVisitToAthena"], and mlsRoleHide sets INLINE
+       display:none. Everything below then ran normally and ended in
+       .focus({preventScroll:true}) on a display:none element — a silent no-op.
+       So a paying tier clicked "Next: Review & send to Athena" and NOTHING
+       happened, with no message, every time.
+
+       INLINE display is the test that matters. The Advanced workspace hides this
+       same button by CSS while it is closed, and that state is fine — the rest of
+       this function opens it. Only a role/tier hide is written inline, so this
+       distinguishes "not yet shown" from "not yours". Testing computed display
+       would refuse the review for every account.
+
+       Receptionist cannot reach here: applyReceptionistPortal hides nav_visit, so
+       the visit lane that owns this button never opens for them. Lite is the only
+       account that lands on this branch, which is why the message may name a plan
+       without misdiagnosing another role.
+
+       The destination is named because it exists — see
+       tests/premium-block-names-a-real-route.test.js, written after a block sent
+       doctors to a Settings screen with no upgrade control in it. */
+    var sendBtn = $('pushAllEmrBtn');
+    if (!sendBtn || (sendBtn.style && sendBtn.style.display === 'none') || sendBtn.disabled) {
+      flowToast('Reviewing Athena actions is not part of your plan. Your note is saved in MLS — see plans on the MLS home page to upgrade.', 'err');
+      return;
+    }
+
     var wasOpen = false;
     try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
     /* owner 2026-07-16: the advanced workspace only needs to EXIST so the send
@@ -33363,7 +33392,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b659';
+  window.__MLS_AV = window.__MLS_AV || 'b661';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33673,7 +33702,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b659';
+  var MLS_APP_BUILD='2026-07-25-b661';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

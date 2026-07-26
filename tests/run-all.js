@@ -324,6 +324,8 @@ const tests = [
   'calm-shell-generic-naming-scope.test.js',
   'settings-preview-commit-contract.test.js',
   'calm-shell-return-path.test.js',
+  'review-step-never-fails-silently.test.js',
+  'modal-focus-goes-in-and-comes-back.test.js',
   'motion-system-costs-no-layout.test.js',
   'voice-cluster-expands-never-decides.test.js',
   'review-is-a-review-not-just-orders.test.js',

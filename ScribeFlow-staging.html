@@ -8392,7 +8392,7 @@ try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch
 function showView(v){
   // TIER GUARD: Lite is note-generation ONLY — any other view bounces back to the Visit screen.
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
-  try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. Upgrade in Settings to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
+  try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. See plans on the MLS home page to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
   currentView=v;
   // One global button press rule. Routes render immediately at full opacity;
   // whole-view fades made every navigation feel like a screen-level pop.
@@ -23030,6 +23030,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b659';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b661';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
