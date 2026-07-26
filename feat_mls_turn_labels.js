@@ -185,7 +185,36 @@
     return HEADER + '\n' + turns.map(function (t) { return t.label + ': ' + t.text; }).join('\n');
   }
 
+  /* The DATA surface. #transcript is canonical: the recogniser writes it, the
+     note generator reads it, and both visit shells MIRROR it (txm-1.0.0). Always
+     write here — never to a mirror, which would be overwritten on the next sync. */
   function transcriptEl() { return $('transcript'); }
+
+  /* The VISIBLE surface, which is not the same thing and must not be assumed to
+     be. MEASURED on a running page at b684: #captureCard — and therefore
+     #transcript inside it — computes to display:none in the current visit shell,
+     with the doctor's editable transcript living in the lane mirror. A strip
+     mounted next to the canonical box would be a control nobody can reach, and
+     it would measure 0x0 forever while looking perfectly healthy in the DOM.
+     Mount beside whichever transcript the doctor can actually see; fall back to
+     the canonical one so a shell without a mirror still gets the strip. */
+  var MIRROR_IDS = ['ez3flTranscript', 'ez3Transcript'];
+  function visibleRect(el) {
+    return safe(function () {
+      if (!el) return null;
+      var r = el.getBoundingClientRect();
+      return (r.width > 0 && r.height > 0) ? r : null;
+    }, null);
+  }
+  function stripHostEl() {
+    for (var i = 0; i < MIRROR_IDS.length; i++) {
+      var m = $(MIRROR_IDS[i]);
+      if (m && visibleRect(m)) return m;
+    }
+    var t = transcriptEl();
+    if (t && visibleRect(t)) return t;
+    return t || null;
+  }
 
   /* Write the labelled form into the real transcript box.
      Refuses while the recorder is writing: ScribeFlow.html's onresult assigns
@@ -252,10 +281,51 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
+  /* MEASURED, real Chrome, 1280x850, dock in its normal resting state: this row
+     came to rest at y=739..838 and `document.elementFromPoint` at the CENTRE of
+     two of its four controls returned #mlsDockCopilot and #mlsDockAsk — the
+     fixed bottom dock, not the buttons. Visible, laid out, and not clickable.
+     This is the same seam b669 found on the Review control, on a new surface:
+     a control at the bottom of the scroll content sits under fixed chrome, and
+     every check that asserts visibility or focus passes anyway.
+     The fix is to make the scrollable content extend past the fixed furniture so
+     the row can always be scrolled clear. Measured from the dock's real height
+     rather than a guessed constant, and recomputed on resize, because a hard-coded
+     number is how this silently degrades when the dock changes. */
+  var FIXED_FURNITURE = ['mlsDock', 'mlsDockBar', 'mlsShellDock'];
+  function clearFixedFurniture(row) {
+    safe(function () {
+      var need = 0;
+      for (var i = 0; i < FIXED_FURNITURE.length; i++) {
+        var el = document.getElementById(FIXED_FURNITURE[i]);
+        if (!el) continue;
+        var cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' || cs.display === 'none') continue;
+        var r = el.getBoundingClientRect();
+        if (r.height > need) need = r.height;
+      }
+      /* No dock on this shell -> no clearance, and say so by leaving it at 0
+         rather than reserving space for furniture that is not there. */
+      row.style.scrollMarginBottom = need ? (Math.ceil(need) + 16) + 'px' : '';
+      row.style.marginBottom = need ? (Math.ceil(need) + 16) + 'px' : '';
+    });
+  }
+
   function ensureRow() {
+    var tx = stripHostEl();
     var row = $(ROW_ID);
-    if (row && row.isConnected) return row;
-    var tx = transcriptEl();
+    /* MEASURED on a running page: `isConnected` alone is not enough. The visit
+       subtree is re-rendered from an HTML string on a timer (the same engine
+       behaviour txf-1.0.0 documents for the transcript itself), and the row
+       survived that still ATTACHED but no longer next to the box it labels —
+       stranded elsewhere inside #captureCard. A connected node is not a
+       correctly placed one, so re-seat it whenever it has drifted. */
+    if (row && row.isConnected) {
+      if (tx && tx.parentNode && tx.nextElementSibling !== row) {
+        safe(function () { tx.parentNode.insertBefore(row, tx.nextSibling); });
+      }
+      return row;
+    }
     if (!tx || !tx.parentNode) return null;
     css();
     row = document.createElement('div');
@@ -264,6 +334,7 @@
     row.setAttribute('role', 'group');
     row.setAttribute('aria-label', 'Speaker labels for this recording');
     tx.parentNode.insertBefore(row, tx.nextSibling);
+    clearFixedFurniture(row);
     row.addEventListener('click', function (ev) {
       var t = ev.target && ev.target.closest ? ev.target.closest('[data-mtn]') : null;
       if (!t) return;
@@ -298,7 +369,12 @@
     row.className = '';
     var html = '<span class="mtn-lbl">Who said what — tap to correct:</span>';
     html += turns.map(function (t, i) {
+      /* An explicit aria-label, because textContent WELDS the two spans into
+         'Drgood morning what brings you in' — measured on the running page. A
+         welded string is not a label a screen reader or a test can use. */
+      var an = t.label + (t.assumed ? ', guessed from a pause, tap to change' : ', you set this') + ': ' + t.text.slice(0, 60);
       return '<button type="button" class="mtn-turn' + (t.assumed ? ' mtn-assumed' : '') + '" data-mtn="turn" data-i="' + i + '"' +
+        ' aria-label="' + esc(an) + '"' +
         ' title="' + esc(t.label + (t.assumed ? ' (guessed from a pause — tap to change)' : ' (you set this)')) + '">' +
         '<span class="mtn-who">' + esc(t.label) + '</span><span class="mtn-txt">' + esc(t.text.slice(0, 60)) + '</span></button>';
     }).join('');
@@ -362,7 +438,9 @@
     wrapStart();
     ensureRow();
     watchStop();
+    safe(function () { window.addEventListener("resize", reclear); });
   }
+  function reclear() { var r = $(ROW_ID); if (r) clearFixedFurniture(r); }
 
   function revert() {
     safe(function () { if (stopWatch) stopWatch.disconnect(); });
@@ -377,6 +455,7 @@
     safe(function () { var r = $(ROW_ID); if (r && r.parentNode) r.parentNode.removeChild(r); });
     safe(function () { var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); });
     safe(function () { var b = $('captureBtn'); if (b) delete b.__mlsTurnsWatched; });
+    safe(function () { window.removeEventListener("resize", reclear); });
     safe(function () { window.__mlsTurns.installed = false; });
   }
 

@@ -11878,7 +11878,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-turn-labels-js-301-button",
+   "id": "feat-mls-turn-labels-js-376-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "' + esc(t.label + (t.assumed ? ' (guessed from a pause — tap to change)' : ' (you set this)')) + '",
@@ -11887,12 +11887,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_turn_labels.js",
-   "line": 301,
+   "line": 376,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-turn-labels-js-306-remove-labels",
+   "id": "feat-mls-turn-labels-js-382-remove-labels",
    "label": "Remove labels",
    "accessibleName": "Remove labels",
    "title": "",
@@ -11901,12 +11901,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_turn_labels.js",
-   "line": 306,
+   "line": 382,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-turn-labels-js-307-add-labels-to-transcript",
+   "id": "feat-mls-turn-labels-js-383-add-labels-to-transcript",
    "label": "Add labels to transcript",
    "accessibleName": "Add labels to transcript",
    "title": "",
@@ -11915,7 +11915,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_turn_labels.js",
-   "line": 307,
+   "line": 383,
    "gated": false,
    "handler": null
   },
