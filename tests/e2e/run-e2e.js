@@ -16,14 +16,33 @@ const path = require('path');
 const assert = require('assert');
 const { createRequire } = require('module');
 
+/* A skip must be LOUD and must be able to FAIL.
+   This suite exits 0 when its dependencies are missing, which reads identically
+   to "everything passed" in a CI summary — and that is precisely why it ran
+   zero times across thirty-plus builds while reporting success. Set
+   MLS_E2E_REQUIRED=1 anywhere the dependencies are supposed to exist (CI), and
+   a missing browser becomes a failure instead of a silent pass. */
+function absent(what, how) {
+  const required = String(process.env.MLS_E2E_REQUIRED || '') === '1';
+  const bar = '='.repeat(72);
+  console.error('\n' + bar);
+  console.error('  E2E SUITE DID NOT RUN — THIS SUITE CHECKED NOTHING');
+  console.error('  missing: ' + what);
+  console.error('  fix:     ' + how);
+  console.error('  ' + (required
+    ? 'MLS_E2E_REQUIRED=1 is set, so this is a FAILURE, not a skip.'
+    : 'Skipping (exit 0). Set MLS_E2E_REQUIRED=1 to make this a hard failure.'));
+  console.error(bar + '\n');
+  process.exit(required ? 1 : 0);
+}
+
 function loadPuppeteer() {
   try { return require('puppeteer-core'); } catch (e) {}
   const dirs = [process.env.MLS_E2E_PUPPETEER_DIR].filter(Boolean);
   for (const d of dirs) {
     try { return createRequire(path.join(d, 'package.json'))('puppeteer-core'); } catch (e) {}
   }
-  console.error('SKIP e2e: puppeteer-core not resolvable (set MLS_E2E_PUPPETEER_DIR).');
-  process.exit(0);
+  absent('puppeteer-core', 'npm i puppeteer-core in a scratch dir, then set MLS_E2E_PUPPETEER_DIR to it');
 }
 const puppeteer = loadPuppeteer();
 
@@ -31,7 +50,7 @@ const CHROME = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe'
 ].find(p => { try { return fs.existsSync(p); } catch (e) { return false; } });
-if (!CHROME) { console.error('SKIP e2e: Chrome not found.'); process.exit(0); }
+if (!CHROME) absent('Google Chrome', 'install Chrome at the standard path, or point CHROME at the binary');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 8873;
