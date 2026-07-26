@@ -36,11 +36,18 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'feat_mls_visit_voice_one.js'), 'utf8');
 
-/* ---- 1. all three peers survive, by name and by canonical id ------------- */
+/* ---- 1. the surviving peers, by name and by canonical id -----------------
+ * PREMISE INVERTED 2026-07-26, on the owner's order (relayed verbatim):
+ * remove MLS Assistant from this menu — "overlapping too much with Copilot"
+ * and "does not work with dictation." The menu is now a DUO. The assistant's
+ * capability lives in the dock's Copilot (the b690 unification reads the
+ * active visit); its underlying controls keep their class-hide + Tools reach
+ * elsewhere. This section now pins BOTH halves: the duo's routes survive,
+ * and the assistant does not quietly return as a third option. */
 
-const LANE = ['ez3flCopilotVoice', 'ez3flAssistant', 'ez3flDictate'];
-const ENGINE = ['ez3QVoice', 'ez3QAssistant', 'ez3QDictate'];
-const CANON = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'];
+const LANE = ['ez3flCopilotVoice', 'ez3flDictate'];
+const ENGINE = ['ez3QVoice', 'ez3QDictate'];
+const CANON = ['mlsCopVoiceBtn', 'mlsDaDock'];
 
 [].concat(LANE, ENGINE, CANON).forEach((id) => {
   assert.ok(src.includes("'" + id + "'"),
@@ -48,11 +55,15 @@ const CANON = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'];
     'the lane chip, the engine chip and the canonical pill are three different ' +
     'renderings of the same tool and any of them may be the one on screen.');
 });
-['Copilot Voice', 'MLS Assistant', 'Dictate'].forEach((label) => {
+['Copilot Voice', 'Dictate'].forEach((label) => {
   assert.ok(src.includes("label: '" + label + "'"),
-    'the option "' + label + '" is gone. The app documents these as three ' +
+    'the option "' + label + '" is gone. The app documents these as ' +
     'different things; the fan must keep them distinguishable BY NAME.');
 });
+assert.ok(!/key:\s*'assistant'/.test(src),
+  'MLS Assistant is back in the voice menu. The owner removed it on ' +
+  '2026-07-26 ("overlapping too much with Copilot"); if it is returning, ' +
+  'that is an owner decision to record here — not a drive-by re-add.');
 
 /* ---- 2. it owns no recognizer behaviour --------------------------------- */
 
@@ -89,10 +100,11 @@ assert.ok(!/pickBest|bestGuess|inferTool|chooseTool/i.test(code),
   'the module appears to choose a tool for the doctor. It must not: Copilot ' +
   'Voice and Dictate are different recognizers writing to different places.');
 {
-  /* three named options must be built, each with its own control list */
+  /* two named options must be built, each with its own control list
+     (three became two on the 2026-07-26 owner order above) */
   const items = src.match(/key:\s*'(voice|assistant|dictate)'/g) || [];
-  assert.strictEqual(items.length, 3,
-    'expected exactly three named options, found ' + items.length);
+  assert.strictEqual(items.length, 2,
+    'expected exactly two named options, found ' + items.length);
 }
 
 /* ---- 4. a closed control may NEVER hide a hot mic ----------------------- */
@@ -106,11 +118,11 @@ assert.ok(/liveNames\.push\(it\.def\.label\)/.test(src) && /faceName\.textConten
 assert.ok(/function chipOn\(id\)[\s\S]{0,400}?aria-pressed/.test(src),
   'live state must be READ off the real control (aria-pressed / .on), never ' +
   'tracked in a private flag that could disagree with the truce');
-assert.ok(/isListening/.test(src) && /mlsAsstPanel/.test(src),
+assert.ok(/isListening/.test(src),
   "the DOM alone is not enough: setTopVoiceChip only writes aria-pressed on the " +
   'LANE chips, so on the engine renderer a live recognizer would be invisible. ' +
-  "The recognizers' own isListening() and the assistant panel's .open must be " +
-  'read too.');
+  "The recognizers' own isListening() must be read too. (The assistant panel's " +
+  '.open read left with the assistant option, 2026-07-26 owner order.)');
 /* the phone lane drops the whole chip row; a live mic must bring it back */
 assert.ok(/body\.mls-phone \.ez3fl-quick:has\(#' \+ ROOT_ID \+ '\.live\)/.test(src),
   'mls-connect.js hides .ez3fl-quick entirely under body.mls-phone. Without an ' +

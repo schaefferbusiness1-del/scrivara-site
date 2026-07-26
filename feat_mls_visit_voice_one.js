@@ -102,15 +102,15 @@
           }, false);
       }
     },
-    {
-      key: 'assistant', label: 'MLS Assistant', icon: '🤖',
-      hint: 'ask about this visit without leaving it',
-      controls: ['ez3flAssistant', 'ez3QAssistant', 'mlsAsstFab'],
-      live: function () {
-        return chipOn('ez3flAssistant') ||
-          safe(function () { var p = $('mlsAsstPanel'); return !!(p && p.classList.contains('open')); }, false);
-      }
-    },
+    /* 'MLS Assistant' LEFT THIS MENU on the owner's order (2026-07-26,
+       relayed): "overlapping too much with Copilot" and "does not work with
+       dictation." Its ask-about-the-visit capability lives in the dock's
+       Copilot (which reads the active visit since the b690 unification), so
+       the entry here was a second door to the same room. The underlying
+       controls (ez3flAssistant / ez3QAssistant / mlsAsstFab) stay class-hidden
+       with their Tools reach — removal from THIS menu, not from the product.
+       An OPEN assistant panel needs no entry here to stay visible: the panel
+       is its own on-screen surface, and closing it remains its own control. */
     {
       key: 'dictate', label: 'Dictate', icon: '🎤',
       hint: 'speak straight into the transcript',
