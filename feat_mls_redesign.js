@@ -1006,7 +1006,7 @@
 "  #mlsRdNav .navtab{ transition:background .15s ease, color .15s ease; }",
 "  body.mls-redesign .modal-bg{ animation:mlsRdFade .18s ease; }",
 "  body.mls-redesign .modal-bg > *{ animation:mlsRdRise .2s ease; }",
-"  body.mls-redesign #toast{ transition:opacity .25s ease, transform .25s ease; }",
+"  body.mls-redesign #toast{ transition:opacity var(--mls-dur-2) var(--mls-ease-out), transform var(--mls-dur-3) var(--mls-ease-spring); }",
 "  body.mls-redesign button:not(.ez3fl-recbtn){ transition:background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .07s ease; }",
 "  #mlsFabMenu button{ animation:mlsRdRise .18s ease backwards; }",
 "  #mlsTbMenuPanel.open{ animation:mlsRdRise .16s ease; }",

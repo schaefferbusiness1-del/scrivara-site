@@ -447,10 +447,10 @@
     'body.mls-calm #settingsModal,body.mls-calm #templatesModal,body.mls-calm #opPrepModal,',
     'body.mls-calm #shareModal,body.mls-calm #countersignModal,body.mls-calm #detailModal,',
     'body.mls-calm #docModal,body.mls-calm #helpModal,body.mls-calm #patientModal',
-    '{animation:mlsMdlIn .18s ease both}',
+    '{animation:mlsMdlIn var(--mls-dur-2) var(--mls-ease-out)}',
     'body.mls-calm .ez3-modal-card,body.mls-calm .ez2-modal>*,body.mls-calm #settingsModal>*,',
     'body.mls-calm #templatesModal>*,body.mls-calm #opPrepModal>*,body.mls-calm #patientModal>*',
-    '{animation:mlsMdlCard .26s cubic-bezier(.2,.7,.3,1) both}',
+    '{animation:mlsMdlCard var(--mls-dur-3) var(--mls-ease-out)}',
     '@media (prefers-reduced-motion:reduce){',
     'body.mls-calm .ez2-modal,body.mls-calm .ez3-modal-card,body.mls-calm #settingsModal,',
     'body.mls-calm #templatesModal,body.mls-calm #opPrepModal,body.mls-calm #patientModal,',
@@ -606,7 +606,7 @@
 
     /* The right-now bar is summoned by the user, so it may spring slightly. */
     '@keyframes mlsMoRise{from{opacity:0;transform:translate3d(0,7px,0)}to{opacity:1;transform:none}}',
-    '#mlsRightNow:not(.empty){animation:mlsMoRise var(--mls-dur-3) var(--mls-ease-spring) both}',
+    '#mlsRightNow:not(.empty){animation:mlsMoRise var(--mls-dur-3) var(--mls-ease-spring)}',
 
     /* A STANDING PROHIBITION, not a rule for motion that exists today. Nothing
        currently applies .mls-mo — this is here so that the next person to add an
