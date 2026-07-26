@@ -99,6 +99,7 @@ const tests = [
   'transcript-mirror-merge-runtime.test.js',
   'no-merge-conflict-markers-in-shipped-assets.test.js',
   'build-bump-names-its-build.test.js',
+  'tree-contains-everything-published.test.js',
   'transcript-focus-survives-rebuild.test.js',
   'visit-host-never-moves-under-a-typing-doctor.test.js',
   'easy-lane-engine-rewrite-runtime.test.js',
