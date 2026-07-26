@@ -1153,15 +1153,36 @@
      by a label pattern scoped to a container. Absent control -> absent action,
      which is the charter rule (illegal actions are absent, not disabled). */
   var ACTIONS = {
-    /* With a patient open, the one thing a doctor is here to do is start the
-       visit. Everything else that used to crowd the profile header moves to the
-       Tools menu. With no patient open, the list actions are what matter. */
-    patient: [
-      { label: /^start visit$/i, within: '#profileCard', primary: true },
-      { id: 'ptNewBtn', primary: true },
-      { id: 'ptPullAthenaBtn' },
-      { id: 'ptIntakeBtn' }
-    ],
+    /* NO ACTIONS ON THE PATIENT SCREEN. Deliberately empty, and it must stay
+       empty — this is not a list waiting to be filled back in.
+
+       The lead's b685 walkthrough on the owner's signed-in tab saw a strip
+       reading "Start visit | New patient | Pull from Athena · READ-ONLY" above
+       a screen that already offers all three, better placed. Measured here at
+       b685, 1280x850, signed in with a patient open:
+
+         strip      #mlsRightNow            1216x59, three buttons
+           "Start visit"                     100x37
+           "New patient"                     115x37
+           "Pull from Athena · READ-ONLY"     244x37
+         the same three, already on the screen underneath it:
+           #profileCard "🎙️ Start visit"     688x62   <- the visit hero
+           #ptNewBtn    "＋ New patient"      128x37
+           #ptPullAthenaBtn                   250x42
+
+       So every action here was a second, SMALLER offer of a control the doctor
+       can already see. That breaks two rules at once: one offer per action per
+       screen (law 4), and — worse — a 100x37 "Start visit" competing with the
+       688x62 hero for the same job, so the biggest thing on screen is no longer
+       unambiguously the next step (law 3).
+
+       Nothing is hidden and nothing needs a route back: the keepers are the
+       app's own controls, in place, at full size. The three ids are still
+       offered by Ask, and #ptIntakeBtn was app-gated to 0x0 in that state
+       anyway. The key stays (rather than being deleted) so the destination can
+       still render its SEGMENTED row — Patients / History is navigation, not a
+       duplicated action, and returns by itself if History is ever unfolded. */
+    patient: [],
     /* Applying a date range turns the calendar into a flat list of every
        appointment in it - 600 rows - and the way back is a button labelled
        "Clear", fifth in a row of eight. That is how you get stuck on a screen
