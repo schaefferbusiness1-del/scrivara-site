@@ -5408,7 +5408,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function injectCSS() {
     var css = [
       /* ---- shared tokens (scoped, no leakage outside #studioView) ---- */
-      "#studioView{--stp-ink:#1A211C;--stp-sub:#46586f;--stp-mini:#79837C;--stp-line:#E7E5DD;--stp-grad:linear-gradient(120deg,#EAF1EE,#f6effd)}",
+      "#studioView{--stp-ink:var(--ink);--stp-sub:#46586f;--stp-mini:var(--muted);--stp-line:var(--line);--stp-grad:linear-gradient(120deg,#EAF1EE,#f6effd)}",
       "#studioView .card{color:var(--stp-ink)}",
       "#studioView .card h2{color:var(--stp-ink);letter-spacing:-.01em}",
       "#studioView .card .sub{color:var(--stp-sub)!important}",
@@ -5443,7 +5443,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
       /* ---- my creations ---- */
       "#studioView #studioSaved{gap:10px!important}",
-      "#studioView #studioSaved > .mini{width:100%;padding:22px 16px;text-align:center;border:1.5px dashed var(--stp-line);border-radius:14px;background:#fbfcfe;color:var(--stp-mini)!important;font-size:13px}",
+      "#studioView #studioSaved > .mini{width:100%;padding:22px 16px;text-align:center;border:1.5px dashed var(--stp-line);border-radius:14px;background:var(--card);color:var(--stp-mini)!important;font-size:13px}",
       "#studioView #studioSaved > *:not(.mini){transition:transform .12s ease,box-shadow .12s ease}",
       "#studioView #studioSaved > *:not(.mini):hover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(20,33,28,.28)}",
 
@@ -32153,7 +32153,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          wrote a value the element already had, once per tick. */
       if (head.type !== "button") head.type = "button";
       if (head.getAttribute("aria-controls") !== "mlsB39SgBody") head.setAttribute("aria-controls", "mlsB39SgBody");
-      if (!head.querySelector('.b39-caret')) head.innerHTML = '&#128202; Study Groups <span style="font:600 12px system-ui;color:#7d8ba1">&mdash; advanced: build a patient cohort, then run a study (graph + Excel + PDF)</span><span class="b39-caret">&#9662;</span>';
+      if (!head.querySelector('.b39-caret')) head.innerHTML = '&#128202; Study Groups <span style="font:600 12px system-ui;color:var(--muted)">&mdash; advanced: build a patient cohort, then run a study (graph + Excel + PDF)</span><span class="b39-caret">&#9662;</span>';
 
       var bodies = [].slice.call(wrap.querySelectorAll('[id="mlsB39SgBody"]'));
       var body = bodies.filter(function (node) { return node.contains(sg); })[0] || bodies[0];
