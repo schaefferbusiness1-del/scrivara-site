@@ -364,6 +364,53 @@
     (rows || []).forEach(function (r) { add(r && r.provider); });
     return labels;
   }
+  /* sfp-1.0.0 STALENESS DISCLOSURE -------------------------------------------
+     The extension's schedule read is a pure DOM scrape of an ALREADY-PAINTED
+     athenaOne grid. It contacts athena's servers ZERO times, so it returns the
+     same rows whether the athenaOne session is alive or died hours ago. The
+     navigation step before it proves nothing either: it verifies the day by
+     re-reading the painted `.calendar-nav` week strip, and for a TODAY pull it
+     compares the selected tab against the BROWSER's clock - a check a stale
+     painted strip passes without athena serving anything.
+
+     ext 3.0.21 therefore reports how old the painted grid is, and whether it
+     ever saw athena's server actually serve this tab (receipt.sessionProof).
+     This turns that into one plain sentence for the clinician.
+
+     THREE RULES, each learned from a defect in this repo:
+       1. It NEVER refuses and NEVER touches `complete`. A pull that works today
+          still works; it just stops claiming the rows are current when nothing
+          proved they are.
+       2. An ABSENT signal reads as "not stated", never as "fresh". An older
+          extension sends no sessionProof at all, and a missing field must not
+          be silently upgraded into a clean bill of health.
+       3. It says what is known and nothing more. "MLS saw no sign your session
+          served anything" is true; "you are signed out" would be a guess. */
+  function freshnessNotice(resp) {
+    var sp = (resp && (resp.sessionProof || (resp.receipt && resp.receipt.sessionProof))) || null;
+    if (!sp) return "";                        /* extension predates sfp-1.0.0 */
+    if (sp.staleRisk === "fresh") return "";
+    var age = Number(sp.dataAgeMs);
+    if (sp.staleRisk === "stale" && isFinite(age) && age > 0) {
+      var mins = Math.round(age / 60000);
+      var howLong = mins >= 120 ? (Math.round(mins / 60) + " hours") : (mins + " minute" + (mins === 1 ? "" : "s"));
+      return " Heads up: these rows are what athenaOne had on screen " + howLong
+        + " ago, and MLS saw no sign athenaOne served that tab since. Refresh the Day schedule in athenaOne and pull again to be sure nothing was cancelled, added or moved.";
+    }
+    return " Heads up: MLS could not confirm how current the athenaOne schedule was when it read it. Refresh the Day schedule in athenaOne and pull again if anything looks out of date.";
+  }
+  function freshnessReceipt(resp) {
+    var sp = (resp && (resp.sessionProof || (resp.receipt && resp.receipt.sessionProof))) || null;
+    if (!sp) return { stated: false, staleRisk: "not-reported", dataAgeMs: null, liveSessionProven: null, proofVia: "" };
+    return {
+      stated: true,
+      staleRisk: String(sp.staleRisk || "unproven"),
+      dataAgeMs: (sp.dataAgeMs == null ? null : Number(sp.dataAgeMs)),
+      liveSessionProven: !!sp.liveSessionProven,
+      proofVia: String(sp.proofVia || ""),
+      proofAgeMs: (sp.proofAgeMs == null ? null : Number(sp.proofAgeMs))
+    };
+  }
   function scopeProviderRows(rows, rawProvider, resp) {
     rows = Array.isArray(rows) ? rows.slice() : [];
     resp = resp || null;
@@ -3125,6 +3172,11 @@
             var preSnapshotComplete = rowFailuresAbsent && dateComplete && accountingComplete && mappingComplete;
             var calendarReceipt = {
               complete: preSnapshotComplete,
+              /* sfp-1.0.0: how current the Athena grid was when it was read.
+                 Recorded on the receipt, NOT folded into `complete` - a stale
+                 read is still a complete read, and conflating the two would
+                 fail pulls that work today. */
+              scheduleFreshness: freshnessReceipt(r),
               attempted: attempted, accounted: accounted, mapped: mappings.length,
               uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length,
               rowFailuresAbsent: rowFailuresAbsent, dateComplete: dateComplete,
@@ -3150,7 +3202,7 @@
             }
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
             else if (res.reason === "provider-empty" && selectedProvider.mode === "selected" && calendarReceipt.snapshotPublished) onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
-            else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments.", "ok");
+            else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments." + freshnessNotice(r), "ok");
             else onStatus("No verified patients could be imported for " + date + ".", "err");
             var historyReceipt = includeHistory
               ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus)
@@ -3211,8 +3263,8 @@
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : ""), "err");
-            else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested.", "ok");
-            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0.", "ok");
+            else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r), "ok");
+            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r), "ok");
             return res;
           });
           });

@@ -237,6 +237,7 @@ const tests = [
   'extension-package.test.js',
   'extension-manifest-text-integrity.test.js',
   'enumerate-noise-surface-exclusion.test.js',
+  'schedule-read-declares-its-freshness.test.js',
   'enumerate-refusal-evidence.test.js',
   'enumerate-evidence-crosses-the-hop.test.js',
   'enumerate-gives-up-when-provably-stuck.test.js',

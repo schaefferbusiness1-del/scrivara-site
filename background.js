@@ -4096,6 +4096,74 @@ try {
   });
 } catch (e) {}
 try { chrome.tabs.onRemoved.addListener(function (tid) { try { delete self.__mlsAthReg[tid]; if (self.__mlsAthPickCache.tabId === tid) self.__mlsAthPickCache.tabId = null; chrome.storage.session.set({ mlsAthReg: self.__mlsAthReg }); } catch (e) {} }); } catch (e) {}
+/* ============ sfp-1.0.0 ATHENA LIVE-SESSION PROOF LEDGER =====================
+ * WHY THIS EXISTS. The day-schedule read is a pure DOM scrape of an ALREADY
+ * PAINTED grid - it issues ZERO requests to athenahealth - so it returns the
+ * same rows whether the athenaOne session is alive or died server-side hours
+ * ago. The inherited session probe (mlsAthSessionProbeFn) recognises only a
+ * PAINTED sign-out (a visible timeout heading or login form), and athena
+ * renders that page on the NEXT navigation, which a scrape never performs.
+ * Result, owner-confirmed 2026-07-25 and already on record in
+ * tests/live-e2e-artifacts/2026-07-22-acceptance.md (an 18th, never-before
+ * pulled appointment arrived while all 17 history reads refused): a stale
+ * roster shipped as ok:true / complete:true with nothing marking it stale.
+ *
+ * This ledger records the moments the extension OBSERVED athena's server
+ * actually serve this tab. A dead session cannot produce one.
+ *
+ * DELIBERATELY NOT TREATED AS PROOF OF LIFE:
+ *   - a content-script hello (__mlsAthReg) - it fires on focus, pageshow and
+ *     visibilitychange of an already-loaded document, with no server involved;
+ *   - mlsAthPing reporting alive:true - it proves only that no sign-out is
+ *     PAINTED, which is the exact blind spot this ledger covers.
+ *
+ * IT IS EVIDENCE, NEVER A GATE. Nothing here refuses a read or changes an
+ * acceptance condition; it only lets the receipt say how old the data is. */
+self.__mlsAthLive = self.__mlsAthLive || {};          /* tabId -> {at, via} */
+try { chrome.storage.session.get(['mlsAthLive'], function (st) { try { var m = st && st.mlsAthLive; if (m && typeof m === 'object') { for (var k in m) { if (self.__mlsAthLive[k] == null) self.__mlsAthLive[k] = m[k]; } } } catch (e) {} }); } catch (e) {}
+function mlsAthNoteLiveSession(tabId, via) {
+  try {
+    if (tabId == null || Number(tabId) < 0) return;
+    self.__mlsAthLive[tabId] = { at: Date.now(), via: String(via || 'unknown').slice(0, 40) };
+    try { chrome.storage.session.set({ mlsAthLive: self.__mlsAthLive }); } catch (e1) {}
+  } catch (e) {}
+}
+/* 15 minutes: comfortably inside athena's own inactivity window, and long
+   enough that a clinician working a normal session never trips it. */
+var MLS_ATH_LIVE_WINDOW_MS = 900000;
+function mlsAthLiveProof(tabId) {
+  var out = { proven: false, ageMs: null, via: '', windowMs: MLS_ATH_LIVE_WINDOW_MS };
+  try {
+    var rec = (self.__mlsAthLive || {})[tabId];
+    if (!rec || !Number(rec.at)) return out;
+    out.ageMs = Math.max(0, Date.now() - Number(rec.at));
+    out.via = String(rec.via || '');
+    out.proven = out.ageMs <= MLS_ATH_LIVE_WINDOW_MS;
+  } catch (e) {}
+  return out;
+}
+try { chrome.tabs.onRemoved.addListener(function (tid) { try { delete self.__mlsAthLive[tid]; chrome.storage.session.set({ mlsAthLive: self.__mlsAthLive }); } catch (e) {} }); } catch (e) {}
+/* A COMMITTED navigation was SERVED by athena. A dead session cannot serve one:
+   it redirects to identity.athenahealth.com (a different host, so it is never
+   counted) or commits its own timeout page - and that page is PAINTED, so the
+   existing probe rejects the tab at pick time before any read starts. The two
+   mechanisms are complementary: this catches the silent expiry the painted
+   probe cannot see, the painted probe catches the repaint this cannot judge.
+   Frame commits count, because athena's day view loads inside frames. */
+try {
+  if (chrome.webNavigation && chrome.webNavigation.onCommitted && typeof chrome.webNavigation.onCommitted.addListener === 'function') {
+    chrome.webNavigation.onCommitted.addListener(function (d) {
+      try {
+        if (!d || d.tabId == null || Number(d.tabId) < 0) return;
+        var u = String(d.url || ''), h = '';
+        try { h = new URL(u).host.toLowerCase(); } catch (e0) { return; }
+        if (h !== 'athenanet.athenahealth.com') return;
+        if (/\/(?:login|logout|signin|sso|timeout)\b/i.test(u)) return;
+        mlsAthNoteLiveSession(d.tabId, d.frameId ? 'athena-frame-load' : 'athena-page-load');
+      } catch (e) {}
+    }, { url: [{ hostEquals: 'athenanet.athenahealth.com' }] });
+  }
+} catch (e) {}
 function mlsAthTabHost(t) { try { return new URL((t && t.url) || '').host.toLowerCase(); } catch (e) { return ''; } }
 function mlsAthIsLoginish(t) {
   var h = mlsAthTabHost(t), u = ((t && t.url) || '').toLowerCase();
@@ -5184,11 +5252,36 @@ var mlsProv = (function () {
       var empty = /\b(?:no appointments?|nothing scheduled|no patients? scheduled|no visits? scheduled)\b/.test(tl);
       var providerContext = /\b(?:provider|resource|clinician|doctor)\b/.test(tl);
       var timeCount = (text.match(/\b\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)\b/gi) || []).length;
+      /* sfp-1.0.0 FRESHNESS. This scrape reads an already-painted grid and asks
+         athena for nothing, so the age of what is painted IS the age of the data.
+         Two Performance reads: no network, no side effects, no PHI.
+           docAgeMs  - how long ago this frame's document was created.
+           lastNetMs - how long ago this frame last received ANYTHING from the
+                       server (newest resource entry).
+         Chrome STOPS recording resource entries once the buffer fills, so a full
+         buffer makes lastNetMs a FLOOR on staleness rather than a measurement -
+         netBufferFull is reported alongside so no consumer can read it as proof. */
+      var docAgeMs = null, lastNetMs = null, netEntries = 0, netBufferFull = false;
+      try {
+        if (typeof performance !== 'undefined') {
+          if (typeof performance.timeOrigin === 'number' && isFinite(performance.timeOrigin)) docAgeMs = Math.max(0, Math.round(Date.now() - performance.timeOrigin));
+          var resEntries = [];
+          try { resEntries = performance.getEntriesByType('resource') || []; } catch (eRes) { resEntries = []; }
+          netEntries = resEntries.length;
+          netBufferFull = netEntries >= 250;
+          var newestNet = 0;
+          for (var ri = resEntries.length - 1, riSeen = 0; ri >= 0 && riSeen < 400; ri--, riSeen++) {
+            var reEnd = Number((resEntries[ri] && resEntries[ri].responseEnd) || 0);
+            if (reEnd > newestNet) newestNet = reEnd;
+          }
+          if (newestNet > 0 && docAgeMs != null) lastNetMs = Math.max(0, Math.round(docAgeMs - newestNet));
+        }
+      } catch (eFresh) {}
       var verified = structure || (table && (scheduleUrl || (!!dateText && scheduleWords)))
         || (!!dateText && scheduleUrl && scheduleWords && (timeCount > 0 || empty || providerContext));
       var via = structure ? 'schedule-structure' : (table && (scheduleUrl || (!!dateText && scheduleWords))) ? 'schedule-table'
         : verified ? (empty ? 'dated-empty-schedule' : 'dated-schedule') : 'unverified';
-      return { verified: !!verified, grid: !!verified, via: via, dateHeader: dateText.slice(0, 60), timeCount: timeCount, table: !!table, structure: !!structure, legacyHeading: !!legacyHeading, appointmentNodes: Math.min(appointmentNodes, 999), appointmentClasses: appointmentClasses.slice(0, 8), urlHint: !!urlHint, scheduleWords: !!scheduleWords, empty: !!empty, providerContext: !!providerContext };
+      return { docAgeMs: docAgeMs, lastNetMs: lastNetMs, netEntries: netEntries, netBufferFull: !!netBufferFull, verified: !!verified, grid: !!verified, via: via, dateHeader: dateText.slice(0, 60), timeCount: timeCount, table: !!table, structure: !!structure, legacyHeading: !!legacyHeading, appointmentNodes: Math.min(appointmentNodes, 999), appointmentClasses: appointmentClasses.slice(0, 8), urlHint: !!urlHint, scheduleWords: !!scheduleWords, empty: !!empty, providerContext: !!providerContext };
     } catch (e) { return { verified: false, grid: false, via: 'probe-error', error: String(e && e.message || e).slice(0, 80) }; }
   }
 
@@ -5881,10 +5974,10 @@ var mlsProv = (function () {
             var __det = __detX.r;
             var __probes = (__det || []).filter(function (r) { return r && r.result; }).map(function (r) {
               var p = r.result || {};
-              return { frameId: r.frameId, verified: !!p.verified, via: p.via || '', dateHeader: p.dateHeader || '', timeCount: p.timeCount || 0, table: !!p.table, structure: !!p.structure, legacyHeading: !!p.legacyHeading, appointmentNodes: p.appointmentNodes || 0, appointmentClasses: (p.appointmentClasses || []).slice(0, 8), urlHint: !!p.urlHint, scheduleWords: !!p.scheduleWords, empty: !!p.empty, providerContext: !!p.providerContext };
+              return { frameId: r.frameId, docAgeMs: (p.docAgeMs == null ? null : Number(p.docAgeMs)), lastNetMs: (p.lastNetMs == null ? null : Number(p.lastNetMs)), netBufferFull: !!p.netBufferFull, verified: !!p.verified, via: p.via || '', dateHeader: p.dateHeader || '', timeCount: p.timeCount || 0, table: !!p.table, structure: !!p.structure, legacyHeading: !!p.legacyHeading, appointmentNodes: p.appointmentNodes || 0, appointmentClasses: (p.appointmentClasses || []).slice(0, 8), urlHint: !!p.urlHint, scheduleWords: !!p.scheduleWords, empty: !!p.empty, providerContext: !!p.providerContext };
             }).slice(0, 40);
             var __hits = (__det || []).filter(function (r) { return r && r.result && r.result.verified; }).map(function (r) {
-              return { frameId: r.frameId, via: r.result.via || '', dateHeader: r.result.dateHeader || '', timeCount: r.result.timeCount || 0 };
+              return { frameId: r.frameId, via: r.result.via || '', dateHeader: r.result.dateHeader || '', timeCount: r.result.timeCount || 0, docAgeMs: (r.result.docAgeMs == null ? null : Number(r.result.docAgeMs)), lastNetMs: (r.result.lastNetMs == null ? null : Number(r.result.lastNetMs)), netBufferFull: !!r.result.netBufferFull };
             });
             return { verified: __hits.length > 0, frameIds: __hits.map(function (h) { return h.frameId; }), hits: __hits, probes: __probes };
           };
@@ -6657,8 +6750,40 @@ async function mlsSchedDomInline(doc, CFG){
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
         var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
         var __complete = __coverageComplete && (__authoritativeEmpty || (__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0));
+        /* sfp-1.0.0 STALENESS VERDICT. Take the FRESHEST verified schedule frame:
+           if any surface that produced these rows has had recent server contact,
+           the grid is fresh. A full resource-timing buffer disqualifies lastNetMs
+           (it under-reports freshness), leaving the document age as the floor.
+           `complete` is NOT touched - this cannot fail a pull that works today. */
+        var __live = mlsAthLiveProof(tab.id);
+        var __gridAgeMs = null, __lastNetMs = null, __netBufferFull = false;
+        (__surface.hits || []).forEach(function (h) {
+          if (h && h.docAgeMs != null && (__gridAgeMs == null || h.docAgeMs < __gridAgeMs)) __gridAgeMs = h.docAgeMs;
+          if (h && h.lastNetMs != null && (__lastNetMs == null || h.lastNetMs < __lastNetMs)) __lastNetMs = h.lastNetMs;
+          if (h && h.netBufferFull) __netBufferFull = true;
+        });
+        var __netUsable = (__lastNetMs != null && !__netBufferFull);
+        var __dataAgeMs = __netUsable
+          ? (__gridAgeMs == null ? __lastNetMs : Math.min(__lastNetMs, __gridAgeMs))
+          : __gridAgeMs;
+        /* 'unproven' is NOT 'fresh'. A frame that could not report its own age
+           has not shown that it is current, and saying so is the whole point. */
+        var __staleRisk = __live.proven ? 'fresh'
+          : (__dataAgeMs == null ? 'unproven' : (__dataAgeMs > MLS_ATH_LIVE_WINDOW_MS ? 'stale' : 'fresh'));
+        var __sessionProof = {
+          liveSessionProven: !!__live.proven,
+          proofVia: __live.via || '',
+          proofAgeMs: __live.ageMs,
+          proofWindowMs: MLS_ATH_LIVE_WINDOW_MS,
+          gridAgeMs: __gridAgeMs,
+          lastServerContactMs: __lastNetMs,
+          resourceBufferFull: !!__netBufferFull,
+          dataAgeMs: __dataAgeMs,
+          staleThresholdMs: MLS_ATH_LIVE_WINDOW_MS,
+          staleRisk: __staleRisk
+        };
         var __receipt = {
-          scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
+          sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount,
           countStrategy: __countStrategy,
           declaredCount: __declaredCount, declaredCountAuthoritative: __declaredCountAuthoritative, declaredCountReason: __declaredCountReason, unnamedCount: __unnamedCount,
@@ -6701,9 +6826,9 @@ async function mlsSchedDomInline(doc, CFG){
         } catch (eSh) {}
         if (!__complete) {
           var __incompleteError = !__coverageComplete ? ('MLS could not finish the full two-dimensional Athena schedule sweep (' + String(__viewportCoverage && __viewportCoverage.reason || 'coverage-unverified').replace(/-/g, ' ') + '). Nothing was imported; keep the full Day schedule open and retry.') : (__expectedCount === 0 ? 'Athena did not show any readable appointment rows - the schedule grid may still be loading, or athenaOne is signed out. Open the signed-in Day schedule and retry. Nothing was imported.' : ('Athena listed ' + __expectedCount + ' appointment row' + (__expectedCount === 1 ? '' : 's') + ' but only ' + __parsedCount + ' could be verified before the view changed. Keep Athena on this day until the grid finishes loading, then retry. Nothing was imported.'));
-          return __schedRespond({ ok: false, reason: 'schedule-incomplete', scheduleVerified: true, receipt: __receipt, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: '', url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', error: __incompleteError, surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
+          return __schedRespond({ ok: false, reason: 'schedule-incomplete', scheduleVerified: true, receipt: __receipt, sessionProof: __sessionProof, staleRisk: __staleRisk, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: '', url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', error: __incompleteError, surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
         }
-        __schedRespond({ ok: true, scheduleVerified: true, receipt: __receipt, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
+        __schedRespond({ ok: true, scheduleVerified: true, receipt: __receipt, sessionProof: __sessionProof, staleRisk: __staleRisk, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
       } catch (e) { if (!__schedResponded) __schedRespond({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
