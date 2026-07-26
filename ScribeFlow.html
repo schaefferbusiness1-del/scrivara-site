@@ -659,7 +659,6 @@
     border-radius:10px;padding:10px 16px;transition:background .15s,box-shadow .15s,border-color .15s,transform .05s;
     display:inline-flex;align-items:center;gap:7px;justify-content:center;letter-spacing:.1px;
   }
-  button:active{transform:translateY(1px)}
   .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 1px 2px rgba(20,33,28,.10)}
   .btn-primary:hover{background:var(--brand-dk);border-color:var(--brand-dk)}
   .btn-green{background:var(--green);color:#fff;border-color:var(--green)}
@@ -811,6 +810,38 @@
   html body #recsView #recsCard > h2,
   html body #studioView #copilotHero h2{ font-family:var(--sans)!important; font-weight:600!important; font-size:20px!important; }
   html body #ordersView .extra-card h3{ font-family:var(--sans)!important; font-weight:600!important; font-size:15px!important; }
+  /* ===== ONE PRESS ACKNOWLEDGMENT =====
+     Measured on the running page at b685: THIRTY-ONE competing :active
+     transform rules across fifteen stylesheets, with at least eight different
+     answers — translateY(1px), translateY(0), translateY(2px), scale(.93),
+     scale(.96), scale(.97), scale(.98), scale(.985), scale(.986), scale(.99).
+     Whichever loaded last won, so the same gesture felt different depending on
+     which module happened to style the control.
+
+     One rule, one value. !important because those thirty-one live in files
+     four other lanes own and range up to (0,3,1) specificity; this is the one
+     place in the theme layer where out-shouting them is the point rather than
+     a hazard, since a press acknowledgment has no second meaning to get wrong.
+
+     THE THREE EXCLUSIONS ARE DELIBERATE:
+       #mlsDock       the dock is untouchable and its own scale(.93) is tuned
+                      for a 64px tap target
+       .ez3-big       the full-width record hero. .97 on a 400px control is a
+                      12px lurch; large surfaces scale less, which is why it
+                      already carried .986
+       typing         input/textarea/select/[contenteditable] never move under
+                      the cursor while someone is dictating into them
+     The transition is --mls-dur-1 (120ms), the token that exists for exactly
+     this: press and hover. */
+  html body :is(button,[role="button"],.ez3fl-qchip,.chip,.navtab):not([disabled]):not(#mlsDock button):not(.ez3-big):not([contenteditable]){
+    transition:transform var(--mls-dur-1) var(--mls-ease-out);
+  }
+  html body :is(button,[role="button"],.ez3fl-qchip,.chip,.navtab):active:not([disabled]):not(#mlsDock button):not(.ez3-big):not([contenteditable]){
+    transform:scale(.97)!important;
+  }
+  @media (prefers-reduced-motion: reduce){
+    html body :is(button,[role="button"],.ez3fl-qchip,.chip,.navtab):active{ transform:none!important; }
+  }
   /* modal */
   .modal-bg{position:fixed;inset:0;background:rgba(26,33,28,.55);backdrop-filter:blur(2px);
     display:none;align-items:center;justify-content:center;padding:20px;z-index:9400}
@@ -1149,7 +1180,6 @@
   .btn-primary,.btn-green,.btn-red,.btn-gold{ box-shadow:0 1px 2px rgba(20,33,28,.10),0 4px 12px rgba(20,33,28,.10); }
   .btn-primary:hover,.btn-green:hover,.btn-red:hover,.btn-gold:hover{ transform:translateY(-1px); filter:brightness(1.04); }
   .btn-ghost:hover{ transform:translateY(-1px); }
-  button:active{ transform:translateY(0) scale(.98); }
   /* Inputs — consistent rounding + a clear modern focus ring (themed) */
   input[type=text],input[type=password],input[type=email],input[type=date],input[type=time],input[type=number],input[type=search],input[type=tel],textarea,select,.sf-select{ border-radius:var(--r-ctl); transition:border-color .15s ease,box-shadow .15s ease,background .15s ease; }
   input:focus,textarea:focus,select:focus{ outline:none; border-color:var(--brand); box-shadow:var(--ring); }
@@ -11106,7 +11136,12 @@ function showView(v){
   if(v==='legalreq'){ try{ if(typeof ensureLegalRequestWorkspace==='function') ensureLegalRequestWorkspace(); }catch(e){} }
   // One global button press rule. Routes render immediately at full opacity;
   // whole-view fades made every navigation feel like a screen-level pop.
-  if(!window._mlsPolishCss){ window._mlsPolishCss=1; try{ var _s=document.createElement('style'); _s.textContent='button{transition:transform .07s ease} button:active{transform:scale(.97)}'; document.head.appendChild(_s); }catch(e){} }
+  /* The runtime press-rule injection that lived here is RETIRED, not moved:
+     it was one of thirty-one competing :active rules and the only one that
+     shipped a bespoke .07s duration. The single canonical rule is in the
+     page stylesheet (ONE PRESS ACKNOWLEDGMENT), so it needs no JS and cannot
+     race the first view switch. The flag stays set for anything reading it. */
+  if(!window._mlsPolishCss){ window._mlsPolishCss=1; }
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ if(typeof renderVisitOrders==='function') renderVisitOrders(); }catch(e){} try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
