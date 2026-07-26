@@ -3,12 +3,12 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 260,
  "totals": {
-  "controls": 1291,
+  "controls": 1292,
   "gated": 100,
-  "active": 1191,
+  "active": 1192,
   "byKind": {
    "handler": 42,
-   "button": 1236,
+   "button": 1237,
    "navtab": 13
   }
  },
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 920
+  "dynamic": 921
  },
  "controls": [
   {
@@ -8952,6 +8952,20 @@
    "handler": null
   },
   {
+   "id": "mlsCvPtJump",
+   "label": "Jump to it",
+   "accessibleName": "Jump to it",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsCvPtJump",
+   "view": "dynamic",
+   "file": "feat_mls_calm_views.js",
+   "line": 549,
+   "gated": false,
+   "handler": null
+  },
+  {
    "id": "cpApply",
    "label": "Apply",
    "accessibleName": "Apply",
@@ -13083,8 +13097,8 @@
   },
   {
    "id": "ez3ActiveGo",
-   "label": "Start Recording — · ' : '') + 'no appointment on — records as an ad-hoc visit",
-   "accessibleName": "Start Recording — · ' : '') + 'no appointment on — records as an ad-hoc visit",
+   "label": "Start Recording — · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no app",
+   "accessibleName": "Start Recording — · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no app",
    "title": "",
    "kind": "button",
    "tag": "button",

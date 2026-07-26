@@ -300,6 +300,17 @@
          occupies 18..103px. It is MEASURED from the dock (see liftToast)
          rather than guessed, so it stays right if the dock changes height. */
       'body.' + BODY_CLASS + ' .toast{bottom:var(--mls-toast-lift,96px);pointer-events:none}',
+      /* the continuity strip: the banner patient's presence on the calendar.
+         Theme tokens throughout so dark mode carries it without the parity
+         engine's help, and the motion tokens so its arrival feels intended. */
+      '#mlsCvPtStrip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:11px 16px;',
+      '  background:var(--card,#fff);border:1px solid var(--line,#E7E5DD);border-radius:16px;',
+      '  transition:opacity var(--mls-dur-2,200ms) var(--mls-ease-out,ease)}',
+      '#mlsCvPtStrip .cvpt-name{font-weight:800;font-size:14.5px;color:var(--ink,#1A211C)}',
+      '#mlsCvPtStrip .cvpt-sub{font-size:13px;color:var(--muted,#5a6b62)}',
+      '#mlsCvPtStrip .cvpt-jump{margin-left:auto;padding:7px 14px;border:1px solid var(--line,#D9D6CD);border-radius:999px;',
+      '  background:transparent;color:var(--brand-dk,#2E6A4B);font:inherit;font-size:13px;font-weight:700;cursor:pointer}',
+      '#mlsCvPtStrip .cvpt-jump:hover{border-color:var(--brand,#2E6A4B)}',
       '@media (max-width:560px){.mls-cv-primary{padding:14px 16px}.mls-cv-primary .mls-cv-big{font-size:17px}}'
     ].join('\n');
   }
@@ -484,6 +495,67 @@
     }
   }
 
+  /* Owner continuity law (2026-07-26): "PATIENT TO CALENDAR TO VISIT should
+     all be on top banner patient." The calendar was the missing leg — it knew
+     the day and the providers but nothing on it followed the doctor's chosen
+     patient (measured live: banner "Bernard P Brooks", zero patient-scoped
+     affordances). This strip is that leg: the active patient's name, their
+     next appointment out of the SAME _calAppts the grid renders, and one Jump
+     that drives the calendar's own navigation (calJump + calOpenDay — never a
+     re-implementation). Write-only-on-change; removed when no patient is
+     active; class-styled through the theme tokens so both themes carry it. */
+  function calStripSig() {
+    var p = null;
+    try { p = (typeof W.verifiedActivePatient === 'function' && W.verifiedActivePatient()) || null; } catch (e) {}
+    if (!p) { try { p = (typeof W.activePatient === 'function' && W.activePatient()) || null; } catch (e) {} }
+    if (!p || p.id == null || !p.name) return null;
+    var appts = Array.isArray(W._calAppts) ? W._calAppts : [];
+    var extId = String(p.athena_patient_id || p.external_id || p.patient_external_id || '');
+    var nm = String(p.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    var todayKey = safe(function () { return typeof W._acctTodayKey === 'function' ? W._acctTodayKey() : ''; }) || '';
+    var mine = appts.filter(function (a) {
+      if (!a) return false;
+      if (extId && String(a.patient_external_id || '') === extId) return true;
+      var an = String(a.name || a.patient || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return !!nm && an === nm;
+    });
+    var next = null;
+    mine.forEach(function (a) {
+      var d = String(a.appt_date || a.date || '').slice(0, 10);
+      if (!d || (todayKey && d < todayKey)) return;
+      if (!next || d < next) next = d;
+    });
+    return { name: p.name, count: mine.length, next: next, sig: String(p.id) + '|' + (next || '-') + '|' + mine.length };
+  }
+  function ensureCalStrip() {
+    var root = byId('calendarView');
+    if (!root || !visible(root)) return;
+    var st = calStripSig();
+    var el = byId('mlsCvPtStrip');
+    if (!st) { if (el && el.parentNode) safe(function () { el.parentNode.removeChild(el); }); return; }
+    if (el && el.getAttribute('data-sig') === st.sig) return;
+    if (!el) {
+      el = D.createElement('div');
+      el.id = 'mlsCvPtStrip';
+      var host = qs('#calendarView .card.cx-agenda, #calendarView .card') || root;
+      safe(function () { host.parentNode ? host.parentNode.insertBefore(el, host) : root.insertBefore(el, root.firstChild); });
+    }
+    var label = st.next
+      ? ('Next appointment ' + st.next + (st.count > 1 ? (' · ' + st.count + ' on the calendar') : ''))
+      : (st.count ? (st.count + ' past appointment' + (st.count === 1 ? '' : 's') + ' · none upcoming') : 'No appointments on this calendar');
+    el.setAttribute('data-sig', st.sig);
+    el.innerHTML = '<span class="cvpt-name">' + escHtml(st.name) + '</span>' +
+      '<span class="cvpt-sub">' + escHtml(label) + '</span>' +
+      (st.next ? '<button type="button" class="cvpt-jump" id="mlsCvPtJump">Jump to it</button>' : '');
+    var jb = byId('mlsCvPtJump');
+    if (jb) jb.onclick = function () {
+      var d = st.next; if (!d) return;
+      safe(function () { if (typeof W.calJump === 'function') W.calJump(d.slice(0, 7)); });
+      safe(function () { if (typeof W.calOpenDay === 'function') W.calOpenDay(d); });
+    };
+  }
+  function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
   function reconcile() {
     if (classic()) { teardown(); return; }
     safe(function () {
@@ -498,6 +570,7 @@
       mountPrimary(v);
       mountMore(v);
     });
+    safe(ensureCalStrip);
   }
 
   function onResize() { liftToast(); schedule(); }
