@@ -99,11 +99,30 @@ const LOADER = 'mls-connect.js';
  *     pattern (feat_mls_copilot_voice_v2.js) is a separately revertible
  *     satellite, and merging three voice controls is exactly the change you
  *     want to be able to back out on its own. */
-const CEILING = 235;
+/* 235 -> 237 at b678, deliberately, for feat_mls_visit_focus.js (vf-1.0.0) and
+ * feat_mls_visit_voice_one.js (vo-1.0.0). Both are DEFERRED, so EAGER_CEILING
+ * below does not move — the cost this ceiling actually guards (the post-login
+ * burst) is unchanged, and arm B proves it rather than asserting it.
+ *
+ * Why they were not folded into an existing feat file to keep the count flat:
+ * that is the dishonest version, for the same reason recorded above the voice
+ * cluster. Both are presentation-only satellites with their own revert(), and
+ * both change what a doctor sees on the two clinical screens — which is exactly
+ * the kind of change you want to be able to back out on its own, at 2am, from
+ * one call, without disturbing anything else in the file it was hiding in.
+ *
+ * What they buy, measured on the running page (isolated Chrome, 1280x800,
+ * animations finished before every sample), visible interactive controls:
+ *   patients, patient open   36 -> 22   and the PRIMARY went 2,405px^2 -> 42,656
+ *   visit, visit locked      28 ->  9
+ *   visit, note ready        43 ->  8
+ * Net interface goes down hard; net boot work does not go up. */
+const CEILING = 237;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 235 are eager; the voice cluster is the first
-   deferred one, so EAGER_CEILING deliberately does NOT move with CEILING. */
+/* arm B - deferral. 234 of the 237 are eager; the voice cluster was the first
+   deferred one and vf-1.0.0 / vo-1.0.0 are the second and third, so
+   EAGER_CEILING deliberately does NOT move with CEILING. */
 const EAGER_CEILING = 234;
 const EAGER_FLOOR = 200;
 

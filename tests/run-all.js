@@ -342,7 +342,9 @@ const tests = [
   'relay-full-notes-choice-travels.test.js',
   'relay-phone-claims-only-what-it-sees.test.js',
   'secondary-text-is-a-theme-token.test.js',
-  'headings-do-not-swallow-their-controls.test.js'
+  'headings-do-not-swallow-their-controls.test.js',
+  'visit-focus-keeps-every-route.test.js',
+  'visit-voice-one-expands-never-decides.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
