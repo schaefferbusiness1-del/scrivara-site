@@ -716,9 +716,15 @@
     visit: ['nav_visit'],
     review: ['nav_orders', 'nav_recs'],
     /* nav_studio lights the Studio item, not Tools: currentDest() is
-       last-match-wins over these keys, so it must appear in exactly one. */
-    studio: ['nav_studio'],
-    tools: ['nav_analysis', 'nav_team', 'nav_admin', 'nav_legalreq', 'nav_help', 'nav_staffpull']
+       last-match-wins over these keys, so it must appear in exactly one.
+       nav_analysis MOVED HERE from tools, 2026-07-26. Owner: "add the analysis
+       tab to the ai studio tab smartly". Analysis is no longer a destination —
+       it is AI Studio's Practice section — so anything that navigates to it
+       must light AI Studio. Leaving it under tools lit the wrong dock item on
+       every route into Practice, which is the dock telling the doctor they are
+       somewhere they are not. */
+    studio: ['nav_studio', 'nav_analysis'],
+    tools: ['nav_team', 'nav_admin', 'nav_legalreq', 'nav_help', 'nav_staffpull']
   };
 
   /* ------------------------------------------------------------------- dock */
@@ -788,7 +794,15 @@
      controls would be reachable only by typing their name in Ask, which the
      charter (and the coverage suite) forbid. */
   var TOOLS_SOURCES = [
-    { id: 'nav_studio' }, { id: 'nav_analysis' }, { id: 'nav_team' },
+    { id: 'nav_studio' },
+    /* nav_analysis is KEPT here, relabelled, 2026-07-26. It is no longer a
+       destination of its own — showView('analysis') lands on AI Studio with
+       Practice open — but the Tools row is the one place a doctor who is
+       looking for the word "Practice" can still find it in a menu, and it now
+       says where it goes. Removing it would have been a silent deletion of a
+       route the coverage suite already knows about. */
+    { id: 'nav_analysis', as: 'Practice trends (AI Studio)' },
+    { id: 'nav_team' },
     { id: 'nav_legalreq' }, { id: 'nav_admin' }, { id: 'nav_staffpull' }, { id: 'nav_help' },
     /* askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
        button, and listing it here as well is the duplication we are removing. */

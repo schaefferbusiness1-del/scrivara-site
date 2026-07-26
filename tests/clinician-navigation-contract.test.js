@@ -25,13 +25,29 @@ const navigation = between(
 );
 
 /* Pin updated 2026-07-24 (owner /goal UI rework): History leaves the rail —
-   five lead routes; nav_history is FOLDED (hidden, still routable) and its
-   list stays reachable via Today's "View completed notes", patient charts,
-   and the command palette. */
-assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_analysis',label:'Practice'\},\s*\{id:'nav_studio',label:'Tools'\}/.test(navigation),
+   nav_history is FOLDED (hidden, still routable) and its list stays reachable
+   via Today's "View completed notes", patient charts, and the command palette.
+
+   PIN UPDATED AGAIN 2026-07-26, deliberately. Owner's order, verbatim:
+   "add the analysis tab to the ai studio tab smartly".
+
+   Analysis is no longer a destination. feat_mls_studio_merge.js (sm-1.0.0)
+   makes it AI Studio's "Practice" section and redirects showView('analysis')
+   there, so a rail tab labelled "Practice" beside one labelled "Tools", both
+   landing on the same screen, is two routes to one place — the duplication the
+   whole rebuild exists to remove. FOUR lead routes now; nav_analysis joins
+   nav_history in FOLDED_NAV.
+
+   It is folded, NOT dropped, and three routes to it survive and are asserted
+   further down and in tests/studio-merge-keeps-every-route.test.js:
+     - showView('analysis') from anywhere (rail tab, command palette, the
+       Copilot's action router, voice, a custom tool's navigate action)
+     - the Calm Shell's Tools menu, as "Practice trends (AI Studio)"
+     - the AI Studio section switcher itself */
+assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_studio',label:'Tools'\}/.test(navigation),
   'clinician lead routes lost their exact order or labels');
-assert(/FOLDED_NAV=\['nav_history'\]/.test(navigation),
-  'History must be deliberately folded, not accidentally dropped');
+assert(/FOLDED_NAV=\['nav_history','nav_analysis'\]/.test(navigation),
+  'History and Analysis must be deliberately folded, not accidentally dropped');
 assert(/data-mlsrd-folded/.test(redesign),
   'folded rail tabs must be marked so the fold is inspectable');
 assert(!/id:'nav_orders',label:'Tasks'|label:'Tasks'/.test(navigation),
@@ -163,16 +179,20 @@ vm.runInContext(`${navigation}\nthis.organizePrimaryNavigation=organizePrimaryNa
   { filename: 'clinician-navigation-runtime.js' });
 
 assert.strictEqual(context.organizePrimaryNavigation(), true);
-/* 2026-07-24 UI rework: five lead routes; History is folded (attribute-marked,
-   hidden when a real style object exists) but never removed from the DOM. */
-assert.deepStrictEqual(nav.children.slice(0, 5).map(node => node.id), [
-  'nav_visit', 'nav_patients', 'nav_calendar', 'nav_analysis', 'nav_studio'
+/* 2026-07-24 UI rework: History is folded (attribute-marked, hidden when a real
+   style object exists) but never removed from the DOM.
+   2026-07-26 studio merge: FOUR lead routes; nav_analysis is folded the same
+   way, for the reason recorded at the PRIMARY_NAV pin above. */
+assert.deepStrictEqual(nav.children.slice(0, 4).map(node => node.id), [
+  'nav_visit', 'nav_patients', 'nav_calendar', 'nav_studio'
 ]);
-assert.deepStrictEqual(nav.children.slice(0, 5).map(node => node.childNodes[0].data.trim()), [
-  '🎙️ Today', '👥 Patients', '📅 Calendar', '📊 Practice', '✨ Tools'
+assert.deepStrictEqual(nav.children.slice(0, 4).map(node => node.childNodes[0].data.trim()), [
+  '🎙️ Today', '👥 Patients', '📅 Calendar', '✨ Tools'
 ]);
 assert.strictEqual(nodes.nav_history.getAttribute('data-mlsrd-folded'), '1',
   'History must be folded deliberately (marked), not dropped');
+assert.strictEqual(nodes.nav_analysis.getAttribute('data-mlsrd-folded'), '1',
+  'Analysis must be folded deliberately (marked), not dropped — its content is AI Studio\'s Practice section');
 assert.strictEqual(nodes.nav_orders.childNodes[0].data.trim(), 'Orders', 'real Orders route was renamed');
 assert.strictEqual(nav.attrs.role, 'navigation');
 assert.strictEqual(nav.attrs['aria-label'], 'Primary navigation');

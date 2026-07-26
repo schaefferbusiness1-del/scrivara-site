@@ -45,13 +45,13 @@
       /* copilot internals */
       "#studioView #copilotHero{flex-shrink:0;display:flex!important;align-items:center;gap:11px;margin:0!important;padding:15px 20px!important;background:linear-gradient(120deg,#f6effd,#EAF1EE)!important;border:0!important;border-bottom:1px solid #F4F2EC!important;border-radius:0!important;color:#1A211C!important}",
       "#studioView #copilotHero h2{color:#1A211C!important;font-size:15px!important;font-weight:700!important;margin:0!important;border:0!important;padding:0!important}",
-      "#studioView #copilotHero .sub{color:#79837C!important;font-size:11.5px!important;margin:2px 0 0!important}",
+      "#studioView #copilotHero .sub{color:var(--muted)!important;font-size:11.5px!important;margin:2px 0 0!important}",
       "#studioView #copilotOrb{width:32px;height:32px;border-radius:9px!important;background:linear-gradient(135deg,#7A5CC0,#2E6A4B)!important;color:#fff!important;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}",
       "#studioView #copilotThread{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;padding:16px 20px!important;margin:0!important}",
       "#studioView #copilotChips{flex-shrink:0;padding:10px 20px 0!important;margin:0!important;display:flex;gap:7px;flex-wrap:wrap}",
       "#studioView #copilotInputRow{flex-shrink:0;display:flex!important;gap:9px;align-items:center;padding:12px 20px 16px!important;border-top:1px solid #F4F2EC;margin:0!important}",
       "#studioView #copilotInput{flex:1;min-height:46px!important;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#FCFBF8!important;padding:12px 15px!important;font-size:13.5px!important;resize:none;color:#1A211C!important}",
-      "#studioView #copilotMicBtn{width:46px;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#fff!important;color:#79837C!important;font-size:15px;flex-shrink:0;padding:0!important}",
+      "#studioView #copilotMicBtn{width:46px;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:var(--card)!important;color:var(--muted)!important;font-size:15px;flex-shrink:0;padding:0!important}",
       "#studioView #copilotSendBtn{width:46px;height:46px;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#2E6A4B,#204034)!important;color:#fff!important;font-size:17px;flex-shrink:0;box-shadow:0 10px 22px -10px rgba(32,64,52,.6);padding:0!important}",
       "#studioView .copilot-note{flex-shrink:0;padding:0 20px 12px!important;margin:0!important}",
       /* right cards */
@@ -115,7 +115,7 @@
     t.innerHTML =
       '<span style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#7A5CC0,#2E6A4B);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff">&#10022;</span>' +
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:23px;letter-spacing:-.01em;margin:0">AI Studio</h1>' +
-      '<span style="color:#79837C;font-size:13px">Ask your data, or build a tool &mdash; everything on one screen.</span>' +
+      '<span style="color:var(--muted);font-size:13px">Ask your data, or build a tool &mdash; everything on one screen.</span>' +
       '<span style="flex:1"></span>' +
       '<span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;color:#fff;background:linear-gradient(135deg,#7A5CC0,#9B82D4);padding:4px 10px;border-radius:20px">PREMIUM</span>';
     v.insertBefore(t, v.firstChild);

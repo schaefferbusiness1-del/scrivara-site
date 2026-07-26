@@ -55,7 +55,7 @@
     "#analysisView.ax-grid .ax-tile.ax-exp{min-height:280px}",
     "#analysisView.ax-grid .ax-tile.ax-exp .ax-body>.card{height:auto!important;max-height:74vh;overflow:auto}",
     "#t7AxBar{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}",
-    "#t7AxStamp{font-size:12px;color:#8b9bb0}",
+    "#t7AxStamp{font-size:12px;color:var(--muted)}",
     "#t7AxStamp.t7-dirty{color:#b26a00;font-weight:600}",
     "#t7AxRefresh{height:30px;padding:0 12px;border-radius:8px;border:1px solid #dbe4ee;background:#fff;color:#2E6A4B;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit}",
     "#t7AxRefresh:hover{background:#f3f7ff}",
