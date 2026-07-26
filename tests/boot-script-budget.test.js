@@ -162,10 +162,35 @@ const LOADER = 'mls-connect.js';
  *     its old path without touching any recognizer. Folding it into a
  *     recognizer-owning module would make backing out the routing mean backing
  *     out a microphone owner. */
-const CEILING = 240;
+/* 240 -> 241 at the same 2026-07-26 voice lane, for feat_mls_audio_capture.js
+ * (ac-1.0.0). The three questions again:
+ *   - DEFERRED (requestIdleCallback). Its first caller is a microphone the
+ *     doctor opens by hand, minutes after boot. EAGER_CEILING does not move.
+ *   - No setInterval, no observer, no DOM. It is a pure policy object: it opens
+ *     nothing on its own and is called only by code that already had a reason to
+ *     open the microphone.
+ *   - Not folded into a caller, because it has TWO callers with nothing else in
+ *     common (feat_mls_record_backup.js and the recording guard inside
+ *     mls-connect.js) and the whole point is that they stop disagreeing about
+ *     what the microphone should be doing. Putting the policy inside one of them
+ *     recreates the split it exists to close. */
+/* 241 -> 242 at the same 2026-07-26 voice lane, for feat_mls_turn_labels.js
+ * (tn-1.0.0), the who-said-what engine. Answered:
+ *   - DEFERRED (requestIdleCallback). It cannot matter until a recording is
+ *     running, which is minutes after boot. EAGER_CEILING does not move.
+ *   - No setInterval. Its one observer is scoped to a SINGLE element
+ *     (#captureBtn, attributeFilter class), not a document subtree, so it does
+ *     not join the multiplicative population the observer ceiling guards. It
+ *     repaints only on a real change signature.
+ *   - Not folded into the visit lane, deliberately and by instruction: the visit
+ *     workspace is being rebuilt by another lane in this same rebuild, and a
+ *     turn engine welded into a layout file could not be reverted without
+ *     reverting that layout. It is a headless engine with a clean API plus one
+ *     inline row, and revert() removes both. */
+const CEILING = 242;
 const FLOOR = 200;
 
-/* arm B - deferral. 234 of the 240 are eager; the voice cluster was the first
+/* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
    deferred one, the calm views the second, vf-1.0.0 / vo-1.0.0 the third and
    fourth, and the studio merge and the voice router the fifth and sixth, so
    EAGER_CEILING deliberately does

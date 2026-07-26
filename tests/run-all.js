@@ -354,7 +354,8 @@ const tests = [
   'visit-focus-keeps-every-route.test.js',
   'visit-voice-one-expands-never-decides.test.js',
   'chart-noise-never-renders-as-medication.test.js',
-  'voice-reaches-one-copilot-brain.test.js'
+  'voice-reaches-one-copilot-brain.test.js',
+  'capture-and-turns-are-honest.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

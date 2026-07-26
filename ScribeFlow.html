@@ -18516,6 +18516,8 @@ async function callOpenAI(transcript,key){
 
 TRANSCRIPT FORMAT — IMPORTANT: The transcript is a NATURAL conversation, usually from live ambient microphone transcription. It typically has NO speaker labels — no "Doctor:" or "Patient:" prefixes — and may be one continuous run of unpunctuated or loosely punctuated speech where the clinician's questions and the patient's answers are interleaved. INFER from context who is speaking (clinician = asks history questions, states exam findings/vitals, gives the assessment and plan; patient = describes symptoms, history, and answers). Do NOT require or expect speaker labels. If labels happen to be present, use them; if not, work entirely from context. Produce the same high-quality note either way.
 
+SPEAKER LABELS ARE UNVERIFIED HYPOTHESES, NOT FACTS. If lines are prefixed with "Dr:", "Patient:" or similar, they were added by this app from PAUSES in the recording — the browser's speech engine performs no speaker identification whatsoever, and the clinician may not have corrected every line. Treat each label as a hint of the same weight as any other contextual clue, and CONTENT ALWAYS WINS: if a line labelled "Patient:" states an exam finding, an assessment or a plan, it is the clinician speaking; if a line labelled "Dr:" describes symptoms in the first person, it is the patient. Never attribute a symptom, a history item or a decision to a person on the strength of a label alone, and never write a label into the note as though speaker identity were established.
+
 NOTE STYLE: ${styleLine}${lengthLine?('\n'+lengthLine):''}
 
 CRITICAL CODING ETHICS — read carefully:

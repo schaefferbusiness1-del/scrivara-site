@@ -21219,7 +21219,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     dbPrune();
     safe(function () {
       if (!navigator.mediaDevices || !isFn(navigator.mediaDevices.getUserMedia) || typeof MediaRecorder === 'undefined') return;
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      /* ac-1.0.0: same reason as the backup recorder. This stream feeds BOTH the
+         rescue recording and the voice-activity analyser below, and the analyser
+         is what decides whether the stall watchdog trusts a VAD-confirmed 30s or
+         falls back to a degraded 90s — so a suppressor that gates a distant
+         voice does not just lose audio, it loses the evidence that anyone spoke.
+         Falls back to the previous constraints if the policy did not load. */
+      var gsConstraints = { audio: true };
+      safe(function () {
+        var pol = window.__mlsAudioCapture;
+        if (pol && pol.installed === true && isFn(pol.constraints)) gsConstraints = pol.constraints('ambient');
+      });
+      navigator.mediaDevices.getUserMedia(gsConstraints).then(function (stream) {
         if (!RG.on) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
         RG.stream = stream;
         try {
@@ -41124,6 +41135,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_voice_ai.js',V='1.1.2',api=window.__mlsVoiceAI,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719vaihot112';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware voice AI command layer: stale mic owner is stopped before replacement. */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A='feat_mls_voice_copilot.js',V='vcp-1.0.0',api=window.__mlsVoiceCopilot,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260726vcp100';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* vcp-1.0.0: ONE route from any microphone to the ONE Copilot brain. Owns no recognizer, no lease, no patterns, no UI - it picks an EXISTING brain (Copilot Voice -> assistant -> Copilot card) and guarantees the doctor's own words reach the Copilot thread exactly once. Reversible: window.__mlsVoiceCopilot.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_audio_capture.js"]'))return;var s=document.createElement('script');s.src='feat_mls_audio_capture.js?v=20260726ac100';s.setAttribute('data-mls-asset','feat_mls_audio_capture.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* ac-1.0.0: ONE deliberate audio policy for AMBIENT exam-room capture (echoCancellation/noiseSuppression OFF, autoGainControl ON - a call-tuned suppressor gates the patient across the room). Applies to the audio THIS APP records; SpeechRecognition accepts no constraints and is explicitly out of scope. Headless - no UI. Reversible: window.__mlsAudioCapture.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_turn_labels.js"]'))return;var s=document.createElement('script');s.src='feat_mls_turn_labels.js?v=20260726tn100';s.setAttribute('data-mls-asset','feat_mls_turn_labels.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* tn-1.0.0: WHO SAID WHAT as a HYPOTHESIS. The browser speech API has NO diarization; turns are PAUSE boundaries and labels are suggestions the doctor corrects with one tap. The raw unlabelled transcript is always recoverable, and labels are only written to the box when the recorder is not writing it. Reversible: window.__mlsTurns.revert() */
 
 ;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260726mb110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
 
