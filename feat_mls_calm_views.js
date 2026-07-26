@@ -103,6 +103,12 @@
       more: { label: 'More calendar tools', anchor: '#calendarView .cx-agenda-head, #calendarView .card' },
       primary: {
         anchor: '#calendarView .card.cx-agenda, #calendarView .card',
+        /* On a phone the agenda card is the THIRD thing down — the patient
+           card and the left rail come first — so the primary was below the
+           fold at 390x844 and the biggest thing on the first screen was "DAY
+           AT A GLANCE". Measured on a running page, not assumed. Narrow
+           viewports mount it at the top of the view instead. */
+        anchorNarrow: '#calendarView',
         label: function () {
           var d = calRefDate();
           return d ? ('Pull ' + d.label) : 'Pull this day’s schedule';
@@ -451,7 +457,8 @@
     var el = byId(id);
     var ok = safe(function () { return v.primary.available(); }, false);
     if (!ok) { if (el) el.remove(); return; }
-    var host = qs(v.primary.anchor);
+    var narrow = safe(function () { return W.innerWidth <= 760; }, false);
+    var host = (narrow && v.primary.anchorNarrow && qs(v.primary.anchorNarrow)) || qs(v.primary.anchor);
     if (!host) return;
     var label = safe(function () { return String(v.primary.label() || ''); }, '');
     if (!label) { if (el) el.remove(); return; }
@@ -523,6 +530,8 @@
     });
   }
 
+  function onResize() { liftToast(); schedule(); }
+
   function schedule() {
     if (pending) return;
     pending = (W.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
@@ -565,7 +574,7 @@
       var m = byId('mlsCvMore_' + v.key); if (m) m.remove();
     });
     var s = byId(STYLE_ID); if (s) s.remove();
-    safe(function () { W.removeEventListener('resize', liftToast); });
+    safe(function () { W.removeEventListener('resize', onResize); });
     safe(function () { D.documentElement.style.removeProperty('--mls-toast-lift'); });
   }
 
@@ -573,7 +582,10 @@
     if (classic()) return;
     reconcile();
     watch();
-    safe(function () { W.addEventListener('resize', liftToast, { passive: true }); });
+    /* One resize listener, not two: the toast lift and the narrow-viewport
+       primary anchor both depend on the viewport, and schedule() is
+       rAF-debounced and writes nothing when nothing changed. */
+    safe(function () { W.addEventListener('resize', onResize, { passive: true }); });
     /* View containers can mount after this module (the loader is async), so make
        a bounded number of retries and then stop.
        A CHAIN OF TIMEOUTS, NOT AN INTERVAL, and the distinction is not cosmetic:
