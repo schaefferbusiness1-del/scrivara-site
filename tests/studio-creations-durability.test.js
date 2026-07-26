@@ -254,6 +254,10 @@ async function run() {
     const changed = env.ctx._studioMergeFromCloud(cloud);
 
     assert.strictEqual(changed, true, 'a cloud copy with new tools must change this device');
+    // The GET is evidence of what the account holds, so badges are right from boot
+    // instead of sitting at "saving to your account…" until some write fires a POST.
+    assert.deepStrictEqual((env.ctx.window.__studioCloudIds || []).slice().sort(), ['w_cloud_1', 'w_cloud_2'],
+      'reading the account copy must record which tools the server actually holds');
     const titles = env.saved().map(w => w.title).sort();
     assert.deepStrictEqual(titles, ['From my other laptop', 'Local only', 'Pinned elsewhere'],
       'merge is a UNION — a device with one tool must not ignore the others, and must not lose its own');
