@@ -75,7 +75,7 @@
       } else if (/Pull chart/i.test(t)) {
         imp(b, "background", "#EAF1EE"); imp(b, "color", "#2E6A4B"); imp(b, "border", "1px solid #EAF1EE"); imp(b, "font-weight", "700");
       } else {
-        imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600");
+        imp(b, "background", "var(--card,#fff)"); imp(b, "color", "var(--ink,#3d5168)"); imp(b, "border", "1px solid var(--line,#e0e8f1)"); imp(b, "font-weight", "600");
       }
     }
   }

@@ -163,11 +163,11 @@
     if (oldGrid && oldGrid !== grid) { oldGrid.classList.remove("grid"); oldGrid.classList.add("vx-oldgrid"); imp(oldGrid, "display", "contents"); }
 
     [cap, note].forEach(function (c) {
-      imp(c, "background", "#fff"); imp(c, "border", "1px solid #E7E5DD"); imp(c, "border-radius", "18px");
+      imp(c, "background", "var(--card,#fff)"); imp(c, "border", "1px solid var(--line,#E7E5DD)"); imp(c, "border-radius", "18px");
       imp(c, "padding", "24px"); imp(c, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(c, "margin", "0");
     });
     if (emr) {
-      imp(emr, "background", "#fff"); imp(emr, "border", "1px solid #E7E5DD"); imp(emr, "border-radius", "18px");
+      imp(emr, "background", "var(--card,#fff)"); imp(emr, "border", "1px solid var(--line,#E7E5DD)"); imp(emr, "border-radius", "18px");
       imp(emr, "padding", "20px"); imp(emr, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(emr, "margin", "0");
       emr.classList.add("vx-emr");
     }
@@ -242,7 +242,7 @@
   /* ===================== OUTCOMES ===================== */
   function buildOutcomes() {
     var o = $("outcomesCard"); if (!o) return;
-    imp(o, "background", "#fff"); imp(o, "border", "1px solid #E7E5DD"); imp(o, "border-radius", "18px");
+    imp(o, "background", "var(--card,#fff)"); imp(o, "border", "1px solid var(--line,#E7E5DD)"); imp(o, "border-radius", "18px");
     imp(o, "padding", "24px"); imp(o, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(o, "margin-top", "20px");
     var v = $("visitView"), grid = v && v.querySelector(":scope > .vx-grid");
     if (grid && o.parentElement === v && o !== v.lastElementChild) { try { v.appendChild(o); } catch (e) {} } /* idempotent: only move when not already last */

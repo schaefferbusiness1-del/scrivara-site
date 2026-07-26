@@ -272,7 +272,7 @@
     /* title (Newsreader) + subtitle from REAL data */
     var lbl = $("calMonthLabel");
     if (lbl && lbl.parentElement !== titlewrap) titlewrap.appendChild(lbl);
-    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "#1A211C"); }
+    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "var(--ink,#1A211C)"); }
     var sub = titlewrap.querySelector(".cx-sub");
     if (!sub) { sub = mk("div", "color:#79837C;font-size:13px;font-weight:500;margin-top:2px"); sub.className = "cx-sub"; titlewrap.appendChild(sub); }
     var subTxt = subtitleText(); if (sub.textContent !== subTxt) sub.textContent = subTxt; /* guarded: no 150ms churn */

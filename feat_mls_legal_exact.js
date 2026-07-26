@@ -47,7 +47,7 @@
       for (var j = 0; j < btns.length; j++) {
         var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px");
         if (/New request/i.test(b.textContent)) { imp(b, "background", "linear-gradient(135deg,#2E6A4B,#204034)"); imp(b, "color", "#fff"); imp(b, "border", "0"); imp(b, "font-weight", "700"); }
-        else { imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }
+        else { imp(b, "background", "var(--card,#fff)"); imp(b, "color", "var(--ink,#3d5168)"); imp(b, "border", "1px solid var(--line,#e0e8f1)"); imp(b, "font-weight", "600"); }
       }
     }
   }

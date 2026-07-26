@@ -94,7 +94,7 @@
           imp(b, "color", "#fff"); imp(b, "border", "0");
           imp(b, "box-shadow", "0 8px 20px -8px rgba(32,64,52,.6)");
         } else {
-          imp(b, "background", "#fff"); imp(b, "color", "#1A211C");
+          imp(b, "background", "var(--card,#fff)"); imp(b, "color", "var(--ink,#1A211C)");
           imp(b, "border", "1px solid #D9D6CD");
         }
         imp(b, "border-radius", "10px");

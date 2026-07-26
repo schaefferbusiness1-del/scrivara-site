@@ -40,7 +40,7 @@
     var sq = mk("span", "width:38px;height:38px;border-radius:10px;background:#EAF1EE;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto", emoji);
     if (ic) h2.replaceChild(sq, ic); else h2.insertBefore(sq, h2.firstChild);
     var btns = h2.querySelectorAll("button");
-    for (var j = 0; j < btns.length; j++) { var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px"); imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }
+    for (var j = 0; j < btns.length; j++) { var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px"); imp(b, "background", "var(--card,#fff)"); imp(b, "color", "var(--ink,#3d5168)"); imp(b, "border", "1px solid var(--line,#e0e8f1)"); imp(b, "font-weight", "600"); }
   }
   function build() { var v = $("teamView"); if (!v) return; injectCSS(); styleHeader(); if (v.getAttribute("data-tx-built") !== VERSION) v.setAttribute("data-tx-built", VERSION); }
   function applyAll() { try { if (_obs) _obs.disconnect(); } catch (e) {} try { build(); } catch (e) {} try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {} }
