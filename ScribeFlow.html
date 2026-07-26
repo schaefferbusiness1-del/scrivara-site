@@ -12662,7 +12662,15 @@ function studioGetSaved(){
   if(dirty){ try{ localStorage.setItem(k, JSON.stringify(arr)); }catch(e){} }
   return arr;
 }
-/* studioSetSaved is the ONE door every writer goes through — this file's Save,
+/* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
+   Measured on the live tab at b697: a tool built in the Studio showed "☁ in your
+   account" while GET /api/prefs held NO creations at all. The auto-save wrapper
+   in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
+   call that sat in saveStudioWidget — and since auto-save is how most tools get
+   saved, that was nearly every tool. Same lesson as the normalisation below: put
+   it at the one door, not in each caller.
+
+   studioSetSaved is the ONE door every writer goes through — this file's Save,
    the auto-save wrapper in mls-connect.js (b39 "toolUpgrades", which unshifts a
    raw {title: the whole request, html, ts, auto:true} after every successful
    build), and that file's separate de-duplication wrapper. Normalising and
@@ -12708,14 +12716,14 @@ function studioSetSaved(a){
     var json;
     try{ json=JSON.stringify(list); }catch(e){ return {ok:false,evicted:evicted,error:'This tool could not be stored.'}; }
     if(json.length<=STUDIO_LOCAL_BUDGET){
-      try{ localStorage.setItem(k,json); return {ok:true,evicted:evicted}; }catch(e){ /* real quota — evict below */ }
+      try{ localStorage.setItem(k,json); studioSyncCreations(); return {ok:true,evicted:evicted}; }catch(e){ /* real quota — evict below */ }
     }
     // Make room by dropping the OLDEST unpinned creation. A pinned tool is a tab
     // the doctor put in their nav on purpose; it is never evicted automatically.
     var victim=-1;
     for(var i=list.length-1;i>=0;i--){ if(!list[i].pinned){ victim=i; break; } }
     if(victim<0 || list.length<=1){
-      try{ localStorage.setItem(k, JSON.stringify(list)); return {ok:true,evicted:evicted}; }catch(e2){}
+      try{ localStorage.setItem(k, JSON.stringify(list)); studioSyncCreations(); return {ok:true,evicted:evicted}; }catch(e2){}
       return {ok:false,evicted:evicted,error:'Your browser storage is full, so this tool was NOT saved.'};
     }
     list.splice(victim,1); evicted++;
@@ -12880,9 +12888,12 @@ function renderStudioSaved(){
   var q=String((filterEl&&filterEl.value)||'').trim().toLowerCase();
   if(cnt) cnt.textContent=arr.length?('· '+arr.length+' tool'+(arr.length===1?'':'s')):'';
   if(bar) bar.style.display=(arr.length>=5?'flex':'none');
-  // What the account actually holds if a sync has come back; otherwise the plan.
-  var confirmed=window.__studioCloudIds, cloudIds={};
-  (Array.isArray(confirmed)?confirmed:_studioCloudPlan(arr).ids).forEach(function(id){ cloudIds[id]=1; });
+  /* ONLY what the server has acknowledged. The previous form fell back to the
+     PLAN when no sync had come back yet, which is how a card claimed "in your
+     account" for a tool the account had never received. An unconfirmed tool says
+     so instead. */
+  var confirmed=Array.isArray(window.__studioCloudIds)?window.__studioCloudIds:null, cloudIds={};
+  if(confirmed) confirmed.forEach(function(id){ cloudIds[id]=1; });
   var meter=document.getElementById('studioSavedMeter');
   if(meter){
     var bytes=0; try{ bytes=JSON.stringify(arr).length; }catch(e){}
@@ -12896,12 +12907,14 @@ function renderStudioSaved(){
   if(!shown.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">No saved tool matches “'+_ce(q)+'”.</div>'; return; }
   box.innerHTML=shown.map(function(w){
     var t=_ce(String(w.title||'Tool')), id=_ce(String(w.id||'')), pinned=!!w.pinned;
-    var synced=!!cloudIds[w.id];
+    var cloud = !confirmed ? {icon:'⏳ saving to your account…', tip:'Saved on this device. Sending it to your MLS account now.'}
+      : (cloudIds[w.id] ? {icon:'☁ in your account', tip:'Backed up to your MLS account — it follows you to any device you sign in on.'}
+                        : {icon:'💻 this device only', tip:'Saved on this device only. Pin it, or remove older tools, to back it up to your account.'});
     var meta=_studioAgo(w.updatedAt||w.ts)+' · '+_studioBytes((w.html||'').length);
     var lnk='cursor:pointer;font-size:12px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:2px 0;font-family:inherit';
     return '<div style="border:1px solid '+(pinned?'var(--brand)':'var(--line)')+';border-radius:10px;padding:11px 13px;min-width:216px;max-width:280px;background:var(--card,#fff);display:flex;flex-direction:column;gap:7px">'
       +'<div style="font-weight:600;font-size:13.5px;line-height:1.35">🧩 '+t+(pinned?' <span style="font-size:11px;font-weight:700;color:var(--brand)">📌 tab</span>':'')+'</div>'
-      +'<div class="mini" style="color:var(--muted);font-size:11.5px">'+_ce(meta)+' · <span title="'+(synced?'Backed up to your MLS account — it follows you to any device you sign in on.':'Saved on this device only. Pin it or remove older tools to back it up to your account.')+'">'+(synced?'☁ in your account':'💻 this device only')+'</span></div>'
+      +'<div class="mini" style="color:var(--muted);font-size:11.5px">'+_ce(meta)+' · <span title="'+_ce(cloud.tip)+'">'+cloud.icon+'</span></div>'
       +'<div class="row" style="gap:6px;flex-wrap:wrap">'
       +'<button class="btn-green" style="font-size:12px;padding:6px 10px" onclick="openStudioSaved(\''+id+'\')">Open</button>'
       +'<button class="'+(pinned?'btn-primary':'btn-ghost')+'" style="font-size:12px;padding:6px 10px" onclick="togglePinWidget(\''+id+'\')">'+(pinned?'📌 Unpin':'📌 Pin as tab')+'</button>'
@@ -24644,7 +24657,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b696: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b697: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24779,7 +24792,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b696 — THE LOADING SCREEN MUST ALWAYS END.
+/* b697 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29484,7 +29497,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b696';
+  window.__MLS_AV='b697';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

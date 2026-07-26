@@ -63,7 +63,10 @@ function makeEnv(opts) {
   const ctx = {
     console, JSON, String, Number, Boolean, Object, Array, Math, Date, RegExp, Error,
     isFinite, parseInt, parseFloat, Promise,
-    setTimeout() { return 0; },                 // never fire deferred UI timers here
+    /* Run deferred work inline. The account push is debounced, so a no-op
+       setTimeout would make this suite blind to whether a write syncs at all -
+       which is exactly the defect (measured live at b696) that 1b now pins. */
+    setTimeout(fn) { if (typeof fn === 'function') fn(); return 0; },
     clearTimeout() {},
     localStorage: {
       getItem(k) { return storage.has(k) ? storage.get(k) : null; },
@@ -122,6 +125,20 @@ async function run() {
     const told = env.statuses.filter(s => s.failed);
     assert(told.length === 1 && /not saved/i.test(told[0].message),
       'a failed save must say plainly that the tool was NOT saved');
+  }
+
+  // ------- 1b. EVERY writer syncs, including the one that never calls Save ---
+  {
+    // Measured live at b696: a tool built in the Studio showed "in your account"
+    // while GET /api/prefs held no creations. mls-connect.js's auto-save wrapper
+    // calls studioSetSaved DIRECTLY and never reached the sync call that lived in
+    // saveStudioWidget - and auto-save is how most tools get saved.
+    const env = makeEnv();
+    env.ctx.studioSetSaved([{ title: 'Auto-saved by the build wrapper', html: '<i>auto</i>', ts: 1, auto: true }]);
+    assert(env.synced.length >= 1,
+      'a write that bypasses saveStudioWidget must still push the account copy');
+    const pushed = JSON.parse(env.synced[env.synced.length - 1] || '[]');
+    assert.strictEqual(pushed.length, 1, 'the auto-saved tool must be in the synced payload');
   }
 
   // --------------------------- 2. per-account key + legacy migration ---------
