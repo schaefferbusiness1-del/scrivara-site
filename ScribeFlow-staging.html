@@ -10663,7 +10663,9 @@ var _copilotDockOpen=false;
 function openCopilotDock(seed){
   var card=document.getElementById('copilotCard'); if(!card) return;
   var dock=document.getElementById('copilotDock');
+  var freshlyBuilt=false;
   if(!dock){
+    freshlyBuilt=true;
     dock=document.createElement('div'); dock.id='copilotDock';
     dock.innerHTML='<div id="copilotDockHead"><span>✦ MLS Copilot</span><button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="closeCopilotDock()">✕</button></div><div id="copilotDockBody"></div>';
     document.body.appendChild(dock);
@@ -10672,6 +10674,13 @@ function openCopilotDock(seed){
   // leave a home anchor so we can put the card back exactly where it lives in AI Studio
   if(!document.getElementById('copilotHomeAnchor') && card.parentNode){ var anc=document.createElement('div'); anc.id='copilotHomeAnchor'; anc.style.display='none'; card.parentNode.insertBefore(anc, card); }
   document.getElementById('copilotDockBody').appendChild(card);
+  /* Give the browser a computed STARTING style before .open lands — see the
+     matching comment in ScribeFlow.html. First open measured ONE distinct
+     position (no slide); second open glided through 22. Forced layout once, on
+     first build only. Deliberately NOT requestAnimationFrame: rAF does not
+     fire in an occluded tab, which would leave the drawer shut rather than
+     merely un-animated. */
+  if(freshlyBuilt){ void dock.offsetWidth; var _sc0=document.getElementById('copilotDockScrim'); if(_sc0) void _sc0.offsetWidth; }
   document.getElementById('copilotDock').classList.add('open');
   document.getElementById('copilotDockScrim').classList.add('open');
   _copilotDockOpen=true;
