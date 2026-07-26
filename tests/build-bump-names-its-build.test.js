@@ -58,7 +58,19 @@ const root = path.resolve(__dirname, '..');
  * is upstream: either the extension release path runs the gate, or the bump
  * script refuses to write a subject omitting the token it just wrote. It already
  * knows the number. A gate only some ship paths run is a gate with a hole. */
-const CUTOFF = 'bdf150e';
+/* SECOND ADVANCE, 2026-07-26, e951a54: the prediction above came true in a new
+ * shape. The goal-lane coordinator HAND-WROTE its commit subjects in a heredoc
+ * instead of using bump-build.js's corrected stdout - a ship path routing
+ * around the writer-side fix this file itself prescribed. An interrupted
+ * duplicate of the ship command had already consumed b690, the script
+ * correctly advanced to b691 and PRINTED the corrected subject, and the
+ * hand-written heredoc shipped the stale token anyway. e951a54 sets b691
+ * under a "b690:" subject; the served feed went b689 -> b691 with no b690
+ * build ever live. Fixed FORWARD for the same reason as bdf150e (four lanes
+ * rebase across it). The durable rule, now mechanical for this lane: the
+ * subject line of a bump commit is bump-build.js's stdout, pasted verbatim,
+ * never retyped. */
+const CUTOFF = 'e951a54';
 
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
