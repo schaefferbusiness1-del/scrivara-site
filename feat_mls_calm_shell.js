@@ -1124,7 +1124,7 @@
        visit. Everything else that used to crowd the profile header moves to the
        Tools menu. With no patient open, the list actions are what matter. */
     patient: [
-      { label: /^start visit$/i, within: '#profileCard', primary: true, moved: true },
+      { label: /^start visit$/i, within: '#profileCard', primary: true },
       { id: 'ptNewBtn', primary: true },
       { id: 'ptPullAthenaBtn' },
       { id: 'ptIntakeBtn' }
@@ -1437,13 +1437,30 @@
     return head ? textOf(head).slice(0, 60) : '';
   }
 
-  /* Eight actions competed at the top of one patient. These move: Start visit
-     becomes the right-now bar's primary, the rest go to the Tools menu (which
-     matches on availability, so a control hidden by THIS shell is still
-     offered). Marked with a class rather than a blanket CSS rule so only the
-     controls actually relocated are hidden - anything new that appears in that
-     header keeps showing until someone decides where it belongs. */
-  var PT_MOVED = /^(start visit|schedule|draft op note|share \/ export|export everything for emr|verify saved data|copy every visit from athenaone|add a visit)$/i;
+  /* Eight actions competed at the top of one patient. These move to the Tools
+     menu (which matches on availability, so a control hidden by THIS shell is
+     still offered). Marked with a class rather than a blanket CSS rule so only
+     the controls actually relocated are hidden - anything new that appears in
+     that header keeps showing until someone decides where it belongs.
+
+     START VISIT IS NOT ONE OF THEM, and used to be. The intent was that it
+     "becomes the right-now bar's primary", but MEASURED on the running page at
+     b676 the two surfaces it landed on were both losing:
+       #profileCard  "Start visit"  93x26  = 2,405px^2, at opacity .5 --
+                     the FOURTH SMALLEST control on a screen of 36, while
+                     "Copy every visit from athenaOne" next to it was 13,536px^2
+       #mlsRightNow  "Start visit"  100x37 = 3,700px^2, sitting beside
+                     "Pull from Athena - READ-ONLY" at 244x37 = 9,028px^2
+     So the one thing a doctor opens a patient to do was, on both surfaces, the
+     smallest thing offered. Demoting a screen's PRIMARY is not decluttering.
+     It stays in the header and feat_mls_visit_focus.js makes it the hero;
+     everything genuinely secondary still moves, exactly as before.
+
+     Dropping `moved:true` from the ACTIONS entry below is part of the same fix
+     and closes a second defect: `moved` skips the VISIBILITY test, so with no
+     patient selected -- #profileCard display:none -- the bar still offered
+     "Start visit" for nobody. */
+  var PT_MOVED = /^(schedule|draft op note|share \/ export|export everything for emr|verify saved data|copy every visit from athenaone|add a visit)$/i;
 
   /* ONLY Snapshot moves. It is not broken - it renders real patient data - it
      is a duplicate of the bar it sits on: that bar already names the patient
