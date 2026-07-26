@@ -32,6 +32,30 @@ phone-app lane stopped 10:18 AM. Nobody else is moving.
 | b674 | ext 3.0.21 (sfp-1.0.0/1.0.1 schedule freshness, Worker B) — zip byte-verified 60cb01b9… | LIVE; NOT yet pong-verified on a running machine |
 | b675 | churn: paintFab/paintChip re-decoration wars end (Worker C); timer-brief corrections | pushed, deploy pending |
 
+## The owner's tabs (identified 2026-07-26, owner: "I gave u all needed tabs")
+
+| tab | what it is | use |
+|---|---|---|
+| athenanet.athenahealth.com (athenaCollector v26.7 FL, practice 22724) | the owner's SIGNED-IN athenaOne | live pull testing; reload after extension updates; READ-ONLY |
+| mlsscribe.com/ScribeFlow.html | the owner's signed-in MLS app (leeschaeffer41@gmail.com) | live verification, probes, pull driving |
+| dashboard.render.com (project prj-d8gt7s7lk1mc73dnns2g) | backend hosting dashboard | backend checks/deploys if needed |
+| github.com/schaefferbusiness1-del/scrivara-site | the site repo | reference |
+
+Extension reload protocol (PROVEN today, zero owner action): push bytes into
+`C:\Users\Micha\Downloads\MLS_Assist_v1.65` (the folder Chrome actually runs —
+audit-loaded-extensions.ps1 confirms) via auto-load\push-build.ps1 -Src <extracted zip>,
+then postMessage mlsDevReload on the mlsscribe tab, reload BOTH tabs, pong-verify.
+First mlsDevReload in a stale tab context returns {error:'extension error'} — reload
+the MLS tab and retry once.
+
+## Live evidence ledger (2026-07-26)
+
+- ext 3.0.21 pong-verified on the owner's machine (was 3.0.18 — 3.0.19/3.0.20 never installed).
+- Arm A freshness: liveSessionProven=true via athena-frame-load, staleRisk=fresh, no sentence on a healthy pull.
+- History pull Jul-28: VERIFIED COMPLETE — 21/21 rows done, day ledger complete, ~9.5s/patient, 0 failures.
+- b676 visually verified on the owner's tab: bubbles GONE, AI Studio in dock, record pill idle-hidden.
+- Row-guard log active on the live store (1 carried row logged, clock rule, non-pull).
+
 ## Waiting on the owner (live-session steps)
 
 1. Tab identification (Chrome connection is ACTIVE; group tab created; none of the owner's tabs touched).

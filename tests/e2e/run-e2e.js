@@ -925,6 +925,17 @@ async function addPatient(page, name, dob) {
     const pp = await newPhonePage(vp);
 
     await step('phone instrument: the overflow detector actually fires at ' + vp.name + ' (reverse A/B)', async () => {
+      /* Wait out the secure-loading gate: while <html> carries it, EVERY body
+         child is visibility:hidden!important — including a canary planted now,
+         which the detector then correctly ignores and this step wrongly calls
+         it blind. b671 guarantees the gate always ends; give it up to 45s. */
+      for (let w = 0; w < 90; w++) {
+        const gated = await pp.evaluate(() =>
+          document.documentElement.classList.contains('mls-secure-loading') ||
+          document.documentElement.classList.contains('mls-app-revealing'));
+        if (!gated) break;
+        await sleep(500);
+      }
       const before = await pp.evaluate(phoneProbe);
       await pp.evaluate(() => {
         const d = document.createElement('div');
@@ -932,7 +943,12 @@ async function addPatient(page, name, dob) {
         /* Pin every property the visibility filter reads. An inherited rule
            (an entry animation mid-flight, a transient overlay) previously left
            the canary undetected intermittently, which makes the instrument
-           itself flaky — worse than a blind one, because it passes most runs. */
+           itself flaky — worse than a blind one, because it passes most runs.
+           NOTE: the secure-loading gate is handled by the wait ABOVE this
+           evaluate — its body>:not(#sfGateLoading){visibility:hidden!important}
+           beats any inline pin here, so pinning alone cannot save the canary
+           while the gate is up (measured: one b677 run planted mid-reveal and
+           reported the detector blind when the CANARY was the hidden thing). */
         d.style.cssText = 'width:1200px;height:24px;background:transparent;' +
           'display:block;visibility:visible;opacity:1;position:static;' +
           'margin:0;padding:0;max-width:none;transform:none';
@@ -1003,7 +1019,14 @@ async function addPatient(page, name, dob) {
     const tp = await newPhonePage(PHONE_VIEWPORTS[0]);
     try {
       const cdp = await tp.createCDPSession();
-      const target = await tp.evaluate(() => {
+      /* b677: the button diet (b676 — bubbles retired, idle record pill hidden)
+         means the LANDING view may legitimately show no [data-tip] control any
+         more. The property under test is product-wide — "on touch, a long
+         press is the only route to an explanation" — so walk the dock's views
+         until a tip carrier is on screen, and only fail if the WHOLE app has
+         none. Do not pin a specific control id here; the diet will keep
+         moving surfaces. */
+      const findTip = () => tp.evaluate(() => {
         const vis = (el) => {
           const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
           return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 8 && r.height > 8
@@ -1015,7 +1038,19 @@ async function addPatient(page, name, dob) {
         return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
                  tip: el.getAttribute('data-tip'), id: el.id || el.tagName };
       });
-      assert(target, 'no visible [data-tip] control to long-press');
+      let target = await findTip();
+      if (!target) {
+        for (const dest of ['visit', 'day', 'patient', 'review']) {
+          await tp.evaluate((d) => {
+            const b = document.querySelector('#mlsDock button[data-dest="' + d + '"]');
+            if (b) b.click();
+          }, dest);
+          await sleep(700);
+          target = await findTip();
+          if (target) break;
+        }
+      }
+      assert(target, 'no visible [data-tip] control to long-press anywhere across the dock views');
 
       const tipState = () => tp.evaluate(() => {
         const t = document.getElementById('mlsTip');
