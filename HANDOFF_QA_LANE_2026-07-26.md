@@ -1,0 +1,188 @@
+# HANDOFF — QA / release-quality lane, 2026-07-26 (b667)
+
+Written by the QA lane at context exhaustion. **Everything below is either measured or
+explicitly marked unverified.** Where I was wrong tonight I have said so, because three
+separate times a lane was nearly dispatched at a defect that no longer existed.
+
+---
+
+## 0. READ THIS FIRST — the rule the whole night earned
+
+**An assignment must carry the measurement that justifies it AND the build it was taken on.**
+
+Three times work was nearly spent on a repaired defect, each because the evidence behind the
+assignment predated the fix:
+
+- `.sc-src` in `feat_mls_status_center.js` — the file had **0** title writes by the time the
+  assignment was read.
+- `#mlsB39SgHead` — "5 references, no guard" counted *mentions of the id*. All five are CSS
+  rules, one `querySelectorAll`, one `createElement`. **Not one is an attribute write.**
+- A duplicate dispatch onto `build-bump-names-its-build.test.js` that I had already fixed 20
+  minutes earlier.
+
+**Corollary, learned the hard way:** re-derive state from the tip before acting. A live tab is a
+*build*, not *the code*. A worktree cannot tell "not here" from "not anywhere".
+
+---
+
+## 1. STATE AT HANDOFF
+
+```
+origin/main   199ab5b   b667
+live          b667                       (mlsscribe.com/app-version.json)
+gate          333 suites green
+E2E           30 steps, 0 failed         (real Chrome; grown 17 -> 30 tonight)
+```
+
+**All four gates I shipped are green at the tip.**
+
+---
+
+## 2. WHAT IS ACTUALLY LEFT
+
+### 2.1 🔴 The 215-timer fleet — NOT STARTED, needs a session
+
+The only item where the blocker is a **decision**, not work. The owner has been asked twice
+and has not answered.
+
+```
+215 setInterval registrations under 10s, across 95 files
+~204 timer fires per second, sustained, on an idle app
+```
+
+Related to the boot cost b581 filed as *"the work 234 modules do"* — but **unlike boot, it never
+stops**. Nobody has measured how much of it is real work vs no-op churn. That measurement is
+step one; do not assume the count implies the cost.
+
+### 2.2 🔵 Review rebuild — IN PROGRESS (UI lane)
+
+Owner's words: *"the review tab sucks and needs to be completely reworked from scratch"* — a
+design verdict, not a bug report. Stage 1 shipped as b666 (*"pressing Review did nothing you
+could see"*).
+
+**⚠️ MY ORIGINAL HANDOFF ON THIS WAS WRONG, and the correction matters:**
+
+- **There is no `reviewView`.** The twelve view containers are `patientsView`, `visitView`,
+  `calendarView`, `ordersView`, `historyView`, `analysisView`, `recsView`, `studioView`,
+  `teamView`, `intakeView`, `adminView`, `legalReqView`.
+- "Review" is a **dock destination**: `{ id:'review', targets:['nav_orders','nav_recs'] }`, and
+  `destTarget()` takes the first available target — **so Review *was* Orders.**
+- **The thing the owner is looking at is `ordersView`.**
+
+**The constraint that must survive the rewrite:** Review is the last human gate before anything
+reaches Athena. However it looks afterwards, it must make the doctor **look** at what is about
+to leave, and sending must never be the default. This codebase has documented history of
+`handOff()` toasting *"note sent to Athena"* over **seven silent refusals**. A prettier Review
+that is easier to click through is a **worse** Review.
+
+---
+
+## 3. CLOSED TONIGHT (verified, don't re-open)
+
+| item | evidence |
+|---|---|
+| **Title war — last writer** | b667. Probe measured **13 writes → 0**. `grep "tb.title = isToday"` returns empty. |
+| **Bump-script mislabelling** | b665. `af6b879` names b665 in its own message; label gate passes. |
+| **`#mlsB39SgHead`** | Already fixed by b664. All 5 refs are CSS/read/createElement — no attribute write exists to guard. |
+| **Body-class no-op writes** | b640. **86 → 0** in 20s idle, foregrounded (`visibilityState:visible`), page clock 29 ticks. |
+| **Bubble merge (3 → 1)** | b651 + follow-up b658 (closed bubble ate clicks, opened wrong way). |
+| **Lite-Review dead end** | b661. `'Upgrade in Settings'` = 0; `'See plans on the MLS home page'` = 1 in **both** prod and staging. |
+
+**b664 churn result, the real story** (attributes per 8s idle, b624 → b664):
+
+```
+patients 442 -> 336 (-24%)     visit 400 -> 193 (-52%)
+review   178 -> 118 (-34%)     calendar 258 -> 180 (-30%)
+verdict: "patients LOUD"  ->  "no view mutates loudly while idle"
+```
+
+---
+
+## 4. THE GATES I SHIPPED — what they protect, and how they fail
+
+All in `tests/`, all registered in `run-all.js`.
+
+1. **`no-merge-conflict-markers-in-shipped-assets.test.js`** — 352 shipped parse-critical files.
+   Shipped after `6ea5677` hotfixed conflict markers **served to users**.
+2. **`build-bump-names-its-build.test.js`** — a commit changing `app-version.json` must name that
+   build **anywhere in its message** (`git log --grep` searches the body), and no two commits may
+   claim the same token.
+   **`CUTOFF` has been advanced ONCE** (`2c066c5` → `bdf150e`). **If it ever moves again, the
+   conclusion is that a ship path is routing around the gate — not that the gate is
+   inconvenient.** That already happened once: the extension-release path bumps
+   `app-version.json` without running `run-all.js`, which took main red. The durable fix is for
+   the bump script to write the token into the message it generates; it already knows the number.
+3. **`tree-contains-everything-published.test.js`** — refuses to ship from a tree missing
+   published work (`git merge-base --is-ancestor origin/main HEAD`). Escape hatch for legitimate
+   mid-development: `MLS_ALLOW_STALE=1`. **It caught its own author within minutes of shipping.**
+4. **The E2E suite** — `tests/e2e/run-e2e.js`, 30 steps in real Chrome, **still NOT in
+   `run-all.js`**, so nobody runs it automatically. It had been silently unrun for 30+ builds.
+
+```bash
+MLS_E2E_PUPPETEER_DIR=<dir whose node_modules has puppeteer-core> node tests/e2e/run-e2e.js
+```
+
+`puppeteer-core` downloads no browser and drives the installed Chrome, so install it **outside
+the repo**. **Proposal still open:** register it behind `MLS_E2E=1` once it has ~10 green builds.
+If you add steps, use `reloadApp(page)`, never a bare `page.reload()` — dismissing a
+`beforeunload` **cancels the navigation** and reports as a 30s nav timeout.
+
+---
+
+## 5. INSTRUMENT TRAPS — every one of these cost real time tonight
+
+1. **A zero is only trustworthy if a witness ticked.** Before believing "0 churn", assert the
+   page's own `#ez3Clock` advanced in the same window. A throttled or hidden tab reports zero for
+   everything. Never validate with an injected timer.
+2. **Count writes, not mutations.** I called `#mlsPortalInviteBtn` "the loudest churner in the
+   app" from a *mutation* count; a *write*-level probe measured **0**. Retracted.
+3. **A point-in-time attribute census is worthless here.** The title count read 1, then 12, then
+   0 with nothing shipped — it was catching transient writes mid-flight between a writer and the
+   stripper. **Only write-rate over a window means anything.**
+4. **A `MutationObserver` cannot name a writer** — its callback runs async and carries the
+   observer's stack. Hook **both** `Element.prototype.setAttribute` **and** the
+   `HTMLElement.prototype.title` property descriptor, installed via `evaluateOnNewDocument`.
+   Property assignment bypasses a `setAttribute`-only hook; that cost an hour.
+5. **Converging static evidence is not runtime evidence.** I raised a stop-work claiming
+   `data-tip` renders nothing without the extension — **five** independent static signals agreed,
+   every one individually true, conclusion **false**. `#mlsTip` exists page-side; hovering with no
+   extension renders a real tooltip (`display:block, opacity:1, 192×36`). **Do not re-raise this.**
+6. **Pipeline truncation hides failures.** `| tail -1` on a failing node process left the bare
+   string `Node.js v24.18.0` — neither pass nor fail. Same family as `| Select-Object -First N`
+   killing a mid-write patch. (The mistyped filename exits **1**; the exit code was fine, the
+   pipe discarded it.)
+7. **Absence in a local harness is not absence on the owner's tab.** The ten `.sc-src` status rows
+   exist only with a **connected extension and live backend** — a local harness never populates
+   them.
+
+Probes, all in the session scratchpad: `probe-idle-churn.js` (per-writer churn with computed
+visibility), `probe-title-writer.js` (names writers at write time), `probe-bodyclass.js`,
+`probe-datatip-renders.js`, `probe-ordersbody.js`.
+
+---
+
+## 6. STILL UNMEASURED — honest gaps, do not record as verified
+
+- **`#visitOrdersBody` with a real note loaded.** It reads 0 mutations where 16 were once
+  measured, but `#noteCard` is revealed by `body.ez3adv` (clicking **"Advanced visit workspace"**)
+  and is **not** gated on note content — which is why seeding `noteBox` never un-hid it and why
+  several sessions measured it at rect 0×0 and wrongly demoted it.
+- **The owner's "glitches every 5 seconds"** was never reproduced in an *empty* app. Signed into
+  Athena he can pull a real schedule, which produces the **loaded** state — the one condition
+  where it may still live.
+
+---
+
+## 7. WORKING AGREEMENTS THAT PREVENTED OUTAGES
+
+- **Work in a worktree outside the repo tree.** A parallel session once committed my in-flight
+  edit into a live build, untested.
+- **Rebase, gate, push fast; abandon the NUMBER, never the work.** Main moved under me six times
+  in one evening.
+- **`background.js` is byte-edit only** (node, latin1). Never the Edit tool.
+- **PowerShell:** `Set-Content -Encoding utf8` adds a BOM that breaks the extension digest — use
+  the Write tool for commit messages. `>` rewrites LF→CRLF. `&&`/`||` are parse errors inside
+  `node -e`; use a script file.
+- **latin1 patch scripts must assert exactly-one-match per anchor**, and encode anchors the same
+  way the file is read — a UTF-8 em-dash is 3 latin1 chars and silently matches nothing.
+- **Hard stops:** orders, real-patient writes, payment PRs.
