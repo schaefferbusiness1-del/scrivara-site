@@ -3958,7 +3958,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="card">
       <h2><span class="ic">📁</span> My creations <span id="studioSavedCount" style="font-weight:500;font-size:13px;color:var(--muted)"></span></h2>
       <div id="studioSavedBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
-        <input id="studioSavedFilter" placeholder="Filter your tools…" oninput="renderStudioSaved()" style="flex:1;min-width:180px;max-width:320px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink)">
+        <input id="studioSavedFilter" placeholder="Filter your tools…" oninput="renderStudioSaved()" style="flex:1;min-width:180px;max-width:320px;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-ctl,10px);font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink)">
         <span id="studioSavedMeter" class="mini" style="color:var(--muted)"></span>
       </div>
       <div id="studioSaved" style="display:flex;gap:10px;flex-wrap:wrap"><div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div></div>
@@ -12663,7 +12663,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b697: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b698: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -24657,7 +24657,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b697: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b698: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24792,7 +24792,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b697 — THE LOADING SCREEN MUST ALWAYS END.
+/* b698 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29497,7 +29497,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b697';
+  window.__MLS_AV='b698';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
