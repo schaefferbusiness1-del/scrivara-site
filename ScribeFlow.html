@@ -1437,6 +1437,7 @@ html body.mls-phone [onclick*="pullScheduleViaAssist"]{ display:none !important;
 (function(){
   'use strict';
   var SHEET_ID='mlsThemeParity', sheet=null, seen=null, pending=false, obs=[], armed=false;
+  var lastSheets=-1, lastInline=-1;
   var SKIP=/#mlsDock|(^|[\s,>+~])option\b|agSigPad|\bcanvas\b|mlsf-note|::-webkit-|::selection|(^|[\s,>+~])(html|:root|head)$/i;
   var FIELD=/\b(input|textarea|select)\b|\.sf-select|\.field\b/i;
   var ROOTISH=/^(:root|html|body)[\s.:#\[]?/i;
@@ -1742,8 +1743,18 @@ html body.mls-phone [onclick*="pullScheduleViaAssist"]{ display:none !important;
       seen=new WeakSet();
     }
     var sheets=document.styleSheets,css=[],n=0,i,s,list;
+    /* CHEAP EARLY-OUT FIRST. Something in the app adds and removes a <style>
+       while idle, so the head observer fires about 1.3 times a second; a scan
+       that re-collected every custom property and re-walked every inline style
+       on each of those cost 5.8ms a time — 0.8% of the main thread doing
+       nothing, which is precisely the timer-fleet tax this app already pays.
+       Nothing can have changed if neither the sheet count nor the number of
+       inline-styled elements moved. */
+    var inlineN=document.querySelectorAll('#appScreen [style]').length;
+    if(sheets.length===lastSheets&&inlineN===lastInline){ if(api) api.noops++; return 0; }
+    lastSheets=sheets.length; lastInline=inlineN;
     for(i=0;i<sheets.length;i++){
-      s=sheets[i]; if(!s||s.ownerNode===sheet) continue;
+      s=sheets[i]; if(!s||s.ownerNode===sheet||seen.has(s)) continue;
       try{ list=s.cssRules; }catch(e){ continue; }
       if(list) collectVars(list);
     }
@@ -1794,14 +1805,14 @@ html body.mls-phone [onclick*="pullScheduleViaAssist"]{ display:none !important;
   }
 
   window.__mlsThemeParity={
-    version:'tp-1.0.0', sheetsSeen:0, rules:0, passes:0,
+    version:'tp-1.0.0', sheetsSeen:0, rules:0, passes:0, noops:0,
     refresh:function(){ return scan(); },
     activate:function(){ arm(); return scan(); },
     revert:function(){
       try{ obs.forEach(function(o){ o.disconnect(); }); }catch(e){}
       obs=[]; armed=false;
       try{ if(sheet&&sheet.parentNode) sheet.parentNode.removeChild(sheet); }catch(e){}
-      sheet=null; seen=null; inlineSeen={}; varMap={};
+      sheet=null; seen=null; inlineSeen={}; varMap={}; lastSheets=-1; lastInline=-1;
     }
   };
 
