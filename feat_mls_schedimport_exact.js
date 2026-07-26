@@ -3250,17 +3250,37 @@
                These reasons are intentionally NOT in SWEEPABLE_REASON — the
                refusal is deterministic, so an automatic re-sweep would burn
                batch budget re-failing rather than recover anything. */
-            var __mismatch = 0, __noIndex = 0;
+            var __mismatch = 0, __noIndex = 0, __noTab = 0;
             try {
               (historyReceipt.patients || []).forEach(function (p) {
                 var why = String((p && (p.visitsReason || p.chartReason || p.reason)) || "");
                 if (/same-frame-name-mismatch/.test(why)) __mismatch++;
                 else if (/no-chart-frame-candidate|encounter-index-incomplete/.test(why)) __noIndex++;
+                else if (/no-athena-tab/.test(why)) __noTab++;
               });
             } catch (eMm) {}
             res.multiTabSuspected = __mismatch >= 2;
             res.encounterIndexUnreadable = __noIndex;
+            /* sfp-1.0.1: NAME the signed-out session. `no-athena-tab` is what the
+               picker returns when every athenaOne tab fails its session probe --
+               i.e. athenaOne is signed out or timed out. It is in
+               SWEEPABLE_REASON, so a dead session triggers up to three full
+               automatic re-sweeps that re-fail every patient, and the clinician
+               is finally told "deferred after timeout": a timing story for a
+               sign-in problem. Nothing in this orchestrator ever said "athenaOne
+               is signed out" -- "signin" and "signin-expired" above are the MLS
+               backend session (/api/me), a different thing entirely.
+
+               This pairs with the freshness notice: when athenaOne is signed
+               out the SCHEDULE still scrapes (a painted grid needs no session)
+               while every history read correctly refuses -- which is exactly
+               the asymmetry the owner reported on 2026-07-25 and the shape
+               recorded in tests/live-e2e-artifacts/2026-07-22-acceptance.md.
+               Threshold 2, matching multiTabSuspected: one refusal can be a
+               transient tab race, two in a row is the session. */
+            res.athenaSignedOutSuspected = __noTab >= 2;
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
+              (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : ""), "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r), "ok");

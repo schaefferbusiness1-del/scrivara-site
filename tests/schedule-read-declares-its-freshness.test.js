@@ -207,4 +207,25 @@ assert(/Schedule-only complete:[\s\S]{0,140}freshnessNotice\(r\)/.test(si),
 assert(/no appointments\." \+ freshnessNotice\(r\)/.test(si),
   'an EMPTY day read off a stale grid is the worst case of all: it is a positive clinical claim that nobody is coming');
 
+/* ===================== 5. the signed-out session is NAMED (sfp-1.0.1) ====== */
+
+/* `no-athena-tab` is what the picker returns when every athenaOne tab fails its
+   session probe -- that is a signed-out athenaOne. It sits in SWEEPABLE_REASON,
+   so a dead session triggers up to three full automatic re-sweeps that re-fail
+   every patient, and the clinician is finally told "deferred after timeout": a
+   timing story for a sign-in problem. Before this, no message in the whole
+   orchestrator said athenaOne was signed out -- "signin" and "signin-expired"
+   are the MLS BACKEND session (/api/me), a different thing entirely. */
+assert(/no-athena-tab/.test(si.slice(si.indexOf('var __mismatch = 0'), si.indexOf('res.multiTabSuspected'))),
+  'a `no-athena-tab` refusal must be counted alongside the other history failure classes -- it is the signature of a signed-out athenaOne and today it is silently swallowed by the retry sweep');
+assert(/res\.athenaSignedOutSuspected = __noTab >= 2/.test(si),
+  'the signed-out verdict must be recorded on the result, at a threshold of 2: one refusal can be a transient tab race, two in a row is the session');
+const signedOutMsg = si.slice(si.indexOf('res.athenaSignedOutSuspected ? "'), si.indexOf('res.multiTabSuspected ? "'));
+assert(/signed out or timed out/.test(signedOutMsg),
+  'the message must name the actual cause; "deferred after timeout" sends the doctor to look at speed when the problem is authentication');
+assert(/Sign in to athenaOne/.test(signedOutMsg),
+  'and it must say what to DO -- this repo has a documented defect class where a failure message names no destination at all');
+assert(/still had on screen/.test(signedOutMsg),
+  'it must ALSO warn that the schedule above was scraped off a painted grid: that is the exact asymmetry the owner reported -- history refuses while the day\'s patients still come through');
+
 console.log('schedule-read-declares-its-freshness: OK');
