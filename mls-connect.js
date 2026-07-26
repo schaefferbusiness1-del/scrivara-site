@@ -6059,7 +6059,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-pull .pw b,#mlsEz3 .ez3-pull .pw strong{color:#8A5A22 !important;}',
     '#mlsEz3 .ez3-qchip .qt{color:#79837C !important;}',
     '#mlsEz3 .ez3-qchip.on .qt{color:#EAF1EC !important;}',
-    '#mlsEz3 .ez3-search input::placeholder{color:#A6AEA6 !important;}',
+    '#mlsEz3 .ez3-search input::placeholder{color:var(--muted) !important;}',
     '#mlsEz3 .ez3-spin{color:#79837C !important;border-top-color:#2E6A4B !important;}',
     /* b245: the base HAPPENING-NOW tag kept its dark-theme pale-mint text (#b9f3dd)
        on the light shell = unreadable (owner screenshot). Calm chip tokens. */
@@ -6155,7 +6155,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3fl-review:hover{background:#2E6A4B;border-color:#2E6A4B;}',
     '#mlsEz3 .ez3fl-nextrow span{color:#68756E;font-size:11.5px;}',
     '#mlsEz3 .ez3fl-quick{flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}',
-    '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:#A6AEA6;}',
+    '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:var(--muted);}',
     '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
     '#mlsEz3 .ez3fl-qchip:hover{background:#F4F2EC;color:#1A211C;}',
     '#mlsEz3 .ez3fl-voicechip.on{background:#204034;color:#fff;border-color:#204034;}',
@@ -41534,7 +41534,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ".mlsTourDimV2{position:fixed;inset:0;background:rgba(26,33,28,.55);z-index:" + Z + ";}" +
       ".mlsTourSpotV2{position:fixed;border-radius:12px;box-shadow:0 0 0 9999px rgba(26,33,28,.55);border:3px solid #C9DCD2;transition:all .25s ease;pointer-events:none;z-index:" + (Z + 1) + ";}" +
       ".mlsTourCardV2{position:fixed;max-width:440px;width:calc(100vw - 40px);background:#fff;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:22px 22px 16px;box-sizing:border-box;z-index:" + (Z + 2) + ";}" +
-      ".mlsTourCardV2 .st{font-size:13px;font-weight:700;color:#A6AEA6;margin:0 0 4px;}" +
+      ".mlsTourCardV2 .st{font-size:13px;font-weight:700;color:var(--muted);margin:0 0 4px;}" +
       ".mlsTourCardV2 h3{margin:0 0 10px;font-size:22px;line-height:1.25;color:#1A211C;font-weight:800;}" +
       ".mlsTourCardV2 p{margin:0;font-size:18px;line-height:1.5;color:#3D453E;}" +
       ".mlsTourBtns{display:flex;gap:8px;align-items:center;margin-top:18px;}" +

@@ -197,7 +197,7 @@
       '#' + PANEL_ID + ' .mls-pqs-badge{flex:0 0 auto;font-size:11px;color:#2E6A4B;background:#EAF1EE;border-radius:20px;padding:2px 8px}' +
       '#' + PANEL_ID + ' .mls-pqs-active{flex:0 0 auto;font-size:10px;color:#0a6b3b;background:#e3f6e9;border-radius:20px;padding:2px 7px;font-weight:700}' +
       '#' + PANEL_ID + ' .mls-pqs-empty{padding:14px 14px;font-size:13px;color:#79837C;text-align:center}' +
-      '#' + PANEL_ID + ' .mls-pqs-foot{padding:7px 12px;font-size:11px;color:#A6AEA6;background:#FCFBF8;border-top:1px solid #F4F2EC}' +
+      '#' + PANEL_ID + ' .mls-pqs-foot{padding:7px 12px;font-size:11px;color:var(--muted);background:#FCFBF8;border-top:1px solid #F4F2EC}' +
       '@media (max-width:760px){#' + BOX_ID + '{flex-basis:150px}#' + BOX_ID + ' .mls-pqs-kbd{display:none}}';
     var st = document.createElement('style');
     st.id = STYLE_ID;

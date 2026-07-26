@@ -60,7 +60,7 @@
     "#t7AxRefresh{height:30px;padding:0 12px;border-radius:8px;border:1px solid #dbe4ee;background:#fff;color:#2E6A4B;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit}",
     "#t7AxRefresh:hover{background:#f3f7ff}",
     "#t7AxRefresh[disabled]{opacity:.55;cursor:default}",
-    ".t7-face-note{color:#A6AEA6;font-size:11px;margin-top:4px}",
+    ".t7-face-note{color:var(--muted);font-size:11px;margin-top:4px}",
     ".t7-busy{position:absolute;inset:0;background:rgba(255,255,255,.72);display:flex;align-items:center;justify-content:center;z-index:40;border-radius:inherit;backdrop-filter:blur(1px)}",
     ".t7-busy>div{display:flex;align-items:center;gap:10px;color:#204034;font-weight:600;font-size:13.5px;background:#fff;border:1px solid #e2e9f2;border-radius:12px;padding:10px 16px;box-shadow:0 8px 24px -12px rgba(20,33,28,.35)}",
     ".t7-spin{width:16px;height:16px;border-radius:50%;border:2px solid #c9d9ef;border-top-color:#2E6A4B;animation:t7spin .8s linear infinite}",

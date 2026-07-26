@@ -450,7 +450,7 @@
         '.mpf-step.completed .lab{color:#3D453E;}',
         '.mpf-step.running .lab{color:#1A211C;font-weight:700;}',
         '.mpf-step.failed .lab{color:#B23B3B;font-weight:700;}',
-        '.mpf-step .sub{display:block;font-size:11px;color:#A6AEA6;font-weight:500;}',
+        '.mpf-step .sub{display:block;font-size:11px;color:var(--muted);font-weight:500;}',
         '@keyframes mpfPulse{0%,100%{box-shadow:0 0 0 0 rgba(46,106,75,.35)}50%{box-shadow:0 0 0 6px rgba(46,106,75,0)}}',
         '.mpf-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}',
         '.mpf-btn{appearance:none;border:0;border-radius:10px;padding:10px 15px;font-size:13px;font-weight:600;cursor:pointer;transition:transform .12s ease;}',

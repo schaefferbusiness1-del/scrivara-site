@@ -113,7 +113,7 @@
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-drag{opacity:.5;background:#EAF1EE;box-shadow:inset 0 0 0 2px #C9DCD2}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-over{box-shadow:inset 0 0 0 2px #2E6A4B,0 12px 28px -16px rgba(32,64,52,.5);transform:translateY(-2px)}",
       "#analysisView." + GRID_CLASS + " .ax-prev{width:100%;height:100%;text-align:left;background:transparent;border:none;padding:18px 20px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;color:#1A211C}",
-      "#analysisView." + GRID_CLASS + " .ax-prev .ax-cta{display:flex;align-items:center;gap:5px;color:#A6AEA6;font-size:12.5px;font-weight:600;margin-top:12px;transition:color .15s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-prev .ax-cta{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12.5px;font-weight:600;margin-top:12px;transition:color .15s ease}",
       "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-prev .ax-cta{color:#2E6A4B}",
       "#analysisView." + GRID_CLASS + " .ax-head{display:none;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #edf2f8;background:#fbfcfe}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-head{display:flex}",
@@ -154,7 +154,7 @@
     prev.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="width:40px;height:40px;border-radius:11px;background:' + m.iconBg + ';display:flex;align-items:center;justify-content:center;font-size:18px">' + m.icon + '</span>' + prem + '</div>' +
       '<div style="font-weight:700;font-size:14.5px;letter-spacing:-.01em;line-height:1.25;margin-bottom:auto">' + m.title + '</div>' +
-      '<div style="margin-top:10px"><div style="font-weight:800;font-size:' + (st.isLabel ? "16px" : "24px") + ';letter-spacing:-.015em;color:' + (st.isLabel ? "#5b6b7c" : m.color) + '">' + st.text + '</div>' + (m.sub ? '<div style="color:#A6AEA6;font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
+      '<div style="margin-top:10px"><div style="font-weight:800;font-size:' + (st.isLabel ? "16px" : "24px") + ';letter-spacing:-.015em;color:' + (st.isLabel ? "#5b6b7c" : m.color) + '">' + st.text + '</div>' + (m.sub ? '<div style="color:var(--muted);font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
       '<div class="ax-cta">Tap to expand &#10530;</div>';
   }
 
@@ -208,7 +208,7 @@
     var t = mk("div"); t.className = "ax-title";
     t.innerHTML =
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.015em;margin:0">Analysis</h1>' +
-      '<p style="color:#A6AEA6;font-size:12.5px;margin:4px 0 0">Live practice metrics. Tap any tile to expand it; drag to reorder.</p>';
+      '<p style="color:var(--muted);font-size:12.5px;margin:4px 0 0">Live practice metrics. Tap any tile to expand it; drag to reorder.</p>';
     v.insertBefore(t, v.firstChild);
   }
 

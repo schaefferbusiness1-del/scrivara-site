@@ -357,7 +357,7 @@
 #mlsDsList{display:none!important}
 :root{
     /* ===== Editorial Calm (2026 redesign) ===== */
-    --bg:#FBFAF7; --card:#ffffff; --ink:#1A211C; --muted:#68736B;
+    --bg:#FBFAF7; --card:#ffffff; --ink:#1A211C; --muted:#636E66;
     --line:#E7E5DD; --brand:#2E6A4B; --brand-dk:#204034;
     --green:#2E6A4B; --green-dk:#204034; --amber:#985F26;
     --red:#B23B3B; --soft:#F4F2EC; --shadow:0 1px 2px rgba(20,33,28,.04),0 4px 14px rgba(20,33,28,.045);
@@ -1422,7 +1422,7 @@ html:has(#authScreen:not([style*="none"])){ scrollbar-gutter: auto; }
 .auth-wrap{ background:var(--bg) !important; position:relative; }
 .auth-wrap::before{ content:''; position:absolute; inset:0; background:radial-gradient(700px 400px at 50% -10%, #EAF1EE, transparent 62%); pointer-events:none; }
 body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50% -10%, #1F2721, transparent 62%); }
-.auth-wrap::after{ content:'Secure account sign-in'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
+.auth-wrap::after{ content:'Secure account sign-in'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:var(--muted); pointer-events:none; }
 .auth-card{ position:relative; background:var(--card) !important; border:1px solid var(--line) !important; border-radius:20px !important;
   box-shadow:0 1px 2px rgba(20,33,28,.04), 0 30px 60px -30px rgba(20,33,28,.28) !important; padding:38px 36px !important; max-width:404px; }
 .auth-logo{ font-family:var(--serif) !important; font-weight:600 !important; font-size:20px !important; letter-spacing:-.01em; color:var(--ink); }

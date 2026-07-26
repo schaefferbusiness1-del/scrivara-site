@@ -135,7 +135,7 @@
 
       "#" + WRAP_ID + "{max-width:760px;margin:6px auto 0;padding:0 2px 24px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#1A211C;box-sizing:border-box}",
       "#" + WRAP_ID + " *{box-sizing:border-box}",
-      "#" + WRAP_ID + " ::placeholder{color:#A6AEA6}",
+      "#" + WRAP_ID + " ::placeholder{color:var(--muted)}",
       "#" + WRAP_ID + " .sim-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}",
       "#" + WRAP_ID + " button{font-family:inherit}",
       "#" + WRAP_ID + " .sim-opt:hover{background:#f2f6fc}",
@@ -162,7 +162,7 @@
         '<div id="simBody" style="padding:24px 32px 30px"></div>' +
         '<div id="simFoot" class="sim-foot" style="border-top:1px solid #F4F2EC;background:#FCFBF8;padding:22px 32px;display:flex;align-items:center;gap:18px;flex-wrap:wrap"></div>' +
       '</section>' +
-      '<p style="text-align:center;color:#A6AEA6;font-size:12px;margin-top:20px">' + E.lock + ' Synthetic evaluation only &middot; Do not enter patient information &middot; You review every draft</p>';
+      '<p style="text-align:center;color:var(--muted);font-size:12px;margin-top:20px">' + E.lock + ' Synthetic evaluation only &middot; Do not enter patient information &middot; You review every draft</p>';
     v.insertBefore(w, v.firstChild);
     return w;
   }
@@ -178,8 +178,8 @@
       var dot = "width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;" +
         (a ? "background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;box-shadow:0 8px 18px -6px rgba(32,64,52,.6);"
            : d ? "background:#2E6A4B;color:#fff;"
-               : "background:#fff;color:#A6AEA6;border:1.5px solid #e0e8f1;");
-      var lbl = "font-size:11.5px;font-weight:" + (a ? "700" : "600") + ";color:" + (a ? "#1A211C" : "#A6AEA6") + ";white-space:nowrap;";
+               : "background:#fff;color:var(--muted);border:1.5px solid #e0e8f1;");
+      var lbl = "font-size:11.5px;font-weight:" + (a ? "700" : "600") + ";color:" + (a ? "#1A211C" : "var(--muted)") + ";white-space:nowrap;";
       var bar = (i < 5)
         ? '<div style="flex:1;height:2px;margin:0 6px;margin-bottom:24px;border-radius:2px;background:' + (d ? "#2E6A4B" : "#e0e8f1") + '"></div>'
         : "";
@@ -278,7 +278,7 @@
         '<label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:8px;color:#3d5168">Whose patients?</label>' +
         '<div style="position:relative;margin-bottom:22px">' +
           '<select id="simWhose" style="width:100%;height:50px;border-radius:13px;border:1px solid #e0e8f1;background:#FCFBF8;padding:0 42px 0 16px;font-size:15px;font-weight:600;outline:none;color:#1A211C;-webkit-appearance:none;appearance:none;cursor:pointer">' + providerOptions() + '</select>' +
-          '<span style="position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;color:#A6AEA6;font-size:12px">' + E.tri + '</span>' +
+          '<span style="position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:12px">' + E.tri + '</span>' +
         '</div>' +
         '<button id="simPullToday" class="sim-hero" style="width:100%;text-align:left;display:flex;align-items:center;gap:18px;padding:22px 24px;border-radius:16px;border:none;cursor:pointer;background:linear-gradient(135deg,#204034,#204034);box-shadow:0 14px 34px -16px rgba(20,33,28,.6);position:relative;overflow:hidden;transition:transform .06s ease">' +
           '<span style="position:absolute;inset:0;background-image:radial-gradient(circle at 92% -30%,rgba(46,106,75,.4),transparent 50%);pointer-events:none"></span>' +

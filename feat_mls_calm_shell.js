@@ -234,7 +234,7 @@
     '#mlsDockAsk{width:150px;height:34px;padding:0 12px;border:0;border-radius:14px;background:rgba(0,0,0,.045);',
     'font:400 13px inherit;color:#1A211C;outline:0;transition:width var(--mls-base) var(--mls-spring),background var(--mls-fast) linear}',
     '#mlsDockAsk:focus{width:250px;background:rgba(0,0,0,.075)}',
-    '#mlsDockAsk::placeholder{color:#8C978F}',
+    '#mlsDockAsk::placeholder{color:var(--muted)}',
     '#mlsAskResults{position:absolute;bottom:46px;right:0;width:340px;max-height:320px;overflow:auto;',
     'background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,.07);',
     'border-radius:16px;box-shadow:0 16px 40px rgba(20,35,28,.18);padding:6px;display:none;',
@@ -242,7 +242,7 @@
     '@keyframes mlsPop{from{opacity:0;transform:scale(.94) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}',
     '#mlsAskResults .r{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;cursor:pointer;font-size:13.5px;color:#1A211C}',
     '#mlsAskResults .r:hover,#mlsAskResults .r.sel{background:#EAF1EE}',
-    '#mlsAskResults .r small{margin-left:auto;color:#8C978F;font-size:11.5px}',
+    '#mlsAskResults .r small{margin-left:auto;color:var(--muted);font-size:11.5px}',
     '#mlsAskResults .r.danger{color:#A32D2D}',
     '#mlsAskResults .none{padding:12px;color:#68736B;font-size:13px}',
 
@@ -364,7 +364,7 @@
     'display:flex;align-items:center;gap:9px;font:500 13.5px/1.3 inherit;color:#4A5B51;border:0;background:none}',
     'body.mls-calm #profileCard .mls-fold > .mls-fold-hd:hover{background:#F6FAF8;border-radius:12px}',
     'body.mls-calm #profileCard .mls-fold > .mls-fold-hd::after{content:"";margin-left:auto;width:7px;height:7px;',
-    'border-right:1.6px solid #9AA69E;border-bottom:1.6px solid #9AA69E;transform:rotate(-45deg);',
+    'border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:rotate(-45deg);',
     'transition:transform var(--mls-base) var(--mls-spring)}',
     'body.mls-calm #profileCard .mls-fold.mls-open > .mls-fold-hd::after{transform:rotate(45deg)}',
     'body.mls-calm #profileCard .mls-fold:not(.mls-open) > .mls-fold-hd button{display:none!important}',
@@ -374,7 +374,7 @@
     '#mlsPrepRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:0 22px;margin:2px 0 6px}',
     '#mlsPrepRows .r{display:flex;align-items:baseline;gap:10px;padding:8px 0;min-width:0;',
     'border-bottom:1px solid rgba(0,0,0,.05)}',
-    '#mlsPrepRows .k{flex:0 0 88px;font:500 11px/1.4 inherit;letter-spacing:.4px;text-transform:uppercase;color:#8C978F}',
+    '#mlsPrepRows .k{flex:0 0 88px;font:500 11px/1.4 inherit;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}',
     /* Clamped to two lines. A prep summary is a glance, not a note: LAST VISIT
        carries a whole SOAP note and rendered a 313px wall of text in one row.
        The full value is on the title attribute, and the untouched raw block
@@ -473,7 +473,7 @@
        rule that a second !important never wins a specificity race. */
     '#mlsRightNow.empty{display:none}',
     '@keyframes mlsRise{to{opacity:1;transform:translateY(0)}}',
-    '#mlsRightNow .note{font-size:12.5px;color:#8C978F}',
+    '#mlsRightNow .note{font-size:12.5px;color:var(--muted)}',
     '#mlsRightNow .seg{display:inline-flex;padding:3px;border-radius:12px;background:rgba(0,0,0,.045);gap:2px;margin-right:6px}',
     '#mlsRightNow .seg .segbtn{border:0;background:transparent;color:#5B6B62;border-radius:10px;padding:6px 12px;',
     'font:500 12.5px inherit;cursor:pointer;opacity:1;transform:none;animation:none}',
@@ -482,7 +482,7 @@
 
     /* stages */
     '#mlsStages{display:flex;align-items:center;gap:0;margin:0 0 14px;padding:2px}',
-    '#mlsStages .st{display:flex;align-items:center;gap:7px;color:#9AA69E;font:500 12.5px inherit}',
+    '#mlsStages .st{display:flex;align-items:center;gap:7px;color:var(--muted);font:500 12.5px inherit}',
     '#mlsStages .st .dot{width:15px;height:15px;border-radius:50%;border:1.6px solid #D6DED9;background:#fff;',
     'transition:transform var(--mls-base) var(--mls-spring),background var(--mls-base) linear,border-color var(--mls-base) linear}',
     '#mlsStages .st.done .dot{background:#2E6A4B;border-color:#2E6A4B;transform:scale(1.05)}',

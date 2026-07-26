@@ -115,7 +115,7 @@
     // honest note when there are no real provider names yet (rows still provider:null until a re-pull)
     var anyStoredProv = (window.__mlsCalProvNames || []).length > 0;
     if(!anyStoredProv){
-      h += '<div style="color:#A6AEA6;font-size:11.5px;font-weight:500;line-height:1.35;margin-top:6px">'+
+      h += '<div style="color:var(--muted);font-size:11.5px;font-weight:500;line-height:1.35;margin-top:6px">'+
            'Real provider names appear after a fresh schedule re-pull from Athena.</div>';
     }
     h += '</div>';

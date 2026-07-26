@@ -673,14 +673,14 @@
       "#" + PANEL_ID + " .as-pinfo{flex:1;min-width:0;line-height:1.3;}",
       "#" + PANEL_ID + " .as-pnm{display:block;font-weight:700;font-size:13.5px;color:#1A211C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
       "#" + PANEL_ID + " .as-pmeta{display:block;color:#79837C;font-size:11.5px;margin-top:1px;}",
-      "#" + PANEL_ID + " .as-preason{display:block;color:#A6AEA6;font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
+      "#" + PANEL_ID + " .as-preason{display:block;color:var(--muted);font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
       "#" + PANEL_ID + " .as-pwb{display:block;font-size:10.5px;margin-top:3px;font-weight:700;}",
       "#" + PANEL_ID + " .as-pwb.yes{color:#2E6A4B;}",
       "#" + PANEL_ID + " .as-pwb.no{color:#c2410c;}",
-      "#" + PANEL_ID + " .as-pwb.notyet{color:#A6AEA6;}",
+      "#" + PANEL_ID + " .as-pwb.notyet{color:var(--muted);}",
       "#" + PANEL_ID + " .as-pgo{flex:0 0 auto;font-size:11px;font-weight:800;color:#2E6A4B;background:#EAF1EE;border-radius:7px;padding:5px 9px;}",
       "#" + PANEL_ID + " .as-pcard.is-active .as-pgo{color:#2E6A4B;background:#e7f5ee;}",
-      "#" + PANEL_ID + " .as-empty{padding:20px 14px;text-align:center;color:#A6AEA6;font-size:12.5px;",
+      "#" + PANEL_ID + " .as-empty{padding:20px 14px;text-align:center;color:var(--muted);font-size:12.5px;",
       "border:1px dashed #E7E5DD;border-radius:12px;background:#FCFBF8;}",
       /* chat */
       "#" + PANEL_ID + " .as-thread{padding:14px 16px;}",
@@ -697,7 +697,7 @@
       "#" + PANEL_ID + " .as-send{flex:0 0 auto;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;border:none;border-radius:10px;",
       "padding:0 16px;font:800 13px/1 'Plus Jakarta Sans';cursor:pointer;}",
       "#" + PANEL_ID + " .as-send:disabled{opacity:.5;cursor:default;}",
-      "#" + PANEL_ID + " .as-foot{padding:8px 16px 12px;font-size:10.5px;color:#A6AEA6;text-align:center;}"
+      "#" + PANEL_ID + " .as-foot{padding:8px 16px 12px;font-size:10.5px;color:var(--muted);text-align:center;}"
     ].join("");
     (document.head || document.documentElement).appendChild(s);
   }

@@ -233,7 +233,7 @@
           '<span style="flex:1;color:#55605A;font-size:13px;font-weight:600">' + nm + '</span></label>';
       }
     } else {
-      html = '<div style="color:#A6AEA6;font-size:12.5px;font-weight:500;margin-bottom:8px">All providers</div>';
+      html = '<div style="color:var(--muted);font-size:12.5px;font-weight:500;margin-bottom:8px">All providers</div>';
     }
     if (list && list.getAttribute("data-cx-h") !== html) { list.innerHTML = html; list.setAttribute("data-cx-h", html); }
     var slot = prov.querySelector(".cx-prov-slot");

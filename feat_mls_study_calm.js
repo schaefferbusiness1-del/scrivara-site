@@ -62,7 +62,7 @@
     }
     var t = document.createElement('button');
     t.type = 'button'; t.id = TOGGLE_ID;
-    t.innerHTML = '<span class="car">&#9656;</span> Manage named groups &amp; manual patient lists <span style="color:#A6AEA6;font-weight:500">(add by name/DOB or import a reviewed CSV/JSON file)</span>';
+    t.innerHTML = '<span class="car">&#9656;</span> Manage named groups &amp; manual patient lists <span style="color:var(--muted);font-weight:500">(add by name/DOB or import a reviewed CSV/JSON file)</span>';
     t.addEventListener('click', function () { document.body.classList.toggle('sg2-open'); });
     /* live INSIDE the advanced card - as a bare grid child the studio sx-grid
        stretched the lone toggle into a giant empty "card" cell */

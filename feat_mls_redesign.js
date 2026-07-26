@@ -73,7 +73,7 @@
   var CSS = [
 "/* ===== MLSscribe Editorial Calm reskin v3 ===== */",
 ":root{",
-"  --bg:#FBFAF7; --card:#ffffff; --ink:#1A211C; --muted:#68736B;",
+"  --bg:#FBFAF7; --card:#ffffff; --ink:#1A211C; --muted:#636E66;",
 "  --line:#E7E5DD; --brand:#2E6A4B; --brand-dk:#204034;",
 "  --green:#2E6A4B; --green-dk:#204034; --amber:#985F26;",
 "  --red:#B23B3B; --soft:#F4F2EC; --soft2:#F6FBF8;",
