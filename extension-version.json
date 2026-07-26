@@ -1,5 +1,5 @@
 {
-  "version": "3.0.21",
+  "version": "3.0.22",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.21 — schedule pulls now tell you when athenaOne's grid may be out of date, and a signed-out athenaOne is named plainly instead of reported as a timeout."
+  "notes": "v3.0.22 — every success message now traces to a real receipt: a write that wasn't confirmed can no longer show green, refusals name what refused, and pull coverage says honestly which providers it actually saw."
 }

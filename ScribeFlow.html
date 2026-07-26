@@ -4539,7 +4539,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <b>Already installed?</b> Updates are automatic — MLS refreshes MLS Assist on this computer when a new version ships, and the badge above tells you the moment you're up to date. If a pull ever looks stuck, open <code>chrome://extensions</code> and press <b>↻</b> on MLS Assist.
         </div>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.21.zip" download="MLS_Assist_v3.0.21.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.21 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.22.zip" download="MLS_Assist_v3.0.22.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.22 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -24276,7 +24276,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b691: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b692: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24411,7 +24411,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b691 — THE LOADING SCREEN MUST ALWAYS END.
+/* b692 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29116,7 +29116,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b691';
+  window.__MLS_AV='b692';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

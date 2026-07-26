@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "3.0.21",
-  "version_name": "3.0.21+core-sha256:736284f1a7ed0361eb9ff57b54781879686a53923dbd56de09e6310f78db6f32",
+  "version": "3.0.22",
+  "version_name": "3.0.22+core-sha256:9cd176b5f37d52ec837c6673287f849569b189775004c59430d83be4e89d193b",
   "description": "Clinician companion for MLS Scribe and athenaOne. Reads only when requested, drafts notes, and requires review.",
   "permissions": [
     "storage",
