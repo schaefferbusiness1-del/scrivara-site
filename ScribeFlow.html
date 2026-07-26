@@ -12718,22 +12718,75 @@ function _copilotSlash(raw){
 function _copilotSaveHist(){ try{ var keep=_copilotHistory.filter(function(m){return m.role!=='pending';}).slice(-30); localStorage.setItem(uns('copilotHist'), JSON.stringify(keep)); }catch(e){} }
 function _copilotLoadHist(){ try{ var raw=localStorage.getItem(uns('copilotHist')); if(raw){ var a=JSON.parse(raw); if(Array.isArray(a)) _copilotHistory=a; } }catch(e){} }
 function copilotReset(){ _copilotHistory=[]; try{ localStorage.removeItem(uns('copilotHist')); }catch(e){} _copilotRenderThread(); _copilotRenderChips(); var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); } }
-/* Voice input — dictate your question. Uses the browser's speech recognition;
-   its own instance so it never clashes with visit dictation. */
-var _copilotRecog=null, _copilotListening=false;
+/* Voice input — dictate your question into the Copilot box.
+   cvm-1.0.0 (2026-07-26, voice lane): this used to say "its own instance so it
+   never clashes with visit dictation", and construct a recognizer WITHOUT
+   registering it with mlsSpeechHub(). A second live recognizer IS the clash —
+   that claim is exactly what the one-recognizer truce exists to disprove.
+   Tapping this mic while a visit was recording put two recognizers on one
+   microphone, and neither knew about the other. It now claims the hub like every
+   other owner, starts only after the previous owner's recognizer has really
+   ended, and yields when someone else claims.
+   Its failures were also silent: onerror reset the button and said NOTHING, so a
+   blocked microphone looked identical to "no speech yet". Every failure now
+   names what happened and a route that exists. */
+var _copilotRecog=null, _copilotListening=false, _copilotMicRelease=null;
+function _copilotMicPaint(on){
+  var b=document.getElementById('copilotMicBtn'); if(!b) return;
+  if(on){ b.classList.add('mic-live'); b.textContent='⏹'; }
+  else { b.classList.remove('mic-live'); b.textContent='🎤'; }
+}
+function _copilotMicStop(){
+  var old=_copilotRecog;
+  _copilotListening=false; _copilotRecog=null;
+  try{ if(old) old.stop(); }catch(e){}
+  try{ mlsSpeechHub().release('copilot-card'); }catch(e){}
+  _copilotMicPaint(false);
+}
 function copilotMic(){
   var SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SRC){ try{ toast('Voice input isn’t supported in this browser.',''); }catch(e){} return; }
-  if(_copilotListening){ try{ _copilotRecog&&_copilotRecog.stop(); }catch(e){} return; }
-  try{
-    _copilotRecog=new SRC(); _copilotRecog.continuous=true; _copilotRecog.interimResults=true; _copilotRecog.lang='en-US';
-    var inp=document.getElementById('copilotInput'); var base=(inp&&inp.value)||'';
-    _copilotRecog.onresult=function(e){ var fin=''; for(var i=e.resultIndex;i<e.results.length;i++){ if(e.results[i].isFinal) fin+=e.results[i][0].transcript; } if(fin){ var x=document.getElementById('copilotInput'); if(x){ x.value=(base?base.replace(/\s*$/,'')+' ':'')+fin.trim(); base=x.value; _copilotAutogrow(x); } } };
-    _copilotRecog.onend=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
-    _copilotRecog.onerror=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
-    _copilotRecog.start(); _copilotListening=true; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.add('mic-live'); b.textContent='⏹'; }
-    try{ toast('Listening… tap the mic again to stop.','ok'); }catch(e){}
-  }catch(e){ try{ toast('Could not start voice input.','err'); }catch(_){} }
+  if(!SRC){ try{ toast('Voice input isn’t available in this browser. Type your question in the Copilot box instead.',''); }catch(e){} return; }
+  if(_copilotListening){ _copilotMicStop(); return; }
+  var hub;
+  try{ hub=mlsSpeechHub(); }catch(e){ hub=null; }
+  if(hub && !_copilotMicRelease){
+    _copilotMicRelease=hub.register('copilot-card','Copilot question mic',function(handoff){
+      var previous=_copilotRecog;
+      var stopNow=function(){ _copilotMicStop(); };
+      if(handoff&&handoff.pending){ stopNow(); return; }
+      if(previous&&typeof hub.waitForEnd==='function') return hub.waitForEnd(previous,stopNow);
+      stopNow();
+    });
+  }
+  var lease=hub?hub.claim('copilot-card'):{ok:true,previous:null};
+  if(!lease||lease.ok===false){ try{ toast('The microphone is busy. Try the Copilot mic again in a moment.','err'); }catch(e){} return; }
+  if(lease.previous){ try{ toast('Stopped '+lease.previous.label+' so the Copilot mic can listen. Anything already captured is safe.',''); }catch(e){} }
+  var instance;
+  try{ instance=new SRC(); }
+  catch(e){ try{ if(hub) hub.release('copilot-card'); }catch(_){} try{ toast('Could not start voice input. Type your question instead.','err'); }catch(_){} return; }
+  _copilotRecog=instance; instance.continuous=true; instance.interimResults=true; instance.lang='en-US';
+  var inp=document.getElementById('copilotInput'); var base=(inp&&inp.value)||'';
+  instance.onresult=function(e){ if(instance!==_copilotRecog) return; var fin=''; for(var i=e.resultIndex;i<e.results.length;i++){ if(e.results[i].isFinal) fin+=e.results[i][0].transcript; } if(fin){ var x=document.getElementById('copilotInput'); if(x){ x.value=(base?base.replace(/\s*$/,'')+' ':'')+fin.trim(); base=x.value; _copilotAutogrow(x); } } };
+  instance.onend=function(){ if(instance!==_copilotRecog) return; _copilotMicStop(); };
+  instance.onerror=function(ev){
+    if(instance!==_copilotRecog) return;
+    var err=(ev&&ev.error)||'';
+    if(err==='no-speech'){ return; }   /* normal; onend follows and says nothing false */
+    _copilotMicStop();
+    var msg=(err==='not-allowed'||err==='service-not-allowed')
+      ? 'Microphone access is blocked for this site. Allow it in your browser, then tap the mic again — or just type your question.'
+      : (err==='audio-capture'
+        ? 'No microphone was found. Check your input device, then tap the mic again — or just type your question.'
+        : 'Voice input stopped before it heard anything. Tap the mic again, or type your question.');
+    try{ toast(msg,'err'); }catch(e){}
+  };
+  var begin=function(){
+    if(instance!==_copilotRecog) return;
+    try{ instance.start(); _copilotListening=true; _copilotMicPaint(true); try{ toast('Listening… tap the mic again to stop.','ok'); }catch(e){} }
+    catch(e){ _copilotMicStop(); try{ toast('The microphone is still busy. Wait a moment, then tap the mic again.','err'); }catch(_){} }
+  };
+  if(lease&&typeof lease.whenReady==='function'){ if(!lease.whenReady(begin)) _copilotMicStop(); }
+  else begin();
 }
 function _copilotRenderChips(){
   var box=document.getElementById('copilotChips'); if(!box) return;
