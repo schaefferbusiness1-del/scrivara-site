@@ -140,4 +140,28 @@ assert.strictEqual(ids2.templatesModal.parentElement, ids2.oprPanelTpls, 'boot m
 assert.strictEqual(roomOpened2, 1, 'boot adoption must open the room around the modal');
 assert(ids2.oprPanelTpls.classList.contains('on'), 'boot adoption must front the Templates tab');
 
-console.log('PASS op-note room stage 3: Templates joins the room - reparent on first open, room auto-opens, tabs follow open/close, floating modal adopted at boot, satellites keep their node, clean revert - all proven in vm');
+/* ---- opr-1.5.0: a posture where the room REFUSES to open (the read-only
+ * preview workspace) must fall back to the classic floating modal - never a
+ * shown-but-invisible modal inside a closed room (the owner's silent no-op). */
+const ids3 = {};
+['opPrepModal', 'templatesModal', 'oprRowNav', 'oprTplRail', 'oprReceipt', 'opPrepList',
+  'oprPanelProcs', 'oprPanelTpls', 'oprTabProcs', 'oprTabTpls'].forEach(function (id) { ids3[id] = stubNode(id); });
+const BODY3 = stubNode('body');
+BODY3.appendChild(ids3.templatesModal);
+const ctx3 = { document: { getElementById: function (id) { return ids3[id] || null; }, visibilityState: 'hidden' }, console: console };
+ctx3.window = ctx3;
+ctx3.addEventListener = function () {}; ctx3.removeEventListener = function () {};
+ctx3.opPrepRender = function () {};
+ctx3.openTemplates = function () { ids3.templatesModal.classList.add('show'); };
+ctx3.closeTemplates = function () { ids3.templatesModal.classList.remove('show'); };
+ctx3.openOpPrepSmart = function () { /* the preview posture: the room REFUSES */ };
+ctx3._opPrep = []; ctx3.getTemplates = function () { return []; };
+vm.createContext(ctx3);
+vm.runInContext(room, ctx3, { filename: 'feat_mls_opnote_room.js' });
+ctx3.openTemplates();
+assert(ids3.templatesModal.classList.contains('show'), 'the modal must still SHOW when the room refuses');
+assert.strictEqual(ids3.templatesModal.parentElement, BODY3,
+  'a refusing room must hand the modal BACK to its floating home - shown-but-invisible is the silent no-op');
+assert(!ids3.oprPanelTpls.classList.contains('on'), 'no tab may front on a closed room');
+
+console.log('PASS op-note room stage 3: Templates joins the room - reparent on first open, room auto-opens, tabs follow open/close, floating modal adopted at boot, a refusing room falls back to the classic modal, satellites keep their node, clean revert - all proven in vm');

@@ -634,3 +634,24 @@ ALSO RECORDED: the 5s boot bar profile (BOOT_5S_PLAN_2026-07-27.md) — visible
 tab paints at 304ms but assembles for 118s; zero timing marks exist; plan =
 instrument → targeted deferral → eager-chain bundling if still over. Gate
 about to run.
+
+**b730 SHIPPED (2026-07-27 ~17:15).** Phone part 2 live (dock fits, burger gone,
+chrome demoted; one deliberate exemption added to shell-hidden-controls).
+
+## CLAIM b731 — goal-lane takeover session (2026-07-27 ~17:20)
+
+**Claimed by:** same session. **Scope:** Templates in the PREVIEW workspace
+(owner: clicking it in ?preview=1 silently no-ops). Live repro on a fresh
+preview tab: openTemplates fires, modal gets .show — but the b721 wrap embeds it
+into the workroom and openOpPrepSmart REFUSES to open there → shown-but-invisible
+inside a closed room. opr-1.5.0: the embed (both the wrap and the boot adoption)
+is conditional on the room ACTUALLY opening; a refusing room hands the modal back
+to its floating home and it presents classically. stage3 contract gains the
+refusing-room vm case. Live verify after deploy: preview reachability + normal
+room path + walk still 14/14. Gate about to run.
+
+**OWNER DECISION (2026-07-27 ~17:40, via relay): review gate STANDS.** Item 7
+("perfect write-back, all fields automatic") = fields fill automatically INSIDE
+the reviewed path; nothing writes to a real chart without his review+approve.
+Never flip to fully-automatic writes. The Adam-only live pass verifies the
+reviewed path fills everything it can.

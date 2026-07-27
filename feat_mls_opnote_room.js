@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.4.1';
+  var VERSION = 'opr-1.5.0';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -260,6 +260,22 @@
             else if (isFn(window.openOpPrep)) window.openOpPrep();
           });
         }
+        /* opr-1.5.0 (owner, sample preview): in postures where the room
+           REFUSES to open (the read-only preview workspace, or any future
+           gate), the embed left the modal shown-but-invisible inside a closed
+           room - a silent no-op dressed as a click. The embed is conditional
+           on the room actually opening: if it did not, the modal returns to
+           its original floating home and presents classically. */
+        if (!shown($('opPrepModal'))) {
+          safe(function () {
+            var tpl = $('templatesModal');
+            if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {
+              if (TPL_HOME.next && TPL_HOME.next.parentNode === TPL_HOME.parent) TPL_HOME.parent.insertBefore(tpl, TPL_HOME.next);
+              else TPL_HOME.parent.appendChild(tpl);
+            }
+          });
+          return o.apply(this, arguments);
+        }
         var r = o.apply(this, arguments);
         showTab('tpls');
         return r;
@@ -317,7 +333,17 @@
         if (isFn(window.openOpPrepSmart)) window.openOpPrepSmart();
         else if (isFn(window.openOpPrep)) window.openOpPrep();
       }
-      showTab('tpls');
+      /* opr-1.5.0: adoption is conditional on the room actually opening —
+         in a posture where it refuses (the preview workspace), embedding
+         would turn a VISIBLE floating modal into an invisible one. */
+      if (shown($('opPrepModal'))) { showTab('tpls'); }
+      else {
+        var tpl = $('templatesModal');
+        if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {
+          if (TPL_HOME.next && TPL_HOME.next.parentNode === TPL_HOME.parent) TPL_HOME.parent.insertBefore(tpl, TPL_HOME.next);
+          else TPL_HOME.parent.appendChild(tpl);
+        }
+      }
     });
   }
 
