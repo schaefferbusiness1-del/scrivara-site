@@ -873,6 +873,14 @@
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
   #opPrepModal.opr-room{ padding:0; }
+  /* b736 (motion pass): the room ARRIVES instead of snapping — entrance on the
+     shared tokens, transform/opacity only; the Templates panel swap crossfades
+     on dur-2. Both silent under prefers-reduced-motion. */
+  #opPrepModal.opr-room.show .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
+  #oprPanelTpls.on{ animation:mlsLoadIn var(--mls-dur-2) var(--mls-ease-out); }
+  @media (prefers-reduced-motion: reduce){
+    #opPrepModal.opr-room.show .modal, #oprPanelTpls.on{ animation:none; }
+  }
   #opPrepModal.opr-room .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }

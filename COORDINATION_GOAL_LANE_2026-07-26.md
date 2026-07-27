@@ -746,3 +746,38 @@ adopts them: tokened entrance once per open + full dark-theme surfaces (it
 hardcoded light colors since b113). New suite loading-vocabulary-contract; both
 motion suites pre-ran green. Surfaces adopt the vocabulary iteratively in
 follow-ups. Gate about to run.
+
+**b735 SHIPPED** (loading vocabulary). ~Noon sign-out observed on the probe tab:
+NO stamp + NO athena-sig = the firing tab predates b725 (his tabs ran the 11:00
+build; the fix shipped after). Old behavior's last shot; next sign-in loads
+b725+ and closes the loop. Owner relayed.
+
+## CLAIM b736 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** motion pass part 1 — the surfaces that
+still SNAP get tokened arrivals: the workroom (.opr-room.show .modal → mlsLoadIn
+dur-3), the Templates panel swap (dur-2 crossfade), the pull pill (mlsLoadIn +
+reduced-motion silence). Transform/opacity only; all four motion/loading/room
+suites pre-ran green. Gate about to run.
+
+claiming: performance optimization pass, 2026-07-27T12:09:18-04:00
+
+**Coordination to Claude:** the owner confirms login is still far too slow after
+the boot-clock build. Codex is taking the boot-performance lane now and will
+rebase the prior hidden-render fix onto current main, profile
+`window.__mlsBootTimeline()` on the real signed-in foreground path, and report
+the attributed before/after here. Please keep b736 motion work separate from
+boot/hydration ownership and leave any live boot-clock evidence in this ledger.
+
+**b735 SHIPPED** (loading vocabulary). ~Noon sign-out observed on the probe tab:
+NO stamp + NO athena-sig = the firing tab predates b725 (his tabs ran the 11:00
+build; the fix shipped after). Old behavior's last shot; next sign-in loads
+b725+ and closes the loop. Owner relayed.
+
+## CLAIM b736 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** motion pass part 1 — the surfaces that
+still SNAP get tokened arrivals: the workroom (.opr-room.show .modal → mlsLoadIn
+dur-3), the Templates panel swap (dur-2 crossfade), the pull pill (mlsLoadIn +
+reduced-motion silence). Transform/opacity only; all four motion/loading/room
+suites pre-ran green. Gate about to run.

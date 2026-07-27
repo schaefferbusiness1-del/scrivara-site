@@ -4484,7 +4484,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'body.theme-dark #' + PANEL + ' .pp-track{background:var(--soft,#1F2721);border-color:var(--line,#2B342D)}',
       'body.theme-dark #' + PANEL + ' .pp-cur, body.theme-dark #' + PANEL + ' .pp-rows, body.theme-dark #' + PANEL + ' .pp-row{background:var(--soft2,#1A211B);border-color:var(--line,#2B342D);color:var(--ink,#EAEFEA)}',
       'body.theme-dark #' + PANEL + ' .pp-btn{background:var(--card,#1C231E);color:var(--ink,#EAEFEA);border-color:var(--line,#2B342D)}',
-      '#' + FAB + '{position:fixed;left:14px;bottom:150px;z-index:100000;background:#2E6A4B;color:#fff;border:0;border-radius:999px;padding:10px 15px;font:800 12.5px system-ui;box-shadow:0 8px 22px rgba(32,64,52,.45);cursor:pointer}'
+      '#' + FAB + '{position:fixed;left:14px;bottom:150px;z-index:100000;background:#2E6A4B;color:#fff;border:0;border-radius:999px;padding:10px 15px;font:800 12.5px system-ui;box-shadow:0 8px 22px rgba(32,64,52,.45);cursor:pointer;animation:mlsLoadIn var(--mls-dur-3,300ms) var(--mls-ease-out,ease-out)}',
+      '@media (prefers-reduced-motion: reduce){#' + FAB + '{animation:none}}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
