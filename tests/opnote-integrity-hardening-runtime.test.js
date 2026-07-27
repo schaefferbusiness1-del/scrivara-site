@@ -181,7 +181,9 @@ async function main() {
   assert(context.__mlsOpNoteTplAdapted && context.__mlsOpNoteTplAdapted.hard === true, 'cross-procedure adaptation was not recorded for the UI');
   assert(scribeFlow.includes("ctx.templateId=String(row.tplId||'')"), 'production UI does not pass selected template identity into generation');
   assert(/ctx\.providerId=String\(appt\.providerId\)/.test(scribeFlow) && /ctx\.facilityId=String\(appt\.facilityId\)/.test(scribeFlow), 'production UI does not pass appointment provider/facility scope into generation');
-  assert(scribeFlow.includes('every remaining case-specific item') && scribeFlow.includes('one <b>Fields</b> box'), 'op-note intro still describes the retired one-at-a-time blank workflow');
+  /* b722: the rail note became one sentence; the pin follows the words while
+     keeping the intent - the intro must teach the ONE-Fields-box workflow. */
+  assert(scribeFlow.includes('gathers every missing detail into one <b>Fields</b> box'), 'op-note intro still describes the retired one-at-a-time blank workflow');
 
   console.log('PASS op-note integrity hardening: repeated PHI scrub, contradictory binding rejection, selected-template identity, generic ESI, short literals, and UI scope');
 }

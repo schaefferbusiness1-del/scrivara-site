@@ -1357,7 +1357,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b721) ----
+  /* ---- Copilot calm polish (b722) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -4849,7 +4849,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <section id="oprPanelProcs">
       <aside id="oprDayRail">
-        <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. Known Settings and saved defaults fill first; every remaining case-specific item (needle size, doses…) appears together in one <b>Fields</b> box above the note. Each draft auto-saves to History; press 💾 to finalize.</p>
+        <p class="note">Pick <b>This patient</b> or a whole day — MLS drafts each procedure from your templates, gathers every missing detail into one <b>Fields</b> box, and auto-saves as you work.</p>
         <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
           <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
           <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
@@ -4871,9 +4871,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
         </div>
         <div id="oprReceipt" class="mini" style="display:none" aria-live="polite"></div>
-        <div id="opPrepEmpty" class="mini" style="color:var(--muted);display:none">No patients on tomorrow’s schedule yet. Pull tomorrow’s schedule from Athena first (📥 on the Visit tab), or book appointments on the Calendar.</div>
+        <div id="opPrepEmpty" class="mini" style="color:var(--muted);display:none">No patients on this day yet — pull the day from Athena (📥 on the Visit tab) or book them on the Calendar.</div>
         <div id="opPrepList"></div>
-        <div class="row" style="margin-top:14px"><button class="btn-ghost" onclick="closeOpPrep()" style="flex:1">Close</button></div>
       </main>
     </section>
     <!-- Stage 3: the Templates tab's panel. #templatesModal reparents WHOLE into
@@ -12779,7 +12778,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b721: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b722: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14636,7 +14635,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b721 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b722 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -14782,10 +14781,10 @@ function opPrepRender(){
     var _dl=document.getElementById('opPrepDayLbl'); if(_dl) _dl.textContent=window._opPrepDay?_opDayStr(window._opPrepDay):'';
   }catch(e){}
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
-  if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b>. Pick a different day above, or pull that day’s schedule from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; return; }
+  if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b> — pick a different day, or pull it from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
   try{ dedupeSavedTemplates(); }catch(e){}   // keep the template list clean — no duplicates in the dropdown
-  if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates first (📄 Templates) — then draft op notes here. The templates are what MLS adapts into each patient’s report.</div>'; return; }
+  if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; return; }
   var tplOpts=function(sel){ return '<option value="">— pick a template —</option>'+getTemplates().map(function(t){ return '<option value="'+t.id+'"'+(t.id===sel?' selected':'')+'>'+esc(t.name||'Template')+'</option>'; }).join(''); };
   box.innerHTML=rows.map(function(row,i){
     var a=row.appt;
@@ -16377,7 +16376,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b721 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b722 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -24810,7 +24809,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b721: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b722: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24945,7 +24944,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b721 — THE LOADING SCREEN MUST ALWAYS END.
+/* b722 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29666,7 +29665,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b721';
+  window.__MLS_AV='b722';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

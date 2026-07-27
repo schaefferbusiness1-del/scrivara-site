@@ -426,3 +426,26 @@ New suite opnote-room-stage3-contract (vm: reparent, room auto-open, tab follow,
 revert restores parent+functions); stage2 pins version-agnostic. Manifest
 regenerated. Files: ScribeFlow.html, feat_mls_opnote_room.js, mls-connect.js,
 tests. Gate about to run; commit only on exit 0.
+
+**b721 SHIPPED and live-verified (2026-07-27 ~07:20)** — Templates lives in the
+room on the live page: openTemplates from outside → room opens, modal embedded
+(2215×1267 inside #oprPanelTpls), tab fronted, form ids reachable, tpf health
+panel AND stdline section traveled with the node; close → Procedures returns,
+room survives; room close clean; embed persists across cycles. One instrument
+lesson re-learned: #mlsPtfBox is NOT stdline's section (#mls-stdline-section is,
+and it was there all along). Claim closed. Next claim: b722 = Stage 4
+(presentation retirement: one-sentence empty states, single exit, injection-point
+contract, walkthrough doc).
+
+## CLAIM b722 — goal-lane takeover session (2026-07-27 ~07:35)
+
+**Claimed by:** same session. **Scope:** Workroom Stage 4 — presentation
+retirement, nothing deleted. One-sentence empty states (rail note, static +
+dynamic empties, no-templates now points at the in-room Templates tab), ONE exit
+(bottom Close row retired; modal-x + Esc remain), OPNOTE_ROOM_WALKTHROUGH.md
+(≤6 steps, committed), and the blueprint's injection-point contract:
+opnote-room-keeps-every-injection-point pins BOTH halves of every satellite seam
+by name (container attrs, note-slot, template select + badge slot, GenAll .row,
+mode/day rail, status/empty/list/preview). Manifest regenerated (1299→1298).
+Dead blank-walker code (_opBlanksHtml etc.) NOT touched — spun off per plan.
+Gate about to run; commit only on exit 0.
