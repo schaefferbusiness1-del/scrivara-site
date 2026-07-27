@@ -1326,7 +1326,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b716) ----
+  /* ---- Copilot calm polish (b717) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -12739,7 +12739,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b716: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b717: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14588,14 +14588,21 @@ function _opPatientCtx(name,dob,patientId){
     return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000), provider:String(provider||''), providerName:String(provider||''), providerNpi:String(typeof getNpi==='function'?getNpi():''), providerCredentials:String(typeof getProviderCred==='function'?getProviderCred():''), practice:String(typeof getPracticeName==='function'?getPracticeName():''), facility:String(facility||''), facilityName:String(facility||'') };
   }catch(e){ return {}; }
 }
-function _opNewRow(name, reason, dob, dateStr, patientId, scope){
+function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
   var rank=_opRankTemplates(reason||'');
   scope=scope||{};
-  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||''), providerId:String(scope.providerId||scope.provider_id||''), providerName:String(scope.providerName||scope.provider_name||scope.provider||''), facilityId:String(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:String(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||''), providerId:String(scope.providerId||scope.provider_id||''), providerName:String(scope.providerName||scope.provider_name||scope.provider||''), facilityId:String(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:String(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:(reason||''), dateStr:(dateStr||''), dateKey:String(dateKey||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
+/* b717 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+   for the row's procedure day, or '' when the day is unknown, so a dangling
+   separator can never render. Readers stay safe by construction: draft-resume
+   matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
+   the history de-dup strips only the leading "name — ", and the PDF label
+   takes the first "—" segment. */
+function _opCcDate(row){ try{ var k=row&&row.dateKey; if(!k) return ''; var d=new Date(k+'T12:00'); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})+' — '; }catch(e){ return ''; } }
 function _opApptsForDay(key){
   try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
     .map(function(a){ return {patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||''), name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at), providerId:String(a.providerId||a.provider_id||''), providerName:String(a.providerName||a.provider_name||a.provider||''), facilityId:String(a.facilityId||a.facility_id||a.departmentId||a.department_id||''), facilityName:String(a.facilityName||a.facility_name||a.departmentName||a.department_name||a.location||'')}; })
@@ -14605,7 +14612,7 @@ function openOpPrep(dayKey){
   window._opPrepMode='all';
   if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
   window._opPrepDay=dayKey;
-  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId, a); });
+  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId, a, dayKey); });
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 /* Re-load the all-patients list for a different day without closing the modal. */
@@ -14624,7 +14631,7 @@ function openOpPrepForPatient(pid){
     if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||'';
   }catch(e){}
   window._opPrepMode='patient'; window._opPrepPatientId=p.id; window._opPrepPatientName=p.name;
-  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date(_acctTodayKey()+'T12:00')).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id) ];
+  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date(_acctTodayKey()+'T12:00')).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id, null, _acctTodayKey()) ];
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
@@ -14864,8 +14871,8 @@ function opPrepAutosaveDraft(i){
     var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
     if(!p){ try{ toast('Draft not saved: exact patient identity could not be verified.','err'); }catch(e){} return false; }
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
-    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
+    if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){} return true;
   }catch(e){ return false; }
 }
@@ -14985,7 +14992,7 @@ function opPrepSave(i){
   var __opSaved=false;
   try{
     var ns=getNotes();
-    var cc=p.name+' — '+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
+    var cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
     var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;   // finalize the SAME draft we auto-saved (no duplicate)
     if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete }; ns.unshift(n); row._noteId=n.id; }
@@ -16329,11 +16336,13 @@ function renderHistory(){
     /* b392: LLM filler phrases used to become row titles verbatim. */
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
-    /* op-note autosaves store cc as "<patient> — <procedure> (op-note draft)"
-       (the STORED format other readers and draft-resume match on); this row
-       already leads with the patient name, so the prefix rendered doubled:
-       "Bernard P Brooks — Bernard P Brooks — B/L L5 TF ESI P". Display-only
-       de-dup — the stored cc is untouched. */
+    /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
+       draft)" (b717 owner-approved auto-name; the date segment is '' for rows
+       whose procedure day is unknown). Draft-resume matches by procedure
+       CONTAINMENT so both formats adopt. This row already leads with the
+       patient name, so the prefix rendered doubled: "Bernard P Brooks —
+       Bernard P Brooks — B/L L5 TF ESI P". Display-only de-dup — the stored
+       cc is untouched. */
     const _pnDedup = _pname(n);
     if(_pnDedup && _ccRaw.lastIndexOf(_pnDedup+' — ', 0)===0) _ccRaw=_ccRaw.slice((_pnDedup+' — ').length);
     const cc = esc(_ccRaw);
@@ -24761,7 +24770,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b716: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b717: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24896,7 +24905,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b716 — THE LOADING SCREEN MUST ALWAYS END.
+/* b717 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29617,7 +29626,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b716';
+  window.__MLS_AV='b717';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

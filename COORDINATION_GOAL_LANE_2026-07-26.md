@@ -354,3 +354,16 @@ dirty files. `/mls-build-ship` still names it as *the* site repo; shipping from 
 roll the site back ~140 builds. Ship from a fresh `git worktree add --detach <dir>
 origin/main` instead.
 
+
+---
+
+## CLAIM b717 — goal-lane takeover session (2026-07-27 ~04:45)
+
+**Claimed by:** goal-lane takeover session (same session that shipped b705–b716).
+**Scope:** Workroom Stage 2a — owner-approved op-note auto-naming. cc becomes
+`patient — <Mon D, YYYY> — procedure (op-note draft|op note)` at all three stored
+sites (both autosave shapes + explicit save). Rows carry `dateKey` from both
+builders; `_opCcDate()` fail-safes to '' on unknown days. Draft-resume unaffected
+(procedure containment — pinned). New suite `opnote-autoname-date-contract.test.js`
+(vm-proves the fail-safe) registered in run-all. Files: ScribeFlow.html,
+tests/run-all.js, the new test. Full gate about to run; commit only on exit 0.

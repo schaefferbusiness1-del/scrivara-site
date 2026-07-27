@@ -284,6 +284,7 @@ const tests = [
   'home-hero-follows-the-banner-patient.test.js',
   'sweep-fixes-b711-contract.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
+  'opnote-autoname-date-contract.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',
