@@ -295,6 +295,7 @@ const tests = [
   'phone-has-a-transcript-and-a-way-on.test.js',
   'ai-audit-safety-fixes-contract.test.js',
   'loading-vocabulary-contract.test.js',
+  'late-surfaces-stay-deferred.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',
