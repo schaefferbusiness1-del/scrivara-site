@@ -128,4 +128,3 @@ dirty files. `/mls-build-ship` still names it as *the* site repo; shipping from 
 roll the site back ~140 builds. Ship from a fresh `git worktree add --detach <dir>
 origin/main` instead.
 
-**CLAIM (goal lane): claiming next build, MLS Assistant leaves the voice trio, gating now**
