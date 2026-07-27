@@ -29,8 +29,7 @@ const TRANCHE = [
   'feat_mls_patient_merge.js',
   'feat_mls_calbox_uniform.js',
   'feat_mls_avs_label_unify.js',
-  'feat_mls_lastseen_unify.js',
-  'feat_mls_lastseen_rows.js'
+  'feat_mls_lastseen_unify.js'
 ];
 
 for (const name of TRANCHE) {
@@ -44,4 +43,10 @@ for (const name of TRANCHE) {
     name + ' loads with async=false - it re-serializes the main thread it was moved off of');
 }
 
-console.log('PASS late surfaces stay deferred: all 16 tranche modules load idle+async, none re-entered the eager sign-in chain');
+/* Patient rows now emit the exact final last-seen label themselves. Keeping
+ * the old observer out of the loader is stronger than merely deferring it:
+ * no whole-document observer or detached-row retention can return. */
+assert(!connect.includes('data-mls-asset="feat_mls_lastseen_rows.js"'),
+  'retired last-seen row observer returned to the production loader');
+
+console.log('PASS late surfaces stay deferred: 15 tranche modules load idle+async and the retired row observer remains absent');

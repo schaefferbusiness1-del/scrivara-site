@@ -11469,7 +11469,7 @@ function showView(v){
   if(v==='calendar' && typeof loadCalendar==='function') loadCalendar();
   if(v==='studio' && typeof renderStudio==='function') renderStudio();
   renderPatientBar();
-  updateNavCounts();
+  if(v!=='patients') updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); try{ if(typeof hideClinicalForReceptionist==='function') hideClinicalForReceptionist(); }catch(e){} }
   if(v==='history'){
     renderHistory();
@@ -13703,7 +13703,6 @@ function _copilotNavigate(raw, label){
     var sort=document.getElementById('ptSort'); if(sort) sort.value=topPatients?'visits':'name';
   }
   showView(v);
-  if(v==='patients'&&typeof renderPatients==='function') renderPatients();
   if(topPatients){ try{ toast('Patients are ranked by visit count.','ok'); }catch(e){} }
   return true;
 }
@@ -14021,18 +14020,48 @@ function renderPatients(){
     shown.forEach(function(p){ var g=_ptGroupKey(p,_ptMode); (groups[g]=groups[g]||[]).push(p); });
     var keys=Object.keys(groups).sort(_ptGroupSort(_ptMode));
     var ghtml='';
-    keys.forEach(function(g){ ghtml+='<div class="pt-group-hdr">'+esc(g)+' <span style="color:var(--muted);font-weight:600">('+groups[g].length+')</span></div>'; ghtml+=groups[g].map(function(p){ return _ptItemHtml(p,activeId); }).join(''); });
-    if(list._mlsSig!==ghtml+capNote||!list.childElementCount){ list.innerHTML=ghtml + capNote; list._mlsSig=ghtml+capNote; }
+    keys.forEach(function(g){ ghtml+='<div class="pt-group-hdr">'+esc(g)+' <span style="color:var(--muted);font-weight:600">('+groups[g].length+')</span></div>'; ghtml+=groups[g].map(function(p){ return _ptItemHtml(p,''); }).join(''); });
+    var _pg=ghtml+capNote, _pgRebuilt=false;
+    if(list._mlsSig!==_pg||!list.childElementCount){ list.innerHTML=_pg; list._mlsSig=_pg; _pgRebuilt=true; }
+    _ptPatchActive(list,activeId,_pgRebuilt);
   } else {
-    var _ph=shown.map(function(p){ return _ptItemHtml(p,activeId); }).join('') + capNote;
-    if(list._mlsSig!==_ph||!list.childElementCount){ list.innerHTML=_ph; list._mlsSig=_ph; }
+    var _ph=shown.map(function(p){ return _ptItemHtml(p,''); }).join('') + capNote, _phRebuilt=false;
+    if(list._mlsSig!==_ph||!list.childElementCount){ list.innerHTML=_ph; list._mlsSig=_ph; _phRebuilt=true; }
+    _ptPatchActive(list,activeId,_phRebuilt);
   }
+}
+function _ptPatchActive(list, activeId, force){
+  if(!list) return;
+  var nextId=String(activeId||'');
+  if(!force && String(list._mlsActiveId||'')===nextId) return;
+  var rows=list.querySelectorAll('.pt-item[data-patient-id]');
+  for(var i=0;i<rows.length;i++){
+    var row=rows[i], on=!!nextId&&String(row.getAttribute('data-patient-id')||'')===nextId;
+    if(row.classList.contains('active')!==on) row.classList.toggle('active',on);
+    var title=row.querySelector('.t'), badge=title&&title.querySelector('.pt-active-badge');
+    if(on&&!badge&&title){
+      badge=document.createElement('span');
+      badge.className='pt-active-badge';
+      badge.style.cssText='font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px';
+      badge.textContent='ACTIVE';
+      title.appendChild(badge);
+    }else if(!on&&badge){ badge.remove(); }
+  }
+  list._mlsActiveId=nextId;
+}
+function _ptLastSeenText(note){
+  var d=new Date((note&&note.updated)||(note&&note.created));
+  var raw=d.toLocaleDateString();
+  var m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+  if(!m) return 'Seen '+raw;
+  var canonical=new Date(+m[3],+m[1]-1,+m[2]).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  return 'last seen '+canonical;
 }
 function _ptItemHtml(p, activeId){
   const notes=patientNotes(p.id);
   const docs=(p.docs||[]).length;
   let lastTxt='New patient';
-  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); lastTxt='Seen '+new Date(notes[0].updated||notes[0].created).toLocaleDateString(); }
+  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); lastTxt=_ptLastSeenText(notes[0]); }
   const isActive=p.id===activeId;
   const demo=[p.sex, p.dob, (p.mrn?('#'+p.mrn):'')].filter(Boolean).join(' · ');
   // Clinical context: top problem from the (pulled) chart, else the scheduled reason.
@@ -14044,10 +14073,10 @@ function _ptItemHtml(p, activeId){
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(notes.length) chips+='<span style="'+chip+'">'+notes.length+' note'+(notes.length===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
-  return `<div class="pt-item ${isActive?'active':''}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
+  return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
       <div class="pt-avatar"${p.photo?` style="background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent"`:''}>${p.photo?'':esc(ptInitials(p.name))}</div>
       <div class="pt-main" style="min-width:0">
-        <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
+        <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span class="pt-active-badge" style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
         ${demo?`<div class="s" style="margin-top:1px">${esc(demo)}</div>`:''}
         ${ctx?`<div style="margin-top:3px;font-size:12px;color:#204034;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">🩺 ${esc(ctx)}</div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>
@@ -14058,7 +14087,7 @@ function _ptItemHtml(p, activeId){
       </div>
     </div>`;
 }
-function ptQuickVisit(id){ try{ setActivePtId(id); renderProfile(); renderPatients(); renderPatientBar(); updateNavCounts(); if(typeof goNewVisitForPatient==='function') goNewVisitForPatient(); }catch(e){} }
+function ptQuickVisit(id){ try{ setActivePtId(id); renderProfile(); renderPatients(); renderPatientBar(); if(typeof goNewVisitForPatient==='function') goNewVisitForPatient(); }catch(e){} }
 var PROC_MAP={ '64483':'Epidural injection (TFESI)','64484':'Epidural injection (TFESI)','62321':'Epidural injection (ILESI)','62322':'Epidural injection (ILESI)','62323':'Epidural injection (ILESI)','62311':'Epidural injection','64490':'Facet joint injection','64491':'Facet joint injection','64492':'Facet joint injection','64493':'Facet joint injection','64494':'Facet joint injection','64495':'Facet joint injection','64633':'Radiofrequency ablation','64634':'Radiofrequency ablation','64635':'Radiofrequency ablation','64636':'Radiofrequency ablation','20610':'Joint injection (major)','20611':'Joint injection (major)','20605':'Joint injection (intermediate)','20600':'Joint injection (small)','27096':'Sacroiliac joint injection','64451':'Sacroiliac nerve injection','20552':'Trigger point injection','20553':'Trigger point injection','64405':'Occipital nerve block','64640':'Nerve block / ablation','63650':'Spinal cord stimulator trial','63685':'Spinal cord stimulator implant','62380':'Endoscopic decompression' };
 function _ptProcedure(p){
   try{
@@ -14081,7 +14110,7 @@ function selectPatient(id){
   if(!id) return;
   _athenaResetSuperbill(true);
   setActivePtId(id);
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
 }
 /* Always OPEN a patient (never toggle off) — for "open patient X" intents from Copilot,
    AI Studio widgets, and the calendar, where deselecting on a re-click would be surprising. */
@@ -14089,18 +14118,18 @@ function openPatient(id){
   if(!id) return;
   _athenaResetSuperbill(true);
   setActivePtId(id);
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
 }
 function deselectPatient(){
   _athenaResetSuperbill(true);
   setActivePtId('');
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
   toast('No patient selected. Visits will be unassigned.','');
 }
 function goNewUnassignedVisit(){
   // Start a fresh visit with no patient attached — saves to History as an unassigned note.
   setActivePtId('');
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
   showView('visit');
   newVisit();
 }
@@ -14114,7 +14143,7 @@ async function deletePatient(id){
   notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; changed=true; } });
   if(changed) saveNotes(notes);
   if(getActivePtId()===id) setActivePtId('');
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
   toast('Patient deleted.','');
 }
 
@@ -14188,7 +14217,7 @@ function savePatient(){
   setActivePtId(p.id);
   closePatientModal();
   const _sb=document.getElementById('ptSearch'); if(_sb) _sb.value=''; // clear filter so the new patient is visible
-  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  renderPatients(); renderProfile(); renderPatientBar();
   toast('Patient saved and set active.','ok');
 }
 
@@ -17835,7 +17864,7 @@ function _heroPickPatient(i){
     if(!dob&&rec.dob) dob=String(rec.dob);
     if(dob&&!rec.dob){rec.dob=dob;if(typeof upsertPatient==='function')upsertPatient(rec);}
     setActivePtId(rec.id);
-    try{if(typeof renderProfile==='function')renderProfile();}catch(_){} try{if(typeof renderPatientBar==='function')renderPatientBar();}catch(_){} try{if(typeof renderPatients==='function')renderPatients();}catch(_){} try{if(typeof updateNavCounts==='function')updateNavCounts();}catch(_){}
+    try{if(typeof renderProfile==='function')renderProfile();}catch(_){} try{if(typeof renderPatientBar==='function')renderPatientBar();}catch(_){} try{if(typeof renderPatients==='function')renderPatients();}catch(_){}
     // Only repaint after the canonical chart binding has succeeded.
     window._heroSelIdx=i; window._heroWinOff=0;
     var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
@@ -22245,7 +22274,7 @@ function exitIntake(){
     const v=document.getElementById('intakeView'); if(v) v.style.display='none';
     const app=document.getElementById('appScreen'); if(app) app.style.display='block';
     resetIntakeForm(); // never leave a patient's answers on screen
-    try{ renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts(); }catch(e){}
+    try{ renderPatients(); renderProfile(); renderPatientBar(); }catch(e){}
   };
   pwEl.focus();
 }

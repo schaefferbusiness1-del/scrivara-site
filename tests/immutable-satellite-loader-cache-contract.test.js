@@ -23,6 +23,7 @@ const assets = [
   ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260722pp1c5', '20260702pp1c1'],
+  ['feat_mls_recentpts.js', '20260727rp210', '20260722rp3'],
   ['feat_mls_redesign.js', '20260726rd327', '20260726rd326'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260719sg2e', '20260713sg2d'],

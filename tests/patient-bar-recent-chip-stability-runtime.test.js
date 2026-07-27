@@ -15,7 +15,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_recentpts.js'), 'utf8');
 
-assert(source.includes("var VERSION='rp-2.0.0'"), 'recent-chip stability version missing');
+assert(source.includes("var VERSION='rp-2.1.0'"), 'recent-chip indexed/event-driven version missing');
 assert(source.includes('min-width:118px'), 'chip wrapper must reserve stable width');
 assert(source.includes('min-width:112px'), 'chip button must reserve stable width');
 assert(source.includes('font-variant-numeric:tabular-nums'), 'count digits must not change button width');
@@ -25,8 +25,8 @@ assert(!/if\(!loc\|\|!others\.length\)/.test(source), 'retired remove-on-empty b
 for (const bundle of ['mls-connect.js', 'mls-connect.staging.js']) {
   const connect = fs.readFileSync(path.join(root, bundle), 'utf8');
   assert(connect.includes('feat_mls_recentpts.js'), `${bundle} must load the recent chip`);
-  assert(connect.includes('?v=20260722rp3'), `${bundle} must cache-bust the rp-2.0.0 stability release`);
-  assert(!connect.includes('?v=20260714rp2'), `${bundle} still pins the pre-stability chip`);
+  assert(connect.includes('?v=20260727rp210'), `${bundle} must cache-bust the rp-2.1.0 performance release`);
+  assert(!connect.includes('?v=20260722rp3'), `${bundle} still pins the repeated-scan chip`);
 }
 
 /* ---- runtime: hand-rolled DOM, no jsdom (repo convention) ---- */
@@ -126,6 +126,8 @@ const documentFake = {
 const store = new Map();
 store.set('mls_recent_pts_v1', JSON.stringify(['P1', 'P2']));
 
+let patientReads = 0;
+const windowListeners = {};
 const context = {
   console,
   localStorage: {
@@ -139,10 +141,12 @@ const context = {
   setTimeout: fn => { fn(); return 1; },
   setInterval: () => 1,
   clearInterval: () => {},
+  addEventListener: (name, fn) => { windowListeners[name] = fn; },
+  removeEventListener: (name, fn) => { if (windowListeners[name] === fn) delete windowListeners[name]; },
   patientsData: [],
 };
 context.window = context;
-context.getPatients = () => context.patientsData;
+context.getPatients = () => { patientReads++; return context.patientsData; };
 context.getActivePtId = () => 'P1';
 vm.createContext(context);
 vm.runInContext(source, context);
@@ -164,7 +168,9 @@ context.patientsData = [
   { id: 'P1', name: 'Alpha Test', dob: '1980-01-01' },
   { id: 'P2', name: 'Beta Test', dob: '1981-02-02' },
 ];
+patientReads = 0;
 api.rerender();
+assert.strictEqual(patientReads, 1, 'six recent IDs must share one patient index per render');
 assert(wrap().innerHTML.includes('Recent (1)'), 'hydrated chip must show the committed count');
 assert(!wrap().innerHTML.includes('disabled'), 'hydrated chip with recents must be enabled');
 
@@ -192,5 +198,8 @@ for (let i = 0; i < 25; i++) {
   assert(wrap(), `chip unmounted on churn iteration ${i}`);
 }
 assert.strictEqual(removedWrapCount, 0, 'refresh churn unmounted the chip');
+assert.strictEqual(typeof windowListeners['mls:active-patient-changed'], 'function',
+  'recent charts still poll instead of subscribing to the canonical patient event');
+assert(!source.includes('setInterval(tick,1500)'), 'recent charts still poll active patient every 1.5 seconds');
 
 console.log('PASS recent chip stays mounted with stable width through hydration, refresh churn, and zero-recent states');
