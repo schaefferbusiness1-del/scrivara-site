@@ -281,6 +281,7 @@ const tests = [
   'calendar-list-keeps-its-exit.test.js',
   'copilot-panel-calm-contract.test.js',
   'opnote-graded-against-what-model-saw.test.js',
+  'home-hero-follows-the-banner-patient.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',
