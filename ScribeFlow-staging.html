@@ -23656,7 +23656,11 @@ function _ptGroupSort(mode){
       'body.'+BODY_CLS+' #patientBar{display:none!important;}'
       +'#'+BAR_ID+'{display:none;align-items:center;gap:12px;flex-wrap:nowrap;margin:8px auto 0;max-width:1180px;'
       +'padding:8px 14px;border-radius:16px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);'
-      +'box-shadow:0 1px 4px rgba(20,40,70,.06);font-size:13px;box-sizing:border-box;}'
+      +'box-shadow:0 1px 4px rgba(20,40,70,.06);font-size:13px;box-sizing:border-box;'
+      /* sticky: the banner patient is the app-wide through-line and must stay
+         on screen while a long surface scrolls (see the live shell for the
+         measurement that earned this). Below the sticky header's z-index. */
+      +'position:sticky;top:var(--mls-hdr-h,74px);z-index:5900;}'
       +'#'+BAR_ID+' .mlsctx-id{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto;}'
       +'#'+BAR_ID+' .mlsctx-av{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;'
       +'justify-content:center;font-weight:700;font-size:12px;color:#fff;background:var(--brand,#2563c9);letter-spacing:.3px;}'
@@ -23696,6 +23700,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b702';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b703';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

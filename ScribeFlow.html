@@ -12663,7 +12663,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b702: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b703: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -24678,7 +24678,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b702: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b703: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24813,7 +24813,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b702 — THE LOADING SCREEN MUST ALWAYS END.
+/* b703 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29411,9 +29411,25 @@ function _ptGroupSort(mode){
     var css = document.createElement('style'); css.id=CSS_ID;
     css.textContent =
       'body.'+BODY_CLS+' #patientBar{display:none!important;}'
+      /* STICKY, and this is load-bearing rather than decorative.
+         The owner's continuity law (2026-07-26) is that the banner patient is
+         the through-line for the whole app, and the Review panel deliberately
+         does NOT repeat the name because "the banner is persistent, above
+         every view". Measured on the running page: the banner sat at
+         position:static, so at scrollY 600 the name was at top:-186 - gone.
+         On a laptop, or any review long enough to scroll, the LAST HUMAN GATE
+         before Athena was anonymous, and the argument for removing the chip
+         was only half true. Making the banner genuinely persistent makes that
+         argument true and serves every other view at the same time.
+         top: the sticky header's real height (74px desktop), published as
+         --mls-hdr-h by the header owner; z-index sits BELOW the header's 6000
+         so the two never fight. Opaque background is already var(--card), so
+         content cannot show through in either theme. */
       +'#'+BAR_ID+'{display:none;align-items:center;gap:12px;flex-wrap:nowrap;margin:8px auto 0;max-width:1180px;'
       +'padding:8px 14px;border-radius:16px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);'
-      +'box-shadow:0 1px 4px rgba(20,33,28,.06);font-size:13px;box-sizing:border-box;}'
+      +'box-shadow:0 1px 4px rgba(20,33,28,.06);font-size:13px;box-sizing:border-box;'
+      +'position:sticky;top:var(--mls-hdr-h,74px);z-index:5900;}'
+      +'@media (prefers-reduced-motion:no-preference){#'+BAR_ID+'{transition:box-shadow var(--mls-dur-2,200ms) var(--mls-ease-out,ease)}}'
       +'#'+BAR_ID+' .mlsctx-id{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto;}'
       +'#'+BAR_ID+' .mlsctx-av{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;'
       +'justify-content:center;font-weight:700;font-size:12px;color:#fff;background:var(--brand,#2E6A4B);letter-spacing:.3px;}'
@@ -29518,7 +29534,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b702';
+  window.__MLS_AV='b703';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

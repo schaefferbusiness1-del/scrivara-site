@@ -848,8 +848,26 @@
     syncBackButton();
     syncTitle();
     refreshUserChip();
+    publishHeaderHeight();
     return true;
   }
+  /* The header is position:sticky, so anything that wants to sit UNDER it and
+     stay on screen needs its real height - the patient context bar does, and
+     the header is 74px on desktop but not on a phone. Measured from the real
+     rect, published once as --mls-hdr-h, written ONLY on change (a no-op
+     custom-property write still invalidates style for the whole document).
+     No timer: install + resize, the same discipline as the dock's toast lift. */
+  var _hdrH = '';
+  function publishHeaderHeight(){
+    try{
+      var h=$('appHeader'); if(!h) return;
+      var r=h.getBoundingClientRect(); if(!(r.height>0)) return;
+      var want=Math.round(r.height)+'px';
+      if(want===_hdrH) return;
+      _hdrH=want; document.documentElement.style.setProperty('--mls-hdr-h',want);
+    }catch(e){}
+  }
+  try{ window.addEventListener('resize',publishHeaderHeight); }catch(e){}
   /* every PREMIUM tag rendered by any module collapses to the ONE canonical
      badge (inline gradient styles at 9px rendered muddy/mismatched) */
   function normalizePremiumBadgeNode(s){
