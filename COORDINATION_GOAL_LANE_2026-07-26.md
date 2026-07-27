@@ -378,3 +378,24 @@ warns about for `scope`). oni 2.16.0 → 2.16.1 carries dateKey; token
 20260726oni2160 → 20260727oni2161 in BOTH connectors + 4 pin lines + 2 VERSION
 pins; opnote-autoname-date-contract gains the "running owner" pins (base
 function ≠ running function). Gate about to run; commit only on exit 0.
+
+**b717 + b718 SHIPPED and live-verified (2026-07-27 ~05:40).** b717 = auto-naming
+(patient — date — procedure) at all three stored cc sites. b718 = the follow-through
+its live verify demanded: oni's replacement _opNewRow now carries dateKey
+(oni-2.16.1). Proof on the owner's signed-in tab: 18/18 real Monday rows carry
+dateKey 2026-07-27; composed title "Anne — Jul 27, 2026 — B/L L3, L4MB & DR B #1 P…".
+Claims closed. Next: workroom Stage 2b (rails) under a fresh claim.
+
+## CLAIM b719 — goal-lane takeover session (2026-07-27 ~05:55)
+
+**Claimed by:** same session. **Scope:** Workroom Stage 2b — the rails come alive.
+opr-1.1.0 → 1.2.0 (auto-busted loader, no frozen token): revertible opPrepRender
+wrap = synchronous onf Fields kick (b715 occluded-tab law: a mid-draft re-render
+must never wait a throttled minute for its Fields boxes) + #oprRowNav patient nav
+(status dots, click scrolls + .opr-cur) + #oprTplRail (health via NEW
+__mlsTplPrepFix.healthOf export — owner-sourced, never a copy) + #oprReceipt
+honest context line. Markup adds the three room-owned nodes; room CSS extends the
+Stage-1 block. New suite opnote-room-stage2-contract vm-RUNS the module (wrap,
+kick, rails, revert) — b718's running-owner lesson applied from day one.
+Files: feat_mls_opnote_room.js, ScribeFlow.html, mls-connect.js, tests. Gate
+about to run; commit only on exit 0.
