@@ -31,10 +31,11 @@ const context = {
   acctTz() { return timezone; }
 };
 vm.createContext(context);
-vm.runInContext(source.slice(start, end) + '\nthis.tzDateKey=tzDateKey;this.tzHHMM=tzHHMM;', context);
+vm.runInContext(source.slice(start, end) + '\nthis.tzFormatter=tzFormatter;this.tzDateKey=tzDateKey;this.tzHHMM=tzHHMM;', context);
 
+const newYorkTime = context.tzFormatter('time', timezone);
 for (let i = 0; i < 3000; i++) {
-  assert.strictEqual(context.tzHHMM('2026-07-27T13:15:00Z'), '09:15');
+  assert.strictEqual(context.tzHHMM('2026-07-27T13:15:00Z', newYorkTime), '09:15');
 }
 assert.strictEqual(constructors, 1, '3,000 appointment times constructed more than one formatter for one timezone');
 
@@ -49,4 +50,7 @@ assert.strictEqual(constructors, 3, 'timezone change did not create exactly one 
 context.tzHHMM('2026-07-27T14:15:00Z');
 assert.strictEqual(constructors, 3, 'hot formatter cache missed after a timezone change');
 
-console.log('PASS Task 3 timezone cache: 3,001 hot appointment formats use two constructors, not 3,001');
+assert(!source.includes("wrapGlobal('renderCalCheckin'"), 'provider check-in render still normalizes the full appointment store');
+assert(source.includes("var resolvedTz = acctTz();") && source.includes("hhmmOf(x, timeFormatter)"), 'normalization does not resolve account timezone once per pass');
+
+console.log('PASS Task 3 hot path: formatters/timezone are reused and provider check-in skips appointment normalization');

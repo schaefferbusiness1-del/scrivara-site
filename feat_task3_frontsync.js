@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.8';
+  var VERSION = 't3-1.0.9';
   var wrapped = [], trackedTimeouts = [], destroyed = false;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -53,8 +53,8 @@
      times slower than format()/formatToParts(), so cache the two immutable
      formatters per account timezone instead of constructing one per row. */
   var _t3TzFormatters = {};
-  function tzFormatter(kind) {
-    var tz = acctTz(), key = kind + '|' + tz, fmt = _t3TzFormatters[key];
+  function tzFormatter(kind, resolvedTz) {
+    var tz = resolvedTz || acctTz(), key = kind + '|' + tz, fmt = _t3TzFormatters[key];
     if (fmt) return fmt;
     fmt = kind === 'date'
       ? new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -62,8 +62,8 @@
     _t3TzFormatters[key] = fmt;
     return fmt;
   }
-  function tzDateKey(d) { try { return tzFormatter('date').format(d); } catch (e) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); } }
-  function tzHHMM(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return ''; var ps = tzFormatter('time').formatToParts(d); var hh = 0, mm = 0; ps.forEach(function (p) { if (p.type === 'hour') hh = parseInt(p.value, 10); if (p.type === 'minute') mm = parseInt(p.value, 10); }); if (hh === 24) hh = 0; return pad(hh) + ':' + pad(mm); } catch (e) { return ''; } }
+  function tzDateKey(d, formatter) { try { return (formatter || tzFormatter('date')).format(d); } catch (e) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); } }
+  function tzHHMM(iso, formatter) { try { var d = new Date(iso); if (isNaN(d.getTime())) return ''; var ps = (formatter || tzFormatter('time')).formatToParts(d); var hh = 0, mm = 0; ps.forEach(function (p) { if (p.type === 'hour') hh = parseInt(p.value, 10); if (p.type === 'minute') mm = parseInt(p.value, 10); }); if (hh === 24) hh = 0; return pad(hh) + ':' + pad(mm); } catch (e) { return ''; } }
   function todayKey() { return tzDateKey(new Date()); }
   function ampm(t) { var m = /^(\d\d?):(\d\d)/.exec(String(t || '')); if (!m) return String(t || ''); var h = +m[1], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; return h + ':' + m[2] + ' ' + ap; }
   function pretty(key) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || ''); if (!m) return key || ''; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); }
@@ -205,14 +205,14 @@
     return s;
   }
   function nameKey(nm) { return String(nm == null ? '' : nm).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
-  function dateKeyOf(a) {
+  function dateKeyOf(a, dateFormatter) {
     if (!a) return '';
     var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(a.appt_date || ''));
     if (m) return m[1];
-    if (a.start_at) { try { var d = new Date(a.start_at); if (!isNaN(d.getTime())) return tzDateKey(d); } catch (e) {} }
+    if (a.start_at) { try { var d = new Date(a.start_at); if (!isNaN(d.getTime())) return tzDateKey(d, dateFormatter); } catch (e) {} }
     return '';
   }
-  function hhmmOf(a) {
+  function hhmmOf(a, timeFormatter) {
     if (!a) return '';
     function wall(v) {
       var s = String(v == null ? '' : v).trim(); if (!s) return '';
@@ -226,7 +226,7 @@
        construct Date from null/empty (new Date(null) is the Unix epoch). */
     var t = wall(a.time_display); if (t) return t;
     t = wall(a.start_local); if (t) return t;
-    if (String(a.start_at == null ? '' : a.start_at).trim()) { t = tzHHMM(a.start_at); if (t) return t; }
+    if (String(a.start_at == null ? '' : a.start_at).trim()) { t = tzHHMM(a.start_at, timeFormatter); if (t) return t; }
     t = wall(a.time); if (t) return t;
     return '';
   }
@@ -240,15 +240,21 @@
       var a = window._calAppts; if (!Array.isArray(a)) return false;
       if (Cal._full && a !== Cal._full && a.length < Cal._full.length * 0.9 && Cal._full.length > 20) return false; /* transient subset swap by another module: keep the real store */
       Cal._full = a;
+      /* A normalize pass is synchronous, so the account timezone cannot change
+         between rows. Resolve it once instead of doing a storage lookup for
+         every appointment in the hot render path. */
+      var resolvedTz = acctTz();
+      var dateFormatter = tzFormatter('date', resolvedTz);
+      var timeFormatter = tzFormatter('time', resolvedTz);
       var seen = {}, provIdx = {}, keep = [], removed = [], i, x;
       for (i = 0; i < a.length; i++) {
         x = a[i]; if (!x) continue;
-        var dk = dateKeyOf(x);
+        var dk = dateKeyOf(x, dateFormatter);
         if (dk && x.appt_date !== dk) x.appt_date = dk;                    /* wrong-day fix: canonical YYYY-MM-DD */
         /* humanize BEFORE any cleaning: "Edwards_Lindsay_PA-CClose" -> "Lindsay Edwards, PA-C" */
         if (x.provider) { var cp = humanize(x.provider); if (cp !== x.provider) x.provider = cp; }
         x.__t3pk = x.provider ? provKey(x.provider) : '';
-        x.__t3t = hhmmOf(x);
+        x.__t3t = hhmmOf(x, timeFormatter);
         var nk = nameKey(x.name);
         if (!nk || !dk) { keep.push(x); continue; }
         var key = nk + '|' + dk + '|' + x.__t3t;
@@ -466,7 +472,6 @@
   function ensureWraps() {
     wrapGlobal('renderCalendar', 4, postCalendarRender);
     wrapGlobal('calOpenDay', 2, null);
-    wrapGlobal('renderCalCheckin', 0, null);
   }
 
   /* smart empty states inside the calendar grid */
