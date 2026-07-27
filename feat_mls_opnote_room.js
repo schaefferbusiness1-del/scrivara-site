@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.2.0';
+  var VERSION = 'opr-1.2.1';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -104,7 +104,11 @@
       var card = rowCard(i);
       if (card) {
         card.classList.add('opr-cur');
-        if (scroll) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        /* opr-1.2.1: smooth scrolling is rAF-driven and this tab's REAL
+           posture is occluded behind athenaOne — a 'smooth' request there
+           NEVER MOVES (proven live at b719: card 1908px below the fold,
+           scrollTop pinned at 0). Smooth only when actually visible. */
+        if (scroll) card.scrollIntoView({ behavior: (document.visibilityState === 'visible' ? 'smooth' : 'auto'), block: 'start' });
       }
     });
     safe(markNav); safe(buildReceipt);

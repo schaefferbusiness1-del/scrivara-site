@@ -399,3 +399,12 @@ Stage-1 block. New suite opnote-room-stage2-contract vm-RUNS the module (wrap,
 kick, rails, revert) — b718's running-owner lesson applied from day one.
 Files: feat_mls_opnote_room.js, ScribeFlow.html, mls-connect.js, tests. Gate
 about to run; commit only on exit 0.
+
+**b719 SHIPPED and live-verified (2026-07-27 ~06:20)** — rails alive on the live
+page: 18-patient nav, 5-template health rail (owner-sourced healthOf, honestly
+"legacy" across the board), honest per-patient receipts (Anne: 0 verified visits;
+Lisa A March: 13 — real per-patient data), selection + highlight + receipt all
+follow the click, wrap proven installed. Live drive caught ONE defect:
+smooth scrollIntoView is rAF-driven → NEVER MOVES occluded (card 1908px below
+fold, scrollTop 0). b720 claim: opr-1.2.1 visibility-conditional scroll +
+contract pin. Same class as b715/calm-views — frame-vs-timer, now frame-vs-scroll.
