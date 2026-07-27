@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.15.0';
+  var VERSION = 'oni-2.16.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -1009,6 +1009,15 @@
     /* a past-note "template" becomes structured + prior-patient-free before
        anything downstream (prompt, fidelity, reanchor, airing) sees it */
     tplText=sanitizeTemplate(tplText);
+    /* oni-2.16.0: the model sees at most 12k chars of template, but fidelity
+       used to grade the draft against the FULL text - any template longer than
+       the slice was structurally unsatisfiable (guaranteed
+       MLS_OPNOTE_TEMPLATE_FIDELITY, one wasted repair round-trip, and no
+       diagnostic naming truncation). ONE variable now feeds the prompt, both
+       fidelity passes, reanchor, and the repair prompt; clinicalConsistency
+       keeps the full text (it reads declared facts, not structure). */
+    var tplForModel=S(tplText).slice(0,12000);
+    var tplTruncated=S(tplText).length>12000;
     generationStage(ctx,'Applying provider defaults','Applying only explicit provider identity and validated provider scope.');
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);if(ctx.age==null)ctx.age=patientAge(ctx.dob);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
@@ -1019,9 +1028,14 @@
     /* When the verified-history owner is ready it is the sole history source;
        do not also trust or duplicate a caller-supplied ctx.history string. */
     var legacyHistory=historyAtStart?'':S(ctx.history);
-    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
+    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+tplForModel;
     var key=isFn(window.getKey)?window.getKey():'';
-    var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
+    /* maxTokens was never set on the only endpoint op notes use; a long
+       template + full JSON-wrapped note rode the server default and could be
+       silently truncated -> parseResult returned the raw cut string -> both
+       fidelity passes failed for a reason no message named. 4096 fits the
+       longest real op note with JSON overhead. */
+    var opts={freeform:true,maxTokens:4096,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
     if(S(selectedTpl&&(selectedTpl.id||selectedTpl.templateId)).trim())opts.mlsOpNoteTemplateId=S(selectedTpl.id||selectedTpl.templateId).trim();
     var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
@@ -1044,11 +1058,11 @@
       if(!histValidation||!histValidation.ok){var ve=new Error('Op-note generation stopped because the exact patient or verified history changed while the draft was being created.');ve.code='MLS_OPNOTE_IDENTITY';ve.reason=histValidation&&histValidation.reason||'history-binding-invalid';throw ve;}
     }
     generationStage(ctx,'Checking side and level','Comparing procedure type, region, side, exact levels, level count, and approach.');
-    var check=fidelity(first.note,tplText), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
+    var check=fidelity(first.note,tplForModel), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
     if(crossAdapt){check={pass:true,adapted:true,details:check};clinical=adaptedClinical(clinical);}
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
-    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.clinicalConsistency=clinical;return first;}
+    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.clinicalConsistency=clinical;if(tplTruncated)first.templateTruncated=true;return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */
@@ -1060,7 +1074,7 @@
       ?('Repair the draft so it preserves every requested clinical fact for the REQUESTED procedure. Output the same JSON shape only. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach; correct the draft wherever it conflicts with the requested procedure. Keep the current heading structure and formatting. Do not invent clinical facts.')
       :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.');
     var frozenHistory=histBinding&&S(histBinding.context);
-    var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
+    var repairUser='SELECTED TEMPLATE:\n'+tplForModel+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
     repaired.note=fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure);
@@ -1068,16 +1082,16 @@
     var check2;
     if(crossAdapt){check2={pass:true,adapted:true};}
     else{
-      check2=fidelity(repaired.note,tplText);
-      if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplText,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplText);}
-      if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
+      check2=fidelity(repaired.note,tplForModel);
+      if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplForModel);}
+      if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+12000+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
     if(crossAdapt)clinical2=adaptedClinical(clinical2);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
     if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});var detail=clinical2.errors.slice(0,2).map(function(x){return x.message;}).join(' ');window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). '+detail+' Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
-    repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;return repaired;
+    repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;if(tplTruncated)repaired.templateTruncated=true;return repaired;
   }
 
   /* oni-2.10.0: the deterministic provider/facility attestation footer is owned

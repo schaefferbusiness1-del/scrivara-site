@@ -1297,7 +1297,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b708) ----
+  /* ---- Copilot calm polish (b709) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -12698,7 +12698,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b708: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b709: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14705,7 +14705,7 @@ function opPrepRender(){
     h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
     h+='<label class="mini" for="opPrepProc_'+i+'" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
-    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">(auto-matched)</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
@@ -24713,7 +24713,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b708: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b709: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24848,7 +24848,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b708 — THE LOADING SCREEN MUST ALWAYS END.
+/* b709 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29569,7 +29569,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b708';
+  window.__MLS_AV='b709';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

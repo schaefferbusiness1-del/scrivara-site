@@ -41,7 +41,7 @@ async function main() {
   context.window = context;
   vm.runInNewContext(source, context, { filename: 'opnote-integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.version === 'oni-2.15.0', 'clinical consistency owner did not install');
+  assert(api && api.version === 'oni-2.16.0', 'clinical consistency owner did not install');
 
   const factCases = [
     ['Left L2 TFESI', { procedureType: 'tfesi', region: 'lumbar', side: 'left', levels: ['L2'], levelCount: 1, approach: 'transforaminal' }],
