@@ -90,9 +90,12 @@
 
   // Locate the visible patient context bar + a stable insertion anchor.
   function visibleBar() {
-    var ctx = document.getElementById('mlsCtxBar');
-    if (ctx) { try { var cs = getComputedStyle(ctx); if (cs.display !== 'none' && ctx.offsetParent !== null) {
-      return { bar: ctx, anchor: ctx.querySelector('.mlsctx-actions') || null }; } } catch (e) {} }
+    /* b742: not into the active-patient banner (owner 2026-07-27, "almost no
+       buttons"). Sending a patient their portal login is a deliberate act, not
+       something to keep one pixel from the patient's name on every screen. The
+       capability is not lost: "Send to your patients" -> Patient portal access
+       -> Send login does the same thing, prefilled from the active patient.
+       Legacy #patientBar path unchanged. */
     var pb = document.getElementById('patientBar');
     if (pb) { try { if (pb.style.display !== 'none' && pb.offsetParent !== null) {
       var inner = document.getElementById('patientBarInner');

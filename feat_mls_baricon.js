@@ -140,6 +140,12 @@
   }
 
   function boot() {
+    /* b742: OFF. This module existed to put icons on the banner's action row —
+       and the banner no longer has one (owner 2026-07-27, "almost no buttons").
+       Left running it would have armed three MutationObservers, one of them
+       over document.body/subtree, plus a startup poll, all to decorate buttons
+       that are never rendered. revert() and the public API stay intact. */
+    if (!window.__MLS_BARICON_ENABLED) return;
     injectCss();
     _obs = safe(function () { return new MutationObserver(function () { applyGuarded(); }); }, null);
     _sentinel = safe(function () { return new MutationObserver(function () { ensureAttached(); }); }, null);

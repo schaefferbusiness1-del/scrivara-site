@@ -326,6 +326,7 @@ const tests = [
   'opnote-dictate-fill-runtime.test.js',
   'patient-bar-stability-contract.test.js',
   'patient-bar-recent-chip-stability-runtime.test.js',
+  'patient-banner-minimal-contract.test.js',
   'recording-ai-visibility-contract.test.js',
   'documents-dialog-meds-runtime.test.js',
   'orders-required-fields-runtime.test.js',

@@ -257,7 +257,11 @@
     ui.emailLink = make('a', { className: 'mls-pr-action', href: '#' }, 'Email');
     row.appendChild(ui.bookingInput); row.appendChild(ui.copyButton); row.appendChild(ui.textLink); row.appendChild(ui.emailLink);
     booking.appendChild(row);
-    booking.appendChild(make('div', { className: 'mls-pr-muted' }, 'Use Patient portal in the patient header for the same secure invite flow.'));
+    /* b742: this used to send the doctor to a "Patient portal" button in the
+       patient header. The banner rework (owner 2026-07-27) took every control
+       off that bar, so the instruction pointed at nothing — and the same
+       secure flow is one card to the left, on this very panel. */
+    booking.appendChild(make('div', { className: 'mls-pr-muted' }, 'Use Open secure invite above for the same secure invite flow.'));
 
     grid.appendChild(portal); grid.appendChild(booking); panel.appendChild(grid);
     panels.send = panel;
@@ -316,7 +320,9 @@
     }
     var hardened = byId('mlsPortalInviteBtn');
     if (!hardened || typeof hardened.click !== 'function') {
-      setStatus('The secure portal invite is still loading. Return to Visit and try Patient portal again.', 'err');
+      /* b742: no longer "return to Visit and try Patient portal" — that button
+         is off the banner. This is a load-order failure, so say so honestly. */
+      setStatus('The secure portal invite is still loading. Open a patient, wait a moment, and try again.', 'err');
       return false;
     }
     setStatus('Opening the secure invite for ' + (frozen.name || 'the selected patient') + '\u2026', 'ok');

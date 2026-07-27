@@ -135,9 +135,12 @@
   }
 
   function visibleBar(){
-    var ctx=document.getElementById('mlsCtxBar');
-    if (ctx){ try{ var cs=getComputedStyle(ctx); if(cs.display!=='none' && ctx.offsetParent!==null){
-      return {bar:ctx, anchor:ctx.querySelector('.mlsctx-actions')||null}; } }catch(e){} }
+    /* b742: not into the active-patient banner (owner 2026-07-27). The
+       "Today's agenda (0/19)" chip keeps its real home — the legacy
+       no-active-patient #patientBar below, which is exactly the state you are
+       in when you start the day and need the agenda — and the same day is on
+       the Calendar view. This also stops a 1300ms interval from re-rendering
+       the chip into a bar that would only hide it. */
     var pb=document.getElementById('patientBar');
     if (pb){ try{ if(pb.style.display!=='none' && pb.offsetParent!==null){
       var inner=document.getElementById('patientBarInner');

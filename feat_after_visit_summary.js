@@ -236,7 +236,18 @@
   // ---------------- the action button (mounted in the patient header) ----------------
   function mountButton() {
     try {
-      var host = document.querySelector('.mlsctx-actions');
+      /* b742: the banner's action row is gone (owner 2026-07-27, "almost no
+         buttons") and the bar's allowlist hides every child but the patient
+         and Recent — so this button is now INVISIBLE. It still mounts on
+         purpose: #mlsavsBtn is a published handle. mls-connect clicks it and
+         otherwise toasts "After-visit summary is not available on this build",
+         feat_mls_history_avs falls back to clicking it, and
+         feat_athena_tooltip_dedupe resolves the assistant's "after-visit
+         summary" request through it. Dropping the node would turn a rework of
+         the banner into a silent loss of the feature on three other surfaces.
+         The doctor-visible buttons are unchanged: History toolbar
+         (#mlsHistAvsBtn) and the clinical tools row (#avsBtn). */
+      var host = document.querySelector('.mlsctx-actions') || document.getElementById('mlsCtxBar');
       if (!host) return;
       if (document.getElementById(BTN_ID)) return;
       var btn = ce('button'); btn.id = BTN_ID; btn.type = 'button';

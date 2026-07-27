@@ -112,9 +112,13 @@
   }
 
   function visibleBar(){
-    var ctx=document.getElementById('mlsCtxBar');
-    if (ctx){ try{ var cs=getComputedStyle(ctx); if(cs.display!=='none' && ctx.offsetParent!==null){
-      return {bar:ctx, anchor:ctx.querySelector('.mlsctx-actions')||null}; } }catch(e){} }
+    /* b742: the active-patient banner no longer hosts chips (owner 2026-07-27,
+       "almost no buttons"). This is the one removal with a clinical edge, so
+       it is called out rather than buried: the red drug-allergy chip only ever
+       appeared when the chart HAD a recorded allergy, and the same single
+       source of truth (activePatient().allergies) still renders on the patient
+       profile. Putting just this chip back is a one-line allowlist entry in
+       the banner CSS if the owner wants it. Legacy #patientBar unchanged. */
     var pb=document.getElementById('patientBar');
     if (pb){ try{ if(pb.style.display!=='none' && pb.offsetParent!==null){
       var inner=document.getElementById('patientBarInner');

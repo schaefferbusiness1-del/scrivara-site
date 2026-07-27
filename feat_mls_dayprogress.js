@@ -72,9 +72,14 @@
 
   function visibleBar(){
     // Returns {bar, anchor} for the visible context bar, or null.
-    var ctx=document.getElementById('mlsCtxBar');
-    if (ctx){ try{ var cs=getComputedStyle(ctx); if(cs.display!=='none' && ctx.offsetParent!==null){
-      return {bar:ctx, anchor:ctx.querySelector('.mlsctx-actions')||null}; } }catch(e){} }
+    /* b742: the ACTIVE-PATIENT bar (#mlsCtxBar) is no longer a mount point.
+       Owner 2026-07-27, on the seen/remaining + "Next 1:40 PM" line this chip
+       put there: the active-patient banner carries the patient and nothing
+       else. Returning null while that bar is up makes render() remove the chip
+       and detach its observer rather than keep re-rendering something the
+       banner's allowlist would hide anyway. The legacy no-active-patient
+       #patientBar below is UNCHANGED — starting the day with no chart open,
+       the day meter still shows there. */
     var pb=document.getElementById('patientBar');
     if (pb){ try{ if(pb.style.display!=='none' && pb.offsetParent!==null){
       var inner=document.getElementById('patientBarInner');

@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b741) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b742) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -873,7 +873,7 @@
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
   #opPrepModal.opr-room{ padding:0; }
-  /* b741 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b742 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -884,7 +884,7 @@
   #opPrepModal.opr-room .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b741 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b742 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -1383,7 +1383,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b741) ----
+  /* ---- Copilot calm polish (b742) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1577,7 +1577,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b741 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b742 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -12628,7 +12628,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b741: the auto-save commits HERE - the one door that knows the tool
+        /* b742: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -12879,7 +12879,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b741: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b742: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -13337,7 +13337,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b741 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b742 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -14770,7 +14770,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b741 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b742 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16511,7 +16511,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b741 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b742 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -16842,7 +16842,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b741 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b742 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -19228,7 +19228,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b741 (diarization, option A): turn labels ride the USER payload — the one
+  /* b742 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -20537,7 +20537,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b741 (audit): op notes save their body to .text, not .soap — every prior
+    /* b742 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -24961,7 +24961,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b741: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b742: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -25096,7 +25096,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b741 — THE LOADING SCREEN MUST ALWAYS END.
+/* b742 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29582,42 +29582,52 @@ function _ptGroupSort(mode){
     var mm = ('0'+p.m).slice(-2), dd = ('0'+p.d).slice(-2);
     return mm+'-'+dd+'-'+p.y;
   }
-  function visitStats(p){
-    var notes = safe(function(){ return (window.patientNotes && window.patientNotes(p.id)) || []; }, []);
-    notes = Array.isArray(notes) ? notes : [];
-    var n = notes.length, last = '';
-    if (n){
-      var times = notes.map(function(x){ return new Date(x.date||x.created||x.updated||x.when||0).getTime(); }).filter(function(t){ return t>0; });
-      if (times.length){ last = new Date(Math.max.apply(null, times)).toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'}); }
-    }
-    return { count:n, last:last };
-  }
+  /* The bar no longer prints a visit count or a last-visit date, so it no
+     longer reads the note store on every refresh — those facts live on the
+     chart, one click away, and reading them here parsed the whole store. */
   function go(view){ safe(function(){ if (window.showView) window.showView(view); }); }
   function openChart(id){ safe(function(){ if (window.openPatient){ window.openPatient(id); go('patients'); } else go('patients'); }); }
-  function openSchedule(id){
-    safe(function(){
-      if (window.calScheduleForPatient) { var _ap=(typeof activePt==='function'?activePt():null); window.calScheduleForPatient(_ap&&_ap.name?_ap.name:''); }
-      else if (window.calOpenPatientFor) { window.calOpenPatientFor(id); }
-      else { go('calendar'); }
-    });
-  }
-  function doSwitch(){ go('patients'); }
   function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
   function renderInto(bar, p){
-    var st = visitStats(p);
     var age = ageFromDob(p.dob), sex = p.sex ? String(p.sex)[0].toUpperCase() : '';
     var dob = fmtDob(p.dob);
     var meta = [ [age,sex].filter(Boolean).join(' '),
                  dob ? ('DOB '+dob) : '',
-                 p.mrn ? ('MRN '+p.mrn) : '',
-                 st.count ? (st.count+' visit'+(st.count===1?'':'s')) : 'no visits',
-                 st.last ? ('last '+st.last) : '' ].filter(Boolean).join('  ·  ');
+                 p.mrn ? ('MRN '+p.mrn) : '' ].filter(Boolean).join('  ·  ');
     bar.style.display='flex';
-    /* Owner 2026-07-23 ("just keep recents and that chart thing — SIMPLIFY"):
-       the bar carries exactly Chart + Switch patient; the NAME itself opens the
-       chart; Visit/History/Schedule live on in the nav and command palette
-       (capability relocated, not removed). Recent chip is module-injected. */
+    /* Owner 2026-07-27, looking at the live bar ("I hate this banner… way too
+       complicated. Completely reworked with almost no buttons. Clicking on the
+       patient's name takes you to the chart, and that's it. Every feature there
+       is almost completely useless except the recent feature."):
+
+       WHO IS ALLOWED IN THIS BAR — the whole list:
+         1. the identity block (avatar + name + age/DOB/MRN), which IS the
+            chart link; clicking or Enter/Space on it opens the chart;
+         2. the Recent chip (#mlsRecentPts, module-injected);
+         3. a genuine FAILURE chip (.mls-sync-err) in the sync slot.
+       Nothing else. Ever.
+
+       The 2026-07-23 pass ("just keep recents and that chart thing") trimmed
+       the same bar to Chart + Switch patient, and by today it had re-grown
+       After-visit summary, Patient portal, "Not a patient?", the Athena status
+       chip, a seen/remaining counter, a next-appointment line, an appointment
+       line inside the identity block and a Today's-agenda chip — because ~14
+       independent modules mount themselves here by querying #mlsCtxBar and
+       appending. Trimming the base HTML alone therefore does NOT hold: it only
+       resets the clock. The rule is enforced structurally in injectCss() as an
+       allowlist over CHILDREN, so a module that mounts here in future renders
+       nothing and this bar cannot silently re-accrete a third time.
+
+       Capability is relocated, not removed — each verified to exist elsewhere
+       before its chip was evicted: Chart = the name; Switch patient = the
+       Patients view and the Recent chip; agenda / day progress = the Calendar
+       and the no-active-patient bar, which still carries both; After-visit
+       summary = the History toolbar (#mlsHistAvsBtn) and the clinical tools
+       row (#avsBtn); Patient portal = "Send to your patients" -> Patient
+       portal access. Two evicted controls are still MOUNTED but invisible
+       (#mlsavsBtn, #mlsPortalInviteBtn) because other surfaces click them by
+       id; see the notes on each. */
     var baseHtml =
       '<div class="mlsctx-id" data-act="chart" role="button" tabindex="0" title="Open '+escapeHtml(p.name||'this patient')+'’s chart" style="cursor:pointer">'
       +   '<span class="mlsctx-av">'+escapeHtml(initials(p.name))+'</span>'
@@ -29626,45 +29636,37 @@ function _ptGroupSort(mode){
       +     '<span class="mlsctx-meta">'+escapeHtml(meta)+'</span>'
       +   '</span>'
       + '</div>'
-      + '<div class="mlsctx-slot" id="mlsCardSlot"></div>'
-      + '<div class="mlsctx-actions">'
-      +   '<button type="button" data-act="chart">Chart</button>'
-      +   '<button type="button" data-act="switch" class="mlsctx-switch">Switch patient</button>'
-      + '</div>';
+      + '<div class="mlsctx-slot" id="mlsCardSlot"></div>';
     /* Cross-tab patient saves can call refresh repeatedly. Preserve the existing
-       subtree (focus, popovers and add-on chips) when the rendered facts did not
-       change instead of visibly tearing the whole header down and rebuilding it. */
-    /* b439: also rebuild when the ACTION BUTTONS are gone, not just when the
-       container is. baseHtml always defines exactly five [data-act] controls
-       (chart, visit, history, schedule, switch). Checking only for
-       .mlsctx-actions meant that if any later owner emptied or partially
-       replaced that row — several modules inject into it after first paint
-       (portal invite, AVS, snapshot, recent, status chip) — the memoised
-       __mlsCardBaseHtml still matched, so the row was never restored and the
-       patient bar showed the name and "Switch patient" with no Chart / Visit /
-       History / Schedule for the rest of the session. Counting the surviving
-       controls makes the bar self-healing on the next refresh. Strictly "fewer
-       than expected" so a module that ADDS its own [data-act] control cannot
-       trigger a rebuild loop. */
-    var mlsCtxActionsPresent = bar.querySelectorAll('.mlsctx-actions button[data-act]').length;
-    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions') || mlsCtxActionsPresent < 2;
+       subtree (focus, popovers and the Recent chip) when the rendered facts did
+       not change instead of visibly tearing the whole header down and
+       rebuilding it. A rebuild is needed only when the FACTS changed or the
+       identity block itself went missing — there is no action row left to
+       count, so the b439 "fewer than five controls" self-heal (which could
+       never be satisfied by a two-button base, and so re-ran the expensive
+       whole-store refresh on every unrelated mutation of this bar) is gone
+       with it. */
+    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id');
     if (needsBase){
       bar.innerHTML = baseHtml;
       bar.__mlsCardBaseHtml = baseHtml;
       var id = p.id;
-      bar.querySelectorAll('[data-act]').forEach(function(b){
-        b.onclick = function(){
-          var a = b.getAttribute('data-act');
-          if (a==='chart') openChart(id);
-          else if (a==='visit') go('visit');
-          else if (a==='history') go('history');
-          else if (a==='schedule') openSchedule(id);
-          else if (a==='switch') doSwitch();
-        };
-      });
-      /* keyboard access for the clickable identity block */
+      /* Read the active patient AT CLICK TIME, not at render time.
+         feat_mls_upnow_sync exists because the old Chart button closed over the
+         id it was rendered with: a quick-pick that changed the active patient
+         without re-rendering this bar left the button opening the PREVIOUS
+         chart, and that fix was a capture-phase interceptor matched against
+         `.mlsctx-actions button[data-act="chart"]` — a selector this rework
+         deletes. Rather than move the workaround, remove what it was working
+         around: getActivePtId() is the one source of truth, and p.id is only
+         the fallback for the moment before it is set. */
+      function chartTarget(){ return activeId() || id; }
+      /* The identity block IS the chart link — the bar's only control. */
       var idBlock = bar.querySelector('.mlsctx-id[data-act="chart"]');
-      if (idBlock) idBlock.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChart(id); } };
+      if (idBlock){
+        idBlock.onclick = function(){ openChart(chartTarget()); };
+        idBlock.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChart(chartTarget()); } };
+      }
     }
     if (_syncHtml) { var slot = bar.querySelector('#mlsCardSlot'); if (slot) slot.innerHTML = _syncHtml; }
   }
@@ -29721,19 +29723,36 @@ function _ptGroupSort(mode){
       +'#'+BAR_ID+' .mlsctx-meta{color:var(--muted,#5b6b7c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;}'
       +'#'+BAR_ID+' .mlsctx-slot{flex:0 0 auto;min-width:220px;min-height:26px;display:flex;align-items:center;justify-content:flex-end;}'
       +'#'+BAR_ID+' .mlsctx-slot .mls-sync{max-width:236px;overflow:hidden;}'
-      +'#'+BAR_ID+' .mlsctx-actions{display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}'
-      +'#'+BAR_ID+' .mlsctx-actions button{font:inherit;font-size:12px;cursor:pointer;padding:5px 11px;border-radius:10px;'
-      +'border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#1A211C);white-space:nowrap;'
-      +'transition:border-color .12s,color .12s,background .12s;}'
-      +'#'+BAR_ID+' .mlsctx-actions button:hover{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);}'
-      +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch{background:var(--brand,#2E6A4B);color:#fff;border-color:var(--brand,#2E6A4B);}'
-      +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch:hover{filter:brightness(1.07);color:#fff;}'
+      /* ---- THE ALLOWLIST (owner 2026-07-27, "almost no buttons") ----
+         This is the rule that makes the rework permanent rather than a reset.
+         ~14 modules mount chips into this bar by querying #mlsCtxBar and
+         appending; every previous trim was undone by the next one to ship.
+         Rather than fight them at runtime (a remove-vs-remount war this bar
+         cannot win — the loser is the owner, mid-clinic), let them mount and
+         render NOTHING. Stated as three allowlists, one per level that a
+         module can reach: direct children of the bar, children of the identity
+         block, and children of the name/meta column. Anything not named here
+         is invisible, whoever adds it and whenever it loads.
+         `body` prefix + id + !important so a late module's own !important
+         rule (feat_mls_redesign and mls-connect both restyle this bar that
+         way) cannot outrank it. */
+      +'body #'+BAR_ID+' > *:not(.mlsctx-id):not(#mlsRecentPts):not(.mlsctx-slot){display:none!important;}'
+      +'body #'+BAR_ID+' .mlsctx-id > *:not(.mlsctx-av):not(.mlsctx-idtext){display:none!important;}'
+      +'body #'+BAR_ID+' .mlsctx-idtext > *:not(.mlsctx-name):not(.mlsctx-meta){display:none!important;}'
+      /* The "● ACTIVE PATIENT" eyebrow (mls-connect) is a label on the only
+         thing in the bar. It said nothing the name did not. */
+      +'body #'+BAR_ID+' .mlsctx-idtext::before{content:none!important;display:none!important;}'
+      /* Sync slot: silent while Athena is fine, visible when it is NOT.
+         A permanent green "extension ready" is the noise the owner means; a
+         real failure is the one thing here worth interrupting him for, and it
+         is the difference between "the pull did nothing" and "I know why". */
+      +'body #'+BAR_ID+' .mlsctx-slot{display:none!important;min-width:0;}'
+      +'body #'+BAR_ID+' .mlsctx-slot:has(.mls-sync-err){display:flex!important;flex:0 0 auto;align-items:center;justify-content:flex-end;}'
+      +'#'+BAR_ID+' #mlsRecentPts{flex:0 0 auto;margin-left:auto;}'
       +'@media (max-width:620px){'
       +'#'+BAR_ID+'{flex-direction:column;align-items:stretch;gap:9px;padding:10px 12px;margin:8px 8px 0;border-radius:16px;}'
       +'#'+BAR_ID+' .mlsctx-meta{white-space:normal;}'
-      +'#'+BAR_ID+' .mlsctx-actions{justify-content:flex-start;gap:7px;}'
-      +'#'+BAR_ID+' .mlsctx-actions button{flex:1 1 auto;min-width:64px;text-align:center;padding:8px 10px;font-size:13px;}'
-      +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch{flex-basis:100%;order:5;}'
+      +'#'+BAR_ID+' #mlsRecentPts{margin-left:0;justify-content:flex-start;}'
       +'}';
     (document.head||document.documentElement).appendChild(css);
   }
@@ -29761,49 +29780,15 @@ function _ptGroupSort(mode){
         _stT = setTimeout(function(){ _stT = null; refresh(); }, 500);
       });
     })();
-    /* b439: self-heal the action row.
-       refresh() otherwise runs only at init, on mls:active-patient-changed, and
-       on a cross-tab storage write. At first sign-in this card renders once and
-       ~200 feature scripts load AFTER it; an owner that empties or partially
-       replaces .mlsctx-actions at that point left the bar with no Chart / Visit
-       / History / Schedule for the whole session, and nothing was scheduled to
-       notice - the reported "no buttons on the patient bar when I first log in".
-       A short startup poll is not enough: the damage can land after it retires.
-       Use one debounced observer scoped to this small bar (NOT the document),
-       disconnected across the repair write so the rebuild cannot re-trigger it.
-       The degraded test is a single subtree query; the expensive refresh() -
-       which parses the whole patient store, see the storm fix above - runs only
-       when the row is genuinely short of its five controls. */
-    (function(){
-      var healing = false, deb = null, obs = null, armT = null;
-      function degraded(){
-        try{
-          var b = document.getElementById(BAR_ID);
-          return !!(b && b.querySelector('.mlsctx-actions') &&
-            b.querySelectorAll('.mlsctx-actions button[data-act]').length < 5);
-        }catch(e){ return false; }
-      }
-      function observe(){
-        try{ var b = document.getElementById(BAR_ID); if (obs && b) obs.observe(b, {childList:true, subtree:true}); }catch(e){}
-      }
-      function heal(){
-        if (healing || !degraded()) return;
-        healing = true;
-        try{ if (obs) obs.disconnect(); }catch(e){}
-        try{ refresh(); }catch(e){}
-        observe();
-        healing = false;
-      }
-      function schedule(){ if (deb) return; deb = setTimeout(function(){ deb = null; heal(); }, 400); }
-      try{
-        obs = new MutationObserver(schedule);
-        armT = setInterval(function(){
-          if (!document.getElementById(BAR_ID)) return;   // bar mounts on the first active patient
-          clearInterval(armT); armT = null;
-          observe(); schedule();
-        }, 500);
-      }catch(e){}
-    })();
+    /* The b439 action-row self-heal is gone with the action row it healed.
+       It armed a 500ms interval, then a debounced MutationObserver over this
+       bar whose "degraded" test was "fewer than five [data-act] controls" —
+       a base that shipped only two could never satisfy it, so every unrelated
+       mutation here (the Athena chip ticking, day progress counting, the
+       Recent chip relabelling) bought a full refresh(): a whole-patient-store
+       JSON.parse for a repair that then changed nothing. The bar now owns one
+       control it renders itself, so there is nothing to lose and nothing to
+       watch for. */
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
@@ -29817,7 +29802,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b741';
+  window.__MLS_AV='b742';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

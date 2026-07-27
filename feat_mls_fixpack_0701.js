@@ -770,7 +770,11 @@
       var acts = [
         ['📥 Pull this day’s patients from Athena', function () { var b = document.querySelector('button[onclick^="pullScheduleViaAssist"]'); if (b) b.click(); else safeToast('Open the Visit screen first.', ''); }],
         ['💉 Prep op note', function () { if (typeof openOpPrepSmart === 'function') openOpPrepSmart(); }],
-        ['🗓 Today’s agenda', function () { var c = $('mlsAgendaChip'); if (c) c.click(); }],
+        /* b742: the agenda chip is no longer in the patient banner (owner
+           2026-07-27), so with a patient open there is nothing to click and
+           this palette entry used to do NOTHING — silently, which is worse
+           than being absent. Fall through to the same day on the Calendar. */
+        ['🗓 Today’s agenda', function () { var c = $('mlsAgendaChip'); if (c) { c.click(); return; } try { if (typeof showView === 'function') showView('calendar'); if (typeof calToday === 'function') calToday(); } catch (e) {} }],
         ['⚙️ Settings', function () { if (typeof openSettings === 'function') openSettings(); }],
         ['📅 Calendar — today', function () { try { if (typeof showView === 'function') showView('calendar'); if (typeof calToday === 'function') calToday(); } catch (e) {} }]
       ];

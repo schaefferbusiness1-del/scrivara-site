@@ -107,7 +107,13 @@
     if (chip.innerHTML !== html) chip.innerHTML = html;
   }
 
-  function start() { render(); if (timer) clearInterval(timer); timer = setInterval(render, 1200); }
+  /* b742: OFF. The "🕐 Appt 7:30 AM · <reason>" line this module wrote into the
+     banner's identity block is part of what the owner called "way too
+     complicated" (2026-07-27) — and it cost a setInterval that re-rendered
+     every 1200ms for the whole session, on every view, forever. The appointment
+     is on the Calendar and on the chart. Module, styles and revert() are left
+     intact; flipping window.__MLS_CTX_APPT_ENABLED back on is the whole undo. */
+  function start() { if (!window.__MLS_CTX_APPT_ENABLED) return; render(); if (timer) clearInterval(timer); timer = setInterval(render, 1200); }
 
   window.__mlsCtxAppt = {
     __live: true,

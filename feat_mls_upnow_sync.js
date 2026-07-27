@@ -94,7 +94,14 @@
     try {
       var t = e && e.target;
       if (!t || !t.closest) return;
-      var btn = t.closest('#mlsCtxBar .mlsctx-actions button[data-act="chart"]');
+      /* b742: the banner rework deleted the action row this used to match, and
+         the NAME is now the chart link. The bar's own handler already reads
+         getActivePtId() at click time, so this interceptor is belt-and-braces
+         rather than the only guard — but it must still match, or a future
+         renderer that reintroduces a captured id would silently reopen the
+         stale-closure bug with nothing watching. Match any chart control in
+         the bar, wherever it lives. */
+      var btn = t.closest('#mlsCtxBar [data-act="chart"]');
       if (!btn) return;
       var id = (typeof window.getActivePtId === "function") ? window.getActivePtId() : null;
       if (!id) return;                       /* no active patient -> let the app's default run */

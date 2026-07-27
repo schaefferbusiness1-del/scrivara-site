@@ -86,8 +86,10 @@
   }
 
   function visibleBar(){
-    var ctx=document.getElementById('mlsCtxBar');
-    if(ctx){try{var cs=getComputedStyle(ctx);if(cs.display!=='none'&&ctx.offsetParent!==null)return {bar:ctx,anchor:ctx.querySelector('.mlsctx-actions')||null};}catch(e){}}
+    /* b742: not into the active-patient banner — that bar is the patient and
+       nothing else now (owner 2026-07-27). The snapshot popover repeated facts
+       the banner already prints and the chart holds in full. Legacy
+       #patientBar path below unchanged. */
     var pb=document.getElementById('patientBar');
     if(pb){try{if(pb.style.display!=='none'&&pb.offsetParent!==null){var inner=document.getElementById('patientBarInner');return {bar:pb,anchor:pb.querySelector('.spacer')||(inner?inner.nextSibling:null)};}}catch(e){}}
     return null;

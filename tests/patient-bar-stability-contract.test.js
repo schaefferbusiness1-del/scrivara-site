@@ -17,6 +17,6 @@ assert(agenda.includes('#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:2')
 assert(agenda.includes('#patientBar>#mlsRecentPts{grid-column:3;grid-row:2'), 'recent patients needs a fixed grid area');
 assert(agenda.includes('#patientBar>.btn-ghost{grid-column:3;grid-row:1'), 'switch-patient action needs a fixed grid area');
 assert(!/\.id\s*=\s*["']wf2OneClick["']/.test(writeflow), 'retired Athena shortcut regained a creator');
-assert(connect.includes('feat_mls_agenda_popover.js') && connect.includes('?v=20260716ag-stable4'), 'production loader must cache-bust the compact stable layout release');
+assert(connect.includes('feat_mls_agenda_popover.js') && connect.includes('?v=20260727ag-stable5'), 'production loader must cache-bust the compact stable layout release');
 
 console.log('PASS patient bar keeps one layout across periodic chip refreshes');
