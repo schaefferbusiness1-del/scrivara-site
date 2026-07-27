@@ -19,7 +19,9 @@
  *
  * Bridge verb inventory pinned at the bottom: content.js must gate + handle
  * mlsAppChartIdentity (the v1.52 lesson - a handler without its allowlist key
- * is dead), and the manifest/feed must carry 3.0.23. */
+ * is dead). The manifest/feed pins below track the CURRENT release and move
+ * with each extension release sweep; MIN_EXT and the vm pong versions stay at
+ * the verb-carrying minimum 3.0.23 to prove backward compatibility. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -40,9 +42,9 @@ assert(/MLS_BRIDGE_TYPES = \{[^}]*mlsAppChartIdentity: 1/.test(content),
 assert(content.includes("if (d.type === 'mlsAppChartIdentity') {") &&
   content.includes("chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }"),
   'the chart-identity verb must forward to the proven write-safety identity handler');
-assert.strictEqual(manifest.version, '3.0.23', 'extension manifest must be 3.0.23');
-assert(/^3\.0\.23\+core-sha256:[0-9a-f]{64}$/.test(manifest.version_name), 'manifest must carry the stamped core digest');
-assert.strictEqual(feed.version, '3.0.23', 'release feed must announce 3.0.23');
+assert.strictEqual(manifest.version, '3.0.24', 'extension manifest must be 3.0.24');
+assert(/^3\.0\.24\+core-sha256:[0-9a-f]{64}$/.test(manifest.version_name), 'manifest must carry the stamped core digest');
+assert.strictEqual(feed.version, '3.0.24', 'release feed must announce 3.0.24');
 assert(connect.includes('data-mls-asset="feat_mls_athena_follow.js"'), 'the follow module has no loader');
 assert(app.includes('id="athenaFollowToggle"'), 'the off-switch is missing from Settings -> Integrations');
 assert(mod.includes("var MIN_EXT = '3.0.23';"), 'the module must gate on the verb-carrying extension version');

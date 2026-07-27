@@ -760,8 +760,6 @@ dur-3), the Templates panel swap (dur-2 crossfade), the pull pill (mlsLoadIn +
 reduced-motion silence). Transform/opacity only; all four motion/loading/room
 suites pre-ran green. Gate about to run.
 
-claiming: performance optimization pass, 2026-07-27T12:09:18-04:00
-
 **Coordination to Claude:** the owner confirms login is still far too slow after
 the boot-clock build. Codex is taking the boot-performance lane now and will
 rebase the prior hidden-render fix onto current main, profile
@@ -843,3 +841,57 @@ consumers of that key inherit the fix); explicit Settings name and explicit
 picks still win; signed-out unchanged. New suite
 provider-default-is-the-signed-in-doctor (vm-driven order). Live verify on the
 owner's next sign-in. Gate about to run.
+
+## CLAIM b740 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** extension 3.0.24 site release — the
+Mac fixes ship. Core edits (already digest-stamped d5da1df3…, zip sha
+76dc252f…cd894a): background.js treats an EMPTY platform probe like Mac for
+the fullscreen popup race, mic-denied strings gain macOS System Settings
+guidance; offscreen.js widens the getUserMedia refusal regex (NotReadable/
+NotFound/Could not start were previously retried as if transient);
+manifest.json 3.0.24 + minimum_chrome_version 116 + audioCapture. Pin sweep
+26 groups (zip name ×2 escaped forms, sha, feed, checker SERVER_EXT_VERSION,
+chk3024 loader token triplet, get-extension dlVer + digest, sw lowercase
+passthrough, _config, inventory, 5 test suites). All 5 pinned suites pre-ran
+green. Enabled-folder SWAP is idle-gated (no pull, no recording) and claimed
+done only on a pong reporting 3.0.24. Gate about to run.
+
+## HANDOFF - Codex whole-app performance pass (2026-07-27)
+
+**Claude: this branch is ready to integrate after your b740 work.** Pushed
+`origin/perf/workspace-hydration-20260727` at `c53e54c`, based on shipped b739.
+Do not copy isolated loader lines; merge/rebase the complete nine-commit series
+so its cache tokens and regression tests travel together. Codex did not push
+main.
+
+- Full gate on the rebased b739 tree: **383/383 PASS**. `npm.cmd run check` is
+  also green. The b739 signed-in-provider test was explicitly rerun and passes.
+- Foreground synthetic A/B with 1,500 patients, 2,250 notes, and 3,000
+  appointments: usable login **3,121 ms -> 2,656 ms** (three optimized runs
+  ranged 2,580-2,717 ms); Calendar-open long-task time **1,330 -> 195 ms**
+  and max task **929 -> 138 ms**; patient-select long-task time **605 -> 91
+  ms**; patient-switch **526 -> 82 ms**.
+- Root fixes: optional satellites no longer hold/reset the critical login quiet
+  window; hidden Patients/Calendar/Data Link chrome stays dormant; Calendar
+  timezone formatters are reused (3,000-row normalize **293.0 -> median 16.1
+  ms**) and provider-only renders skip appointment scans; patient selection
+  patches two rows instead of rebuilding 150; the whole-document last-seen row
+  observer and its detached-DOM retention are retired; Recent Patients uses one
+  lookup index and the canonical patient-change event.
+- b738 invariant handled deliberately: 15 remaining tranche modules are still
+  idle+async. `feat_mls_lastseen_rows.js` is no longer loaded at all because its
+  exact visible text is now emitted at source; the permanent
+  `late-surfaces-stay-deferred` test was strengthened to require that retirement.
+  The ordered op-note/Copilot/writeback/pull chains remain untouched/eager.
+- No Athena write, patient write/persistence, or authentication logic changed.
+  Date-range patient/Calendar lazy loading and broader wrapper consolidation
+  were flagged, not attempted, because shared-store semantics make them unsafe
+  for this conservative pass.
+
+**Owner live evidence:** the owner refreshed currently deployed b739 while this
+branch was gating and still saw a 30+ second login. That build does not contain
+this branch. Ship the integrated performance tree, then capture
+`__mlsBootTimeline()` on the owner's first real-account forced re-auth. If it is
+still over five seconds, retain the trace: the remaining hosted-only floor must
+be attributed before another change.

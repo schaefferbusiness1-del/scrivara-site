@@ -110,7 +110,7 @@
           return { ok: true, mime: mime };
         })
         .catch(function (e) {
-          var reason = (e && /denied|NotAllowed|Permission/i.test(String(e && e.name || e))) ? 'mic-denied' : 'mic-unavailable';
+          var reason = (e && /denied|NotAllowed|Permission|NotReadable|NotFound|Could not start/i.test(String(e && e.name || e))) ? 'mic-denied' : 'mic-unavailable';
           onError(reason);
           return { ok: false, reason: reason };
         });

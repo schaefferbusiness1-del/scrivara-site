@@ -1,5 +1,5 @@
 {
-  "version": "3.0.23",
+  "version": "3.0.24",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.23 — MLS can now ask (read-only, trusted app only) which patient is open in athenaOne, so the app follows your Athena navigation automatically. Nothing new is written; the same identity reader the write-safety gate already used."
+  "notes": "v3.0.24 — MLS can now ask (read-only, trusted app only) which patient is open in athenaOne, so the app follows your Athena navigation automatically. Nothing new is written; the same identity reader the write-safety gate already used."
 }

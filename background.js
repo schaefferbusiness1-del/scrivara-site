@@ -11913,7 +11913,7 @@ async function mlsAthenaSignSave(mode) {
             if (chrome.runtime.lastError || !r || r.ok === false) {
               var reason = (r && r.reason) || 'recorder-start-failed';
               progress(tabId, reason === 'mic-denied'
-                ? 'Microphone blocked — allow mic access or type your note.'
+                ? 'Microphone blocked — allow mic access or type your note. On a Mac, also check System Settings > Privacy & Security > Microphone for Chrome.'
                 : 'Couldn’t start the mic — type your note instead.', 'warn');
               resolve({ ok: false, reason: reason, typeOnly: true });
             } else { resolve({ ok: true }); }
@@ -11966,7 +11966,7 @@ async function mlsAthenaSignSave(mode) {
       var tid = recordingTabId;
       if (tid != null) {
         var human = msg.reason === 'mic-denied'
-          ? 'Microphone blocked — allow mic access or type your note.'
+          ? 'Microphone blocked — allow mic access or type your note. On a Mac, also check System Settings > Privacy & Security > Microphone for Chrome.'
           : 'Mic problem — type your note instead.';
         progress(tid, human, 'warn');
         try { chrome.tabs.sendMessage(tid, { type: 'MLS_OVL_RECORD_ERROR', reason: msg.reason }); } catch (e) {}
@@ -13910,7 +13910,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     var forcesState = ('state' in u) && win && u.state !== win.state;
     /* rule 1: mac fullscreen - never move/resize/de-fullscreen for unfocused
        maintenance; an explicit focused:true (user-facing action) passes. */
-    if (platform === 'mac' && win && win.state === 'fullscreen' && u.focused !== true && (hasBounds || forcesState)) {
+    if ((platform === 'mac' || platform === '') && win && win.state === 'fullscreen' && u.focused !== true && (hasBounds || forcesState)) {
       var rest = {};
       for (var k in u) { if (k !== 'left' && k !== 'top' && k !== 'width' && k !== 'height' && k !== 'state') rest[k] = u[k]; }
       return Object.keys(rest).length ? { updates: rest, reason: 'mac-fullscreen-bounds-dropped' } : { updates: null, reason: 'mac-fullscreen-skip' };

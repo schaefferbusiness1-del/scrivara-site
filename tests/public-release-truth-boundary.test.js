@@ -42,15 +42,15 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.23\.zip/.test(download) &&
-  /869574331f9ba95c2a9330d807ae907108a3020c4ecc492116f732a7739873e7/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.24\.zip/.test(download) &&
+  /76dc252fd21694e30617aa39e76e72863499462046186907afe7c45ffacd894a/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 
 /* The page must never name a version other than the one the link serves.
  * It did: the label read "Download MLS Assist v3.0.4" while the href pointed
- * at MLS_Assist_v3.0.23.zip, because the label was hand-maintained and the
+ * at MLS_Assist_v3.0.24.zip, because the label was hand-maintained and the
  * release lane only moved the href, the download attribute and the digest.
  * A reader following the printed instruction to verify the digest would have
  * found a mismatch against the version they thought they were getting.
@@ -70,13 +70,14 @@ assert(/getAttribute\(['"]href['"]\)[\s\S]{0,200}MLS_Assist_v/.test(download),
 assert(!/same bytes as the Web Store build/i.test(download),
   'the page must not assert ZIP/Web-Store byte equality it cannot verify from here');
 const feed = JSON.parse(read('extension-version.json'));
-/* 3.0.23 released 2026-07-27 (one read-only bridge verb, mlsAppChartIdentity,
-   for the owner-approved bidirectional Athena<->MLS follow; digest-stamped
-   core). The feed must announce it for the proven owner-side auto-reload to
-   fetch it; the release is only CLAIMED running on a pong reporting 3.0.23.
-   Earlier: 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only delta on the 3.0.0
-   core, digest 816d57a6…), loaded and live-verified before that pin move. */
-assert.strictEqual(feed.version, '3.0.23', 'public feed must state the released stable channel exactly');
+/* 3.0.24 released 2026-07-27 (Mac fixes: empty-platform fullscreen race,
+   macOS mic guidance, wider getUserMedia refusal regex, min Chrome 116).
+   The feed must announce it for the proven owner-side auto-reload to fetch
+   it; the release is only CLAIMED running on a pong reporting 3.0.24.
+   Earlier: 3.0.23 2026-07-27 (mlsAppChartIdentity bridge verb for the
+   bidirectional follow); 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only
+   delta on the 3.0.0 core), each loaded and live-verified before its pin move. */
+assert.strictEqual(feed.version, '3.0.24', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));
