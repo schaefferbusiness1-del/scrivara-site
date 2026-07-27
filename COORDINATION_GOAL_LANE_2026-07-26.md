@@ -911,3 +911,44 @@ comment; (3) immutable-loader triplets — merged: Codex's calbox/caldedupe
 entries + this lane's chk3024/chk3023 release truth. Integrity: no markers,
 chk3024 in both connectors, lastseen 0 hits, Codex's 5 new suites + merged
 contract green. Full gate about to run on the combined tree.
+
+**b741 CLOSED** — shipped b6a5c5d (drift 0), live app-version b741. All 9
+Codex commits integrated by rebase, nothing dropped (verified: branch tip
+c53e54c reachable from the rebase; its 6 new suites in the gate). Combined
+gate green. Boot-timeline datapoint on a HIDDEN probe tab: DCL 671ms /
+load 911ms / lastScriptEnd 10.7s — hidden-tab throttling inflates the
+tail; the <5s verdict is measured on the owner's next VISIBLE real login.
+Extension 3.0.24 functional walk (signed-out scope): SW boots clean (error
+trap: zero crashes, clean 3.0.23→3.0.24 transition), messaging ~55–110ms
+(shadow-state, ext-health), 1 athena tab 0 discarded; chart-identity verb
+HANGS against a chartless hollow dashboard — v1.51 handler has no exec
+budget (v1.89 visits reader wraps 90s for exactly this) — pre-existing,
+fail-closed app-side, 3.0.25 hardening candidate. Pull/record/write-back
+evidence still requires the owner's sign-in; NO Web-Store go-ahead yet.
+
+## CLAIM b743 — goal-lane takeover session
+
+**Claimed by:** same session (b742 = banner lane's, coordinated). **Scope:**
+(1) SMS-2FA client: method-aware 2FA login card (texted-code default only
+when a code was actually sent, resend with rate-limit honesty, sms-sibling
+completion route, recovery stays on the TOTP path) + Settings→Security
+enrollment card (setup/verify/password-gated disable) — all server-driven,
+dormant until the sms-2fa backend deploys. (2) slideSession client:
+404-safe /api/auth/refresh kick on session start + visible tab return, 6h
+floor, no timers. (3) Honest 3.0.24 feed notes (Mac fixes, not the 3.0.23
+follow text). (4) OWNER LIVE REPORT: the "Full visit notes" checkbox was
+hidden by the calm-shell declutter (proven live: body.mls-calm #mlsDsStrip
+> #mlsDsVisitTgl !important, sheet mlsCalmShellCss) — restored as its OWN
+separated Settings→Integrations option, one stored truth
+(uns('pullVisitBodies')) + inline-node mirror for the relay lane. Four new
+suites registered. Rebased over b742 (banner) — its minimal-banner contract
+green on the combined tree. Gate about to run.
+
+**LIVE 30s-load work order for the Codex boot lane (owner-demanded, measured
+on HIS session, b741, 1,497-patient account, tab he opened himself):** FP
+340ms · DCL 579ms · ALL /api data done ~2.0s (patients 637ms, appointments
+800ms) · engines/ready 13,967ms · script tail 17,698ms · underFiveSeconds
+FALSE. Network + data shape exonerated; the 12s gap is the serial
+idle-callback loader chain across 228 scripts (900–2500ms timeout rungs,
+engines arming in one lump at the end). Fix = collapse loader SCHEDULING;
+boot must complete even occluded.
