@@ -895,3 +895,19 @@ this branch. Ship the integrated performance tree, then capture
 `__mlsBootTimeline()` on the owner's first real-account forced re-auth. If it is
 still over five seconds, retain the trace: the remaining hosted-only floor must
 be attributed before another change.
+
+## CLAIM b741 — goal-lane takeover session (Codex perf integration)
+
+**Claimed by:** same session, per owner directive. **Scope:** integrate
+Codex's `perf/workspace-hydration-20260727` (9 commits, c53e54c tip, based
+b739) onto b740 by rebase. Codex's numbers: login 3.12s→2.66s,
+patient-switch blocking 526–605ms→82–91ms, calendar-open blocking
+1,330ms→195ms; its gate 383/383; no auth/Athena-write/patient-write logic
+touched. Rebase conflicts resolved: (1) lastseen_rows loader — Codex's
+deletion honored (feature folded into ScribeFlow `_ptLastSeenText` at
+source, proven by its patient-row-stability contract); (2) calbox_uniform
+loader token — Codex's 20260727cb110 kept, timeline line keeps the b740
+comment; (3) immutable-loader triplets — merged: Codex's calbox/caldedupe
+entries + this lane's chk3024/chk3023 release truth. Integrity: no markers,
+chk3024 in both connectors, lastseen 0 hits, Codex's 5 new suites + merged
+contract green. Full gate about to run on the combined tree.
