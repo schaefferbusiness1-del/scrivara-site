@@ -481,3 +481,36 @@ athena-follow-bidirectional-contract DRIVES both legs in a vm. ⚠ One
 WriteAllLines EOL near-disaster on mls-connect.js caught by diff-stat (45,918
 lines) and reverted; redone via node latin1. Owner-side extension reload will be
 gated on IDLE (never mid-pull/mid-recording). Gate about to run.
+
+**b723 SHIPPED + ext 3.0.23 RUNNING + LEG B PROVEN LIVE (2026-07-27 ~10:20).**
+Full release train solo: zip byte-verified on the CDN (sha 8695…73e7 exact),
+feed announces 3.0.23, idle-gated swap into Downloads\MLS_Assist_v1.65 (backup
+MLS_Assist_backup_3.0.22_20260727_swap), mlsDevReload ok:true, PONG buildId
+3.0.23+core-sha256:4badba9c… — zero owner action. First live call of the new
+verb returned the REAL open chart (Bernard P Brooks, his 7:30). Leg B proof on
+real data: banner Michele → focus event → banner Bernard P Brooks
+(p_sched_ibuwu5), loop suppression held. Leg A live drive DEFERRED to the
+Adam-only write-back window (it navigates his Athena tab; vm contract + the
+44/44 search-open lane cover the mechanics). Claim closed.
+
+**⚠ 10:30 SESSION DROP (not a defect, needs the OWNER):** the MLS tab's token was
+evicted by the PROOF-GATED 401 lane (his own 2026-07-21 hardening — /api/me
+confirmed the token dead; "session expired" toast shown). One sign-in restores
+everything; owner notified by push + relay. Also: Adam J Schaeffer [MLS TEST] is
+on NO pulled day — the Adam-only live write-back pass needs an [MLS TEST] slot
+booked (asked in the same relay).
+
+## CLAIM b724 — goal-lane takeover session (2026-07-27 ~11:10)
+
+**Claimed by:** same session. **Scope:** write-back walkthrough strip (op-note v2
+item 5). NEW feat_mls_writeback_walkthrough.js wbw-1.0.0 (idle loader after the
+follow loader): wraps __mlsWriteFlow.openUnifiedConfirmation, injects a
+STATUS-ONLY 4-step strip (Pick → Athena checks → Confirm & write → Verify) into
+the unified review — every state READ from the surface's own elements
+(radio/:checked, #mlsAthenaUnifiedContext, #mlsAthenaUnifiedReceipt), refusals
+never read as written, ZERO added action controls (the 45700 law), two
+element-scoped observers only, revert() removes strip + unwraps. New suite
+writeback-walkthrough-contract vm-drives all transitions. Boot CEILING 244→245
+documented. Live verify DEFERRED until the owner signs back in; the Adam-only
+send + Verify click-through + Leg A live drive remain queued on the [MLS TEST]
+slot. Gate about to run.

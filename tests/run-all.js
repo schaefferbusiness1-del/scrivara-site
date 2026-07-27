@@ -289,6 +289,7 @@ const tests = [
   'opnote-room-stage3-contract.test.js',
   'opnote-room-keeps-every-injection-point.test.js',
   'athena-follow-bidirectional-contract.test.js',
+  'writeback-walkthrough-contract.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',

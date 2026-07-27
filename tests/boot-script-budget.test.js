@@ -218,7 +218,19 @@ const LOADER = 'mls-connect.js';
  *     the calm shell, or any drafter machinery.
  *   - Net interface change: one Settings checkbox. The feature REMOVES the
  *     manual find-the-patient-again step on both sides of the tab boundary. */
-const CEILING = 244;
+/* 244 -> 245 at b724, for feat_mls_writeback_walkthrough.js (wbw-1.0.0) — the
+ * owner's op-note v2 item 5 (better write-back walkthrough). The three
+ * questions, answered:
+ *   - DEFERRED (requestIdleCallback, 4s timeout): EAGER_CEILING does not move.
+ *     Zero timers; two ELEMENT-scoped observers that exist only while the
+ *     review overlay is open (the document-wide count below is untouched).
+ *   - Not folded into feat_mls_writeflow.js because that file IS the write
+ *     lane — the strip is presentation over it, must never be able to change
+ *     what sends, and must be revertible on its own without touching a
+ *     safety-critical module (the same separation the room keeps from the
+ *     drafter machinery).
+ *   - It ADDS no controls at all — four status chips and one hint line. */
+const CEILING = 245;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
