@@ -504,6 +504,30 @@
       receipt.reason = "provider-unverified";
       return { complete: false, reason: receipt.reason, rows: [], receipt: receipt };
     }
+    /* pa-1.0.0 (owner escalation 2026-07-27, b744 follow-through): b744 stamped
+       the requested provider onto columnless rows in the CREATE body, but THIS
+       gate runs first and counted every such row as unattributed, so a scoped
+       pull returned provider-incomplete and imported NOTHING - the stamp was
+       unreachable for the exact one-column Day view it was written for
+       (measured live: 400/400 stored rows provider-empty across 17 days).
+       Attribution is legitimate here and ONLY here: the two-dimensional sweep
+       finished, the grid carries NO provider column at all (zero rows tagged),
+       the read never named a second clinician, and the user explicitly scoped
+       to one provider that is either roster-verified or named by this very
+       read. A MIXED grid stays fail-closed exactly as before. An all-scope
+       pull is untouched and stays honestly empty. Every filled row is counted
+       and disclosed on the receipt. */
+    var anyRowTagged = rows.some(function (r) {
+      return !!providerKey(r && r.provider) || !!String(rowProviderId(r) || "").trim();
+    });
+    var namedOthers = receipt.discoveredProviders.filter(function (p) {
+      var pk = providerKey(p); return pk && pk !== req.key;
+    });
+    var targetNamedByRead = receipt.discoveredProviders.some(function (p) { return providerKey(p) === req.key; });
+    var scopeFill = !anyRowTagged && rows.length > 0 && receipt.scheduleComplete === true &&
+                    namedOthers.length === 0 && (req.rosterVerified === true || targetNamedByRead);
+    receipt.scopeFilledRows = 0;
+    receipt.attribution = scopeFill ? "requested-scope-columnless" : "row-provider";
     var matching = [];
     var requireStableId = !!(req.id && req.rosterVerified);
     var canonicalNameFallback = false;
@@ -521,7 +545,15 @@
     rows.forEach(function (r) {
       var k = providerKey(r && r.provider), rowId = String(rowProviderId(r) || "").trim().toLowerCase();
       var wantId = String(req.id || "").trim().toLowerCase();
-      if (!k && !rowId) { receipt.unattributedRows++; return; }
+      if (!k && !rowId) {
+        if (!scopeFill) { receipt.unattributedRows++; return; }
+        /* pa-1.0.0: the columnless scoped fill - a COPY, so the caller's raw
+           rows never mutate; the filled copy carries into both the create
+           body and the enrich path downstream. */
+        var filled = {}; for (var fk in r) if (Object.prototype.hasOwnProperty.call(r, fk)) filled[fk] = r[fk];
+        filled.provider = req.name;
+        receipt.providerTaggedRows++; receipt.scopeFilledRows++; matching.push(filled); return;
+      }
       receipt.providerTaggedRows++;
       /* A canonical provider id is the selected-provider identity. Never fall
          back to a display-name token set when the row exposes an id: two real
@@ -1174,6 +1206,10 @@
       }
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};
+      /* pa-1.0.0: rows that were ALREADY stored provider-empty and got
+         attributed by this re-pull. This is the backfill counter - the only
+         honest number for how many of the 400 are fixed now. */
+      var providerBackfilled = 0;
       /* PHI-free row-failure telemetry. The old receipt exposed only `failed:N`,
          so an unavailable calendar GET, a refused identity merge, a backend
          write error, and a one-to-one mapping refusal all looked identical.
@@ -1415,7 +1451,14 @@
               enrich[field] = value; enrichKeys.push(field);
             }
             addMissing("dob", String(a.dob || ""));
-            addMissing("provider", String(a.provider || ""));
+            /* pa-1.0.0: the line that ATTRIBUTES an ALREADY-STORED
+               provider-empty row. b744 only ever stamped the CREATE path, so
+               no re-pull could fix a stored row; addMissing skips a non-empty
+               stored provider, so this is idempotent and never overwrites. */
+            var enrichProvider = String(a.provider || "");
+            if (!enrichProvider && requestedProvider.mode === "selected") enrichProvider = requestedProvider.name;
+            addMissing("provider", enrichProvider);
+            if (enrich.provider) providerBackfilled++;
             if (!storedAppointmentId) addMissing("athena_appointment_id", incomingAppointmentId);
             if (!storedProviderId2) addMissing("athena_provider_id", incomingProviderId2);
             addMissing("reason", String(a.reason || ""));
@@ -1588,7 +1631,7 @@
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
           historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
-          return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt };
+          return { created: created, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt };
         });
       });
     });
@@ -3309,6 +3352,7 @@
               failureReasons: phiFreeReasonCounts(res.failureReasons),
               mappingReasons: mappingReasonCounts(res.unresolvedMappings),
               created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0),
+              providerBackfilled: Number(res.providerBackfilled || 0),
               failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0)
             };
             var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, returnedAppointments: r.appts, providerDiag: r.providerDiag, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
@@ -3603,6 +3647,7 @@
           result.totals.skipped += Number(day.skipped || 0);
           result.totals.historiesRequested += Number(hr.requested || 0);
           result.totals.historiesProcessed += Number(hr.processed || 0);
+          result.totals.providerBackfilled = Number(result.totals.providerBackfilled || 0) + Number(cr.providerBackfilled || 0);
           if (day.ok === true && day.complete === true) result.totals.completeDays++;
           else { result.totals.failures++; result.retry.dates.push(date); }
           if (day.ok === true) { breaker.reason = ""; breaker.streak = 0; }

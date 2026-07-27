@@ -68,4 +68,54 @@ assert(si.includes('if (!rowProvider && requestedProvider.mode === "selected") r
 assert(si.includes('provider: rowProvider,'),
   'the stamped provider is what gets stored');
 
+/* ---- 5b. THE BEHAVIORAL ARM (pa-1.0.0) — the assertion whose absence let
+   b744 ship dead: the b744 stamp lived in the CREATE path, but
+   scopeProviderRows ran FIRST and returned zero rows for a columnless scoped
+   grid, so the stamp was unreachable. This arm RUNS the real gate. ---- */
+{
+  const vm = require('vm');
+  const head = si.slice(si.indexOf('var PROVIDER_NOISE = {'), si.indexOf('function normDob(s)'));
+  const tailStart = si.indexOf('function firstField(');
+  const tailEnd = si.indexOf('\n', si.indexOf('function rowProviderId('));
+  assert(tailStart > 0 && tailEnd > tailStart, 'helper slice anchors must exist');
+  const tail = si.slice(tailStart, tailEnd + 1);
+  const ctx = { window: {}, console };
+  ctx.window.window = ctx.window;
+  vm.createContext(ctx);
+  vm.runInContext(
+    'var safe=function(f,d){try{return f()}catch(e){return d}};var isFn=function(f){return typeof f===\'function\'};\n' +
+    head + '\n' + tail + '\nthis.__scope=scopeProviderRows;',
+    ctx, { filename: 'scopeProviderRows-slice.js' });
+  const COLUMNLESS = [
+    { name: 'A Patient', dob: '01/01/1980', time: '9:00 AM' },
+    { name: 'B Patient', dob: '02/02/1981', time: '9:30 AM' }
+  ];
+  const RESP = { receipt: { complete: true } };
+  /* columnless + roster-verified scope -> FILLED, complete, counted */
+  const filled = ctx.__scope(COLUMNLESS, { name: 'Cheston Simmons, MD', id: '7', rosterVerified: true }, RESP);
+  assert.strictEqual(filled.complete, true, 'a columnless scoped grid must now IMPORT (b744 returned zero rows here)');
+  assert.strictEqual(filled.rows.length, 2, 'every columnless row rides the scoped fill');
+  assert.strictEqual(filled.rows[0].provider, 'Cheston Simmons, MD', 'the fill stamps the requested provider');
+  assert.strictEqual(filled.receipt.scopeFilledRows, 2, 'the receipt counts every filled row');
+  assert.strictEqual(filled.receipt.attribution, 'requested-scope-columnless', 'the receipt names the attribution source');
+  assert(!COLUMNLESS[0].provider, 'the caller rows are never mutated - the fill copies');
+  /* MIXED grid (one tagged row) stays fail-closed exactly as before */
+  const MIXED = [
+    { name: 'A Patient', dob: '01/01/1980', provider: 'Someone Else, MD' },
+    { name: 'B Patient', dob: '02/02/1981' }
+  ];
+  const mixed = ctx.__scope(MIXED, { name: 'Cheston Simmons, MD', id: '7', rosterVerified: true }, RESP);
+  assert.strictEqual(mixed.complete, false, 'a MIXED grid must stay provider-incomplete - never guessed');
+  assert.strictEqual(mixed.rows.length, 0, 'a fail-closed scope imports nothing');
+  /* incomplete sweep -> no fill */
+  const incompleteSweep = ctx.__scope(COLUMNLESS, { name: 'Cheston Simmons, MD', id: '7', rosterVerified: true }, { receipt: { complete: false } });
+  assert.strictEqual(incompleteSweep.complete, false, 'an unfinished sweep must never scope-fill');
+  /* unverified, unnamed provider -> no fill */
+  const unverified = ctx.__scope(COLUMNLESS, { name: 'Total Stranger, MD' }, RESP);
+  assert.strictEqual(unverified.complete, false, 'an unverified provider the read never named must not scope-fill');
+  /* all-scope stays honestly untouched */
+  const allScope = ctx.__scope(COLUMNLESS, 'All providers', RESP);
+  assert(allScope.rows.every(function (r) { return !r.provider; }), 'an all-scope pull never invents attribution');
+}
+
 console.log('PASS pull panel calm under fire: built once + painted in place, pill by default, reporter outlives sweeps, store writes batched and sanitize stood down, scoped pulls attribute their provider');

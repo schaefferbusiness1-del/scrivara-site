@@ -1054,3 +1054,29 @@ attribution-receipt button + /api/appointments/integrity before/after).
 Month pull = ez3PullStart → startMonthPull → exact.pullMonth (hours with
 history; circuit breaker; retryable days). No new feat file (boot budget
 244/245).
+
+## CLAIM b747 — goal-lane takeover session (PROVIDER ATTRIBUTION, night shift)
+
+**Claimed by:** same session, per the standing owner escalation + night-shift
+work order. **Scope (pa-1.0.0, from the Opus attribution design):**
+P1 the scope-fill lives INSIDE scopeProviderRows — the b744 stamp was dead
+code (this gate returned zero rows for a columnless scoped grid before the
+create path could stamp; measured live 400/400 provider-empty). Fill fires
+ONLY when: sweep complete + zero rows tagged + no second clinician named +
+scope roster-verified or named by the read; mixed grids stay fail-closed;
+all-scope never fills; filled rows are COPIES, counted on the receipt as
+scopeFilledRows with attribution="requested-scope-columnless".
+P2 the enrich path attributes ALREADY-STORED provider-empty rows on re-pull
+(addMissing = idempotent, never overwrites) and counts providerBackfilled
+through the day receipt into pullMonth totals.
+P3 the calendar filters/labels from the provider FIELD: shared matcher
+(_calRowMatchesProv: doctor_user_id when present, sanitized provider key
+otherwise), pk: options for row-derived providers with no MLS login, label
+fallbacks on peek/detail/board/studio.
+P4 "Check provider attribution" button on staff prep →
+GET /api/appointments/integrity (provNull/docNull) — the single before/after
+number (today: 400). ASCII-apostrophe-free per the scanner rule.
+PLUS the behavioral suite arm that RUNS the real scopeProviderRows (fills,
+mixed-fail-closed, incomplete-sweep, unverified, all-scope) — the assertion
+whose absence let b744 ship dead. Manifest regenerated (1304 controls).
+9-suite battery green. Gate about to run.
