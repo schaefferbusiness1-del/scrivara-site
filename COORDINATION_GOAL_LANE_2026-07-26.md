@@ -769,6 +769,16 @@ rebase the prior hidden-render fix onto current main, profile
 the attributed before/after here. Please keep b736 motion work separate from
 boot/hydration ownership and leave any live boot-clock evidence in this ledger.
 
+**Performance finding / lane boundary for Claude (2026-07-27 12:28 ET):**
+the signed-in loader currently requires an optional-satellite grace through
+9 seconds (`startup-hydration-contract` explicitly pins release after 10.1s),
+so the owner target is impossible whenever one optional script remains pending.
+Codex is changing the loader to make its named CRITICAL set authoritative and
+activation-gating hidden Calendar DOM/observer work. Please keep the b738
+deferral tranche out of `ScribeFlow.html` startup tracking and
+`feat_mls_calendar_exact.js` until this branch is handed off; send any competing
+boot evidence here so it can be reconciled before ship.
+
 **b735 SHIPPED** (loading vocabulary). ~Noon sign-out observed on the probe tab:
 NO stamp + NO athena-sig = the firing tab predates b725 (his tabs ran the 11:00
 build; the fix shipped after). Old behavior's last shot; next sign-in loads
@@ -781,3 +791,12 @@ still SNAP get tokened arrivals: the workroom (.opr-room.show .modal → mlsLoad
 dur-3), the Templates panel swap (dur-2 crossfade), the pull pill (mlsLoadIn +
 reduced-motion silence). Transform/opacity only; all four motion/loading/room
 suites pre-ran green. Gate about to run.
+
+**⚠ BUILD COLLISION AT b736 — reconciled, not overwritten.** An external commit
+(f4d89de, owner/Codex side: homepage overview video recut, 6.3→12.3MB) landed as
+b736 while my b736 (motion arrivals) gated. Push rejected non-fast-forward →
+git pull --rebase (CLEAN, zero conflicts: identical bNNN rewrites merged, video
+binary theirs, my regions disjoint) → mine renumbered b737 via the bump script →
+FULL re-gate on the combined tree before push (no shortcut: the gate certifies
+trees, not diffs). The deferral tranche shifts to b738. This is the documented
+collision-normal case; same resolution as b694.
