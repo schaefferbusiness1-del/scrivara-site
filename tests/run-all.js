@@ -300,6 +300,7 @@ const tests = [
   'session-sliding-refresh-client.test.js',
   'sms-twofa-client-contract.test.js',
   'pull-visit-bodies-setting-restored.test.js',
+  'pull-panel-calm-under-fire.test.js',
   'pull-progress-feeds-modern-pull.test.js',
   'phone-has-a-transcript-and-a-way-on.test.js',
   'ai-audit-safety-fixes-contract.test.js',

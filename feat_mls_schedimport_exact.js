@@ -217,7 +217,11 @@
   }
   function beginPatientBatch(label) {
     var api = patientBatchApi();
-    return api ? api.begin({ label: String(label || "managed-pull"), maxChanges: 4, maxDelayMs: 5000 }) : null;
+    /* b744 #36: 4/5000 flushed a ~1.4s full-store LZ compress every 4 upserts
+       during a pull - the owner's once-a-second freezes. 12/15000 is the
+       clamp ceiling (ScribeFlow.html batch API); the forced checkpoint before
+       chart navigation and withPatientBatch's terminal flush keep durability. */
+    return api ? api.begin({ label: String(label || "managed-pull"), maxChanges: 12, maxDelayMs: 15000 }) : null;
   }
   function checkpointPatientBatch(token, reason, force) {
     if (!token) return null;
@@ -1488,7 +1492,17 @@
              null -> doctor-scoped "Who's Next" excluded them (matchesDoctor returns false on
              an empty provider) and showed a stale set instead. This is the "doctors assigned
              to their correct patients" fix. */
-          var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), provider: String(a.provider || ""), patient_external_id: ext || null, appt_date: date, start_at: startIso };
+          /* b744 (owner escalation: providers must be "assigned to their
+             correct patients"): a ONE-COLUMN Athena Day view has no per-row
+             provider column, so a provider-SCOPED pull stored every row with
+             an empty provider (his real 18-appointment day: 18x unattributed).
+             When the scrape row carries no provider and the pull was scoped to
+             one selected provider, that provider IS the attribution. An
+             'all'-scope pull with a columnless grid stays honestly empty -
+             never guessed. */
+          var rowProvider = String(a.provider || "");
+          if (!rowProvider && requestedProvider.mode === "selected") rowProvider = requestedProvider.name;
+          var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), provider: rowProvider, patient_external_id: ext || null, appt_date: date, start_at: startIso };
           var sourceAppointmentId = rowAppointmentId(a), sourceProviderId = rowProviderId(a);
           if (sourceAppointmentId) body.athena_appointment_id = sourceAppointmentId;
           if (sourceProviderId) body.athena_provider_id = sourceProviderId;
@@ -2096,6 +2110,10 @@
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
+    /* b744 #36: true only when the per-patient loop ran to completion; the
+       finally uses it to close the progress reporter ONLY on the throw path
+       (the normal close waits out the automatic sweeps below). */
+    var batchBodyCompleted = false;
     /* si-1.9.1: sweeps inherit the OUTER frozen deadline (a sub-batch used to
        mint its own budget, which could keep the pull alive past the frozen
        deadline — never-immortal is the rule). Number form kept for callers. */
@@ -2179,7 +2197,11 @@
             readerVersion: String(savedVisits && savedVisits.readerVersion || ""),
             authoritativeEmpty: savedVisits && savedVisits.authoritativeEmpty === true
           };
-          if (isFn(window.savePatients)) window.savePatients(arr);
+          /* b744 #36: join the patient batch instead of forcing an unbatched
+             full-store LZ compress per stamped patient (upsertPatient defers
+             to the active pull batch; savePatients stays the fallback). */
+          if (isFn(window.upsertPatient)) window.upsertPatient(arr[i]);
+          else if (isFn(window.savePatients)) window.savePatients(arr);
           safe(function () { if (isFn(window._pendingSyncAdd)) window._pendingSyncAdd(String(patientId)); });
           return;
         }
@@ -2642,7 +2664,19 @@
         }
         ppResolve(pOne.__ppRow, pOne.complete === true, pOne.complete === true ? "" : (pOne.reason || ""));
       }
-    } finally { historyBatchRunning = false; ppEnd(); }
+      batchBodyCompleted = true;
+    } finally {
+      historyBatchRunning = false;
+      /* b744 #36: the progress reporter's lifecycle belongs to the OUTER
+         batch AND outlives its automatic sweeps. Closing it here killed and
+         re-created the whole panel at every sweep boundary - the elapsed
+         clock restarted, a hidden panel slammed back open, and the pts
+         pull shield dropped between passes. Inner (sweep) batches never
+         close the reporter; the outer close lives after the sweep block.
+         This finally only closes it on the THROW path, so an exception can
+         never leave the panel running forever. */
+      if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);
+    }
     function finalizeVerdict() {
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
       /* An empty verified provider day has no patient history targets and is
@@ -2664,7 +2698,7 @@
        attempt is a full fresh open+verify+read — no identity gate is
        loosened, and a patient still refusing keeps an honest retry entry. */
     var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
-    if (!sweepDepth) {
+    if (!sweepDepth) try {
       receipt.sweepPasses = 0;
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
@@ -2705,6 +2739,12 @@
         receipt.retry = freshRetry;
         finalizeVerdict();
       }
+    } finally {
+      /* b744 #36: the OUTER batch closes the progress reporter exactly once,
+         after every automatic sweep pass — the panel now lives continuously
+         from first row to true finish (no teardown at sweep boundaries, no
+         elapsed reset, the pts pull shield never drops mid-pull). */
+      safe(ppEnd);
     }
     safe(function () { if (isFn(window.renderHistory)) window.renderHistory(); });
     safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });

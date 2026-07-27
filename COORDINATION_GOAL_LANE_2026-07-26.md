@@ -952,3 +952,29 @@ FALSE. Network + data shape exonerated; the 12s gap is the serial
 idle-callback loader chain across 228 scripts (900–2500ms timeout rungs,
 engines arming in one lump at the end). Fix = collapse loader SCHEDULING;
 boot must complete even occluded.
+
+## CLAIM b744 — goal-lane takeover session (URGENT #36 + provider stamp)
+
+**Claimed by:** same session, owner's "extension is #1, fix right away" rule.
+**Scope (Opus-subagent root-cause, all three defects behind the owner's live
+"glitches out every literally second" report):** (1) the pull panel rebuilt
+its whole card via innerHTML every 900ms Worker tick, so b735's mlsLoadIn
+entrance replayed on a brand-new element ~1/s and the Hide button died
+mid-click → built once + painted in place, no-op-guarded writes, rows
+re-render only on settles; (2) ppEnd() fired before the automatic sweeps →
+panel teardown at every sweep boundary, elapsed reset, hidden reset, pull
+shield dropping → the reporter now outlives sweeps (outer close after the
+sweep block, throw-path fallback in the finally; pinned literal in
+pull-progress-feeds-modern-pull updated in the same commit); (3) per-patient
+full-store LZ compress storms (sanitize sweep every 2.5s all pull long +
+batch flush every 4 upserts + stampVisitsProof unbatched) → sanitize stands
+down during pulls, batch raised to the 12/15000 clamp ceiling,
+stampVisitsProof joins the batch. PLUS: non-blocking by DEFAULT (pill first,
+modal one click away, live pill text) and the provider-attribution stamp
+(a provider-scoped pull stamps its provider onto columnless one-column-grid
+rows; 'all' scope stays honestly empty). New suite
+pull-panel-calm-under-fire. Anchoring lesson re-learned: an unanchored
+indexOf splice on mls-connect.js grabbed the FIRST of 14 matches and cut
+1,900 unrelated lines — caught by git diff --stat before anything ran;
+re-applied with module-anchored search + window-size guard. Gate about to
+run.

@@ -32,8 +32,17 @@ assert(si.includes('ppCurrent(row.name || (target && target.name) || "");'),
 assert(si.includes('one.__ppRow = ppSettle(row.name,'), 'every processed row must settle into the panel state');
 assert(si.includes('ppResolve(pOne.__ppRow, pOne.complete === true,'),
   'pipelined rows must be corrected at finalization');
-assert(si.includes('} finally { historyBatchRunning = false; ppEnd(); }'),
-  'the batch finally must end the progress state');
+/* b744 #36: the reporter's close moved OUT of the per-patient finally — it
+   used to fire before the automatic sweeps, killing and re-creating the whole
+   panel at every sweep boundary (elapsed reset, hidden reset, and the pts
+   pull shield dropping between passes). Now: the finally closes it only on
+   the THROW path, and the outer batch closes it exactly once after sweeps. */
+assert(si.includes('if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);'),
+  'a thrown batch must still end the progress state (throw-path fallback)');
+assert(/if \(!sweepDepth\) try \{[\s\S]*?\} finally \{[\s\S]{0,400}?safe\(ppEnd\);[\s\S]{0,10}?\}/.test(si),
+  'the OUTER batch must end the progress state exactly once, after its sweeps');
+assert(!si.includes('} finally { historyBatchRunning = false; ppEnd(); }'),
+  'the old pre-sweep close must stay gone - it was the panel-teardown bug');
 assert(si.includes('if(g.state&&g.state.running===true) return null;'),
   'a mid-run LEGACY state must never be stolen');
 
