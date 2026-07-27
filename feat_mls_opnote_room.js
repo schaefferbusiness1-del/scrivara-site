@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.3.0';
+  var VERSION = 'opr-1.4.0';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -283,6 +283,22 @@
   /* If the drafter is already open when this module lands (idle-deferred
      load), give the rails their first build now. */
   if (shown($('opPrepModal'))) safe(buildRails);
+  /* opr-1.4.0 (owner live report: "templates taking up half the screen"):
+     if the doctor opened Templates BEFORE this module landed, the base opener
+     showed the old 960px floating modal — half a wide screen, and visually a
+     different product from the room. Adopt it in place: embed, open the room,
+     front the tab. The doctor's open surface upgrades instead of living in
+     two inconsistent shapes. */
+  if (shown($('templatesModal')) && safe(function () { return $('templatesModal').parentElement !== $('oprPanelTpls'); }, false)) {
+    safe(function () {
+      ensureEmbedded();
+      if (!shown($('opPrepModal'))) {
+        if (isFn(window.openOpPrepSmart)) window.openOpPrepSmart();
+        else if (isFn(window.openOpPrep)) window.openOpPrep();
+      }
+      showTab('tpls');
+    });
+  }
 
   var api = {
     installed: true,

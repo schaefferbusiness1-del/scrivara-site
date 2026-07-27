@@ -6436,7 +6436,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b725: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b726: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6658,7 +6658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b725 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b726 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -15551,7 +15551,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   API.openMonth = openMonth;
   API.draftAll = draftAll;
   API.testMatch = runMatchTest;
-  /* b725: the workroom's template rail reads health through THIS owner — one
+  /* b726: the workroom's template rail reads health through THIS owner — one
      source for the honest heuristics, never a duplicated copy that drifts. */
   API.healthOf = healthOf;
 
@@ -18497,11 +18497,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      a recording starts/stops elsewhere, THE BANNER PATIENT CHANGES) */
   function homeSig() {
     var tc = timeContext();
-    /* b725: the empty-day hero renders from activePatient() (the owner's
+    /* b726: the empty-day hero renders from activePatient() (the owner's
        through-line law, b693) but this signature never tracked it — switching
        patients via Recent or the calendar's "Open patient" left the hero
        offering the PREVIOUS patient's name until something else moved.
-       Measured live at b725 in BOTH directions (banner Adam / hero Bernard,
+       Measured live at b726 in BOTH directions (banner Adam / hero Bernard,
        then banner Bernard / hero Adam). The banner patient is part of what
        the home shows, so it is part of the signature. */
     var apk = '';
@@ -33632,7 +33632,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b725';
+  window.__MLS_AV = window.__MLS_AV || 'b726';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33962,7 +33962,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b725';
+  var MLS_APP_BUILD='2026-07-25-b726';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38816,7 +38816,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b725+b725 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b726+b726 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -42487,7 +42487,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Calm Shell: dock + right-now bar + visit stages + heads-down + Ask over the existing controls, ?ui=classic escape hatch (window.__mlsCalmShell calm-1.0.0; revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_room.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_room.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_room.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Op-note workroom home (opr-1.0.0, Stage 0 inert): the owner-approved full-screen room builds inside this one revertible module - see OPNOTE_WORKROOM_PLAN_2026-07-26.md. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_room.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_room.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_room.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* Op-note workroom home (opr-1.0.0, Stage 0 inert): the owner-approved full-screen room builds inside this one revertible module - see OPNOTE_WORKROOM_PLAN_2026-07-26.md. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_athena_follow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_athena_follow.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_athena_follow.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Bidirectional Athena<->MLS patient follow (owner-approved "Automatic with context" + bidirectional follow-up). Idle-deferred: follow triggers are tab-arrival and patient-pick moments, never the boot burst (window.__mlsAthenaFollow af-1.0.0; revert(), describe()). */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_walkthrough.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_walkthrough.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_writeback_walkthrough.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Write-back walkthrough strip on the unified Athena review (owner op-note v2 item 5): Pick -> Athena checks -> Confirm -> Verify, states READ from the surface, zero added controls. Idle-deferred; the review is a minutes-in surface (window.__mlsWritebackWalkthrough wbw-1.0.0; revert(), describe()). */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_studio_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Deferred on requestIdleCallback - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.0; revert()) */
@@ -43715,7 +43715,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b725: `safe` was never defined in this IIFE, so the moment
+      /* b726: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a

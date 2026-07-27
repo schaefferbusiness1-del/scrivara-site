@@ -541,3 +541,22 @@ idle-logout-knows-athena-work (vm: changed-chart re-arms, parked chart + silence
 fail closed, stamps, gate-once). Region-slicing suites pre-ran green ×4.
 DEFERRED (prepared next, deploy in idle window): backend sliding-refresh
 (/api/auth/refresh) to kill the 30-day-TTL surprise class too. Gate about to run.
+
+**b725 SHIPPED (2026-07-27 ~12:40)** — idle logout learns Athena work; owner has
+the full root-cause writeup. Badge verified live: "Installed v3.0.23 · up to date".
+
+## CLAIM b726 — goal-lane takeover session (2026-07-27 ~12:45)
+
+**Claimed by:** same session. **Scope:** the owner's two live Templates reports,
+walked and fixed properly (his instruction: nothing half-assed). Reproduced live:
+mechanics were correct on the wrapped path (full-screen room, exits functional) —
+the REAL defects were (1) the only exit was a 14×23px corner ✕ on a full-screen
+takeover (b722's one-door minimalism = a trap for someone who fell in via
+Templates), and (2) the idle-deferred module leaves a window where Templates
+opens as the OLD 960px floating modal ("half the screen", two inconsistent
+products). Fixes: header ‹ Back button (opr-back, closeOpPrep) + ~44px ✕;
+opr-1.4.0 ADOPTS a floating modal open at module-land (embed + open room +
+front tab); room loader idle timeout 4000→1500. Pins moved deliberately:
+injection-point exit section (findability outranks minimalism), stage3 version
+pin → agnostic + adopt-at-boot vm case. Manifest 1298→1299. Full personal
+walk of every entry×exit path AFTER deploy. Gate about to run.

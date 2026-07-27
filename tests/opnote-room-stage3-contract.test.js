@@ -23,7 +23,9 @@ const room = fs.readFileSync(path.join(root, 'feat_mls_opnote_room.js'), 'utf8')
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 /* ---- source pins ------------------------------------------------------- */
-assert(room.includes("var VERSION = 'opr-1.3.0';"), 'room module is not opr-1.3.0');
+assert(/var VERSION = 'opr-1\.\d+\.\d+';/.test(room), 'room module lost its version line');
+assert(room.includes('if (shown($(\'templatesModal\')) && safe(function () { return $(\'templatesModal\').parentElement !== $(\'oprPanelTpls\'); }, false)) {'),
+  'the module must ADOPT a floating Templates modal that opened before it landed (the half-screen report)');
 assert(app.includes('<section id="oprPanelTpls"></section>'), 'the Templates tab panel is missing from the room markup');
 assert(app.includes('#oprPanelTpls #templatesModal{ position:static;'), 'embedded presentation must neutralize the floating-modal chrome');
 assert(app.includes('#oprPanelTpls #templatesModal.show{ display:block; }'), "the modal's own .show lifecycle must stay the visibility gate when embedded");
@@ -103,4 +105,28 @@ assert.strictEqual(ctx.openTemplates, OT, 'revert did not restore openTemplates'
 assert.strictEqual(ctx.closeTemplates, CT, 'revert did not restore closeTemplates');
 assert.strictEqual(ids.templatesModal.parentElement, BODY, 'revert did not return #templatesModal to its original parent');
 
-console.log('PASS op-note room stage 3: Templates joins the room - reparent on first open, room auto-opens, tabs follow open/close, satellites keep their node, clean revert - all proven in vm');
+/* ---- b726: a floating Templates modal open BEFORE the module lands is
+ * ADOPTED at boot - embedded, room opened, tab fronted (the owner's
+ * "half the screen" report was the unwrapped 960px modal). Fresh context. */
+const ids2 = {};
+['opPrepModal', 'templatesModal', 'oprRowNav', 'oprTplRail', 'oprReceipt', 'opPrepList',
+  'oprPanelProcs', 'oprPanelTpls', 'oprTabProcs', 'oprTabTpls'].forEach(function (id) { ids2[id] = stubNode(id); });
+const BODY2 = stubNode('body');
+BODY2.appendChild(ids2.templatesModal);
+ids2.templatesModal.classList.add('show');            /* the doctor is IN the floating modal */
+let roomOpened2 = 0;
+const ctx2 = { document: { getElementById: function (id) { return ids2[id] || null; }, visibilityState: 'hidden' }, console: console };
+ctx2.window = ctx2;
+ctx2.addEventListener = function () {}; ctx2.removeEventListener = function () {};
+ctx2.opPrepRender = function () {};
+ctx2.openTemplates = function () { ids2.templatesModal.classList.add('show'); };
+ctx2.closeTemplates = function () { ids2.templatesModal.classList.remove('show'); };
+ctx2.openOpPrepSmart = function () { roomOpened2++; ids2.opPrepModal.classList.add('show'); };
+ctx2._opPrep = []; ctx2.getTemplates = function () { return []; };
+vm.createContext(ctx2);
+vm.runInContext(room, ctx2, { filename: 'feat_mls_opnote_room.js' });
+assert.strictEqual(ids2.templatesModal.parentElement, ids2.oprPanelTpls, 'boot must adopt (embed) an already-open floating Templates modal');
+assert.strictEqual(roomOpened2, 1, 'boot adoption must open the room around the modal');
+assert(ids2.oprPanelTpls.classList.contains('on'), 'boot adoption must front the Templates tab');
+
+console.log('PASS op-note room stage 3: Templates joins the room - reparent on first open, room auto-opens, tabs follow open/close, floating modal adopted at boot, satellites keep their node, clean revert - all proven in vm');

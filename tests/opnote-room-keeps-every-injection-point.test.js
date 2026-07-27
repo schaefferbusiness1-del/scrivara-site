@@ -60,12 +60,19 @@ assert(connect.includes('opPrepGenAllBtn'), 'mls-connect (tpf) no longer targets
 });
 assert(app.includes("id=\"opPrepPrev_'+i+'\""), 'the per-row preview anchor moved - _opProcChanged live preview dies');
 
-/* 7. STAGE-4 PRESENTATION: one exit only (the modal-x; the bottom Close row
- * is retired), and the empty states teach in one sentence. */
+/* 7. STAGE-4/b726 PRESENTATION: exits are FINDABLE and consistent - a real
+ * Back button leads the header, the ~44px modal-x remains, Esc still works,
+ * and the redundant bottom Close row stays retired. (b722 shipped "one exit"
+ * as a 14x23px corner X; the owner fell into Templates and could not find
+ * his way out - findability outranks minimalism.) */
 assert(!/<div class="row" style="margin-top:14px"><button class="btn-ghost" onclick="closeOpPrep\(\)"/.test(app),
-  'the second exit (bottom Close row) is back - the room has ONE exit');
+  'the redundant bottom Close row is back');
+assert(app.includes('id="oprBack" class="opr-back" onclick="closeOpPrep()"'),
+  'the header Back button is gone - the room becomes a trap again');
 assert(app.includes('onclick="closeOpPrep()" aria-label="Close op-note prep"'),
-  'the one exit (modal-x) lost its accessible name');
+  'the modal-x lost its accessible name');
+assert(app.includes('#opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;\n    font-size:26px; padding:8px 14px; line-height:1; }'),
+  'the modal-x shrank below a findable target again');
 assert(app.includes('gathers every missing detail into one <b>Fields</b> box'),
   'the rail note lost its one-sentence teaching line');
 assert(app.includes('Upload your operative-note templates on the <b>Templates</b> tab first'),
