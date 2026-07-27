@@ -17,7 +17,7 @@ const studyGroups = read('feat_mls_studygroups.js');
 const inventory = JSON.parse(read('pages-publication-inventory.json')).paths;
 
 const policyTag = '<script src="public-preview-policy.js?v=b497"></script>';
-const runtimeTag = '<script src="public-preview-runtime.js?v=b497"></script>';
+const runtimeTag = '<script src="public-preview-runtime.js?v=b711"></script>';
 const policyAt = app.indexOf(policyTag);
 const purgeAt = app.indexOf('<script src="clinical-state-purge.js');
 const appMainAt = app.indexOf('const _SF_DEMO = (function(){');
@@ -136,10 +136,14 @@ assert(loadingCalm.includes("visualOwner: 'mlsProgressStages'") &&
     'provider passthrough did not exit before its Athena picker/chip side effects');
 }
 
+/* Tokens move WITH content (immutable-cache law): the runtime moved at b711
+ * (the dock now clears the SAMPLE WORKSPACE strip); the policy bytes have not
+ * changed since b497, so its URL must not move. */
+const shellTokens = { 'public-preview-policy.js': 'b497', 'public-preview-runtime.js': 'b711' };
 for (const asset of ['public-preview-policy.js', 'public-preview-runtime.js']) {
   assert(config.includes(`- "${asset}"`), `${asset} is not explicitly reviewed in the Pages allowlist`);
   assert(inventory.includes(asset), `${asset} is missing from the exact Pages inventory`);
-  assert(sw.includes(`/${asset}?v=b497`), `${asset} is missing from the immutable app shell`);
+  assert(sw.includes(`/${asset}?v=${shellTokens[asset]}`), `${asset} is missing from the immutable app shell`);
 }
 
 assert(app.includes('const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"'),

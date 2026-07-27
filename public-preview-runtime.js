@@ -324,7 +324,13 @@
       '[data-mls-preview-readonly="1"]{background:#f4f3ef!important;cursor:not-allowed!important;}' +
       '[data-mls-preview-action="sample-month"],[data-mls-preview-action="sample-day"]{opacity:1!important;cursor:pointer!important;background:#204034!important;color:#fff!important;}' +
       '.mls-preview-menu-badge{display:inline-flex;margin-left:auto;border:1px solid #8fd8be;border-radius:999px;padding:2px 7px;background:#e8f7f1;color:#183a2f;font:800 10px/1.2 system-ui;letter-spacing:.04em;text-transform:uppercase;}' +
-      '@media(max-width:680px){body.mls-public-preview{padding-bottom:104px!important;}#mlsPublicPreviewStrip{align-items:flex-start;flex-wrap:wrap;padding:8px 10px;gap:6px 9px;}#mlsPublicPreviewStrip .mls-preview-copy{flex-basis:100%;font-size:12px;}#mlsPublicPreviewStrip .mls-preview-actions{width:100%;}#mlsPublicPreviewStrip button{flex:1 1 0;}}';
+      /* The dock is bottom-fixed at 18px; this strip is bottom-fixed at 0 and
+         50px tall, and it painted over the dock's lower half - the ask bar and
+         every dock label were clipped for every prospect (measured 32px of
+         overlap at 2320x1287). body padding cannot move FIXED chrome; the dock
+         itself lifts while the strip exists. 74 = 18 + 50 strip + 6 gap. */
+      'body.mls-public-preview #mlsDock{bottom:74px;}' +
+      '@media(max-width:680px){body.mls-public-preview{padding-bottom:104px!important;}body.mls-public-preview #mlsDock{bottom:112px;}#mlsPublicPreviewStrip{align-items:flex-start;flex-wrap:wrap;padding:8px 10px;gap:6px 9px;}#mlsPublicPreviewStrip .mls-preview-copy{flex-basis:100%;font-size:12px;}#mlsPublicPreviewStrip .mls-preview-actions{width:100%;}#mlsPublicPreviewStrip button{flex:1 1 0;}}';
     (document.head || document.documentElement).appendChild(style);
   }
 
