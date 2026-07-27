@@ -114,9 +114,12 @@
       why: 'a chart export is not the reason the patient screen is open. NOTE: this is a CLASS, not an id - feat_fullhistory_pdf.js styles .mlsfhpdf-btn, and the first version of this rule wrote #mlsfhpdf-btn, matched nothing, and hid nothing. A selector that matches zero elements looks exactly like a fix that shipped.' },
 
     /* ---- visitView ---- */
-    { sel: '#visitView #mlsWdDeck:has(.wd-starter)',
-      route: 'dock > Tools > AI Studio (#customWidgetHdrBtn opens the widget builder)',
-      why: 'the :has() is the whole point - hidden ONLY in the starter state, where the deck is 484px of advertising for widgets the doctor has not built' },
+    { sel: '#visitView #mlsWdDeck .wd-starter:not(:first-of-type)',
+      route: 'the kept FIRST starter card - its Add button opens the same builder where every template is offered',
+      why: 'b734: hiding the WHOLE starter deck left zero-widget doctors with no surface and no way to create the first one; one compact card stays as the first-run door, the other suggestion cards fold' },
+    { sel: '#visitView #mlsWdDeck .wd-starter p',
+      route: 'the same first starter card - the description re-appears inside the builder it opens',
+      why: 'b734: descriptions are prose, not controls; folding them keeps the kept card compact on a clinical screen' },
     { sel: '#visitView #mlsWdDeck .wd-head .wd-btn',
       route: 'dock > Tools > AI Studio (#customWidgetHdrBtn opens the widget builder)',
       why: 'authoring controls on a clinical screen; the widgets themselves stay' },
@@ -208,8 +211,16 @@
     /* The widget BUILDER leaves the clinical screen. Widgets the doctor has
        actually built keep their cards; only the authoring row goes. */
     'body.' + BODY + ' #visitView #mlsWdDeck .wd-head .wd-btn{display:none!important}',
-    /* ...and in the starter state the deck is nothing BUT authoring. */
-    'body.' + BODY + ' #visitView #mlsWdDeck:has(.wd-starter){display:none!important}',
+    /* b734 (audit): hiding the whole starter deck left a doctor with ZERO
+       widgets no surface AND no way to create the first one from the clinical
+       screen — the feature was invisible until you already had it. Instead of
+       vanishing, the starter collapses to ONE compact card (title + its Add
+       button, description folded) — a first-run entry point, not an authoring
+       row. With >=1 widget saved this rule never matches and cards render as
+       before. */
+    'body.' + BODY + ' #visitView #mlsWdDeck .wd-starter:not(:first-of-type){display:none!important}',
+    'body.' + BODY + ' #visitView #mlsWdDeck .wd-starter p{display:none!important}',
+    'body.' + BODY + ' #visitView #mlsWdDeck .wd-starter .wd-btn{display:inline-flex!important;min-height:44px}',
 
     /* EXACTLY ONE TEXT-ENTRY SURFACE. Owner, 2026-07-26: "sometimes 2 textboxes
      * pop up - all errors like this must not make final product."

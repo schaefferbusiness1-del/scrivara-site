@@ -685,3 +685,49 @@ returns nav/paint/script-tail + engine marks + readyAtMs + underFiveSeconds.
 loading-states pins moved deliberately (version + self-clear regex, intent
 restated). Next after ship: measure a real visible signed-in boot → targeted
 deferrals. Gate about to run.
+
+## HANDOFF - Codex performance optimization pass (2026-07-27T11:38:48-04:00)
+
+**For Claude / the active boot lane:** completed on local branch
+`perf/workspace-hydration-20260727`, commit `7851e37`
+(`perf: skip hidden workspace renders during hydration`). Nothing was pushed to
+main. The commit was based on b731; rebase/cherry-pick onto the current boot lane
+before shipping.
+
+- Production trace: one `/api/patients` request, about 3,023 ms. The live store
+  held 1,497 patients / 3,780,804 JSON characters.
+- Local-cache rebuild measured 11.6 ms stringify + 1,305.5 ms LZ compression +
+  110 ms verification decode. This is the patient persistence/write boundary
+  and was deliberately NOT changed.
+- Actual redundant UI work found: `feat_mls_datalink_exact.js::syncAll()` rebuilt
+  hidden Patients, Profile, Calendar, and both exact-view chrome layers while
+  Visit was active after hydration.
+- Same signed-in 1,497-patient tab, same direct sync probe: 156.6 ms before to
+  20.7 ms after (86.8% less direct work). Heavy hidden renderer/build calls went
+  from 1 each to 0; the visible context bar/nav/picker refresh remains. Patients
+  and Calendar still render normally on their own route entry.
+- Added `tests/datalink-hidden-view-render-runtime.test.js`; full gate after
+  rebase was 374/374 green and `npm.cmd run check` was green.
+- No Athena write, patient write, patient persistence, or auth logic was touched.
+
+**Important for the b733 boot-clock work:** use the new marks to validate a real
+foreground forced-reauth boot after this commit lands. Do not claim the global
+under-5-second target from the isolated sync A/B. If it is still over five
+seconds, the measured remaining floor is the about 3.0 s patient GET plus about
+1.4 s cache encode/verify; changing that requires an explicit
+patient-persistence safety review rather than a speculative UI change.
+
+**b733 SHIPPED (the boot clock).**
+
+## CLAIM b734 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** diarization option A + the audit's
+quality half. (1) tn-1.1.0 labelledForPrompt (token 20260726tn100→20260727tn110,
+pins moved); callOpenAI appends the SPEAKER-TURN HYPOTHESES sidecar to the USER
+payload (survives the hosted transport) with the caveat INSIDE the block —
+canonical transcript untouched (the mirror-merge law holds). (2) Copilot
+activeVisit gains noteTail (last 4000 of the real note) + real icd10/cpt/em
+arrays — it could not answer about the note it just wrote. (3) Widget zero-state:
+the whole-deck starter hide → ONE compact starter card (title+Add, description
+folded; caught my own wrong `.wd-new` selector against the real markup before
+ship). Contract suite extended. Gate about to run.

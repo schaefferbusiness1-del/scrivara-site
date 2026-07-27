@@ -68,7 +68,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'tn-1.0.0';
+  var VERSION = 'tn-1.1.0';
   var ASSET = 'feat_mls_turn_labels.js';
   try {
     if (window.__mlsTurns && window.__mlsTurns.installed && window.__mlsTurns.version === VERSION) return;
@@ -475,6 +475,16 @@
     setLabel: setLabel,
     cycleLabel: cycleLabel,
     raw: raw,
+    /* tn-1.1.0 (b734, diarization option A): the labels' delivery to the model
+       is a SIDECAR block appended to the user payload by callOpenAI — never a
+       rewrite of the canonical transcript. Empty string when there are no
+       turns, bounded, label-prefixed lines only. */
+    labelledForPrompt: function () {
+      try {
+        if (!turns.length) return '';
+        return turns.map(function (t) { return (t.label || '?') + ': ' + t.text; }).join('\n').slice(0, 8000);
+      } catch (e) { return ''; }
+    },
     render: render,
     apply: apply,
     unapply: unapply,

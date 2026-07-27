@@ -61,4 +61,21 @@ assert(app.includes("n.kind==='opnote'&&(n.text||'').trim()"),
 assert(room.includes("var VERSION = 'opr-1.5.1';"), 'room module is not opr-1.5.1');
 assert(room.includes('safe(wrapProcOpeners);'), 'opener wraps must re-attempt at call time');
 
-console.log('PASS ai-audit safety fixes: both study lanes really de-identify (vm-proven), studio saves only what passed, the record sees op-note bodies, and the room retries before floating');
+/* b734 - the quality half of the audit + diarization option A */
+const tn = fs.readFileSync(path.join(root, 'feat_mls_turn_labels.js'), 'utf8');
+const vf = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
+assert(tn.includes('labelledForPrompt: function () {'), 'the turn engine must offer the sidecar block');
+assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
+  'the sidecar must carry its caveat INSIDE the user block - the one field the hosted transport keeps');
+assert(app.includes("return await postChat(sys,'Visit transcript:\\n\\n'+transcript+ctxLine+turnsBlock,key);"),
+  'the sidecar must ride the user payload, never rewrite the transcript');
+assert(app.includes("noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',"),
+  'Copilot must receive the NOTE, not a word count');
+assert(app.includes('codes: coding?{ icd10:(coding.icd10||[]).slice(0,20)'),
+  'Copilot must receive the real code arrays');
+assert(vf.includes(".wd-starter:not(:first-of-type){display:none!important}"),
+  'the zero-widget state must keep ONE compact starter card as the first-run entry');
+assert(!vf.includes("#mlsWdDeck:has(.wd-starter){display:none!important}"),
+  'the whole-deck starter hide is back - the feature is invisible until you already have it');
+
+console.log('PASS ai-audit safety fixes: both study lanes really de-identify (vm-proven), studio saves only what passed, the record sees op-note bodies, the room retries before floating, the turn sidecar rides the user payload with its caveat, Copilot sees its own note and codes, and first-run widgets have a door');

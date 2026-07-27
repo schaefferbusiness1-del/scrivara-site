@@ -5075,7 +5075,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     results.forEach(function (r) {
       pi++;
       if(!window.__mlsStudyScrub){window.__mlsStudyScrub=function(text,name){var t=String(text==null?'':text);try{String(name==null?'':name).toLowerCase().split(/[^a-z]+/).forEach(function(w){if(w.length>2)t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'),'[patient]');});t=t.replace(/\b(mrn|acct|account|chart|id)\s*[#:]?\s*\d[\d-]*\b/gi,'[id]');t=t.replace(/\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/g,'[phone]');t=t.replace(/\b\d{6,}\b/g,'[id]');t=t.replace(/\b(\d{4})-(\d{2})-\d{2}\b/g,'$1-$2');t=t.replace(/\b(\d{1,2})\/\d{1,2}\/(\d{4})\b/g,'$1/$2');}catch(e){}return t;};}
-      /* b733: same de-identification promise, same scrub. */
+      /* b734: same de-identification promise, same scrub. */
       r.visits.forEach(function (v) { if (lines.length < 900) { lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + window.__mlsStudyScrub(S(v.detail), (r.patient && r.patient.name) || r.name).replace(/[\n\r|]+/g, " ").slice(0, 260)); nVisits++; } });
     });
     var sys = "You are a careful, honest, PREMIUM clinical-study analyst. Use ONLY the provided de-identified per-visit records. " +
@@ -6438,7 +6438,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b733: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b734: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6660,7 +6660,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b733 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b734 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -6735,7 +6735,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        ever absent the class comes off and the engine card is back on its own. */
     try {
       var laneMounted = !!(_primaryLane && _primaryLane.isConnected) || !!body.querySelector('.ez3fl-record');
-      /* b733 (phone audit B2): on the phone the whole lane is CSS-hidden, so a
+      /* b734 (phone audit B2): on the phone the whole lane is CSS-hidden, so a
          MOUNTED lane must not claim the top - that claim was hiding the
          engine's transcript card and quick-tools chip, leaving the phone with
          no transcript at all. Mounted is not visible. */
@@ -15557,7 +15557,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   API.openMonth = openMonth;
   API.draftAll = draftAll;
   API.testMatch = runMatchTest;
-  /* b733: the workroom's template rail reads health through THIS owner — one
+  /* b734: the workroom's template rail reads health through THIS owner — one
      source for the honest heuristics, never a duplicated copy that drifts. */
   API.healthOf = healthOf;
 
@@ -18503,11 +18503,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      a recording starts/stops elsewhere, THE BANNER PATIENT CHANGES) */
   function homeSig() {
     var tc = timeContext();
-    /* b733: the empty-day hero renders from activePatient() (the owner's
+    /* b734: the empty-day hero renders from activePatient() (the owner's
        through-line law, b693) but this signature never tracked it — switching
        patients via Recent or the calendar's "Open patient" left the hero
        offering the PREVIOUS patient's name until something else moved.
-       Measured live at b733 in BOTH directions (banner Adam / hero Bernard,
+       Measured live at b734 in BOTH directions (banner Adam / hero Bernard,
        then banner Bernard / hero Adam). The banner patient is part of what
        the home shows, so it is part of the signature. */
     var apk = '';
@@ -31951,7 +31951,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!inRange(v.date, months)) return;
         nVisits++;
         if(!window.__mlsStudyScrub){window.__mlsStudyScrub=function(text,name){var t=String(text==null?'':text);try{String(name==null?'':name).toLowerCase().split(/[^a-z]+/).forEach(function(w){if(w.length>2)t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'),'[patient]');});t=t.replace(/\b(mrn|acct|account|chart|id)\s*[#:]?\s*\d[\d-]*\b/gi,'[id]');t=t.replace(/\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/g,'[phone]');t=t.replace(/\b\d{6,}\b/g,'[id]');t=t.replace(/\b(\d{4})-(\d{2})-\d{2}\b/g,'$1-$2');t=t.replace(/\b(\d{1,2})\/\d{1,2}\/(\d{4})\b/g,'$1/$2');}catch(e){}return t;};}
-        /* b733: the header below says DE-IDENTIFIED; the detail must be. */
+        /* b734: the header below says DE-IDENTIFIED; the detail must be. */
         if (lines.length < 900) lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + window.__mlsStudyScrub(S(v.detail), p && p.name).replace(/[\n\r|]+/g, " ").slice(0, 260));
       });
     });
@@ -32272,7 +32272,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         _origRender = window.renderStudioWidget;
         var w = function (html, title) {
           var r = _origRender.apply(this, arguments);
-          /* b733 (audit): a tool that FAILS its runtime check was saved into
+          /* b734 (audit): a tool that FAILS its runtime check was saved into
              My creations anyway - the verdict arrives LATER by postMessage.
              Stash a PENDING save; the __mlsWidgetReady branch (ScribeFlow)
              commits it - the one door that knows the tool passed. */
@@ -33636,7 +33636,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b733';
+  window.__MLS_AV = window.__MLS_AV || 'b734';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33966,7 +33966,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b733';
+  var MLS_APP_BUILD='2026-07-25-b734';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38820,7 +38820,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b733+b733 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b734+b734 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -41189,7 +41189,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_voice_ai.js',V='1.1.2',api=window.__mlsVoiceAI,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719vaihot112';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware voice AI command layer: stale mic owner is stopped before replacement. */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A='feat_mls_voice_copilot.js',V='vcp-1.0.0',api=window.__mlsVoiceCopilot,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260726vcp100';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* vcp-1.0.0: ONE route from any microphone to the ONE Copilot brain. Owns no recognizer, no lease, no patterns, no UI - it picks an EXISTING brain (Copilot Voice -> assistant -> Copilot card) and guarantees the doctor's own words reach the Copilot thread exactly once. Reversible: window.__mlsVoiceCopilot.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_audio_capture.js"]'))return;var s=document.createElement('script');s.src='feat_mls_audio_capture.js?v=20260726ac100';s.setAttribute('data-mls-asset','feat_mls_audio_capture.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* ac-1.0.0: ONE deliberate audio policy for AMBIENT exam-room capture (echoCancellation/noiseSuppression OFF, autoGainControl ON - a call-tuned suppressor gates the patient across the room). Applies to the audio THIS APP records; SpeechRecognition accepts no constraints and is explicitly out of scope. Headless - no UI. Reversible: window.__mlsAudioCapture.revert() */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_turn_labels.js"]'))return;var s=document.createElement('script');s.src='feat_mls_turn_labels.js?v=20260726tn100';s.setAttribute('data-mls-asset','feat_mls_turn_labels.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* tn-1.0.0: WHO SAID WHAT as a HYPOTHESIS. The browser speech API has NO diarization; turns are PAUSE boundaries and labels are suggestions the doctor corrects with one tap. The raw unlabelled transcript is always recoverable, and labels are only written to the box when the recorder is not writing it. Reversible: window.__mlsTurns.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_turn_labels.js"]'))return;var s=document.createElement('script');s.src='feat_mls_turn_labels.js?v=20260727tn110';s.setAttribute('data-mls-asset','feat_mls_turn_labels.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* tn-1.0.0: WHO SAID WHAT as a HYPOTHESIS. The browser speech API has NO diarization; turns are PAUSE boundaries and labels are suggestions the doctor corrects with one tap. The raw unlabelled transcript is always recoverable, and labels are only written to the box when the recorder is not writing it. Reversible: window.__mlsTurns.revert() */
 
 ;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260726mb110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
 
@@ -43719,7 +43719,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b733: `safe` was never defined in this IIFE, so the moment
+      /* b734: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a
@@ -44922,7 +44922,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        toggles only, nothing removed */
     'body.mls-phone .ez3fl-quick, body.mls-phone .ez3fl-staffLink, body.mls-phone .ez3fl-steps,',
     'body.mls-phone .wd-deck, body.mls-phone [id^="mlsWd"], body.mls-phone #mlsDayProgress,',
-    /* b733: .ez3-row2 left this list - visit_focus owns row2 folding on every
+    /* b734: .ez3-row2 left this list - visit_focus owns row2 folding on every
        device (behind the Visit shortcuts disclosure), and the blanket hide was
        the phone's post-stop dead end: note readonly, no edit/copy/resume. */
     'body.mls-phone #ez3Adv,',
@@ -44950,10 +44950,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     'body.mls-phone #mlsDsStrip{ padding:7px 9px; gap:6px; }',
     'body.mls-phone #mlsDsStrip .ds-pull{ padding:8px 12px; }',
     'body.mls-phone #mlsPhExit{ display:block; }',
-    /* b733 (audit B3): the ONE disclosure that reaches every folded control
+    /* b734 (audit B3): the ONE disclosure that reaches every folded control
        stays reachable on the phone. */
     'html body.mls-phone #ez3QuickTools{ display:inline-flex !important; min-height:44px; }',
-    /* b733 (audit crowding): the right-now bar duplicates the dock's nav 14px
+    /* b734 (audit crowding): the right-now bar duplicates the dock's nav 14px
        above the content, and the stage rail wraps to two rows of pure status -
        ~120px of chrome between the header and the record button. Both stand
        down on the phone; the dock and day strip carry their jobs. */

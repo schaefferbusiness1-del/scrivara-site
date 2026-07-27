@@ -115,7 +115,7 @@ function loadTurns() {
 }
 
 const { api: T, el: box } = loadTurns();
-assert(T && T.installed && T.version === 'tn-1.0.0', 'the turn engine did not install');
+assert(T && T.installed && T.version === 'tn-1.1.0', 'the turn engine did not install');
 assert.strictEqual(T.diarization, false,
   'the turn engine now advertises diarization. The browser Web Speech API performs NO speaker ' +
   'identification — there is no speaker field and no speaker confidence. Anything printing a ' +
