@@ -50,7 +50,7 @@ assert(app.includes("[1100,'Loading your schedule…']") && app.includes("[2500,
 assert(showSource.includes('if(sfGateLoadingVisible&&el.style.display!==\'none\') return el'), 'duplicate startup calls can reset visible progress again');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b727'"), 'ScribeFlow loader was not cache-busted to b727');
+assert(app.includes("window.__MLS_AV='b728'"), 'ScribeFlow loader was not cache-busted to b728');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -125,7 +125,7 @@ assert(bootDriver.includes("owner:'ScribeFlow'"), 'compatibility layer does not 
 assert(!bootDriver.includes('setInterval('), 'a second progress interval can fight the secure loader again');
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b727'"), 'shared asset version was not bumped to b727');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-25-b727'"), 'app build was not bumped to b727');
+assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b728'"), 'shared asset version was not bumped to b728');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-25-b728'"), 'app build was not bumped to b728');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

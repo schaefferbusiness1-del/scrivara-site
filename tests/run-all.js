@@ -291,6 +291,7 @@ const tests = [
   'athena-follow-bidirectional-contract.test.js',
   'writeback-walkthrough-contract.test.js',
   'idle-logout-knows-athena-work.test.js',
+  'pull-progress-feeds-modern-pull.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',

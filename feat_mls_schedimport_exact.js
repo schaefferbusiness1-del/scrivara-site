@@ -2099,6 +2099,25 @@
     /* si-1.9.1: sweeps inherit the OUTER frozen deadline (a sub-batch used to
        mint its own budget, which could keep the pull alive past the frozen
        deadline — never-immortal is the rule). Number form kept for callers. */
+    /* si-2.1.0 (owner: "whatever happened to the amazing running icon"): the
+       full-screen pull-progress panel and its pill (__mlsPullProgress, b113)
+       watch window.__mlsDayHistoryPull.state — a contract the LEGACY
+       day-history engine maintained and THIS engine never fed, so the panel
+       has been structurally dead on every modern pull. Feed it honestly.
+       Rules: never steal the state while the legacy engine is mid-run; a
+       sub-batch (progressBase>0) NEVER resets the bar (the si-1.9.4 law —
+       "when the bar resets it seems like nothing was done"); pipelined rows
+       settle provisionally and are corrected at finalization; tallies are
+       recomputed from rows so corrections can never drift. The
+       patient-row-loss shield reads state.running and finally gets its
+       signal on modern pulls too. */
+    function ppState(){ try{ var g=window.__mlsDayHistoryPull=window.__mlsDayHistoryPull||{}; if(!g.state||g.state.__si!==1){ if(g.state&&g.state.running===true) return null; g.state={__si:1,running:false,total:0,done:0,ok:0,failed:0,current:'',rows:[]}; } return g.state; }catch(e){ return null; } }
+    function ppTally(s){ try{ s.ok=s.rows.filter(function(r){return r.ok===true;}).length; s.failed=s.rows.filter(function(r){return r.ok!==true&&r.pending!==true;}).length; }catch(e){} }
+    function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; }
+    function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
+    function ppSettle(name,ok,reason,pending){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true}; s.rows.push(r); s.done=(s.done||0)+1; if(s.total&&s.done>s.total) s.total=s.done; ppTally(s); return r; }
+    function ppResolve(rowRef,ok,reason){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); ppTally(s); }
+    function ppEnd(){ var s=ppState(); if(s){ s.running=false; s.current=''; } }
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
     var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
     /* si-1.9.4 (owner 2026-07-22): "when the bar resets it makes it seem like
@@ -2326,6 +2345,7 @@
         if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; }
       }
     }
+    ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);
     try {
       for (var i = 0; i < rows.length; i++) {
         safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: keep the merge deferred for the whole batch */
@@ -2336,7 +2356,7 @@
         }
         var row = rows[i] || {}, target = exactHistoryTarget(row), carryProof = null, one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
         if (!target) {
-          one.reason = "identity-target-unresolved"; receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
+          one.reason = "identity-target-unresolved"; ppSettle(row.name, false, one.reason); receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
         }
         one.patientId = String(target.patientId || one.patientId);
         one.identityVerified = true;
@@ -2348,6 +2368,7 @@
         var patientReadStartedAt = Date.now();
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (sweepProgressBase + i + 1) + " of " + (sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length) + (sweepDepth ? " (automatic re-check)" : "") + "...", "");
+        ppCurrent(row.name || (target && target.name) || "");
         /* An explicit pull always performs a fresh chart read. A legacy
            "Pulled from Athena" marker is not a coverage receipt and may be
            stale or partial, so it can never short-circuit this batch. */
@@ -2572,6 +2593,7 @@
             receipt.retry.push(frozenRetryEntry(row, target, one.reason));
           }
         }
+        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : (one.reason || "")), one.parsePipelined === true);
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
@@ -2618,8 +2640,9 @@
           pOne.reason = pOne.chartReason || pOne.visitsReason || "history-partial";
           receipt.retry.push(frozenRetryEntry(pEntry.row, pEntry.target, pOne.reason));
         }
+        ppResolve(pOne.__ppRow, pOne.complete === true, pOne.complete === true ? "" : (pOne.reason || ""));
       }
-    } finally { historyBatchRunning = false; }
+    } finally { historyBatchRunning = false; ppEnd(); }
     function finalizeVerdict() {
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
       /* An empty verified provider day has no patient history targets and is

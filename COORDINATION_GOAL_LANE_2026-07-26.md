@@ -578,3 +578,21 @@ up from 3.0.4→3.0.23; store button labeled with the version it actually
 installs) + restored b368 Mac copy (unzip/load-unpacked steps, remove-old-copy
 step, macOS mic System-Settings wording) with pins so page rewrites can't drop
 them again. Gate about to run.
+
+**b727 SHIPPED (2026-07-27 ~14:35)** — proc doors land on Procedures; install
+page truth-flipped (ZIP leads; store lag stated; b368 Mac copy restored+pinned).
+Owner asked to upload MLS_Assist_v3.0.23.zip to the Web Store console (store
+serves 3.0.4, 19 behind — the Mac scout's top finding).
+
+## CLAIM b728 — goal-lane takeover session (2026-07-27 ~14:40)
+
+**Claimed by:** same session. **Scope:** the owner's "amazing running icon" =
+the pull-progress panel/pill (__mlsPullProgress, b113) — structurally DEAD on
+modern pulls: feat_mls_schedimport_exact never fed window.__mlsDayHistoryPull
+.state (zero refs). si-2.1.0 feeds it honestly (start/current/settle/resolve/
+end; si-1.9.4 never-reset law on sub-batches; provisional pipelined rows
+corrected at finalization; tallies recomputed from rows; legacy mid-run state
+never stolen; row-loss shield finally gets running on modern pulls). Pill moves
+to bottom-LEFT (owner's memory; free since the bubbles retired). New suite
+pull-progress-feeds-modern-pull (vm-driven). Panel visual polish rides task 26.
+Gate about to run.
