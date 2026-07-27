@@ -37,7 +37,7 @@
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
   /* wsg-1.0.0: five write-safety verbs added — mlsAppReviewScreen (extension-side review overlay),
      mlsAppTeachRecall/DryRun/Forget/MemoryList (taught-destination memory; all read-only). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1, mlsAppChartIdentity: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -297,6 +297,17 @@
           reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: { error: 'extension error' } }); }
+    }
+    // v3.0.23: open-chart identity for the TRUSTED app only (Athena->MLS follow).
+    // Forwards to the same background handler the write-safety pre-gate uses
+    // (mlsAssistChartIdentity: banner-preferred, shadow-DOM fallback). Read-only;
+    // exposure class identical to mlsAppReadChart, behind the same origin gate.
+    if (d.type === 'mlsAppChartIdentity') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppChartIdentityResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartIdentityResult', resp: { error: 'extension error' } }); }
     }
     // v1.51: reviews scrape driver (reputation lane) — background opens each PUBLIC
     // review URL in a background tab, runs the reader, returns normalized data. No PHI.

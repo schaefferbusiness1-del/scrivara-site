@@ -203,7 +203,22 @@ const LOADER = 'mls-connect.js';
  *     (calm_views) and without touching the drafter machinery (oni/onf/opnp)
  *     that three other modules gate the Fields box on. One revert() puts both
  *     old modals back exactly as they were. */
-const CEILING = 243;
+/* 243 -> 244 at b723, for feat_mls_athena_follow.js (af-1.0.0) — the
+ * owner-approved bidirectional Athena<->MLS patient follow. The three
+ * questions, answered:
+ *   - DEFERRED (requestIdleCallback, 4s timeout): EAGER_CEILING does not move
+ *     and the post-login burst this ceiling guards is unchanged. Its
+ *     steady-state cost is exactly three event listeners — no setInterval,
+ *     no observers; both legs fire on human moments (a patient pick, a tab
+ *     arrival), never on a clock.
+ *   - It is the ONLY module allowed to auto-drive the athenaOne tab, and that
+ *     is precisely why it is not folded into an existing file to keep the
+ *     count flat: its off-switch and its 2am revert() must map 1:1 to that
+ *     single behavior. Killing follow must not revert the version checker,
+ *     the calm shell, or any drafter machinery.
+ *   - Net interface change: one Settings checkbox. The feature REMOVES the
+ *     manual find-the-patient-again step on both sides of the tab boundary. */
+const CEILING = 244;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

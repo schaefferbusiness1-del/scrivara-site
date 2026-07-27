@@ -449,3 +449,35 @@ by name (container attrs, note-slot, template select + badge slot, GenAll .row,
 mode/day rail, status/empty/list/preview). Manifest regenerated (1299→1298).
 Dead blank-walker code (_opBlanksHtml etc.) NOT touched — spun off per plan.
 Gate about to run; commit only on exit 0.
+
+**b722 SHIPPED and live-verified (2026-07-27 ~08:10) — THE WORKROOM IS COMPLETE.**
+All 4 stages of OPNOTE_WORKROOM_PLAN_2026-07-26.md are live: b716 (Stage 1 shell),
+b717+b718 (Stage 2a auto-naming through the RUNNING builder), b719+b720 (Stage 2b
+rails + occlusion-proof scroll), b721 (Stage 3 Templates-in-room), b722 (Stage 4
+one-sentence presentation, one exit, walkthrough doc, injection-point contract).
+Live proof: rail note 159 chars, 0 visible Close buttons, ✕ present, 18-patient
+nav intact. Claim closed. Next per the chain: extension Athena auto-follow
+(bidirectional) — BUILD now; the owner-browser extension reload will be gated on
+idle (never mid-pull, never mid-recording).
+
+## CLAIM b723 — goal-lane takeover session (2026-07-27 ~09:20)
+
+**Claimed by:** same session. **Scope:** BIDIRECTIONAL Athena↔MLS patient follow
+(owner: "Automatic with context" + bidirectional relay). Extension 3.0.22 →
+**3.0.23**: ONE new trusted-origin bridge verb `mlsAppChartIdentity` in content.js
+(allowlist + handler, forwards to the proven write-safety identity reader;
+read-only), digest re-stamped, zip built sha 8695…73e7, ALL pins moved together
+(24 replacement groups: feed, get-extension href+sha, ScribeFlow direct link,
+_config, sw passthrough, inventory, checker SERVER_EXT_VERSION + loader token
+chk3023 both connectors, 6 test files incl. escaped-regex forms + loader triplet).
+MLS side: NEW feat_mls_athena_follow.js af-1.0.0 (auto-busted idle loader) —
+Leg A posts the proven mlsAppSearchOpenPatient on doctor-driven banner changes
+(visible-only, debounced, skip-if-already-open); Leg B follows the open chart on
+tab ARRIVAL (the event IS the switch — no polling) with exact unique identity +
+DOB agreement; guards: off-switch (Settings→Integrations #athenaFollowToggle,
+default ON), pong≥3.0.23 fail-closed (missed ping retried, never cached), never
+during pull, never while recording, 5s loop suppression. New suite
+athena-follow-bidirectional-contract DRIVES both legs in a vm. ⚠ One
+WriteAllLines EOL near-disaster on mls-connect.js caught by diff-stat (45,918
+lines) and reverted; redone via node latin1. Owner-side extension reload will be
+gated on IDLE (never mid-pull/mid-recording). Gate about to run.

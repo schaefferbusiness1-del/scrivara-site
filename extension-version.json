@@ -1,5 +1,5 @@
 {
-  "version": "3.0.22",
+  "version": "3.0.23",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.22 — every success message now traces to a real receipt: a write that wasn't confirmed can no longer show green, refusals name what refused, and pull coverage says honestly which providers it actually saw."
+  "notes": "v3.0.23 — MLS can now ask (read-only, trusted app only) which patient is open in athenaOne, so the app follows your Athena navigation automatically. Nothing new is written; the same identity reader the write-safety gate already used."
 }
