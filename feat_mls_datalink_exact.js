@@ -21,25 +21,26 @@
  *  ---
  *  1) It wraps the app's REAL data-load entry points (loadCalendar, loadPatientsFromServer,
  *     pullScheduleViaAssist, importPatients, _importPulledSchedule) so that AFTER a pull the
- *     picker, Patients list and Calendar are all re-rendered from the freshly-loaded stores,
- *     and the Calendar focuses the same "pulled day" the picker is showing.
+ *     picker and active heavy view are re-rendered from the freshly-loaded stores. Hidden
+ *     Patients / Calendar views defer to their normal view-entry renderers, and the Calendar
+ *     retains the same "pulled day" the picker is showing.
  *  2) It wraps the app's TWO real selection funnels (openPatient -- used by the picker; and
  *     selectPatient -- used by the Patients list and calendar appt clicks) so that picking a
  *     patient anywhere re-highlights the picker cards, refreshes the patient context bar, and
  *     (when the Calendar is on screen) focuses that patient's appointment day.
  *  3) A light 2s signature poll (patient count + appt count) is a safety net: if any code path
- *     we did not wrap changes the data, all three surfaces still re-sync exactly once.
+ *     we did not wrap changes the data, shared chrome and the active surface still re-sync once.
  *
- *  Every refresh calls the app's OWN renderers (renderPatients / renderProfile / renderCalendar
- *  / renderPatientBar) and the *_exact build() hooks; nothing is rebuilt or deleted here. It is
- *  idempotent (re-syncs fire only on real data/selection changes -> no flicker at steady state)
- *  and fully reversible (window.__mlsLink.revert() restores every wrapped function).
+ *  Every refresh calls the app's OWN renderers for the active surface and the *_exact build()
+ *  hook for that surface; nothing is rebuilt or deleted here. It is idempotent (re-syncs fire
+ *  only on data/selection lifecycle signals -> no flicker at steady state) and fully reversible
+ *  (window.__mlsLink.revert() restores every wrapped function).
  *
  *  ASCII-only.  Additive.  View-agnostic.
  */
 ;(function () {
   "use strict";
-  var VERSION = "link-1.0.1";
+  var VERSION = "link-1.0.2";
   try { if (window.__mlsLink && window.__mlsLink.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -57,6 +58,17 @@
   function viewVisible(id) {
     var v = $(id); if (!v) return false;
     try { return getComputedStyle(v).display !== "none" && v.offsetParent !== null; } catch (e) { return false; }
+  }
+  function viewActive(name, id) {
+    /* showView publishes the canonical route. Prefer it to a computed-style /
+       offsetParent read, which can force layout during the exact boot path this
+       module is meant to keep light. The visibility fallback preserves support
+       for older shells that do not publish __mlsCurrentView. */
+    try {
+      var current = window.__mlsCurrentView;
+      if (typeof current === "string" && current) return current === name;
+    } catch (e) {}
+    return viewVisible(id);
   }
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function localDate(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
@@ -169,23 +181,33 @@
   function buildPx() { try { if (window.__mlsPx && typeof window.__mlsPx.build === "function") window.__mlsPx.build(); } catch (e) {} }
 
   /* ====================================================================
-     syncAll: a pull / data change -> repopulate ALL THREE surfaces.
-     Only ever called on a real data change (wrapped pull fns + the change
-     poll), so the full re-renders here are not a steady-state cost.
+     syncAll: a pull / data change -> refresh shared chrome plus the active
+     heavy surface. Hidden surfaces render from the same stores on entry.
      ==================================================================== */
   var _busy = false;
   function syncAll(reason, jumpCalToPull) {
     if (_busy) return; _busy = true;
     try {
-      /* Patients roster + active profile + context bar (the app's own renderers) */
-      if (isFn("renderPatients")) { try { window.renderPatients(); } catch (e) {} }
-      if (isFn("renderProfile")) { try { window.renderProfile(); } catch (e) {} }
+      var patientsOn = viewActive("patients", "patientsView");
+      var calendarOn = viewActive("calendar", "calendarView");
+      /* A cloud hydration must not build the 150-row directory while Visit is
+         on screen. showView("patients") owns the same two renderers on entry,
+         so the visible Patients behavior remains identical. Preserve the nav
+         count update that renderPatients used to provide while hidden. */
+      if (patientsOn) {
+        if (isFn("renderPatients")) { try { window.renderPatients(); } catch (e) {} }
+        if (isFn("renderProfile")) { try { window.renderProfile(); } catch (e) {} }
+      } else if (isFn("updateNavCounts")) {
+        try { window.updateNavCounts(); } catch (e) {}
+      }
       if (isFn("renderPatientBar")) { try { window.renderPatientBar(); } catch (e) {} }
       /* Calendar: optionally focus the same pulled day, then re-render */
       if (jumpCalToPull) { var pd = pulledDate(); if (pd) focusCalDay(pd); }
-      if (isFn("renderCalendar")) { try { window.renderCalendar(); } catch (e) {} }
-      /* design-exact rebuild hooks re-apply their chrome over the fresh DOM */
-      buildCx(); buildPx();
+      if (calendarOn && isFn("renderCalendar")) { try { window.renderCalendar(); } catch (e) {} }
+      /* Re-apply design chrome only to the surface being repainted. Each exact
+         module also owns its normal view-entry lifecycle. */
+      if (calendarOn) buildCx();
+      if (patientsOn) buildPx();
       /* Picker re-renders its selectable cards from the fresh stores */
       pokePicker();
     } catch (e) {}

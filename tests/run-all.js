@@ -40,6 +40,7 @@ const tests = [
   'premium-block-names-a-real-route.test.js',
   'feature-directory-routes-exist.test.js',
   'calendar-deoverlap-skips-hidden-grid.test.js',
+  'datalink-hidden-view-render-runtime.test.js',
   'autosave-draft-owner.test.js',
   'athena-unified-manifest-contract.test.js',
   'athena-final-action-truth-contract.test.js',
