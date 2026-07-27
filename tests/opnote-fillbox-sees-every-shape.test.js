@@ -55,6 +55,13 @@ const replaced = sandbox.replaceToken('needle [GAUGE] and [[gauge]] and [FILL: g
 assert(replaced.indexOf('[GAUGE]') < 0 && replaced.indexOf('[[gauge]]') < 0 && replaced.indexOf('[FILL:') < 0,
   'one value must fill all three forms of the same label');
 
+/* 4b (onf-2.11.1) - the heartbeat's creation must never depend on the first
+ * beat: boot ran tick() BARE before setInterval, so one boot-time throw left
+ * the whole session tickless (measured live at b713 - export installed,
+ * manual tick built the box perfectly, interval dead). */
+assert(/function boot\(\) \{ css\(\); safe\(seedProfile\); safe\(tick\); iv = setInterval/.test(onf),
+  'boot must safe-wrap the first tick so the interval is always created');
+
 /* 4 - buildFillBox failures are surfaced, never swallowed */
 assert(onf.includes('function noteFillError('),
   'fill failures must have a named reporter');

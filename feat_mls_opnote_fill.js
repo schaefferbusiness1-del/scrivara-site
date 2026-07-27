@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.11.0';
+  var VERSION = 'onf-2.11.1';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -1565,7 +1565,12 @@
     }); }
   }
 
-  function boot() { css(); safe(seedProfile); tick(); iv = setInterval(function () { safe(tick); }, 1000); }
+  /* onf-2.11.1: the first tick ran BARE here, so one boot-time throw aborted
+     boot() before the interval was created - the Fields box then never ticked
+     for the whole session (measured live at b713: export installed, manual
+     tick() built the box perfectly, no interval running). The heartbeat's
+     creation must never depend on the first beat succeeding. */
+  function boot() { css(); safe(seedProfile); safe(tick); iv = setInterval(function () { safe(tick); }, 1000); }
   function revert() {
     if (iv) { clearInterval(iv); iv = null; }
     safe(function () { var b = $(BAR_ID); if (b) b.remove(); });
