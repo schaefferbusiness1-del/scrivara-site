@@ -13,7 +13,15 @@ assert(canonicalMarker >= 0 && canonicalStart >= 0 && canonicalEnd > canonicalSt
 const canonical = source.slice(canonicalStart, canonicalEnd);
 assert(canonical.includes("var VER = '3.7.3'"), 'unexpected canonical Easy version');
 assert(canonical.includes('installScheduledVisitBinding(a) && exactScheduledBindingMatches(a)'), 'canonical owner lacks exact scheduled binding read-back');
-assert(canonical.includes('if (!exactBindingReady) { render(); return; }'), 'canonical owner can action after binding failure');
+/* Owner 2026-07-26: the bare warn-and-return on binding failure silently ate
+ * Record clicks (the missing-appointment-ID report). The canonical owner now
+ * routes record/generate through the requireExactScheduledBinding demotion
+ * gate - proceed unscheduled + visible warning, block only a proven
+ * cross-patient conflict - and keeps warn-and-stop for a plain open. */
+assert(canonical.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"),
+  'canonical owner must route record/generate through the demotion gate on binding failure');
+assert(canonical.includes('if (!opts.record && !opts.generate) { render(); return; }'),
+  'canonical owner must keep warn-and-stop for a plain open on binding failure');
 assert(canonical.includes("window.addEventListener('mls:session-boundary', resetEasySession)"), 'canonical owner lacks synchronous account reset');
 assert(canonical.includes('window.__mlsEasyV32 = api;'), 'canonical API is not claimed by its synchronous IIFE');
 

@@ -12,7 +12,11 @@ assert(start >= 0 && end > start, 'could not bound canonical scheduled-action ga
 const runtime = source.slice(start, end);
 
 assert(runtime.includes('installScheduledVisitBinding(a) && exactScheduledBindingMatches(a)'), 'activation does not require a read-back match after installing the exact binding');
-assert(runtime.includes('if (!exactBindingReady) { render(); return; }'), 'record/generate can continue after exact binding failure');
+/* Owner 2026-07-26: record/generate under an unproven binding demote through
+ * requireExactScheduledBinding (unscheduled + visible warning; only a proven
+ * cross-patient conflict blocks). A plain open still warns and stops. */
+assert(runtime.includes('if (!opts.record && !opts.generate) { render(); return; }'), 'a plain open must still warn and stop on unproven binding');
+assert(runtime.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"), 'record/generate on unproven binding must route through the demotion gate');
 assert(source.includes("on('ez3Rec2', function () { if (!requireExactScheduledBinding(S.appt, 'recording')) return;"), 'resume recording bypasses exact scheduled binding');
 assert(source.includes("if (!requireExactScheduledBinding(S.appt, 'note generation')) return;"), 'visible note generation bypasses exact scheduled binding');
 assert(source.includes("on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return;"), 'regeneration bypasses exact scheduled binding');
@@ -89,11 +93,26 @@ for (const day of ['2026-07-19', '2026-07-22']) {
     assert.strictEqual(h.calls.freeze, 0, `${day}: missing active patient created a visit binding`);
   }
   {
+    /* Owner 2026-07-26: a failed binding WRITE is an unproven schedule, not a
+     * wrong patient - the action DEMOTES to an explicitly-unscheduled visit
+     * (binding cleared, visible warning) and proceeds. */
     const h = makeHarness({ setFails: true });
     h.run(row(day), { record: true, generate: true });
-    assert.strictEqual(h.calls.record, 0, `${day}: failed binding write started recording`);
-    assert.strictEqual(h.calls.generate, 0, `${day}: failed binding write started generation`);
-    assert.strictEqual(h.calls.set, 1, `${day}: exact binding was not attempted once`);
+    assert.strictEqual(h.calls.record, 1, `${day}: unproven binding must demote and record, not silently refuse`);
+    assert.strictEqual(h.calls.generate, 1, `${day}: unproven binding must demote and generate`);
+    assert.strictEqual(h.calls.set, 2, `${day}: the demotion must clear the binding (set(null) after the failed install)`);
+    assert(/UNSCHEDULED/.test(h.context.S.lastWarn), `${day}: the demotion must announce itself in the warning`);
+    assert.strictEqual(h.context.currentVisitAthenaBinding, null, `${day}: no binding may survive the demotion`);
+  }
+  {
+    /* The fail-closed core the gate exists for is PRESERVED: an active chart
+     * whose DOB contradicts the picked row is a proven cross-patient conflict
+     * and still blocks outright. */
+    const h = makeHarness({ active: { id: 'PT-2', name: 'Exact Patient', dob: '01/01/1999' } });
+    h.run(row(day), { record: true, generate: true });
+    assert.strictEqual(h.calls.record, 0, `${day}: DOB-conflicting active chart must never record`);
+    assert.strictEqual(h.calls.generate, 0, `${day}: DOB-conflicting active chart must never generate`);
+    assert(/DIFFERENT patient/.test(h.context.S.lastWarn), `${day}: the conflict block must name the cause`);
   }
   {
     const h = makeHarness();
@@ -104,4 +123,4 @@ for (const day of ['2026-07-19', '2026-07-22']) {
   }
 }
 
-console.log('PASS exact scheduled action gate: Today and non-Today block record/generate until patient, appointment, date, provider, and binding read-back all match');
+console.log('PASS exact scheduled action gate: a proven binding records bound, an unproven one demotes to unscheduled with the binding cleared, and a cross-patient conflict still blocks outright');

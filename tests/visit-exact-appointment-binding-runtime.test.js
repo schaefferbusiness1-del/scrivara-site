@@ -20,7 +20,12 @@ const lockSource = sliceFunction('lockAndStart', 'lockAndStartPatient');
 
 assert(lockSource.includes('var exactBindingReady = installScheduledVisitBinding(a) && exactScheduledBindingMatches(a);'), 'scheduled visit activation does not install and read back the exact binding');
 assert(lockSource.indexOf('installScheduledVisitBinding(a)') < lockSource.indexOf('if (opts.record'), 'recording can begin before exact scheduled binding is attempted');
-assert(lockSource.includes('if (!exactBindingReady) { render(); return; }'), 'record/generate can run after exact scheduled binding failure');
+/* Owner 2026-07-26 ("Record must work regardless of this warning"): an
+ * unproven binding DEMOTES record/generate to an explicitly-unscheduled visit
+ * through requireExactScheduledBinding instead of silently returning. A plain
+ * open (no action requested) still warns and stops. */
+assert(lockSource.includes('if (!opts.record && !opts.generate) { render(); return; }'), 'a plain open must still warn and stop on unproven binding');
+assert(lockSource.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"), 'record/generate on unproven binding must route through the demotion gate, not silently return');
 assert(idSource.includes('a.appointmentId || a.appointment_id || a.apptId || a.appt_id || a.athena_appointment_id'), 'binding does not recognize the explicit Athena appointment-id fields');
 assert(!/a\.id\s*\|\|/.test(idSource), 'calendar/source id can still masquerade as Athena appointment id');
 

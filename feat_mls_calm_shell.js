@@ -1377,18 +1377,16 @@
       { label: /^check in to the office$/i, within: '#calendarView', as: 'Check in' },
       { id: 'ptBoardBtn' }
     ],
-    visit: [
-      /* The negative lookahead is load-bearing. /^start/i also matches
-         "Start over", which DISCARDS the visit — and measured on the running
-         page at b625 that was the bar's only action on the Visit screen, styled
-         as the green primary. The one control offered on the screen where a
-         doctor records an encounter was the one that throws it away. */
-      { label: /^(?!start over)(start|record|begin)/i, within: '#visitView', primary: true },
-      { label: /\bstop\b/i, within: '#visitView', primary: true },
-      { label: /^(pause|resume)/i, within: '#visitView' },
-      { label: /^generate/i, within: '#visitView', primary: true },
-      { label: /^(sign|save to athena|send to athena)/i, within: '#visitView', primary: true }
-    ],
+    /* NO ACTIONS ON THE VISIT SCREEN EITHER — same ruling as `patient` above,
+       owner-escalated 2026-07-26 ("I've asked many times"): this bar rendered
+       "Start Recording — <patient> · <dob> · …" at 734x37 directly above a
+       720x82 hero (#ez3ActiveGo / #ez3Nxt) offering the SAME action in the
+       SAME words. vf-1.0.0 gives the visit view ONE state-driven primary at
+       hero size for every phase (record / stop / generate / sign), so any
+       entry this list could hold is by construction a second, smaller offer
+       of a control already on screen (laws 3, 4, 15). The key stays so the
+       destination can still render its segments — navigation, not actions. */
+    visit: [],
     review: [
       { label: /^(add|new) order/i, within: '#ordersView', primary: true },
       { label: /^(review|place)/i, within: '#ordersView' },
