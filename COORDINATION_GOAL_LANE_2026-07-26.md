@@ -672,3 +672,16 @@ in __mlsWidgetReady; error clears pending. (3) compilePatientRecord sees op-note
 bodies (.text fallback) + honest draft label — feeds the op-note (B) fallback
 AND the IME/legal report. (4) opr-1.5.1 retry+rewrap. New suite
 ai-audit-safety-fixes-contract. Gate about to run.
+
+**b732 SHIPPED (PHI de-identify + studio save-truth + record completeness).**
+
+## CLAIM b733 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** br-1.0.0 → 1.1.0 — the boot gets a
+clock (owner 5s bar step 1). Each engine's first live transition stamps
+performance.mark('mls:engine-…'); all-live stamps 'mls:all-engines-live' (also
+on the 30s deadline branch when all are in fact live); window.__mlsBootTimeline()
+returns nav/paint/script-tail + engine marks + readyAtMs + underFiveSeconds.
+loading-states pins moved deliberately (version + self-clear regex, intent
+restated). Next after ship: measure a real visible signed-in boot → targeted
+deferrals. Gate about to run.

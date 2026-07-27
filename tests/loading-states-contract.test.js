@@ -15,12 +15,14 @@ const shell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const templateLib = fs.readFileSync(path.join(root, 'feat_mls_template_library.js'), 'utf8');
 
 /* b523 br-1.0.0 — the post-auth module-train window is named and self-clears. */
-assert(connect.includes("window.__mlsBootReadiness={installed:true,version:'br-1.0.0'}"),
+/* b733: br-1.1.0 — the strip also stamps performance.marks per engine-live
+   transition and exposes __mlsBootTimeline() for the owner's 5-second bar. */
+assert(connect.includes("window.__mlsBootReadiness={installed:true,version:'br-1.1.0'}"),
   'boot-readiness strip module must be installed exactly once');
 assert(connect.includes("'Getting MLS ready - '+n+' of '+total+' engines live'"),
   'the boot strip must name the not-ready state with real counts');
-assert(/Date\.now\(\)-t0>30000\)\{clearInterval\(iv\);gone\(\);return\}/.test(connect),
-  'the boot strip must self-clear on a hard deadline — it can never wedge');
+assert(/Date\.now\(\)-t0>30000\)\{[^}]*clearInterval\(iv\);gone\(\);return\}/.test(connect),
+  'the boot strip must self-clear on a hard deadline — it can never wedge (b733: the deadline branch also stamps the all-live mark first)');
 assert(connect.indexOf('__mlsSI&&window.__mlsSI.pull') > 0 && connect.indexOf('__mlsPatientLock') > 0,
   'readiness must be judged on the real core engines, not timers');
 
