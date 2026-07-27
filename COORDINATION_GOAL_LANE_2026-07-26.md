@@ -92,6 +92,22 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b706 SHIPPED, claim closed (2026-07-26 night)
+
+**b706 (27c048c) LIVE and verified on the owner's-zoom tab:**
+- Visit right-now Start-Recording duplicate GONE (bar `.empty` 0×0 on visit; the
+  hero #ez3ActiveGo is the one recording surface).
+- Record under an unproven binding: end-to-end proof on the [MLS TEST] slot
+  (Adam J Schaeffer, Jul 18, no provider, no appt id): hero click → "Proceeding
+  as an UNSCHEDULED visit" banner + toast → consent gate → CAPTURE RUNNING →
+  stopped, state restored (Bernard active, Today). Measured context: 2,788 of
+  3,090 rows in the live store carry no Athena appointment id.
+- Three suites that byte-pinned the old fail-closed line were updated
+  deliberately (easy-canonical-action-owner, visit-exact-appointment-binding,
+  visit-exact-action-gate — the runtime harness now proves demote + the
+  preserved DOB-conflict block). First gate attempt was RED on those pins;
+  gate-then-commit meant nothing shipped red.
+
 ## Goal-lane takeover session (2026-07-26 late evening) — claim CLOSED
 
 **The ask-bar work I claimed as b704 shipped LIVE inside b705** (3a5a7fc): while my
