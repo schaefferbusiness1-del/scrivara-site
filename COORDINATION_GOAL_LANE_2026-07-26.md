@@ -92,6 +92,57 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b713/b714/b715 SHIPPED, claims closed (2026-07-27 ~3:30 AM)
+
+**THE FILL-IN-THE-BLANK CHAIN IS CLOSED, live-proven under the strictest
+conditions** (occluded tab, resumed draft, zero hands): the Fields box now
+self-appears within 3s of the drafter opening — "✏️ 9 fields need you
+(5 blank · 4 suggested)". Three real defects, three builds:
+b713 (the [CAPS] shape the generator emits was invisible to the box — 8/10
+blanks; + failures surfaced on lastFillError) · b714 (boot's first tick ran
+bare; the interval's creation no longer depends on it) · b715 (THE ROOT:
+visibilityState 'hidden' — Chrome throttles occluded-tab intervals to
+~1/min, the app's REAL posture behind athenaOne; the three drafter openers
+now kick a SYNCHRONOUS tick + 150/700/2000ms ladder).
+
+⚠️ URGENT FOR THE OWNER BEFORE MONDAY CLINIC: the QA-debris template
+("QA Bilateral Lumbar Facet Injection 20260722") AUTO-MATCHED a REAL Monday
+patient (Michele C Gatti, R L2/L3/L4MB & L5 DR B facet procedure) in tonight's
+verification. If he drafts her op note today, the QA template fires. The
+replacement pack (OP_NOTE_TEMPLATE_PACK_2026-07-23.md) should be installed
+WITH him before drafting. The tab was left Monday-ready: Michele active,
+up-now banner on Bernard 7:30 AM, nothing drafted for any real patient.
+
+## Goal-lane takeover session — ELEVENTH CLAIM OPEN (2026-07-27 ~3 AM)
+
+**claiming next build (b715), onf-2.12.0 — THE REAL ROOT of the Fields-box
+deadness, proven: `document.visibilityState === 'hidden'` — the MLS tab sits
+occluded (its REAL posture, behind athenaOne) and Chrome throttles hidden-tab
+intervals to ~1/minute; zero ticks across repeated 5s watches while a manual
+tick built the box instantly. The drafter's three openers now kick a
+150/700/2000ms tick ladder (first-party wrap idiom, idempotent); the interval
+stays for steady-state. b713's shape fix + b714's boot hardening remain
+genuine defense-in-depth. Token onf2111→onf2120 + version pins ×3. Gating
+now.** ⚠️ No `git add -A`.
+
+## Goal-lane takeover session — TENTH CLAIM OPEN (2026-07-27 ~2:30 AM)
+
+**claiming next build (b714), onf-2.11.1 — b713's live acid test found the TRUE
+root of the dead Fields box: boot() ran the first tick BARE before creating the
+interval, so one boot-time throw left the whole session tickless (proven live:
+export installed, manual tick() built the box perfectly — "9 fields need you" —
+interval dead). boot now safe-wraps the first beat; pin added; token
+onf2110→onf2111 + version pins ×3. Gating now.** ⚠️ No `git add -A`.
+
+## Goal-lane takeover session — NINTH CLAIM OPEN (2026-07-27 ~2 AM)
+
+**claiming next build (b713), onf-2.11.0 — the Fields box sees every placeholder
+shape ([CAPS] added to fillTokens/renderLayout/sigOf/mainBoxWithBlanks from ONE
+shared source + replaceToken fills it) and buildFillBox failures land on the
+export (lastFillError) instead of dying in a bare safe(). Token
+20260723onf2100 → 20260727onf2110 in both connectors + 2 pins; VERSION pins
+moved in 3 suites. Gating now.** ⚠️ Do NOT `git add -A` — my dirty files are mine.
+
 ## Goal-lane takeover session — b712 SHIPPED + HARD-GATE EVIDENCE (2026-07-27 ~1:45 AM)
 
 **b712 (fe4c43f) LIVE**: workroom Stage 0 module installed (opr-1.0.0 verified
