@@ -215,7 +215,12 @@
     if (anchor && anchor.parentElement === card) card.insertBefore(row, anchor); else card.appendChild(row);
     var panel = document.createElement('div');
     panel.id = 'cpPanel';
-    panel.style.cssText = 'display:none;margin:0 0 12px;background:#fff;border:1px solid #d9e5f7;border-radius:12px;padding:13px';
+    /* max-height + own scrollbar: a month of appointments used to grow this
+       panel to ~30,000px, pushing the calendar grid (and every exit) thousands
+       of pixels off screen - the owner's "no way back out" trap (2026-07-26).
+       Bounded, the grid stays in reach and the sticky exit bar below is always
+       visible however deep the list is scrolled. */
+    panel.style.cssText = 'display:none;margin:0 0 12px;background:#fff;border:1px solid #d9e5f7;border-radius:12px;padding:13px;max-height:70vh;overflow:auto';
     row.parentElement.insertBefore(panel, row.nextSibling);
     /* events */
     el('cpApply').onclick = function () {
@@ -229,7 +234,7 @@
       el('cpFrom').value = RANGE.from; el('cpTo').value = RANGE.to;
       VIEW = 'range'; rerender();
     };
-    el('cpClear').onclick = function () { RANGE = null; VIEW = null; el('cpFrom').value = ''; el('cpTo').value = ''; var p = el('cpPanel'); if (p) p.style.display = 'none'; rerender(); };
+    el('cpClear').onclick = leaveView;
     el('cpMon').onclick = function () { VIEW = 'mon'; rerender(); };
     el('cpThu').onclick = function () { VIEW = 'thu'; rerender(); };
     el('cpList').onclick = function () { VIEW = 'range'; rerender(); };
@@ -273,6 +278,29 @@
   }
 
   /* ------------------------------ list panel ------------------------------ */
+  /* ONE exit for every panel view, owned by the panel itself. The old exit
+     ("Clear") lives in #cpRow, which "Hide more calendar tools" collapses -
+     measured live at b705: hiding the tools while the list was open left a
+     30,729px list on screen with ZERO visible exit anywhere (the shell's
+     "Back to the calendar" proxy also died, because it requires a VISIBLE
+     Clear). The panel must never depend on another container for its way out. */
+  function leaveView() {
+    RANGE = null; VIEW = null;
+    var f = el('cpFrom'), t = el('cpTo');
+    if (f) f.value = ''; if (t) t.value = '';
+    var p = el('cpPanel'); if (p) p.style.display = 'none';
+    rerender();
+  }
+  function exitBar(label) {
+    return '<div style="position:sticky;top:-13px;z-index:2;display:flex;align-items:center;gap:10px;' +
+      'background:#fff;margin:-13px -13px 10px;padding:10px 13px;border-bottom:1px solid #E7E5DD">' +
+      '<button id="cpPanelBack" style="' + CSS + ';background:#F1F6F3;font-weight:700">‹ Back to the calendar</button>' +
+      (label ? '<span style="font-size:12px;color:#69758c">' + label + '</span>' : '') + '</div>';
+  }
+  function wireExit() {
+    var b = el('cpPanelBack');
+    if (b) b.onclick = leaveView;
+  }
   function renderPanel() {
     var p = el('cpPanel'); if (!p) return;
     p.style.display = '';
@@ -303,7 +331,8 @@
         });
       });
     }
-    p.innerHTML = h;
+    p.innerHTML = exitBar() + h;
+    wireExit();
     STATE.lastPanel = { view: VIEW, count: rows.length, from: r.from, to: r.to };
   }
 
@@ -417,7 +446,8 @@
         sk.slice(0, 12).map(function (t) { return esc(t.date) + ' (' + esc(t.providerName) + ': ' + esc(t.status) + ')'; }).join(', ') + (sk.length > 12 ? ' …' : '') +
         ' <button id="cpRetryAll" style="' + CSS + ';padding:3px 10px;font-size:11.5px">Retry all skipped</button></div>';
     }
-    p.innerHTML = h;
+    p.innerHTML = exitBar(PULL.running ? 'The pull keeps running - Stop after current ends it.' : '') + h;
+    wireExit();
     var run = el('cpRun'); if (run) run.onclick = function () { runPull(); };
     var stop = el('cpStop'); if (stop) stop.onclick = function () { PULL.stopAsk = true; };
     var rb = el('cpRebuild'); if (rb) rb.onclick = function () { buildPlan(); paintPull(); };

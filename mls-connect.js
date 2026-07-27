@@ -6436,7 +6436,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b706: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b707: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6658,7 +6658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b706 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b707 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -33616,7 +33616,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b706';
+  window.__MLS_AV = window.__MLS_AV || 'b707';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33946,7 +33946,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b706';
+  var MLS_APP_BUILD='2026-07-25-b707';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38800,7 +38800,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b706+b706 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b707+b707 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -42453,7 +42453,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=20260717wbs110-b356';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260714pf111';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260722cal14b';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260726cal15';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260723opnp170';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - immutable identity, account-scoped provider/practice/facility facts, draft-only (window.__mlsOpNotePrep opnp-1.6.0; revert()) */
 /* Medical-legal narrative workflow is intentionally held pending reviewed release. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
@@ -43696,7 +43696,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b706: `safe` was never defined in this IIFE, so the moment
+      /* b707: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a

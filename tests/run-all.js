@@ -278,6 +278,7 @@ const tests = [
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',
   'record-not-blocked-by-unproven-binding.test.js',
+  'calendar-list-keeps-its-exit.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',
