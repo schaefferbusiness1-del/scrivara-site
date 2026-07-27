@@ -47,7 +47,9 @@
   "use strict";
   try { if (window.__mlsCalDedupe && window.__mlsCalDedupe.__live) return; } catch (e) { return; }
 
-  var WRAPPED = ["renderCalendar", "calOpenDay", "renderCalCheckin"];
+  /* Provider check-in reads _calProviders only. Wrapping it used to scan and
+     dedupe every appointment for a render that never touches appointments. */
+  var WRAPPED = ["renderCalendar", "calOpenDay"];
   var orig = {};
 
   function norm(s) { return String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " "); }
@@ -116,19 +118,25 @@
     if (all || tries > 40) { try { clearInterval(t); } catch (e) {} }
   }, 250);
 
-  /* if the calendar is already populated, clean + repaint once through the wrapped renderer */
-  try { dedupe(); if (typeof window.renderCalendar === "function") window.renderCalendar(); } catch (e) {}
+  /* Future Calendar renders already pass through the wrappers. Do not paint
+     the hidden Calendar during Visit/login merely because this module loaded. */
+  try {
+    if (window.__mlsCurrentView === "calendar") {
+      dedupe();
+      if (typeof window.renderCalendar === "function") window.renderCalendar();
+    }
+  } catch (e) {}
 
   window.__mlsCalDedupe = {
     __live: true,
-    version: "caldedupe-1.0.0",
+    version: "caldedupe-1.1.0",
     item: 68,
     dedupeNow: function () { dedupe(); try { if (typeof window.renderCalendar === "function") window.renderCalendar(); } catch (e) {} },
     revert: function () {
       try { clearInterval(t); } catch (e) {}
       for (var i = 0; i < WRAPPED.length; i++) { var nm = WRAPPED[i]; if (orig[nm]) { try { window[nm] = orig[nm]; } catch (e) {} } }
       try { if (window.__mlsCalDedupeRaw) { window._calAppts = window.__mlsCalDedupeRaw; window.__mlsCalDedupeRaw = null; } } catch (e) {}
-      try { if (typeof window.renderCalendar === "function") window.renderCalendar(); } catch (e) {}
+      try { if (window.__mlsCurrentView === "calendar" && typeof window.renderCalendar === "function") window.renderCalendar(); } catch (e) {}
       this.__live = false;
     }
   };

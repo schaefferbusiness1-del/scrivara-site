@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_calbox_uniform.js  ->  window.__mlsCalBox   (cb-1.0.0)
+ * feat_mls_calbox_uniform.js  ->  window.__mlsCalBox   (cb-1.1.0)
  * ---------------------------------------------------------------------------
  * ITEM 9: the blue appointment boxes in the Week and Day calendar views must be
  * CONSISTENT (uniform style), and each must show the time + the patient name.
@@ -21,7 +21,7 @@
   'use strict';
   try { if (window.__mlsCalBox && window.__mlsCalBox.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cb-1.0.0';
+  var VERSION = 'cb-1.1.0';
   var STYLE_ID = 'mlsCalBoxStyle';
   var _orig = null;
 
@@ -63,7 +63,9 @@
   }
 
   function rerender() {
-    safe(function () { if (typeof window.renderCalendar === 'function') window.renderCalendar(); });
+    safe(function () {
+      if (window.__mlsCurrentView === 'calendar' && typeof window.renderCalendar === 'function') window.renderCalendar();
+    });
   }
 
   function boot() {
