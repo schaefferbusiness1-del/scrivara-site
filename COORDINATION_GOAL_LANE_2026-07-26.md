@@ -731,3 +731,18 @@ arrays — it could not answer about the note it just wrote. (3) Widget zero-sta
 the whole-deck starter hide → ONE compact starter card (title+Add, description
 folded; caught my own wrong `.wd-new` selector against the real markup before
 ship). Contract suite extended. Gate about to run.
+
+**b734 SHIPPED** (turn sidecar + Copilot note context + widget first-run door;
+red-gate lesson: visit_focus's routes table demanded named routes for my two new
+starter hides — added, 19/19).
+
+## CLAIM b735 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** loading vocabulary (owner item:
+loading screens everywhere — the foundation build). Page-level primitives beside
+the motion tokens (.mls-load-bar/-fill/-dots + mlsLoadIn; theme vars; motion
+tokens; reduced-motion silence) + the pull panel — the running-icon surface —
+adopts them: tokened entrance once per open + full dark-theme surfaces (it
+hardcoded light colors since b113). New suite loading-vocabulary-contract; both
+motion suites pre-ran green. Surfaces adopt the vocabulary iteratively in
+follow-ups. Gate about to run.
