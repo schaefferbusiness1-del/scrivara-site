@@ -39,7 +39,9 @@ assert(render.includes("p.__ppRowsSig !== sig"),
 /* ---- 2. non-blocking by default, hidden survives, live pill ---- */
 assert(connect.includes('var startedAt = 0, hidden = true, stopped = false;'),
   'the pull opens as the PILL by default - the modal is one click away');
-assert(render.includes('hidden = true; /* b744: reset to the pill DEFAULT, never to the modal */'),
+/* Bump-proof: the build tag inside the source comment is renumbered by every
+   bump-build run, so the pin matches the code + comment SHAPE, not the tag. */
+assert(/hidden = true; \/\* b\d+: reset to the pill DEFAULT, never to the modal \*\//.test(render),
   'pull end resets to the pill default, never slams the modal back');
 assert(connect.includes("function paintFab(S)") && connect.includes("'Pulling ' + (S.done || 0) + '/' + (S.total || 0)"),
   'the pill carries live progress instead of a frozen label');

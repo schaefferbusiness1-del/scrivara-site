@@ -74,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-2.2.0';
+  var VERSION = 'wf2-2.3.0'; /* b745: live writes probe-bound; historical writes still pre-name their encounter */
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0, orderAccepts: 0 };
   var stopped = false;
@@ -224,7 +224,24 @@
     var suppliedEncounterUrl = S(supplied.encounterUrl || supplied.visitUrl || '').trim();
     if (!!suppliedEncounter !== !!suppliedEncounterUrl) { suppliedEncounter = ''; suppliedEncounterUrl = ''; }
     var suppliedAppointment = S(supplied.appointmentId || supplied.id || '').trim();
-    if (suppliedDate && suppliedProvider) return { visitDate: athenaVisitDate(suppliedDate), provider: suppliedProvider, appointmentId: suppliedAppointment, encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
+    if (suppliedDate && suppliedProvider) {
+      /* b745 (write-blocker audit #15): this short-circuit returned with an
+         empty appointmentId even when the day's import ledger could resolve it
+         unambiguously, which fed the exact-visit gate nothing. Resolve first;
+         exactly-one match or the id stays honestly empty. */
+      if (!suppliedAppointment) {
+        try {
+          var srcS = opts.patient || activePt() || {};
+          var pidS = S(srcS.patientId || srcS.id || srcS.patient_external_id || '').trim();
+          var dayRows = calendarRows().filter(function (a) {
+            return a && S(a.patient_external_id || a.patientId || '').trim() === pidS &&
+              visitDay(a.day_local || a.appt_date || a.start_at) === suppliedDate;
+          });
+          if (pidS && dayRows.length === 1) suppliedAppointment = athenaAppointmentIdFromImportIndex(pidS, dayRows[0].id, suppliedDate) || '';
+        } catch (eResolve) {}
+      }
+      return { visitDate: athenaVisitDate(suppliedDate), provider: suppliedProvider, appointmentId: suppliedAppointment, encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
+    }
 
     var src = opts.patient || activePt() || {};
     var pid = S(src.patientId || src.id || src.patient_external_id || '').trim();
@@ -960,8 +977,19 @@
     var receiptSessionId = S(opts.receiptSessionId).trim() || ('athena-unified-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     var previewHash = S(opts.previewHash).trim() || hashPreview({ patient: patient, visit: visit, plan: plan, sections: noteSections });
     var identityBlocked = !patient.patientId || !patient.name || !patient.dob || !patient.mrn;
-    var exactVisitBlocked = !visit.visitDate || !visit.provider ||
-      (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl));
+    /* b745 (write-blocker audit #14): the appointment-id PRE-gate blocked every
+       write before the read-only Athena probe ever ran — including today-writes
+       whose id the ledger could resolve, and every historical record (a gate
+       with no key: no UI could furnish what it demanded). Only a HISTORICAL
+       write (requireExpectedVisit) must pre-name its exact encounter; for a
+       live write the probe itself discovers, verifies, and LOCKS the open
+       encounter (validatedUnifiedProbe still requires the complete matching
+       patient plus one exact encounter id/URL/date/provider/control before
+       anything can execute). The wrong-chart guarantee is unchanged - it was
+       never this pre-gate, it is the probe + the execute-time rebinding. */
+    var exactVisitBlocked = opts.requireExpectedVisit === true &&
+      (!visit.visitDate || !visit.provider ||
+        (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)));
     var commonBlock = identityBlocked
       ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
       : (exactVisitBlocked ? 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.' : '');

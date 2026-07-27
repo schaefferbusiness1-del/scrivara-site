@@ -55,7 +55,7 @@ const superbill = between(app, 'function pushSuperbillToAthena()', '/* Preview a
 assert(superbill.includes('openUnifiedConfirmation'), 'Superbill must enter the same unified confirmation page');
 assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill must not retain an executable billing fallback');
 
-/* wf2-2.2.0 (owner 2026-07-22, seamless write): when the probe refuses only
+/* wf2-2.3.0 (owner 2026-07-22, seamless write): when the probe refuses only
    because the destination is not open, the unified review opens the exact
    identity-verified chart itself (SearchOpen) and re-probes once — no more
    "go open the chart first". Bounded and fail-closed: whitelisted not-open

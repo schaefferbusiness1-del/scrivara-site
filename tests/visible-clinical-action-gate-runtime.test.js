@@ -175,10 +175,16 @@ assert(stagingPushPlan.includes('typeof wf.openUnifiedConfirmation'), 'staging r
 assert(stagingPushPlan.includes('requireExpectedVisit:true'), 'staging review no longer requires the exact expected encounter at confirmation time');
 
 assert(owner.includes('exactActionReady: function (actionLabel)'), 'canonical API does not expose the exact scheduled action decision to engine sinks');
-/* pin updated 2026-07-22: the no-locked-visit refusal must now be VISIBLE
-   (toast + render) instead of a silent false — the gate itself is unchanged. */
+/* pin updated 2026-07-22: the no-locked-visit OUTCOME must be VISIBLE
+   (toast + render), never silent. pin moved b745 (write-blocker audit #36):
+   the outcome is now a DEMOTION — proceed as an UNSCHEDULED visit with the
+   visible warning — instead of a hard refusal, matching the owner's standing
+   ruling in requireExactScheduledBinding. The visibility requirement and the
+   scheduled-path gate are unchanged. */
 assert(owner.includes("if (!S.appt) {"), 'engine decision lost its explicit no-locked-visit branch');
-assert(owner.includes("S.lastWarn = 'MLS blocked ' + label + ' because no scheduled visit is locked"), 'no-locked-visit refusal is silent again (no visible warning)');
+assert(owner.includes("is proceeding as an UNSCHEDULED visit - no schedule row is locked"), 'the unscheduled demotion lost its visible warning');
+assert(/if \(!S\.appt\) \{[\s\S]{0,900}?S\.lastWarn[\s\S]{0,300}?toast\(S\.lastWarn\)[\s\S]{0,200}?return true;/.test(owner), 'the no-locked-visit branch must WARN visibly and demote, never refuse silently');
+assert(!owner.includes("S.lastWarn = 'MLS blocked ' + label + ' because no scheduled visit is locked"), 'the old hard generation refusal must stay gone');
 assert(owner.includes('return requireExactScheduledBinding(S.appt, label);'), 'engine decision can pass without the selected scheduled appointment gate');
 
 function makeEngineHarness(blocks, gate) {

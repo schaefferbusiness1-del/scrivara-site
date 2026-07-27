@@ -978,3 +978,27 @@ indexOf splice on mls-connect.js grabbed the FIRST of 14 matches and cut
 1,900 unrelated lines — caught by git diff --stat before anything ran;
 re-applied with module-anchored search + window-size guard. Gate about to
 run.
+
+## CLAIM b745 — goal-lane takeover session (write-blocker fixes)
+
+**Claimed by:** same session, owner directive "remove any blockers that
+prevent me from writing." Sources: the 42-gate Opus write-audit. Fixes
+(bugs only; every wrong-chart safety gate stays): (1) hand-typed notes are
+now writable AND savable — emrReadyText/saveCurrentNote read the note box
+whenever it HAS text instead of only when generation revealed it; the
+review entry gates on emrReadyText, not currentSoap provenance; (2) the
+exact-visit appointment-id PRE-gate now binds only HISTORICAL writes
+(requireExpectedVisit) — live writes let the read-only probe discover +
+verify + lock the open encounter (probe/execute-rebinding guarantees
+unchanged), and a supplied date+provider context resolves its appointment
+id from the day ledger (exactly-one or honestly empty); (3) the !S.appt
+hard refusal in exactActionReady DEMOTES to an UNSCHEDULED visit with a
+visible warning (the owner's standing ruling; the cross-patient-conflict
+block stays); (4) the dead Verify-in-Athena affordance is alive — the
+2.9.44 exact-build pin becomes MIN 3.0.23 + stamped-release shape check
+(unstamped dev builds still refused), eev-1.4.0; (5) the 30-char send
+floor drops to non-empty across every module copy. All four heavyweight
+write-path suites + ui-control-coverage pass unchanged; new suite
+writes-are-unblocked-safely pins fixes AND kept gates. EXTENSION half
+(background.js probe-shape line, write_safety_guard TEST_MARKER_RE
+tightening, identity-verb budget) queued as ext 3.0.25. Gate about to run.

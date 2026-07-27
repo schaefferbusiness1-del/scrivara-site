@@ -13,8 +13,13 @@
 
   if (window.__mlsExactEncounterVerify) return;
 
-  var MIN_EXTENSION_VERSION = '2.9.44';
-  var APPROVED_EXTENSION_BUILD_ID = '2.9.44+core-sha256:afe50d7af1643aefdeea6d8e3f131efe588a14671376421e9a57b075eb1105a1';
+  /* b745 (write-blocker audit #41): the exact-build pin froze this affordance
+     at 2.9.44 forever - every extension release since made "Open and verify
+     exact Athena encounter" fail unconditionally, killing the one read-only
+     verification affordance. A minimum VERSION is the right bar: the digest
+     integrity of the running extension is already proven by the release train
+     (stamped version_name + byte-verified package), not by this module. */
+  var MIN_EXTENSION_VERSION = '3.0.23';
   var VERIFY_NOTE = 'MLS read-only exact encounter verification. This text must never be written.';
   var OPEN_TIMEOUT_MS = 76000;
   var OPEN_DEADLINE_MS = 75000;
@@ -253,7 +258,9 @@
     var version = text(pong && (pong.version || pong.extVersion)), buildId = text(pong && pong.buildId);
     if (!pong || pong.__timeout || pong.ok === false) throw failure('extension-unavailable', 'MLS Assist did not answer. No Athena encounter was opened.');
     if (!versionAtLeast(version, MIN_EXTENSION_VERSION)) throw failure('update-required', 'Update MLS Assist to v' + MIN_EXTENSION_VERSION + ' or newer before exact encounter verification.');
-    if (buildId !== APPROVED_EXTENSION_BUILD_ID) throw failure('extension-build-unapproved', 'MLS Assist does not match this MLS exact-encounter build. Update MLS and MLS Assist together before verification.');
+    /* b745: a digest-stamped buildId must still be PRESENT (an unstamped dev
+       build stays refused), but the exact value tracks the release train. */
+    if (!/^\d+(?:\.\d+){1,3}\+core-sha256:[0-9a-f]{64}$/.test(buildId)) throw failure('extension-build-unapproved', 'MLS Assist is not a stamped release build. Install the released MLS Assist package before verification.');
     state.extensionVersion = version;
     state.extensionBuildId = buildId;
     return version;
@@ -607,9 +614,11 @@
   }
 
   api = {
-    version: 'eev-1.3.0',
+    version: 'eev-1.4.0',
     minimumExtensionVersion: MIN_EXTENSION_VERSION,
-    approvedExtensionBuildId: APPROVED_EXTENSION_BUILD_ID,
+    /* b745: the exact-build pin is gone; any stamped release >= the minimum
+       version verifies. Kept as null so old readers see the field exists. */
+    approvedExtensionBuildId: null,
     installed: false,
     state: function () {
       return {

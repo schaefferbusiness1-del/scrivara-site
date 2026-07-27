@@ -25,7 +25,7 @@ const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8');
-assert(src.includes("var VERSION = 'wf2-2.2.0'"), 'writeflow version must be wf2-2.2.0');
+assert(src.includes("var VERSION = 'wf2-2.3.0'"), 'writeflow version must be wf2-2.3.0');
 assert(!/appointmentId:\s*suppliedAppointment\s*\|\|[^,]*\|\|\s*S\(hit\.id/.test(src), 'the backend row id must never be the appointment-id fallback');
 
 function makeContext(indexRows, calAppts) {
@@ -97,14 +97,24 @@ function manifestFor(indexRows, calAppts) {
 }
 
 // 2. No index (or no match): the appointment id is EMPTY — never the backend
-//    row id — and the unified manifest blocks the write with the honest
-//    exact-visit reason instead of presenting a ready action that the live
-//    probe is guaranteed to refuse.
+//    row id. b745 (write-blocker audit #14): the CONSEQUENCE moved — a LIVE
+//    write stays READY with an empty id, because the read-only probe
+//    discovers, verifies, and locks the open encounter and remains the
+//    fail-closed arbiter of every write. What must never change: the id is
+//    never guessed (b438), and a HISTORICAL write (requireExpectedVisit)
+//    still blocks up front with the honest exact-visit reason.
 {
   const manifest = manifestFor(null, [ADAM_ROW]);
   assert.strictEqual(manifest.visit.appointmentId, '', 'without an index match the appointment id must be empty, never the backend row id');
   const note = manifest.rows.find(r => r.id === 'write-note');
-  assert(note && note.capability !== 'ready', 'write-note must not be ready without a real appointment id or bound encounter');
+  assert(note && note.capability === 'ready', 'a LIVE write stays probe-bound ready - the probe is the arbiter, not this pre-gate');
+}
+{
+  const ctx = makeContext(null, [ADAM_ROW]);
+  vm.runInContext(src, ctx, { filename: 'feat_mls_writeflow.js' });
+  const manifest = ctx.window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, NOTE_OPTS, { requireExpectedVisit: true }));
+  const note = manifest.rows.find(r => r.id === 'write-note');
+  assert(note && note.capability !== 'ready', 'a HISTORICAL write must still block without a real appointment id or bound encounter');
   assert(/appointment ID|encounter/i.test(String(note && note.reason || '')), 'the block reason must name the missing exact-visit context');
 }
 
