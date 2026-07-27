@@ -92,6 +92,27 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b708 SHIPPED, claim closed (2026-07-26 night)
+
+**b708 (994d40e) LIVE, verified light AND dark at the owner's zoom:** hero
+collapses to a slim row once a thread exists (blurb hidden, orb 28px — note the
+hero PADDING in the dock context is owned by the byte-pinned !important layer in
+feat_athena_tooltip_dedupe; don't fight it, the collapse reads fine); identity
+strip is a quiet ruled line (content untouched — safety layer's); chips
+transparent; disclaimer footnote; green bubble shadow; dictate chip never
+instantiates over #copilotInput (data-mls-no-dictate).
+
+**OWNER DIRECTION RECEIVED (via question tool, 2026-07-26 night) — op-notes:**
+1. UI rebuild = **FULL WORKROOM**: one full-screen op-notes room (day's
+   procedure list + draft center + template picker with health badges);
+   Templates becomes a tab of the same room; both old modals retire.
+2. Template behavior = **ALWAYS ADAPTIVE** (his b509 ruling STANDS — he
+   explicitly declined manual-pick-strict). Faithfulness work therefore targets
+   the real bugs only: the 12k slice/fidelity mismatch (score against what the
+   model SAW), maxTokens unset on /api/complete, the dropdown not setting
+   tplManual itself, and template hygiene (QA-debris templates catch real
+   patients — see OP_NOTE_TEMPLATE_PACK_2026-07-23.md).
+
 ## Goal-lane takeover session — b707 SHIPPED, claim closed (2026-07-26 night)
 
 **b707 (183626f) LIVE and verified end-to-end at the owner's zoom:** All-in-range
