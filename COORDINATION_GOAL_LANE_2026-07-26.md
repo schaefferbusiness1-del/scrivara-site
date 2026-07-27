@@ -92,6 +92,32 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b716 SHIPPED, WORKROOM STAGE 1 LIVE (2026-07-27 ~4:30 AM)
+
+**b716 (4867fc8) verified on the occluded tab:** the room measures 2270×1268
+full-screen, rail + editor + tabs render, EVERY satellite kept working (the
+Fields box SELF-APPEARED inside the room with all 9 fields, suggested values
+already applied into the live note, per-field mics, "Use every time",
+Dictate-to-fill, honest "save to History (5 blanks left)"). The tab was
+restored to its Monday-ready state (Michele active). NEXT IN THE CHAIN:
+Stage 2 (editor parity + template rail with health badges + cc date naming +
+context receipt line), Stage 3 (in-room Templates tab), Stage 4 (presentation
+retirement + walkthrough), then the auto-follow extension release and the
+write-back walkthrough. The plan doc is the single source; claims here before
+every gate. No claim open; tree clean at 4867fc8.
+
+## Goal-lane takeover session — TWELFTH CLAIM OPEN (2026-07-27 ~4 AM)
+
+**claiming next build (b716), WORKROOM STAGE 1: #opPrepModal becomes the
+full-screen room (option C — container id, class-toggled open, and the pinned
+role/aria attrs all byte-identical; every satellite anchor id kept in place:
+ModeRow/DayRow in the rail, GenAllBtn still in a .row, Status/Empty/List in
+the editor). Tab strip: Procedures active; Templates routes to the REAL
+openTemplates() until Stage 3. Room module opr-1.1.0 owns ESC (templates-
+over-room closes templates, room survives). CSS beside the settings
+wide-modal block; shell fills the backdrop so no mousedown-close pixel
+exists. Gating now.** ⚠️ No `git add -A`.
+
 ## Goal-lane takeover session — b713/b714/b715 SHIPPED, claims closed (2026-07-27 ~3:30 AM)
 
 **THE FILL-IN-THE-BLANK CHAIN IS CLOSED, live-proven under the strictest
