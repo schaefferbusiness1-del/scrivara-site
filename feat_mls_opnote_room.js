@@ -32,7 +32,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.0.0';
+  var VERSION = 'opr-1.1.0';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -40,18 +40,44 @@
     try { previous.revert(); } catch (e1) {}
   }
 
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function $(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function shown(el) { return !!(el && el.classList && el.classList.contains('show')); }
+
+  /* Stage 1 ESC OWNERSHIP. Two .modal-bg surfaces can be open at once (the
+     room + the Templates modal over it) and two ESC handlers already exist:
+     the pinned document-capture handler (closes the room; DO NOT EDIT IT) and
+     theme_polish's last-open-modal closer. A doctor on the Templates modal
+     expects ESC to close THAT and return to the room - not to lose the room.
+     window-capture fires before both; when templates is open we close it and
+     stop the event so the room survives. When only the room is open, we do
+     nothing and the existing owners behave exactly as before. */
+  function onKey(e) {
+    if (e.key !== 'Escape') return;
+    var room = $('opPrepModal'), tpl = $('templatesModal');
+    if (!shown(room) || !shown(tpl)) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    safe(function () { if (typeof window.closeTemplates === 'function') window.closeTemplates(); });
+  }
+  window.addEventListener('keydown', onKey, true);
+
   var api = {
     installed: true,
     version: VERSION,
-    stage: 0,
+    stage: 1,
     describe: function () {
-      return 'op-note workroom home, stage 0: inert. The room container is ' +
-        '#opPrepModal (option C); stages 1-4 build the shell, editor parity, ' +
-        'the Templates tab, and the modal-presentation retirement here.';
+      return 'op-note workroom, stage 1: full-screen shell live inside ' +
+        '#opPrepModal (option C - the container id and class-toggled open are ' +
+        'load-bearing for three satellites); tab strip routes Templates to the ' +
+        'real openTemplates(); ESC on the Templates modal returns to the room. ' +
+        'Stages 2-4: editor parity + template rail, the in-room Templates tab, ' +
+        'presentation retirement.';
     },
     revert: function () {
       api.installed = false;
-      try { if (window.__mlsOpNoteRoom === api) delete window.__mlsOpNoteRoom; } catch (e2) {}
+      try { window.removeEventListener('keydown', onKey, true); } catch (e2) {}
+      try { if (window.__mlsOpNoteRoom === api) delete window.__mlsOpNoteRoom; } catch (e3) {}
     }
   };
   window.__mlsOpNoteRoom = api;

@@ -854,6 +854,35 @@
   #settingsModal .modal::-webkit-scrollbar-track{ background:#F1F0EB;border-radius:10px; }
   #settingsModal .modal::-webkit-scrollbar-thumb{ background:#9AABA0;border:2px solid #F1F0EB;border-radius:10px; }
   #settingsModal .modal-x{ position:absolute; top:16px; right:18px; z-index:3; }
+  /* ---- Op-note WORKROOM (Stage 1 of OPNOTE_WORKROOM_PLAN_2026-07-26.md) ----
+     The drafter stops being a 920px popup and becomes the full-screen room the
+     owner approved. #opPrepModal STAYS the container (three satellites gate
+     the entire Fields box on this id's computed display) and keeps its
+     class-toggled open; only the PRESENTATION changes. The shell fills the
+     backdrop completely, so no .modal-bg pixel can ever be a mousedown target
+     (theme_polish closes modals on backdrop mousedown). */
+  #opPrepModal.opr-room{ padding:0; }
+  #opPrepModal.opr-room .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
+    border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
+    display:flex; flex-direction:column; overflow:hidden; }
+  #opPrepModal.opr-room .modal-x{ position:absolute; top:14px; right:16px; z-index:3; }
+  .opr-top{ display:flex; align-items:center; gap:14px; padding:12px 52px 12px 18px;
+    border-bottom:1px solid var(--line); background:var(--card); flex:0 0 auto; }
+  .opr-top h3{ margin:0; border:0; padding:0; }
+  .opr-tabs{ display:flex; gap:6px; margin-left:6px; }
+  .opr-tab{ font-size:13px; font-weight:600; padding:7px 14px; border-radius:10px;
+    border:1px solid transparent; background:transparent; color:var(--muted); cursor:pointer; }
+  .opr-tab.on{ background:var(--soft); color:var(--ink); border-color:var(--line); }
+  #oprPanelProcs{ flex:1 1 auto; display:grid; grid-template-columns:290px minmax(0,1fr); min-height:0; }
+  #oprDayRail{ border-right:1px solid var(--line); padding:14px 16px; overflow:auto;
+    background:var(--card); min-height:0; }
+  #oprDayRail .note{ font-size:12px; line-height:1.5; }
+  #oprEditor{ padding:16px 22px; overflow:auto; min-height:0; }
+  @media (max-width:900px){
+    #oprPanelProcs{ grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); }
+    #oprDayRail{ border-right:0; border-bottom:1px solid var(--line); }
+  }
+  body.theme-dark .opr-top{ background:var(--card); }
   #settingsModal #settingsTabBar{ position:absolute; top:54px; right:18px; width:230px; display:flex; flex-direction:column; gap:5px; align-items:stretch; max-height:calc(94vh - 74px); overflow-y:auto; scrollbar-width:none; padding-left:14px; border-left:1px solid var(--line); }
   #settingsModal #settingsTabBar::-webkit-scrollbar{ display:none; }
   #settingsModal #settingsTabBar .set-tab{ text-align:left; width:100%; box-sizing:border-box; }
@@ -1297,7 +1326,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b715) ----
+  /* ---- Copilot calm polish (b716) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -4777,29 +4806,41 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- PROCEDURE-DAY OP NOTES — auto-draft tomorrow's operative reports from the doctor's uploaded op-note templates. -->
-<div class="modal-bg" id="opPrepModal" role="dialog" aria-modal="true" aria-labelledby="opPrepHdr">
-  <div class="modal" style="max-width:920px">
+<div class="modal-bg opr-room" id="opPrepModal" role="dialog" aria-modal="true" aria-labelledby="opPrepHdr">
+  <div class="modal">
     <button class="modal-x" onclick="closeOpPrep()" aria-label="Close op-note prep">×</button>
-    <h3 id="opPrepHdr">💉 Prep op notes</h3>
-    <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. Known Settings and saved defaults fill first; every remaining case-specific item (needle size, doses…) appears together in one <b>Fields</b> box above the note. Each draft auto-saves to History; press 💾 to finalize.</p>
-    <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
-      <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
-      <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
+    <div class="opr-top">
+      <h3 id="opPrepHdr">💉 Prep op notes</h3>
+      <nav class="opr-tabs" role="tablist" aria-label="Op-note areas">
+        <button type="button" id="oprTabProcs" class="opr-tab on" role="tab" aria-selected="true">Procedures</button>
+        <button type="button" id="oprTabTpls" class="opr-tab" role="tab" aria-selected="false" onclick="openTemplates()" title="Manage the op-note templates drafts follow">Templates</button>
+      </nav>
     </div>
-    <div id="opPrepDayRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px">
-      <label class="mini" for="opPrepDayInput" style="color:var(--muted)">Procedures for:</label>
-      <button onclick="opPrepSetDayToday()" style="font-size:12.5px;padding:6px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer">Today</button>
-      <button onclick="opPrepSetDayTomorrow()" style="font-size:12.5px;padding:6px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer">Tomorrow</button>
-      <input type="date" id="opPrepDayInput" onchange="opPrepSetDay(this.value)" aria-label="Pick a schedule day to prep" style="font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">
-      <span id="opPrepDayLbl" class="mini" style="color:var(--brand-dk);font-weight:700"></span>
-    </div>
-    <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
-      <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
-      <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
-    </div>
-    <div id="opPrepEmpty" class="mini" style="color:var(--muted);display:none">No patients on tomorrow’s schedule yet. Pull tomorrow’s schedule from Athena first (📥 on the Visit tab), or book appointments on the Calendar.</div>
-    <div id="opPrepList"></div>
-    <div class="row" style="margin-top:14px"><button class="btn-ghost" onclick="closeOpPrep()" style="flex:1">Close</button></div>
+    <section id="oprPanelProcs">
+      <aside id="oprDayRail">
+        <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. Known Settings and saved defaults fill first; every remaining case-specific item (needle size, doses…) appears together in one <b>Fields</b> box above the note. Each draft auto-saves to History; press 💾 to finalize.</p>
+        <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
+          <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
+          <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
+        </div>
+        <div id="opPrepDayRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px">
+          <label class="mini" for="opPrepDayInput" style="color:var(--muted)">Procedures for:</label>
+          <button onclick="opPrepSetDayToday()" style="font-size:12.5px;padding:6px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer">Today</button>
+          <button onclick="opPrepSetDayTomorrow()" style="font-size:12.5px;padding:6px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer">Tomorrow</button>
+          <input type="date" id="opPrepDayInput" onchange="opPrepSetDay(this.value)" aria-label="Pick a schedule day to prep" style="font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">
+          <span id="opPrepDayLbl" class="mini" style="color:var(--brand-dk);font-weight:700"></span>
+        </div>
+      </aside>
+      <main id="oprEditor">
+        <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
+          <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
+          <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
+        </div>
+        <div id="opPrepEmpty" class="mini" style="color:var(--muted);display:none">No patients on tomorrow’s schedule yet. Pull tomorrow’s schedule from Athena first (📥 on the Visit tab), or book appointments on the Calendar.</div>
+        <div id="opPrepList"></div>
+        <div class="row" style="margin-top:14px"><button class="btn-ghost" onclick="closeOpPrep()" style="flex:1">Close</button></div>
+      </main>
+    </section>
   </div>
 </div>
 
@@ -12698,7 +12739,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b715: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b716: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -24720,7 +24761,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b715: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b716: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24855,7 +24896,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b715 — THE LOADING SCREEN MUST ALWAYS END.
+/* b716 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29576,7 +29617,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b715';
+  window.__MLS_AV='b716';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
