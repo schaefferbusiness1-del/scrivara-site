@@ -20,7 +20,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "px-1.2.0";
+  var VERSION = "px-1.3.0";
   try { if (window.__mlsPx && window.__mlsPx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -33,7 +33,7 @@
   if (!isStaging()) { try { window.__mlsPx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "pxStyle";
-  var _obs = null, _t = null, _sched = null;
+  var _obs = null, _sched = null, _active = false;
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
@@ -119,31 +119,47 @@
     try { build(); } catch (e) {}
     try {
       var v = $("patientsView");
-      if (_obs && v) _obs.observe(v, {
+      if (_active && _obs && v) _obs.observe(v, {
         childList: true, subtree: true, attributes: true,
         attributeFilter: ["style", "class", "hidden", "aria-hidden"]
       });
     } catch (e) {}
   }
-  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
+  function isPatientsActive() {
+    try { return window.__mlsCurrentView === "patients"; } catch (e) { return false; }
+  }
+  function stopActive() {
+    _active = false;
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+  }
+  function schedule() {
+    if (!_active || !isPatientsActive() || _sched) return;
+    _sched = setTimeout(function () { _sched = null; if (_active && isPatientsActive()) applyAll(); }, 160);
+  }
+  function startActive() {
+    if (!isPatientsActive()) return;
+    if (!_obs) { try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {} }
+    if (_active) { schedule(); return; }
+    _active = true;
+    applyAll();
+  }
   function onViewChanged(ev) {
-    var d = ev && ev.detail;
-    if (!d || d.view === "patients" || d.previousView === "patients") schedule();
+    var d = ev && ev.detail, view = d && d.view;
+    if (!view) { try { view = window.__mlsCurrentView; } catch (e) {} }
+    if (view === "patients") startActive(); else stopActive();
   }
   function boot() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_t) clearInterval(_t); } catch (e) {} _t = null;
-    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    stopActive();
     try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
-    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
     try { window.addEventListener("mls:view-changed", onViewChanged); } catch (e) {}
-    applyAll();
-    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) { clearInterval(_t); _t = null; } }, 700);
+    /* showView("patients") renders the directory/profile before it emits the
+       canonical lifecycle event. One synchronous build plus the view-scoped
+       observer therefore covers real changes without 13 blind repair passes. */
+    if (isPatientsActive()) startActive();
   }
   function revert() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_t) clearInterval(_t); } catch (e) {}
-    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+    stopActive();
     try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try {

@@ -29,10 +29,12 @@ assert(simple.includes('window.addEventListener("mls:view-changed", onLifecycle)
 assert(simple.includes('function boot() {\n    stopLifecycle();') && simple.includes('function revert() {\n    stopLifecycle();'), 'Simple Visit reapply/revert must not leak observers or listeners');
 
 assert(patients.includes('_obs.observe(v, {'), 'Patients styling observer must be rooted at #patientsView');
-assert(patients.includes('var VERSION = "px-1.2.0"'), 'Patients scoped lifecycle release version was not advanced');
+assert(patients.includes('var VERSION = "px-1.3.0"'), 'Patients view-activated lifecycle release version was not advanced');
 assert(!patients.includes('_obs.observe(document.documentElement'), 'Patients styling still observes page-wide DOM/style churn');
 assert(!/\.offsetParent|getComputedStyle\s*\(/.test(patients), 'Patients reconciliation still forces layout merely to test profile visibility');
 assert(patients.includes('window.addEventListener("mls:view-changed", onViewChanged)') && patients.includes('window.removeEventListener("mls:view-changed", onViewChanged)'), 'Patients view event lifecycle is incomplete');
+assert(patients.includes('if (isPatientsActive()) startActive();'), 'Patients styling must stay dormant until the Patients view is active');
+assert(!/setInterval\s*\(/.test(patients), 'Patients styling must not run blind repair passes after boot');
 
 assert(studio.includes('_obs.observe(v, { childList: true, subtree: true })'), 'AI Studio observer must be scoped to #studioView');
 assert(studio.includes('var VERSION = "sx-2.4.0-prod"'), 'AI Studio scoped lifecycle release version was not advanced');
@@ -72,9 +74,8 @@ assert(settingsWb.includes("window.addEventListener('mls:settings-reconciled', o
 assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Settings writeback row must unsubscribe on revert');
 
 [
-  /* patients_exact advanced to 20260726dkn1 at b681 (theme-token pass on the
-     imp() literals) — the pin moves WITH the deliberate token bump. */
-  'feat_mls_patients_exact.js?v=20260726dkn1',
+  /* Patients exact now stays inert until Patients is the active view. */
+  'feat_mls_patients_exact.js?v=20260727px130',
   'feat_mls_studio_exact.js?v=20260716sx240',
   'feat_mls_patientpick.js?v=20260716pick161',
   'feat_mls_simple_exact.js?v=20260719simx142'
