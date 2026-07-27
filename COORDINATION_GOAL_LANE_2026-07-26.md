@@ -92,6 +92,31 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b710 SHIPPED, claim closed (2026-07-26 night)
+
+**b710 (e34f289):** the visit home follows the banner patient (canonical
+homeSig() tracks the active-patient id; found live-verifying b709 in both
+directions). **b709 (adb4c34) live-verified end-to-end** with a real draft on
+the [MLS TEST] patient: manual pick honored + "(your selection)" label, note
+follows the hand-picked template heading-for-heading, honest [[slots]],
+attestation block, autosaved to History.
+
+**THE WORKROOM PLAN IS COMMITTED: `OPNOTE_WORKROOM_PLAN_2026-07-26.md`** —
+option C (keep #opPrepModal as the room container; reparent #templatesModal
+whole), 4 separately-green stages, 11 satellite injection points pinned, the
+modalOpen() display gate named as the decisive seam. Any lane building the
+workroom starts THERE.
+
+## Goal-lane takeover session — FIFTH CLAIM OPEN (2026-07-26 night)
+
+**claiming next build (b709), op-note reliability pack (oni-2.15.0 → 2.16.0):
+fidelity graded against the same 12k slice the model saw (+ truncation named in
+the failure), maxTokens:4096 on /api/complete, the template dropdown sets
+tplManual itself and stops claiming (auto-matched) for hand picks. Token
+20260723oni2150 → 20260726oni2160 in BOTH connectors + 4 pin lines + 2 VERSION
+pins; crossAdapt untouched (owner: always-adaptive). Gating now.**
+⚠️ Do NOT `git add -A` — my dirty files are mine.
+
 ## Goal-lane takeover session — b708 SHIPPED, claim closed (2026-07-26 night)
 
 **b708 (994d40e) LIVE, verified light AND dark at the owner's zoom:** hero
