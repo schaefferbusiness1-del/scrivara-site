@@ -46,8 +46,9 @@ assert(loaderCode.includes("s.src='mls-connect.js?v='+window.__MLS_AV") && loade
 assert(!loaderCode.includes('response.text()') && !loaderCode.includes("s.text=String(source||'')"), 'main UI is still buffered and copied as a multi-megabyte text blob');
 assert(loaderCode.includes("var loadBudget=Math.max(1,Math.min(10000,hardAt-Date.now()-1200))") && loaderCode.includes("abort('main-load-timeout')"), 'main UI script lost its protected timeout budget');
 assert(loaderCode.includes("if(!window.__MLS_APP_BUILD){ abort('main-execution-blocked'); return; }"), 'external main UI execution is not verified');
-assert(loaderCode.includes('var gateStarted=') && loaderCode.includes('var releaseAt=gateStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS') && loaderCode.includes('var hardAt=releaseAt-Math.max(1400,SF_GATE_QUIET_MS+500)') && loaderCode.includes('var optionalWaitUntil=Math.min(hardAt,gateStarted+9000)'), 'UI deadlines are not derived from the active loader budget');
-assert(loaderCode.includes('var optionalSettled=allPending===0||now>=optionalWaitUntil') && loaderCode.includes('if(pending===0&&optionalSettled&&quiet)'), 'a hung optional script can still hold the full-screen loader to its absolute deadline');
+assert(loaderCode.includes('var gateStarted=') && loaderCode.includes('var releaseAt=gateStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS') && loaderCode.includes('var hardAt=releaseAt-Math.max(1400,SF_GATE_QUIET_MS+500)'), 'UI deadlines are not derived from the active loader budget');
+assert(!loaderCode.includes('optionalWaitUntil') && loaderCode.includes('if(pending===0&&quiet)'), 'optional scripts can still delay critical UI readiness');
+assert(loaderCode.includes('tracker.optionalLastActivity=Date.now()') && !loaderCode.includes('satellitePending++; tracker.lastActivity=Date.now()'), 'optional script activity can still reset the critical quiet window');
 assert(!loaderCode.includes('assets.satelliteErrors.length===0&&critical'), 'optional satellite errors can still fail the critical UI');
 assert(loaderCode.includes('window.__mlsAbortUiBundle=abort') && loaderCode.includes('if(window.__mlsAbortUiBundle===abort) window.__mlsAbortUiBundle=null'), 'UI abort hook is not single-owner or cleaned up');
 assert(loaderCode.includes('s.onload=s.onerror=null') && loaderCode.includes('assets.abortPending()') && loaderCode.includes('assets.settled=true; assets.stop()'), 'UI abort does not retire the main script, satellites, and tracker listeners');
@@ -226,10 +227,10 @@ async function verifyLoaderRuntime() {
 
   const optionalPending = makeLoaderHarness({ assets: 'success', optionalPending: true });
   const optionalPendingResult = optionalPending.window.__mlsEnsureUiBundle();
-  await optionalPending.advance(8999);
-  assert.strictEqual(optionalPending.window.__mlsUiBundleReady, undefined, 'optional grace period was skipped');
-  await optionalPending.advance(10100);
-  assert.strictEqual(await optionalPendingResult, true, 'one hung optional script trapped or failed the critical UI');
+  await optionalPending.advance(899);
+  assert.strictEqual(optionalPending.window.__mlsUiBundleReady, undefined, 'critical quiet window was skipped');
+  await optionalPending.advance(2000);
+  assert.strictEqual(await optionalPendingResult, true, 'one hung optional script delayed or failed the critical UI');
   assert.strictEqual(optionalPending.window.__mlsStartupAssets.degraded, true, 'optional pending state was not exposed diagnostically');
 
   const optionalError = makeLoaderHarness({ assets: 'success', optionalError: true });
@@ -286,7 +287,7 @@ assert(!gate.includes('showAgreementsGate()'), 'agreement lookup must return a d
 assert(gate.includes('if(!sfStartupValid(opts)) return true'), 'late legal-readiness responses can still fail open after startup cancellation');
 
 verifyLoaderRuntime().then(function () {
-  console.log('PASS startup hydration: phased session, streaming external UI load, bounded optional grace, fail-closed critical assets, and loader-owned deadline');
+  console.log('PASS startup hydration: phased session, streaming external UI load, critical-only readiness, fail-closed critical assets, and loader-owned deadline');
 }).catch(function (error) {
   console.error(error);
   process.exit(1);
