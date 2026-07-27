@@ -40,7 +40,7 @@ const assets = [
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
-  ['feat_task3_frontsync.js', '20260723t3108', '20260719t3107'],
+  ['feat_task3_frontsync.js', '20260727t3109', '20260723t3108'],
   ['feat_mls_upnow_realtime.js', '20260723unr110', '20260626unr1c1']
 ];
 

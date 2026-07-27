@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.7';
+  var VERSION = 't3-1.0.8';
   var wrapped = [], trackedTimeouts = [], destroyed = false;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -48,8 +48,22 @@
   function lsSet(name, v) { safe(function () { if (isFn(window.uns)) localStorage.setItem(window.uns(name), String(v == null ? '' : v)); }); }
   function lsDel(name) { safe(function () { if (isFn(window.uns)) localStorage.removeItem(window.uns(name)); }); }
   function acctTz() { return safe(function () { var t = isFn(window._acctTz) ? window._acctTz() : localStorage.getItem(window.uns ? window.uns('acctTz') : '') || ''; return (t && String(t).trim()) || 'America/New_York'; }, 'America/New_York'); }
-  function tzDateKey(d) { try { return new Intl.DateTimeFormat('en-CA', { timeZone: acctTz(), year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); } catch (e) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); } }
-  function tzHHMM(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return ''; var ps = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: acctTz() }).formatToParts(d); var hh = 0, mm = 0; ps.forEach(function (p) { if (p.type === 'hour') hh = parseInt(p.value, 10); if (p.type === 'minute') mm = parseInt(p.value, 10); }); if (hh === 24) hh = 0; return pad(hh) + ':' + pad(mm); } catch (e) { return ''; } }
+  /* Calendar normalization touches every appointment on renders, click repair,
+     and the foreground pulse. Intl.DateTimeFormat construction is hundreds of
+     times slower than format()/formatToParts(), so cache the two immutable
+     formatters per account timezone instead of constructing one per row. */
+  var _t3TzFormatters = {};
+  function tzFormatter(kind) {
+    var tz = acctTz(), key = kind + '|' + tz, fmt = _t3TzFormatters[key];
+    if (fmt) return fmt;
+    fmt = kind === 'date'
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      : new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+    _t3TzFormatters[key] = fmt;
+    return fmt;
+  }
+  function tzDateKey(d) { try { return tzFormatter('date').format(d); } catch (e) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); } }
+  function tzHHMM(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return ''; var ps = tzFormatter('time').formatToParts(d); var hh = 0, mm = 0; ps.forEach(function (p) { if (p.type === 'hour') hh = parseInt(p.value, 10); if (p.type === 'minute') mm = parseInt(p.value, 10); }); if (hh === 24) hh = 0; return pad(hh) + ':' + pad(mm); } catch (e) { return ''; } }
   function todayKey() { return tzDateKey(new Date()); }
   function ampm(t) { var m = /^(\d\d?):(\d\d)/.exec(String(t || '')); if (!m) return String(t || ''); var h = +m[1], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; return h + ':' + m[2] + ' ' + ap; }
   function pretty(key) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || ''); if (!m) return key || ''; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); }
