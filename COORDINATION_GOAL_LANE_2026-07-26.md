@@ -92,12 +92,23 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
-## Goal-lane takeover session (2026-07-26 late evening)
+## Goal-lane takeover session (2026-07-26 late evening) — claim CLOSED
 
-**claiming next build (b704), ask-bar Copilot failover + dictate-chip overlap + b18 chip scoping, gating now.**
-Files: feat_mls_calm_shell.js, feat_b18_qa.js, mls-connect.js (b18 token only),
-tests/immutable-satellite-loader-cache-contract.test.js, tests/run-all.js,
-tests/ask-bar-copilot-failover-contract.test.js (new). Will delete this claim after push.
+**The ask-bar work I claimed as b704 shipped LIVE inside b705** (3a5a7fc): while my
+full gate ran green (356/356, exit 0) on my bytes, the b705 lane's `git add -A`
+in this SHARED checkout swept my staged files into its delete-row commit and
+pushed. My bytes are unchanged (verified: -w diff of feat_b18_qa.js is exactly my
+10 lines; the 1213-line stat was line-ending noise). A second full gate on the
+combined pushed tree was then run by me to certify the merge of the two
+workstreams — result recorded below when read.
+
+Live-verified on the owner's-zoom tab at b705: ask input 172px + data-mls-no-dictate,
+zero-match renders the "Ask MLS Copilot" row, Enter sends the question into an
+opened Copilot dock (user bubble + answer), dictate chip and b18 chip both absent.
+
+⚠️ Standing lesson re-learned: TWO sessions gating in ONE checkout will ship each
+other's staged work. If you are another session: announce here BEFORE staging, and
+never `git add -A` without checking for foreign dirty files.
 
 ---
 
