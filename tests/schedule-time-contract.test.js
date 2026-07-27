@@ -37,7 +37,7 @@ assert.strictEqual(api.dOf({ start_at: '2026-07-14T01:30:00Z' }), '2026-07-13', 
 // Every downstream calendar surface follows the same priority: explicit wall
 // time, then a real instant converted in the account timezone, then legacy
 // time. No hard-coded/default 18:00 lane is allowed.
-const frontTime = between(frontsync, 'function hhmmOf(a)', "var swapping = false");
+const frontTime = between(frontsync, 'function hhmmOf(a, timeFormatter)', "var swapping = false");
 assert(frontTime.indexOf('a.time_display') < frontTime.indexOf('a.start_local'));
 assert(frontTime.indexOf('a.start_local') < frontTime.indexOf('a.start_at'));
 assert(frontTime.indexOf('a.start_at') < frontTime.indexOf('wall(a.time)'));
