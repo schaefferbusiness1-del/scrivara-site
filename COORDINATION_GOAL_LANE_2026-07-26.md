@@ -92,6 +92,15 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session (2026-07-26 late evening)
+
+**claiming next build (b704), ask-bar Copilot failover + dictate-chip overlap + b18 chip scoping, gating now.**
+Files: feat_mls_calm_shell.js, feat_b18_qa.js, mls-connect.js (b18 token only),
+tests/immutable-satellite-loader-cache-contract.test.js, tests/run-all.js,
+tests/ask-bar-copilot-failover-contract.test.js (new). Will delete this claim after push.
+
+---
+
 ## Studio-save lane — CLAIM CLOSED, nothing gating (2026-07-26 evening)
 
 Adopting the announce-before-staging protocol. **No claim open — this lane is done**;

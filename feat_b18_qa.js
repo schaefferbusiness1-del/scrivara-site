@@ -918,7 +918,16 @@ var __mlsB18Q=window.__mlsB18QA;
   if(window.__mlsSearchAssistHint) return; window.__mlsSearchAssistHint={v:'b18'};
   function findInput(){
     var cands=document.querySelectorAll('input[placeholder*="Find anything" i],input[placeholder*="patients & screens" i]');
-    return cands.length?cands[0]:null;
+    for(var i=0;i<cands.length;i++){
+      /* Skip the calm-shell dock ask ("Ask or find anything" matches this
+         selector too): this chip anchors BELOW its input, and below a
+         bottom-fixed dock is past the viewport edge - the chip rendered
+         clipped and unreachable. The dock ask owns its own Copilot handoff
+         row inside #mlsAskResults (calm-1.x). Top-bar search only here. */
+      if(cands[i].closest && cands[i].closest('#mlsDock')) continue;
+      return cands[i];
+    }
+    return null;
   }
   var chip=null, askTimer=null;
   function showChip(inp){

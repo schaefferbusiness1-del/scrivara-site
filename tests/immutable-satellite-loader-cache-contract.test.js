@@ -14,7 +14,7 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
 const assets = [
   ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
   ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
-  ['feat_b18_qa.js', '20260719b18v9', '20260719b18v8'],
+  ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260723asst144', '20260719asst143'],
   ['feat_mls_b121_pack.js', '20260726p2c4', '20260719p2c3'],

@@ -250,7 +250,9 @@
     'transition:transform var(--mls-base) var(--mls-spring)}',
     '#mlsDock .mls-dock-count.show{transform:scale(1)}',
     '#mlsDockAskWrap{position:relative;z-index:1;display:flex;align-items:center;margin-left:4px;padding-left:8px;border-left:1px solid rgba(0,0,0,.07)}',
-    '#mlsDockAsk{width:150px;height:34px;padding:0 12px;border:0;border-radius:14px;background:rgba(0,0,0,.045);',
+    /* 172px: "Ask or find anything" measures 145px at the rendered font plus
+       the 24px padding - at 150px the placeholder clipped mid-word. */
+    '#mlsDockAsk{width:172px;height:34px;padding:0 12px;border:0;border-radius:14px;background:rgba(0,0,0,.045);',
     'font:400 13px inherit;color:#1A211C;outline:0;transition:width var(--mls-base) var(--mls-spring),background var(--mls-fast) linear}',
     '#mlsDockAsk:focus{width:250px;background:rgba(0,0,0,.075)}',
     '#mlsDockAsk::placeholder{color:var(--muted)}',
@@ -837,8 +839,11 @@
 
     var askWrap = D.createElement('div');
     askWrap.id = 'mlsDockAskWrap';
+    /* data-mls-no-dictate: the dictate-anywhere chip anchors to a focused
+       field's top-right corner - for this input that is the exact spot
+       #mlsAskResults opens, and the two collided on the owner's screen. */
     askWrap.innerHTML = '<input id="mlsDockAsk" type="text" autocomplete="off" spellcheck="false" ' +
-      'placeholder="Ask or find anything" aria-label="Ask or find anything">' +
+      'data-mls-no-dictate placeholder="Ask or find anything" aria-label="Ask or find anything">' +
       '<div id="mlsAskResults" role="listbox" aria-label="Results"></div>';
     nav.appendChild(askWrap);
 
@@ -2194,8 +2199,20 @@
         .slice(0, 8).map(function (r) { return r.c; });
 
       if (!results.length) {
-        panel.innerHTML = '<div class="none">Nothing matches "' + q.replace(/[<>&]/g, '') + '".</div>';
+        /* Not a control name -> hand the question to Copilot instead of
+           dead-ending. The row is a REAL result: Enter, arrows and click all
+           run through the same choose() path as every other row, so a typed
+           question is never swallowed (the owner's report, 2026-07-26). */
+        var qRaw = input.value.trim();
+        results = [{ copilot: true, q: qRaw }];
+        sel = 0;
+        panel.innerHTML = '<div class="none">Nothing here is called that.</div>' +
+          '<div class="r sel" role="option" data-i="0">🤖 Ask MLS Copilot: "' +
+          qRaw.replace(/[<>&]/g, '') + '"<small>Enter</small></div>';
         panel.style.display = 'block';
+        qsa('.r', panel).forEach(function (row) {
+          row.addEventListener('click', function () { choose(parseInt(row.getAttribute('data-i'), 10)); });
+        });
         return;
       }
       sel = 0;
@@ -2213,6 +2230,23 @@
     function choose(i) {
       var r = results[i];
       if (!r) return;
+      if (r.copilot) {
+        var question = r.q;
+        close();
+        input.value = '';
+        input.blur();
+        /* Copilot owns the answer. Open its dock, then send through the app's
+           own chip path (fill + busy-guard + copilotAsk) - never reimplemented
+           here. copilotChipText missing -> the dock still opens with the
+           question prefilled, one keypress from sent, never lost. */
+        safe(function () { if (typeof W.openCopilotDock === 'function') W.openCopilotDock(); });
+        if (typeof W.copilotChipText === 'function') {
+          safe(function () { W.copilotChipText(question); });
+        } else {
+          safe(function () { if (typeof W.openCopilotDock === 'function') W.openCopilotDock(question); });
+        }
+        return;
+      }
       close();
       input.value = '';
       input.blur();

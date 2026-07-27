@@ -275,6 +275,7 @@ const tests = [
   'copilot-actions-once-contract.test.js',
   'copilot-context-pack-runtime.test.js',
   'copilot-dock-fullheight.test.js',
+  'ask-bar-copilot-failover-contract.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',

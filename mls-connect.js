@@ -6436,7 +6436,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b703: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b705: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6658,7 +6658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b703 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b705 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -33605,7 +33605,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b703';
+  window.__MLS_AV = window.__MLS_AV || 'b705';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -33935,7 +33935,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b703';
+  var MLS_APP_BUILD='2026-07-25-b705';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38789,7 +38789,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b703+b703 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b705+b705 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -41972,7 +41972,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260722pp1c5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping in hosted mode and exits before chips/timers/wrappers in the sealed public preview. Revert: window.__mlsProv.revert() */
 
 
-;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260719b18v9";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
+;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260726b18v10";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
 ;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260725sc113";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Status Center 1.1.0 -- account/epoch-isolated tasks, honest readiness evidence, one current patient/day/data-source status surface, bounded retries, and sealed-preview early exit. */
 
 ;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718pr5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report v2.0.0 -- Editorial Calm UI (summary cards, provider chips, month stepper, collapsible per-provider tables, print), auto-build, credential-only PA/NP rate default, unmatched-estimate disclosure, incomplete-total flagging. Same honest data model: grounded estimates + manual overrides. Read-only. Revert: remove this loader. */
@@ -43685,7 +43685,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b703: `safe` was never defined in this IIFE, so the moment
+      /* b705: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a

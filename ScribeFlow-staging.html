@@ -755,7 +755,20 @@
   .pt-main{flex:1;min-width:0}
   .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
   .pt-main .s{font-size:13px;color:var(--muted);margin-top:2px}
-  .pt-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:10px}
+  /* THE ROW DELETE IS NOT AN EVERYDAY CONTROL. Measured on the live page at
+     b703: the Patients surface rendered 327 visible controls - 150 Record and
+     150 delete, one destructive pair per row, the trash sitting immediately
+     beside the primary action on clinical records. deletePatient() does
+     confirm first, so this was never silent loss; it was 150 chances to open
+     a destructive dialog by mistake, and contract law 4 (secondary and
+     destructive actions leave the surface) in plain violation.
+     visibility, NOT opacity: an opacity:0 control still hit-tests, which is
+     exactly how an invisible toast ate dock clicks at b678.
+     Three real routes survive, one per input method: hover (mouse),
+     focus-within (keyboard tabs into the row), and .active (touch - tapping
+     a row selects that patient, and the selected row keeps its delete). */
+  .pt-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:10px;visibility:hidden}
+  .pt-item:hover .del,.pt-item:focus-within .del,.pt-item.active .del{visibility:visible}
   .pt-item .del:hover{background:#fdeced;color:var(--red)}
   /* ---- profile sections ---- */
   .prof-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px}
@@ -23700,6 +23713,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b703';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b705';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
