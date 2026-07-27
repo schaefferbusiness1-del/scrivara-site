@@ -597,6 +597,8 @@ to bottom-LEFT (owner's memory; free since the bubbles retired). New suite
 pull-progress-feeds-modern-pull (vm-driven). Panel visual polish rides task 26.
 Gate about to run.
 
+claiming: performance optimization pass, 2026-07-27T10:56:29-04:00
+
 **b728 SHIPPED + LIVE-VERIFIED (2026-07-27 ~15:15).** Four live checks green:
 b727 proc-door (Templates Back-exit → drafter opens on Procedures — the walk is
 now 14/14), b728 panel renders from fed state ("Now reading Bernard, 3 of 18"),
@@ -617,3 +619,18 @@ B5: showMicWarn with no rendered box also toasts — mic failures never silent.
 New suite phone-has-a-transcript-and-a-way-on (vm-runs showMicWarn both ways).
 B1 dock overflow + B4 burger + B7 empty-day + crowding demotions = b730 next.
 Gate about to run.
+
+**b729 SHIPPED (2026-07-27 ~16:20).** Phone B2+B3+B5 live.
+
+## CLAIM b730 — goal-lane takeover session (2026-07-27 ~16:30)
+
+**Claimed by:** same session. **Scope:** phone audit part 2 — B1 (Ask bar steps
+out of the dock ≤760px: 393px demanded of 345px; Ask stays via Tools), B4 (the
+burger hides with the rail it opens — calm shell), crowding (#mlsRightNow +
+#mlsStages stand down on phone; ~120px of duplicated chrome). Contract suite
+extended. force_full_phone retirement DEFERRED (pin-entangled: exactly-once
+loader assert + immutable triplet + 2 live suites — cleanup, not breakage).
+ALSO RECORDED: the 5s boot bar profile (BOOT_5S_PLAN_2026-07-27.md) — visible
+tab paints at 304ms but assembles for 118s; zero timing marks exist; plan =
+instrument → targeted deferral → eager-chain bundling if still over. Gate
+about to run.

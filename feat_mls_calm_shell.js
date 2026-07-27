@@ -200,6 +200,10 @@
        column out and give the width back. Nothing is lost: Settings and Sign out
        are in the Tools menu, which the coverage suite enforces. */
     'html body.mls-calm #mlsRdNav{display:none!important}',
+    /* b730 (phone audit B4): with the rail gone, the mobile burger opened a
+       grey scrim over NOTHING — a dead control dressed as navigation. If the
+       calm shell hides the rail, it hides the button that opens it. */
+    'html body.mls-calm #mlsRdRailBtn{display:none!important}',
     'html body.mls-calm.mls-redesign.mls-rd-shell{padding-left:0!important}',
     /* The other rail layout: an #appWrap grid whose first column exists only to
        hold .mainnav. With the rail hidden that column is dead space. */

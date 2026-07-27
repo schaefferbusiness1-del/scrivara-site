@@ -57,6 +57,7 @@ while ((m = TOOLS.exec(shell))) offered.add(m[1]);
 /* Hidden on purpose, with no Tools entry needed. Each needs a reason. */
 const EXEMPT = {
   mlsRdNav: 'the redesign rail - the dock replaces it wholesale and reaches every one of its tabs',
+  mlsRdRailBtn: 'b730: the mobile burger whose ONLY function is opening mlsRdNav (exempt above) - with the rail gone it opened a scrim over nothing; hiding it removes a dead control, not a feature',
   mlsEz3Head: 'hidden only when :empty; it is a heading, not a control',
   mlsDaDock: 'offered as "Dictate" - kept here too because the id also names a dock wrapper',
   mlsPdpWrap: 'a wrapper; its control #mlsPdpSel is offered as "Where pulls run"',

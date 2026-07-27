@@ -49,4 +49,13 @@ warnNode.offsetParent = {};
 ctx.showMicWarn('second');
 assert(toasts.length === 1, 'a VISIBLE warn must not double-announce as a toast');
 
-console.log('PASS phone has a transcript and a way on: top-owns never claims a hidden lane, the :has hide excludes phone, row2 unfolds through the kept disclosure, and mic failures are never silent');
+/* b730 - B1 dock fit, B4 ghost burger, crowding demotions */
+const shell = fs.readFileSync(path.join(root, 'feat_mls_calm_shell.js'), 'utf8');
+assert(app.includes('html body #mlsDock #mlsDockAskWrap{ display:none; }'),
+  'the Ask bar must step out of the dock at phone widths - 393px demanded of a 345px box');
+assert(shell.includes("'html body.mls-calm #mlsRdRailBtn{display:none!important}',"),
+  'the burger must hide with the rail it opens - a scrim over nothing is a dead control');
+assert(connect.includes("'html body.mls-phone #mlsRightNow, html body.mls-phone #mlsStages{ display:none !important; }',"),
+  'the right-now bar and stage rail must stand down on the phone');
+
+console.log('PASS phone has a transcript and a way on: top-owns never claims a hidden lane, the :has hide excludes phone, row2 unfolds through the kept disclosure, mic failures are never silent, the dock fits 375px, the ghost burger is gone, and the duplicated chrome stands down');
