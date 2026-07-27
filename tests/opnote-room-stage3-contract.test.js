@@ -99,10 +99,21 @@ assert.strictEqual(roomOpened, 1, 'an open room must not be re-opened');
 assert.strictEqual(baseOpen, 2, 'the base opener runs on every open');
 ctx.closeTemplates();
 
+/* opr-1.4.1: a PROCEDURE door always lands on Procedures - even if a prior
+ * Back-exit left the Templates modal 'show' inside the closed room. */
+ctx.openTemplates();                                     /* templates open in the room */
+assert(ids.templatesModal.classList.contains('show'));
+const OPS = ctx.openOpPrepSmart;
+assert(OPS.__oprProcWrap, 'the procedure openers were not wrapped');
+ctx.openOpPrepSmart();                                   /* the drafter door */
+assert(!ids.templatesModal.classList.contains('show') && !ids.oprPanelTpls.classList.contains('on'),
+  'openOpPrepSmart must land on Procedures, not on a leftover Templates tab');
+
 /* revert: functions restored, modal back in its original slot */
 ctx.__mlsOpNoteRoom.revert();
 assert.strictEqual(ctx.openTemplates, OT, 'revert did not restore openTemplates');
 assert.strictEqual(ctx.closeTemplates, CT, 'revert did not restore closeTemplates');
+assert(!ctx.openOpPrepSmart.__oprProcWrap, 'revert did not restore the procedure openers');
 assert.strictEqual(ids.templatesModal.parentElement, BODY, 'revert did not return #templatesModal to its original parent');
 
 /* ---- b726: a floating Templates modal open BEFORE the module lands is

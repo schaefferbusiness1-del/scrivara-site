@@ -214,6 +214,22 @@ assert(/869574331f9ba95c2a9330d807ae907108a3020c4ecc492116f732a7739873e7/.test(d
 assert(/extension-version\.json/.test(downloadPage), 'download page may display only the published-channel feed version');
 assert(/chromewebstore\.google\.com\/detail\/mls-assist\/mpeidpagiccfdehcgfanlkibpafhogfg/.test(downloadPage),
   'download page must retain the known published Chrome Web Store channel');
+/* b727: the b368 Mac-readiness copy was deleted at b430 with no pin, and the
+ * Web Store drifted 19 versions behind the ZIP with the store as the
+ * recommended path. The ZIP leads; the install steps and Mac wording are
+ * load-bearing and may not be dropped by the next page rewrite. */
+assert(/Load unpacked/i.test(downloadPage) && /Developer mode/i.test(downloadPage) && /manifest\.json/.test(downloadPage),
+  'the load-unpacked install steps are gone again (b430 class)');
+assert(/Remove any older MLS Assist first/i.test(downloadPage) && /keep exactly ONE/i.test(downloadPage),
+  'the remove-the-old-copy step is gone - the duplicate-extension failure returns');
+assert(/System Settings/.test(downloadPage) && /Microphone/.test(downloadPage),
+  'the macOS microphone wording is gone again (b430 class)');
+assert(/store copy can lag this released package/i.test(downloadPage),
+  'the store button must state honestly that the store can lag the released ZIP');
+const dlIdx = downloadPage.indexOf('id="dl"');
+const storeIdx = downloadPage.indexOf('chromewebstore.google.com');
+assert(dlIdx > 0 && storeIdx > dlIdx,
+  'the exact released ZIP must LEAD the page; the store link follows it');
 
 const builder = read('scripts/build_extension_zip.py');
 const builderListMatch = builder.match(/PACKAGE_FILES\s*=\s*\((.*?)\)\s*\n/s);

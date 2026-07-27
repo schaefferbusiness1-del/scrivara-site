@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.4.0';
+  var VERSION = 'opr-1.4.1';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -229,6 +229,26 @@
      own show/hide lifecycle is untouched, so every satellite that reaches
      into #templatesModal (tpf health panel, stdline section, onf upload
      wiring, the E2E's real-form drive) keeps working on the same node. */
+  /* opr-1.4.1 (found on my own full walk): leaving the room from the
+     Templates tab via Back keeps the modal's .show, so the DRAFTER doors -
+     which mean "procedures" - reopened on Templates. Each procedure opener
+     lands on Procedures; the Templates door still lands on Templates
+     (openTemplates' wrap runs its base opener AFTER openOpPrepSmart, so this
+     inner close never fights it). */
+  function wrapProcOpeners() {
+    ['openOpPrep', 'openOpPrepForPatient', 'openOpPrepSmart'].forEach(function (name) {
+      var orig = window[name];
+      if (!isFn(orig) || orig.__oprProcWrap) return;
+      var w = function () {
+        var r = orig.apply(this, arguments);
+        safe(function () { if (shown($('templatesModal')) && isFn(window.closeTemplates)) window.closeTemplates(); else showTab('procs'); });
+        return r;
+      };
+      w.__oprProcWrap = true; w.__oprProcOrig = orig;
+      window[name] = w;
+    });
+  }
+
   function wrapTemplates() {
     var o = window.openTemplates;
     if (isFn(o) && !o.__oprTplWrap) {
@@ -280,6 +300,7 @@
   }
   wrapRender();
   wrapTemplates();
+  wrapProcOpeners();
   /* If the drafter is already open when this module lands (idle-deferred
      load), give the rails their first build now. */
   if (shown($('opPrepModal'))) safe(buildRails);
@@ -329,6 +350,12 @@
         var ct = window.closeTemplates;
         if (isFn(ct) && ct.__oprTplWrap && isFn(ct.__oprTplOrig)) window.closeTemplates = ct.__oprTplOrig;
       } catch (e8) {}
+      try {
+        ['openOpPrep', 'openOpPrepForPatient', 'openOpPrepSmart'].forEach(function (name) {
+          var f = window[name];
+          if (isFn(f) && f.__oprProcWrap && isFn(f.__oprProcOrig)) window[name] = f.__oprProcOrig;
+        });
+      } catch (e10) {}
       try {
         var tpl = $('templatesModal');
         if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {

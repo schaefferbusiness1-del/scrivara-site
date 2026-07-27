@@ -560,3 +560,21 @@ front tab); room loader idle timeout 4000→1500. Pins moved deliberately:
 injection-point exit section (findability outranks minimalism), stage3 version
 pin → agnostic + adopt-at-boot vm case. Manifest 1298→1299. Full personal
 walk of every entry×exit path AFTER deploy. Gate about to run.
+
+**b726 SHIPPED + FULL TEMPLATES WALK RUN (2026-07-27 ~13:35).** 13/14 checks
+green live: Menu→Templates = room+tab+one panel; Back 70×35 exits fully; ✕ now
+44×43; Esc chain correct; reopen sane; form/stdline/health all reachable. The
+1 red was REAL and mine: a Back-exit from the Templates tab leaves modal .show,
+so the DRAFTER door reopened on Templates.
+
+## CLAIM b727 — goal-lane takeover session (2026-07-27 ~13:40)
+
+**Claimed by:** same session. **Scope:** opr-1.4.1 — procedure doors land on
+Procedures: openOpPrep/ForPatient/Smart wrapped (callthrough → closeTemplates if
+shown), revert restores all three; stage3 contract gains the proc-door vm case +
+revert assert. ALSO folding in the Mac scout's site-only finding #1 mitigation:
+get-extension.html emphasis flip (ZIP = recommended until the Web Store catches
+up from 3.0.4→3.0.23; store button labeled with the version it actually
+installs) + restored b368 Mac copy (unzip/load-unpacked steps, remove-old-copy
+step, macOS mic System-Settings wording) with pins so page rewrites can't drop
+them again. Gate about to run.

@@ -44,13 +44,19 @@ h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em
   <section class="card" aria-labelledby="pageTitle">
     <img src="icon-512.png" alt="" width="56" height="56" style="border-radius:13px;display:block;margin:2px 0 12px">
     <h1 id="pageTitle">MLS Assist <span class="ver" id="verBadge">published version</span></h1>
-    <p class="sub">The published Chrome Web Store channel is the only extension build currently offered here. It can read an Athena schedule only after the clinician starts the pull and keeps review and final actions under clinician control.</p>
-    <span class="tag">Published channel</span>
-    <a class="store" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer">Open MLS Assist in the Chrome Web Store<span class="store-sub">Chrome manages installation and published updates</span></a>
-    <div class="divider"><span>Manual installation</span></div>
-    <a id="dl" class="store quiet" href="MLS_Assist_v3.0.23.zip" download="MLS_Assist_v3.0.23.zip" aria-describedby="status">Download the released package <span id="dlVer">v3.0.23</span> (ZIP)<span class="store-sub">Confirm the digest below before you load or upload it</span></a>
+    <p class="sub">MLS Assist can read an Athena schedule only after the clinician starts the pull, and keeps review and final actions under clinician control. The package below is the exact released build the MLS app expects.</p>
+    <span class="tag">Recommended — exact released version</span>
+    <a id="dl" class="store" href="MLS_Assist_v3.0.23.zip" download="MLS_Assist_v3.0.23.zip" aria-describedby="status">Download the released package <span id="dlVer">v3.0.23</span> (ZIP)<span class="store-sub">Confirm the digest below, then install with the steps underneath</span></a>
     <div id="status" role="status">Released package SHA-256 digest: <code style="word-break:break-all;font-size:12px">869574331f9ba95c2a9330d807ae907108a3020c4ecc492116f732a7739873e7</code>. Verify the digest after downloading before you load or upload the package. Only this exact stamped release is distributed — loose source files and unstamped candidate ZIPs never are.</div>
-    <div class="note">Prefer the Chrome Web Store install above so Chrome manages updates. The ZIP exists for a Chrome Web Store upload or an offline install of this exact reviewed version.</div>
+    <ol class="note" style="text-align:left;margin:12px 0 0;padding-left:20px;line-height:1.65">
+      <li>Unzip the download. <b>Mac:</b> double-click the zip in Finder — it makes a folder next to it. Windows: right-click → Extract All.</li>
+      <li><b>Remove any older MLS Assist first</b>: open <code>chrome://extensions</code> and if an MLS Assist card is already there, click Remove. Two copies answer the same requests and break pulls — keep exactly ONE.</li>
+      <li>On <code>chrome://extensions</code>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>.</li>
+      <li><b>Mac:</b> also allow the microphone for Chrome in System Settings → Privacy &amp; Security → Microphone, or dictation stays silent.</li>
+      <li>Sign in to MLS in a tab — the extension uses that login automatically. Settings → Integrations shows the running version and tells you the moment you're up to date.</li>
+    </ol>
+    <div class="divider"><span>Chrome Web Store</span></div>
+    <a class="store quiet" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer">Open MLS Assist in the Chrome Web Store<span class="store-sub">Chrome manages updates there, but the store copy can lag this released package — after installing, the version badge in MLS Settings says whether you're current</span></a>
     <p style="text-align:center;margin:16px 0 0;font-size:13px"><a href="assist-privacy.html" style="color:var(--muted)">What this extension can access — privacy policy</a></p>
   </section>
 </main>
