@@ -92,6 +92,16 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b707 SHIPPED, claim closed (2026-07-26 night)
+
+**b707 (183626f) LIVE and verified end-to-end at the owner's zoom:** All-in-range
+panel bounded 30,927px→3,492px page height (panel scrolls 18,456px internally at
+901px tall); sticky "‹ Back to the calendar" visible mid-scroll, with tools
+hidden, and on the pull-plan view; exit click restores the grid. ⚠️ calpro's
+frozen token is pinned in TWO suites (calendar-list-keeps-its-exit +
+visible-control-context-accessibility-contract:22) — both moved together.
+First gate attempt was red on the second pin; nothing shipped red.
+
 ## Goal-lane takeover session — b706 SHIPPED, claim closed (2026-07-26 night)
 
 **b706 (27c048c) LIVE and verified on the owner's-zoom tab:**
