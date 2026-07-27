@@ -408,3 +408,21 @@ follow the click, wrap proven installed. Live drive caught ONE defect:
 smooth scrollIntoView is rAF-driven → NEVER MOVES occluded (card 1908px below
 fold, scrollTop 0). b720 claim: opr-1.2.1 visibility-conditional scroll +
 contract pin. Same class as b715/calm-views — frame-vs-timer, now frame-vs-scroll.
+
+**b720 SHIPPED and live-verified (2026-07-27 ~06:40)** — occluded-posture proof:
+visibilityState 'hidden', click → scrollTop 1937, card flush at editor top.
+
+## CLAIM b721 — goal-lane takeover session (2026-07-27 ~06:50)
+
+**Claimed by:** same session. **Scope:** Workroom Stage 3 — Templates joins the
+room. opr-1.3.0: #templatesModal reparents WHOLE into new #oprPanelTpls on first
+open (id + inner ids + own .show lifecycle intact for tpf/stdline/onf/E2E);
+openTemplates/closeTemplates wrapped OUTERMOST (idle-deferred module wraps last):
+open embeds + opens the room when closed + fronts the tab; close returns to
+Procedures; buildRails self-heals tab/modal disagreement. Embedded CSS neutralizes
+floating-modal chrome (two-id specificity), hides the second X. Feature-directory
+`how:` names the room (where: 'Menu -> Templates' stays TRUE and its pin holds).
+New suite opnote-room-stage3-contract (vm: reparent, room auto-open, tab follow,
+revert restores parent+functions); stage2 pins version-agnostic. Manifest
+regenerated. Files: ScribeFlow.html, feat_mls_opnote_room.js, mls-connect.js,
+tests. Gate about to run; commit only on exit 0.

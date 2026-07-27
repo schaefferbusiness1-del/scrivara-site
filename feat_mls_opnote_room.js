@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.2.1';
+  var VERSION = 'opr-1.3.0';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -190,7 +190,74 @@
     el.style.display = '';
   }
 
-  function buildRails() { buildNav(); buildTplRail(); buildReceipt(); }
+  function buildRails() {
+    buildNav(); buildTplRail(); buildReceipt();
+    /* self-heal: if the Templates tab is marked active but its modal is not
+       shown (a close path we do not wrap took it down), return to Procedures */
+    safe(function () {
+      var panel = $('oprPanelTpls');
+      if (panel && panel.classList.contains('on') && !shown($('templatesModal'))) showTab('procs');
+    });
+  }
+
+  /* ------------------- Stage 3: the Templates tab ------------------------- */
+  var TPL_HOME = null;   /* original DOM slot, for revert */
+
+  function ensureEmbedded() {
+    var panel = $('oprPanelTpls'), tpl = $('templatesModal');
+    if (!panel || !tpl || tpl.parentElement === panel) return;
+    if (!TPL_HOME) TPL_HOME = { parent: tpl.parentElement, next: tpl.nextSibling };
+    panel.appendChild(tpl);
+  }
+
+  function showTab(which) {
+    var onTpl = which === 'tpls';
+    safe(function () { var p = $('oprPanelProcs'); if (p) p.style.display = onTpl ? 'none' : ''; });
+    safe(function () { var p = $('oprPanelTpls'); if (p) p.classList.toggle('on', onTpl); });
+    safe(function () {
+      var a = $('oprTabProcs'), b = $('oprTabTpls');
+      if (a) { a.classList.toggle('on', !onTpl); a.setAttribute('aria-selected', onTpl ? 'false' : 'true'); }
+      if (b) { b.classList.toggle('on', onTpl); b.setAttribute('aria-selected', onTpl ? 'true' : 'false'); }
+    });
+  }
+
+  /* openTemplates/closeTemplates wrapped OUTERMOST (this module loads
+     idle-deferred, after every other wrapper): Templates now lives inside the
+     room. Opening it embeds the modal (first time), opens the room when it is
+     closed, calls the base opener (checkbox state + list render + 'show'),
+     and fronts the Templates tab. Closing returns to Procedures. The modal's
+     own show/hide lifecycle is untouched, so every satellite that reaches
+     into #templatesModal (tpf health panel, stdline section, onf upload
+     wiring, the E2E's real-form drive) keeps working on the same node. */
+  function wrapTemplates() {
+    var o = window.openTemplates;
+    if (isFn(o) && !o.__oprTplWrap) {
+      var w = function () {
+        ensureEmbedded();
+        if (!shown($('opPrepModal'))) {
+          safe(function () {
+            if (isFn(window.openOpPrepSmart)) window.openOpPrepSmart();
+            else if (isFn(window.openOpPrep)) window.openOpPrep();
+          });
+        }
+        var r = o.apply(this, arguments);
+        showTab('tpls');
+        return r;
+      };
+      w.__oprTplWrap = true; w.__oprTplOrig = o;
+      window.openTemplates = w;
+    }
+    var c = window.closeTemplates;
+    if (isFn(c) && !c.__oprTplWrap) {
+      var w2 = function () {
+        var r = c.apply(this, arguments);
+        showTab('procs');
+        return r;
+      };
+      w2.__oprTplWrap = true; w2.__oprTplOrig = c;
+      window.closeTemplates = w2;
+    }
+  }
 
   /* ------------------- the render wrap (one seam, revertible) ------------- */
   function wrapRender() {
@@ -212,6 +279,7 @@
     window.opPrepRender = w;
   }
   wrapRender();
+  wrapTemplates();
   /* If the drafter is already open when this module lands (idle-deferred
      load), give the rails their first build now. */
   if (shown($('opPrepModal'))) safe(buildRails);
@@ -219,14 +287,18 @@
   var api = {
     installed: true,
     version: VERSION,
-    stage: 2,
+    stage: 3,
     select: function (i) { oprSelect(+i || 0, true); },
     rebuild: function () { safe(buildRails); },
+    showTab: function (which) { safe(function () { showTab(which === 'tpls' ? 'tpls' : 'procs'); }); },
     describe: function () {
-      return 'op-note workroom, stage 2b: patient nav + template-health rails ' +
-        'and an honest per-row context receipt, rebuilt on a revertible ' +
-        'opPrepRender wrap that also kicks the onf Fields tick synchronously ' +
-        '(occluded-tab law). Stage 3 next: the in-room Templates tab.';
+      return 'op-note workroom, stage 3: Templates lives IN the room - ' +
+        '#templatesModal reparents whole into the Templates tab on first open ' +
+        '(own show lifecycle intact for every satellite), openTemplates/' +
+        'closeTemplates wrapped outermost (opens the room when closed, ' +
+        'switches tabs). Plus stage 2b: patient nav + template-health rails, ' +
+        'honest context receipt, synchronous onf kick on every render ' +
+        '(occluded-tab law). Stage 4 next: presentation retirement.';
     },
     revert: function () {
       api.installed = false;
@@ -235,6 +307,20 @@
         var w = window.opPrepRender;
         if (isFn(w) && w.__oprWrap && isFn(w.__oprOrig)) window.opPrepRender = w.__oprOrig;
       } catch (e3) {}
+      try {
+        var ot = window.openTemplates;
+        if (isFn(ot) && ot.__oprTplWrap && isFn(ot.__oprTplOrig)) window.openTemplates = ot.__oprTplOrig;
+        var ct = window.closeTemplates;
+        if (isFn(ct) && ct.__oprTplWrap && isFn(ct.__oprTplOrig)) window.closeTemplates = ct.__oprTplOrig;
+      } catch (e8) {}
+      try {
+        var tpl = $('templatesModal');
+        if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {
+          if (TPL_HOME.next && TPL_HOME.next.parentNode === TPL_HOME.parent) TPL_HOME.parent.insertBefore(tpl, TPL_HOME.next);
+          else TPL_HOME.parent.appendChild(tpl);
+        }
+        showTab('procs');
+      } catch (e9) {}
       try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}
       try { var b = $('oprTplRail'); if (b) b.innerHTML = ''; } catch (e5) {}
       try { var c = $('oprReceipt'); if (c) { c.textContent = ''; c.style.display = 'none'; } } catch (e6) {}
