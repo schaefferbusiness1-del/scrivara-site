@@ -92,6 +92,15 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b711 SHIPPED, claim closed (2026-07-26 night)
+
+**b711 (c0a5ccf) LIVE, both fixes verified:** preview dock clears the SAMPLE
+WORKSPACE strip (measured 7px clearance, was 32px overlap — every prospect saw
+a half-eaten dock); history op-note rows say the name once ("Bernard P Brooks —
+B/L L5 TF ESI P", was doubled). ⚠ public-preview-runtime's token is pinned in
+FOUR places (page tag, sw precache, integration + runtime suites) and the
+integration pin is now asset-aware — policy stays b497 until its bytes move.
+
 ## Goal-lane takeover session — b710 SHIPPED, claim closed (2026-07-26 night)
 
 **b710 (e34f289):** the visit home follows the banner patient (canonical
