@@ -4,8 +4,8 @@ Written so a new session can take this cold. Everything below is **measured on t
 running page** or explicitly marked unverified. Where I was wrong, it says so.
 
 ```
-origin/main   d7cefd2   b702        live: mlsscribe.com = b702 (confirmed)
-gate          356 suites registered, 355 PASS + this merge green
+origin/main   448b3a4   b703        live: mlsscribe.com = b703 (confirmed)
+gate          356 registered, 355 PASS, exit 0 at b703
 E2E           30 steps, 0 failed (run at b671, b673, b677, b678, b680)
 extension     3.0.22 published AND pong-verified installed on the owner's Chrome
 repo          dispatch-work/claude-qa-txm-20260725   push: origin HEAD:main
@@ -174,3 +174,9 @@ report the new version**. A stale tab's first `mlsDevReload` returns
 5. Re-run `tests/e2e/run-e2e.js` (needs `MLS_E2E_PUPPETEER_DIR` pointing at a
    puppeteer-core install **outside** the repo) and one real history pull as
    regression before declaring anything done.
+
+---
+
+## 8. THE WALKTHROUGH
+
+Every dock destination and rail tab was walked on the live signed-in tab with real data; 0 uncaught JS errors. Results, the b703 banner fix it produced, the probe artifact it taught, and the ranked open items are in **WALKTHROUGH_FINDINGS_2026-07-26.md** (repo root and this lane). Top open item: 150 delete buttons render at once on Patients, beside 150 Record buttons.
