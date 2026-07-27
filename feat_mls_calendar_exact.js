@@ -22,7 +22,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-2.1.1";
+  var VERSION = "cx-2.1.2";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -35,7 +35,7 @@
   if (!isStaging()) { try { window.__mlsCx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "cxStyle";
-  var _obs = null, _t = null, _sched = null;
+  var _obs = null, _t = null, _sched = null, _active = false;
   var LARR = "&#9664;", RARR = "&#9654;";
   var MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   var DOW = ["S","M","T","W","T","F","S"];
@@ -543,17 +543,50 @@
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { build(); } catch (e) {}
-    try { var root = $("calendarView"); if (_obs && root) _obs.observe(root, { childList: true, subtree: true }); } catch (e) {}
+    try { var root = $("calendarView"); if (_active && _obs && root) _obs.observe(root, { childList: true, subtree: true }); } catch (e) {}
   }
-  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 150); }
-  function boot() {
-    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+  function isCalendarActive() {
+    try { return window.__mlsCurrentView === "calendar"; } catch (e) { return false; }
+  }
+  function stopActive() {
+    _active = false;
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_t) clearInterval(_t); } catch (e) {} _t = null;
+    try { if (_sched) clearTimeout(_sched); } catch (e) {} _sched = null;
+  }
+  function schedule() {
+    if (!_active || !isCalendarActive() || _sched) return;
+    _sched = setTimeout(function () { _sched = null; if (_active && isCalendarActive()) applyAll(); }, 150);
+  }
+  function startActive() {
+    if (!isCalendarActive()) return;
+    if (!_obs) { try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {} }
+    if (_active) { schedule(); return; }
+    _active = true;
     applyAll();
-    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 12) clearInterval(_t); }, 700);
+    var n = 0; _t = setInterval(function () {
+      if (!_active || !isCalendarActive()) { stopActive(); return; }
+      applyAll();
+      if (++n > 12) { clearInterval(_t); _t = null; }
+    }, 700);
+  }
+  function onViewChanged(ev) {
+    var d = ev && ev.detail, view = d && d.view;
+    if (!view) { try { view = window.__mlsCurrentView; } catch (e) {} }
+    if (view === "calendar") startActive(); else stopActive();
+  }
+  function boot() {
+    stopActive();
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
+    try { window.addEventListener("mls:view-changed", onViewChanged); } catch (e) {}
+    /* Visit is the startup route. Calendar construction, its subtree observer,
+       and bounded repair passes begin only after showView("calendar") has
+       rendered the real calendar and emitted the canonical lifecycle event. */
+    if (isCalendarActive()) startActive();
   }
   function revert() {
-    try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { if (_t) clearInterval(_t); } catch (e) {}
+    stopActive();
+    try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try {
       var v = $("calendarView"), main = v && v.querySelector(":scope > .cx-main");
