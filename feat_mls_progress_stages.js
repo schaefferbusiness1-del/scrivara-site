@@ -482,7 +482,7 @@
       '#' + PANEL_ID + ' .ps-job{padding:11px 14px;border-bottom:1px solid #EFEDE5}',
       '#' + PANEL_ID + ' .ps-job:last-child{border-bottom:none}',
       '#' + PANEL_ID + ' .ps-top{display:flex;align-items:center;gap:8px;justify-content:space-between}',
-      '#' + PANEL_ID + ' .ps-label{font-weight:700;font-size:13px}',
+      '#' + PANEL_ID + ' .ps-label{font-weight:700;font-size:13px;min-width:0;overflow-wrap:anywhere}',
       '#' + PANEL_ID + ' .ps-chipst{font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:999px;white-space:nowrap}',
       '#' + PANEL_ID + ' .ps-chipst.running,#' + PANEL_ID + ' .ps-chipst.retrying,#' + PANEL_ID + ' .ps-chipst.queued{background:#E3F0E9;color:#1F5138}',
       '#' + PANEL_ID + ' .ps-chipst.completed{background:#DCFCE7;color:#166534}',
@@ -525,6 +525,7 @@
     return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
   }
   var ACTIVE_STATUS = { queued: 1, running: 1, retrying: 1 };
+  var ST_LABEL = { queued: 'Queued', running: 'Running', retrying: 'Retrying', completed: 'Done', partial: 'Finished with gaps', failed: "Didn't finish", canceled: 'Stopped', timed_out: 'Took too long' };
   function render() {
     var api = lb(); if (!api || typeof document === 'undefined' || !document.createElement) return;
     var jobsAll = safe(function () { return api.snapshot(); }, []) || [];
@@ -567,7 +568,7 @@
       var row = document.createElement('div'); row.className = 'ps-job';
       var top = document.createElement('div'); top.className = 'ps-top';
       var label = document.createElement('span'); label.className = 'ps-label'; label.textContent = j.label || j.kind || 'Working';
-      var st = document.createElement('span'); st.className = 'ps-chipst ' + j.status; st.textContent = String(j.status || '').replace('_', ' ');
+      var st = document.createElement('span'); st.className = 'ps-chipst ' + j.status; st.textContent = ST_LABEL[j.status] || String(j.status || '').replace('_', ' ');
       top.appendChild(label); top.appendChild(st); row.appendChild(top);
       var bits = [];
       if (j.patient) bits.push(j.patient);
@@ -605,7 +606,7 @@
       }
       if (ACTIVE_STATUS[j.status] && now() - j.updatedAt > STALE_AFTER_MS) {
         var stale = document.createElement('div'); stale.className = 'ps-stale';
-        stale.textContent = 'No update for ' + elapsed(now() - j.updatedAt) + ' — still waiting on Athena. This will time out honestly rather than spin forever.';
+        stale.textContent = 'No word from Athena for ' + elapsed(now() - j.updatedAt) + '. MLS is still waiting and will stop on its own if nothing comes back.';
         row.appendChild(stale);
       }
       if (!ACTIVE_STATUS[j.status] && j.message) {

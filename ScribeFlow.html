@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b745) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b746) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -873,7 +873,7 @@
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
   #opPrepModal.opr-room{ padding:0; }
-  /* b745 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b746 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -884,7 +884,7 @@
   #opPrepModal.opr-room .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b745 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b746 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -1383,7 +1383,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b745) ----
+  /* ---- Copilot calm polish (b746) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1577,7 +1577,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b745 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b746 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -3863,7 +3863,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="calNewApptBox" style="display:none;margin:0 0 12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:10px;padding:14px"></div>
       <div id="calAvailBox" data-availbox style="display:none;margin:0 0 12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:14px"></div>
       <div id="calSplitWrap">
-        <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+        <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading your calendar…</div></div>
         <div id="calDayPanel" style="display:none;margin-top:14px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:14px"></div>
       </div>
       <p class="mini" style="color:var(--muted);margin-top:10px">Appointments across your whole practice. Click a day to see details on the right. Green chips above show which providers are in the office today.</p>
@@ -3885,7 +3885,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">Your real results, turned into proof you can publish. Measured from first vs. latest visit per patient — fully de-identified, no names ever leave your practice. Use it on your website, in referral packets, and with patients.</p>
-      <div id="anaOutcomesBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="anaOutcomesBody"><div class="mini" style="color:var(--muted)">Loading your outcomes…</div></div>
     </div>
 
     <!-- 🔬 RESEARCH / RWE REGISTRY -->
@@ -3894,7 +3894,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="exportRegistryCsv()">⬇ Export de-identified CSV</button>
       </h2>
       <p class="sub">A de-identified, aggregate registry of your outcomes by procedure — the foundation for real-world-evidence studies, MIPS/quality reporting, and device/pharma data partnerships. No patient names or PHI are included.</p>
-      <div id="anaRegistryBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="anaRegistryBody"><div class="mini" style="color:var(--muted)">Loading the research registry…</div></div>
     </div>
 
     <!-- 🔎 FREE-TEXT DATA STUDY BOX — ask anything of your practice records (PREMIUM) -->
@@ -3937,7 +3937,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">Practice aggregates computed on the clinic server from non-PHI visit metadata available to your account.</p>
-      <div id="anaBaselineBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="anaBaselineBody"><div class="mini" style="color:var(--muted)">Loading your baseline metrics…</div></div>
     </div>
 
     <div class="card" id="anaDoctorReview" hidden aria-hidden="true" style="display:none">
@@ -3970,7 +3970,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh</button>
       </h2>
       <p class="sub">How your doctors are doing with patients — an AI grade (1–5) of the patient experience on each visit, from the visit conversation. Averages and the most recent visits per doctor. No patient data — dates and scores only.</p>
-      <div id="anaTeamGradesBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="anaTeamGradesBody"><div class="mini" style="color:var(--muted)">Loading your team ratings…</div></div>
     </div>
 
     <!-- 🤝 REFERRAL OUTCOMES — close-the-loop reports for referring physicians (PREMIUM) -->
@@ -4021,12 +4021,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="card" id="expertCard" hidden aria-hidden="true" style="display:none">
       <h2><span class="ic">🧑‍⚖️</span> Expert profile review</h2>
       <p class="sub">Synthetic evaluation only. Prepare an invented profile draft and choose whether to request independent publication review. Opting in does not publish the profile, create attorney availability, or enable case intake. Do not enter PHI or real credentials documents.</p>
-      <div id="expertBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="expertBody"><div class="mini" style="color:var(--muted)">Loading the profile review…</div></div>
     </div>
     <div class="card" id="connectCard" style="display:none"><!-- hidden for now: direct payouts (Stripe Connect) deferred until live platform is finished; report payments collect to MLS + settle manually -->
       <h2><span class="ic">💳</span> Direct payouts</h2>
       <p class="sub">Connect your bank through Stripe so attorney payments for your reports land in your account automatically. You keep 95% of every report; MLS's 5% platform fee is taken at the time of payment — nothing to invoice or chase.</p>
-      <div id="connectBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="connectBody"><div class="mini" style="color:var(--muted)">Loading your payout status…</div></div>
     </div>
   </div><!-- /legalReqView -->
 
@@ -4191,7 +4191,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </h2>
     <p class="sub">Only profiles that completed independent publication review can appear here. This synthetic evaluation does not confirm availability and cannot start case intake. Do not enter patient or case information.</p>
     <input id="expSearch" aria-label="Search experts by specialty, jurisdiction or name" placeholder="Search specialty, jurisdiction, or name…" oninput="renderExpertsBrowse()" style="width:100%;margin-bottom:10px">
-    <div id="expBrowseBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+    <div id="expBrowseBody"><div class="mini" style="color:var(--muted)">Loading expert profiles…</div></div>
   </div>
 
   <div class="card" style="margin-top:20px">
@@ -4589,7 +4589,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b745: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b746: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4707,7 +4707,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b745: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b746: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -5112,7 +5112,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="su_step" id="su_step2" style="display:none">
       <p style="font-weight:700;margin:0 0 2px">🕘 Your weekly schedule</p>
       <p class="note" style="margin:0 0 10px">Pick the days and hours patients can request appointments through your authenticated booking link. Use the quick buttons or set each day.</p>
-      <div id="su_schedBox"><div class="note">Loading…</div></div>
+      <div id="su_schedBox"><div class="note">Loading your availability…</div></div>
     </div>
 
     <!-- STEP 3: Staff Prep -->
@@ -5501,7 +5501,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b745): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b746): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6066,7 +6066,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b745: METHOD-AWARE. The login response now reports every second factor the
+/* b746: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6199,7 +6199,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b745: a texted code completes at its own sibling route; the TOTP and
+    /* b746: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6407,7 +6407,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b745: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b746: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8110,7 +8110,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b745: the restored "Pull full visit notes" Settings option. One stored
+/* b746: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change. */
@@ -8152,7 +8152,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b745: texted-codes card, from the same server truth (/api/me projection). */
+  /* b746: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -9876,7 +9876,7 @@ var _outcomesData=null, _analyticsData=null;
 async function loadOutcomesMarketing(force){
   var box=document.getElementById('anaOutcomesBody'); if(!box) return;
   if(_outcomesData && !force){ renderOutcomesMarketing(_outcomesData); return; }
-  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your outcomes…</div>';
   try{
     var r=await fetch(bkBase()+'/api/outcomes/marketing',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
@@ -11973,7 +11973,7 @@ async function suChangePassword(btn){
 async function suRenderSchedule(){
   var box=document.getElementById('su_schedBox'); if(!box) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ box.innerHTML='<div class="note">Sign in to set your schedule.</div>'; return; }
-  box.innerHTML='<div class="note">Loading…</div>';
+  box.innerHTML='<div class="note">Loading your availability…</div>';
   try{
     var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
     var d=await r.json();
@@ -12021,7 +12021,7 @@ async function askMlsHelp(){
   if(!q){ setA('Type a question first.','#b4231e'); return; }
   try{ var localAnswer=typeof window.mlsFeatureHelpAnswer==='function'?window.mlsFeatureHelpAnswer(q):''; if(localAnswer){setA(localAnswer);return;} }catch(e){}
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ setA('Sign in to your MLS account to use Help.','#b4231e'); return; }
-  var btn=document.getElementById('helpAskBtn'); if(btn){ btn.disabled=true; btn.textContent='…'; }
+  var btn=document.getElementById('helpAskBtn'); if(btn){ btn.disabled=true; btn.textContent='Asking…'; }
   setA('Thinking…','var(--muted)');
   try{
     var featureMap=(window.__mlsFeatureDirectory||[]).map(function(f){return {name:f.name,where:f.where,how:f.how};});
@@ -12174,7 +12174,7 @@ async function apptUpdate(id,patch,btn){
      no-op tap), and the tapped button locks while the update is in flight. */
   if(typeof backendMode==='function'&&backendMode()&&!bkToken()){ toast('Your sign-in expired — reload MLS and sign in again to update the board.','err'); return; }
   if(btn&&btn.disabled) return;
-  if(btn){ btn.disabled=true; btn.setAttribute('data-busy-label',btn.textContent); btn.textContent='…'; }
+  if(btn){ btn.disabled=true; btn.setAttribute('data-busy-label',btn.textContent); btn.textContent='Saving…'; }
   function unlock(){ if(btn){ btn.disabled=false; var l=btn.getAttribute('data-busy-label'); if(l!=null){ btn.textContent=l; btn.removeAttribute('data-busy-label'); } } }
   try{
     const r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(patch||{})});
@@ -12219,7 +12219,7 @@ async function loadReceptionists(show){
   const box=document.getElementById('receptionBox'); if(!box) return;
   if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage receptionists.','err'); return; }
-  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
+  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your front-desk team…</div>'; }
   try{
     const r=await fetch(bkBase()+'/api/team/receptionists',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(show) toast('Receptionist management is for clinician accounts.','err'); return; }
@@ -12528,7 +12528,7 @@ async function loadDoctorSeats(show){
   const box=document.getElementById('doctorBox'); if(!box) return;
   if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage doctors.','err'); return; }
-  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
+  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your doctors…</div>'; }
   try{
     const r=await fetch(bkBase()+'/api/team/doctors',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(show) toast('Only the head physician can manage doctor seats.','err'); return; }
@@ -12590,7 +12590,7 @@ async function loadLawyers(show){
   const box=document.getElementById('lawyerBox'); if(!box) return;
   if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage lawyers.','err'); return; }
-  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
+  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your lawyers…</div>'; }
   try{
     const r=await fetch(bkBase()+'/api/team/lawyers',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(show) toast('Lawyer management is for clinician accounts.','err'); return; }
@@ -12855,7 +12855,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b745: the auto-save commits HERE - the one door that knows the tool
+        /* b746: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13106,7 +13106,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b745: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b746: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -13459,7 +13459,7 @@ async function renderTeamGrades(force){
   if(window.__MLS_TEAM_WORKSPACE_RELEASED!==true){ var heldCard=document.getElementById('anaTeamGrades'); if(heldCard){ heldCard.hidden=true; heldCard.setAttribute('aria-hidden','true'); heldCard.style.display='none'; } return false; }
   var card=document.getElementById('anaTeamGrades'), box=document.getElementById('anaTeamGradesBody'); if(!card||!box) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ card.style.display='none'; return; }
-  if(force) box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  if(force) box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your team ratings…</div>';
   try{
     var r=await fetch(bkBase()+'/api/grades/team',{headers:{Authorization:'Bearer '+bkToken()}});
     var d=await r.json().catch(function(){return {};});
@@ -13564,7 +13564,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b745 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b746 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -13820,7 +13820,7 @@ async function copilotTweak(i){
   var instruction=(tw.value||'').trim(); if(!instruction){ try{ toast('Type a change first.',''); }catch(e){} return; }
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in first.','err'); }catch(e){} return; }
   var cur=ta.value||''; var m=_copilotHistory[i]; var kind=(m&&m.artifact&&m.artifact.kind)||'text';
-  var btn=document.getElementById('cTwBtn_'+i); if(btn){ btn.disabled=true; btn.textContent='…'; }
+  var btn=document.getElementById('cTwBtn_'+i); if(btn){ btn.disabled=true; btn.textContent='Rewriting…'; }
   try{
     var r=await fetch(bkBase()+'/api/copilot/edit',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({artifact:cur,instruction:instruction,kind:kind})});
     var d=await r.json().catch(function(){return {};});
@@ -14997,7 +14997,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b745 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b746 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16449,7 +16449,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b745 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b746 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -16740,7 +16740,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b745 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b746 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -17071,7 +17071,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b745 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b746 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -19457,7 +19457,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b745 (diarization, option A): turn labels ride the USER payload — the one
+  /* b746 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -20153,7 +20153,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b745 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b746 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -20505,7 +20505,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b745 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b746 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -20607,7 +20607,7 @@ function _athenaReceiptAction(action){
     try{ toast(manualMessage,''); }catch(e0){}
     return;
   }
-  if(status){ status.style.display='block'; status.style.color='#6f5a20'; status.textContent='Preparing the selected Athena action...'; }
+  if(status){ status.style.display='block'; status.style.color='#6f5a20'; status.textContent='Preparing the selected Athena action…'; }
   var opts={patient:state.patient,plan:state.sections,statusEl:status,previewHash:state.previewHash,expectedContext:state.expectedContext||null,noteTimestamp:state.noteTimestamp||null,requireExpectedVisit:state.requireExpectedVisit===true,receiptSessionId:state.receiptSessionId};
   opts.onResult=function(resp){
     if(_athenaReceiptState!==state) return;
@@ -20774,7 +20774,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b745 (audit): op notes save their body to .text, not .soap — every prior
+    /* b746 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -25198,7 +25198,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b745: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b746: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -25333,7 +25333,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b745 — THE LOADING SCREEN MUST ALWAYS END.
+/* b746 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -26502,7 +26502,7 @@ function recFeatureCard(key,title,desc,cfg,hasTiming){
 }
 async function loadRecSettings(){
   var box=document.getElementById('recSettings'); if(!box) return;
-  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your communication settings…</div>';
   try{
     var r=await fetch(bkBase()+'/api/comms/settings',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
@@ -26738,7 +26738,7 @@ async function submitLegalRequest(){
 var _expertsCache=[];
 async function loadExpertsBrowse(){
   var box=document.getElementById('expBrowseBody'); if(!box) return;
-  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading expert profiles…</div>';
   try{
     var r=await fetch(bkBase()+'/api/experts',{headers:{Authorization:'Bearer '+bkToken()},cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
     var d=await r.json().catch(function(){return {experts:[]};});
@@ -30039,7 +30039,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b745';
+  window.__MLS_AV='b746';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

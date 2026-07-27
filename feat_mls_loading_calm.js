@@ -69,7 +69,7 @@
     if (!ACTIVE[j.status]) return;
     var left = Math.max(0, j.deadlineAt - now());
     timers[j.id] = setTimeout(function () {
-      terminal(j.id, 'timed_out', { message: 'This operation exceeded its deadline. Retry when ready.' }, j.requestId);
+      terminal(j.id, 'timed_out', { message: "This took longer than expected and stopped. Try again when you're ready." }, j.requestId);
     }, left);
   }
   function terminal(id, status, detail, requestId) {
@@ -138,14 +138,14 @@
   api.start = function (opts) {
     opts = opts || {}; var key = text(opts.key || opts.kind || uid('job:'), 160); var old = api.active(key);
     if (old && !opts.replace) return makeHandle(jobs[old.id], true);
-    if (old && opts.replace) terminal(old.id, 'canceled', { message: 'Superseded by a newer request.' }, old.requestId);
+    if (old && opts.replace) terminal(old.id, 'canceled', { message: 'Replaced by a newer request.' }, old.requestId);
     var started = now(), requestId = validId(opts.requestId) ? String(opts.requestId) : uid('req-');
     var stages = Array.isArray(opts.stages) ? opts.stages.map(function (s) { return text(s, 120); }).filter(Boolean) : [];
     var timeoutMs = Math.max(1000, Math.min(Number(opts.timeoutMs) || 10 * 60 * 1000, 60 * 60 * 1000));
     var j = {
       id: uid('job-'), key: key, requestId: requestId, serverJobId: '', kind: text(opts.kind || 'operation', 80),
-      label: text(opts.label || 'Working...', 120), status: opts.retrying ? 'retrying' : 'running', stages: stages,
-      stageIndex: 0, stage: text(opts.stage || stages[0] || opts.label || 'Preparing', 120), operation: text(opts.operation || '', 160),
+      label: text(opts.label || 'Working…', 120), status: opts.retrying ? 'retrying' : 'running', stages: stages,
+      stageIndex: 0, stage: text(opts.stage || stages[0] || opts.label || 'Getting started…', 120), operation: text(opts.operation || '', 160),
       current: Math.max(0, Number(opts.current) || 0), total: Math.max(0, Number(opts.total) || 0),
       patient: text(opts.patient, 100), provider: text(opts.provider, 100), selectedDate: text(opts.selectedDate, 40),
       cancelable: !!opts.cancelable, attempt: Math.max(1, Number(opts.attempt) || 1), maxAttempts: Math.max(1, Number(opts.maxAttempts) || 1),
@@ -173,9 +173,9 @@
     j.updatedAt = now(); persist(); emit(j); sync(); return { accepted: true, job: clone(j) };
   };
   api.complete = function (id, message, requestId) { return terminal(id, 'completed', { message: message || 'Completed.' }, requestId); };
-  api.partial = function (id, message, current, requestId) { return terminal(id, 'partial', { message: message || 'Partially completed.', current: current }, requestId); };
+  api.partial = function (id, message, current, requestId) { return terminal(id, 'partial', { message: message || 'Finished, but some items were skipped.', current: current }, requestId); };
   api.fail = function (id, err, requestId) {
-    var e = err || {}; return terminal(id, 'failed', { message: text(e.message || e || 'Operation failed.', 240), errorCode: e.code || 'FAILED' }, requestId);
+    var e = err || {}; return terminal(id, 'failed', { message: text(e.message || e || "This didn't finish.", 240), errorCode: e.code || 'FAILED' }, requestId);
   };
   api.cancel = function (id, message, requestId) {
     var j = jobs[id]; if (!j || (requestId && requestId !== j.requestId)) return { accepted: false, stale: !!j };
@@ -194,7 +194,7 @@
     fn(next); return next;
   };
   api.linkServer = function (id, serverJobId) { var j = jobs[id]; if (!j || !serverJobId) return false; j.serverJobId = text(serverJobId, 128); j.updatedAt = now(); persist(); return true; };
-  api.begin = function (label) { var h = api.start({ key: uid('manual:'), kind: 'manual', label: label || 'Working...', timeoutMs: 90000 }); manualStack.push(h.id); sync(); return h.id; };
+  api.begin = function (label) { var h = api.start({ key: uid('manual:'), kind: 'manual', label: label || 'Working…', timeoutMs: 90000 }); manualStack.push(h.id); sync(); return h.id; };
   api.end = function (id) { var target = id || manualStack.pop(); var at = manualStack.indexOf(target); if (at >= 0) manualStack.splice(at, 1); if (target) terminal(target, 'completed', { message: 'Completed.' }, jobs[target] && jobs[target].requestId); sync(); };
   api.snapshot = publicJobs;
 

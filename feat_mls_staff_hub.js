@@ -114,7 +114,7 @@ try{
   function loadNurses() {
     var box = nurseBox(); if (!box) return;
     if (box.style.display === 'block') { box.style.display = 'none'; return; }
-    box.style.display = 'block'; box.textContent = 'Loading nursing logins...';
+    box.style.display = 'block'; box.textContent = 'Loading nursing logins…';
     fetch(bkBase() + '/api/team/nurses', { headers: authHeaders(false) })
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Could not load nursing logins.'); return d; }); })
       .then(function (d) { renderNurses(d.nurses || []); })

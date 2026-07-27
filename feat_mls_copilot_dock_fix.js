@@ -117,7 +117,7 @@
       setState('ready', '', false);
       return true;
     }
-    setState('waiting', 'Preparing your MLS Copilot conversation...', false);
+    setState('waiting', 'Preparing your MLS Copilot conversation…', false);
     return false;
   }
 
@@ -165,7 +165,7 @@
   function retry() {
     stopTimer();
     tries = 0;
-    setState('waiting', 'Preparing your MLS Copilot conversation...', false);
+    setState('waiting', 'Preparing your MLS Copilot conversation…', false);
     if (tick()) return true;
     timer = setInterval(tick, RETRY_MS);
     return false;

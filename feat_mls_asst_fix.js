@@ -386,8 +386,8 @@
   }
   function addPending(text, extra) {
     var s = CONVO();
-    if (s) return safe(function () { return s.pushPending(text || "Thinking...", extra || null); }, null);
-    var pending = { role: "pending", text: text || "Thinking..." };
+    if (s) return safe(function () { return s.pushPending(text || "Thinking…", extra || null); }, null);
+    var pending = { role: "pending", text: text || "Thinking…" };
     if (extra && typeof extra === "object") for (var k in extra) if (k !== "role" && k !== "text") pending[k] = extra[k];
     chatLog.push(pending); renderThread(); return pending;
   }

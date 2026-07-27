@@ -968,7 +968,7 @@
       return requestEpoch === accountEpoch && chatStates[owner] === state && state.requestSeq === requestId;
     }
     if (owner === chatOwnerKey()) setSendEnabled(false);
-    state.history.push({ role: "pending", text: "Thinking...", requestId: requestId }); renderThread(owner);
+    state.history.push({ role: "pending", text: "Thinking…", requestId: requestId }); renderThread(owner);
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
     var ctx = safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : null; }, null);

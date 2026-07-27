@@ -1347,7 +1347,7 @@
     if (!go || go.getAttribute('data-mls-athena-action') !== row.action || go.getAttribute('data-mls-preview-hash') !== state.manifest.previewHash || (row.action === 'place_order' && (go.getAttribute('data-mls-row-hash') !== row.rowHash || go.getAttribute('data-mls-client-order-id') !== S(row.payload.order && row.payload.order.clientOrderId).trim()))) { unifiedStatus(state, 'The confirmation binding changed. Nothing was written; select the action again.', 'err'); return; }
     var currentTaughtDestination = taughtDestinationFor(state.manifest, row);
     if (probe.taughtDestinationHash !== hashPreview(currentTaughtDestination || {})) { unifiedStatus(state, 'The taught destination changed after the read-only check. Select the action again before writing.', 'err'); invalidateUnifiedProbeForTeach(state); return; }
-    state.running = true; go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Working...';
+    state.running = true; go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Working…';
     var cancel = document.getElementById('mlsAthenaUnifiedCancel'), close = document.getElementById('mlsAthenaUnifiedClose');
     if (cancel) cancel.disabled = true; if (close) close.disabled = true;
     var radios = document.querySelectorAll('#mlsAthenaUnifiedConfirm input[name="mlsAthenaUnifiedAction"]');

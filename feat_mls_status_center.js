@@ -1038,17 +1038,17 @@
       var path = '';
       if (isBackend) {
         safe(function () { path = String(url).replace(/^https?:\/\/[^/]+/i, '').split('?')[0].slice(0, 80); });
-        if (method !== 'GET') srcSet('backend', 'working', 'Syncing with the MLS backend… (' + method + ' ' + path + ')');
+        if (method !== 'GET') srcSet('backend', 'working', 'Saving your changes…');
       }
       var p = orig.apply(this, arguments);
       if (isBackend && method !== 'GET') {
         p.then(function (res) {
           if (requestEpoch !== sessionEpoch) return;
           safe(function () {
-            if (res && res.ok) srcSet('backend', 'ok', 'Backend saved (' + method + ' ' + path + ' → HTTP ' + res.status + ')');
-            else srcSet('backend', 'fail', 'Backend rejected ' + method + ' ' + path + ' (HTTP ' + (res && res.status) + ')');
+            if (res && res.ok) srcSet('backend', 'ok', 'Your changes are saved.');
+            else srcSet('backend', 'fail', 'Your changes could not be saved. MLS will retry.');
           });
-        }, function () { if (requestEpoch === sessionEpoch) srcSet('backend', 'fail', 'Network error talking to the MLS backend'); });
+        }, function () { if (requestEpoch === sessionEpoch) srcSet('backend', 'fail', "MLS can't reach your account right now. It will keep trying."); });
       }
       return p;
     };

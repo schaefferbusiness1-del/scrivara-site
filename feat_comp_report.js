@@ -328,7 +328,7 @@
   function build() {
     var ym = (document.getElementById("mlsCompMonth") || {}).value || defaultMonth();
     S.ym = ym; S.est = null; S.loading = true;
-    setStatus("Loading appointments for " + monthLabel(ym) + " ...", "busy");
+    setStatus("Loading appointments for " + monthLabel(ym) + "…", "busy");
     var body = document.getElementById("mlsCompBody"); if (body) body.innerHTML = "";
     var estBtn = document.getElementById("mlsCompEst"), xBtn = document.getElementById("mlsCompXlsx"), pBtn = document.getElementById("mlsCompPrint");
     if (estBtn) estBtn.disabled = true; if (xBtn) xBtn.disabled = true; if (pBtn) pBtn.disabled = true;

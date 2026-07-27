@@ -1670,7 +1670,7 @@
     var codeOut = ui.body.querySelector('[data-qtp-phone-code]');
     var linkOut = ui.body.querySelector('[data-qtp-phone-link]');
     var qrOut = ui.body.querySelector('[data-qtp-phone-qr]');
-    if (status) status.textContent = ready ? 'Ready. Scan the code or open the secure link on your phone.' : 'Preparing a secure phone link...';
+    if (status) status.textContent = ready ? 'Ready. Scan the code or open the secure link on your phone.' : 'Preparing a secure phone link…';
     if (codeOut) codeOut.textContent = ready ? codeText : '------';
     if (linkOut) { linkOut.textContent = ready ? href : ''; linkOut.href = ready ? href : '#'; }
     if (qrOut) { if (src && src !== location.href) qrOut.src = src; qrOut.style.opacity = ready ? '1' : '.35'; }
@@ -1688,7 +1688,7 @@
   function openPhonePopup() {
     var ui = popup('Record on phone', 'Pair your phone as the microphone for the active patient and visit.');
     ui.body.innerHTML =
-      '<div class="mls-qtp-phone"><div><div data-qtp-phone-status>Preparing a secure phone link...</div>' +
+      '<div class="mls-qtp-phone"><div><div data-qtp-phone-status>Preparing a secure phone link…</div>' +
       '<div class="mls-qtp-code" data-qtp-phone-code>------</div>' +
       '<a class="mls-qtp-link" data-qtp-phone-link href="#" target="_blank" rel="noopener"></a>' +
       '<div class="mls-qtp-note">The phone transcript feeds this visit only. Confirm the active patient before recording.</div></div>' +

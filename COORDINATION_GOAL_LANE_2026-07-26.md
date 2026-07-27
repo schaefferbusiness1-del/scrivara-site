@@ -1002,3 +1002,55 @@ write-path suites + ui-control-coverage pass unchanged; new suite
 writes-are-unblocked-safely pins fixes AND kept gates. EXTENSION half
 (background.js probe-shape line, write_safety_guard TEST_MARKER_RE
 tightening, identity-verb budget) queued as ext 3.0.25. Gate about to run.
+
+## MATRIX FINDINGS (owner's per-provider escalation) — post-b745 live stint
+
+- Provider-SCOPED pull shape: WORKS + honest. ez3Prov selector (full
+  17-provider roster) + "Pull this day" scoped to Cheston Simmons, MD →
+  "Today · 2026-07-27 · 0 appointments · scoped to Cheston Simmons, MD" —
+  a clean scoped-empty verdict, no fabricated rows, ~45s.
+- **ATTRIBUTION QUANTIFIED: all 400 stored appointments across 17 days
+  carry NO provider.** The roster knows 17 providers; the rows know none.
+  The b744 stamp only helps FUTURE scoped pulls; the default day-strip pull
+  is all-scope on a one-column grid and stays empty by design. Per-provider
+  CALENDAR PLACEMENT + ACCESSIBILITY testing is therefore BLOCKED BY this
+  gap — there is nothing attributed to place. The v2 fix (next attribution
+  build): carry provider from the backend-calendar rows (the same source
+  that enumerated the 17 providers) onto imported appointments, and/or
+  scrape the Day view's provider column header for one-column grids +
+  backfill the existing 400 via the roster-verified backend echo.
+- Month-of-patients grind: the real trigger is NOT ez3ProvRefresh (roster
+  only) nor mlsPadBtn (day-scoped). Still to locate on the staff-prep
+  surface; month shape remains PENDING, not failed.
+
+## CLAIM b746 — goal-lane takeover session (loading-copy pass, night shift)
+
+**Claimed by:** same session. **Scope:** the owner's "loading things must be
+actually good UI" complaint — 52 verified edits from the Opus spec (which
+dry-ran every one): raw HTTP method/path/status strings out of the status
+dock; job-status enums rendered as English (ST_LABEL map incl. queued);
+engineer-voice waiting copy humanized; the four "engine is still loading"
+leaks now say what the doctor should do; loading-calm defaults de-placeholdered;
+three bare-ellipsis busy buttons named (Asking…/Saving…/Rewriting…); the boot
+veil's first line now matches the gate's ("Connecting to your practice…" —
+the sequence no longer runs backwards); the pull panel's "Now reading: …"
+empty state says "opening the next chart"; the pill reads "— show details";
+ASCII three-dots → real ellipsis in 9 satellites; and the EIGHTEEN bare
+"Loading…" boxes (9 JS writers + 9 static HTML twins the audit found) named
+per surface — first paint and refresh now agree. One skipped: the followup
+box is dead code behind an unconditional return (flagged, untouched). All
+edits line-count-neutral except one insertion in a manifest-empty file, so
+the line-keyed control manifest needed no regen (verified: coverage suite
+green). 8 neighbor suites green. Gate about to run.
+
+**NIGHT NOTE — b744 stamp is DEAD CODE (attribution agent's load-bearing
+finding):** scopeProviderRows counts every blank-provider row as
+unattributed and returns ZERO rows for a columnless scoped grid BEFORE the
+create path can stamp — provider-incomplete, nothing imported. The b744
+suite pinned literals, not behavior. Fix = b747 (P1 scope-fill inside the
+gate with fail-closed conditions, P2 enrich-path backfill counter, P3
+calendar renders/filters from a.provider with pk: fallback options, P4
+attribution-receipt button + /api/appointments/integrity before/after).
+Month pull = ez3PullStart → startMonthPull → exact.pullMonth (hours with
+history; circuit breaker; retryable days). No new feat file (boot budget
+244/245).

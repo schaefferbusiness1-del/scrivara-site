@@ -205,7 +205,7 @@
   function load(status) {
     var version = ++loadVersion;
     activeStatus = status || "new";
-    var list = gid("mlsPrqList"); if (list) list.textContent = "Loading portal requests...";
+    var list = gid("mlsPrqList"); if (list) list.textContent = "Loading portal requests…";
     showNotice("", false);
     Array.prototype.forEach.call(document.querySelectorAll(".mlsPrqFilter"), function (button) {
       button.classList.toggle("on", button.getAttribute("data-status") === activeStatus);
