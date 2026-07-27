@@ -231,7 +231,11 @@
      * of THIS idea asserted the top lane owned the controls while the top lane
      * rendered nothing, and left the doctor with none at all. A rule that can
      * hide the last transcript is worse than a duplicate one. */
-    'body.' + BODY + ' #visitView #mlsEz3Body:has(.ez3fl-record:not([hidden]) #ez3flTranscript:not([hidden])) .ez3-transcript-card{display:none!important}',
+    /* b729 (phone audit B2): :not([hidden]) cannot see a display:none from
+       another layer — on the phone the whole lane is CSS-hidden, this rule
+       still matched, and the doctor had NO transcript anywhere. Phone mode
+       is excluded outright: there the engine card is the only transcript. */
+    'body.' + BODY + ':not(.mls-phone) #visitView #mlsEz3Body:has(.ez3fl-record:not([hidden]) #ez3flTranscript:not([hidden])) .ez3-transcript-card{display:none!important}',
 
     /* THE STATE PRIMARY, when the state changes under the hero.
      *

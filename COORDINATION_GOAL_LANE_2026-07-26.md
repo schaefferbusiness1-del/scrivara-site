@@ -596,3 +596,24 @@ never stolen; row-loss shield finally gets running on modern pulls). Pill moves
 to bottom-LEFT (owner's memory; free since the bubbles retired). New suite
 pull-progress-feeds-modern-pull (vm-driven). Panel visual polish rides task 26.
 Gate about to run.
+
+**b728 SHIPPED + LIVE-VERIFIED (2026-07-27 ~15:15).** Four live checks green:
+b727 proc-door (Templates Back-exit → drafter opens on Procedures — the walk is
+now 14/14), b728 panel renders from fed state ("Now reading Bernard, 3 of 18"),
+pill at bottom-LEFT (@14,1158), end clears panel+pill. TASK 18 (Templates trap)
+CLOSED. Real-pull end-to-end proof of the panel rides the next actual pull
+(idle-window task-15 evidence pull). Claim closed. Next: phone breakages B1-B7.
+
+## CLAIM b729 — goal-lane takeover session (2026-07-27 ~15:45)
+
+**Claimed by:** same session. **Scope:** phone audit breakages B2+B3+B5 (the
+work-blocking trio; see PHONE_AUDIT_2026-07-27.md). B2: ez3fl-top-owns never
+claims the top on phone (mounted ≠ visible — this alone re-releases the engine
+transcript card AND #ez3QuickTools via the existing 6146/6162 rules) +
+visit_focus's :has hide excludes .mls-phone (:not([hidden]) can't see
+display:none). B3: .ez3-row2 leaves the ph blanket-hide (visit_focus owns row2
+folding behind the disclosure) + explicit ph re-show of #ez3QuickTools (44px).
+B5: showMicWarn with no rendered box also toasts — mic failures never silent.
+New suite phone-has-a-transcript-and-a-way-on (vm-runs showMicWarn both ways).
+B1 dock overflow + B4 burger + B7 empty-day + crowding demotions = b730 next.
+Gate about to run.
