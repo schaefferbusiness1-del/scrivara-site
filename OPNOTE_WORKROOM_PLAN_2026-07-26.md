@@ -1,5 +1,36 @@
 # OP-NOTE WORKROOM — implementation plan (owner-approved direction, 2026-07-26)
 
+## v2 EXPANSION (owner relay + direction check, 2026-07-26 ~midnight)
+
+Five additional owner asks fold into this workstream; two direction questions
+were put to him and ANSWERED via the question tool:
+
+1. **Athena navigation automation — owner chose AUTOMATIC WITH CONTEXT**: the
+   athenaOne tab follows the MLS context (switch patient/day in MLS → Athena
+   jumps along), not just click-to-jump buttons. Extension-side (3.0.x release
+   protocol, byte-edit rules). Guardrails required: NEVER navigate mid-pull
+   (the pull owns the tab-of-record), never while recording, debounced, and a
+   switch in Settings → MLS Controls (every feature has a switch — doctrine).
+   Navigation is read-only; the write hard-stops are untouched.
+2. **Op-note auto-save + naming — owner chose MLS RECORD, AUTO-NAMED**
+   (patient + date + procedure; the Athena write stays one reviewed,
+   confirmed click — he explicitly declined auto-writing into Athena). The cc
+   format gains the DATE: update ScribeFlow.html 14826/14827/14947 twins +
+   adoptExistingDraft matching + the workflow-hardening fixtures (208-209)
+   TOGETHER — resume-matching parses cc, so format and fixtures move as one.
+3. **Context quality**: the pipeline already injects verified history on both
+   passes (feat_opnote_history, pinned) + fillChartSlots. The workroom's
+   editor gets a RECEIPT LINE ("built from N verified visits + chart data") so
+   the doctor SEES the sourcing every time, and generation refuses silently
+   sourceless drafts only per the existing adaptive rules.
+4. **Template upload polish**: explicit stage-3 acceptance criteria — the
+   upload flow (single, drag-drop, bulk) must pass the 1-minute test inside
+   the Templates tab.
+5. **Recording → Athena write-back UI**: the Review/Send step joins the
+   workstream as its own stage (after stage 4): better walkthrough UI, and a
+   full live verification pass on Adam J Schaeffer ONLY (the write-back hard
+   stop stands).
+
 Owner direction (via direction check, recorded in COORDINATION_GOAL_LANE_2026-07-26.md):
 FULL WORKROOM — one full-screen op-notes room; Templates becomes a tab of it; both
 old modals retire as *presentations*. Template behavior stays ALWAYS-ADAPTIVE

@@ -92,6 +92,22 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — FINAL STATE (2026-07-26 ~midnight)
+
+**Live = b711. Release regression GREEN and logged**
+(tests/live-e2e-artifacts/2026-07-26-b711-release-regression.md): two
+consecutive clean passes over every surface, E2E 30/30 (puppeteer-core
+reinstalled at C:\Users\Micha\mls-e2e-puppeteer), Jul-28 pull 21/21 done on
+real appointment-id keys + day-complete ledger.
+
+**OWNER DIRECTION (via question tool, ~midnight) — op-note workstream v2:**
+auto-save = MLS record with patient+date+procedure naming (he DECLINED
+auto-writing into Athena — review gate stands); Athena navigation = AUTOMATIC
+follow of MLS context (extension 3.0.x work; never mid-pull, switch in MLS
+Controls). Full v2 scope in OPNOTE_WORKROOM_PLAN_2026-07-26.md — the workroom
+build (4 stages) + nav-follow + cc-naming + context receipts + write-back UI
+are THE next lanes. No claim open; the tree is clean at d1dd069.
+
 ## Goal-lane takeover session — b711 SHIPPED, claim closed (2026-07-26 night)
 
 **b711 (c0a5ccf) LIVE, both fixes verified:** preview dock clears the SAMPLE
