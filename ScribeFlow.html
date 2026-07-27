@@ -29810,7 +29810,11 @@ function _ptGroupSort(mode){
     var initialScripts=[];
     try{ initialScripts=Array.prototype.slice.call(document.querySelectorAll('script[src]')); }catch(e){}
     CRITICAL.forEach(function(name){ wanted[name]=true; });
-    var tracker={started:true,sealed:false,settled:false,degraded:false,lastActivity:Date.now(),state:state,expected:expected,errors:errors,satelliteErrors:satelliteErrors};
+    /* `lastActivity` is deliberately CRITICAL activity only. Optional feature
+       scripts continue loading in their existing order, but their long tail
+       must not keep the full-screen login gate over an already-complete Visit
+       workspace. Optional state remains diagnostic through allPending/errors. */
+    var tracker={started:true,sealed:false,settled:false,degraded:false,lastActivity:Date.now(),optionalLastActivity:Date.now(),state:state,expected:expected,errors:errors,satelliteErrors:satelliteErrors};
     function settle(node,kind){
       var name=assetName(node); if(!wanted[name]) return;
       if(state[name]==='loaded'||state[name]==='error') return;
@@ -29824,7 +29828,7 @@ function _ptGroupSort(mode){
         try{ node.__mlsStartupSettled=kind||'load'; }catch(e){}
         if(node.__mlsStartupObserved&&satellitePending>0) satellitePending--;
         if(kind==='error') satelliteErrors.push(assetName(node)||String(node.src||'unknown'));
-        tracker.lastActivity=Date.now();
+        tracker.optionalLastActivity=Date.now();
       }
       settle(node,kind);
     }
@@ -29835,7 +29839,7 @@ function _ptGroupSort(mode){
       if(initialScripts.indexOf(node)>=0||node.__mlsStartupObserved) return;
       try{ node.__mlsStartupObserved=true; }catch(e){}
       if(node.__mlsStartupSettled) return;
-      satellitePending++; tracker.lastActivity=Date.now();
+      satellitePending++; tracker.optionalLastActivity=Date.now();
       node.addEventListener('load',function(){ markNode(node,'load'); },{once:true});
       node.addEventListener('error',function(){ markNode(node,'error'); },{once:true});
     }
@@ -29909,7 +29913,6 @@ function _ptGroupSort(mode){
       var gateStarted=(typeof sfGateLoadingStarted==='number'&&sfGateLoadingStarted)?sfGateLoadingStarted:ensureStarted;
       var releaseAt=gateStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
       var hardAt=releaseAt-Math.max(1400,SF_GATE_QUIET_MS+500);
-      var optionalWaitUntil=Math.min(hardAt,gateStarted+9000);
       function publish(ok,critical){
         if(published) return; published=true;
         if(hardTimer) clearTimeout(hardTimer);
@@ -29962,8 +29965,7 @@ function _ptGroupSort(mode){
             var incomplete=assets.incomplete();
             var allPending=assets.allPending();
             var quiet=now-assets.lastActivity>=900;
-            var optionalSettled=allPending===0||now>=optionalWaitUntil;
-            if(pending===0&&optionalSettled&&quiet){
+            if(pending===0&&quiet){
               if(incomplete===0&&assets.errors.length===0&&critical&&visible){
                 if(allPending||assets.satelliteErrors.length) assets.degraded=true;
                 publish(true,true); return;
