@@ -827,3 +827,19 @@ timezone measured 18.0 ms hot with the identical 131,677-character signature.
 Codex has this as its own small commit plus a constructor-count test. Please
 signal here once b738 is pushed so the performance branch can rebase and run
 the combined foreground A/B without racing your dirty tree.
+
+**b738 SHIPPED** (16 late surfaces deferred, eager 233→218; the red gate caught
+3 truncated concatenated-src tokens before ship — repaired to the shared buster.
+Boot-speed work now HANDED TO CODEX; late-surfaces-stay-deferred pins relayed).
+
+## CLAIM b739 — goal-lane takeover session
+
+**Claimed by:** same session. **Scope:** owner ask — the default provider is
+whoever is SIGNED IN. Root cause: 'mine' resolved providerDisplayName → the
+SCRAPED grid name (whoever's Athena day was open). Fix in
+feat_athena_provider_picker.js: account identity (bkUser.name) outranks the
+scrape; empty providerDisplayName seeds once from the account (all other
+consumers of that key inherit the fix); explicit Settings name and explicit
+picks still win; signed-out unchanged. New suite
+provider-default-is-the-signed-in-doctor (vm-driven order). Live verify on the
+owner's next sign-in. Gate about to run.

@@ -455,10 +455,18 @@
   function dobMap() { var d = jget(DOB_KEY); return (d && typeof d === 'object') ? d : {}; }
   function realName() { return clean(lsGet('providerDisplayName')); }
   function scrapedName() { return clean(lsGet('providerName')); }
+  /* b739 (owner: "the default provider should be whoever is logged in"):
+     'mine' resolved realName() -> SCRAPED name — and the scraped name is
+     whoever's Athena grid happened to be open, which is how another provider
+     became the default. The signed-in ACCOUNT identity now outranks the
+     scrape, and an empty providerDisplayName is seeded from it once so every
+     other consumer of that key resolves correctly too. */
+  function accountProviderName() { try { return clean((window.bkUser && window.bkUser.name) || ''); } catch (e) { return ''; } }
+  function seedDisplayNameOnce() { try { if (!realName() && accountProviderName()) lsSet('providerDisplayName', accountProviderName()); } catch (e) {} }
   function chosenFromFinder() { return safe(function () { var c = window.__mlsFindDoctors && window.__mlsFindDoctors.chosen; return c ? clean(c.name || c.raw) : ''; }, ''); }
   function getPick() { return lsGet(PICK_KEY) || 'mine'; }
   function setPick(v) { lsSet(PICK_KEY, v || 'mine'); }
-  function selectedDoctor() { var fc = chosenFromFinder(); if (fc) return { all: false, name: fc }; var p = getPick(); if (p === 'all') return { all: true, name: '' }; if (p && p !== 'mine') return { all: false, name: p }; var rn = realName(); return { all: false, name: rn || scrapedName() }; }
+  function selectedDoctor() { var fc = chosenFromFinder(); if (fc) return { all: false, name: fc }; var p = getPick(); if (p === 'all') return { all: true, name: '' }; if (p && p !== 'mine') return { all: false, name: p }; seedDisplayNameOnce(); var rn = realName() || accountProviderName(); return { all: false, name: rn || scrapedName() }; }
   function apptDate(a) { return S(a.appt_date || a.date || S(a.start_at).slice(0, 10)); }
   function hhmm(a) { if (/^\d\d?:\d\d/.test(S(a.time))) return ('0' + a.time).slice(-5); var d = safe(function () { return new Date(a.start_at); }, null); if (d && !isNaN(d.getTime())) return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); return ''; }
   function ampm(t) { var m = /^(\d\d?):(\d\d)/.exec(S(t)); if (!m) return S(t); var h = +m[1], mm = m[2], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; return h + ':' + mm + ' ' + ap; }
