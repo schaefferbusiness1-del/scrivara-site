@@ -92,6 +92,38 @@ If you are another session reading this: announce yourself here before editing
 
 ---
 
+## Goal-lane takeover session — b712 SHIPPED + HARD-GATE EVIDENCE (2026-07-27 ~1:45 AM)
+
+**b712 (fe4c43f) LIVE**: workroom Stage 0 module installed (opr-1.0.0 verified
+on the running page). ⚠ Its first gate was RED: my b711-shaped preview-runtime
+token sat inside the bump script's rewrite pattern — the bump moved the page
+tag but not sw.js, forking page from precache. Token re-shaped 20260726pv711
+everywhere + a new pin FORBIDS build-shaped tokens on that asset. Frozen
+tokens must NEVER look like bNNN.
+
+**PULL CAMPAIGN (owner's hard gate) — 5 real pulls at b711/b712, ext 3.0.22,
+zero failures, zero missed histories:** Jul-28 21/21 done · Jul-27 18/18 done ·
+Jul-25 honest "No appointments" · Jul-28 re-pull idempotent 21/21 no dupes ·
+Jul-24 5/5 done. Every receipt: all rows state:"done" on real appointment-id
+keys + day-complete ledger. 44 identity-gated history reads, 44 passed. The
+one refusal all night: "Pull today" with the Athena tab parked on a stray
+Aug-1 view — the date guard NAMED it (honest, remedied by navigating the tab).
+
+**VERIFY-IN-ATHENA**: machinery proven by the same 44/44 lane; the button's
+guard fail-closes on provider-less rows with a named reason. Interactive
+click-through on a provider row → rides the write-back walkthrough lane.
+
+**FILL-IN-THE-BLANK (owner: "confirm it exists")**: it EXISTS and is rich
+(fields, per-field mic, dictate-to-fill, defaults, one-click save) but TWO
+defects found live: (A) fillTokens (onf:248) can't see the [CAPS] placeholder
+shape the generator emits — 8 of 10 real blanks invisible by shape (the
+quarantine scanner knows all three syntaxes; the fill box knows two);
+(B) on a RESUMED draft the box silently fails entirely (exception swallowed
+by safe() in buildFillBox — the silent-failure class the workroom plan
+flagged). Fix = onf-2.11.0, folded into workroom Stage 2. NEXT LANES:
+workroom stages 1-4, extension auto-follow (bidirectional), write-back UI,
+onf-2.11.0. No claim open; tree clean.
+
 ## Goal-lane takeover session — FINAL STATE (2026-07-26 ~midnight)
 
 **Live = b711. Release regression GREEN and logged**
