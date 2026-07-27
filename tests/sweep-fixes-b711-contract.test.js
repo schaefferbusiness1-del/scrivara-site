@@ -27,13 +27,17 @@ assert(preview.includes('body.mls-public-preview #mlsDock{bottom:74px;}'),
   'the dock must lift above the 50px preview strip on desktop');
 assert(preview.includes('body.mls-public-preview #mlsDock{bottom:112px;}'),
   'the dock must lift above the wrapped strip on phone');
-/* the fix must actually be served: the frozen token moved in BOTH loaders */
-assert(app.includes('public-preview-runtime.js?v=b711'),
+/* the fix must actually be served: the frozen token moved in BOTH loaders.
+ * Dated shape, never bNNN: the build bump rewrites bNNN tokens in
+ * ScribeFlow.html but not sw.js, and forked the two at b712. */
+assert(app.includes('public-preview-runtime.js?v=20260726pv711'),
   'the page must load the fixed preview runtime');
-assert(sw.includes('/public-preview-runtime.js?v=b711'),
+assert(sw.includes('/public-preview-runtime.js?v=20260726pv711'),
   'the service worker precache must fetch the fixed preview runtime');
 assert(!app.includes('public-preview-runtime.js?v=b497') && !sw.includes('public-preview-runtime.js?v=b497'),
   'the retired preview-runtime cache token must be unreachable');
+assert(!/public-preview-runtime\.js\?v=b\d+/.test(app) && !/public-preview-runtime\.js\?v=b\d+/.test(sw),
+  'the preview-runtime token must never be build-shaped - the bump forks page from precache');
 
 /* 2 - history titles never lead with the name twice */
 assert(app.includes("if(_pnDedup && _ccRaw.lastIndexOf(_pnDedup+' — ', 0)===0)"),

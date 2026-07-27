@@ -187,7 +187,23 @@ const LOADER = 'mls-connect.js';
  *     turn engine welded into a layout file could not be reverted without
  *     reverting that layout. It is a headless engine with a clean API plus one
  *     inline row, and revert() removes both. */
-const CEILING = 242;
+/* 242 -> 243 at the 2026-07-26 op-note workstream, for feat_mls_opnote_room.js
+ * (opr-1.0.0, Stage 0 of OPNOTE_WORKROOM_PLAN_2026-07-26.md — the owner-approved
+ * full-screen room). The three questions this pin exists to force, answered:
+ *   - DEFERRED (requestIdleCallback, 4s timeout). Op notes are minutes-after-
+ *     boot work a doctor opens by hand; the room has no business in the
+ *     post-login burst. EAGER_CEILING does not move.
+ *   - Stage 0 is HEADLESS AND INERT: no setInterval, no observer, no DOM.
+ *     INTERVAL_CEILING and OBSERVER_CEILING do not move, and the later stages
+ *     inherit that rule in the module header.
+ *   - It could have been folded into feat_mls_calm_views.js or the drafter
+ *     satellites to keep the count flat, and that would have been the
+ *     dishonest version. The room is the one thing that must be revertible at
+ *     2am ON ITS OWN — without reverting the calendar/history/studio layouts
+ *     (calm_views) and without touching the drafter machinery (oni/onf/opnp)
+ *     that three other modules gate the Fields box on. One revert() puts both
+ *     old modals back exactly as they were. */
+const CEILING = 243;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
