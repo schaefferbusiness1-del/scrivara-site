@@ -1357,7 +1357,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b724) ----
+  /* ---- Copilot calm polish (b725) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -6555,9 +6555,9 @@ var _h401Busy=false;
 function handle401(){
   if(_h401Busy) return;
   var tok=''; try{ tok=bkToken(); }catch(e){}
-  if(!tok){ setBkToken(''); bkUser=null; if(session){ toast('Your session expired — please log in again.','err'); logout(true); } return; }
+  if(!tok){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401a){} toast('Your session expired — please log in again.','err'); logout(true); } return; }
   _h401Busy=true;
-  var evict=function(){ setBkToken(''); bkUser=null; if(session){ toast('Your session expired — please log in again.','err'); logout(true); } };
+  var evict=function(){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401b){} toast('Your session expired — please log in again.','err'); logout(true); } };
   try{
     fetch(bkBase()+'/api/me',{headers:{Authorization:'Bearer '+tok}}).then(function(r){
       _h401Busy=false;
@@ -7471,6 +7471,55 @@ function _accountIdleRemainingMs(windowMs){
   const remaining=last+windowMs-Date.now();
   return remaining>0?remaining:0;
 }
+/* lgn-1.2.0 (completes lgn-1.0.0's own stated intent — "the doctor is active
+   in another tab (or in Athena)"): Athena work was named in that comment but
+   never actually fed into the idle reckoning, so a doctor deep in athenaOne
+   charts looked exactly like a doctor who walked away — proven live
+   2026-07-27 ~10:30: 30 quiet MLS-minutes mid-clinic, idleLogout fired in a
+   HIDDEN tab (its toast died unseen), and the backend logout's session bump
+   evicted every tab. At fire time we now ask the extension (>=3.0.23
+   read-only chart-identity verb) whether the open athenaOne chart CHANGED
+   since the previous idle check; a change is real clinical work and re-arms
+   the window. No extension, no change, or a timeout leaves the logout
+   exactly as it was. */
+function _idleAthenaProbe(cb){
+  var done=false; var fin=function(v){ if(done)return; done=true; try{window.removeEventListener('message',h);}catch(e){} try{cb(v);}catch(e2){} };
+  var rid='idle'+Date.now().toString(36);
+  function h(e){
+    var d=e&&e.data; if(!d||d.source!=='mls-ext'||d.type!=='mlsAppChartIdentityResult'||d.requestId!==rid) return;
+    var idn=(d.resp&&d.resp.ok&&d.resp.identity&&d.resp.identity.name)?d.resp.identity:null;
+    if(!idn) return fin(false);
+    var sig=''; try{ sig=String(idn.name||'').toLowerCase()+'|'+String(idn.dob||''); }catch(e2){}
+    var prev=''; try{ prev=localStorage.getItem('sf_idle_athena_sig')||''; }catch(e3){}
+    try{ localStorage.setItem('sf_idle_athena_sig',sig); }catch(e4){}
+    fin(!!sig&&sig!==prev);
+  }
+  try{ window.addEventListener('message',h); window.postMessage({source:'mls-app',type:'mlsAppChartIdentity',requestId:rid},location.origin); }catch(e){ return fin(false); }
+  setTimeout(function(){ fin(false); },3000);
+}
+/* lgn-1.2.0: WHY was I signed out? The old answer was a toast in a hidden tab;
+   the next thing the doctor saw was a bare login gate. Stamp the reason
+   OUTSIDE the account namespace (it must survive the sign-out namespace
+   flip) and show it ONCE on the gate. */
+function _stampSignoutReason(reason,extra){
+  try{ localStorage.setItem('sf_last_signout',JSON.stringify(Object.assign({reason:reason,at:Date.now()},extra||{}))); }catch(e){}
+}
+function _showSignoutReasonOnGate(){
+  try{
+    if(session) return;
+    var raw=localStorage.getItem('sf_last_signout'); if(!raw) return;
+    var d=JSON.parse(raw);
+    if(!d||!d.at||(Date.now()-d.at)>12*3600000){ localStorage.removeItem('sf_last_signout'); return; }
+    var el=document.getElementById('authErr'); if(!el||String(el.textContent||'').trim()) return;
+    var when=new Date(d.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    el.textContent=(d.reason==='idle')
+      ? ('You were signed out at '+when+' after '+(d.mins||30)+' quiet minutes (auto log-off — adjustable in Settings → Security & privacy). Your work is saved; sign in to continue.')
+      : ('Your session ended at '+when+' — nothing was lost. Sign in to continue.');
+    el.style.display='block';
+    localStorage.removeItem('sf_last_signout');
+  }catch(e){}
+}
+try{ if(document.readyState!=='loading'){ setTimeout(_showSignoutReasonOnGate,800); } else { document.addEventListener('DOMContentLoaded',function(){ setTimeout(_showSignoutReasonOnGate,800); }); } }catch(e){}
 var _legalGenerating=false; // true while a medical-legal report is being generated
 function idleLogout(){
   if(!session) return;
@@ -7493,8 +7542,14 @@ function idleLogout(){
     const remaining=_accountIdleRemainingMs(m*60000);
     if(remaining>1000){ clearTimeout(idleTimer); idleTimer=setTimeout(idleLogout,remaining); return; }
   }
-  toast('Logged out due to inactivity.','');
-  logout(true);
+  // lgn-1.2.0: last check before the irreversible step — is the doctor working
+  // the ATHENA tab right now? A changed open chart is real work; re-arm.
+  _idleAthenaProbe(function(athenaActive){
+    if(athenaActive){ resetIdle(); return; }
+    _stampSignoutReason('idle',{mins:getIdleMins()||30});
+    toast('Logged out due to inactivity.','');
+    logout(true);
+  });
 }
 function resetIdle(){
   clearTimeout(idleTimer);
@@ -12782,7 +12837,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b724: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b725: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14639,7 +14694,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b724 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b725 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16380,7 +16435,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b724 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b725 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -24813,7 +24868,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b724: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b725: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -24948,7 +25003,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b724 — THE LOADING SCREEN MUST ALWAYS END.
+/* b725 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -29669,7 +29724,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b724';
+  window.__MLS_AV='b725';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

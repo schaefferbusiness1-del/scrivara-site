@@ -514,3 +514,30 @@ writeback-walkthrough-contract vm-drives all transitions. Boot CEILING 244→245
 documented. Live verify DEFERRED until the owner signs back in; the Adam-only
 send + Verify click-through + Leg A live drive remain queued on the [MLS TEST]
 slot. Gate about to run.
+
+**ROOT CAUSE OF THE 10:30 SIGN-OUT — FOUND, the owner was right (2026-07-27 ~12:00).**
+NOT token expiry. The IDLE AUTO-LOGOUT (lgn, 30-min default) fired: he worked
+athenaOne charts all morning, MLS tabs saw zero events, idleLogout ran in a
+HIDDEN tab (toast unseen), and the backend logout's session_version bump
+(auth.js:675 — logout-everywhere semantics) evicted EVERY tab; handle401's
+proof-gated lane then reported "expired" on the others. lgn-1.0.0's own comment
+NAMED "active…in Athena" as the class to protect — the signal never existed
+until ext 3.0.23's chart-identity verb. The "super slow" after re-login = the
+forced fresh-namespace hydration slam (1,501 patients) + SW precache churn from
+six deploys; his tab measured HEALTHY once settled (timer lag 0-3ms). ONE root
+cause, both symptoms. Ruled out structurally: backend deploy (rev e4783f0 =
+Jul-23), sv-bumps outside password/logout, the 5-min 2FA token, af-1.0.0 (zero
+backend calls), my probes (can't remove tokens).
+
+## CLAIM b725 — goal-lane takeover session (2026-07-27 ~12:05)
+
+**Claimed by:** same session. **Scope:** lgn-1.2.0 — the idle logout learns what
+Athena knows. At fire time, ask ext ≥3.0.23 (read-only chart-identity verb)
+whether the open chart CHANGED since the last idle check: change → resetIdle;
+no ext/no change/timeout → the old logout, unchanged. Both sign-out paths stamp
+WHY outside the account namespace ('sf_last_signout'); the gate shows it ONCE
+in plain words, never clobbering a real auth error. New suite
+idle-logout-knows-athena-work (vm: changed-chart re-arms, parked chart + silence
+fail closed, stamps, gate-once). Region-slicing suites pre-ran green ×4.
+DEFERRED (prepared next, deploy in idle window): backend sliding-refresh
+(/api/auth/refresh) to kill the 30-day-TTL surprise class too. Gate about to run.
