@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.10.0';
+  var VERSION = 'onf-2.11.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -244,10 +244,19 @@
       return '[FILL: ' + label + ']';
     });
   }
+  /* onf-2.11.0: the box now sees the THIRD placeholder shape — [CAPS LIKE
+     THIS] — which _genOpNote itself emits ([LEVELS], [STEROID DOSE]…).
+     Measured live at b712 on a real draft: 8 of 10 blanks were this shape and
+     invisible to the box, while the draft-quarantine scanner already counted
+     them. The alternative is deliberately strict (all-caps, 3-30 chars,
+     starts/ends alphanumeric) so prose brackets and [[snake]] never match.
+     KEEP IN SYNC with renderLayout() below — the edit-adoption math replays
+     the same shapes; a shape known here but not there resets field state. */
+  var CAPS_TOKEN_SRC = '\\[([A-Z][A-Z0-9 /&-]{1,28}[A-Z0-9])\\]';
   function fillTokens(text) {
-    var re = /\[FILL:\s*([^\]]+?)\s*\]|\[\[([a-z0-9_]+)\]\]/gi, seen = {}, out = [], m;
+    var re = new RegExp('\\[FILL:\\s*([^\\]]+?)\\s*\\]|\\[\\[([a-z0-9_]+)\\]\\]|' + CAPS_TOKEN_SRC, 'g'), seen = {}, out = [], m;
     while ((m = re.exec(text)) !== null) {
-      var label = m[1] != null ? m[1].trim() : keyToLabel(m[2]);
+      var label = m[1] != null ? m[1].trim() : (m[2] != null ? keyToLabel(m[2]) : S(m[3]).toLowerCase().trim());
       var key = label.toLowerCase();
       if (!seen[key]) { seen[key] = 1; out.push(label); }
     }
@@ -260,6 +269,11 @@
     var out = text.replace(re, value);
     var qk = labelToKey(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     out = out.replace(new RegExp('\\[\\[' + qk + '\\]\\]', 'gi'), value);
+    /* onf-2.11.0: the [CAPS] form of the same label (case-insensitive match,
+       shape-anchored like CAPS_TOKEN_SRC so prose brackets stay untouched) */
+    out = out.replace(new RegExp('\\[' + q + '\\]', 'gi'), function (m0) {
+      return /^\[[A-Z][A-Z0-9 /&-]{1,28}[A-Z0-9]\]$/.test(m0) ? value : m0;
+    });
     return out;
   }
   function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }
@@ -299,7 +313,8 @@
   function mainBoxWithBlanks() {
     var ta = $(MAIN_ID);
     if (!ta || ta.offsetParent === null) return null;
-    var hasTokens = /\[FILL:|\[\[[a-z0-9_]+\]\]|_{3,}|\[not dictated[^\]]*\]/i.test(ta.value || '');
+    var hasTokens = /\[FILL:|\[\[[a-z0-9_]+\]\]|_{3,}|\[not dictated[^\]]*\]/i.test(ta.value || '')
+      || new RegExp(CAPS_TOKEN_SRC).test(ta.value || '');
     /* also pick up a lingering fill box whose tokens were all just filled, so it re-renders/clears */
     var hasBox = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf-fillbox');
     return (hasTokens || hasBox) ? ta : null;
@@ -320,7 +335,8 @@
   }
   function sigOf(ta) {
     var v = (ta && ta.value) || '';
-    return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length) + '|' + textSig(v);
+    return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length
+      + (v.match(new RegExp(CAPS_TOKEN_SRC, 'g')) || []).length) + '|' + textSig(v);
   }
 
   /* Auto-fill only identity already known from this visit or canonical Settings. */
@@ -707,7 +723,8 @@
   }
   function renderLayout(raw, vals) {
     raw = S(raw); vals = vals || {};
-    var re = /\[FILL:\s*([^\]]+?)\s*\]|\[\[([a-z0-9_]+)\]\]/gi, parts = [], rendered = '', at = 0, m;
+    /* MUST enumerate the same shapes as fillTokens (see CAPS_TOKEN_SRC note) */
+    var re = new RegExp('\\[FILL:\\s*([^\\]]+?)\\s*\\]|\\[\\[([a-z0-9_]+)\\]\\]|' + CAPS_TOKEN_SRC, 'g'), parts = [], rendered = '', at = 0, m;
     function addLiteral(s) {
       if (!s) return;
       parts.push({ kind: 'literal', raw: s, rendered: s, renderStart: rendered.length, renderEnd: rendered.length + s.length });
@@ -715,7 +732,7 @@
     }
     while ((m = re.exec(raw)) !== null) {
       addLiteral(raw.slice(at, m.index));
-      var token = m[0], label = m[1] != null ? S(m[1]).trim() : keyToLabel(m[2]), key = label.toLowerCase();
+      var token = m[0], label = m[1] != null ? S(m[1]).trim() : (m[2] != null ? keyToLabel(m[2]) : S(m[3]).toLowerCase().trim()), key = label.toLowerCase();
       var value = S(vals[key]), shown = value ? value : token;
       parts.push({ kind: 'token', raw: token, rendered: shown, label: label, key: key, renderStart: rendered.length, renderEnd: rendered.length + shown.length });
       rendered += shown;
@@ -1334,6 +1351,15 @@
 
   /* ---------------- tick (freeze-safe: cheap, gated, write-if-changed) ---------------- */
   var _sig = {}, iv = null, _wireN = 0;
+  /* onf-2.11.0: buildFillBox failures land on the export (queryable) and warn
+     once - a bare safe() swallowed them and the stored signature then skipped
+     every retry, so one throw killed the Fields box for the whole session. */
+  function noteFillError(taId, e) {
+    var rec = { ta: taId, message: S(e && e.message || e), stack: S(e && e.stack).slice(0, 400), time: Date.now() };
+    try { if (window.__mlsOpNoteFill) window.__mlsOpNoteFill.lastFillError = rec; } catch (e2) {}
+    if (!noteFillError._warned) { noteFillError._warned = true; safe(function () { console.warn('[onf] Fields box failed for #' + taId + ':', e); }); }
+  }
+  function clearFillError() { try { if (window.__mlsOpNoteFill) window.__mlsOpNoteFill.lastFillError = null; } catch (e) {} }
   function tick() {
     _wireN++;
     /* PERF: wire early then every ~6s - EXCEPT while the op modal is open,
@@ -1350,7 +1376,9 @@
       if (main) {
         var ms = sigOf(main);
         if (_sig[MAIN_ID] !== ms) {
-          safe(function () { buildFillBox(main); });
+          /* onf-2.11.0: same not-silent rule as the prep loop below */
+          try { buildFillBox(main); clearFillError(); }
+          catch (eMB) { noteFillError(MAIN_ID, eMB); }
           _sig[MAIN_ID] = sigOf(main);
         }
       }
@@ -1377,7 +1405,10 @@
         var rw = safe(function () { return (window._opPrep || [])[+t.id.replace('opPrepNote_', '')]; }, null);
         safe(function () { syncProcedure(rw); });         /* readiness "Procedure" = the matched template */
         safe(function () { ensureHeader(t); });          /* guarantee personalization (may prepend header) */
-        safe(function () { buildFillBox(t); });           /* raw+values: pre-fill known + smart-default every field */
+        /* onf-2.11.0: measured live at b712 on a resumed draft - box absent,
+           no console error, nobody told. Not silent any more. */
+        try { buildFillBox(t); clearFillError(); }
+        catch (eFB) { noteFillError(t.id, eFB); }
         _sig[t.id] = sigOf(t);                            /* store the POST-render signature (settles the tick) */
       })(ta);
     }
@@ -1545,7 +1576,7 @@
   }
 
   window.__mlsOpNoteFill = {
-    installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js',
+    installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js', lastFillError: null,
     applyBulk: applyBulk, _fillTokens: fillTokens, _fieldSpec: fieldSpec, _replaceToken: replaceToken,
     _patientKey: patientKey, _loadFillMem: loadFillMem, _saveFillMemValue: saveFillMemValue, _historyMed: historyMed,
     getDefault: function (labelOrKey) { var d = fieldDefault(labelOrKey); return d ? d.value : ''; },

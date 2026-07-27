@@ -49,7 +49,7 @@ function makeContext() {
 async function main() {
   const ctx = makeContext();
   const api = ctx.__mlsOpNoteFill;
-  assert(api && api.installed && api.version === 'onf-2.10.0', 'onf did not install at 2.10.0');
+  assert(api && api.installed && api.version === 'onf-2.11.0', 'onf did not install at 2.11.0');
   const d = api._dictation;
   assert(d && ['buildRoutePrompt', 'parseRouteResult', 'planRoutedFills', 'routeDictation', 'normalizeDictatedField'].every(k => typeof d[k] === 'function'),
     'dictation API surface incomplete');
