@@ -247,7 +247,7 @@ async function main() {
   assert(opnpSource.includes('blockUnsavedSwitch'), 'day/mode switch has no unsaved-content guard');
 
   /* ---------------- onf source pins: edit flag, history gates, needle depth ---------------- */
-  assert(onfSource.includes("var VERSION = 'onf-2.11.1'"), 'onf version did not move');
+  assert(onfSource.includes("var VERSION = 'onf-2.12.0'"), 'onf version did not move');
   assert(/wasEdited = row \? !!row\.edited : false;[\s\S]{0,400}row\.edited = wasEdited;/.test(onfSource),
     'writeRendered no longer restores the clinician edit flag around machine renders');
   assert(onfSource.includes('if (val && defaultEligible(label) && scopedKey'), 'account dropdown-history write is not allowlist-gated');

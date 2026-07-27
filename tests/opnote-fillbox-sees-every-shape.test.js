@@ -57,10 +57,23 @@ assert(replaced.indexOf('[GAUGE]') < 0 && replaced.indexOf('[[gauge]]') < 0 && r
 
 /* 4b (onf-2.11.1) - the heartbeat's creation must never depend on the first
  * beat: boot ran tick() BARE before setInterval, so one boot-time throw left
- * the whole session tickless (measured live at b713 - export installed,
- * manual tick built the box perfectly, interval dead). */
-assert(/function boot\(\) \{ css\(\); safe\(seedProfile\); safe\(tick\); iv = setInterval/.test(onf),
+ * the whole session tickless. */
+assert(/function boot\(\) \{ css\(\); safe\(seedProfile\); safe\(wrapOpeners\); safe\(tick\); iv = setInterval/.test(onf),
   'boot must safe-wrap the first tick so the interval is always created');
+
+/* 4c (onf-2.12.0) - the OPEN MOMENT must not wait for the interval. In the
+ * app's real posture (MLS occluded behind athenaOne) Chrome throttles hidden
+ * tab intervals to ~1/minute - measured live at b714: visibilityState
+ * 'hidden', modal open, ZERO ticks across 5s watches, manual tick instant.
+ * The drafter's own openers kick a burst of ticks. */
+assert(onf.includes("['openOpPrep', 'openOpPrepForPatient', 'openOpPrepSmart'].forEach"),
+  'all three drafter openers must be wrapped to kick the Fields box');
+assert(onf.includes('function kickTicks()'),
+  'the open-moment kick must exist');
+assert(/kickTicks\(\)[\s\S]{0,200}\[150, 700, 2000\]/.test(onf),
+  'the kick must ladder several attempts - one 0ms shot still throttles in a hidden tab');
+assert(onf.includes('orig.__onfKick'),
+  'the opener wrap must be idempotent');
 
 /* 4 - buildFillBox failures are surfaced, never swallowed */
 assert(onf.includes('function noteFillError('),

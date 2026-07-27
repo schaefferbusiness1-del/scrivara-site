@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.11.1';
+  var VERSION = 'onf-2.12.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -1366,7 +1366,7 @@
        where its Upload-templates button must work on the FIRST click (it is
        born dead; the lazy cadence left a ~6s window where clicks did nothing
        - owner bug 2026-07-13) */
-    if (_wireN <= 3 || _wireN % 6 === 0 || modalOpen()) safe(wireUploadButtons);
+    if (_wireN <= 3 || _wireN % 6 === 0 || modalOpen()) { safe(wireUploadButtons); safe(wrapOpeners); }
     var open = modalOpen();
     /* onf-2.1.0: [FILL:] blanks in the MAIN note editor get the same fill box
        (the floating tap-to-start walker is retired; this is the ONE mechanism).
@@ -1570,7 +1570,28 @@
      for the whole session (measured live at b713: export installed, manual
      tick() built the box perfectly, no interval running). The heartbeat's
      creation must never depend on the first beat succeeding. */
-  function boot() { css(); safe(seedProfile); safe(tick); iv = setInterval(function () { safe(tick); }, 1000); }
+  /* onf-2.12.0: the OPEN MOMENT must not wait for the interval at all. In the
+     app's real posture (MLS occluded behind athenaOne) Chrome throttles a
+     hidden tab's intervals to ~1/minute - measured live at b714:
+     visibilityState 'hidden', modal open, ZERO interval ticks across repeated
+     5s watches, while a manual tick() built the box instantly. The drafter's
+     own openers now kick a burst of ticks (same first-party wrap idiom the
+     other satellites use on openTemplates); the interval stays for
+     steady-state and the visible-tab case. */
+  function kickTicks() {
+    safe(tick);
+    [150, 700, 2000].forEach(function (ms) { setTimeout(function () { safe(tick); }, ms); });
+  }
+  function wrapOpeners() {
+    ['openOpPrep', 'openOpPrepForPatient', 'openOpPrepSmart'].forEach(function (fn) {
+      var orig = window[fn];
+      if (!isFn(orig) || orig.__onfKick) return;
+      var wrapped = function () { var r = orig.apply(this, arguments); kickTicks(); return r; };
+      wrapped.__onfKick = 1;
+      try { window[fn] = wrapped; } catch (e) {}
+    });
+  }
+  function boot() { css(); safe(seedProfile); safe(wrapOpeners); safe(tick); iv = setInterval(function () { safe(tick); }, 1000); }
   function revert() {
     if (iv) { clearInterval(iv); iv = null; }
     safe(function () { var b = $(BAR_ID); if (b) b.remove(); });
