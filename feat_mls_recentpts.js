@@ -25,10 +25,10 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__mlsRecentPts && window.__mlsRecentPts.__booted) return;
 
-  var VERSION='rp-2.0.0'; /* layout-stable: chip never unmounts while its bar is visible */
+  var VERSION='rp-2.1.0'; /* layout-stable + indexed/event-driven patient switching */
   var WRAP_ID='mlsRecentPts', MENU_ID='mlsRecentPtsMenu', STYLE_ID='mlsRecentPts-style';
   var WRAP_STYLE_ID='mls-ctxbar-wrap-style', LS_KEY='mls_recent_pts_v1', MAX=6;
-  var pollTimer=null, backTimer=null, origRenderBar=null, lastSeenId=null, obs=null, obsTarget=null;
+  var backTimer=null, origRenderBar=null, lastSeenId=null, obs=null, obsTarget=null;
   var lastCommitted=null;
 
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -36,20 +36,20 @@
   function loadIds(){try{var v=JSON.parse(localStorage.getItem(lsKey())||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
   function saveIds(ids){try{localStorage.setItem(lsKey(),JSON.stringify(ids.slice(0,MAX)));}catch(e){}}
   function patients(){try{return (typeof window.getPatients==='function'?window.getPatients():[])||[];}catch(e){return [];}}
-  function ptById(id){if(!id)return null;var l=patients();for(var i=0;i<l.length;i++)if(String(l[i].id)===String(id))return l[i];return null;}
+  function patientIndex(){var rows=patients(),byId=new Map();for(var i=0;i<rows.length;i++){var p=rows[i];if(p&&p.id!=null)byId.set(String(p.id),p);}return {rows:rows,byId:byId};}
+  function ptById(id,index){if(!id)return null;var idx=index||patientIndex();return idx.byId.get(String(id))||null;}
   function activeId(){try{if(typeof window.getActivePtId==='function')return window.getActivePtId()||'';}catch(e){}return '';}
   function pushRecent(id){if(!id)return;var ids=loadIds().filter(function(x){return String(x)!==String(id);});ids.unshift(String(id));saveIds(ids);}
 
   function ensureWrapStyle(){if(document.getElementById(WRAP_STYLE_ID))return;try{var s=document.createElement('style');s.id=WRAP_STYLE_ID;s.textContent='#mlsCtxBar{flex-wrap:wrap;row-gap:6px;}';document.head.appendChild(s);}catch(e){}}
 
   function switchTo(id){
-    try{if(!ptById(id))return;
+    try{var index=patientIndex(),patient=ptById(id,index);if(!patient)return;
       if(typeof window.setActivePtId==='function')window.setActivePtId(id);
       try{if(typeof window.renderProfile==='function')window.renderProfile();}catch(e){}
       try{if(typeof window.renderPatients==='function')window.renderPatients();}catch(e){}
       try{if(typeof window.renderPatientBar==='function')window.renderPatientBar();}catch(e){}
-      try{if(typeof window.updateNavCounts==='function')window.updateNavCounts();}catch(e){}
-      var nm=(ptById(id)||{}).name||'patient';
+      var nm=patient.name||'patient';
       try{if(typeof window.toast==='function')window.toast('Switched to '+nm+'.','');}catch(e){}
       closeMenu();
     }catch(e){}
@@ -59,10 +59,11 @@
   function openMenu(anchor){
     closeMenu();
     var cur=activeId();
-    var rows=loadIds().filter(function(id){return String(id)!==String(cur)&&ptById(id);});
+    var index=patientIndex();
+    var rows=loadIds().filter(function(id){return String(id)!==String(cur)&&ptById(id,index);});
     var menu=document.createElement('div');menu.id=MENU_ID;
     if(!rows.length){menu.innerHTML='<div class="mrp-empty">No other recent charts yet.<br>Open a few patients and they will show up here.</div>';}
-    else{menu.innerHTML=rows.map(function(id){var p=ptById(id)||{};var meta=[p.sex,p.dob].filter(Boolean).join(' · ');
+    else{menu.innerHTML=rows.map(function(id){var p=ptById(id,index)||{};var meta=[p.sex,p.dob].filter(Boolean).join(' · ');
       return '<button type="button" class="mrp-item" data-id="'+esc(id)+'"><span class="mrp-nm">'+esc(p.name||'Patient')+'</span>'+(meta?'<span class="mrp-meta">'+esc(meta)+'</span>':'')+'</button>';}).join('');}
     document.body.appendChild(menu);
     try{var r=anchor.getBoundingClientRect();menu.style.top=Math.round(r.bottom+6)+'px';menu.style.left=Math.round(Math.min(r.left,window.innerWidth-250))+'px';}catch(e){}
@@ -116,14 +117,15 @@
       }
       var cur=activeId();
       var ids=loadIds().filter(function(id){return String(id)!==String(cur);});
-      var hydrated=patients().length>0;
+      var index=patientIndex();
+      var hydrated=index.rows.length>0;
       var state;
       if(!hydrated&&ids.length){
         /* Patient store still hydrating: hold the last committed label so the
            chip never flashes through empty/partial counts mid-refresh. */
         state=lastCommitted||{n:0,ready:false};
       }else{
-        var others=ids.filter(function(id){return !!ptById(id);});
+        var others=ids.filter(function(id){return !!ptById(id,index);});
         state={n:others.length,ready:others.length>0};
         lastCommitted=state;
       }
@@ -144,20 +146,21 @@
     obs.observe(bar,{childList:true});}catch(e){}}
   function detachObs(){try{if(obs){obs.disconnect();obs=null;obsTarget=null;}}catch(e){}}
 
-  function tick(){try{var id=activeId();if(id&&id!==lastSeenId){lastSeenId=id;pushRecent(id);render();}}catch(e){}}
+  function onPatientChanged(ev){try{var d=ev&&ev.detail,id=(d&&d.patientId)||activeId();if(id&&id!==lastSeenId){lastSeenId=id;pushRecent(id);render();}}catch(e){}}
 
   function wrapRenderBar(){try{if(typeof window.renderPatientBar==='function'&&!origRenderBar){
     origRenderBar=window.renderPatientBar;
     window.renderPatientBar=function(){var r;try{r=origRenderBar.apply(this,arguments);}catch(e){}try{render();}catch(e){}return r;};}}catch(e){}}
 
   function boot(){injectCss();wrapRenderBar();lastSeenId=activeId();if(lastSeenId)pushRecent(lastSeenId);render();
-    if(!pollTimer)pollTimer=setInterval(tick,1500);if(!backTimer)backTimer=setInterval(render,15000);}
+    try{window.removeEventListener('mls:active-patient-changed',onPatientChanged);window.addEventListener('mls:active-patient-changed',onPatientChanged);}catch(e){}
+    if(!backTimer)backTimer=setInterval(render,15000);}
 
   window.__mlsRecentPts={
     __booted:true, rerender:render, list:loadIds,
     revert:function(){
-      try{if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}catch(e){}
       try{if(backTimer){clearInterval(backTimer);backTimer=null;}}catch(e){}
+      try{window.removeEventListener('mls:active-patient-changed',onPatientChanged);}catch(e){}
       try{detachObs();}catch(e){}
       try{document.removeEventListener('mousedown',onDocClick,true);}catch(e){}
       try{if(origRenderBar){window.renderPatientBar=origRenderBar;origRenderBar=null;}}catch(e){}
