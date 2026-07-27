@@ -367,3 +367,14 @@ builders; `_opCcDate()` fail-safes to '' on unknown days. Draft-resume unaffecte
 (procedure containment — pinned). New suite `opnote-autoname-date-contract.test.js`
 (vm-proves the fail-safe) registered in run-all. Files: ScribeFlow.html,
 tests/run-all.js, the new test. Full gate about to run; commit only on exit 0.
+
+## CLAIM b718 — goal-lane takeover session (2026-07-27 ~05:10)
+
+**Claimed by:** same session. **Scope:** b717 follow-through — live verify found
+every row STILL missing dateKey: `feat_mls_opnote_integrity.js` REPLACES
+`window._opNewRow` with its own `newRow` (line ~1183), so the 7th param added to
+the base died at the override (the exact defect class oni-2.10.0's own comment
+warns about for `scope`). oni 2.16.0 → 2.16.1 carries dateKey; token
+20260726oni2160 → 20260727oni2161 in BOTH connectors + 4 pin lines + 2 VERSION
+pins; opnote-autoname-date-contract gains the "running owner" pins (base
+function ≠ running function). Gate about to run; commit only on exit 0.

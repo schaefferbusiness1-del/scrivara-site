@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.16.0';
+  var VERSION = 'oni-2.16.1';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -534,13 +534,16 @@
     return { tplId:'', noMatch:true, score:r.score || 0, reason:r.reason || 'ambiguous' };
   }
 
-  function newRow(name, reason, dob, dateStr, patientId, scope) {
+  function newRow(name, reason, dob, dateStr, patientId, scope, dateKey) {
     var m = bestFor(name, reason, dob, patientId);
     /* oni-2.10.0: the base _opNewRow gained a 6th `scope` param carrying the
        appointment's provider/facility identity — this owner must carry it too,
-       or every prep row silently loses the scheduled provider and facility. */
+       or every prep row silently loses the scheduled provider and facility.
+       oni-2.16.1: same law for the 7th `dateKey` param (b717 auto-naming) —
+       proven live: the b717 base carried it, THIS owner ran, every row lost
+       its day and the cc silently dropped its date segment. */
     scope = scope || {};
-    return { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId), providerId:S(scope.providerId||scope.provider_id||''), providerName:S(scope.providerName||scope.provider_name||scope.provider||''), facilityId:S(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:S(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:reason||'', dateStr:dateStr||'', tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
+    return { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId), providerId:S(scope.providerId||scope.provider_id||''), providerName:S(scope.providerName||scope.provider_name||scope.provider||''), facilityId:S(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:S(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:reason||'', dateStr:dateStr||'', dateKey:S(dateKey||''), tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
   }
   newRow.__omb = true;
 

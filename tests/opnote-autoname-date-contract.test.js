@@ -54,6 +54,17 @@ assert(app.includes('p.id, null, _acctTodayKey()) ];'),
 assert(app.includes("dateKey:String(dateKey||'')"),
   '_opNewRow must store the key on the row');
 
+/* 3b - THE RUNNING OWNER carries it. Proven live at b717: the base builder
+ * stored dateKey, the gate was green, and every live row still lost its day -
+ * feat_mls_opnote_integrity REPLACES window._opNewRow with its own newRow
+ * (oni line ~1183), so a param added only to the base dies at the override.
+ * The base function is not the running function; pin the override too. */
+const oni = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
+assert(oni.includes('function newRow(name, reason, dob, dateStr, patientId, scope, dateKey)'),
+  "oni's replacement builder must accept the 7th dateKey param");
+assert(oni.includes("dateKey:S(dateKey||'')"),
+  "oni's replacement builder must store dateKey on the row it returns");
+
 /* 4 - backward compat is load-bearing: draft-resume adopts by procedure
  * CONTAINMENT, so pre-b717 drafts (no date in cc) still resume. */
 assert(prep.includes('if (proc && S(n.cc).indexOf(proc) < 0) continue;'),
