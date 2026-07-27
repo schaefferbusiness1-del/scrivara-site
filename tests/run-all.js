@@ -293,6 +293,7 @@ const tests = [
   'idle-logout-knows-athena-work.test.js',
   'pull-progress-feeds-modern-pull.test.js',
   'phone-has-a-transcript-and-a-way-on.test.js',
+  'ai-audit-safety-fixes-contract.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',
   'copilot-unify-pending-runtime.test.js',

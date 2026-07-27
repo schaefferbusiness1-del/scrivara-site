@@ -45,7 +45,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.5.0';
+  var VERSION = 'opr-1.5.1';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -253,12 +253,17 @@
     var o = window.openTemplates;
     if (isFn(o) && !o.__oprTplWrap) {
       var w = function () {
+        /* opr-1.5.1: openers defined AFTER module boot never got wrapped —
+           re-attempt at call time (idempotent). And openOpPrepSmart has its
+           own early-after-reload readiness refusal, so when it declines, the
+           direct day opener gets one try before we fall back to floating. */
+        safe(wrapProcOpeners);
         ensureEmbedded();
         if (!shown($('opPrepModal'))) {
-          safe(function () {
-            if (isFn(window.openOpPrepSmart)) window.openOpPrepSmart();
-            else if (isFn(window.openOpPrep)) window.openOpPrep();
-          });
+          safe(function () { if (isFn(window.openOpPrepSmart)) window.openOpPrepSmart(); });
+        }
+        if (!shown($('opPrepModal'))) {
+          safe(function () { if (isFn(window.openOpPrep)) window.openOpPrep(); });
         }
         /* opr-1.5.0 (owner, sample preview): in postures where the room
            REFUSES to open (the read-only preview workspace, or any future

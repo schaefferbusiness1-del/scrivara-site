@@ -597,7 +597,6 @@ to bottom-LEFT (owner's memory; free since the bubbles retired). New suite
 pull-progress-feeds-modern-pull (vm-driven). Panel visual polish rides task 26.
 Gate about to run.
 
-claiming: performance optimization pass, 2026-07-27T10:56:29-04:00
 
 **b728 SHIPPED + LIVE-VERIFIED (2026-07-27 ~15:15).** Four live checks green:
 b727 proc-door (Templates Back-exit → drafter opens on Procedures — the walk is
@@ -655,3 +654,21 @@ room path + walk still 14/14. Gate about to run.
 the reviewed path; nothing writes to a real chart without his review+approve.
 Never flip to fully-automatic writes. The Adam-only live pass verifies the
 reviewed path fills everything it can.
+
+**b731 SHIPPED + VERIFIED (2026-07-27 ~18:30).** Preview: Templates visibly
+opens (classic modal, X works — the earlier "didn't close" was a 400ms probe
+race, the instrument lied), Esc works. Signed-in: the room's smart opener has an
+early-after-reload readiness refusal → users briefly got the floating fallback
+(visible, usable — never trapped); opr-1.5.1 in the next build retries via
+openOpPrep before falling back + re-attempts opener wraps at call time.
+
+## CLAIM b732 — goal-lane takeover session (2026-07-27 ~18:35)
+
+**Claimed by:** same session. **Scope:** AI-audit safety batch + opr-1.5.1.
+(1) Study S3/S4 PHI: guarded window.__mlsStudyScrub (name tokens, MRN/long ids,
+phones, dates→month) defined+USED at both lanes that claim DE-IDENTIFIED —
+vm-proven. (2) Studio save-truth: eager auto-save → pending stash; commits ONLY
+in __mlsWidgetReady; error clears pending. (3) compilePatientRecord sees op-note
+bodies (.text fallback) + honest draft label — feeds the op-note (B) fallback
+AND the IME/legal report. (4) opr-1.5.1 retry+rewrap. New suite
+ai-audit-safety-fixes-contract. Gate about to run.
