@@ -75,3 +75,25 @@ activation lease) — not shipped here.
 - One transient during the release: the extension dev-reload orphans content
   scripts in already-open tabs; the athena tab needed one reload before the
   picker saw it again. Expected devReload behaviour, not a product defect.
+
+## b766 + MLS Assist 3.0.31 addendum — the "10 saves not confirmed" incident, closed
+- INCIDENT (owner, ~19:2xZ): Thu Jul 30 pull, visit notes off, hit the historic
+  "10 saves not confirmed" banner. Probe: a SECOND app tab (the QA lane) ran a
+  concurrent engine; the generation rule and pull shield are per-tab, and
+  cross-tab arrays fall to the documented 12s clock rule - the removal window.
+  The removed rows were already re-created by later passes when probed.
+- FIX (b766): CROSS-TAB PULL SHIELD - shared 45s heartbeat + owner token;
+  __mlsPtsPullActive honors any tab's live heartbeat, so no-removal-during-
+  pull finally holds across tabs; engines refuse to start under a foreign
+  shield (day strip says why; batch refuses via the busy lane); hidden tabs
+  never self-start automatic rounds.
+- WRITE HARDENING (MLS Assist 3.0.31, published + installed, pong verified):
+  all three typing drivers' landed() verifiers snapshot the field BEFORE the
+  first write and refuse to confirm an UNCHANGED field - the length fallback
+  alone could false-confirm a failed paste into any pre-filled field. Executed
+  against shipped bytes by tests/write-confirm-requires-change (413 suites).
+- DECISIVE RE-RUN (20:08:39Z, Thu Jul 30, notes off, single tab, shield live):
+  schedule resolved, sweep 17/17 ok 0 failed, "saves not confirmed" NEVER
+  appeared, +16 Thursday patients persisted stable (1514 -> 1530), and
+  2026-07-30 is MARKED COMPLETE in schedImportDaysV1. Preference defaults
+  restored (bodies ON) after the test.
