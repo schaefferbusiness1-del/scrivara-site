@@ -3373,7 +3373,11 @@ function mlsEnsureClinicalChartFn(requestGuard) {
     function actionAllowed() {
       return !guarded || (!!guard.token && Number.isFinite(guard.deadline) && Date.now() < guard.deadline);
     }
-    try { out.url = String(location.href || '').slice(0, 200); out.frame = location.hostname; } catch (e0) {}
+    /* NOT truncated to 200: this url is the only thing that can bind the briefing
+       capture below to the requested appointment, and athenaOne also serves the
+       briefing as appointmentbrief.esp?APPOINTMENTID=<id>, where a long query string
+       pushes the id past 200. A shorter url can only DROP a legitimate frame. */
+    try { out.url = String(location.href || '').slice(0, 600); out.frame = location.hostname; } catch (e0) {}
     function vis(el) { try { var r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (e) { return false; } }
     function txt(el) { return String((el && el.textContent) || '').replace(/\s+/g, ' ').trim(); }
     var BAD = /save|sign|order|delete|discard|remove|void|submit|bill|charge|check\s*-?\s*(in|out)|prescri|refill|dispense|cancel|log\s*out|apptmnt|reschedul/i;
@@ -3389,6 +3393,12 @@ function mlsEnsureClinicalChartFn(requestGuard) {
     }
     out.briefing = !!(out.refreshSeen || examPrep || isBriefingUrl);
     if (!out.briefing) return out;
+    /* The appointment BRIEFING is the ONLY surface that renders "Active Problems";
+       the clinical chart carries the patient banner and does NOT render them (v1.59
+       above). This nudge is about to click AWAY from the briefing, so capture its
+       rendered text FIRST. It travels as its own response field and is never folded
+       into the coverage-bound chart text, so no identity or binding gate sees it. */
+    try { out.briefingText = String((document.body && document.body.innerText) || '').slice(0, 90000); } catch (eBriefText) { out.briefingText = ''; }
     var pick = refresh || chartLink;
     if (pick) {
       if (!actionAllowed()) { out.reason = 'chart-deadline-exceeded'; return out; }
@@ -7268,7 +7278,7 @@ async function mlsSchedDomInline(doc, CFG){
            chart identity; when the exam-prep view is detected, click its read-only
            "REFRESH CHART" / "Chart" control and WAIT for the real patient banner.
            Fails honestly if the clinical chart never loads. Gates untouched. */
-        let ident = null, sawBriefing = false, navClicked = '', clickAt = 0, polls = 0, injFails = 0, noClickRounds = 0, fgByUs = false, identDiag = [], identityFrameResults = [];
+        let ident = null, sawBriefing = false, briefingFrames = [], navClicked = '', clickAt = 0, polls = 0, injFails = 0, noClickRounds = 0, fgByUs = false, identDiag = [], identityFrameResults = [];
         const T0 = Date.now(), BUDGET_MS = Math.max(0, Math.min(52000, chartRequestGuard.deadline - Date.now()));
         /* v1.60: EXPECTED patient - a bare read that follows a search-open (the
            day/month pull pattern) must wait for THAT patient's banner, not accept
@@ -7378,6 +7388,14 @@ async function mlsSchedDomInline(doc, CFG){
           const evs = ((ex && ex.r) || []).map((m) => m && m.result).filter(Boolean);
           const briefingNow = evs.some((v) => v && v.briefing);
           sawBriefing = sawBriefing || briefingNow;
+          /* Retain what each briefing frame rendered BEFORE this round clicked away
+             from it, keyed by frame url, longest per url across polls (the same frame
+             is re-read every poll). NOTHING is selected here: a briefing carries no
+             patient banner by definition - that is the whole reason the reader clicks
+             away from it - so it cannot prove its own identity at this point in the
+             loop. Binding happens ONCE, below, beside the chart-frame binding gates.
+             Bounded so a wedged tab full of frames cannot grow the worker heap. */
+          try { evs.forEach(function (v) { var bt = (v && typeof v.briefingText === 'string') ? v.briefingText : ''; if (!bt) return; var bu = String((v && v.url) || ''); var slot = null; for (var bi = 0; bi < briefingFrames.length; bi++) { if (briefingFrames[bi].u === bu) { slot = briefingFrames[bi]; break; } } if (slot) { if (bt.length > slot.t.length) slot.t = bt; return; } if (briefingFrames.length >= 12) return; briefingFrames.push({ u: bu, t: bt }); }); } catch (eBriefCap) {}
           const clickedNow = evs.find((v) => v && v.clicked);
           if (clickedNow) {
             navClicked = navClicked || clickedNow.clicked; clickAt = Date.now(); noClickRounds = 0;
@@ -7603,7 +7621,44 @@ async function mlsSchedDomInline(doc, CFG){
           if (chartReceiptStrict.complete || exactGlobalIdentity) {
             try { self.__mlsVerifiedReadTarget = { tabId: tab.id, name: want, dob: wantDob, mrn: wantMrn, at: Date.now(), requestId: chartReceiptStrict.requestId }; } catch (eReadLease) {}
           }
-          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
+          /* The appointment briefing is the ONLY Athena surface that renders the
+             problem list, and it carries NO patient banner - which is exactly why the
+             reader has to click away from it. It therefore cannot prove its own
+             identity, so it is bound by PROVENANCE: the frame url must carry the
+             appointment id THIS read was asked for. A frame that additionally proves
+             the patient inside its own text passes the same two doors
+             frameBoundToTarget uses. Everything else is DROPPED and counted - never
+             chosen by length. athenaOne keeps a PREVIOUS patient's frames alive across
+             consecutive pulls (the read-lease note above records it), and on the poll
+             where the nudge fires that stale frame is the fully painted, longer one,
+             so a longest-wins pick would actively prefer the wrong patient. */
+          /* the SAME two url shapes appointmentIdFor (~line 296) already treats as an
+             appointment id: the /appointment/<id> path and the named query parameter.
+             A bare digit match anywhere in the url is deliberately NOT accepted - an
+             8-digit patient id or an epoch could collide with it. */
+          const briefingApptRe = expectedAppointmentId ? new RegExp('(?:/appointment/|(?:appointment|appointmentid|appointment_id|apptid)[=/:])' + expectedAppointmentId + '(?:\\D|$)', 'i') : null;
+          const briefingBound = (briefingFrames || []).filter((f) => {
+            if (!f || !f.t) return false;
+            if (briefingApptRe && briefingApptRe.test(String(f.u || ''))) return true;
+            if (!want || (!wantDob && !wantMrn)) return false;
+            if (!strictNameMatch(f.t, want)) return false;
+            return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
+          });
+          const BRIEFING_CAP = 90000;
+          let briefingMerged = '', briefingUsed = 0, briefingOmitted = 0;
+          briefingBound.slice().sort((a, b) => b.t.length - a.t.length).forEach((f) => {
+            const separator = briefingMerged ? '\n\n===== (next briefing frame) =====\n\n' : '';
+            if (briefingMerged.length + separator.length + f.t.length > BRIEFING_CAP) { briefingOmitted++; return; }
+            briefingMerged += separator + f.t; briefingUsed++;
+          });
+          /* The briefing adds no proof of its own, so it rides out ONLY on a read
+             whose chart identity was exactly proved. Without that proof it is silence,
+             never a guess. briefingDiag is a SIBLING of the response - never inside
+             receipt, whose textChars three separate gates re-check - so that a briefing
+             which never arrived stops looking identical to a patient with no problems. */
+          const briefingShip = exactGlobalIdentity ? briefingMerged : '';
+          const briefingDiag = { offered: (briefingFrames || []).length, bound: briefingBound.length, used: briefingUsed, omitted: briefingOmitted, chars: briefingShip.length, apptScoped: briefingApptRe ? 1 : 0, identityHeld: exactGlobalIdentity ? 1 : 0 };
+          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { chartRespond({ ok: false, error: String((e && e.message) || e) }); }
     })();

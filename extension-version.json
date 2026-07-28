@@ -1,5 +1,5 @@
 {
-  "version": "3.0.26",
+  "version": "3.0.27",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.26 — Finishes 3.0.25. The day-navigation repair is now actually ENFORCED: the one place that acts on a restored schedule date refuses to open an appointment on a day the extension could not confirm, instead of accepting its own echo. Day navigation still reports the day athenaOne is actually showing, reading the selected day tab rather than only the page heading. Reading the open chart identity cannot hang without answering. Two permissions the extension never used (audio capture, offscreen documents) remain removed. Requires Chrome 116+."
+  "notes": "v3.0.27 — Chart history now captures the problem list. athenaOne shows Active Problems on the appointment briefing, but that view carries no patient banner, so the reader has always had to navigate away from it in order to verify identity - and the problem list went with it. The briefing is now read BEFORE that navigation and merged into the chart, while identity verification stays exactly where it was. Requires Chrome 116+."
 }

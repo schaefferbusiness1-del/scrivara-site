@@ -42,15 +42,15 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.26\.zip/.test(download) &&
-  /128d60fae14dc3cf49627c8a29a6729a3fe62910a264a15cc0c5f35334298f24/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.27\.zip/.test(download) &&
+  /af9a4cbeb401b1231e583541f69031dcb4def3088f44defb678d2eefa9a7721e/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 
 /* The page must never name a version other than the one the link serves.
  * It did: the label read "Download MLS Assist v3.0.4" while the href pointed
- * at MLS_Assist_v3.0.26.zip, because the label was hand-maintained and the
+ * at MLS_Assist_v3.0.27.zip, because the label was hand-maintained and the
  * release lane only moved the href, the download attribute and the digest.
  * A reader following the printed instruction to verify the digest would have
  * found a mismatch against the version they thought they were getting.
@@ -70,7 +70,31 @@ assert(/getAttribute\(['"]href['"]\)[\s\S]{0,200}MLS_Assist_v/.test(download),
 assert(!/same bytes as the Web Store build/i.test(download),
   'the page must not assert ZIP/Web-Store byte equality it cannot verify from here');
 const feed = JSON.parse(read('extension-version.json'));
-/* 3.0.26 released 2026-07-27, and it is what makes 3.0.25 real. 3.0.25 taught
+/* 3.0.27 released 2026-07-28: chart history finally captures the PROBLEM LIST.
+   Measured on the owner account for Wed 2026-07-29 (19 appointments): problems
+   stored for 6, meds 0/19, vitals 0/19, and a signed-IN pull wrote ZERO
+   characters while reporting "history 19/19, failures 0" - against charts that
+   hold, on one measured patient, seven active problems over 740 characters.
+
+   Cause: TWO SURFACES. /ax/appointment/<apptId>/briefing carries Active Problems
+   but has NO patient banner (it shows only the provider). The clinical chart has
+   the banner and no Active Problems. mlsEnsureClinicalChartFn deliberately
+   navigates AWAY from the briefing because v1.59 found that without that nudge
+   "the reader returned the provider as the patient and the pull refused
+   everything". So the reader moved toward identity and away from the data, and
+   both halves were individually correct.
+
+   3.0.27 reads the briefing BEFORE that navigation and carries it out as its own
+   response field, merged only at the hand-off to the chart parser. Identity
+   verification is untouched. Notably it does NOT inject a synthetic frame into
+   the read: that design was traced first and REJECTED, because such a frame
+   survives the noise filter, scores into the ranked set, then fails
+   frameBoundToTarget and returns before the merge - so the text never arrives at
+   all, and unboundClinicalFrames !== 0 makes three separate coverage gates
+   refuse the whole read. It would have taken the measured 6-of-19 capture to
+   0-of-19: the v1.59 outcome by another route.
+
+   3.0.26 released 2026-07-27, and it is what makes 3.0.25 real. 3.0.25 taught
    the day driver to declare out.dateUnverified on a surface it cannot read, but
    the ONE place in the whole extension that consumes out.done/out.schedDate did
    not check that flag - so the echo branch still made the guard compare target
@@ -100,7 +124,7 @@ const feed = JSON.parse(read('extension-version.json'));
    3.0.23 2026-07-27 (mlsAppChartIdentity bridge verb for the bidirectional
    follow); 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only delta on the 3.0.0
    core), each loaded and live-verified before its pin move. */
-assert.strictEqual(feed.version, '3.0.26', 'public feed must state the released stable channel exactly');
+assert.strictEqual(feed.version, '3.0.27', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

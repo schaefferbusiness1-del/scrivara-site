@@ -13109,7 +13109,7 @@ function _assistReadChart(patientRef, onStatus){
         identityObserved:r.receipt.identityObserved===true,
         identityVia:String(r.receipt.identityVia||'')
       }:null;
-      resolve({requestId:requestId,text:r.text||'',receipt:receipt,coverageReceipt:receipt,url:r.url||'',opened:!!r.opened,chartName:observed.chartName,chartDob:observed.chartDob,chartMrn:observed.chartMrn,targetPatientId:target.patientId});
+      resolve({requestId:requestId,text:r.text||'',briefingText:String(r.briefingText||''),briefingDiag:(r.briefingDiag&&typeof r.briefingDiag==='object')?{offered:Number(r.briefingDiag.offered||0),bound:Number(r.briefingDiag.bound||0),used:Number(r.briefingDiag.used||0),omitted:Number(r.briefingDiag.omitted||0),chars:Number(r.briefingDiag.chars||0),apptScoped:Number(r.briefingDiag.apptScoped||0),identityHeld:Number(r.briefingDiag.identityHeld||0)}:null,receipt:receipt,coverageReceipt:receipt,url:r.url||'',opened:!!r.opened,chartName:observed.chartName,chartDob:observed.chartDob,chartMrn:observed.chartMrn,targetPatientId:target.patientId});
     }
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
@@ -13118,6 +13118,52 @@ function _assistReadChart(patientRef, onStatus){
     }
   });
 }
+/* The appointment BRIEFING is the only Athena surface that renders "Active Problems",
+   and the reader must click AWAY from it to reach the patient banner that proves
+   identity, so the extension captures the briefing text first and returns it as its
+   OWN field. It is deliberately NOT part of rd.text: rd.text is the coverage-receipted,
+   frame-bound chart text whose exact character count three separate gates re-check
+   (extension receipt textChars, _assistReadChart, verifiedChartCoverage). Combine the
+   two ONLY here, at the hand-off into _parsePatientChart, which is below every gate.
+   This adds no identity proof and loosens no identity check. The combined length is
+   capped at the same 90000 _parsePatientChart enforces, so a large chart can never
+   start throwing because a briefing was appended.
+   rd.briefingText is NOT free-floating text: the extension only ships a briefing frame
+   whose url carries THIS appointment id (or which proves the patient in its own text),
+   and only on a read whose chart identity was exactly proved. A previous patient
+   briefing iframe stays alive in athenaOne across consecutive pulls and is routinely
+   the longer one, so never re-introduce a length-based pick anywhere on this path. */
+function _athenaChartTextForParse(rd){
+  var CAP=90000;
+  var base=String((rd&&rd.text)||'');
+  var brief=String((rd&&rd.briefingText)||'');
+  /* A briefing that never arrived used to look EXACTLY like a patient with no problem
+     list, so every run of this fix would have been undiagnosable. Record the whole path
+     - what the extension offered/bound/shipped and what survived the cap here - keyed by
+     the verified patient, in a bounded log so a 19-appointment day pull keeps every row. */
+  var note={patientId:String((rd&&rd.targetPatientId)||''),extOffered:0,extBound:0,extUsed:0,extOmitted:0,extChars:0,extApptScoped:0,baseChars:base.length,briefChars:brief.length,usedChars:0,dropped:'',at:Date.now()};
+  try{ var bd=rd&&rd.briefingDiag; if(bd&&typeof bd==='object'){ note.extOffered=Number(bd.offered||0); note.extBound=Number(bd.bound||0); note.extUsed=Number(bd.used||0); note.extOmitted=Number(bd.omitted||0); note.extChars=Number(bd.chars||0); note.extApptScoped=Number(bd.apptScoped||0); } }catch(eBriefDiag){}
+  try{ window.__mlsLastBriefingCombine=note; var blog=window.__mlsBriefingCombineLog; if(!Array.isArray(blog)) blog=window.__mlsBriefingCombineLog=[]; blog.push(note); if(blog.length>40) blog.splice(0,blog.length-40); }catch(eBriefNote){}
+  if(!brief.trim()){ note.dropped=brief?'blank':'absent'; return base; }
+  var head='\n\n===== (appointment briefing for the same verified patient) =====\n\n';
+  var room=CAP-base.length-head.length;
+  if(room<200){ note.dropped='no-room'; return base; }
+  var used=brief;
+  if(used.length>room){
+    /* The TOP of a briefing page is navigation chrome and the provider header; the
+       clinical sections render BELOW it. A head slice therefore keeps the one part of
+       the page that is worthless and drops the part being captured, which would be
+       indistinguishable from the shipped defect. Budget from the first clinical section
+       marker instead, and when there is no marker keep the TAIL, never the head. */
+    var mark=used.search(/active problems|problem list|medications|allergies|vitals/i);
+    if(mark>0) used=used.slice(mark);
+    used=used.length>room?(mark>0?used.slice(0,room):used.slice(used.length-room)):used;
+    note.dropped='truncated';
+  }
+  note.usedChars=used.length;
+  return base+head+used;
+}
+try{ window._athenaChartTextForParse=_athenaChartTextForParse; }catch(eChartTextForParse){}
 /* ===== Pull a PATIENT'S CHART/HISTORY from Athena via MLS Assist and SAVE it into the
    patient's MLS record (problems, meds, allergies, running summary) + a history entry.
    Reuses the same Assist read as the schedule pull — no extension change needed.
@@ -13145,7 +13191,7 @@ async function pullPatientChartViaAssist(btn, opts){
     rd=await _assistReadChart(pullTarget, setT);
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
-    var chart=await _parsePatientChart(rd.text);
+    var chart=await _parsePatientChart(_athenaChartTextForParse(rd));
     if(!chart || _athenaChartProfileCoverage(chart).complete!==true){
       setT('Read the page, but all six patient-history sections were not verified. Nothing was saved as a complete pull; keep the exact chart open and retry.','err');
       if(btn){ btn.disabled=false; btn.innerHTML=orig; } return false;
@@ -13424,7 +13470,7 @@ async function _pullAllHistories(appts){
     setT('📥 Refreshing histories from Athena… '+(i+1)+'/'+todo.length+' — '+name);
     try{
       var rd=await _assistReadChart(target, function(){});
-      var chart=await _parsePatientChart(rd.text);
+      var chart=await _parsePatientChart(_athenaChartTextForParse(rd));
       if(chart && _athenaChartProfileCoverage(chart).complete===true){
         var saveRef=_athenaHistoryVerifiedRef(target,rd);
         if(saveRef&&_savePatientChart(saveRef,a,chart)===true)saved++;else failed++;
@@ -23713,6 +23759,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b752';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b753';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

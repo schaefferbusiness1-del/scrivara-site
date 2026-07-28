@@ -20,7 +20,7 @@ const assets = [
   ['feat_mls_b121_pack.js', '20260726p2c4', '20260719p2c3'],
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
-  ['feat_mls_checker.js', '20260727chk3026', '20260727chk3025'],
+  ['feat_mls_checker.js', '20260727chk3027', '20260727chk3026'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
   ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
@@ -57,7 +57,7 @@ for (const [asset, token, retired] of assets) {
   assert(!connect.includes(retired), `${asset} still exposes retired cache token ${retired}`);
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260727chk3026'),
+assert(staging.includes('feat_mls_checker.js?v=20260727chk3027'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');

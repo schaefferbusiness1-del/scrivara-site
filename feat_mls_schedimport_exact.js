@@ -2446,7 +2446,13 @@
     var coverage = verifiedChartCoverage(rd, readStartedAt);
     if (!coverage) return Promise.reject(new Error("chart-coverage-unproven"));
     var aborter = typeof AbortController === "function" ? new AbortController() : null;
-    var parsePromise = Promise.resolve(safe(function () { return window._parsePatientChart(rd.text, { signal: aborter && aborter.signal, deadlineAt: deadlineAt, requestId: requestId }); }, null));
+    /* rd.text is the coverage-receipted chart text and verifiedChartCoverage above
+       already re-checked its exact character count. The appointment briefing text
+       rides on rd.briefingText as its own field and is folded in ONLY here, below
+       every gate, by the one shared combiner. This is the lane the day pull uses. */
+    var parseText = safe(function () { return window._athenaChartTextForParse ? window._athenaChartTextForParse(rd) : String(rd.text || ""); }, null);
+    if (typeof parseText !== "string" || !parseText) parseText = String(rd.text || "");
+    var parsePromise = Promise.resolve(safe(function () { return window._parsePatientChart(parseText, { signal: aborter && aborter.signal, deadlineAt: deadlineAt, requestId: requestId }); }, null));
     return boundedUntil(parsePromise, deadlineAt, "chart-parse-deadline-exceeded", function () { if (aborter) aborter.abort(); }).then(function (chart) {
       var parsedCoverage=safe(function(){return isFn(window._athenaChartProfileCoverage)?window._athenaChartProfileCoverage(chart):null;},null);
       if (!chart || !parsedCoverage || parsedCoverage.complete!==true) throw new Error("clinical-field-coverage-unproven");

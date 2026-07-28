@@ -144,6 +144,7 @@ const tests = [
   'chart-request-deadline-runtime.test.js',
   'patient-chart-parse-abort-runtime.test.js',
   'chart-refresh-merge-runtime.test.js',
+  'briefing-problem-capture-runtime.test.js',
   'provider-day-history-cards-runtime.test.js',
   'full-visit-reader-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
