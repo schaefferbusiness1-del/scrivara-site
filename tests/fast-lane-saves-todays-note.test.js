@@ -76,8 +76,9 @@ function part4() {
   /* ---- 4. site payload + fast-lane wiring (source pins) ---- */
   assert(fv.includes("onlyDate: String(runOpts.onlyDate || '')"), 'cv payload must carry onlyDate');
   assert(fv.includes('function run(onStatus, patientOverride, runOpts)'), 'cv.run accepts opts');
-  assert(si.includes("runForPatient(pToday, function () {}, { onlyDate: todayNoteDay })"), 'fast lane must request the day-scoped read');
-  assert(si.includes('one.todayNoteReason'), 'the scoped read reports honestly');
+  assert(si.includes("runForPatient(tnP, function () {}, { onlyDate: tnDay })"), 'fast lane must request the day-scoped read');
+  assert(si.includes('todayNoteReason'), 'the scoped read reports honestly');
+  assert(si.includes('FULLY AWAITED'), 'the scoped reads must run post-sweep, never racing the batch for the athena tab');
   const skipIdx = si.indexOf('one.visitsSkipped = true');
   const win = si.slice(skipIdx - 300, skipIdx + 300);
   assert(!/parsedVisits|visitCount|persistedVisits/.test(win), 'the skip path must still never fabricate visit evidence');

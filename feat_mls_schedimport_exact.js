@@ -3041,26 +3041,6 @@
           one.visitsComplete = true;
           one.visitsSkipped = true;
           if (one.parsePipelined !== true) one.organizationComplete = one.organized;
-          /* 2026-07-28 owner directive: even with "Full visit notes" off, the
-             pulled day's OWN encounter note still saves — op-notes for that
-             visit depend on it. Day-scoped read: the reader files every other
-             row as index-only and keeps its exact-count gate on the one day.
-             Bounded, honest, and it never fails the patient. */
-          try {
-            var todayNoteDay = normDate(row.scheduleDate || row.date) || "";
-            var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
-            var pToday = todayNoteDay ? safe(function () { return findStorePatient(target.patientId); }, null) : null;
-            if (vpToday && typeof vpToday.runForPatient === "function" && pToday) {
-              var todayNoteCap = new Promise(function (rCap) { (window.__mlsBgSleep ? window.__mlsBgSleep(25000) : new Promise(function (r2) { setTimeout(r2, 25000); })).then(function () { rCap({ ok: false, reason: "today-note-time-cap" }); }); });
-              var todayNoteRes = await Promise.race([
-                Promise.resolve(vpToday.runForPatient(pToday, function () {}, { onlyDate: todayNoteDay })).then(function (r3) { return r3 || { ok: true }; }, function (e3) { return { ok: false, reason: String((e3 && e3.message) || e3).slice(0, 80) }; }),
-                todayNoteCap
-              ]);
-              one.todayNote = todayNoteRes && todayNoteRes.ok === true;
-              if (!one.todayNote) one.todayNoteReason = String((todayNoteRes && todayNoteRes.reason) || "").slice(0, 80);
-            } else if (todayNoteDay) { one.todayNote = false; one.todayNoteReason = "reader-unavailable"; }
-            else { one.todayNote = false; one.todayNoteReason = "no-day-on-row"; }
-          } catch (eTn) { one.todayNote = false; one.todayNoteReason = String((eTn && eTn.message) || eTn).slice(0, 80); }
         } else if (!stopAfterTimeout && (carryProof = visitsProofCarry(target.patientId))) {
           /* si-2.0.0: the fresh chart read just refreshed this patient's index
              and it matches the stamped verified-bodies pass — nothing new to
@@ -3319,6 +3299,33 @@
         }
         if (day) recordHistoryVerdict(day, receipt, rows.length);
       });
+    }
+    /* 2026-07-28 owner directive (post-sweep lane): with "Full visit notes"
+       off, the pulled day's OWN encounter note still saves — op-notes for
+       that visit depend on it. This pass runs AFTER the sweep, sequential
+       and FULLY AWAITED, because a mid-batch scoped read abandoned on a
+       timer keeps DRIVING the athena tab and wrestles the tab-of-record
+       away from the next patient's chart open (measured live 2026-07-28:
+       10 ok, then 11 straight tab-unreachable). cv.run's own 240s timeout
+       bounds each read; failures land on todayNoteReason and never change
+       the pull verdict. */
+    if (pullVisitBodies !== true) {
+      var todayNoteDayById = {};
+      try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = normDate((r && (r.scheduleDate || r.date)) || "") || ""; }); } catch (eMap) {}
+      var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
+      for (var tn = 0; tn < receipt.patients.length; tn++) {
+        var oneTn = receipt.patients[tn];
+        if (!oneTn || oneTn.visitsSkipped !== true) continue;
+        var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
+        var tnId = String(oneTn.patientId || "");
+        var tnP = (tnDay && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
+        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnDay ? "reader-unavailable" : "no-day-on-row"; continue; }
+        try {
+          var tnRes = await vpToday.runForPatient(tnP, function () {}, { onlyDate: tnDay });
+          oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
+          if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
+        } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); }
+      }
     }
     finalizeVerdict();
     /* si-1.9.0 (owner directive 2026-07-22): pulls must COMPLETE during
