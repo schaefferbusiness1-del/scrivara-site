@@ -1,108 +1,85 @@
-# Why chart reads come back `ambiguous`: the identity spine is built, and most rows never get on it
+# MEASURED: identity is NOT why histories are missing. Two hypotheses of mine, both refuted.
 
-**Date:** 2026-07-27 · **Answering the relay's question:** "WHY is identity resolution ambiguous
-at all — the pull starts from an appointment row, so Athena already knows the patient?"
+**Date:** 2026-07-27 · **Method:** extension 3.0.25 installed locally and pong-verified, then the
+real `mlsAppPullSchedule` verb driven against the owner's live athenaOne (Thu 2026-07-30).
+Read-only; no Athena writes.
 
-> **Correction, recorded deliberately.** My first draft of this file blamed the schedule scrape
-> for not collecting `data-appointment-id`, citing `background.js:421-426`. **That was wrong.**
-> Those lines are inside `parseIdentity()`, which parses the **chart banner**, not a schedule
-> row. The real schedule extractor *does* collect appointment ids. The corrected finding below
-> is a different mechanism with a different fix. Keeping the error visible because the
-> mis-attribution is easy to repeat: `parseIdentity` and the schedule scrape both read
-> `data-patient-*` attributes and look nearly identical out of context.
+## The measurement
 
-## The spine exists end to end and is already enforced
+| metric | value |
+|---|---|
+| rows returned | **13** |
+| rows carrying an appointment id | **13 / 13 (100%)** |
+| distinct appointment ids | **13** (0 duplicates), 8-digit |
+| rows carrying a DOB | **13 / 13** |
+| rows whose DOB **passes `validDobProof`** | **13 / 13** (0 rejected), format `NN/NN/NNNN` |
+| rows carrying an MRN | **0 / 13** |
+| rows carrying a provider | **13 / 13** |
+| rows carrying an encounter id | 0 / 13 |
 
-| Step | Location | State |
-|---|---|---|
-| Chart verb accepts an appointment id | `background.js:6992` `mlsAppChartRequest` reads `msg.appointmentId` | present |
-| Enforced as a HARD frame filter | `background.js:778` — `if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(...)) continue;` | present |
-| Rides the write-back lock | `background.js:820`, `1717` `expectedContextKey`, `1752` | present |
-| Row-side reader | `feat_mls_schedimport_exact.js:614` `rowAppointmentId(a)`, 8 aliases | present |
-| Passed on open | `feat_mls_schedimport_exact.js:1869` | present |
-| content.js forwards it | `content.js:342`, `364`, `1878` | present |
-| **DOM extractor collects it per row** | `background.js:4912-4921` — 4 attribute names + an `href` regex fallback | **present** |
-| **Merge preserves and back-fills it** | `mlsMergeSchedule` `copyRow` copies all own props; `rowProofKey` keys on it; the field-merge list at ~`5120` explicitly includes all 4 appointment-id aliases | **present** |
-| **The extension already counts them** | `background.js` — `out.diag.appointmentIdCount = out.appts.filter(a => !!clean(a.appointmentId)).length` | **present** |
+## Hypothesis 1 — REFUTED
 
-Nothing is missing. The spine is well built, and the write-back side already refuses to act on a
-frame whose observed appointment id disagrees.
+*"Rows that exist only in the TEXT schedule reader arrive with no appointment id, so the hard
+frame filter skips silently and identity degrades to a name search."*
 
-## The actual mechanism: two readers, only one of which can carry an id
+**Wrong.** 13 of 13 rows carry an appointment id, all distinct. The text-lane starvation does
+not happen on this surface. The earlier reasoning was sound about the *mechanism* being possible
+(`mlsExtractScheduleFromText` genuinely has zero `appointmentId` references) but it does not
+occur in practice here — the DOM lane covers the day.
 
-`mlsMergeSchedule(domRes, textRes)` unions **two independent** schedule readers:
+## Hypothesis 2 — REFUTED, and it was nearly filed as a one-line bug
 
-- `mlsExtractScheduleFromDom` (`4873`) — reads attributes. **Carries appointment ids.**
-- `mlsExtractScheduleFromText` (`4724`) — reads rendered text. **Zero occurrences of
-  `appointmentId` in the entire function** (verified by count). It structurally cannot carry one.
+*"`feat_mls_schedimport_exact.js:1868` passes `patientDob: ""` hardcoded, throwing away the one
+hard identifier available."*
 
-The merge is deliberately a **union**, and the comment above it says why:
+**Wrong, and correct by design.** Twelve lines above it, `1839`:
 
-> "Athena virtualizes schedule rows. A provider-rich DOM result can be a partial viewport, so
-> union both independently validated readers instead of discarding the alternate."
+```js
+if (proof.dob) { receipt.alreadyProven++; continue; }
+```
 
-That union is correct — it is what stops a virtualized grid from silently importing only the
-painted viewport. But it has an unstated consequence:
+That loop only ever runs for rows **without** a valid DOB. There is no DOB to pass, so `""` is
+right. I nearly shipped a "fix" for a non-bug — the third instrument-lie of the session
+([[the-instrument-lies-first]]).
 
-**A row that exists only in the TEXT lane joins the import with no appointment id.** The
-field-merge back-fill only helps rows the DOM lane *also* saw. Off-viewport rows have no DOM
-counterpart to back-fill from.
+## What the measurement actually proves
 
-## The consequence chain
+The schedule read delivers a **fully identity-proven roster**: every row has a unique appointment
+id *and* a DOB that satisfies `validDobProof`. So `proof.dob` is truthy for all 13, every row is
+counted `alreadyProven`, and **the identity/chart-read loop is never entered at all.**
 
-1. DOM lane sees the painted viewport → those rows carry appointment ids.
-2. Text lane sees the whole day → off-viewport rows are text-only, no appointment id.
-3. Those rows store with `appointmentId: ''`.
-4. `background.js:778`'s filter is guarded by `if (digits(expectedContext.appointmentId) && …)`.
-   With an empty value **the hard filter is skipped entirely** — an absent id looks exactly like
-   "this caller has none to offer."
-5. Identity degrades to matching the chart banner by name / DOB / MRN across up to 13 frames.
-   That is a search, not a lookup.
-6. A search over a set containing near-matches returns `ambiguous`, and the read refuses —
-   correctly, since `_athenaHistoryProofMatches` ends `return dobProof || mrnProof`.
+**Identity resolution cannot be the reason histories are missing, because on this day it does not
+run.** The `ambiguous` refusals seen earlier came from a different call path, not this one.
 
-**The refusal is the guard working. It is refusing because we handed it a weak question.**
+## Where the real defect must be
 
-## Why this fits the owner's numbers
+I conflated two separate stages, and that is the correction that matters:
 
-He reported "only 6 of the idk more then 14", and the Wednesday measurement was **4 of 19 charts
-landed, 15 with no history**. A viewport-sized subset resolving while the rest refuse is exactly
-the shape this mechanism produces. It also explains the inconsistency between runs: how many rows
-the DOM lane catches depends on where the grid happens to be scrolled.
+1. **Identity proof** — binds a schedule row to a patient. Needs DOB or MRN. **Measured working:
+   13/13.**
+2. **History capture** — navigates to each chart and reads its history cards. A *separate*
+   operation with separate failure modes.
 
-**This is a hypothesis with strong code support, not a confirmed measurement.** Labelled as such
-on purpose — see [[the-instrument-lies-first]].
+The owner's complaint ("many patients didn't have a history") is stage 2. The Athena-side
+measurement already established stage 2's data is present and rich: three of the fifteen
+no-history patients each exposed 37-44 populated sections, one with a 20-medication list.
+**Real data, not thin charts — so the loss is in our read or our store, downstream of identity.**
 
-## The one measurement that settles it
+## The next measurement, precisely
 
-The extension **already computes the number**: `diag.appointmentIdCount`. Compare it against the
-total appointment count from a real Visit-lane pull.
+Drive the history read for a **named** appointment id from the 13 and compare three numbers:
+what Athena's chart shows, what the read verb returns, and what lands in the store under
+`<ns>::schedImportIndexV1::<date>`. Whichever gap is non-zero localises the stage. Do NOT infer
+it from a pull's self-report — that is what produced two wrong hypotheses above.
 
-- `appointmentIdCount` ≈ total → hypothesis **refuted**; the loss is downstream of the merge.
-- `appointmentIdCount` ≈ 4-6 out of 19 → hypothesis **confirmed**, and the fix is bounded.
+Note for whoever runs it: the bridge envelope **requires `source: 'mls-app'`** and the reply
+payload is **nested under `resp`**. Omitting either makes every verb look dead; that cost several
+probes tonight before `content.js:146` settled it.
 
-This requires one live pull with the receipt read. No Athena writes; a schedule read is a pure
-DOM scrape of the already-painted grid (see [[signed-out-schedule-pull-works]]).
+## Still true and still worth fixing regardless
 
-## Ranked fix, once measured (NOT bundled into 3.0.25)
-
-1. **Re-run the DOM extractor on every sweep pass and union its ids by row key.** The
-   two-dimensional sweep already scrolls the grid (`maxChanges: 12, maxDelayMs: 15000`), so each
-   pass paints new rows. Harvesting attributes per pass turns "viewport" into "whole day" without
-   inventing anything. Preferred: it uses machinery that already exists and adds no new trust.
-2. **Follow the row's own link** where one exists (`a[href*="appointment"]` is already in the
-   extractor's selector) — no reconstruction at all.
-3. **Name search** — today's behaviour, kept as the last resort and still fail-closed.
-
-Deliberately excluded from 3.0.25: that build is gated green and fixes the day driver reporting a
-day it never read. Bundling an unmeasured structural change into a green build is how a good
-build becomes a bad one.
-
-## Also worth fixing regardless of the outcome
-
-Step 4 is a silent degradation: an empty appointment id skips a patient-safety filter and nothing
-anywhere says so. Whatever the measurement shows, the pull receipt should **state how many rows
-carry a hard appointment identifier and how many will fall back to a name search**, so this can
-never again be invisible. Same family as
-[[driver-echoes-target-defeats-guard]] — a guard that is skipped is indistinguishable from a
-guard that passed.
+An empty appointment id would make the `background.js:778` frame filter skip **silently** — the
+guard is opt-in, so "absent" is indistinguishable from "passed". It happens not to trigger on
+this day, but the pull receipt should still state how many rows carry a hard identifier versus
+will fall back to a name search. Same family as [[driver-echoes-target-defeats-guard]]: a guard
+that is skipped looks exactly like a guard that passed.

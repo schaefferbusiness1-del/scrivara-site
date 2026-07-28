@@ -297,6 +297,7 @@ const tests = [
   'athena-follow-bidirectional-contract.test.js',
   'day-navigation-observes-the-header.test.js',
   'day-pull-lane-convergence.test.js',
+  'b749-incomplete-fixes-finished.test.js',
   'writeback-walkthrough-contract.test.js',
   'idle-logout-knows-athena-work.test.js',
   'session-sliding-refresh-client.test.js',

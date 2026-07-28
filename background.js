@@ -11134,7 +11134,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The requested schedule date was missing after Athena recovery. Nothing was opened.' }); return; }
               var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
               if (regroundX.timeout) { failOpenDeadline('post-recovery date restoration'); return; }
-              var regroundOk = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).some(function (value) { return value.done === true && String(value.schedDate || '') === frozenScheduleDate; });
+              var regroundOk = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).some(function (value) { return value.done === true && value.dateUnverified !== true && String(value.schedDate || '') === frozenScheduleDate; });
               if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'Athena recovered, but the exact requested date could not be restored. No appointment was opened.' }); return; }
             }
           }
