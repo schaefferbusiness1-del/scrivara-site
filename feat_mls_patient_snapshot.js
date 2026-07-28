@@ -42,6 +42,7 @@
       'background:rgba(59,130,246,.16);color:#C9DCD2;border:1px solid rgba(59,130,246,.30);}',
       '#' + POP_ID + ' .mlssnap-pill.alg{background:rgba(220,38,38,.16);color:#fca5a5;border-color:rgba(220,38,38,.34);}',
       '#' + POP_ID + ' .mlssnap-pill.ok{background:rgba(16,185,129,.16);color:#6ee7b7;border-color:rgba(16,185,129,.32);}',
+      '#' + POP_ID + ' .mlssnap-pill.unk{background:rgba(234,179,8,.16);color:#fcd34d;border-color:rgba(234,179,8,.34);}',
       '#' + POP_ID + ' .mlssnap-v{font-weight:600;}',
       '#' + POP_ID + ' .mlssnap-visit{display:flex;gap:8px;padding:5px 0;border-top:1px solid rgba(148,163,184,.12);}',
       '#' + POP_ID + ' .mlssnap-visit:first-of-type{border-top:none;}',
@@ -88,9 +89,18 @@
     return out;
   }
 
+  /* b749: an EMPTY allergy field is NOT a documented NKDA. This returned true
+     for '' , so the popover published a reassuring NKDA pill for every
+     patient whose Athena chart had never been read. Unknown and negative are
+     now separate states, and only real text can be a negative finding. */
   function isNKDA(raw) {
     var t = (raw == null ? '' : String(raw)).trim();
-    return !t || /^(nkda|nka|none|no known (drug )?allerg(y|ies)?|denies|n\/a|na)\.?$/i.test(t);
+    return !!t && /^(nkda|nka|none|no known (drug )?allerg(y|ies)?|denies|n\/a|na)\.?$/i.test(t);
+  }
+  function isUnknownAllergy(raw) { return !String(raw == null ? '' : raw).trim(); }
+  /* A landed Athena chart is proven by the import stamp, never by emptiness. */
+  function chartLanded(p) {
+    try { return !!String((p && p.athenaChartImportedAt) || '').trim(); } catch (e) { return false; }
   }
 
   // Parse "Recent visits:" bullet lines out of the pulled summary text.
@@ -156,6 +166,9 @@
     var age = computeAge(ap.dob);
     var problems = parseList(ap.problems);
     var nkda = isNKDA(ap.allergies);
+    var algUnknown = isUnknownAllergy(ap.allergies);
+    var landed = chartLanded(ap);
+    var unread = landed ? 'None documented in the pulled chart' : 'Not pulled from Athena yet';
     var allergies = nkda ? [] : parseList(ap.allergies);
     var visits = parseRecentVisits(ap.summary);
 
@@ -175,16 +188,17 @@
 
     // allergies
     h += '<div class="mlssnap-sec"><div class="mlssnap-k">Allergies</div>';
-    if (nkda) h += '<span class="mlssnap-pill ok">NKDA</span>';
+    if (algUnknown) h += '<span class="mlssnap-pill unk">' + esc(unread) + '</span>';
+    else if (nkda) h += '<span class="mlssnap-pill ok">NKDA</span>';
     else if (allergies.length) allergies.forEach(function (a) { h += '<span class="mlssnap-pill alg">' + esc(a) + '</span>'; });
-    else h += '<span class="mlssnap-pill ok">NKDA</span>';
+    else h += '<span class="mlssnap-pill alg">' + esc(String(ap.allergies).trim().slice(0, 80)) + '</span>';
     h += '</div>';
 
     // problems
     h += '<div class="mlssnap-sec"><div class="mlssnap-k">Active problems' +
       (problems.length ? ' (' + problems.length + ')' : '') + '</div>';
     if (problems.length) problems.slice(0, 10).forEach(function (p) { h += '<span class="mlssnap-pill">' + esc(p) + '</span>'; });
-    else h += '<span class="mlssnap-v" style="opacity:.6">None on file</span>';
+    else h += '<span class="mlssnap-v" style="opacity:.6">' + esc(unread) + '</span>';
     h += '</div>';
 
     // recent visits

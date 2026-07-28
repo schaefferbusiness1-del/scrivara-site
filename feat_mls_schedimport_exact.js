@@ -1615,8 +1615,93 @@
         });
       }
 
+      /* --------------------------------------------------------------------
+         b749 HONEST COUNTS + REFRESH AFTER PULL.
+         Measured 2026-07-27: the owner tab said 6 patients for Wednesday
+         2026-07-29 while his account store held 19 rows for that day. Two
+         separate holes made that possible:
+           1. loadCalendar can REFUSE to apply its response (the b346
+              newest-wins guard returns {applied:false, discarded:'superseded'}
+              or 'session_changed'). Nothing here ever read that answer, so a
+              tab could keep a pre-pull day list indefinitely.
+           2. Nothing recorded whether the refresh had actually landed, so no
+              surface could tell a backed count from a stale one.
+         Now the refresh is verified and retried, every open surface is
+         re-rendered from the store, and the outcome is receipted per day in
+         window.__mlsDayPullStamp for the label logic to read.
+         The AWAITED path is at most two loadCalendar calls: the suites stub
+         setTimeout to an inert no-op, so anything behind a timer here is
+         strictly fire-and-forget and can never hang a pull. */
+      function siDayCount(day) {
+        return safe(function () {
+          var cal = window._calAppts; if (!Array.isArray(cal)) return null;
+          var n = 0;
+          for (var i = 0; i < cal.length; i++) {
+            var r = cal[i]; if (!r) continue;
+            var k = String(r.appt_date || r.day_local || r.start_at || "").slice(0, 10);
+            if (k === day) n++;
+          }
+          return n;
+        }, null);
+      }
+      function siReadStore() {
+        return Promise.resolve(safe(function () {
+          return isFn(window.loadCalendar) ? window.loadCalendar() : null;
+        }, null)).then(function (r) { return r; }, function () { return null; });
+      }
+      /* Older loadCalendar builds return undefined. Only an explicit
+         applied:false is a PROVEN refusal to apply; unknown is not stale. */
+      function siApplied(r) { return !(r && typeof r === "object" && r.applied === false); }
+      function siStampDays(refreshed) {
+        safe(function () {
+          var sr = (providerResp && providerResp.receipt) || null;
+          /* declaredCountAuthoritative is the extension receipt field that says
+             whether Athena's own day total may be trusted (a multi-provider
+             column count and a legacy header count explicitly may NOT). No
+             authoritative total means the label must hedge, not assert. */
+          var declaredOk = !!(sr && sr.declaredCountAuthoritative === true && isFinite(Number(sr.declaredCount)));
+          var keys = {};
+          if (target) keys[target] = 1;
+          Object.keys(days || {}).forEach(function (k) { if (k) keys[k] = 1; });
+          var stamps = window.__mlsDayPullStamp = window.__mlsDayPullStamp || {};
+          Object.keys(keys).forEach(function (day) {
+            stamps[day] = {
+              completedAt: Date.now(),
+              storeRefreshed: refreshed === true,
+              storeCount: siDayCount(day),
+              declaredTotal: declaredOk ? Number(sr.declaredCount) : null,
+              declaredReason: String((sr && sr.declaredCountReason) || (sr ? "" : "no-schedule-receipt")),
+              parsedCount: (sr && isFinite(Number(sr.parsedCount))) ? Number(sr.parsedCount) : null,
+              expectedCount: (sr && isFinite(Number(sr.expectedCount))) ? Number(sr.expectedCount) : null,
+              attempted: appts.length
+            };
+          });
+        });
+      }
+      /* Every OPEN surface re-reads the store, not just the hero. The calendar
+           grid and check-in strip are the two that render day rows directly;
+           refreshEasy is the one proven safe re-render of the Easy workspace
+           (it refuses to touch an active visit, a recording, or a live pull). */
+      function siRefreshSurfaces() {
+        safe(function () { if (isFn(window.renderCalendar)) window.renderCalendar(); });
+        safe(function () { if (isFn(window.renderCalCheckin)) window.renderCalCheckin(); });
+        safe(function () {
+          var prf = window.__mlsPullRecFix;
+          if (prf && isFn(prf.refreshEasy)) prf.refreshEasy("si-pull-complete");
+        });
+      }
       return chain.then(function () {
-        return Promise.resolve(safe(function () { return isFn(window.loadCalendar) ? window.loadCalendar() : null; })).then(function () {
+        return siReadStore().then(function (first) {
+          if (siApplied(first)) return true;
+          /* A discarded read PROVES our rows are older than this completed
+             pull. Re-read once immediately rather than leaving the tab to
+             state a pre-pull count as fact. */
+          return siReadStore().then(function (second) { return siApplied(second); });
+        }).then(function (refreshed) {
+          siStampDays(refreshed);
+          if (refreshed !== true) {
+            safe(function () { if (isFn(window.toast)) window.toast("Your schedule was saved, but this tab could not reload it \u2014 refresh the page to see every appointment for the day.", "err"); });
+          }
           stampProviders();
           safe(function () { if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); });
           /* FIX 2026-07-01: loadCalendar repopulates _calAppts asynchronously, so a single
@@ -1630,6 +1715,18 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
+          siRefreshSurfaces();
+          [900, 2600].forEach(function (ms) {
+            setTimeout(function () {
+              safe(function () {
+                siReadStore().then(function (r) {
+                  if (!siApplied(r)) return;
+                  siStampDays(true);
+                  siRefreshSurfaces();
+                }, function () {});
+              });
+            }, ms);
+          });
           historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
           return { created: created, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt };
         });
@@ -3802,12 +3899,173 @@
     }, 3000);
   });
 
+  /* ======================================================================
+     cv-1.0.0  ONE GUARDED DAY LANE  (lane convergence 2026-07-27)
+
+     There were THREE day-pull lanes and only one of them was guarded:
+
+       staff-prep (mls-connect ez3)  resolves a canonical provider FIRST,
+         and when that resolve fails it drives athenaOne to the Day view,
+         re-reads the painted grid, re-ingests the canonical roster and
+         retries the resolve ONCE. It then pulls WITH provider + history.
+       selected-day strip (ds-2.0.2) passed NO provider at all, so every
+         pull ran the all-providers branch of scopeProviderRows -- which is
+         all-or-nothing: one unattributed row makes it return rows:[] and
+         import ZERO. On a Day grid with no provider column that is EVERY
+         row (measured live: 400/400 stored rows provider-empty, 17 days).
+       the legacy hero enumeration (ScribeFlow pullScheduleViaAssist) parsed
+         page text and filed rows through _importPulledSchedule, which dates
+         undated rows from whatever the open Athena page happened to print.
+
+     dayPull() is the single entry all three now use. It adds the staff-prep
+     pre-flight and the account provider scope, and then calls pull(). It
+     NEVER weakens pull(): every refusal, receipt and status pull() emits is
+     returned untouched, and the pre-flight is ADVISORY -- it cannot refuse a
+     pull and it never touches complete.
+     ====================================================================== */
+  /* One pre-flight per page lifetime is what absorbs the
+     first-navigation-after-a-reload failure; after that it only runs when a
+     provider scope cannot be resolved, exactly like the staff-prep lane. */
+  var _dayPreflightDone = false;
+  function warmUpDay(date, onStatus) {
+    var day = normDate(date) || "";
+    var say = isFn(onStatus) ? onStatus : function () {};
+    var out = { warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "" };
+    if (!day) { out.reason = "no-date"; return Promise.resolve(out); }
+    say("Opening " + day + " in athenaOne before the pull...", "");
+    return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: day, probe: false }).then(function (nav) {
+      out.navOk = !!(nav && nav.ok !== false);
+      /* observedDay is the EXTENSION SELF-REPORT. On the weekstrip nav path it
+         echoes the requested target, so it is NOT proof the schedule landed.
+         This pre-flight therefore claims nothing about the day: it imports no
+         rows, it stores nothing, and the real pull keeps its own day gates. */
+      out.observedDay = normDate(nav && nav.schedDate) || "";
+      if (!out.navOk) out.reason = String((nav && nav.reason) || "nav-failed");
+      say("Re-reading the athenaOne Day schedule...", "");
+      /* The date rides along so a date-aware read can refuse a wrong surface.
+         Todays reader ignores it; nothing here depends on it being honoured. */
+      return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000, { date: day });
+    }).then(function (r) {
+      out.readOk = !!(r && r.ok === true);
+      if (!out.readOk && !out.reason) out.reason = String((r && r.reason) || "no-read");
+      /* Re-ingesting is idempotent, and the real pull re-ingests its OWN
+         batch-bound reply straight afterwards, so this can never leave an
+         unbound receipt standing in for a bound one. */
+      safe(function () {
+        var roster = window.__mlsProviderRoster;
+        if (out.readOk && roster && isFn(roster.ingestResp)) roster.ingestResp(r);
+        var rec = roster && isFn(roster.getReceipt) ? roster.getReceipt() : null;
+        out.rosterComplete = !!(rec && rec.complete === true);
+      });
+      out.warmed = out.navOk && out.readOk;
+      return out;
+    }, function (err) {
+      out.reason = String((err && err.message) || err || "warmup-failed");
+      return out;
+    });
+  }
+  /* The scope a lane with no provider picker should pull as. Returns a roster
+     ENTRY only when the signed-in clinician is uniquely present in the
+     VERIFIED athenaOne roster; otherwise the string "all". Never a guess, and
+     never a name that the roster cannot resolve. */
+  function accountProviderRequest() {
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (!(roster && isFn(roster.resolve))) return "all";
+    var names = [];
+    /* 1. the explicit "Pulling as" pick, read from its STORE not its chip */
+    safe(function () {
+      if (!isFn(window.uns)) return;
+      var v = localStorage.getItem(window.uns("pullProvider"));
+      if (v && String(v).trim()) names.push(String(v).trim());
+    });
+    /* 2. the signed-in account mapped through the app provider list */
+    safe(function () {
+      var me = window._calMe || null, list = window._calProviders || [];
+      if (!me || me.id == null) return;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && String(list[i].id) === String(me.id) && list[i].name) { names.push(String(list[i].name)); return; }
+      }
+    });
+    safe(function () { var me = window._calMe || null; if (me && me.name) names.push(String(me.name)); });
+    for (var n = 0; n < names.length; n++) {
+      var nm = names[n];
+      var entry = safe(function () { return roster.resolve(nm); }, null);
+      if (entry && entry.name && entry.stableKey) return entry;
+    }
+    return "all";
+  }
+  function _resolveDayScope(scope) {
+    return safe(function () {
+      return resolveProviderRequest(scope, { allowAll: true, requireRosterForAll: false });
+    }, null);
+  }
+  function dayPull(opts) {
+    opts = opts || {};
+    var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    var day = normDate(opts.date) || "";
+    /* No date is not this lane to judge: hand it straight to the engine so its
+        own refusal is the one the clinician reads. */
+    if (!day) return Promise.resolve(pull(opts));
+    var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
+    var scope0 = explicit ? opts.provider : accountProviderRequest();
+    var gate0 = _resolveDayScope(scope0);
+    var needWarm = (_dayPreflightDone !== true) || !(gate0 && gate0.ok === true);
+    var warmed = needWarm ? warmUpDay(day, say) : Promise.resolve({ warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "skipped-already-warm" });
+    return warmed.then(null, function () {
+      return { warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "warmup-threw" };
+    }).then(function (warm) {
+      if (needWarm) _dayPreflightDone = true;
+      /* Re-resolve AFTER the pre-flight: that read is what makes a provider
+         resolvable at all on a first pull after a reload. */
+      var scope = explicit ? opts.provider : accountProviderRequest();
+      var gate = _resolveDayScope(scope);
+      var provider = (gate && gate.ok === true) ? gate.provider : "all";
+      say(provider === "all"
+        ? "Pulling every provider painted on the athenaOne Day grid."
+        : ("Pulling " + day + " as " + String((provider && provider.name) || "") + "."), "");
+      var runOpts = {};
+      for (var k in opts) if (opts.hasOwnProperty(k)) runOpts[k] = opts[k];
+      runOpts.date = day;
+      runOpts.provider = provider;
+      if (runOpts.includeHistory === undefined) runOpts.includeHistory = true;
+      var preflight = {
+        ran: !!needWarm,
+        warmed: !!(warm && warm.warmed),
+        navOk: !!(warm && warm.navOk),
+        readOk: !!(warm && warm.readOk),
+        rosterComplete: !!(warm && warm.rosterComplete),
+        observedDay: String((warm && warm.observedDay) || ""),
+        reason: String((warm && warm.reason) || ""),
+        providerMode: provider === "all" ? "all" : "selected",
+        providerResolved: provider !== "all",
+        scopeSource: explicit ? "caller" : "account"
+      };
+      var inner = pull(runOpts);
+      /* The engine must hand back a settleable receipt. Keep the exact refusal
+         the selected-day strip used to raise for a non-promise engine. */
+      if (!(inner && isFn(inner.then))) {
+        return { ok: false, complete: false, reason: "no-receipt",
+          error: "The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.",
+          preflightReceipt: preflight };
+      }
+      return inner.then(function (res) {
+        safe(function () {
+          if (res && typeof res === "object" && res.preflightReceipt === undefined) res.preflightReceipt = preflight;
+        });
+        return res;
+      });
+    });
+  }
   window.__mlsSI = {
     installed: true,
     version: VERSION,
     asset: "feat_mls_schedimport_exact.js",
     importAppts: importAppts,
     pull: pull,
+    /* cv-1.0.0: the ONE guarded day lane every visible pull owner calls. */
+    dayPull: dayPull,
+    _warmUpDay: warmUpDay,
+    _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
     _maybeResumePull: maybeResumePull,

@@ -2,19 +2,17 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "MLS Assist",
-  "version": "3.0.24",
-  "version_name": "3.0.24+core-sha256:d5da1df33f4825838b5eeedde0e7514263e11b39bd87cd4b206b683cd4e578ec",
+  "version": "3.0.25",
+  "version_name": "3.0.25+core-sha256:e790bc9c2b0b5cb1cf1bba5623ca6f1a826d6633dc31ab0d4005b3e55983f68c",
   "description": "Clinician companion for MLS Scribe and athenaOne. Reads only when requested, drafts notes, and requires review.",
   "permissions": [
     "storage",
-    "audioCapture",
     "tabs",
     "activeTab",
     "scripting",
     "webNavigation",
     "alarms",
-    "system.display",
-    "offscreen"
+    "system.display"
   ],
   "host_permissions": [
     "https://athenanet.athenahealth.com/*",

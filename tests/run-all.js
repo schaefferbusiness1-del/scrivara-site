@@ -295,6 +295,8 @@ const tests = [
   'opnote-room-stage3-contract.test.js',
   'opnote-room-keeps-every-injection-point.test.js',
   'athena-follow-bidirectional-contract.test.js',
+  'day-navigation-observes-the-header.test.js',
+  'day-pull-lane-convergence.test.js',
   'writeback-walkthrough-contract.test.js',
   'idle-logout-knows-athena-work.test.js',
   'session-sliding-refresh-client.test.js',

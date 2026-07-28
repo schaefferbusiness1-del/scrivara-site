@@ -3522,7 +3522,7 @@ async function mlsAthenaGotoDate(target, probe, requestGuard) {
       }
       function fullDateAttr(n) {
         try {
-          var s = [n.getAttribute('data-date'), n.getAttribute('date'), n.getAttribute('value'), n.getAttribute('href'), n.getAttribute('aria-label'), n.getAttribute('title'), n.getAttribute('onclick')].filter(Boolean).join(' ');
+          var s = [n.getAttribute('data-date-value'), n.getAttribute('data-datevalue'), n.getAttribute('data-date'), n.getAttribute('date'), n.getAttribute('value'), n.getAttribute('href'), n.getAttribute('aria-label'), n.getAttribute('title'), n.getAttribute('onclick')].filter(Boolean).join(' ');
           var a = /(20\d{2}|19\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)/.exec(s);
           if (a) { var d1 = mkDate(+a[1], +a[2], +a[3]); if (d1) return d1; }
           var b = /([01]?\d)[-\/]([0-3]?\d)[-\/](20\d{2}|19\d{2})/.exec(s);
@@ -3656,7 +3656,36 @@ async function mlsAthenaGotoDate(target, probe, requestGuard) {
         await new Promise(function (r) { setTimeout(r, 1400); });
         if (!actionAllowed()) return deadlineStop();
         var rf = rangeInfo();
-        out.done = true; out.schedDate = target; out.steps = st || 0;
+        /* Read the day the strip is ACTUALLY showing off the selected tab.
+           hdr() parses prose out of body.innerText and the v26.3 dashboard
+           never prints it, so hdr() alone reports 'no readable date' on the
+           one surface that matters. Measured on the owner account: the
+           selected tab carries an ISO date in data-date-value. */
+        function wsSelectedIso() {
+          var sels = ['.day-tab-container.selected', '.day-tab.selected', '[aria-selected="true"]', '[class*="selected"]', '[class*="active"]'];
+          for (var wsi = 0; wsi < sels.length; wsi++) {
+            var els = [];
+            try { els = Array.prototype.slice.call(cnav.querySelectorAll(sels[wsi])); } catch (eSel) { continue; }
+            for (var wei = 0; wei < els.length; wei++) {
+              var d = fullDateAttr(els[wei]);
+              if (!d) { try { var inner = els[wei].querySelector('[data-date-value],[data-datevalue],[data-date]'); if (inner) d = fullDateAttr(inner); } catch (eIn) {} }
+              if (d) return iso(d);
+            }
+          }
+          return hdr();
+        }
+        var wsObs = wsSelectedIso(); out.steps = st || 0;
+        if (wsObs) {
+          out.schedDate = wsObs; out.done = (wsObs === target);
+          if (!out.done) out.error = 'weekstrip: clicked the day tab but the schedule reads ' + wsObs + ' instead of ' + target;
+        } else {
+          /* Unknown surface: nothing readable. Carrying the requested day
+             forward keeps pulls working where we cannot see, but it is only
+             allowed together with dateUnverified so the claim can never be
+             silent again - the old bug was the echo WITHOUT the flag. */
+          out.schedDate = target; out.done = true; out.dateUnverified = true;
+          out.dateUnverifiedReason = 'weekstrip: clicked the day tab for ' + target + ' but this athenaOne surface prints no readable day - the date was NOT confirmed';
+        }
         out.visibleStart = isFinite(rf.min) ? iso(new Date(rf.min)) : '';
         out.visibleEnd = isFinite(rf.max) ? iso(new Date(rf.max)) : '';
         return out;
@@ -3697,7 +3726,24 @@ async function mlsAthenaGotoDate(target, probe, requestGuard) {
       di.dispatchEvent(new Event('change', { bubbles: true }));
       var keyTypes = ['keydown', 'keypress', 'keyup'];
       for (var kt = 0; kt < keyTypes.length; kt++) { if (!actionAllowed()) return deadlineStop(); di.dispatchEvent(new KeyboardEvent(keyTypes[kt], { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); }
-      out.done = true;
+      /* 3.0.25: this strategy declared success WITHOUT EVER READING THE HEADER
+         BACK, and never set out.schedDate at all. Typing a date into the box and
+         pressing Enter is a REQUEST - athenaOne can reject it, ignore it, or still
+         be re-rendering when we return. done=true with an EMPTY schedDate then
+         failed the app-side date check and surfaced to the doctor as "Athena could
+         not be opened to the requested day" even when the navigation had in fact
+         worked: a false negative on a healthy pull. Read the strip back instead,
+         up to ~6s, and report the day athenaOne is ACTUALLY showing. */
+      var inObs = '';
+      for (var iw = 0; iw < 12; iw++) {
+        if (!actionAllowed()) return deadlineStop();
+        inObs = hdr();
+        if (inObs === target) break;
+        await new Promise(function (r) { setTimeout(r, 500); });
+      }
+      out.schedDate = inObs || '';
+      out.done = (inObs === target);
+      if (!out.done) out.error = 'date input: typed ' + target + ' but the schedule reads ' + (inObs || 'no readable date');
       return out;
     }
     /* arrows: click toward the target, re-reading the header each step */
@@ -7566,17 +7612,35 @@ async function mlsSchedDomInline(doc, CFG){
   /* ---- v1.51: read the OPEN athena chart's identity (for the writeback pre-gate) ---- */
   if (msg.type === 'mlsAssistChartIdentity') {
     (async () => {
+      /* 3.0.25: the identity verb had NO time budget. When executeScript wedged
+         on a mid-navigation frame - or the shadow-DOM fallback never settled -
+         this handler never answered AT ALL. The write-back pre-gate then read an
+         ambiguous SILENCE and surfaced it as "could not confirm the chart", the
+         exact same words a real identity MISMATCH produces, so a stalled read was
+         indistinguishable from a wrong patient. It now always answers, and a
+         timeout says in words that athenaOne did not settle. */
+      var __idSettled = false;
+      var __idBudget = null;
+      var reply = function (r) {
+        if (__idSettled) return;
+        __idSettled = true;
+        if (__idBudget) { try { clearTimeout(__idBudget); } catch (e) {} }
+        try { sendResponse(r); } catch (e) {}
+      };
+      __idBudget = setTimeout(function () {
+        reply({ ok: false, error: 'identity read timed out after 8s - athenaOne did not settle enough to read the chart banner', timedOut: true });
+      }, 8000);
       try {
         const all = await chrome.tabs.query({});
         const tab = await mlsPickAthenaTab(all, { athenaOnly: true }); /* v1.90 unified picker */
-        if (!tab) return sendResponse({ ok: false, error: 'no athena tab' });
+        if (!tab) return reply({ ok: false, error: 'no athena tab' });
         const idr = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsReadChartIdentity });
         let ident = mlsBestIdentityFrom(idr); /* v1.59: banner-preferred */
         /* v1.78/v1.86: shadow-DOM banner fallback (see mlsReadChartIdentityShadow);
            a banner-grade shadow identity also replaces a weak non-banner grep. */
         if (!ident || !ident.name || (ident.score || 0) < 0 || ident.via !== 'banner') { const sI = await mlsShadowIdentityTry(tab.id); if (sI && (!ident || ident.via !== 'banner')) ident = sI; }
-        sendResponse({ ok: true, identity: ident ? { name: ident.name, dob: ident.dob || '', mrn: ident.mrn || '' } : null });
-      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+        reply({ ok: true, identity: ident ? { name: ident.name, dob: ident.dob || '', mrn: ident.mrn || '' } : null });
+      } catch (e) { reply({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
   }

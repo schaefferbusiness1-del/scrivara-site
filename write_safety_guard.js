@@ -173,7 +173,18 @@
   /* ------------------------------------------------------------------ *
    * 3. PRODUCTION TEST/STAGING POLICY                                   *
    * ------------------------------------------------------------------ */
-  var TEST_MARKER_RE = /\[(?:MLS[ _-])?TEST\]|\bSELF-?TEST\b|\bTEST(?:ING)?\s+(?:ONLY|NOTE|CONTENT|WRITE|ENTRY)\b|\bSTAGING\s+(?:ONLY|NOTE|CONTENT)\b|\bDO\s+NOT\s+(?:FILE|SIGN|BILL|TREAT)\b/i;
+  /* 3.0.25 (write audit #33): the former loose alternatives - an unanchored,
+     case-INSENSITIVE TEST(ING)? (ONLY|NOTE|CONTENT|WRITE|ENTRY) and SELF-?TEST -
+     hard-BLOCKED real clinical prose: "recommend testing only if symptoms
+     persist", "self-test glucose", "TNM staging only after biopsy", "do not
+     treat empirically". A blocked write is a refused note, not a warning.
+     Deliberate test content is always MARKED, so match only (a) bracketed or
+     parenthesised markers, case-insensitive, or (b) an ALL-CAPS header at the
+     start of a line, case-SENSITIVE so ordinary sentences can never trip it.
+     opts.isTest stays the explicit signal. TREAT is dropped: it names clinical
+     care, not a records action - "DO NOT TREAT WITH PENICILLIN" is real charting. */
+  var TEST_MARKER_RE = /\[(?:MLS[ _-])?(?:TEST|TESTING|STAGING|DO\s+NOT\s+(?:FILE|SIGN|BILL))\]|\((?:MLS[ _-])?TEST(?:\s+(?:ONLY|PATIENT|NOTE))?\)/i;
+  var TEST_HEADER_RE = /^[ \t>*#-]*(?:MLS[ _-])?TEST(?:ING)?\s+(?:PATIENT|ONLY|NOTE|CONTENT|WRITE|ENTRY)\b|^[ \t>*#-]*STAGING\s+(?:ONLY|NOTE|CONTENT)\b|^[ \t>*#-]*DO\s+NOT\s+(?:FILE|SIGN|BILL)\b/m;
   /* Real clinical directives that must never ride inside TEST content. */
   var CLINICAL_DIRECTIVE_RES = [
     /\b\d+(?:\.\d+)?\s?(?:mg|mcg|g|ml|cc|units?|iu)\b/i,              // dosing
@@ -188,7 +199,7 @@
     /\binject(?:ion|ed)?\s+of\b/i,
     /\b(?:discontinue|stop\s+taking|increase|decrease)\s+\w+/i
   ];
-  function looksLikeTestContent(t) { return TEST_MARKER_RE.test(String(t == null ? '' : t)); }
+  function looksLikeTestContent(t) { var s = String(t == null ? '' : t); return TEST_MARKER_RE.test(s) || TEST_HEADER_RE.test(s); }
   function containsClinicalDirectives(t) {
     var s = String(t == null ? '' : t);
     for (var i = 0; i < CLINICAL_DIRECTIVE_RES.length; i++) if (CLINICAL_DIRECTIVE_RES[i].test(s)) return true;

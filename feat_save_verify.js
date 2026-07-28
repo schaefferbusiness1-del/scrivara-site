@@ -295,7 +295,7 @@
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var css = '' +
-      '#' + STACK_ID + '{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);' +
+      '#' + STACK_ID + '{position:fixed;left:var(--mls-notice-left,50%);top:var(--mls-notice-top,96px);bottom:auto;transform:translateX(-50%);' +
       'z-index:2147483600;display:flex;flex-direction:column;gap:10px;align-items:stretch;' +
       'max-width:min(560px,94vw);width:max-content;pointer-events:none;font-family:inherit;}' +
       '.mls-sv-card{pointer-events:auto;border-radius:12px;padding:13px 16px;color:#fff;' +
@@ -307,7 +307,7 @@
       '.mls-sv-lines{margin-top:3px;opacity:.97;font-size:13px;white-space:pre-line;word-break:break-word;}' +
       '.mls-sv-x{pointer-events:auto;flex:0 0 auto;background:transparent;border:0;color:#fff;opacity:.8;' +
       'cursor:pointer;font-size:16px;line-height:1;padding:0 2px;margin-left:4px;}.mls-sv-x:hover{opacity:1;}' +
-      '@keyframes mlsSvIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}' +
+      '@keyframes mlsSvIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:none;}}' +
       '.mls-sv-verifybtn{display:inline-flex;align-items:center;gap:7px;margin:8px 0;padding:9px 14px;' +
       'border-radius:10px;border:1px solid #204034;background:#204034;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +
       '.mls-sv-verifybtn:hover{background:#1E2B24;}' +
@@ -316,7 +316,7 @@
       '.mls-sv-report b{color:#0d2238;}.mls-sv-report .mls-sv-good{color:#0f6b30;font-weight:700;}' +
       '.mls-sv-report .mls-sv-bad{color:#a5400b;font-weight:700;}.mls-sv-report ul{margin:6px 0 0;padding-left:18px;}' +
       '#' + STACK_ID + ':empty{display:none!important;}' +
-      '@media(max-width:760px){#mlsMobileNoticeShelf>#' + STACK_ID + '{position:static;left:auto;bottom:auto;transform:none;' +
+      '@media(max-width:760px){#mlsMobileNoticeShelf>#' + STACK_ID + '{position:static;left:auto;top:auto;bottom:auto;transform:none;' +
       'z-index:auto;width:100%;max-width:none;display:flex;gap:8px;box-sizing:border-box;}' +
       '#mlsMobileNoticeShelf .mls-sv-card{width:100%;box-sizing:border-box;border-radius:11px;padding:11px 13px;' +
       'font-size:13.5px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.15);}}';
@@ -344,6 +344,7 @@
       s = document.createElement('div'); s.id = STACK_ID; s.setAttribute('aria-label', 'Save verification notices');
       (document.body || document.documentElement).appendChild(s);
     }
+    try { if (typeof window.__mlsSyncNoticeAnchor === 'function') window.__mlsSyncNoticeAnchor(); } catch (e) {}
     return syncStackHost(s);
   }
   function banner(kind, title, lines, opts) {
@@ -370,7 +371,14 @@
       var icon = document.createElement('div'); icon.className = 'mls-sv-icon';
       icon.textContent = kind === 'ok' ? '✓' : kind === 'warn' ? '⚠' : 'ℹ';
       var body = document.createElement('div'); body.className = 'mls-sv-body';
-      var t = document.createElement('div'); t.className = 'mls-sv-title'; t.textContent = title || ''; body.appendChild(t);
+      /* .mls-sv-icon above already renders the status glyph. Six callers also
+         hardcode one at the head of the title, which shipped as "check check
+         Saved & verified: ..." (owner screenshot 2026-07-27). The icon is the
+         single owner of the glyph, so strip a leading one here - one place, and
+         every caller keeps the literal that other modules and suites match. */
+      var t = document.createElement('div'); t.className = 'mls-sv-title';
+      t.textContent = String(title == null ? '' : title).replace(/^[\u2713\u2714\u2705\u26a0\u2139\u274c\ufe0f\s]+/, '');
+      body.appendChild(t);
       if (lines && lines.length) {
         var l = document.createElement('div'); l.className = 'mls-sv-lines';
         l.textContent = Array.isArray(lines) ? lines.join('\n') : String(lines); body.appendChild(l);

@@ -907,7 +907,18 @@
       /* Only Snapshot is relocated off the context bar — see CTX_MOVED. After-visit
          summary and Patient portal stay on the bar, so they are deliberately NOT
          listed here; offering them in both places is the duplication this removes. */
-      { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' }
+      { label: /^snapshot$/i, within: '#patientBar,#mlsCtxBar' },
+      /* #43 (owner 2026-07-27: "stat prep should be available from a tool
+         section"). Day-level op-note prep is offered ONLY on the Staff prep
+         screen (#ez3sPrep "Prep notes", mls-connect.js renderStaff), and that
+         node exists only while that screen is rendered, so it can never be a
+         Tools row - toolsResolve would drop it silently on every other
+         screen. #opPrepSmartBtn is the always-present control the app itself
+         ships for the same entry point (openOpPrepSmart: this patient when
+         one is bound, otherwise the whole scheduled day), so Tools drives
+         THAT node and no handler is duplicated. runControl uses el.click(),
+         and openOpPrepSmart is not trusted-gesture gated. */
+      { id: 'opPrepSmartBtn', as: 'Prep op notes' }
     ] },
     { id: 'practice', label: 'Practice', items: [
       { label: /^schedule$/i, within: '#profileCard' },
@@ -1865,6 +1876,35 @@
 
     wireFolds();
 
+    /* b749 (owner 2026-07-27: "the arrows do not work"). The five chart-section
+       rows are built by __mlsProfCalm (pf2-1.1.0) as direct children of
+       #profileCard, each with its own header BUTTON, its own arrow and its own
+       open class. This shell adopted them as folds and BOTH mechanisms then
+       died on the same row:
+         - our display:none!important on a non-open fold body outspecifies the
+           pf2 rule .pf2-sec.open .pf2-b{display:block} (1,4,1 against 0,3,0,
+           and ours is important), so the pf2 click toggled a class that could
+           no longer reveal anything;
+         - our delegated toggle bails when the click lands on a control that
+           belongs to the block, via e.target.closest("button,a,input,select,
+           textarea") - and a pf2 header IS a button, so that matched every
+           time and .mls-open was never set either.
+       On top of that our ::after drew a chevron beside the pf2 triangle, which
+       is the two arrows the owner is looking at. A block that is ALREADY a
+       disclosure does not need a second one: stand down (see the pf2-sec skip
+       in the adopt loop below) and un-stamp anything an earlier pass claimed,
+       so the fix is self-healing rather than dependent on module load order.
+       aria-expanded is deliberately NOT removed here: pf2 owns that attribute
+       now and this pass must not fight its state. */
+    qsa('.pf2-sec.mls-fold', card).forEach(function (sec) {
+      sec.classList.remove('mls-fold');
+      sec.classList.remove('mls-open');
+      var hd = sec.children[0];
+      if (!hd) return;
+      hd.classList.remove('mls-fold-hd');
+      hd.removeAttribute('role');
+      hd.removeAttribute('tabindex');
+    });
     /* Re-assert the click target on blocks already folded, in case they
        re-rendered their heading since the last pass. */
     qsa('.mls-fold', card).forEach(markFoldHead);
@@ -1874,6 +1914,10 @@
       if (PT_KEEP_OPEN.indexOf(block.id) !== -1) return;
       if (PT_KEEP_OPEN_TEXT.test(foldTitle(block))) return;
       if (block.children.length < 2) return;          /* nothing to fold */
+      /* b749: pf2 rows are already disclosures with their own arrow, their own
+         open class and their own delegated handler. Folding them a second time
+         is what killed both mechanisms and drew the second arrow. */
+      if (block.classList.contains('pf2-sec')) return;
       if (block.classList.contains('mls-fold')) return;
       var title = foldTitle(block);
       if (!title) return;

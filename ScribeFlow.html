@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b747) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b748) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -873,7 +873,7 @@
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
   #opPrepModal.opr-room{ padding:0; }
-  /* b747 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b748 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -884,7 +884,7 @@
   #opPrepModal.opr-room .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b747 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b748 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -957,7 +957,7 @@
      announce itself and then get out of the way. The travel was 80px,
      which reads as a thing thrown up from off-screen; 14px reads as a
      thing settling. pointer-events is deliberately untouched. */
-  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(14px);
+  .toast{position:fixed;top:var(--mls-notice-top,96px);bottom:auto;left:var(--mls-notice-left,50%);transform:translateX(-50%) translateY(-14px);
     background:var(--ink);color:#fff;padding:13px 22px;border-radius:10px;font-size:15px;
     box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;z-index:99999;max-width:90vw;
     transition:transform var(--mls-dur-2) var(--mls-ease-inout),opacity var(--mls-dur-1) linear}
@@ -1383,7 +1383,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b747) ----
+  /* ---- Copilot calm polish (b748) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1577,7 +1577,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b747 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b748 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -2844,7 +2844,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="pullScheduleViaAssist(this)" title="Pulls the day's patients from Athena AND auto-pulls each patient's chart history, saving everything to your account" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📥 Pull today’s patients &amp; their history</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
-        <button onclick="openOpPrepSmart()" title="Draft an operative note from your uploaded op-note templates. If a patient is selected, it preps that patient; otherwise you can prep all scheduled procedures." style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep op note</button>
+        <button id="opPrepSmartBtn" onclick="openOpPrepSmart()" title="Draft an operative note from your uploaded op-note templates. If a patient is selected, it preps that patient; otherwise you can prep all scheduled procedures." style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep op note</button>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
@@ -4589,7 +4589,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b747: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b748: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4707,7 +4707,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b747: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b748: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -4719,7 +4719,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.24.zip" download="MLS_Assist_v3.0.24.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.24 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.25.zip" download="MLS_Assist_v3.0.25.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.25 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -5501,7 +5501,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b747): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b748): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -5589,11 +5589,56 @@ function mlsPlaceMobileNotice(node){
 window.__mlsMobileNoticeShelf=mlsMobileNoticeShelf;
 window.__mlsPlaceMobileNotice=mlsPlaceMobileNotice;
 window.__mlsRefreshMobileNoticeShelf=mlsRefreshMobileNoticeShelf;
+/* ONE anchor for every transient notice, and it is MEASURED.
+   Owner 2026-07-27: "these alerts should come from the top not bottom where
+   they block the bar." The bottom belongs to the Calm Shell dock (#mlsDock,
+   fixed bottom:18px, z-index 920) and its ask panel (#mlsAskResults,
+   bottom:46px, up to ~366px tall). The top belongs to #appHeader (sticky,
+   z-index 60) and the patient banner #mlsCtxBar - measured live at b685,
+   1280x850: #appHeader 1280x82 at y=0, #mlsCtxBar 1180x123 at y=82 - and the
+   standing owner rule keeps that banner visible and minimal. So a notice
+   rests directly BELOW whichever of those reaches lowest, and left of the
+   fixed 236px redesign rail it is centred on the CONTENT column, because
+   body padding does not move a position:fixed child.
+   A full-screen modal covers the header, so while one is open the anchor
+   collapses to the viewport top rather than dropping the notice into the
+   middle of the dialog. */
+function mlsNoticeAnchor(){
+  let low=0,leftPx=null;
+  try{
+    for(const id of ['appHeader','mlsCtxBar','patientBar']){
+      const el=document.getElementById(id); if(!el) continue;
+      const cs=getComputedStyle(el);
+      if(cs.display==='none'||cs.visibility==='hidden'||(+cs.opacity)<0.05) continue;
+      const r=el.getBoundingClientRect();
+      if(r.height>0&&r.bottom>low) low=r.bottom;
+    }
+    if(document.querySelector('.modal-bg.show')) low=0;
+    const rail=document.getElementById('mlsRdNav');
+    if(rail){
+      const rcs=getComputedStyle(rail);
+      if(rcs.position==='fixed'&&rcs.display!=='none'&&rcs.visibility!=='hidden'){
+        const rr=rail.getBoundingClientRect();
+        if(rr.width>0&&rr.left<=1&&rr.right>0) leftPx=rr.right+((window.innerWidth||0)-rr.right)/2;
+      }
+    }
+  }catch(e){}
+  const vh=window.innerHeight||800;
+  return {top:Math.max(12,Math.min(Math.round(low)+10,Math.round(vh*0.45))),left:leftPx==null?null:Math.round(leftPx)};
+}
+function mlsSyncNoticeAnchor(){
+  try{
+    const a=mlsNoticeAnchor(),root=document.documentElement;
+    root.style.setProperty('--mls-notice-top',a.top+'px');
+    root.style.setProperty('--mls-notice-left',a.left==null?'50%':(a.left+'px'));
+  }catch(e){}
+}
+window.__mlsSyncNoticeAnchor=mlsSyncNoticeAnchor;
 let toastT,toastKey='';
 function toast(msg,type){
   const t=document.getElementById('toast'); if(!t)return null;
   const nextType=type||'',nextMsg=String(msg==null?'':msg),nextKey=nextType+'|'+nextMsg;
-  mlsPlaceMobileNotice(t);
+  mlsPlaceMobileNotice(t); mlsSyncNoticeAnchor();
   /* Repeated owner/poll messages must not restart the lifetime forever. */
   if(t.classList.contains('show')&&toastKey===nextKey)return t;
   toastKey=nextKey; t.textContent=nextMsg; t.className='toast show'+(nextType?' '+nextType:'');
@@ -5606,7 +5651,7 @@ function toast(msg,type){
   },4000);
   return t;
 }
-window.addEventListener('resize',()=>{const t=document.getElementById('toast');if(t&&t.classList.contains('show'))mlsPlaceMobileNotice(t);},{passive:true});
+window.addEventListener('resize',()=>{mlsSyncNoticeAnchor();const t=document.getElementById('toast');if(t&&t.classList.contains('show'))mlsPlaceMobileNotice(t);},{passive:true});
 function esc(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
 
 /* =========================================================
@@ -6066,7 +6111,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b747: METHOD-AWARE. The login response now reports every second factor the
+/* b748: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6199,7 +6244,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b747: a texted code completes at its own sibling route; the TOTP and
+    /* b748: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6407,7 +6452,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b747: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b748: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8110,7 +8155,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b747: the restored "Pull full visit notes" Settings option. One stored
+/* b748: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change. */
@@ -8152,7 +8197,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b747: texted-codes card, from the same server truth (/api/me projection). */
+  /* b748: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -12871,7 +12916,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b747: the auto-save commits HERE - the one door that knows the tool
+        /* b748: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13122,7 +13167,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b747: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b748: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -13580,7 +13625,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b747 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b748 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -14473,7 +14518,20 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
+  /* b749 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+     15 of 19 scheduled patients had no landed Athena chart, yet every
+     clinical card still rendered a generic "No ... recorded." line. That is
+     the same sentence a REVIEWED-and-clear chart shows, so the panel was
+     silently claiming a clinical finding it had never read - which is how one
+     patient's history looked duplicated onto everyone else on the day.
+     Nothing has been pulled for this record, so nothing here is a finding. */
+  if(!_athenaChartLanded(p)) return 'No Athena history pulled for this patient yet.';
   return fallback;
+}
+/* A landed Athena chart is proven by the import stamp _savePatientChart
+   writes (p.athenaChartImportedAt) - never by a field merely being empty. */
+function _athenaChartLanded(p){
+  try{ return !!String((p&&p.athenaChartImportedAt)||'').trim(); }catch(e){ return false; }
 }
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
@@ -14504,9 +14562,55 @@ function renderProfile(){
   fieldBody('profMeds',p.meds,_athenaProfileEmptyText(p,'meds','No medications recorded.'));
   fieldBody('profAllergies',p.allergies,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
+  _renderProfUnpulledNotice(p);
   renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
+}
+/* b749: one honest, actionable line above the clinical grid when NOTHING has
+   been read for this patient and the clinician has typed nothing either. It
+   reuses the exact Pull-chart verb the History view owns
+   (pullPatientChartViaAssist), so there is no second pull path to keep in
+   step. Display only; it never writes a record. It disappears the moment any
+   field has content, so manually entered facts are never hidden. */
+function _profClinicalHasContent(p){
+  var keys=['problems','meds','allergies','summary'];
+  for(var i=0;i<keys.length;i++){ if(String((p&&p[keys[i]])||'').trim()) return true; }
+  return false;
+}
+function _profUnpulledEsc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function _renderProfUnpulledNotice(p){
+  try{
+    var card=document.getElementById('profileCard'); if(!card) return;
+    var el=document.getElementById('profUnpulled');
+    var show=!!p&&!_athenaChartLanded(p)&&!_profClinicalHasContent(p);
+    if(!show){ if(el&&el.parentNode) el.parentNode.removeChild(el); return; }
+    var who=_profUnpulledEsc(String((p&&p.name)||'this patient'));
+    var html='<span style="font-weight:700">No Athena history pulled for this patient yet.</span> '+
+      'Problems, medications and allergies below are empty because nothing has been read from Athena for '+who+
+      ' — not because they were reviewed and found clear. Anything you type here is yours and is kept.'+
+      '<button type="button" id="profUnpulledPull" class="btn-ghost" style="margin-left:10px;font-size:13px;padding:6px 12px" '+
+      'title="Open this patient&#39;s chart in your Athena tab, then import their problems, meds, allergies and history">📥 Pull chart from Athena</button>';
+    if(!el){
+      el=document.createElement('div'); el.id='profUnpulled';
+      el.setAttribute('role','status');
+      el.style.cssText='background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:10px 13px;margin:10px 0 2px;font-size:13px;line-height:1.5;color:#7a5a16';
+      var grid=null; try{ grid=card.querySelector?card.querySelector('.prof-grid'):null; }catch(eq){ grid=null; }
+      if(grid&&grid.parentNode) grid.parentNode.insertBefore(el,grid); else card.appendChild(el);
+    }
+    if(el.innerHTML!==html) el.innerHTML=html;
+    var btn=document.getElementById('profUnpulledPull');
+    if(btn&&!btn.__mlsUnpulledWired){
+      btn.__mlsUnpulledWired=1;
+      btn.addEventListener('click',function(){
+        try{ if(typeof pullPatientChartViaAssist==='function') pullPatientChartViaAssist(btn); }catch(ec){}
+      });
+    }
+  }catch(e){}
 }
 /* "At a glance" chips on a patient chart — visits, last visit, last pain — so the
    doctor reads the patient's status in a second when the chart opens. */
@@ -15013,7 +15117,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b747 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b748 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16465,7 +16569,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b747 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b748 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -16756,7 +16860,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b747 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b748 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -17087,7 +17191,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b747 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b748 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -17197,6 +17301,25 @@ function _showAssistInstallBanner(){
    they pre-load as today's patients so the doctor just taps one and records. ===== */
 function pullScheduleViaAssist(btn){
   var setS=function(m,kind){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(kind==='err')?'#ffe0e0':(kind==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } else { try{ toast(m, kind==='err'?'err':''); }catch(e){} } };
+  /* cv-1.0.0 (lane convergence 2026-07-27): this legacy hero enumeration is
+     RETIRED as a lane. When the guarded engine is installed the day is handed
+     to its ONE entry point -- window.__mlsSI.dayPull -- which is the same
+     pre-flight, provider scope, receipts and refusals the selected-day strip
+     and the staff-prep lane use. The body below never runs in that case: it
+     parsed page text and filed rows through _importPulledSchedule, which dates
+     undated rows from whatever the open Athena page happened to print. It stays
+     in place as the ONLY path for a build with no guarded engine, and this
+     function keeps its name and its button keeps its id so every caller that
+     clicks or wraps window.pullScheduleViaAssist still works. */
+  try{
+    var _cvSI=window.__mlsSI;
+    var _cvDay=(typeof _acctTodayKey==='function')?String(_acctTodayKey()||''):'';
+    if(_cvSI && _cvSI.installed!==false && typeof _cvSI.dayPull==='function' && /^\d{4}-\d{2}-\d{2}$/.test(_cvDay)){
+      if(btn){ btn.disabled=true; if(!btn.dataset._t) btn.dataset._t=btn.innerHTML; btn.innerHTML='\u2026 reading Athena'; }
+      var _cvDone=function(){ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||btn.innerHTML; } };
+      return Promise.resolve(_cvSI.dayPull({date:_cvDay,includeHistory:true,onStatus:setS})).then(_cvDone,_cvDone);
+    }
+  }catch(_cv){}
   var ponged=false, tries=0, iv=null;
   function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
   window.addEventListener('message',onPong);
@@ -19473,7 +19596,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b747 (diarization, option A): turn labels ride the USER payload — the one
+  /* b748 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -20169,7 +20292,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b747 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b748 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -20521,7 +20644,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b747 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b748 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -20790,7 +20913,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b747 (audit): op notes save their body to .text, not .soap — every prior
+    /* b748 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -25214,7 +25337,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b747: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b748: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -25349,7 +25472,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b747 — THE LOADING SCREEN MUST ALWAYS END.
+/* b748 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -30055,7 +30178,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b747';
+  window.__MLS_AV='b748';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

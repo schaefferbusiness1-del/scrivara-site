@@ -235,30 +235,58 @@ assert.ok(
    * See tests/review-control-clears-fixed-furniture.test.js. */
   assert.ok(
     /var offscreen = r\.bottom <= 0 \|\| r\.top >= vh;/.test(fn[0]),
-    'the off-screen test must survive — it is the original reason to scroll at all.'
+    'the off-screen test must survive — since b749 it is what decides whether ' +
+    'the doctor is TOLD the control sits further down the page (reviewReachNote).'
   );
   assert.ok(
     /var covered = /.test(fn[0]),
-    'the COVERED test must survive. Without it a control that is on screen but ' +
-    'underneath the floating bubble never earns a scroll, which is the measured ' +
-    'b668 defect: focused, visible, and unclickable by mouse.'
+    'the COVERED test must survive. A control that is on screen but underneath ' +
+    'the floating bubble is unpressable by mouse (measured b668: focused, ' +
+    'visible, 7 of 9 sample points owned by #mlsCopVoiceBtn), so the doctor has ' +
+    'to be told about it in the same words as one below the fold.'
+  );
+  /* PIN REPLACED AT b749, DELIBERATELY, on an owner ruling: "when I click review
+   * and sign it should not scroll me down."
+   *
+   * b666 scrolled because the click had no visible consequence, and b669 kept
+   * that scroll clear of the fixed bubble. Both were fixes for a real defect.
+   * The owner has now ruled the viewport move out entirely, so the scroll is
+   * gone and the VISIBLE EFFECT is carried by the message instead — which is
+   * why the flowToast assertions above are the load-bearing half of this
+   * section now, and why offscreen/covered must still be computed: they decide
+   * whether the doctor is told the control sits further down the page.
+   *
+   * The old pin REQUIRED the conditional scroll to exist, which would have made
+   * the owner instruction unshippable. What replaces it is stronger in the one
+   * direction that still matters: no viewport movement may return to this
+   * handler by accident, and if a scroll is ever reinstated by an owner
+   * decision it must not be block:'nearest' — that parks the control flush
+   * with the viewport bottom, which is the b668 defect. */
+  assert.ok(
+    !/scrollIntoView/.test(fn[0]),
+    'openReviewStep moves the viewport again. The owner ruled on 2026-07-27 that ' +
+    'pressing Review must not scroll the page: the visible effect is the message ' +
+    'plus the focus move, never a jump. A scroll here needs a fresh owner ' +
+    'decision, and it must NOT use block:\'nearest\' — measured b668, 7 of 9 ' +
+    'points across #pushAllEmrBtn were owned by #mlsCopVoiceBtn when it came to ' +
+    'rest flush with the viewport bottom.'
   );
   assert.ok(
-    /if \(\(offscreen \|\| covered\) && send\.scrollIntoView\)/.test(fn[0]),
-    'scrolling must be CONDITIONAL on the control being off-screen OR covered. An ' +
-    'unconditional scroll re-creates the viewport jump the owner rejected on ' +
-    '2026-07-16; dropping either condition re-creates a control the doctor is told ' +
-    'to press and cannot.'
+    !/block: 'nearest'/.test(fn[0]) && !/block: 'center'/.test(fn[0]),
+    'a scroll block position is back in openReviewStep. Nothing in this handler ' +
+    'may position the viewport.'
   );
   assert.ok(
-    /block: 'nearest'/.test(fn[0]) && !/block: 'center'/.test(fn[0]),
-    "scroll must use block:'nearest' — the minimum distance that reveals the " +
-    "control. 'center' drags the page further than needed and is the jump again."
+    /reviewReachNote/.test(fn[0]),
+    'offscreen/covered no longer feed the message. Without that the two tests ' +
+    'above are computed and discarded, and a doctor whose control is below the ' +
+    'fold is back to a click with no visible consequence — the b666 defect, ' +
+    'reintroduced by deleting the scroll without replacing what it communicated.'
   );
   assert.ok(
     /focus\(\{ preventScroll: true \}\)/.test(fn[0]),
-    'focus must keep preventScroll:true, so focus itself never moves the page — ' +
-    'the conditional scroll above is the only thing allowed to.'
+    'focus must keep preventScroll:true. Since b749 NOTHING in this handler may ' +
+    'move the page, and focus is the one remaining call that could.'
   );
 }
 

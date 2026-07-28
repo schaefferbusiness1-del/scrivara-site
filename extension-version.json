@@ -1,5 +1,5 @@
 {
-  "version": "3.0.24",
+  "version": "3.0.25",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.24 — Mac fixes: the popup no longer disappears in fullscreen Chrome on a Mac, microphone-permission messages now include the macOS System Settings step, and a mic blocked at the OS level is reported honestly instead of being retried silently. Requires Chrome 116+."
+  "notes": "v3.0.25 — Day navigation stops guessing. Every strategy that puts athenaOne on a date now reads the schedule header BACK and reports the day athenaOne is actually showing: a pull that landed on the wrong day fails loudly instead of importing it silently, and a day that WAS reached is no longer reported as unreachable. Reading the open chart identity can no longer hang without answering. Two permissions the extension never used (audio capture, offscreen documents) were removed. Requires Chrome 116+."
 }
