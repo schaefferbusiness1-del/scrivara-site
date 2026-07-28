@@ -44,7 +44,7 @@ assert(calpro.split('wireExit()').length - 1 >= 3,
   'wireExit must run after both innerHTML rebuilds');
 
 /* the fix must actually reach a browser: frozen loader token bumped */
-assert(connect.includes('feat_mls_calpro.js?v=20260726cal15'),
-  'calpro loader token must be the bumped 20260726cal15');
+assert(connect.includes('feat_mls_calpro.js?v=20260728cal16'),
+  'calpro loader token must be the bumped 20260728cal16');
 assert(!connect.includes('feat_mls_calpro.js?v=20260722cal14b'),
   'the retired calpro cache token must be unreachable');

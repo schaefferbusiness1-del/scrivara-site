@@ -97,17 +97,21 @@ function manifestFor(indexRows, calAppts) {
 }
 
 // 2. No index (or no match): the appointment id is EMPTY — never the backend
-//    row id. b745 (write-blocker audit #14): the CONSEQUENCE moved — a LIVE
-//    write stays READY with an empty id, because the read-only probe
-//    discovers, verifies, and locks the open encounter and remains the
-//    fail-closed arbiter of every write. What must never change: the id is
-//    never guessed (b438), and a HISTORICAL write (requireExpectedVisit)
-//    still blocks up front with the honest exact-visit reason.
+//    row id. 2026-07-28 (supersedes the b745 stance): a LIVE write with no
+//    nameable encounter now BLOCKS up front — the extension's own predicate
+//    needs an appointment id or a bound encounter id+URL before its probe can
+//    run, so a READY row here promised a write that could only be refused at
+//    check time. The reason must name the missing field and the day-pull
+//    remedy. What must never change: the id is never guessed (b438), and a
+//    HISTORICAL write (requireExpectedVisit) still blocks with the honest
+//    exact-visit reason.
 {
   const manifest = manifestFor(null, [ADAM_ROW]);
   assert.strictEqual(manifest.visit.appointmentId, '', 'without an index match the appointment id must be empty, never the backend row id');
   const note = manifest.rows.find(r => r.id === 'write-note');
-  assert(note && note.capability === 'ready', 'a LIVE write stays probe-bound ready - the probe is the arbiter, not this pre-gate');
+  assert(note && note.capability !== 'ready', 'a LIVE write with no nameable encounter must not paint READY - the extension predicate cannot accept it');
+  assert(/appointment ID/i.test(String(note && note.reason || '')), 'the live block reason must name the missing appointment id');
+  assert(/day pull|Athena schedule/i.test(String(note && note.reason || '')), 'the live block reason must point at the day-pull remedy');
 }
 {
   const ctx = makeContext(null, [ADAM_ROW]);

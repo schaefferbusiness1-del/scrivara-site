@@ -43,7 +43,7 @@
   /* The three retired pills, by canonical id: 'Copilot Voice' (#mlsCopVoiceBtn),
      'MLS Assistant' (#mlsAsstFab), 'Dictate' (#mlsDaDock). Named here so the
      reach story above stays greppable against the real ids. */
-  var HIDDEN_IDS = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock'];
+  var HIDDEN_IDS = ['mlsAsstFab', 'mlsDaDock']; /* 2026-07-28: Copilot Voice retired */
 
   function css() {
     if (D.getElementById(STYLE_ID)) return;

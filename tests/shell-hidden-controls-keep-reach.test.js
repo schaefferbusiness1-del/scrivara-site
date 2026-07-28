@@ -56,6 +56,7 @@ while ((m = TOOLS.exec(shell))) offered.add(m[1]);
 
 /* Hidden on purpose, with no Tools entry needed. Each needs a reason. */
 const EXEMPT = {
+  'mls-ask-btn': '2026-07-28 owner sweep: the dock Ask bar and the dock Copilot are the two owners of ask-your-data; the header button and its Tools row were third and fourth doors to the same room',
   mlsRdNav: 'the redesign rail - the dock replaces it wholesale and reaches every one of its tabs',
   mlsRdRailBtn: 'b730: the mobile burger whose ONLY function is opening mlsRdNav (exempt above) - with the rail gone it opened a scrim over nothing; hiding it removes a dead control, not a feature',
   mlsEz3Head: 'hidden only when :empty; it is a heading, not a control',
@@ -78,13 +79,18 @@ assert.deepStrictEqual(stranded, [],
   '\nHiding a control without a route to it removes a feature. Add it to\n' +
   'TOOLS_SOURCES, or add it to EXEMPT here with the reason it needs no route.');
 
-/* The three that were actually stranded must stay offered - this is the
- * regression the suite was written for. */
-for (const id of ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock']) {
+/* The stranded controls must stay offered - this is the regression the suite
+ * was written for. 2026-07-28: mlsCopVoiceBtn left this list with the feature
+ * itself - the owner retired Copilot Voice entirely (its creators, the b39
+ * inline block and the v2 satellite, are both stood down, so the node never
+ * exists to strand). */
+for (const id of ['mlsAsstFab', 'mlsDaDock']) {
   assert(offered.has(id),
     id + ' lost its Tools entry. Its floating pill is hidden by the shell, so ' +
     'Tools is the only route to it outside the Visit screen.');
 }
+assert(!offered.has('mlsCopVoiceBtn'),
+  'Copilot Voice is retired (2026-07-28 owner order) - a Tools entry for it would be a dead control');
 
 console.log('PASS shell hidden controls keep reach: ' + hidden.size + ' hidden ids, ' +
   Object.keys(EXEMPT).length + ' documented exemptions, 0 stranded');

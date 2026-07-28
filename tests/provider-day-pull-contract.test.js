@@ -30,8 +30,8 @@ assert(!siSource.includes('want.split(/[ ,]/)[0]'), 'provider scope must not use
 assert(!siSource.includes('if (scoped.length) appts = scoped'), 'explicit provider scope must never fall back to all rows');
 assert(calSource.includes('id="\' + PULL_ID + \'"'), 'calendar roster must render a selected-provider pull action');
 assert(calSource.includes('api.pullCalendarSelection'), 'calendar action must route through the verified provider-day pipeline');
-assert(calSource.includes("HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck'"), 'provider-day UI must expose a compact history checkbox');
-assert(calSource.includes("(includeHistory() ? ' checked' : '')"), 'history checkbox must default from the safe default-on preference');
+assert(!calSource.includes('Also pull &amp;amp; verify full history/visits'), '2026-07-28: the calendar history checkbox is retired - a provider-day pull always verifies history');
+assert(calSource.includes('the calendar checkbox for this preference is') && /function includeHistory\(\) \{[\s\S]{0,700}?return true;\s*\}/.test(calSource), '2026-07-28: includeHistory is hard-true and must IGNORE the legacy stored 0 (honoring it would strand opted-out accounts in schedule-only mode with no control left)');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
 assert(loaderSource.includes("feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now())"), 'production loader must use the shared cache-buster for the exact provider/day/month history importer');

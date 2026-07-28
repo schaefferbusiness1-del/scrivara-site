@@ -987,12 +987,29 @@
        patient plus one exact encounter id/URL/date/provider/control before
        anything can execute). The wrong-chart guarantee is unchanged - it was
        never this pre-gate, it is the probe + the execute-time rebinding. */
+    /* 2026-07-28: the LIVE lane painted a row READY that the extension's probe
+       predicate could never accept. The pre-gate above only bound HISTORICAL
+       writes, so a live review with no bound encounter showed a green READY row
+       whose only possible outcome was a refusal at check time. Mirror the
+       extension's own predicate here and say WHICH field is missing plus how to
+       get it, instead of promising a write that cannot happen. */
+    var visitReady = !!visit.visitDate && !!visit.provider &&
+      (!!visit.appointmentId || (!!visit.encounterId && !!visit.encounterUrl));
+    var missingVisit = [];
+    if (!visit.visitDate) missingVisit.push('visit date');
+    if (!visit.provider) missingVisit.push('provider');
+    if (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)) missingVisit.push('appointment ID (or a bound encounter ID and URL)');
+    var liveVisitBlocked = opts.requireExpectedVisit !== true && !visitReady;
+    var liveVisitBlock = liveVisitBlocked
+      ? ('This encounter is not bound yet: the ' + missingVisit.join(' and the ') + (missingVisit.length === 1 ? ' is' : ' are') +
+         ' missing, so MLS cannot name the exact Athena encounter. Pull today\'s Athena schedule binds this encounter - run the day pull, then reopen this review. Nothing is sent and nothing was changed.')
+      : '';
     var exactVisitBlocked = opts.requireExpectedVisit === true &&
       (!visit.visitDate || !visit.provider ||
         (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)));
     var commonBlock = identityBlocked
       ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
-      : (exactVisitBlocked ? 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.' : '');
+      : (exactVisitBlocked ? 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.' : liveVisitBlock);
     /* Orders are always review-only, so missing bridge capabilities never turn
        them into a hidden or misleading executable state. */
     var orderCommonBlock = '';
@@ -1086,11 +1103,61 @@
       '<button type="button" data-mls-teach-start="' + esc(row.id) + '" style="border:1px solid #bfd4c8;background:#f7fbf9;color:#204034;border-radius:8px;padding:5px 8px;font-size:11.5px;font-weight:750;cursor:pointer">' + (learned ? 'Re-teach destination' : 'Teach destination') + '</button>' +
       '<button type="button" data-mls-teach-cancel="' + esc(row.id) + '" style="display:' + ((state === 'connected' || state === 'waiting') ? 'inline-block' : 'none') + ';border:1px solid #d8ddd9;background:#fff;color:#52675c;border-radius:8px;padding:5px 8px;font-size:11.5px;font-weight:700;cursor:pointer">Cancel watcher</button>' +
       '<button type="button" data-mls-teach-clear="' + esc(row.id) + '" style="display:' + (learned ? 'inline-block' : 'none') + ';border:1px solid #d8ddd9;background:#fff;color:#52675c;border-radius:8px;padding:5px 8px;font-size:11.5px;font-weight:700;cursor:pointer">Clear</button>' +
-      '<span data-mls-teach-status="' + esc(row.id) + '" data-state="' + esc(state) + '" style="font-size:11.5px;color:' + color + '"><b>' + esc(state === 'idle' ? 'READY TO TEACH' : state.toUpperCase()) + ':</b> ' + esc(message) + '</span></div>';
+      '<span data-mls-teach-status="' + esc(row.id) + '" data-state="' + esc(state) + '" style="font-size:11.5px;color:' + color + '"><b>' + esc(state === 'idle' ? 'OPTIONAL' : state.toUpperCase()) + ':</b> ' + esc(message) + '</span></div>';
+  }
+  /* 2026-07-28: destination teaching is an expert escape hatch, not a step in
+     the write. It keeps its exact behaviour and call signature (the teaching
+     runtime contract pins teachingHtml(manifest, row)); it is only demoted
+     behind one disclosure so the review reads as note -> check -> confirm. */
+  function advancedTeachingHtml(manifest, row) {
+    var html = teachingHtml(manifest, row);
+    if (!html) return '';
+    return '<details style="margin-top:7px"><summary style="cursor:pointer;font-weight:700;color:#52675c;font-size:11.5px">Advanced</summary>' + html + '</details>';
+  }
+  /* Copy without a clipboard permission prompt where possible; never claim a
+     copy that did not happen. */
+  function unifiedCopyText(text, btn, idleLabel) {
+    var value = S(text);
+    function flash(msg) {
+      if (!btn) return;
+      try {
+        btn.textContent = msg;
+        setTimeout(function () { try { btn.textContent = idleLabel; } catch (e0) {} }, 1400);
+      } catch (e1) {}
+    }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(value).then(function () { flash('Copied'); }, function () { flash('Copy failed'); });
+        return;
+      }
+    } catch (e2) {}
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = value; ta.setAttribute('readonly', 'readonly');
+      ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e3) {}
+      try { ta.remove(); } catch (e4) {}
+      flash(ok ? 'Copied' : 'Copy failed');
+    } catch (e5) { flash('Copy failed'); }
+  }
+  /* 2026-07-28: the green "Athena verified" tick is painted ONLY by a probe that
+     validated, and is cleared by anything that invalidates that probe. It never
+     enables the button - the single enable path stays the probe-ok branch. */
+  function setUnifiedReadyTick(rowId) {
+    try {
+      var ticks = document.querySelectorAll('[data-mls-ready-tick]');
+      for (var i = 0; i < ticks.length; i++) {
+        ticks[i].style.display = (rowId && ticks[i].getAttribute('data-mls-ready-tick') === rowId) ? 'inline-block' : 'none';
+      }
+    } catch (e) {}
   }
   function disableUnifiedGo() {
     var go = document.getElementById('mlsAthenaUnifiedGo'); if (!go) return;
     go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash'); go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id');
+    setUnifiedReadyTick(null);
   }
   function invalidateUnifiedProbeForTeach(state) {
     if (!state || state.closed) return;
@@ -1107,7 +1174,7 @@
     if (status) {
       var color = value === 'captured' ? '#205c43' : ((value === 'failed' || value === 'expired') ? '#8b2525' : '#6d5010');
       status.style.color = color; status.setAttribute('data-state', value);
-      status.innerHTML = '<b>' + esc(value === 'idle' ? 'READY TO TEACH' : value.toUpperCase()) + ':</b> ' + esc(S(current.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: open the destination screen in athenaOne FIRST, then click Teach destination - your next Athena click is captured, never activated.')));
+      status.innerHTML = '<b>' + esc(value === 'idle' ? 'OPTIONAL' : value.toUpperCase()) + ':</b> ' + esc(S(current.message || (learned ? 'Captured and validated for this exact destination.' : 'Optional: open the destination screen in athenaOne FIRST, then click Teach destination - your next Athena click is captured, never activated.')));
     }
   }
   function wireUnifiedTeaching(state, card) {
@@ -1174,11 +1241,11 @@
       try { returnFocus.focus({ preventScroll: true }); } catch (e1) { try { returnFocus.focus(); } catch (e2) {} }
     }, 0);
   }
-  function unifiedStatus(state, message, kind) {
+  function unifiedStatus(state, message, kind, behavior) {
     if (!state || state.closed) return;
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) {}
     if (el) { el.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#205c43' : '#6d5010'); el.textContent = message; }
-    actionSay(state.sourceOpts, message, kind);
+    actionSay(state.sourceOpts, message, kind, behavior);
   }
   function unifiedRecheckButton(state, rowId) {
     /* wf2-1.9.0: read-only re-probe on demand; the button lives inside the
@@ -1229,13 +1296,25 @@
     state.selectedRowId = row.id; state.probe = null; state.probeGeneration += 1;
     var generation = state.probeGeneration;
     if (go) { go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash'); go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id'); go.setAttribute('aria-label', 'Confirm and write disabled while Athena is checked'); }
+    setUnifiedReadyTick(null);
     renderUnifiedContext(state, null);
     unifiedStatus(state, 'Checking the exact Athena patient, encounter, destination, and control read-only for ' + row.label + '...', '');
     var proofOpts = { receiptSessionId: state.manifest.receiptSessionId };
     var priorWrite = row.action === 'sign_encounter' ? findAnyVerifiedWrite(state.manifest.patient, state.manifest.previewHash, proofOpts, row.payload) : null;
-    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Complete Sign & Save directly in Athena. MLS never finalizes an encounter.', 'err'); return; }
+    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Complete Sign & Save directly in Athena. MLS never finalizes an encounter.', 'err'); unifiedRecheckButton(state, row.id); return; }
     var bridgeProbePatient = bridgePatient(state.manifest.patient);
     var taughtDestination = taughtDestinationFor(state.manifest, row);
+    /* 2026-07-28: a first read-only check that has not answered in 25s is a
+       stuck or absent extension, not a slow one - 90s of silent waiting read as
+       a frozen review. Later attempts (auto-open re-probe, manual re-check) keep
+       the long ceiling because a chart is genuinely loading behind them. An
+       interim line at 8s says the wait is normal AND that nothing is sent. */
+    state.probeAttempts = (state.probeAttempts || 0) + 1;
+    var probeTimeoutMs = state.probeAttempts > 1 ? 90000 : 25000;
+    var interimTimer = setTimeout(function () {
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration || state.probe) return;
+      unifiedStatus(state, 'Still checking Athena - nothing is sent.', '', { toast: false });
+    }, 8000);
     bridge('mlsAppAthenaActionV2', {
       mode: 'probe', action: row.action, patient: bridgeProbePatient, expectedPatient: bridgeProbePatient,
       expectedContext: state.manifest.visit, previewHash: state.manifest.previewHash, manifestHash: state.manifest.manifestHash, payload: row.payload,
@@ -1243,7 +1322,8 @@
       noteWriteProof: priorWrite ? priorWrite.noteWriteProof : '', billing: row.payload.billing || null, order: row.payload.order || null,
       rowHash: row.rowHash, taughtDestination: taughtDestination,
       clientOrderId: row.action === 'place_order' ? S(row.payload.order && row.payload.order.clientOrderId).trim() : ''
-    }, 'mlsAppAthenaActionV2Result', 90000).then(function (probe) {
+    }, 'mlsAppAthenaActionV2Result', probeTimeoutMs).then(function (probe) {
+      try { clearTimeout(interimTimer); } catch (eInterim) {}
       if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
       if (!probe || !probe.ok) {
         var probeReason = S(probe && probe.reason);
@@ -1282,11 +1362,11 @@
         return;
       }
       var lock = validatedUnifiedProbe(state.manifest.patient, probe);
-      if (!lock.ok) { unifiedStatus(state, lock.error, 'err'); return; }
+      if (!lock.ok) { unifiedStatus(state, lock.error, 'err'); unifiedRecheckButton(state, row.id); return; }
       var exactWrite = row.action === 'sign_encounter' ? findVerifiedWrite(lock.patient, state.manifest.previewHash, proofOpts, row.payload, lock.context) : null;
-      if (row.action === 'sign_encounter' && (!exactWrite || !exactWrite.noteWriteProof)) { unifiedStatus(state, 'The verified note proof does not match this exact Athena encounter. Sign & Save remains blocked.', 'err'); return; }
+      if (row.action === 'sign_encounter' && (!exactWrite || !exactWrite.noteWriteProof)) { unifiedStatus(state, 'The verified note proof does not match this exact Athena encounter. Sign & Save remains blocked.', 'err'); unifiedRecheckButton(state, row.id); return; }
       var probedClientOrderId = row.action === 'place_order' ? S(probe.clientOrderId).trim() : '';
-      if (row.action === 'place_order' && (S(probe.rowHash).trim() !== row.rowHash || probedClientOrderId !== S(row.payload.order && row.payload.order.clientOrderId).trim())) { unifiedStatus(state, 'The Athena order authorization did not bind this exact immutable row. Nothing was changed.', 'err'); return; }
+      if (row.action === 'place_order' && (S(probe.rowHash).trim() !== row.rowHash || probedClientOrderId !== S(row.payload.order && row.payload.order.clientOrderId).trim())) { unifiedStatus(state, 'The Athena order authorization did not bind this exact immutable row. Nothing was changed.', 'err'); unifiedRecheckButton(state, row.id); return; }
       state.probe = deepFreeze({ rowId: row.id, rowHash: row.rowHash, clientOrderId: probedClientOrderId, manifestHash: state.manifest.manifestHash, token: lock.token, patient: lock.patient, context: lock.context, control: lock.control, rawContext: lock.rawContext, verifiedWrite: exactWrite, taughtDestination: stableClone(taughtDestination), taughtDestinationHash: hashPreview(taughtDestination || {}) });
       renderUnifiedContext(state, lock);
       if (go) {
@@ -1294,6 +1374,7 @@
         go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', UNIFIED_ARIA[row.action]); go.title = UNIFIED_ARIA[row.action] + '. Runs only this selected action.';
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
+      setUnifiedReadyTick(row.id);
       unifiedStatus(state, 'Ready. Review the full payload and exact Athena context, then use the single Confirm & write button. Only ' + row.label + ' will run.', '');
     });
   }
@@ -1305,11 +1386,16 @@
   }
   function renderUnifiedReceipts(state) {
     var host = document.getElementById('mlsAthenaUnifiedReceipt'); if (!host) return;
+    /* 2026-07-28: before anything is attempted every row reported "NOT ATTEMPTED
+       / BLOCKED / MANUAL" in a red-and-amber column that read as a wall of
+       failure for a review where nothing had happened yet. The receipt is an
+       outcome record: it appears only once there IS an outcome. */
+    if (!Object.keys(state.receipts).length) { host.innerHTML = ''; return; }
     var colors = { verified: '#205c43', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c' };
-    host.innerHTML = '<div style="font-weight:800;color:#204034;margin-bottom:6px">Receipt for this immutable manifest</div>' + state.manifest.rows.map(function (row) {
+    host.innerHTML = '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
       var r = receiptStateForRow(state, row), label = S(r.status).toUpperCase();
       return '<div style="border-top:1px solid #e2e8f2;padding:7px 0"><b>' + esc(row.label) + '</b><span style="float:right;color:' + (colors[r.status] || '#52675c') + ';font-weight:800">' + esc(label) + '</span><div style="clear:both;color:#52675c;font-size:12px">' + esc(r.message) + '</div></div>';
-    }).join('');
+    }).join('') + '</div>';
   }
   function resultToUnifiedReceipt(state, row, resp, probe) {
     resp = resp || {}; var status = 'blocked', message = '', verifiedWrite = null;
@@ -1368,6 +1454,7 @@
       state.probe = null;
       renderUnifiedReceipts(state);
       if (go) { go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Confirm & write'; go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash'); go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id'); }
+      setUnifiedReadyTick(null);
       if (cancel) cancel.disabled = false; if (close) close.disabled = false;
       unifiedStatus(state, receipt.message + (state.halted ? ' This manifest is halted because the outcome is uncertain.' : ' No other action ran automatically.'), receipt.status === 'verified' ? 'ok' : 'err');
       if (state.halted) {
@@ -1409,7 +1496,7 @@
         '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#204034">Review complete proposed order</summary>' +
         '<div style="font-size:10.5px;color:#52675c;margin:4px 0">Payload ' + esc(row.payloadHash) + ' | Row ' + esc(row.rowHash) + '</div>' +
         '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow:auto;margin:0;padding:8px;border:1px solid #dbe7e0;border-radius:8px;background:#fff;color:#1f3027;font:11.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>' +
-        '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px">' + esc(row.reason) + '</div>' + acceptHtml + teachingHtml(manifest, row) + '</div>';
+        '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px">' + esc(row.reason) + '</div>' + acceptHtml + advancedTeachingHtml(manifest, row) + '</div>';
     }).join('');
     return '<section data-mls-orders-summary="1" style="border:1px solid #cfded5;border-radius:11px;padding:10px 12px;margin-top:9px;background:#f7fbf9">' +
       '<div style="display:flex;gap:8px;align-items:center"><b style="font-size:14px;color:#204034">Orders proposed for Athena</b><span style="margin-left:auto;font-size:11px;color:#52675c">' + orderRows.length + ' item' + (orderRows.length === 1 ? '' : 's') + '</span></div>' +
@@ -1464,6 +1551,86 @@
       unifiedStatus(unifiedAthenaState, 'Acceptance recorded — "' + S(row.payload.summary).slice(0, 90) + '" is now an accepted reviewed draft and will not be asked again. Placement still happens in Athena, by you.', 'ok');
     }
   }
+  /* -----------------------------------------------------------------------
+     2026-07-28 review rework (owner: the review read as a wall of red for a
+     page where nothing had happened yet, and the note being sent - the one
+     thing a doctor must actually read - was buried under every other row).
+     Two panels: the NOTE on the left as the hero, everything the review can
+     say about it on the right, grouped by what MLS can really do. Nothing
+     about the safety model moves: same rows, same [data-manifest-row]
+     markers, same single radio group, same ONE disabled Confirm & write
+     button whose only enable path is a validated read-only probe.
+     ----------------------------------------------------------------------- */
+  function unifiedOneLine(text) {
+    var one = S(text).replace(/\s+/g, ' ').trim(), stop = one.indexOf('. ');
+    return stop > 0 ? one.slice(0, stop + 1) : one;
+  }
+  function unifiedHashFooter(row) {
+    return 'Payload ' + esc(row.payloadHash) + ' &middot; Row ' + esc(row.rowHash);
+  }
+  function unifiedPayloadDetails(row) {
+    return '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Review full payload and hashes</summary>' +
+      '<div style="font-size:11px;color:#52675c;margin:5px 0">' + unifiedHashFooter(row) + '</div>' +
+      '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;margin:0;padding:9px;border:1px solid #dbe7e0;border-radius:8px;background:#f7fbf9;color:#1f3027;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>';
+  }
+  function unifiedCopyPayloadButton(row) {
+    return '<button type="button" data-mls-copy-payload="' + esc(row.id) + '" style="margin-top:7px;border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy payload</button>';
+  }
+  function unifiedGroupHead(title, color, note) {
+    return '<div style="margin-top:14px"><div style="font-size:12.5px;font-weight:850;color:' + color + '">' + title + '</div>' +
+      (note ? '<div style="font-size:11.5px;color:#52675c;margin-top:2px">' + note + '</div>' : '') + '</div>';
+  }
+  function unifiedReadyRowHtml(manifest, row) {
+    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #cfe0d7;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fff">' +
+      '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">' +
+      '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '" aria-label="Select ' + esc(row.label) + ' for Athena review" style="margin-top:3px">' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#204034">' + esc(row.label) + '</b>' +
+      '<span data-mls-ready-tick="' + esc(row.id) + '" style="display:none;font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">&#10003; Athena verified</span></span>' +
+      '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px">' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
+      unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
+  }
+  function unifiedManualRowHtml(manifest, row) {
+    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #f0d79a;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fffdf5">' +
+      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#6d5010">' + esc(row.label) + '</b>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">YOU FINISH THIS IN ATHENA</span></div>' +
+      '<div style="font-size:12px;color:#6d5010;margin-top:3px">Complete in Athena: ' + esc(row.destination) + '</div>' +
+      '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#6d5010;font-size:11.5px">Why?</summary>' +
+      (row.reason ? '<div style="font-size:12px;color:#52675c;margin-top:4px">' + esc(row.reason) + '</div>' : '') +
+      '<div style="font-size:12px;color:#52675c;margin-top:4px"><b>Consequence:</b> ' + esc(row.consequence) + '</div></details>' +
+      unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + advancedTeachingHtml(manifest, row) + '</section>';
+  }
+  function unifiedBlockedRowHtml(manifest, row) {
+    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #e7c0c0;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fdf7f7">' +
+      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">' + esc(row.label) + '</b>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">CANNOT SEND</span></div>' +
+      (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px">' + esc(row.reason) + '</div>' : '') +
+      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Consequence:</b> ' + esc(row.consequence) + '</div>' +
+      unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + '</section>';
+  }
+  function unifiedNoteHeroHtml(manifest) {
+    var noteRow = unifiedRow(manifest, 'write-note');
+    var who = [S(manifest.patient.name).trim() || '(patient name missing)'];
+    if (manifest.patient.dob) who.push('DOB ' + S(manifest.patient.dob));
+    if (manifest.patient.mrn) who.push('MRN ' + S(manifest.patient.mrn));
+    if (manifest.visit.visitDate) who.push(S(manifest.visit.visitDate));
+    if (manifest.visit.provider) who.push(S(manifest.visit.provider));
+    var open = '<section style="border:1px solid #dce5df;border-radius:12px;padding:14px 15px;background:#fff;min-width:0">' +
+      '<div style="font-size:13.5px;font-weight:850;color:#204034">Sending to: Athena encounter &gt; Encounter note</div>' +
+      '<div style="color:#52675c;font-size:12px;margin-top:3px">' + esc(who.join(' - ')) + '</div>';
+    if (!noteRow) {
+      return open + '<div style="margin-top:12px;padding:13px;border:1px dashed #dbe7e0;border-radius:10px;color:#52675c">This review carries no note text, so nothing will be written to the encounter note.</div></section>';
+    }
+    return open +
+      '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;margin:11px 0 0;padding:13px;border:1px solid #dbe7e0;border-radius:10px;background:#f8fbf9;color:#1f3027;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(S(noteRow.payload.noteText)) + '</pre>' +
+      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
+      '<span style="font-size:11px;color:#52675c">' + unifiedHashFooter(noteRow) + '</span>' +
+      '<button type="button" data-mls-copy-note="' + esc(noteRow.id) + '" style="margin-left:auto;border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy note</button></div></section>';
+  }
+  function unifiedIdentityHtml(manifest) {
+    return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Patient, visit and manifest identity</summary>' +
+      '<div style="display:grid;grid-template-columns:118px 1fr;gap:5px 9px;margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;overflow-wrap:anywhere"><span>Patient</span><b>' + esc(manifest.patient.name || '(missing)') + '</b><span>DOB</span><b>' + esc(manifest.patient.dob || '(missing)') + '</b><span>MRN</span><b>' + esc(manifest.patient.mrn || 'verified from Athena before writing') + '</b><span>MLS patient ID</span><b>' + esc(manifest.patient.patientId || '(missing)') + '</b><span>Expected visit</span><b>' + esc(manifest.visit.visitDate || 'unique encounter must be discovered') + '</b><span>Expected provider</span><b>' + esc(manifest.visit.provider || 'verified from Athena before writing') + '</b><span>Appointment ID</span><b>' + esc(manifest.visit.appointmentId || 'verified from Athena before writing') + '</b><span>Expected encounter</span><b>' + esc(manifest.visit.encounterId || 'verified from Athena before writing') + '</b><span>Manifest</span><b>' + esc(manifest.manifestHash) + '</b></div></details>';
+  }
   function renderUnifiedConfirmation(state) {
     closeActionConfirm();
     try { var oldReceipt = document.getElementById('athenaReceipt'); if (oldReceipt) oldReceipt.remove(); } catch (e0) {}
@@ -1475,33 +1642,30 @@
     var manifest = state.manifest, ready = manifest.rows.filter(function (r) { return r.capability === 'ready' && r.action; });
     var chosen = ready.filter(function (r) { return r.action === state.sourceOpts.preferredAction; })[0] || ready[0] || null;
     var orderRows = manifest.rows.filter(function (row) { return row.payload && row.payload.category === 'order'; });
-    var renderedOrders = false;
-    var rowsHtml = manifest.rows.map(function (row) {
-      if (row.payload && row.payload.category === 'order') {
-        if (renderedOrders) return '';
-        renderedOrders = true;
-        return renderUnifiedOrderSummary(orderRows, manifest);
-      }
-      var selectable = row.capability === 'ready' && row.action;
-      var badgeColor = row.capability === 'ready' ? '#205c43' : (row.capability === 'manual' ? '#7a5a16' : '#8b2525');
-      return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #dce5df;border-radius:11px;padding:11px 12px;margin-top:9px;background:#fff">' +
-        '<div style="display:flex;gap:9px;align-items:flex-start">' + (selectable ? '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '" aria-label="Select ' + esc(row.label) + ' for Athena review" style="margin-top:4px">' : '<span style="width:13px"></span>') +
-        '<div style="flex:1;min-width:0"><div><b>' + esc(row.label) + '</b><span style="float:right;color:' + badgeColor + ';font-size:11px;font-weight:850">' + esc(row.capability.toUpperCase()) + '</span></div>' +
-        '<div style="clear:both;color:#385b49;font-size:12px;margin-top:2px">Destination: ' + esc(row.destination) + '</div>' +
-        (row.reason ? '<div style="color:' + badgeColor + ';font-size:12px;margin-top:5px">' + esc(row.reason) + '</div>' : '') +
-        '<div style="color:#52675c;font-size:12px;margin-top:5px"><b>Consequence:</b> ' + esc(row.consequence) + '</div>' +
-        '<details style="margin-top:7px"><summary style="cursor:pointer;font-weight:750;color:#204034">Review full payload and hashes</summary><div style="font-size:11px;color:#52675c;margin:5px 0">Payload ' + esc(row.payloadHash) + ' | Row ' + esc(row.rowHash) + '</div><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;margin:0;padding:9px;border:1px solid #dbe7e0;border-radius:8px;background:#f7fbf9;color:#1f3027;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>' + teachingHtml(manifest, row) + '</div></div></section>';
-    }).join('');
+    var plainRows = manifest.rows.filter(function (row) { return !(row.payload && row.payload.category === 'order'); });
+    var readyRows = plainRows.filter(function (row) { return row.capability === 'ready' && row.action; });
+    var manualRows = plainRows.filter(function (row) { return row.capability === 'manual'; });
+    var blockedRows = plainRows.filter(function (row) { return row.capability !== 'manual' && !(row.capability === 'ready' && row.action); });
+    var rowsHtml = '';
+    if (readyRows.length) rowsHtml += unifiedGroupHead('MLS can do this', '#205c43', 'Pick one. MLS checks Athena read-only first; nothing is sent until you press Confirm &amp; write.') +
+      readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row); }).join('');
+    if (manualRows.length) rowsHtml += unifiedGroupHead('You finish this in Athena', '#7a5a16', 'The exact payload stays here for you to copy. It never crosses the write bridge.') +
+      manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('');
+    if (orderRows.length) rowsHtml += renderUnifiedOrderSummary(orderRows, manifest);
+    if (blockedRows.length) rowsHtml += unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these. Each one names exactly what is missing.') +
+      blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('');
     var ov = document.createElement('div'); ov.id = 'mlsAthenaUnifiedConfirm';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(10,25,50,.55);display:flex;align-items:center;justify-content:center;padding:18px';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'mlsAthenaUnifiedTitle'); ov.setAttribute('aria-describedby', 'mlsAthenaUnifiedSafety');
-    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(760px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
-    card.innerHTML = '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Review Athena destinations</div><div style="color:#52675c;margin-top:3px">One immutable review. Only reviewed note write and Save Draft can be confirmed here; complete final actions in Athena.</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
-      '<div style="display:grid;grid-template-columns:120px 1fr;gap:5px 9px;margin-top:12px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px"><span>Patient</span><b>' + esc(manifest.patient.name || '(missing)') + '</b><span>DOB</span><b>' + esc(manifest.patient.dob || '(missing)') + '</b><span>MRN</span><b>' + esc(manifest.patient.mrn || 'verified from Athena before writing') + '</b><span>MLS patient ID</span><b>' + esc(manifest.patient.patientId || '(missing)') + '</b><span>Expected visit</span><b>' + esc(manifest.visit.visitDate || 'unique encounter must be discovered') + '</b><span>Expected provider</span><b>' + esc(manifest.visit.provider || 'verified from Athena before writing') + '</b><span>Appointment ID</span><b>' + esc(manifest.visit.appointmentId || 'verified from Athena before writing') + '</b><span>Expected encounter</span><b>' + esc(manifest.visit.encounterId || 'verified from Athena before writing') + '</b><span>Manifest</span><b>' + esc(manifest.manifestHash) + '</b></div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:11px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> Select one READY note row for a read-only check and explicit confirmation. Rows marked MANUAL stay in your hands; complete billing, orders, prescriptions, signature, attestation, and claim submission in Athena.</div>' +
-      rowsHtml + '<div id="mlsAthenaUnifiedContext" style="margin-top:11px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034"><b>Exact Athena encounter:</b> waiting for the read-only check.</div>' +
+    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(1180px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
+    card.innerHTML = '<style>#mlsAthenaUnifiedConfirm .mlswf-two{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:15px;align-items:start;margin-top:12px}#mlsAthenaUnifiedConfirm .mlswf-col{min-width:0}@media (max-width:900px){#mlsAthenaUnifiedConfirm .mlswf-two{grid-template-columns:minmax(0,1fr)}}</style>' +
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Review Athena destinations</div><div style="color:#52675c;margin-top:3px">One immutable review. Only reviewed note write and Save Draft can be confirmed here; complete final actions in Athena.</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      '<div class="mlswf-two"><div class="mlswf-col">' + unifiedNoteHeroHtml(manifest) + '</div><div class="mlswf-col">' +
+      '<div id="mlsAthenaUnifiedContext" style="padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> waiting for the read-only check.</div>' +
       '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Choose one ready action to run its read-only Athena check.</div>' +
-      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px;padding:10px 12px;border:1px solid #e2e8f2;background:#fff;border-radius:10px"></div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> Select one READY note row for a read-only check and explicit confirmation. Rows marked MANUAL stay in your hands; complete billing, orders, prescriptions, signature, attestation, and claim submission in Athena.</div>' +
+      rowsHtml + unifiedIdentityHtml(manifest) +
+      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div></div></div>' +
       '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="flex:1;border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px;font-weight:750;cursor:pointer">Close review</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:11px;font-weight:850;cursor:pointer">Confirm &amp; write</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
@@ -1512,6 +1676,16 @@
     for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
     var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
     for (var abi = 0; abi < acceptBtns.length; abi++) acceptBtns[abi].addEventListener('click', function () { acceptUnifiedSuggestion(state, this.getAttribute('data-mls-accept-order'), this); });
+    var copyPayloadBtns = card.querySelectorAll('[data-mls-copy-payload]');
+    for (var cpi = 0; cpi < copyPayloadBtns.length; cpi++) copyPayloadBtns[cpi].addEventListener('click', function () {
+      var row = unifiedRow(state.manifest, this.getAttribute('data-mls-copy-payload'));
+      if (row) unifiedCopyText(manifestPayloadText(row), this, 'Copy payload');
+    });
+    var copyNoteBtns = card.querySelectorAll('[data-mls-copy-note]');
+    for (var cni = 0; cni < copyNoteBtns.length; cni++) copyNoteBtns[cni].addEventListener('click', function () {
+      var row = unifiedRow(state.manifest, this.getAttribute('data-mls-copy-note'));
+      if (row) unifiedCopyText(S(row.payload.noteText), this, 'Copy note');
+    });
     state.a11yKeyHandler = function (ev) {
       if (state.closed || unifiedAthenaState !== state) return;
       if (ev.key === 'Escape' || ev.key === 'Esc') {

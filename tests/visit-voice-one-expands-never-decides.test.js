@@ -47,7 +47,9 @@ const src = fs.readFileSync(path.join(root, 'feat_mls_visit_voice_one.js'), 'utf
 
 const LANE = ['ez3flCopilotVoice', 'ez3flDictate'];
 const ENGINE = ['ez3QVoice', 'ez3QDictate'];
-const CANON = ['mlsCopVoiceBtn', 'mlsDaDock'];
+/* 2026-07-28 owner order retired Copilot Voice (#mlsCopVoiceBtn); Dictate
+   remains the one canonical voice route the merged chrome must keep. */
+const CANON = ['mlsDaDock'];
 
 [].concat(LANE, ENGINE, CANON).forEach((id) => {
   assert.ok(src.includes("'" + id + "'"),
@@ -55,11 +57,17 @@ const CANON = ['mlsCopVoiceBtn', 'mlsDaDock'];
     'the lane chip, the engine chip and the canonical pill are three different ' +
     'renderings of the same tool and any of them may be the one on screen.');
 });
-['Copilot Voice', 'Dictate'].forEach((label) => {
+/* 2026-07-28: 'Copilot Voice' left this list with the feature - the owner
+   retired it entirely, so a fan option named for it would be a dead control. */
+['Dictate'].forEach((label) => {
   assert.ok(src.includes("label: '" + label + "'"),
     'the option "' + label + '" is gone. The app documents these as ' +
     'different things; the fan must keep them distinguishable BY NAME.');
 });
+assert.ok(!src.includes("label: 'Copilot Voice'"),
+  'a Copilot Voice fan option is back. The owner retired the feature on ' +
+  '2026-07-28 ("completely broken"); its creators are stood down, so this ' +
+  'option could only click a button that never mounts.');
 assert.ok(!/key:\s*'assistant'/.test(src),
   'MLS Assistant is back in the voice menu. The owner removed it on ' +
   '2026-07-26 ("overlapping too much with Copilot"); if it is returning, ' +
@@ -100,11 +108,13 @@ assert.ok(!/pickBest|bestGuess|inferTool|chooseTool/i.test(code),
   'the module appears to choose a tool for the doctor. It must not: Copilot ' +
   'Voice and Dictate are different recognizers writing to different places.');
 {
-  /* two named options must be built, each with its own control list
-     (three became two on the 2026-07-26 owner order above) */
+  /* one named option remains: three became two on the 2026-07-26 owner order
+     (assistant retired), and two became one on 2026-07-28 (Copilot Voice
+     retired entirely - "completely broken"). Dictate is the survivor. */
   const items = src.match(/key:\s*'(voice|assistant|dictate)'/g) || [];
-  assert.strictEqual(items.length, 2,
-    'expected exactly two named options, found ' + items.length);
+  assert.strictEqual(items.length, 1,
+    'expected exactly one named option (dictate), found ' + items.length);
+  assert.ok(/key:\s*'dictate'/.test(src), 'the surviving option must be dictate');
 }
 
 /* ---- 4. a closed control may NEVER hide a hot mic ----------------------- */

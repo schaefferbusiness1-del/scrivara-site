@@ -1462,6 +1462,7 @@
     }
     var arr = Array.isArray(visits) ? visits : [];
     var fullBatch = !!(batchReceipt && batchReceipt.complete === true && batchReceipt.indexComplete === true && batchReceipt.bodyComplete === true && batchReceipt.fullDetail === true && Number(batchReceipt.parsed) === Number(batchReceipt.expected));
+    var scopedRead = !!(batchReceipt && batchReceipt.onlyDate);
     if (arr.some(function (raw) { return !visitIdentityAgrees(p, raw, fullBatch); })) {
       throw new Error('Safety stop — at least one returned visit identifies a different patient. Nothing from this batch was saved. Re-open the correct chart and pull again.');
     }
@@ -1475,7 +1476,11 @@
       });
       if (stored) { saved++; if (onStatus) try { onStatus('Saved visit ' + (stored.date || (i + 1)) + ' (' + (i + 1) + ' of ' + arr.length + ')…'); } catch (e) {} }
     });
-    if (fullBatch && isFn(M().reconcileVerifiedAthenaVisits)) M().reconcileVerifiedAthenaVisits(p.id, arr);
+    /* 2026-07-28 invariant fix: a DAY-SCOPED read (runOpts.onlyDate) returns
+       a complete receipt for ONE day - reconciling it as the verified FULL
+       set would let a one-day slice speak for the whole history. Scoped
+       saves stay additive; only a genuine every-visit batch reconciles. */
+    if (fullBatch && !scopedRead && isFn(M().reconcileVerifiedAthenaVisits)) M().reconcileVerifiedAthenaVisits(p.id, arr);
     return saved;
   }
 

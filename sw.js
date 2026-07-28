@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v187';
+const CACHE = 'mls-v188';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -45,6 +45,7 @@ const PUBLIC_HTML_PATHS = new Set([
 ]);
 
 const RETIRED_ASSET_PATHS = new Set([
+  '/feat_mls_copilot_voice_v2.js','/feat_mls_voice_commands.js','/feat_mls_voice_ai.js','/feat_mls_voice_copilot.js','/feat_mls_voice_ai_micbridge.js',
   'feat_mls_best_doctors.js',
   'feat_mls_review_request.js',
   'legal-connect-ui.js',

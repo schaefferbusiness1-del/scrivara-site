@@ -19,7 +19,7 @@ assert(connect.includes("var ab = $('mlsavsBtn'); if (ab) { ab.click(); }"), 'pa
 
 assert(calendar.includes('id="cpFrom"') && calendar.includes('aria-label="Range start date"'), 'calendar range start needs an exact accessible name');
 assert(calendar.includes('id="cpTo"') && calendar.includes('aria-label="Range end date"'), 'calendar range end needs an exact accessible name');
-assert(connect.includes('feat_mls_calpro.js?v=20260726cal15'), 'the current calendar owner cache key must load the accessible controls');
+assert(connect.includes('feat_mls_calpro.js?v=20260728cal16'), 'the current calendar owner cache key must load the accessible controls');
 assert(production.includes("s.src='mls-connect.js?v='"), 'production must load the current render owner');
 assert(staging.includes("s.src='mls-connect.staging.js?v='+window.__MLS_AV"), 'staging must load its explicitly isolated staging bundle with the deterministic release token');
 assert(!staging.includes("s.src='mls-connect.js?v='+window.__MLS_AV"), 'staging must not silently load the production render owner too');

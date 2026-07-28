@@ -275,7 +275,7 @@
        over the bottom of every screen and all led to the same assistant. One
        Copilot button in the dock replaces them; the mic lives inside the Copilot
        card, which is where a mic belongs. */
-    'body.mls-calm #mlsCopVoiceBtn,body.mls-calm #mlsAsstFab,',
+    'body.mls-calm #mlsAsstFab,',
     'body.mls-calm #mlsDaDock{display:none!important}',
     'body.mls-calm #mls-ask-btn{display:none!important}',
     /* vis-1.0.0 - the Visit screen was 1307px tall before anything below it.
@@ -417,7 +417,7 @@
     'clip-path:inset(50%);white-space:pre-wrap!important;pointer-events:none}',
 
     /* tools menu */
-    '#mlsToolsMenu{position:fixed;z-index:930;min-width:224px;padding:6px;border-radius:16px;',
+    '#mlsToolsMenu{position:fixed;z-index:930;width:min(560px,94vw);padding:10px;border-radius:16px;',
     'background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);',
     'border:1px solid rgba(0,0,0,.07);box-shadow:0 16px 40px rgba(20,35,28,.18);',
     /* Clamped because this menu is built from whatever the live DOM still
@@ -428,7 +428,12 @@
        bound leaves room for the dock underneath. */
     'max-height:calc(100vh - 132px);overflow-y:auto;overscroll-behavior:contain;',
     'transform-origin:bottom left;animation:mlsPop var(--mls-base) var(--mls-spring)}',
-    '#mlsToolsMenu .r{padding:9px 12px;border-radius:11px;font-size:13.5px;color:#1A211C;cursor:pointer}',
+    /* 2026-07-28: windows-style launcher grid - icon above, name below */
+    '#mlsToolsMenu .grp{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:4px}',
+    '#mlsToolsMenu .gh,#mlsToolsMenu .sep{grid-column:1/-1}',
+    '#mlsToolsMenu .r{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;padding:12px 6px 10px;border-radius:12px;font-size:11.5px;line-height:1.25;color:#1A211C;cursor:pointer;text-align:center;min-height:76px}',
+    '#mlsToolsMenu .r .ri{font-size:26px;line-height:1}',
+    '#mlsToolsMenu .r .rn{overflow-wrap:anywhere}',
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
     '#mlsToolsMenu .sep{height:1px;margin:5px 8px;background:rgba(0,0,0,.07)}',
     '#mlsToolsMenu .r.classic{color:#68736B}',
@@ -900,7 +905,6 @@
          Reading the chip handlers is what surfaced this - I had been about to
          fold the chips as duplicates, which would have stranded all three. */
       { id: 'mlsDaDock', as: 'Dictate' },
-      { id: 'mlsCopVoiceBtn', as: 'Copilot Voice' },
       { id: 'mlsAsstFab', as: 'MLS Assistant' },
       /* Relocated off the patient header — see PT_MOVED. */
       { label: /^draft op note$/i, within: '#profileCard' },
@@ -931,7 +935,7 @@
          reached from Patients > New patient.
          askCopilotHdrBtn is deliberately absent: Copilot now has its own dock
          button, and listing it here as well is the duplication we are removing. */
-      { id: 'mls-ask-btn', as: 'Ask your data' },
+      /* 2026-07-28: Ask your data row retired - the dock Ask bar and dock Copilot are the owners. */
       /* "Where pulls run" named a place, not a thing a doctor wants. What they
          are looking for when they open this is whether the pull is happening
          and where - so the row says what it shows. */
@@ -940,7 +944,8 @@
          from the rail tab, so the Tools menu carried a row called Tools that
          went somewhere else - two controls sharing a label for different
          actions, which the labeling law forbids. */
-      { id: 'nav_studio', as: 'AI Studio' },
+      /* 2026-07-28: AI Studio row retired here - it has its own dock destination. */
+      { id: 'mlsAthenaDoctorBtn', as: 'Troubleshoot Athena' },
       /* nav_analysis is KEPT here, relabelled, 2026-07-26. It is no longer a
          destination of its own — showView('analysis') lands on AI Studio with
          Practice open — but the Tools row is the one place a doctor who is
@@ -1178,8 +1183,10 @@
       s.rows.concat(s.tailRows).forEach(function (it) { items[it.i] = it; });
     });
     function row(it) {
-      return '<div class="r" role="menuitem" tabindex="0" data-i="' + it.i + '">' +
-        it.label.replace(/[<>&]/g, '') + '</div>';
+      /* 2026-07-28 owner order: Tools is a windows-style launcher - icon above, name below. Same rows, same data-i indexing, same resolver; only the cell presentation changed. */
+      var nm = it.label.replace(/[<>&]/g, '');
+      var ic = it.icon || ({'Dictate':'🎙️','MLS Assistant':'🤖','Draft op note':'📝','Snapshot':'📸','Prep op notes':'📋','Schedule':'📅','Pre-visit intake forms':'🧾','Templates':'📄','Custom widget':'🧩','Pull activity':'📥','Analysis':'📊','Team':'👥','Staff prep':'👩‍⚕️','Legal requests':'⚖️','Verify saved data':'🛡️','Share / Export':'📤','Export everything for EMR':'💾','Full visit notes':'📖','Copy every visit from athenaOne':'📋','Add a visit':'➕','Settings':'⚙️','Admin':'🔐','Help':'🎓','Troubleshoot Athena':'🩺','Log out':'🚪'})[nm] || '🔧';
+      return '<div class="r" role="menuitem" tabindex="0" data-i="' + it.i + '"><span class="ri" aria-hidden="true">' + ic + '</span><span class="rn">' + nm + '</span></div>';
     }
     menu.innerHTML = sections.map(function (s) {
       var body = s.rows.map(row).join('');
@@ -1188,7 +1195,7 @@
          whole menu: it is an app-level choice like Settings, and a row with no
          section was the last thing left in the flat list. */
       if (s.id === 'app') {
-        body += '<div class="r classic" role="menuitem" tabindex="0" data-classic="1">Classic layout</div>';
+        /* 2026-07-28 owner order: the Classic layout row is gone - it was a one-way door. ?ui=classic stays as the un-advertised recovery path. */
       }
       if (!body && !tail) return '';
       /* Log out is separated from what precedes it, and only when both exist -
@@ -1221,16 +1228,7 @@
 
     qsa('.r', menu).forEach(function (row) {
       row.addEventListener('click', function () {
-        if (row.getAttribute('data-classic')) {
-          safe(function () { localStorage.setItem(STORE_KEY, '0'); });
-          close();
-          teardown();
-          /* Offer the way back in the same gesture. Not inside teardown(),
-             which also runs on the boot error path, where re-offering the
-             shell that just threw would invite a loop. */
-          safe(mountReturn);
-          return;
-        }
+        /* 2026-07-28: data-classic rows no longer render; recovery stays at ?ui=classic. */
         var it = items[parseInt(row.getAttribute('data-i'), 10)];
         close();
         if (!it) return;
@@ -1732,7 +1730,7 @@
      reference: it becomes one quiet line that opens on demand.
      Nothing is removed - every folded block keeps its own heading as the click
      target, so its controls stay one click away and keep their 'panel' reach. */
-  var PT_KEEP_OPEN = ['mlsEpTopBox', 'mlsEpRisksBox', 'mlsEpSummaryBox'];
+  var PT_KEEP_OPEN = ['mlsEpTopBox', 'mlsEpRisksBox', 'mlsEpSummaryBox', 'pf2Quick', 'pf2ExpandAll']; /* 2026-07-28: the quick row and its Expand control are never adoptable folds */
   var PT_KEEP_OPEN_TEXT = /problem list/i;
 
   function foldTitle(block) {

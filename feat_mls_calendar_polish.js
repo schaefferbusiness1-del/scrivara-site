@@ -244,8 +244,13 @@
     return safe(function () { return typeof window.uns === 'function' ? window.uns(HISTORY_PREF) : ''; }, '') || '';
   }
   function includeHistory() {
-    var k = historyPrefKey(); if (!k) return true;
-    return safe(function () { var v = localStorage.getItem(k); return v == null ? true : v !== '0'; }, true);
+    /* 2026-07-28 owner sweep: the calendar checkbox for this preference is
+       gone (one fewer switch; the owner bar is first-pull completeness, so a
+       provider-day pull ALWAYS verifies full history). The legacy stored '0'
+       is deliberately ignored - honoring it would strand any account that
+       ever unchecked the old box in schedule-only mode with no control left
+       to turn it back on. */
+    return true;
   }
   function saveIncludeHistory(on) {
     var k = historyPrefKey(); if (!k) return;
@@ -363,8 +368,8 @@
       html += '<span class="mlsRosChip' + (on ? ' mlsRosOn' : '') + '" data-prov="' + escq(p.fval)
         + '" title="Show only ' + escq(p.name) + '">' + dot + escq(p.name) + '</span>';
     });
-    html += '<label id="' + HISTORY_ID + '" title="When enabled, this pull is complete only after every exact patient has verified organized history and old visits.">'
-      + '<input type="checkbox" id="' + HISTORY_CHECK_ID + '"' + (includeHistory() ? ' checked' : '') + '> Also pull &amp; verify full history/visits</label>';
+    /* 2026-07-28: the history checkbox is retired - a provider-day pull is
+       complete only with verified history, always (includeHistory() above). */
     html += '<button type="button" id="' + PULL_ID + '">Choose a provider to pull</button>';
     html += '<span id="' + PULL_STATUS_ID + '" aria-live="polite"></span>';
     html += '<div id="' + PULL_BAR_ID + '" role="progressbar"><i></i></div>';

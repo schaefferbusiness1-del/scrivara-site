@@ -123,12 +123,18 @@
     { sel: '#visitView #mlsWdDeck .wd-head .wd-btn',
       route: 'dock > Tools > AI Studio (#customWidgetHdrBtn opens the widget builder)',
       why: 'authoring controls on a clinical screen; the widgets themselves stay' },
-    { sel: '#visitView #mlsEz3Body .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2))',
+    { sel: '#visitView #mlsEz3Body:has(#ez3Change) .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2))',
       route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
       why: 'up to twelve same-size chips flat against the state primary. The :not(:has()) is an OWNER ORDER (2026-07-26, "make sure the op notes button is easily accessible"): the row that carries the op-note chip survives the fold' },
-    { sel: '#visitView #mlsEz3Body .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2)',
+    { sel: '#visitView #mlsEz3Body:has(#ez3Change) .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2)',
       route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
       why: 'inside the surviving row, everything except the op-note chip still folds - the exemption is for op notes, not for the row' },
+    { sel: '#visitView #mlsEz3Body:has(#ez3Change) .ez3-toolslbl:has(+ .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2)))',
+      route: 'the same "Visit shortcuts" chip that owns the row underneath (#ez3QToolsToggle / #ez3flToolsToggle) - caption and chips return together',
+      why: 'the fold hid every .ez3-row2 but not the .ez3-toolslbl above it, so three centered divider headings rendered over nothing on every visit' },
+    { sel: '#visitView #mlsEz3Body:has(#ez3Change) #mlsStEzPanel',
+      route: 'the "Visit shortcuts" chip for the tools, the note card document buttons under More tools for documents, and the Smart widgets deck beside the note card for widgets - every item in this panel is a duplicate pointer to one of those three homes',
+      why: 'the panel repeats controls that live elsewhere and its two captions rendered over folded rows; hiding the panel removes the duplicate pointers, never the features' },
     { sel: '#visitView #ez3StyleChips',
       route: 'the "Visit shortcuts" chip already on the visit (#ez3QToolsToggle / #ez3flToolsToggle)',
       why: 'eight note-format chips offered after the note exists, competing with Review & Sign' },
@@ -340,9 +346,18 @@
        two actions away on every visit state. It now stays OUT of the fold: the
        row survives only when it carries the op-note chip, and inside that row
        only the op-note chip is shown. Everything else still folds. */
-    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2)),' +
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body:has(#ez3Change) .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2)),' +
     'body.' + BODY + ':not(.' + TOOLS + ') #visitView #ez3StyleChips{display:none!important}',
-    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2){display:none!important}',
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body:has(#ez3Change) .ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2){display:none!important}',
+    /* 2026-07-28 owner sweep: the fold hid the .ez3-row2 chips but never the
+       .ez3-toolslbl caption above them, so three centered divider headings
+       rendered over nothing. A heading with no content under it is chrome
+       explaining chrome - it folds with its row and returns with it. The
+       :has(#ez3Change) scope on all three rules also repairs a route-less
+       deletion: staff prep renders into the same #mlsEz3Body with no Visit
+       shortcuts chip, so its chips must never fold at all. */
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body:has(#ez3Change) .ez3-toolslbl:has(+ .ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2))){display:none!important}',
+    'body.' + BODY + ':not(.' + TOOLS + ') #visitView #mlsEz3Body:has(#ez3Change) #mlsStEzPanel{display:none!important}',
     /* ...and it is unmissable rather than merely present. Bigger than the quiet
        chips beside it, under the state hero, never competing with it. */
     'body.' + BODY + ' #visitView #ez3Prep,' +

@@ -1,10 +1,9 @@
 /* =============================================================================
- * feat_mls_calpro.js -> window.__mlsCalPro  (cp-1.0.3)
+ * feat_mls_calpro.js -> window.__mlsCalPro  (cp-1.1.0)
  * -----------------------------------------------------------------------------
- * TASK 11 - Calendar & provider APP-SIDE logic (mock-tested; Athena-gated parts
- * stay pluggable and are NOT driven from here). Fully generic: providers come
- * from the backend roster (window._calProviders) - no names/practices/IDs are
- * hardcoded anywhere.
+ * TASK 11 - Calendar & provider APP-SIDE logic. Fully generic: providers come
+ * from the backend roster (window._calProviders) and, for the pull, from the
+ * canonical Athena roster - no names/practices/IDs are hardcoded anywhere.
  *
  * Adds ON TOP of the existing live calendar (single-select #calProvFilter,
  * month/week/day views - audit 2026-07-11 SS10) without editing any base code:
@@ -24,12 +23,12 @@
  *     get a "prep op note" flag chip + a count badge. STATE + UI ONLY here
  *     (op-note drafting itself is owned by another task; nothing is wired
  *     into those files).
- *  5) PULL PLAN with PROGRESS UI for multi-day x multi-provider pulls,
- *     SKIPPED-DATE reporting (empty / error / timeout, with reasons) and
- *     RETRY controls (per-day + retry-all-skipped). The actual pull runner is
- *     PLUGGABLE (setRunner) and defaults to "not connected": live Athena
- *     pulls are certification-gated elsewhere; this module owns only the
- *     app-side state machine and UI, which is what gets mock-tested.
+ *  5) PULL PLAN - ONE CALENDAR MONTH, ONE SQUARE PER DAY, run by the verified
+ *     Athena engine (window.__mlsSI.pullMonth). The provider is one scope for
+ *     the whole run, never a per-day choice. Every day state comes from the
+ *     engine's own receipts: already-pulled days are seeded from
+ *     __mlsSI.authoritativeStatusForDay, and every end state is read off the
+ *     pullMonth result object (complete / retry.dates / systemicReason).
  *
  * Patient safety: read-only over the appointment store; never creates,
  * modifies, signs, or writes anything; every row keeps its own patient's
@@ -49,12 +48,24 @@
  * plan" click (found live in the harness: 62-task month plan survived a
  * switch to a 3-day range). Apply/Full-month now always shows the range
  * list view, so the button's result is visible regardless of prior view.
+ * cp-1.1.0 (2026-07-28, pull-plan rework): the panel was two-dimensional and
+ * ran nothing. It multiplied every planned day by every roster row - 17 of
+ * which carry an empty id - so one month built 527 identical "All providers"
+ * tasks and repainted all 527 on every tick; the pluggable RUNNER it awaited
+ * had exactly one setter and ZERO callers, so Run marked every task "error -
+ * live pull runner not connected", permanently; and the plan happily listed
+ * future days the engine refuses. Replaced by ONE ENTRY PER DATE, one
+ * provider scope for the whole run, and the verified engine
+ * (window.__mlsSI.pullMonth) doing the pulling - same caller shape as the
+ * Staff month pull, including the roster auto-stage-once retry and the
+ * failed-dates-only retry. Nothing about a day is claimed that the engine's
+ * own receipts do not say.
  * ===========================================================================*/
 (function () {
   'use strict';
   if (window.__mlsCalPro && window.__mlsCalPro.installed) return;
 
-  var VERSION = 'cp-1.0.3';
+  var VERSION = 'cp-1.1.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var esc = (typeof window.esc === 'function') ? window.esc
     : function (s) { return S(s).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
@@ -66,12 +77,22 @@
   var SEL = {};              /* provider id (string) -> true; {} = all        */
   var RANGE = null;          /* {from:'YYYY-MM-DD', to:'YYYY-MM-DD'} | null   */
   var VIEW = null;           /* null | 'range' | 'mon' | 'thu'                */
-  var CFG = { timeoutMs: 45000, procRe: /fluoro|inject|\besi\b|\bmbb\b|\brfa\b|nerve\s*block|ablat|epidural|\bproc\b|procedure|surg|arthro|biopsy|aspirat|\bpre[- ]?op\b|\bpost[- ]?op\b/i };
+  var CFG = { procRe: /fluoro|inject|\besi\b|\bmbb\b|\brfa\b|nerve\s*block|ablat|epidural|\bproc\b|procedure|surg|arthro|biopsy|aspirat|\bpre[- ]?op\b|\bpost[- ]?op\b/i };
   var STATE = { installed: true, opPrepFlags: [], lastPanel: null };
-  var PULL = { running: false, plan: [], done: 0, total: 0, startedAt: 0, stopAsk: false };
-  var RUNNER = null;         /* async ({date, providerId, providerName}) ->
-                                {ok:true, found:N} | {ok:true, found:0} |
-                                throws / rejects on error; module adds timeout */
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  /* ONE DIMENSION. days[] holds one entry per calendar date of ONE month:
+     {date, dom, state, note, found}. state is one of
+     pulled | empty | todo | running | failed | future. The provider is a
+     single scope for the WHOLE run (scopeLabel), never a per-day field. */
+  var PULL = {
+    running: false, stopAsk: false,
+    sig: '', month: '', scopeLabel: 'All providers',
+    days: [], index: 0, total: 0, runDates: null,
+    status: '',          /* the engine's own last onStatus line, verbatim     */
+    message: '',         /* end state - only ever read off a result object    */
+    detail: '', systemic: '', systemicText: '', retryDates: []
+  };
 
   function appts() { return (window._calAppts || []); }
   function providers() { return (window._calProviders || []); }
@@ -211,7 +232,7 @@
       '<button id="cpThu" style="' + CSS + '">Thursday procedures</button>' +
       '<button id="cpList" style="' + CSS + '">All in range</button>' +
       '<span id="cpOpPrepBadge" style="display:none;background:#fff4e0;border:1px solid #ecd3a7;color:#7a5410;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:700"></span>' +
-      '<button id="cpPull" style="' + CSS + ';background:#eef4ff" title="Plan a chart pull for the selected providers and dates (progress, skipped days, retries)">Pull plan</button>';
+      '<button id="cpPull" style="' + CSS + ';background:#eef4ff" title="Pull this month of patients from Athena, one day at a time, and retry the days that did not verify">Pull plan</button>';
     if (anchor && anchor.parentElement === card) card.insertBefore(row, anchor); else card.appendChild(row);
     var panel = document.createElement('div');
     panel.id = 'cpPanel';
@@ -238,7 +259,9 @@
     el('cpMon').onclick = function () { VIEW = 'mon'; rerender(); };
     el('cpThu').onclick = function () { VIEW = 'thu'; rerender(); };
     el('cpList').onclick = function () { VIEW = 'range'; rerender(); };
-    el('cpPull').onclick = function () { VIEW = 'pull'; renderPanel(); };
+    /* Opening the panel re-reads the month and the provider scope from
+       scratch: a plan built for a month you have since left is a lie. */
+    el('cpPull').onclick = function () { VIEW = 'pull'; if (!PULL.running) seedDays(true); renderPanel(); };
     renderProvBoxes();
     renderBadge();
     return true;
@@ -336,129 +359,398 @@
     STATE.lastPanel = { view: VIEW, count: rows.length, from: r.from, to: r.to };
   }
 
-  /* ------------------------- pull plan state machine ---------------------- */
-  function daysBetween(from, to) {
-    var out = []; var p = from.split('-');
-    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    for (var i = 0; i < 400; i++) {
-      var iso = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      if (iso > to) break;
-      out.push(iso);
-      d.setDate(d.getDate() + 1);
+  /* ------------------------- month pull: one day, one square ---------------
+     The engine is the only thing that pulls. This module owns the month
+     model, the squares, and the honest reading of what came back. It never
+     invents a day state: a square is green only because
+     __mlsSI.authoritativeStatusForDay said available, or because the
+     pullMonth result said that day was complete. */
+  function SI() { try { return window.__mlsSI || null; } catch (e) { return null; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function num(v) { var n = Number(v || 0); return isFinite(n) ? n : 0; }
+  function engineReady() { var si = SI(); return !!(si && isFn(si.pullMonth) && isFn(si._resolveProviderRequest)); }
+  function monthKeyNow() {
+    /* the month the calendar is showing (or the month a picked range starts
+       in) - the pull is month-shaped because the engine's month route is. */
+    var r = RANGE ? RANGE : effectiveRange();
+    var k = S(r && r.from).slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(k) ? k : todayIso().slice(0, 7);
+  }
+  function monthLabel(ym) {
+    var p = S(ym).split('-'), mi = Number(p[1]) - 1;
+    return (MONTHS[mi] ? MONTHS[mi] + ' ' + p[0] : S(ym));
+  }
+  function monthLength(ym) {
+    var p = S(ym).split('-');
+    return new Date(Number(p[0]), Number(p[1]), 0).getDate() || 31;
+  }
+  /* ONE provider for the WHOLE run. Default is every provider; a chosen
+     calendar provider is resolved through the canonical roster so the engine
+     receives a verified identity rather than a display string. */
+  function pullScope() {
+    var pf = el('calProvFilter');
+    var fval = pf ? S(pf.value) : '';
+    if (!fval) return { request: 'all', label: 'All providers', key: 'all' };
+    var roster = null; try { roster = window.__mlsProviderRoster; } catch (e) {}
+    var entry = null;
+    if (roster && isFn(roster.resolve)) { try { entry = roster.resolve(fval); } catch (e2) { entry = null; } }
+    if (entry && entry.name) return { request: entry, label: S(entry.name), key: S(entry.stableKey || entry.name) };
+    /* Unresolvable pick: hand the raw value to the engine gate, which refuses
+       it by name. Widening to "everyone" here would pull charts nobody asked
+       for, so the honest move is to let the gate say no. */
+    return { request: fval, label: provName(fval), key: 'raw:' + fval };
+  }
+  function dayEntry(date) {
+    var d = S(date);
+    for (var i = 0; i < PULL.days.length; i++) if (PULL.days[i].date === d) return PULL.days[i];
+    return null;
+  }
+  function seedDays(force) {
+    var ym = monthKeyNow(), scope = pullScope();
+    var sig = ym + '|' + scope.key;
+    if (!force && PULL.sig === sig && PULL.days.length) return PULL.days;
+    if (PULL.running) return PULL.days;
+    var si = SI();
+    /* the engine decides which dates are pullable at all - it clamps the month
+       to today, so future days never enter a run it would refuse. */
+    var keys = (si && isFn(si._monthDateKeys)) ? (function () { try { return si._monthDateKeys(ym) || []; } catch (e) { return []; } })() : [];
+    var pullable = {};
+    keys.forEach(function (k) { pullable[S(k)] = 1; });
+    var last = monthLength(ym), days = [], d, iso, st;
+    for (d = 1; d <= last; d++) {
+      iso = ym + '-' + pad(d);
+      var e = { date: iso, dom: d, state: 'future', note: '', found: 0 };
+      if (pullable[iso]) {
+        st = null;
+        if (si && isFn(si.authoritativeStatusForDay)) {
+          try { st = si.authoritativeStatusForDay(iso, scope.request); } catch (e3) { st = null; }
+        }
+        if (st && st.available === true) { e.state = 'pulled'; e.found = num(st.sourceCount); }
+        else e.state = 'todo';
+      }
+      days.push(e);
     }
-    return out;
+    PULL.sig = sig; PULL.month = ym; PULL.days = days;
+    PULL.scopeLabel = scope.label;
+    PULL.index = 0; PULL.total = 0;
+    PULL.status = ''; PULL.message = ''; PULL.detail = '';
+    PULL.systemic = ''; PULL.systemicText = ''; PULL.retryDates = [];
+    return days;
   }
-  function planSigNow() {
-    var r = effectiveRange();
-    var ids = selActive() ? selIds() : providers().map(function (p) { return String(p.id); });
-    return r.from + '|' + r.to + '|' + ids.slice().sort().join(',');
+  function dayCounts() {
+    var c = { pulled: 0, empty: 0, todo: 0, running: 0, failed: 0, future: 0 };
+    PULL.days.forEach(function (e) { c[e.state] = (c[e.state] || 0) + 1; });
+    c.done = c.pulled + c.empty;
+    c.left = c.todo + c.failed + c.running;
+    c.pullable = c.done + c.left;
+    return c;
   }
-  function buildPlan() {
-    var r = effectiveRange();
-    var ids = selActive() ? selIds() : providers().map(function (p) { return String(p.id); });
-    if (!ids.length) ids = [''];
-    var plan = [];
-    daysBetween(r.from, r.to).forEach(function (day) {
-      ids.forEach(function (id) {
-        plan.push({ date: day, providerId: id, providerName: id ? provName(id) : 'All providers', status: 'pending', reason: '', found: 0, tries: 0 });
-      });
-    });
-    PULL.plan = plan; PULL.done = 0; PULL.total = plan.length; PULL.running = false;
-    PULL.sig = planSigNow();
-    return plan;
+  function datesLeft() {
+    return PULL.days.filter(function (e) { return e.state === 'todo' || e.state === 'failed'; })
+      .map(function (e) { return e.date; });
   }
-  function skipped() {
-    return PULL.plan.filter(function (t) { return t.status === 'empty' || t.status === 'error' || t.status === 'timeout'; });
+  function datesAll() {
+    return PULL.days.filter(function (e) { return e.state !== 'future'; })
+      .map(function (e) { return e.date; });
   }
-  function withTimeout(prom, ms) {
-    return new Promise(function (resolve, reject) {
-      var done = false;
-      var to = setTimeout(function () { if (!done) { done = true; reject(new Error('timeout')); } }, ms);
-      prom.then(function (v) { if (!done) { done = true; clearTimeout(to); resolve(v); } },
-        function (e) { if (!done) { done = true; clearTimeout(to); reject(e); } });
-    });
+  function dayTitle(e) {
+    if (e.state === 'future') return e.date + ' - not yet';
+    if (e.state === 'running') return e.date + ' - pulling now';
+    if (e.state === 'pulled') return e.date + ' - pulled and verified' + (e.found ? (' (' + e.found + ' appointment' + (e.found === 1 ? '' : 's') + ')') : '') + '. Click to pull it again.';
+    if (e.state === 'empty') return e.date + ' - verified empty, nothing was scheduled. Click to pull it again.';
+    if (e.state === 'failed') return e.date + ' - did not verify' + (e.note ? (': ' + e.note) : '') + '. Click to retry this day.';
+    return e.date + ' - not pulled yet. Click to pull this day.';
   }
-  async function runTask(t) {
-    if (!RUNNER) { t.status = 'error'; t.reason = 'live pull runner not connected (Athena-gated)'; return; }
-    t.status = 'running'; t.tries++; paintPull();
+
+  /* ------------------------------ pull painting --------------------------- */
+  var SQ = 'width:34px;height:30px;padding:0;border-radius:8px;font-size:12px;font-weight:700;line-height:1;' +
+    'display:inline-flex;align-items:center;justify-content:center;';
+  function squareCss(state) {
+    if (state === 'pulled') return SQ + 'background:#2E6A4B;border:1px solid #2E6A4B;color:#fff;cursor:pointer';
+    if (state === 'empty') return SQ + 'background:#F1F2F6;border:1px solid #DDE1EA;color:#69758C;cursor:pointer';
+    if (state === 'running') return SQ + 'background:#FFF4E0;border:1px solid #ECD3A7;color:#7A5410;cursor:default;animation:cpPulse 1.1s ease-in-out infinite';
+    if (state === 'failed') return SQ + 'background:#FDECEC;border:1px solid #E4A9A9;color:#8E2F2F;cursor:pointer';
+    if (state === 'future') return SQ + 'background:#fff;border:1px dashed #E7E5DD;color:#C4CAD6;cursor:default';
+    return SQ + 'background:#fff;border:1px solid #C9D4E6;color:#42506B;cursor:pointer';
+  }
+  function ensurePullCss() {
+    if (el('cpPullCss')) return;
     try {
-      var res = await withTimeout(Promise.resolve(RUNNER({ date: t.date, providerId: t.providerId, providerName: t.providerName })), CFG.timeoutMs);
-      if (res && res.ok && (res.found || 0) > 0) { t.status = 'ok'; t.found = res.found; t.reason = ''; }
-      else if (res && res.ok) { t.status = 'empty'; t.found = 0; t.reason = 'no appointments that day'; }
-      else { t.status = 'error'; t.reason = S(res && res.error || 'runner refused'); }
-    } catch (e) {
-      var msg = S(e && e.message || e);
-      t.status = (msg === 'timeout') ? 'timeout' : 'error';
-      t.reason = (msg === 'timeout') ? ('no reply within ' + Math.round(CFG.timeoutMs / 1000) + 's') : msg.slice(0, 90);
-    }
+      var st = document.createElement('style');
+      st.id = 'cpPullCss';
+      st.textContent = '@keyframes cpPulse{0%,100%{opacity:1}50%{opacity:.45}}';
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
   }
-  async function runPull(tasks) {
-    if (PULL.running) return;
-    PULL.running = true; PULL.stopAsk = false; PULL.startedAt = Date.now();
-    var list = tasks || PULL.plan.filter(function (t) { return t.status === 'pending'; });
-    for (var i = 0; i < list.length; i++) {
-      if (PULL.stopAsk) { list[i].status = list[i].status === 'running' ? 'pending' : list[i].status; break; }
-      await runTask(list[i]);
-      PULL.done = PULL.plan.filter(function (t) { return t.status !== 'pending' && t.status !== 'running'; }).length;
-      paintPull();
-    }
-    PULL.running = false;
-    paintPull();
+  function pullPanel() { var p = el('cpPanel'); return (p && VIEW === 'pull') ? p : null; }
+  function paintDay(e) {
+    var p = pullPanel(); if (!p) return;
+    var b = p.querySelector('button[data-cp-day="' + e.date + '"]'); if (!b) return;
+    var sig = e.state + '|' + e.note + '|' + (PULL.running ? 'run' : 'idle');
+    /* ONE square, only when that square actually changed. The old panel
+       rebuilt every task box on every tick. */
+    if (b.getAttribute('data-cp-sig') === sig) return;
+    b.setAttribute('data-cp-sig', sig);
+    b.style.cssText = squareCss(e.state);
+    b.title = dayTitle(e);
+    b.setAttribute('aria-label', dayTitle(e));
+    b.disabled = (e.state === 'future' || e.state === 'running' || PULL.running);
   }
-  function paintPull() {
-    var p = el('cpPanel'); if (!p || VIEW !== 'pull') return;
-    renderPullPanel(p);
+  function setDayState(e, state, note) {
+    if (!e) return;
+    e.state = state; e.note = S(note || '');
+    paintDay(e);
+  }
+  function headHtml() {
+    var c = dayCounts(), mt = monthLabel(PULL.month);
+    var h = '<b style="font-size:14px">Pull patients from Athena &mdash; ' + esc(mt) + '</b>' +
+      '<div style="font-size:12px;color:#69758c;margin-top:3px">' + esc(PULL.scopeLabel) +
+      ' &middot; ' + PULL.days.length + ' day' + (PULL.days.length === 1 ? '' : 's') + ' in this month</div>';
+    if (PULL.running) {
+      h += '<div style="font-size:12.5px;font-weight:700;margin-top:6px">Pulling ' + esc(mt) +
+        (PULL.index && PULL.total ? (' &hellip; day ' + PULL.index + ' of ' + PULL.total) : ' &hellip; starting') + '</div>';
+    } else {
+      h += '<div style="font-size:12.5px;margin-top:6px">' +
+        '<b>' + c.done + '</b> already pulled &middot; <b>' + c.left + '</b> still to pull' +
+        (c.future ? (' &middot; <b>' + c.future + '</b> not here yet') : '') + '</div>';
+    }
+    return h;
+  }
+  function pct() {
+    if (PULL.running) return PULL.total ? Math.round(100 * PULL.index / PULL.total) : 0;
+    var c = dayCounts();
+    return c.pullable ? Math.round(100 * c.done / c.pullable) : 0;
+  }
+  function actionsHtml() {
+    if (!engineReady()) {
+      return '<span style="font-size:12.5px;color:#69758c">The Athena pull engine is still loading. Give it a moment.</span>';
+    }
+    /* Each label is a literal in the markup, never a ternary spliced into the
+       tag: the control inventory (and the shell that proxies controls BY
+       LABEL) reads this source text, and a label built out of an expression
+       records as unaddressable punctuation. */
+    var stopTitle = ' title="Athena finishes the day it is already on. Nothing new is started after this run."';
+    if (PULL.running) {
+      if (PULL.stopAsk) return '<button id="cpPullStop" style="' + CSS + '" disabled' + stopTitle + '>Stopping after this day</button>';
+      return '<button id="cpPullStop" style="' + CSS + '"' + stopTitle + '>Stop after this day</button>';
+    }
+    var c = dayCounts();
+    if (!c.pullable) return '<span style="font-size:12.5px;color:#69758c">' + esc(monthLabel(PULL.month)) + ' has not happened yet.</span>';
+    return '<button id="cpPullRest" style="' + CSS + ';background:#e7f6ee;font-weight:700"' + (c.left ? '' : ' disabled') +
+      '>Pull the rest of ' + esc(monthLabel(PULL.month)) + '</button>' +
+      '<button id="cpPullAll" style="' + CSS + '" title="Pull every day of this month again, including the days already verified">Re-pull everything</button>';
+  }
+  function endHtml() {
+    if (PULL.running || !PULL.message) return '';
+    var n = PULL.retryDates.length;
+    var h = '<div style="margin-top:12px;padding:10px 12px;background:#FCFBF8;border:1px solid #E7E5DD;border-radius:10px;font-size:12.5px">' +
+      '<b>' + esc(PULL.message) + '</b>';
+    if (PULL.systemic && PULL.systemicText) h += '<div style="margin-top:4px;color:#7a5410">' + esc(PULL.systemicText) + '</div>';
+    if (PULL.detail) h += '<div style="margin-top:4px;color:#69758c">' + esc(PULL.detail) + '</div>';
+    if (n) {
+      h += '<div style="margin-top:8px">' +
+        (PULL.systemic
+          ? ('<button id="cpPullRetry" style="' + CSS + '">Retry the remaining ' + n + '</button>')
+          : ('<button id="cpPullRetry" style="' + CSS + '">Retry those ' + n + ' day' + (n === 1 ? '' : 's') + '</button>')) +
+        '</div>';
+    }
+    return h + '</div>';
+  }
+  function stripHtml() {
+    return PULL.days.map(function (e) {
+      var t = esc(dayTitle(e));
+      var sig = e.state + '|' + e.note + '|' + (PULL.running ? 'run' : 'idle');
+      return '<button data-cp-day="' + esc(e.date) + '" data-cp-sig="' + esc(sig) + '" title="' + t + '" aria-label="' + t + '"' +
+        (e.state === 'future' || e.state === 'running' || PULL.running ? ' disabled' : '') +
+        ' style="' + squareCss(e.state) + '">' + e.dom + '</button>';
+    }).join('');
+  }
+  function legendHtml() {
+    return '<div style="margin-top:8px;font-size:11.5px;color:#69758c">' +
+      'Green = pulled and verified &middot; grey = verified empty &middot; outline = still to pull &middot; ' +
+      'red = did not verify (click it to retry that day) &middot; faint = not here yet</div>';
+  }
+  /* Header, bar and status only - the strip and the buttons are left alone,
+     so a status tick never rebuilds 31 squares or drops their wiring. */
+  function paintHead() {
+    var p = pullPanel(); if (!p) return;
+    var head = el('cpPullHead'); if (head) head.innerHTML = headHtml();
+    var fill = el('cpPullFill'); if (fill) fill.style.width = pct() + '%';
+    var st = el('cpPullStatus'); if (st) st.textContent = PULL.status;
   }
   function renderPullPanel(p) {
-    /* cp-1.0.2: a plan built for an OLD range/provider selection must never
-       silently survive - rebuild when the signature changed (never mid-run). */
-    if (!PULL.plan.length || (!PULL.running && PULL.sig !== planSigNow())) buildPlan();
-    var r = effectiveRange();
-    var doneN = PULL.plan.filter(function (t) { return t.status !== 'pending' && t.status !== 'running'; }).length;
-    var okN = PULL.plan.filter(function (t) { return t.status === 'ok'; }).length;
-    var pct = PULL.total ? Math.round(100 * doneN / PULL.total) : 0;
-    var sk = skipped();
-    var h = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
-      '<b style="font-size:14px">Pull plan</b>' +
-      '<span style="font-size:12px;color:#69758c">' + esc(r.from) + ' → ' + esc(r.to) + ' · ' + PULL.total + ' day-provider task' + (PULL.total === 1 ? '' : 's') + '</span>' +
-      '<button id="cpRun" style="' + CSS + ';background:#e7f6ee"' + (PULL.running ? ' disabled' : '') + '>' + (PULL.running ? 'Running…' : (doneN ? 'Resume' : 'Run')) + '</button>' +
-      (PULL.running ? '<button id="cpStop" style="' + CSS + '">Stop after current</button>' : '') +
-      '<button id="cpRebuild" style="' + CSS + '"' + (PULL.running ? ' disabled' : '') + '>Rebuild plan</button></div>';
-    h += '<div style="height:10px;background:#eef1f7;border-radius:999px;overflow:hidden;margin:4px 0 10px"><div style="height:100%;width:' + pct + '%;background:#2E6A4B;transition:width .3s"></div></div>' +
-      '<div style="font-size:12px;color:#69758c;margin-bottom:8px">' + doneN + ' / ' + PULL.total + ' finished · ' + okN + ' with data · ' + sk.length + ' skipped' + (RUNNER ? '' : ' · <b style="color:#a15c00">live runner not connected — Athena-gated; showing app-side plan only</b>') + '</div>';
-    var byDay = {};
-    PULL.plan.forEach(function (t) { (byDay[t.date] = byDay[t.date] || []).push(t); });
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px">';
-    Object.keys(byDay).sort().forEach(function (day) {
-      byDay[day].forEach(function (t) {
-        var col = { pending: '#eef1f7', running: '#fff4e0', ok: '#e7f6ee', empty: '#f3f4f8', error: '#fdecec', timeout: '#fdecec' }[t.status] || '#eef1f7';
-        var lbl = { pending: 'pending', running: 'running…', ok: 'ok · ' + t.found, empty: 'empty', error: 'error', timeout: 'timeout' }[t.status] || t.status;
-        h += '<div style="border:1px solid #e2e8f4;border-radius:9px;padding:7px 9px;font-size:12px;background:' + col + '">' +
-          '<b>' + esc(day) + '</b> · ' + esc(t.providerName) + '<br><span style="color:#556077">' + esc(lbl) + (t.reason ? ' — ' + esc(t.reason) : '') + '</span>' +
-          ((t.status === 'error' || t.status === 'timeout' || t.status === 'empty') && !PULL.running ? ' <button data-cp-retry="' + esc(day) + '|' + esc(t.providerId) + '" style="' + CSS + ';padding:2px 8px;font-size:11px;margin-top:3px">Retry</button>' : '') +
-          '</div>';
-      });
-    });
-    h += '</div>';
-    if (sk.length && !PULL.running) {
-      h += '<div style="margin-top:10px;padding:9px 11px;background:#fff8f0;border:1px solid #ecd3a7;border-radius:9px;font-size:12.5px">' +
-        '<b>Skipped-date report</b> — ' + sk.length + ' task' + (sk.length === 1 ? '' : 's') + ' need attention: ' +
-        sk.slice(0, 12).map(function (t) { return esc(t.date) + ' (' + esc(t.providerName) + ': ' + esc(t.status) + ')'; }).join(', ') + (sk.length > 12 ? ' …' : '') +
-        ' <button id="cpRetryAll" style="' + CSS + ';padding:3px 10px;font-size:11.5px">Retry all skipped</button></div>';
-    }
-    p.innerHTML = exitBar(PULL.running ? 'The pull keeps running - Stop after current ends it.' : '') + h;
+    seedDays(false);
+    ensurePullCss();
+    var h = '<div id="cpPullHead" style="margin-bottom:8px">' + headHtml() + '</div>' +
+      '<div style="height:10px;background:#eef1f7;border-radius:999px;overflow:hidden;margin:4px 0 8px">' +
+      '<div id="cpPullFill" style="height:100%;width:' + pct() + '%;background:#2E6A4B;transition:width .3s"></div></div>' +
+      '<div id="cpPullStatus" style="font-size:12px;color:#69758c;min-height:15px;margin-bottom:9px"></div>' +
+      '<div id="cpPullActions" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:11px">' + actionsHtml() + '</div>' +
+      '<div id="cpPullStrip" style="display:flex;flex-wrap:wrap;gap:4px">' + stripHtml() + '</div>' +
+      legendHtml() +
+      '<div id="cpPullEnd">' + endHtml() + '</div>';
+    p.innerHTML = exitBar(PULL.running ? 'The pull keeps running while you look around.' : '') + h;
     wireExit();
-    var run = el('cpRun'); if (run) run.onclick = function () { runPull(); };
-    var stop = el('cpStop'); if (stop) stop.onclick = function () { PULL.stopAsk = true; };
-    var rb = el('cpRebuild'); if (rb) rb.onclick = function () { buildPlan(); paintPull(); };
-    var ra = el('cpRetryAll'); if (ra) ra.onclick = function () { var t = skipped(); t.forEach(function (x) { x.status = 'pending'; x.reason = ''; }); runPull(t); };
-    p.querySelectorAll('button[data-cp-retry]').forEach(function (b) {
+    var st = el('cpPullStatus'); if (st) st.textContent = PULL.status;
+    var rest = el('cpPullRest'); if (rest) rest.onclick = function () { startPull(datesLeft()); };
+    var all = el('cpPullAll'); if (all) all.onclick = function () { startPull(datesAll()); };
+    var stop = el('cpPullStop'); if (stop) stop.onclick = function () { PULL.stopAsk = true; askedToStop(); };
+    var ret = el('cpPullRetry'); if (ret) ret.onclick = function () { startPull(PULL.retryDates.slice()); };
+    p.querySelectorAll('button[data-cp-day]').forEach(function (b) {
       b.onclick = function () {
-        var kv = b.getAttribute('data-cp-retry').split('|');
-        var t = PULL.plan.find(function (x) { return x.date === kv[0] && String(x.providerId) === kv[1]; });
-        if (t) { t.status = 'pending'; t.reason = ''; runPull([t]); }
+        if (PULL.running) return;
+        var e = dayEntry(b.getAttribute('data-cp-day'));
+        if (e && e.state !== 'future') startPull([e.date]);
       };
     });
+    STATE.lastPanel = { view: 'pull', month: PULL.month, days: PULL.days.length, running: !!PULL.running };
+  }
+  function askedToStop() {
+    /* pullMonth has no cancel: the days it already holds finish. Say that
+       plainly instead of showing a button that pretends otherwise. */
+    PULL.status = 'Stopping - Athena finishes the day it is on, and MLS starts nothing new after this run.';
+    var act = el('cpPullActions'); if (act) act.innerHTML = actionsHtml();
+    paintHead();
+  }
+
+  /* -------------------------------- the run ------------------------------- */
+  /* The engine keeps its systemic sentences private, but its own final status
+     line carries the one that matters. Quote the engine; never restate it. */
+  var SYS_RE = /every day was failing the same way:\s*([\s\S]*?)(?:\s*Fix that first|$)/;
+  var DAY_RE = /^Month pull\s+(\d+)\s*\/\s*(\d+):\s*(\d{4}-\d{2}-\d{2})/;
+  function onEngineStatus(msg) {
+    var m = S(msg);
+    PULL.status = m;
+    var sys = SYS_RE.exec(m);
+    if (sys && S(sys[1]).trim()) PULL.systemicText = S(sys[1]).trim();
+    var hit = DAY_RE.exec(m);
+    if (hit) {
+      var prev = PULL.runDates && PULL.runDates[Number(hit[1]) - 2];
+      PULL.index = Number(hit[1]); PULL.total = Number(hit[2]);
+      /* the day that just ended: re-read the engine's own snapshot rather
+         than guessing an outcome it has not reported yet. */
+      if (prev) refreshDay(prev);
+      var cur = dayEntry(hit[3]);
+      if (cur) setDayState(cur, 'running', '');
+    }
+    paintHead();
+  }
+  function refreshDay(date) {
+    var e = dayEntry(date); if (!e) return;
+    var si = SI(), st = null;
+    if (si && isFn(si.authoritativeStatusForDay)) {
+      try { st = si.authoritativeStatusForDay(e.date, pullScope().request); } catch (err) { st = null; }
+    }
+    if (st && st.available === true) { e.found = num(st.sourceCount); setDayState(e, 'pulled', ''); }
+    else setDayState(e, 'todo', '');
+  }
+  function startPull(dates) {
+    if (PULL.running) return;
+    if (!engineReady()) {
+      PULL.message = 'The Athena pull engine is still loading. Give it a moment.';
+      PULL.detail = ''; PULL.retryDates = []; PULL.systemic = '';
+      var p0 = pullPanel(); if (p0) renderPullPanel(p0);
+      return;
+    }
+    seedDays(false);
+    var targets = (dates || []).filter(function (d) { var e = dayEntry(d); return !!e && e.state !== 'future'; });
+    if (!targets.length) {
+      PULL.message = 'Nothing to pull in ' + monthLabel(PULL.month) + ' right now.';
+      PULL.detail = ''; PULL.retryDates = []; PULL.systemic = '';
+      var p1 = pullPanel(); if (p1) renderPullPanel(p1);
+      return;
+    }
+    PULL.running = true; PULL.stopAsk = false;
+    PULL.runDates = targets.slice();
+    PULL.index = 0; PULL.total = targets.length;
+    PULL.message = ''; PULL.detail = ''; PULL.systemic = ''; PULL.systemicText = ''; PULL.retryDates = [];
+    PULL.status = 'Starting the verified Athena pull...';
+    targets.forEach(function (d) { var e = dayEntry(d); if (e) { e.found = 0; e.state = 'todo'; e.note = ''; } });
+    var p = pullPanel(); if (p) renderPullPanel(p);
+    runWithGate(targets, false);
+  }
+  function finishRun() {
+    PULL.running = false; PULL.stopAsk = false; PULL.runDates = null;
+    var p = pullPanel(); if (p) renderPullPanel(p);
+  }
+  function runWithGate(targets, rosterRetried) {
+    var si = SI();
+    if (!(si && isFn(si.pullMonth) && isFn(si._resolveProviderRequest))) {
+      PULL.message = 'The Athena pull engine is still loading. Give it a moment.';
+      finishRun(); return;
+    }
+    var scope = pullScope();
+    PULL.scopeLabel = scope.label;
+    var gate = null;
+    try { gate = si._resolveProviderRequest(scope.request, { allowAll: true, requireRosterForAll: true }); } catch (e) { gate = null; }
+    if (!gate || !gate.ok) {
+      /* Never tell the doctor to stage Athena by hand. Drive the Day schedule
+         ourselves through the engine's own read-only warm-up, re-read the
+         roster, and retry the gate ONCE. The manual sentence only appears if
+         that automatic attempt still cannot verify it. */
+      if (!rosterRetried && isFn(si._warmUpDay)) {
+        PULL.status = 'Setting up Athena automatically - opening the Day schedule to verify your provider roster.';
+        paintHead();
+        Promise.resolve(safeCall(function () { return si._warmUpDay(todayIso(), function (m) { PULL.status = S(m); paintHead(); }); }))
+          .then(null, function () { return null; })
+          .then(function () { runWithGate(targets, true); });
+        return;
+      }
+      PULL.message = S(gate && gate.error) || 'The Athena provider roster is not verified yet.';
+      PULL.detail = 'MLS tried to verify it automatically but could not read the Athena Day schedule. Check that athenaOne is signed in, then try again.';
+      finishRun(); return;
+    }
+    var month = PULL.month;
+    Promise.resolve(si.pullMonth({
+      month: month,
+      dates: targets,
+      provider: gate.provider,
+      includeHistory: true,
+      onStatus: function (m) { onEngineStatus(m); }
+    })).then(function (res) { readResult(res); }, function (err) {
+      PULL.message = 'The pull stopped safely.';
+      PULL.detail = S(err && err.message || err || 'Try again when Athena is ready.');
+      PULL.retryDates = targets.slice();
+      targets.forEach(function (d) { setDayState(dayEntry(d), 'failed', 'the pull stopped before this day was verified'); });
+      finishRun();
+    });
+  }
+  function safeCall(fn) { try { return fn(); } catch (e) { return null; } }
+  /* EVERY end state below is read off the result object. Nothing here counts
+     stamps, and nothing here says "done" on our own authority. */
+  function readResult(res) {
+    res = res || {};
+    var totals = res.totals || {}, retry = res.retry || {};
+    PULL.retryDates = Array.isArray(retry.dates) ? retry.dates.slice() : [];
+    PULL.systemic = S(res.systemicReason || '');
+    (Array.isArray(res.days) ? res.days : []).forEach(function (d) {
+      var e = dayEntry(d && d.date); if (!e) return;
+      if (d.complete === true) {
+        setDayState(e, (d.reason === 'empty-day' || d.reason === 'provider-empty') ? 'empty' : 'pulled', '');
+      } else {
+        setDayState(e, 'failed', S(d.reason || '').replace(/-/g, ' '));
+      }
+    });
+    var mt = monthLabel(PULL.month);
+    var doneN = num(totals.completeDays), dayN = num(totals.days) || PULL.total;
+    PULL.detail = 'Schedule ' + num(totals.scheduleAccounted) + '/' + num(totals.scheduleAttempted) +
+      ' - histories ' + num(totals.historiesProcessed) + '/' + num(totals.historiesRequested) + '.';
+    if (res.complete === true) {
+      PULL.message = mt + ' is complete.';
+      PULL.detail = doneN + ' of ' + dayN + ' days verified. ' + PULL.detail;
+    } else if (PULL.systemic) {
+      PULL.message = 'Stopped early - every day was failing the same way.';
+      if (!PULL.systemicText) PULL.systemicText = PULL.systemic.replace(/-/g, ' ');
+    } else if (PULL.retryDates.length) {
+      PULL.message = doneN + ' of ' + dayN + ' days done. ' + PULL.retryDates.length + ' need another try.';
+    } else {
+      PULL.message = doneN + ' of ' + dayN + ' days verified.';
+    }
+    finishRun();
+  }
+  /* Kept for external callers that ask which days still need attention. */
+  function skipped() {
+    return PULL.days.filter(function (e) { return e.state === 'failed'; });
   }
 
   /* ------------------------------ self-test ------------------------------- */
@@ -483,16 +775,40 @@
       if (viewRows().length !== 1) fails.push('range-narrow');
       if (weekdayOf('2026-07-06') !== 1 || weekdayOf('2026-07-09') !== 4) fails.push('weekday');
       if (!isProcedure({ type: 'MBB RFA' }) || isProcedure({ type: 'est15' })) fails.push('proc-re');
-      if (daysBetween('2026-07-30', '2026-08-02').length !== 4) fails.push('days-cross-month');
-      RANGE = { from: '2026-07-06', to: '2026-07-07' }; SEL = { '1': true, '2': true };
-      buildPlan(); if (PULL.plan.length !== 4) fails.push('plan-2x2');
-      PULL.plan[0].status = 'empty'; PULL.plan[1].status = 'error'; PULL.plan[2].status = 'ok';
-      if (skipped().length !== 2) fails.push('skipped');
+      /* the month model: ONE entry per date, never days x providers */
+      if (monthLabel('2026-07') !== 'July 2026') fails.push('month-label');
+      if (monthLength('2026-02') !== 28 || monthLength('2024-02') !== 29 || monthLength('2026-07') !== 31) fails.push('month-length');
+      RANGE = { from: '2026-07-06', to: '2026-07-07' };
+      if (monthKeyNow() !== '2026-07') fails.push('month-key');
+      PULL.month = '2026-07'; PULL.days = [
+        { date: '2026-07-01', dom: 1, state: 'pulled', note: '', found: 3 },
+        { date: '2026-07-02', dom: 2, state: 'empty', note: '', found: 0 },
+        { date: '2026-07-03', dom: 3, state: 'todo', note: '', found: 0 },
+        { date: '2026-07-04', dom: 4, state: 'failed', note: 'signin', found: 0 },
+        { date: '2026-07-05', dom: 5, state: 'future', note: '', found: 0 }
+      ];
+      var c = dayCounts();
+      if (c.done !== 2 || c.left !== 2 || c.future !== 1 || c.pullable !== 4) fails.push('day-counts');
+      if (datesLeft().join(',') !== '2026-07-03,2026-07-04') fails.push('dates-left');
+      if (datesAll().length !== 4) fails.push('dates-all');
+      if (skipped().length !== 1) fails.push('skipped');
+      if (!dayEntry('2026-07-04') || dayEntry('2026-07-09')) fails.push('day-entry');
+      if (dayTitle(PULL.days[4]).indexOf('not yet') < 0) fails.push('future-title');
+      /* the engine's own systemic sentence is quoted, never restated */
+      var sysLine = 'Month pull STOPPED EARLY - every day was failing the same way: ' +
+        'MLS is signed out - sign in to MLS first. Fix that first, then use Retry failed days (3 days remain).';
+      var sysHit = SYS_RE.exec(sysLine);
+      if (!sysHit || sysHit[1].trim() !== 'MLS is signed out - sign in to MLS first.') fails.push('systemic-quote');
+      var dayHit = DAY_RE.exec('Month pull 3/19: 2026-07-03');
+      if (!dayHit || dayHit[1] !== '3' || dayHit[2] !== '19' || dayHit[3] !== '2026-07-03') fails.push('day-progress');
       if (provName(null) !== 'No provider' || provName('') !== 'No provider' || provName(undefined) !== 'No provider') fails.push('provname-empty');
       if (provName(1) !== 'Dr. A') fails.push('provname-known');
       if (provName(999) !== 'Provider 999') fails.push('provname-unknown');
     } catch (e) { fails.push('exception:' + S(e && e.message).slice(0, 60)); }
-    finally { window._calAppts = realA; window._calProviders = realP; SEL = realSel; RANGE = realRange; VIEW = realView; PULL.plan = []; PULL.total = 0; }
+    finally {
+      window._calAppts = realA; window._calProviders = realP; SEL = realSel; RANGE = realRange; VIEW = realView;
+      PULL.days = []; PULL.sig = ''; PULL.month = ''; PULL.total = 0; PULL.index = 0;
+    }
     return { pass: !fails.length, fails: fails };
   }
 
@@ -513,7 +829,7 @@
     Object.keys(wrapped).forEach(function (k) {
       try { if (window[k] && window[k].__cpWrapped) window[k] = wrapped[k].orig; } catch (e) {}
     });
-    ['cpRow', 'cpPanel'].forEach(function (id) { try { var n = el(id); if (n) n.remove(); } catch (e) {} });
+    ['cpRow', 'cpPanel', 'cpPullCss'].forEach(function (id) { try { var n = el(id); if (n) n.remove(); } catch (e) {} });
     try { var pf = el('calProvFilter'); if (pf && providers().length) pf.style.display = ''; } catch (e) {}
     window.__mlsCalPro.installed = false;
   }
@@ -522,9 +838,14 @@
     installed: true, version: VERSION, state: STATE, cfg: CFG,
     selProviders: function () { return selIds(); },
     clearSelection: function () { SEL = {}; try { renderProvBoxes(); } catch (e) {} try { rerender(); } catch (e) {} },
-    setRunner: function (fn) { RUNNER = (typeof fn === 'function') ? fn : null; paintPull(); },
-    getPlan: function () { return PULL.plan.slice(); },
+    /* setRunner is GONE: it was the only writer of a pluggable runner that had
+       zero callers, so every Run ended in "live pull runner not connected".
+       The run is the verified engine now - there is nothing to plug in. */
     pullRunning: function () { return !!PULL.running; },
+    pullDays: function () {
+      return PULL.days.map(function (e) { return { date: e.date, state: e.state, note: e.note, found: e.found }; });
+    },
+    pullMonthKey: function () { return PULL.month || monthKeyNow(); },
     skipped: skipped, computeOpPrep: computeOpPrep,
     viewRows: viewRows, isProcedure: isProcedure, weekdayOf: weekdayOf,
     _rerender: rerender, selfTest: selfTest, revert: revert

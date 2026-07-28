@@ -3870,6 +3870,18 @@
      it must be big AND central AND actively counting, or we show our own. */
   function otherOverlayVisible() {
     try {
+      /* 2026-07-28 owner sweep: this deferral contract was written when the
+         b113 pull surface opened as a centred modal. b766 made it PILL-FIRST,
+         and a corner pill can never satisfy the >=55%x45% modal test below -
+         so both progress surfaces painted at once on every pull. The b113
+         surface (pill OR panel) present-and-visible now defers this toast by
+         name, keeping the fallback: if b113 is ever reverted, this toast
+         returns automatically. */
+      var b113 = document.getElementById('mlsPullProgFab') || document.getElementById('mlsPullProgPanel');
+      if (b113) {
+        var s113 = getComputedStyle(b113);
+        if (s113.display !== 'none' && s113.visibility !== 'hidden') return true;
+      }
       var vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
       var els = document.querySelectorAll('div');
       for (var i = 0; i < els.length; i++) {

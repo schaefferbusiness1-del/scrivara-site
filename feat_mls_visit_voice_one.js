@@ -90,18 +90,9 @@
    * what keeps the one-recognizer truce, the permission prompt and the failure
    * toasts in one place. */
   var ITEMS = [
-    {
-      key: 'voice', label: 'Copilot Voice', icon: '🎙',
-      hint: 'hands-free commands during the visit',
-      controls: ['ez3flCopilotVoice', 'ez3QVoice', 'mlsCopVoiceBtn'],
-      live: function () {
-        return chipOn('ez3flCopilotVoice') || chipOn('mlsCopVoiceBtn') ||
-          safe(function () {
-            var v = W.__mlsCopilotVoiceV2;
-            return !!(v && isFn(v.isListening) && v.isListening());
-          }, false);
-      }
-    },
+    /* 2026-07-28 owner order: the Copilot Voice entry is retired with the
+       feature (broken, never connected to Copilot). Dictate below is the one
+       voice surface. */
     /* 'MLS Assistant' LEFT THIS MENU on the owner's order (2026-07-26,
        relayed): "overlapping too much with Copilot" and "does not work with
        dictation." Its ask-about-the-visit capability lives in the dock's

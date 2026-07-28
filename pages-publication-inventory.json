@@ -80,6 +80,7 @@
     "feat_mls_calendar_exact.js",
     "feat_mls_calendar_polish.js",
     "feat_mls_calpro.js",
+    "feat_mls_firstrun.js",
     "feat_mls_caption_entityfix.js",
     "feat_mls_centerpiece.js",
     "feat_mls_chartautofill_guard.js",

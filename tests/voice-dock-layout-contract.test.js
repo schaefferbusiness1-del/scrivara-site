@@ -15,7 +15,7 @@ const quickEnd = connect.indexOf('rec.appendChild(q);', quickAt);
 assert(quickAt >= 0 && quickEnd > quickAt, 'primary QUICK TOOLS lane not found');
 const quick = connect.slice(quickAt, quickEnd);
 [
-  ['ez3flCopilotVoice', 'mlsCopVoiceBtn'],
+  /* 2026-07-28: the Copilot Voice pair left with the feature (owner retired it). */
   ['ez3flAssistant', 'mlsAsstFab'],
   ['ez3flDictate', 'mlsDaDock']
 ].forEach(([proxy, real]) => {

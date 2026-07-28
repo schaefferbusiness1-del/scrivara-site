@@ -109,7 +109,10 @@
 "#mlsRdTop{ height:60px; width:100%; min-width:0; flex:1 1 100%; box-sizing:border-box; display:flex; align-items:center; gap:14px; padding:0 22px; }",
 "#mlsRdTitle{ flex:0 0 auto; font-family:'Newsreader',Georgia,serif; font-weight:600; font-size:19px; letter-spacing:-.01em; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }",
 "#appHeader.mlsRdHdr > [data-mlsrd-hid]{ display:none !important; }",
-"#mlsRdSearchSlot{ position:relative; flex:0 1 340px; min-width:120px; margin-left:auto; }",
+"#mlsRdSearchSlot{ position:relative; flex:0 1 340px; min-width:120px; }",
+/* 2026-07-28 owner sweep: the top bar duplicated the bottom Ask bar (search), the dock (Menu) and quick-create; they hide - never delete, satellites and tests still reach the nodes - and Account keeps the right edge. */
+"#mlsRdSearchSlot, #mlsRdNewBtn, #mlsTbMenu, #whoLabel{ display:none !important; }",
+"#mlsRdMenuSlot{ margin-left:auto; }",
 "#mlsRdSearchSlot .mlsRdSearch{ width:100%; height:38px; border-radius:10px; border:1px solid #E4E1D8; background:var(--card); color:var(--ink); padding:0 34px 0 36px; font-size:13.5px; outline:none; transition:border-color .15s, box-shadow .15s; }",
 "#mlsRdSearchSlot .mlsRdSearch:focus{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(46,106,75,.12); }",
 "#mlsRdKbd{ position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#68736B; font-size:10.5px; border:1px solid var(--line); border-radius:5px; padding:2px 6px; background:var(--field-bg); }",
@@ -130,7 +133,7 @@
 "/* The floating '+' FAB (#mlsFab) duplicated these actions and cluttered the",
 "   working area. The top-bar button is now the single owner at every width;",
 "   phones reduce it to a compact plus while keeping the same accessible name. */",
-"@media (min-width:761px){ body.mls-rd-shell #mlsFab, body.mls-rd-shell #mlsFabMenu{ display:none !important; } }",
+/* 2026-07-28: +New is hidden above, so the FAB is the quick-create at every width again */
 "@media (max-width:760px){ #mlsRdNewBtn{ display:inline-flex !important; width:38px; padding:0 !important; justify-content:center; font-size:0; } #mlsRdNewBtn .plus{font-size:19px;} }",
 
 "/* ---- nav rail ---- */",

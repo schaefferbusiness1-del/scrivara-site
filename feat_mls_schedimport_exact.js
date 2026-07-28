@@ -3333,6 +3333,19 @@
         var tnId = String(oneTn.patientId || "");
         var tnP = (tnDay && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
         if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnDay ? "reader-unavailable" : "no-day-on-row"; continue; }
+        if (todayNoteExtOk === null) {
+          /* 2026-07-28 invariant fix: an extension that predates the
+             day-scoped reader ignores onlyDate and returns EVERY body -
+             exactly what the fast lane promises not to pull. One pong per
+             batch decides; the pong version is the only honest source. */
+          todayNoteExtOk = await safeAsync(async function () {
+            var pg = await bridge("mlsPong", "mlsPing", 3500);
+            var m = String((pg && pg.version) || "").match(/^(\d+)\.(\d+)\.(\d+)/);
+            if (!m) return false;
+            return (Number(m[1]) > 3) || (Number(m[1]) === 3 && (Number(m[2]) > 0 || Number(m[3]) >= 30));
+          }, false);
+        }
+        if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; continue; }
         try {
           var tnRes = await vpToday.runForPatient(tnP, function () {}, { onlyDate: tnDay });
           oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
@@ -4133,7 +4146,11 @@
         date: __resumeDate,
         startedAt: Date.now(),
         attempts: (__prev && __prev.date === __resumeDate) ? Number(__prev.attempts || 0) : 0,
-        includeHistory: opts.includeHistory !== false
+        includeHistory: opts.includeHistory !== false,
+        /* 2026-07-28 invariant fix: a resumed pull must keep the ORIGINAL
+           bodies choice - a phone-commanded fast-lane pull that reloads must
+           not resume as a full-bodies pull on the office default. */
+        bodies: (typeof _pullBodiesOverride === 'boolean') ? _pullBodiesOverride : null
       });
     }
     var run = function () {
@@ -4375,11 +4392,13 @@
   function resumeStart(rec) {
     resumeDismiss(false);
     var prev = resumeGet() || rec;
-    resumeSave({ date: rec.date, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1, includeHistory: rec.includeHistory !== false });
+    resumeSave({ date: rec.date, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1, includeHistory: rec.includeHistory !== false, bodies: (typeof rec.bodies === 'boolean') ? rec.bodies : null });
     safe(function () {
-      pull({ date: rec.date, includeHistory: rec.includeHistory !== false, onStatus: function (m, k) {
+      var resumeOpts = { date: rec.date, includeHistory: rec.includeHistory !== false, onStatus: function (m, k) {
         safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(m, k); });
-      } });
+      } };
+      if (typeof rec.bodies === 'boolean') resumeOpts.pullVisitBodies = rec.bodies;
+      pull(resumeOpts);
     });
   }
   function resumeOffer(rec) {

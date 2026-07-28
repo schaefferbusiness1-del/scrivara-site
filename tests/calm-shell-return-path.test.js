@@ -45,11 +45,14 @@ assert(/if\s*\(!enabled\(\)\)\s*return\s+mountReturn\(\);/.test(shell),
  *    sites matter: the header button and the Tools menu row. */
 const classicWrites = shell.match(/localStorage\.setItem\(STORE_KEY,\s*'0'\)/g) || [];
 assert(classicWrites.length >= 2,
-  'expected at least two switch-to-classic call sites (header button + Tools row), found ' +
+  'expected at least two switch-to-classic call sites (header button + ?ui=classic; the Tools row was retired 2026-07-28 by owner order), found ' +
   classicWrites.length + '. If a site was removed, confirm the remaining ones still mount the return.');
 
+/* 2026-07-28: the Tools row switch site was retired with the classic option,
+   leaving the header button (direct safe(mountReturn)) and the ?ui=classic URL
+   path, which mounts through boot()'s !enabled() branch pinned in section 2. */
 const mountCalls = (shell.match(/safe\(mountReturn\)/g) || []).length;
-assert(mountCalls >= 2,
+assert(mountCalls >= 1,
   'expected every user-initiated switch to classic to be followed by safe(mountReturn); found ' +
   mountCalls + ' call(s). A switch that does not mount the return recreates the one-way door.');
 
