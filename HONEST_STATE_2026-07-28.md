@@ -1,10 +1,10 @@
 # Honest state — 2026-07-28
 
-He said *"I expect everything tested."* This is the truthful answer, and it has **four**
+He said *"I expect everything tested."* This is the truthful answer, and it has **five**
 categories, not two. The distinction that matters most is between **1** and **2**: category 2
 looks like success and is not.
 
-**Live right now: b756.** Five commits are held locally and unpushed.
+**Live right now: b756.** Eight commits are held locally and unpushed.
 
 ---
 
@@ -51,7 +51,7 @@ on the same unproven footing.
 | #43 stat prep in Tools | implemented b748, comment quotes him verbatim | source only |
 | #34 default provider | fixed b739, pinned by a 5-case suite | commit says "live verification lands with his next sign-in" |
 | the dead ▶ arrows | repaired b748; his screenshot **provably predates** it (the `›` cannot render at ≥b748) | he has not retried them |
-| b757 / b758 / b759 | gated 405/405 | **held, unpushed** |
+| b757 / b758 / b759 / b760 | gated 406/406 | **held, unpushed** |
 
 ---
 
@@ -94,8 +94,9 @@ Ready to run the moment clinic ends. No further authoring required.
   geometry when the viewport is 0. Leads with a **four-source build identity** (requested
   token / bytes received / server claim / extension pong) because "he is on b756" has been
   assumed all night and never read off his machine.
-- **Five held commits** — b757 (phone), b758 (problem-list data loss), b759 (glyphs), the
-  standing sweeps, this audit.
+- **Eight held commits** — b757 (phone), b758 (problem-list data loss), b759 (glyphs),
+  b760 (the pull-visits check mark gets a reachable home), the standing sweeps, the branch
+  audit, this document, the reachability audit.
 - **Six one-session specs** — boot, diarization, Mac, AI-surface audit, loading/motion,
   write-back.
 - **`BOOT_WHAT_THE_PERF_COMMITS_MISSED.md`** — three candidates with discriminators that can
@@ -113,7 +114,7 @@ Ready to run the moment clinic ends. No further authoring required.
 | motion / loading **design** | "Apple quality" is taste and cannot be gated |
 | Athena write-back walkthrough | owner-blocked on the `[MLS TEST]` slot |
 | `bump-build` bNNN corruption | real, measured (b759 appears **112×**), deliberately not fixed tonight |
-| the "check mark that lets you pull visits" | investigated; `mlsDsVisitBodies` is the likely control |
+| ~~the "check mark that lets you pull visits"~~ | **FIXED in b760** — it was never deleted; the Settings copy has existed since b743 and the Tools row that should have found it never rendered once |
 
 ---
 
@@ -128,8 +129,10 @@ Ready to run the moment clinic ends. No further authoring required.
 
 ## What tonight actually cost, stated plainly
 
-**Fourteen instrument errors.** Three of them nearly shipped as fixes for defects that did not
-exist. The recurring shape: *a probe that could not have detected the thing it reported
+**Fifteen instrument errors.** Three of them nearly shipped as fixes for defects that did not
+exist. The fifteenth was a sweep that reported 86 suites from a blind
+instrument and said so itself — the only one caught by its own positive control before it
+reached anyone. The recurring shape: *a probe that could not have detected the thing it reported
 absent.* Frozen hidden-tab timers reading as dead code; a CSS scanner returning zero across 208
 stylesheets because cross-origin `cssRules` throws into a swallowed catch; latin1 decoding
 being structurally incapable of producing U+FFFD; measuring `#toast` when the complaint was
