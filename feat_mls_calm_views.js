@@ -299,7 +299,14 @@
          disagree with the dock, which is 85px tall at bottom:18px and so
          occupies 18..103px. It is MEASURED from the dock (see liftToast)
          rather than guessed, so it stays right if the dock changes height. */
-      'body.' + BODY_CLASS + ' .toast{bottom:var(--mls-toast-lift,96px);pointer-events:none}',
+      /* b753: bottom:auto, NOT a lift. Measured live on b751: this rule (specificity
+         0,2,1, later document order) beat the b748 top-anchor rule .toast{bottom:auto}
+         (0,1,0), so the shown toast carried BOTH top:158px and bottom:100px and
+         stretched to offsetHeight 1085 - an 87x1085 dark column down the whole
+         viewport instead of a compact pill. The lift existed to raise a
+         BOTTOM-anchored toast above the ask bar; the toast is top-anchored now, so
+         the lift is not just redundant, it is the bug. */
+      'body.' + BODY_CLASS + ' .toast{bottom:auto;pointer-events:none}',
       /* the continuity strip: the banner patient's presence on the calendar.
          Theme tokens throughout so dark mode carries it without the parity
          engine's help, and the motion tokens so its arrival feels intended. */

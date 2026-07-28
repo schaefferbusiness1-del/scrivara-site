@@ -454,6 +454,58 @@
       + ((painted || known) === 1 ? "" : "s") + " athenaOne's Day view had on screen. MLS has never read "
       + "athenaOne's own provider list, so it cannot confirm that is everyone.";
   }
+  /* b752: say the census out loud. The doctor was shown
+     the terminal verdict sentence reading schedule 19/19, history 19/19,
+     failures 0 for a pull that wrote zero characters, and no wording tweak
+     to a walk count could have prevented it - the number had to come from
+     the store.
+     This notice never guesses WHY a record is empty: MLS cannot tell an
+     empty Athena chart from a chart whose content it failed to read, so it
+     states only what is held and names a route that is genuinely true (an
+     explicit pull always performs a fresh chart read for every row - the
+     Retry failed histories control is deliberately NOT named here, because
+     it is built from receipt.retry and these patients are not failures). */
+  /* THE PULL SENTENCE, separate from the store sentence. The census answers
+     what MLS holds; the delta answers what THIS pull changed. Both are needed:
+     a store already filled by an earlier pull would let a second zero-write
+     pull close its own gap, and a fact the clinician typed by hand counts
+     toward the store no matter who wrote it. Descriptive, never a cause - an
+     unchanged record is perfectly legitimate when Athena has nothing new. */
+  function censusChangeClause(hr) {
+    var d = hr && hr.storeDelta;
+    if (!d || d.measured !== true) return "";
+    var n = Number(d.compared || 0), ch = Number(d.changed || 0);
+    if (!n) return "";
+    if (!ch) return " No stored record changed during this pull.";
+    return " " + ch + " of " + n + " stored record" + (n === 1 ? "" : "s")
+      + " changed during this pull.";
+  }
+  function contentNotice(hr) {
+    var c = hr && hr.storeCensus;
+    if (!c) return "";
+    var t = Number(c.targets || 0);
+    /* AN UNMEASURED CENSUS MUST NOT FALL SILENT. Silence handed the sentence
+       straight back to processed/requested - the discredited pair that read
+       19/19 - with nothing saying the store had never been looked at. */
+    if (c.measured !== true) {
+      if (!t && !Number(c.rows || 0)) return "";
+      return " Chart content in MLS was NOT measured for this day, so the history count"
+        + " above is a count of rows walked rather than of records stored - treat it as"
+        + " unproven and pull this day again.";
+    }
+    if (!t) return "";
+    var held = Number(c.withContent || 0), gap = Math.max(0, t - held);
+    /* Says only what the STORE shows. It cannot say nothing was captured for
+       these patients: vitals-only and typed-by-hand records both exist, and
+       from here an empty Athena chart and a read that missed the content look
+       identical. Never names the Retry failed histories control either - that
+       is built from receipt.retry, and these patients are not failures. */
+    return " Chart content in MLS: " + held + " of " + t + " patient" + (t === 1 ? "" : "s") + "."
+      + censusChangeClause(hr)
+      + (gap ? (" " + gap + (gap === 1 ? " holds" : " hold") + " none that MLS can see, and from"
+        + " here an empty Athena chart looks the same as a chart MLS failed to read. Pulling"
+        + " this day again re-reads every chart.") : "");
+  }
   function providerScopeReceipt(providerMode) {
     var sc = providerScope();
     if (!sc) return { stated: false, scope: "not-reported", knownCount: null, paintedCount: null, athenaListEnumerated: null, coversPractice: null };
@@ -686,6 +738,270 @@
     }, { v: 1, rows: {} });
   }
   function writeIndex(day, x) { var k = indexKey(day); if (k) { ensureDay(day); safe(function () { localStorage.setItem(k, JSON.stringify(x)); }); } }
+  /* b752: THE STORE CENSUS. The verdict was built entirely out of counts of
+     rows the pull had WALKED, so it could not disagree with the store no
+     matter what the store held. Measured live on the owner account, Wed
+     2026-07-29: a pull walked all 19 appointments over 157 seconds and
+     reported "history 19/19; failures 0" while writing ZERO characters -
+     stamps 19, problems 6, meds 0, visits 18 before AND after, byte
+     identical - and ten of those patients hold nothing but the ~32-character
+     import stamp line. requested is rows.length + unresolved.length;
+     processed++ fires for a pure failure and for every patient regardless of
+     whether anything landed. Neither number can ever contradict the walk.
+     These helpers ask the STORE instead: for every row of the day, resolve
+     the immutable local patient id with the SAME resolver the history reader
+     already uses (rowLocalPatientId -> patientById, no second resolver) and
+     decide whether that record actually holds clinical content.
+     It never fails a patient and it never writes. A genuinely empty Athena
+     chart is a valid outcome and MLS cannot tell it apart from a read that
+     missed the content, so the census reports WHAT IS HELD and says nothing
+     about why. Honest reporting, not refusal. */
+  /* The vocabulary of "nothing is documented here" is ALREADY OWNED by the app
+     (isNoData in ScribeFlow._savePatientChart, and again in
+     _athenaChartSnapshotList). Re-implementing it narrower let the census be
+     silenced by a string the save deliberately KEEPS: merge retains the newest
+     placeholder when no meaningful fact exists, so allergies of "None on file"
+     is a normal stored state, and it made the gap vanish (19 of 19 held
+     content, notice silent) on the very store that holds nothing else. This set
+     is the union of both app sets plus the census-only additions. */
+  var CENSUS_EMPTY_ITEM = /^(?:none(?: recorded| documented| known| on file)?|not recorded|not documented|not on file|not available|not applicable|unknown|deferred|n\s*\/\s*a|na|nil|no data|no known allergies|nka)$/i;
+  /* Bullets and middots are structure, not text. The summary block is built
+     with bullet characters and listItems strips exactly this set, so the census
+     must strip them too or a placeholder hides behind its own bullet. */
+  function censusTrim(v) { return String(v == null ? "" : v).replace(/^[\s\-\u2013\u2014\u2022\u00b7*.:;]+/, "").replace(/[\s\-\u2013\u2014\u2022\u00b7*.:;]+$/, ""); }
+  function censusListHasContent(v) {
+    if (v == null) return false;
+    var parts = String(v).split(/[\r\n;,|]+/);
+    for (var i = 0; i < parts.length; i++) {
+      var t = censusTrim(parts[i]);
+      if (t && !CENSUS_EMPTY_ITEM.test(t)) return true;
+    }
+    return false;
+  }
+  /* The bare import stamp is a receipt that a read HAPPENED, not content. Ten
+     of nineteen patients received exactly that one line and nothing else, so a
+     summary made only of stamp lines must never count as captured.
+     Two further shapes of the same lie live in the SAME string. The block the
+     chart save writes is stamp + chart summary + a "Prior history" section of
+     LABEL: value bullets + a "Recent visits" section whose bullets are
+     "<date> - <type>" INDEX LINES assembled from row metadata by
+     _athenaChartSnapshotFromChart. A section heading is structure; a bullet
+     whose value is a placeholder is not a fact; an encounter index is not a
+     clinical body. None of the three may count, or the read that produced them
+     closes its own gap. */
+  var CENSUS_STAMP_LINE = /^(?:Pulled from Athena|Longitudinal summary refreshed)\b[\s\d\/\-.,:]*/i;
+  var CENSUS_SECTION_HEAD = /^(?:prior history|recent visits?|history|visits|chart summary|athena chart)$/i;
+  var CENSUS_INDEX_SECTION = /^recent visits?$/i;
+  function censusSummaryHasContent(v) {
+    if (v == null) return false;
+    var lines = String(v).split(/[\r\n]+/), indexSection = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = String(lines[i] == null ? "" : lines[i]).replace(/^[\s\-\u2013\u2014\u2022\u00b7*]+/, "").replace(CENSUS_STAMP_LINE, "");
+      var head = censusTrim(line);
+      if (!head) continue;
+      if (CENSUS_SECTION_HEAD.test(head)) { indexSection = CENSUS_INDEX_SECTION.test(head); continue; }
+      if (indexSection) continue;
+      /* A LABEL: prefix is structure supplied by the writer, so judge only the
+         VALUE after it - otherwise the label alone reads as clinical text. */
+      var m = /^([A-Za-z][A-Za-z0-9 _\/-]{0,40}):([\s\S]*)$/.exec(line);
+      if (m) { if (censusListHasContent(m[2])) return true; continue; }
+      if (censusListHasContent(head)) return true;
+    }
+    return false;
+  }
+  function censusHistoryHasContent(h) {
+    if (!h) return false;
+    if (typeof h === "string") return censusListHasContent(h);
+    if (Array.isArray(h)) { for (var ai = 0; ai < h.length; ai++) if (censusListHasContent(h[ai])) return true; return false; }
+    if (typeof h !== "object") return false;
+    for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) { if (censusListHasContent(h[k])) return true; }
+    return false;
+  }
+  /* MIRROR THE APPS OWN VISIT PREDICATE. _hasVisitContent in feat_visits.js
+     judges text, codes and scores and deliberately ignores date and type, and
+     _emptyPlaceholder treats indexOnly === true as a shell unconditionally -
+     because _normVisit sets raw to "" for an index-only row BY CONSTRUCTION.
+     A date is metadata: the briefing page that has no Active Problems section
+     still yields a Recent visits list, so counting a dated shell as content let
+     the failing read close its own gap (19 of 19, no gap sentence) on a store
+     that had gained nothing. The strict persistence proof in this very file
+     already agrees: indexOnly !== true && fullDetail && bodyComplete && raw. */
+  function censusVisitsHaveContent(p) {
+    var arr = Array.isArray(p && p.visits) ? p.visits : [];
+    for (var i = 0; i < arr.length; i++) {
+      var v = arr[i];
+      if (!v) continue;
+      if (typeof v === "string") { if (v.trim()) return true; continue; }
+      if (typeof v !== "object") continue;
+      if (v.indexOnly === true) continue;
+      /* textHead is the INDEX LINE and aiSummary is derived from row metadata -
+         feat_visits._emptyPlaceholder states that outright - so neither is proof
+         that an encounter body was captured. What is left is the intersection of
+         _hasVisitContent and the strict persistence proof in this file. */
+      if (String(v.raw || v.text || v.note || v.detail || v.findings || v.plan || "").trim()) return true;
+      if ((v.cpt && v.cpt.length) || (v.icd10 && v.icd10.length) || (v.meds && v.meds.length)) return true;
+      if (v.scores && typeof v.scores === "object" && Object.keys(v.scores).length) return true;
+    }
+    return false;
+  }
+  /* VITALS ARE A CLINICAL FIELD and this module already says so - the chart
+     reader counts problems, meds, allergies, VITALS, history as its clinical
+     fields, and the save writes p.vitals and p.bmi. Leaving them out pointed
+     the whole instrument the wrong way: a patient whose chart documented BP,
+     height, weight and BMI and nothing else was reported to the doctor as
+     holding nothing at all, which is the same defect as a false 19/19 with the
+     sign flipped. takenAt is when the vitals were taken, i.e. metadata, and is
+     excluded for the same reason a visit date is. */
+  function censusVitalsHaveContent(p) {
+    if (!p) return false;
+    var v = p.vitals;
+    if (typeof v === "string" && censusListHasContent(v)) return true;
+    if (v && typeof v === "object") {
+      for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) {
+        if (k === "takenAt" || k === "taken_at" || k === "recordedAt" || k === "date") continue;
+        var t = censusTrim(v[k]);
+        if (t && !CENSUS_EMPTY_ITEM.test(t)) return true;
+      }
+    }
+    return censusListHasContent(p.bmi);
+  }
+  var CENSUS_FIELDS = ["problems", "meds", "allergies", "vitals", "history", "visits", "summary"];
+  function censusPatientContent(p) {
+    return {
+      problems: censusListHasContent(p && p.problems),
+      meds: censusListHasContent(p && p.meds),
+      allergies: censusListHasContent(p && p.allergies),
+      vitals: censusVitalsHaveContent(p),
+      history: censusHistoryHasContent(p && p.history),
+      visits: censusVisitsHaveContent(p),
+      summary: censusSummaryHasContent(p && p.summary)
+    };
+  }
+  /* ATTRIBUTION, recorded but never used as the headline. The fields above are
+     the store, and the store is what the doctor asked about - but a fact he
+     typed himself merges into problems/meds/summary and survives mergeOwned,
+     so "MLS holds content" is not by itself "Athena gave us content".
+     athenaChartSnapshot is the one slice the save stamps as Athena-owned, so
+     count it separately for the ledger. Its visits array is the same index of
+     "<date> - <type>" lines and is excluded here too. */
+  function censusAthenaSourced(p) {
+    var s = p && p.athenaChartSnapshot;
+    if (!s || typeof s !== "object") return false;
+    if (censusListHasContent(s.problems) || censusListHasContent(s.meds) || censusListHasContent(s.allergies)) return true;
+    if (censusHistoryHasContent(s.history)) return true;
+    if (censusVitalsHaveContent({ vitals: s.vitals })) return true;
+    if (censusSummaryHasContent(s.summary)) return true;
+    return false;
+  }
+  /* WHAT THIS PULL CAPTURED, as distinct from what MLS holds. A census taken
+     only AFTER the walk cannot tell a record THIS pull filled from one an
+     earlier pull filled, so the second zero-write pull of the same day would
+     close its own gap and the lie would be back. The fingerprint is content
+     SIZE only and deliberately excludes every save timestamp: a save that
+     rewrote the identical characters and bumped athenaChartImportedAt must not
+     read as a capture, because that is exactly what the measured pull did. */
+  function censusLen(v) {
+    if (v == null) return 0;
+    if (Array.isArray(v)) { var n = 0; for (var ai = 0; ai < v.length; ai++) n += censusLen(v[ai]); return n; }
+    if (typeof v === "object") { var m = 0; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) m += censusLen(v[k]); return m; }
+    return String(v).length;
+  }
+  function censusFingerprint(p) {
+    if (!p) return "";
+    var arr = Array.isArray(p.visits) ? p.visits : [], bodies = 0, vchars = 0;
+    for (var i = 0; i < arr.length; i++) {
+      var v = arr[i];
+      if (!v) continue;
+      if (typeof v === "string") { vchars += v.length; if (v.trim()) bodies++; continue; }
+      if (typeof v !== "object") continue;
+      var body = String(v.raw || v.text || v.note || v.detail || v.findings || v.plan || "");
+      vchars += body.length;
+      if (v.indexOnly !== true && body.trim()) bodies++;
+    }
+    return [censusLen(p.problems), censusLen(p.meds), censusLen(p.allergies), censusLen(p.history),
+      censusLen(p.vitals), censusLen(p.bmi), arr.length, bodies, vchars, censusLen(p.summary)].join("|");
+  }
+  /* Descriptive only, and never a cause. An unchanged record can be perfectly
+     legitimate - nothing new in Athena since the last pull - so this never
+     fails anything. It is simply the one number that would have contradicted
+     "history 19/19" on a day whose store was byte identical before and after. */
+  function censusDelta(before, after) {
+    var out = { measured: false, compared: 0, changed: 0, unchanged: 0 };
+    if (!before || !after || before.measured !== true || after.measured !== true) return out;
+    var bp = (before.prints && typeof before.prints === "object") ? before.prints : {};
+    var ap = (after.prints && typeof after.prints === "object") ? after.prints : {};
+    for (var pid in ap) if (Object.prototype.hasOwnProperty.call(ap, pid)) {
+      out.compared++;
+      if (String(bp[pid] == null ? "" : bp[pid]) === String(ap[pid])) out.unchanged++; else out.changed++;
+    }
+    out.measured = true;
+    return out;
+  }
+  /* Measure what the store holds for THIS day. rows are the schedule rows the
+     batch was built from and unresolved are the days patients whose identity
+     never resolved, so the denominator is the day itself and never a number the
+     walk chose for us. targets counts DISTINCT patients plus rows that carry no
+     local patient id at all, so two appointments for one person can never
+     manufacture a gap. */
+  function storedContentCensus(rows, unresolvedList) {
+    rows = Array.isArray(rows) ? rows : [];
+    unresolvedList = Array.isArray(unresolvedList) ? unresolvedList : [];
+    var out = {
+      measured: false, rows: rows.length, targets: 0, resolved: 0, unresolved: 0, neverAttempted: 0,
+      withContent: 0, withoutContent: 0, stampOnlySummary: 0, athenaSourced: 0, gap: 0,
+      fields: { problems: 0, meds: 0, allergies: 0, vitals: 0, history: 0, visits: 0, summary: 0 },
+      emptyPatientIds: [], prints: {}
+    };
+    return safe(function () {
+      var seen = {};
+      for (var i = 0; i < rows.length; i++) {
+        var pid = String(rowLocalPatientId(rows[i]) || "");
+        if (!pid) { out.targets++; out.unresolved++; continue; }
+        if (seen[pid]) continue;
+        seen[pid] = 1; out.targets++;
+        var p = patientById(pid);
+        if (!p) { out.unresolved++; continue; }
+        out.resolved++;
+        out.prints[pid] = censusFingerprint(p);
+        if (censusAthenaSourced(p)) out.athenaSourced++;
+        var c = censusPatientContent(p), any = false;
+        for (var fi = 0; fi < CENSUS_FIELDS.length; fi++) {
+          var fk = CENSUS_FIELDS[fi];
+          if (c[fk]) { out.fields[fk]++; any = true; }
+        }
+        if (any) { out.withContent++; continue; }
+        out.withoutContent++;
+        if (out.emptyPatientIds.length < 40) out.emptyPatientIds.push(pid);
+        /* no content AND a non-empty summary can only mean stamp lines. */
+        if (String(p.summary || "").trim()) out.stampOnlySummary++;
+      }
+      /* THE DENOMINATOR MUST BE THE DAY. requested is rows.length +
+         unresolved.length, so counting only rows shrank the fraction to hide
+         exactly the patients that were never attempted: a six-appointment day
+         with four unresolved rows read "history 2/2" where it used to read 2/6.
+         An unresolved patient is a target of the day, is not content, and is
+         not a record we are entitled to call empty either - so it lands in the
+         gap and in unresolved, never in withoutContent. */
+      for (var ui = 0; ui < unresolvedList.length; ui++) {
+        var upid = String((unresolvedList[ui] && unresolvedList[ui].patientId) || "");
+        if (upid && seen[upid]) continue;
+        if (upid) seen[upid] = 1;
+        out.targets++; out.unresolved++; out.neverAttempted++;
+      }
+      /* THE INSTRUMENT LIES FIRST. Zero resolutions out of a non-empty day is
+         far more likely a store read that never happened than a day on which
+         every single record vanished, and a census that reports a false zero is
+         the same class of defect as a walk count that reports a false 19. This
+         also covers the day whose rows ALL failed identity resolution: the
+         batch is handed zero rows and nineteen unresolved, which used to score
+         a vacuous 0 of 0 with measured true. Report UNMEASURED and let every
+         consumer say so out loud. */
+      if (out.targets > 0 && out.resolved === 0) { out.gap = 0; return out; }
+      out.gap = Math.max(0, out.targets - out.withContent);
+      out.measured = true;
+      return out;
+    }, out);
+  }
   /* b751: write the history verdict and every per-patient reason into the day
      ledger. The pull already KNOWS why each patient failed - frozenRetryEntry
      builds {patientId, reason} at all seven failure sites - but the receipt was
@@ -699,6 +1015,18 @@
     safe(function () {
       var x = readIndex(day);
       var reasons = {}, perPatient = {}, storedOk = 0;
+      /* b752: the census is measured in finalizeVerdict and rides the receipt;
+         an older receipt with none is recorded as unmeasured rather than as
+         zero content, because zero would be a claim we did not measure. */
+      var census = (receipt.storeCensus && typeof receipt.storeCensus === "object") ? receipt.storeCensus
+        : { measured: false, rows: Number(dayRowCount || 0), targets: 0, resolved: 0, unresolved: 0, neverAttempted: 0, withContent: 0, withoutContent: 0, stampOnlySummary: 0, athenaSourced: 0, gap: 0, fields: {}, emptyPatientIds: [] };
+      var delta = (receipt.storeDelta && typeof receipt.storeDelta === "object") ? receipt.storeDelta
+        : { measured: false, compared: 0, changed: 0, unchanged: 0 };
+      /* prints is the per-patient content fingerprint the delta is computed
+         from. It exists for one comparison and must never be persisted: the
+         ledger is bounded localStorage, and a fingerprint is not a finding. */
+      var ledgerCensus = {};
+      for (var ck in census) if (Object.prototype.hasOwnProperty.call(census, ck) && ck !== "prints") ledgerCensus[ck] = census[ck];
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         var pid = String(p.patientId || "");
@@ -729,7 +1057,30 @@
         complete: receipt.complete === true,
         verdict: String(receipt.reason || ""),
         reasons: reasons,
-        perPatient: perPatient
+        perPatient: perPatient,
+        /* b752: the CENSUS OF THE STORE, recorded next to the walk counts so
+           the two can be compared after the fact. contentOk/contentNone are
+           the answer to the question this ledger could not answer before:
+           how many of the days patients actually hold clinical content. */
+        contentOk: Number(census.withContent || 0),
+        contentNone: Number(census.withoutContent || 0),
+        contentGap: Number(census.gap || 0),
+        contentMeasured: census.measured === true,
+        contentVerified: receipt.contentVerified === true,
+        /* WHAT THIS PULL ACTUALLY CHANGED, next to what the store holds. The
+           measured pull left the store byte identical, so contentChanged 0
+           beside contentOk 19 is the shape of the defect written down. An
+           unchanged record is legitimate on its own - the pair is the finding.
+           athenaSourced counts records holding an Athena-attributed snapshot,
+           which is how a fact the clinician typed by hand can be told apart
+           from a fact a chart read brought in. */
+        contentChanged: Number(delta.changed || 0),
+        contentUnchanged: Number(delta.unchanged || 0),
+        contentCompared: Number(delta.compared || 0),
+        changeMeasured: delta.measured === true,
+        athenaSourced: Number(census.athenaSourced || 0),
+        neverAttempted: Number(census.neverAttempted || 0),
+        census: ledgerCensus
       };
       writeIndex(day, x);
     });
@@ -2555,6 +2906,12 @@
         if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; }
       }
     }
+    /* b752: THE BEFORE HALF OF THE MEASUREMENT, taken before the first chart is
+       opened. A census taken only after the walk cannot tell a record THIS pull
+       filled from one an earlier pull filled, so on the second zero-write pull of
+       the same day the gap would close and the verdict would be back to claiming
+       coverage it never captured. Pure read, no write, same resolver. */
+    receipt.storeCensusBefore = storedContentCensus(rows, unresolved);
     ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);
     try {
       for (var i = 0; i < rows.length; i++) {
@@ -2871,12 +3228,49 @@
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
       receipt.failures = receipt.retry.length;
+      /* b752: MEASURE THE STORE, then judge. Everything downstream that speaks
+         about coverage in words now reads this census rather than the walk
+         counters, because requested/processed are arithmetically incapable of
+         contradicting the walk that produced them. A pull that stored nothing
+         reported 19/19 with failures 0 for exactly that reason. */
+      /* unresolved is passed so the DENOMINATOR IS THE DAY. Censusing rows alone
+         shrank the fraction to hide exactly the patients that were never
+         attempted (a six-appointment day with four unresolved rows read 2/2
+         where the walk counters had at least said 2/6), and a day whose rows ALL
+         failed identity resolution hands this batch zero rows - which scored a
+         vacuous 0 of 0 with measured true. */
+      receipt.storeCensus = storedContentCensus(rows, unresolved);
+      receipt.storeDelta = censusDelta(receipt.storeCensusBefore, receipt.storeCensus);
+      receipt.storedContent = Number(receipt.storeCensus.withContent || 0);
+      receipt.storedNoContent = Number(receipt.storeCensus.withoutContent || 0);
+      receipt.storedChanged = Number(receipt.storeDelta.changed || 0);
+      receipt.storeChangeMeasured = receipt.storeDelta.measured === true;
+      receipt.contentGap = receipt.storeCensus.measured === true ? Number(receipt.storeCensus.gap || 0) : 0;
+      /* contentVerified is the ONLY completeness claim the census can support:
+         every target of the day resolved to a stored record that holds real
+         clinical content. A patient whose Athena chart is genuinely empty
+         makes it false WITHOUT making the pull a failure - complete below
+         keeps its meaning (every requested read finished and receipted) so a
+         verified-empty chart is still a valid, saved outcome. The gap is
+         reported, never refused, and never explained: from here an empty
+         chart and a read that missed the content look identical. */
+      receipt.contentVerified = receipt.storeCensus.measured === true && receipt.contentGap === 0;
       receipt.complete = receipt.exactIdentityVerified && receipt.retry.length === 0 && receipt.processed === rows.length && receipt.patients.every(function (p) { return p && p.complete === true; });
       receipt.reason = receipt.complete ? "complete" : "history-partial";
       /* b751: persist it. finalizeVerdict runs at every exit and may run twice
          (before and after the end-of-batch re-sweep); the write is keyed by day
          so the LAST call wins, which is the post-sweep truth we want. */
       safe(function () {
+        /* b752: A SUBSET RUN MUST NOT OVERWRITE THE DAY. The automatic sweep and
+           the manual retry both walk a handful of the days patients through this
+           same finalizeVerdict, and the record is keyed by day - so a sub-batch
+           filed three swept patients under day-level field names, and on the
+           break paths of the sweep loop (a throw, or a sub-receipt with no
+           patients array) that subset record was the one left standing. The
+           census fields now make this ledger the forensic answer to "how many of
+           the days patients hold content", so a mis-scoped record is worse than
+           none. The outer pre-sweep call has already written the full day. */
+        if (sweepDepth) return;
         var day = "";
         for (var di = 0; di < rows.length && !day; di++) {
           day = normDate((rows[di] && (rows[di].scheduleDate || rows[di].date)) || "");
@@ -3541,7 +3935,19 @@
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
             res.retry = { schedule: false, calendarFailed: calendarReceipt.failed, calendarClass: calendarReceipt.failureClass, history: historyReceipt.retry || [] };
             var scheduleSummary = calendarReceipt.accounted + "/" + calendarReceipt.attempted;
-            var historySummary = historyReceipt.processed + "/" + historyReceipt.requested;
+            /* b752: this fraction is the sentence the doctor acts on, so it must
+               be MEASURED. processed and requested are both walk counters -
+               requested is rows.length + unresolved.length and processed++ fires
+               for a pure failure and for every patient regardless of whether the
+               chart landed - so the pair reported 19/19 on a day that stored
+               nothing. The census counts patients whose stored record actually
+               holds clinical content, out of the days own targets. The walk
+               counters remain the fallback for a receipt with no census (the
+               schedule-only synthetic receipt), never a substitute for one. */
+            var historyStoreCensus = historyReceipt.storeCensus || null;
+            var historySummary = (historyStoreCensus && historyStoreCensus.measured === true)
+              ? (Number(historyStoreCensus.withContent || 0) + "/" + Number(historyStoreCensus.targets || 0))
+              : (historyReceipt.processed + "/" + historyReceipt.requested);
             var historyFailures = Number(historyReceipt.failures != null ? historyReceipt.failures : (historyReceipt.retry || []).length);
             /* tabhint-1.0.0 (2026-07-24, proven live): a run whose failures are
                mostly same-frame-name-mismatch is almost always MULTIPLE OPEN
@@ -3604,9 +4010,9 @@
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
-              (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : ""), "err");
+              (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") + contentNotice(historyReceipt), "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
-            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
+            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt), "ok");
             return res;
           });
           });
@@ -4130,6 +4536,10 @@
     pullMonth: pullMonth,
     pullCalendarSelection: pullCalendarSelection,
     calendarSelection: calendarSelection,
+    /* b752: exported so every verdict surface says the census with ONE set of
+       words. The Calendar provider-day surface rendered its own walk-count
+       verdict over the top of this one after the promise resolved. */
+    contentNotice: contentNotice,
     _providerKey: providerKey,
     _resolveProviderRequest: resolveProviderRequest,
     _monthDateKeys: monthDateKeys,

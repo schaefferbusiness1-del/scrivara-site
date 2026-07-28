@@ -279,14 +279,27 @@
       var cr = res && res.calendarReceipt || {}, hr = res && res.historyReceipt || {};
       var scheduleDone = Number(cr.accounted != null ? cr.accounted : (Number(res && res.created || 0) + Number(res && res.repaired || 0) + Number(res && res.skipped || 0)));
       var scheduleTotal = Number(cr.attempted != null ? cr.attempted : scheduleDone);
-      var historyDone = Number(hr.processed || 0), historyTotal = Number(hr.requested || 0);
+      /* b752: MEASURED, not walked. hr.processed is incremented for a pure
+         failure and for every patient regardless of whether the chart landed,
+         and hr.requested is rows plus unresolved - so the pair reported 19/19
+         for a pull that wrote zero characters to the store. The census counts
+         patients whose stored record actually holds clinical content, out of
+         the days own targets. The walk counters remain the fallback for a
+         receipt with no census, never a substitute for one. */
+      var storeCensus = hr.storeCensus && hr.storeCensus.measured === true ? hr.storeCensus : null;
+      var historyDone = storeCensus ? Number(storeCensus.withContent || 0) : Number(hr.processed || 0);
+      var historyTotal = storeCensus ? Number(storeCensus.targets || 0) : Number(hr.requested || 0);
+      var contentSay = safe(function () {
+        var f = api && api.contentNotice;
+        return typeof f === 'function' ? String(f(hr) || '') : '';
+      }, '');
       var failures = Number(cr.failed || 0) + Number(hr.failures != null ? hr.failures : ((hr.retry || []).length));
       if (res && res.ok === true && res.complete === true) {
         pullStatus(withHistory
-          ? ('Verified complete: schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures 0.')
+          ? ('Verified complete: schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures 0.' + contentSay)
           : ('Schedule-only complete: ' + scheduleDone + '/' + scheduleTotal + ' appointments accounted for; history was not requested.'), 'ok');
       } else {
-        var detail = withHistory ? (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures ' + failures + '.') : (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; history not requested; failures ' + failures + '.');
+        var detail = withHistory ? (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures ' + failures + '.' + contentSay) : (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; history not requested; failures ' + failures + '.');
         pullStatus(((res && res.error) || 'This provider-day pull is incomplete. Nothing was widened to other providers; it is safe to retry.') + detail, 'err');
       }
     }, function () {

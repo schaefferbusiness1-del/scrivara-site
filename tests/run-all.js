@@ -300,6 +300,8 @@ const tests = [
   'b749-incomplete-fixes-finished.test.js',
   'record-verb-names-the-patient-once.test.js',
   'history-outcome-is-recorded-and-reported-honestly.test.js',
+  'pull-verdict-is-a-store-census.test.js',
+  'live-measured-occlusion-regressions.test.js',
   'writeback-walkthrough-contract.test.js',
   'idle-logout-knows-athena-work.test.js',
   'session-sliding-refresh-client.test.js',
