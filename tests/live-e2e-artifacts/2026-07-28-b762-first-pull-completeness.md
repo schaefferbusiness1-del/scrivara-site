@@ -56,3 +56,22 @@ activation lease) — not shipped here.
   call sites in the served bundle).
 - Wall clock: ~26 min including the deepest occluded charts. The two-window
   setup remains the fast path; one-window now CONVERGES instead of failing.
+
+## b764/b765 + MLS Assist 3.0.30 addendum — owner directives closed, live-proven
+- NO-YANK, MAC-SAFE (b763): auto-convergence proven earlier the same day.
+- 3.0.30 PUBLISHED to the site (Settings direct link, get-extension page,
+  release feed): zip sha dc03b20d... byte-verified over the live URL; running
+  live (mlsPong version 3.0.30) after the proven dev-folder install protocol.
+- DAY-SCOPED READER (3.0.30): rows outside the requested day are narrated,
+  filed index-only, and EXCLUDED from the reader's exact-count arithmetic.
+- FAST LANE SAVES TODAY'S NOTE (b765): first in-loop design was live-falsified
+  (a 25s race abandoned-but-did-not-abort the scoped read, which kept driving
+  the athena tab under the batch: 10 ok then 11 tab-unreachable). Rebuilt as a
+  POST-SWEEP sequential fully-awaited pass. Live verification 18:56-19:31Z,
+  bodies preference OFF: sweep 21/21 ok 0 failed; the post-sweep pass then
+  raised today-dated verified bodies 3 -> 6 across today's imports; patients
+  with no charted same-day encounter receipt honestly as zero-row completes.
+  Preference keys removed afterwards; default-ON restored (pref=true, vp=true).
+- One transient during the release: the extension dev-reload orphans content
+  scripts in already-open tabs; the athena tab needed one reload before the
+  picker saw it again. Expected devReload behaviour, not a product defect.
