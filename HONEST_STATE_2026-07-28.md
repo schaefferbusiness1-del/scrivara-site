@@ -55,6 +55,36 @@ on the same unproven footing.
 
 ---
 
+## 2b — CLAIMED BY A PROOF THAT CANNOT FAIL
+
+**Worse than unverified, because it has been counted as done.** See
+`REACHABILITY_PROOF_AUDIT_2026-07-28.md`: **22 of 38** suites that claim a control
+is reachable prove it by matching source text rather than exercising the shipped resolver.
+
+One is confirmed to have certified a live defect — `shell-hidden-controls-keep-reach`
+asserted that `#mlsDsVisitBodies` "is offered as Full visit notes" by
+regex-extracting the spec literal from source, while the Tools row never rendered once.
+Fixed in b760.
+
+Items whose status traces to a source-text reachability proof, and which therefore move out
+of "verified":
+
+| item | suite | what it actually proves |
+|---|---|---|
+| every visit-focus route survives | `visit-focus-keeps-every-route` | 19 routes are **named in source**, not that any resolves |
+| the calendar list keeps its exit (owner-reported nav trap) | `calendar-list-keeps-its-exit` | the exit exists in source |
+| voice pills keep their routes | `voice-cluster-expands-never-decides`, `visit-voice-one-expands-never-decides` | routes and controls **counted** from source |
+
+Four more are suites written during this effort and are listed in the audit rather than
+exempted, including `phone-dock-fits-and-targets-reach-44`, whose name overclaims relative
+to its method even though its geometry was separately measured live at 320 / 347 / 360.
+
+**This is a screening result, not a verdict.** Source-text pinning is correct for claims
+ABOUT source. Only runtime-reachability claims proved textually can certify a defect, and
+each of the 22 needs reading before being called wrong. The real unit is the ASSERTION, not
+the suite: a mixed suite that executes most things and proves the critical one by regex would
+pass this sweep.
+
 ## 3 — PREPARED, WAITING ONLY ON HIS LANE
 
 Ready to run the moment clinic ends. No further authoring required.
