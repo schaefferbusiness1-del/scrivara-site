@@ -10670,7 +10670,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             });
             if (!sameRow) matchedRows.push(matchedRow);
           }
-          if (matchedRows.length > 1) return { el: null, sc: 99, scanned: holders.length, viaApptId: true, ambiguous: true, matches: matchedRows.length };
+          if (matchedRows.length > 1) {
+            /* b754: DUPLICATE RENDER, NOT AMBIGUITY. Every holder carries the
+               one exact wanted id and every row here already matched the
+               expected last name, so these are the same appointment drawn more
+               than once (athena draws the main schedule and a mini schedule).
+               Collapse to the richest MAIN row instead of refusing: preferring
+               a row outside any mini-schedule container, then the longest row
+               text, which is the fuller main-grid row. dupRenders is reported
+               so this stays visible in the diag rather than silently passing. */
+            var MINI_RE = /mini/i;
+            var inMini = function (el) {
+              var n = el;
+              for (var d = 0; d < 8 && n; d++) {
+                try { if (MINI_RE.test(String(n.className || '') + ' ' + String(n.id || ''))) return true; } catch (eMini) {}
+                n = n.parentElement;
+              }
+              return false;
+            };
+            var mains = matchedRows.filter(function (r) { return !inMini(r); });
+            var pool = mains.length ? mains : matchedRows;
+            pool.sort(function (a, b) { return rowText(b).length - rowText(a).length; });
+            return { el: pool[0], sc: 99, scanned: holders.length, viaApptId: true, matches: 1, dupRenders: matchedRows.length, mainRows: mains.length };
+          }
           return matchedRows.length === 1 ? { el: matchedRows[0], sc: 99, scanned: holders.length, viaApptId: true, matches: 1 } : null;
         }
         // fast path: exact id only in bootstrap mode; ordinary opens retain the

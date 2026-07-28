@@ -1,5 +1,5 @@
 {
-  "version": "3.0.27",
+  "version": "3.0.28",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.27 — Chart history now captures the problem list. athenaOne shows Active Problems on the appointment briefing, but that view carries no patient banner, so the reader has always had to navigate away from it in order to verify identity - and the problem list went with it. The briefing is now read BEFORE that navigation and merged into the chart, while identity verification stays exactly where it was. Requires Chrome 116+."
+  "notes": "v3.0.28 — Fixes the refusal that blocked chart history for most patients. athenaOne draws every appointment twice (a main schedule and a mini schedule), so looking a patient up by their appointment id found several matching elements and MLS refused the read as ambiguous - even though they were all the same appointment. Duplicate copies are now recognised as one appointment and the fuller main-grid row is used. Identity is still proven from the chart banner, exactly as before. Requires Chrome 116+."
 }

@@ -866,6 +866,14 @@
     return censusListHasContent(p.bmi);
   }
   var CENSUS_FIELDS = ["problems", "meds", "allergies", "vitals", "history", "visits", "summary"];
+  /* b754: allergies are counted in the BREAKDOWN but must never, alone, mark a
+     record as captured. mergeOwned preserves a prior allergy value whenever the
+     fresh read is empty, and athenaOne prints that section as the literal string
+     NKDA - so allergies came back present for 19 of 19 patients even on a pull
+     that stored nothing, and on a SIGNED-OUT session. A field the broken path
+     does not produce cannot be evidence that the path worked. This is the same
+     exclusion the chart-import gate already makes, applied one level up. */
+  var CENSUS_CONTENT_FIELDS = ["problems", "meds", "vitals", "history", "visits", "summary"];
   function censusPatientContent(p) {
     return {
       problems: censusListHasContent(p && p.problems),
@@ -967,7 +975,10 @@
         var c = censusPatientContent(p), any = false;
         for (var fi = 0; fi < CENSUS_FIELDS.length; fi++) {
           var fk = CENSUS_FIELDS[fi];
-          if (c[fk]) { out.fields[fk]++; any = true; }
+          if (c[fk]) out.fields[fk]++;
+        }
+        for (var ci = 0; ci < CENSUS_CONTENT_FIELDS.length; ci++) {
+          if (c[CENSUS_CONTENT_FIELDS[ci]]) { any = true; break; }
         }
         if (any) { out.withContent++; continue; }
         out.withoutContent++;
