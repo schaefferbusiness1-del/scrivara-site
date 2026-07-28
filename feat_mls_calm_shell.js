@@ -955,7 +955,16 @@
       { label: /^verify saved data$/i, within: '#profileCard' },
       { label: /^share \/ export$/i, within: '#profileCard' },
       { label: /^export everything for emr$/i, within: '#profileCard' },
-      { id: 'mlsDsVisitBodies', as: 'Full visit notes' },
+      /* Owner, 2026-07-28: "the check mark that lets you pull visits is
+         gone and needs to be added back but not next to the pull today in
+         the settings option." Both halves are honoured here. The row no
+         longer targets #mlsDsVisitBodies - the checkbox beside Pull today,
+         which this shell hides and which he explicitly does not want back
+         there - but #setPullVisitBodies, the Settings copy of the same
+         stored preference (uns('pullVisitBodies'), ScribeFlow.html:4835).
+         `reveal` routes the row THROUGH Settings so he sees a real check
+         mark with its state, instead of a hidden box being flipped. */
+      { id: 'setPullVisitBodies', as: 'Full visit notes', reveal: 'integrations' },
       { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
       { label: /^add a visit$/i, within: '#profileCard' }
     ] },
@@ -1042,6 +1051,42 @@
     return true;
   }
 
+  /* A control that lives INSIDE Settings must never be driven blind. The
+     modal is closed while the Tools menu is open, so el.click() would flip
+     a checkbox the clinician cannot see - which is the complaint that sent
+     us here in the first place. Open Settings, land on the group that owns
+     it, and SHOW it. Same doctrine as openCopilot: delegate to the control
+     the app already owns, fall back to the global opener only if absent. */
+  function revealSetting(it) {
+    var el = it && it.el;
+    var opener = null;
+    /* Scoped to the header on purpose: qsa(sel, null) falls back to the
+       whole document, which would let any button reading "Settings"
+       anywhere on the page claim this route. */
+    var header = qs('#appHeader');
+    if (header) qsa('button', header).some(function (b) {
+      if (!/^settings$/i.test(textOf(b))) return false;
+      opener = b; return true;
+    });
+    if (opener) opener.click();
+    else safe(function () { if (typeof W.openSettings === 'function') W.openSettings(); });
+    setTimeout(function () {
+      /* The unified Settings owner draws one tab per group. Click its tab
+         rather than calling into that module: no new export is needed, and
+         the legacy tab model simply has no such button, so it is skipped
+         instead of throwing. */
+      safe(function () {
+        var tab = qs('#settingsTabBar [data-mls-settings-group="' + it.reveal + '"]');
+        if (tab) tab.click();
+      });
+      /* block:"center", never "nearest": the minimum scroll parks a control
+         flush with the viewport edge - on screen, focused, and under the
+         fixed dock. Shown is not the same as reachable. */
+      safe(function () { if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); });
+      if (el) spotlight(el);
+    }, 240);
+  }
+
   /* Availability, not visibility: these are hidden BY THIS SHELL, so offsetWidth
      would report every one of them as gone. What matters is whether the app
      itself gated them (inline display:none, hidden, disabled). */
@@ -1067,8 +1112,17 @@
         });
       }
     }
-    if (!available(el) || !textOf(el)) return null;
-    return { el: el, label: spec.as || controlLabel(el), last: !!spec.last };
+    /* A DECLARED label IS a name. This guard used to reject the element
+       for having no derivable text ONE LINE before `spec.as` - the field
+       that exists to name exactly these controls - was consulted. A bare
+       <input type=checkbox> has empty textContent and carries its title
+       and aria-label on the wrapping <label>, so EVERY checkbox spec was
+       silently dropped. The "Full visit notes" row the shell promises had
+       therefore never rendered once, while the reach suite exempted the
+       hidden wrapper *because* that row was "offered". Offered in the
+       spec list is not offered on screen. */
+    if (!available(el) || (!spec.as && !textOf(el))) return null;
+    return { el: el, label: spec.as || controlLabel(el), last: !!spec.last, reveal: spec.reveal || '' };
   }
 
   /* Flat, in section order, so the row index used by the click handler is one
@@ -1180,6 +1234,7 @@
         var it = items[parseInt(row.getAttribute('data-i'), 10)];
         close();
         if (!it) return;
+        if (it.reveal) { revealSetting(it); return; }
         runControl(it.el);
       });
       row.addEventListener('keydown', function (e) {
