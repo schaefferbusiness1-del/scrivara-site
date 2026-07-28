@@ -686,6 +686,54 @@
     }, { v: 1, rows: {} });
   }
   function writeIndex(day, x) { var k = indexKey(day); if (k) { ensureDay(day); safe(function () { localStorage.setItem(k, JSON.stringify(x)); }); } }
+  /* b751: write the history verdict and every per-patient reason into the day
+     ledger. The pull already KNOWS why each patient failed - frozenRetryEntry
+     builds {patientId, reason} at all seven failure sites - but the receipt was
+     in-memory only, so the reasons died with the pull. A store scan of the
+     owner account found 220 keys and not one failure reason recorded, which is
+     why "why did these patients get no history" has never been answerable after
+     the fact. Additive: rides the existing ledger object and namespace, touches
+     no row state, and readIndex preserves unknown top-level keys. */
+  function recordHistoryVerdict(day, receipt, dayRowCount) {
+    day = String(day || ""); if (!day || !receipt) return;
+    safe(function () {
+      var x = readIndex(day);
+      var reasons = {}, perPatient = {}, storedOk = 0;
+      (receipt.patients || []).forEach(function (p) {
+        if (!p) return;
+        var pid = String(p.patientId || "");
+        if (p.complete === true) { storedOk++; if (pid) perPatient[pid] = "ok"; return; }
+        var why = String(p.reason || "incomplete").slice(0, 120);
+        if (pid) perPatient[pid] = why;
+        reasons[why] = (reasons[why] || 0) + 1;
+      });
+      (receipt.retry || []).forEach(function (r) {
+        if (!r) return;
+        var why = String(r.reason || "history-partial").slice(0, 120);
+        var pid = String(r.patientId || "");
+        if (pid && !perPatient[pid]) perPatient[pid] = why;
+        reasons[why] = (reasons[why] || 0) + 1;
+      });
+      x.history = {
+        at: Date.now(),
+        requestId: String(receipt.requestId || ""),
+        /* dayRows is the DAYS OWN patient count. requested is only what the
+           batch was handed, so the two disagreeing is itself the finding: it
+           means patients were never queued for history at all. */
+        dayRows: Number(dayRowCount || 0),
+        requested: Number(receipt.requested || 0),
+        processed: Number(receipt.processed || 0),
+        storedOk: storedOk,
+        failures: Number(receipt.failures || 0),
+        timedOut: receipt.timedOut === true,
+        complete: receipt.complete === true,
+        verdict: String(receipt.reason || ""),
+        reasons: reasons,
+        perPatient: perPatient
+      };
+      writeIndex(day, x);
+    });
+  }
   function markDone(key, meta) {
     var day = String((meta && meta.date) || ""), x = readIndex(day);
     x.rows[key] = { state: "done", patientId: String((meta && meta.patientId) || ""), backendAppointmentId: String((meta && meta.backendAppointmentId) || ""), appt_date: String((meta && meta.date) || ""), updated: Date.now() };
@@ -2825,6 +2873,16 @@
       receipt.failures = receipt.retry.length;
       receipt.complete = receipt.exactIdentityVerified && receipt.retry.length === 0 && receipt.processed === rows.length && receipt.patients.every(function (p) { return p && p.complete === true; });
       receipt.reason = receipt.complete ? "complete" : "history-partial";
+      /* b751: persist it. finalizeVerdict runs at every exit and may run twice
+         (before and after the end-of-batch re-sweep); the write is keyed by day
+         so the LAST call wins, which is the post-sweep truth we want. */
+      safe(function () {
+        var day = "";
+        for (var di = 0; di < rows.length && !day; di++) {
+          day = normDate((rows[di] && (rows[di].scheduleDate || rows[di].date)) || "");
+        }
+        if (day) recordHistoryVerdict(day, receipt, rows.length);
+      });
     }
     finalizeVerdict();
     /* si-1.9.0 (owner directive 2026-07-22): pulls must COMPLETE during

@@ -299,6 +299,7 @@ const tests = [
   'day-pull-lane-convergence.test.js',
   'b749-incomplete-fixes-finished.test.js',
   'record-verb-names-the-patient-once.test.js',
+  'history-outcome-is-recorded-and-reported-honestly.test.js',
   'writeback-walkthrough-contract.test.js',
   'idle-logout-knows-athena-work.test.js',
   'session-sliding-refresh-client.test.js',
