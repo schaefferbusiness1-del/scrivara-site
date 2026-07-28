@@ -7564,9 +7564,28 @@ async function mlsSchedDomInline(doc, CFG){
           };
           const frameIdentity = {};
           (identityFrameResults || []).forEach((r) => { if (r && typeof r.frameId === 'number' && r.result) frameIdentity[r.frameId] = r.result; });
+          /* b755 DOOR 3: a frame whose OWN URL carries the requested appointment
+             id is bound to this patient by athenaOne itself. The frame holding
+             Active Problems is /ax/appointment/<apptId>/briefing, and it has no
+             patient banner and (measured live) neither the expected DOB nor MRN
+             in its text - so Door 1 has nothing to read and Door 2's second
+             conjunct is unsatisfiable. It was discarded before the merge, which
+             is why the chart text came back empty while identity was proven
+             elsewhere. This does not weaken either existing door: the id must
+             have been SUPPLIED by the caller (an ordinary name-scan open passes
+             none, so it cannot reach this branch) and it must match exactly on a
+             non-alphanumeric boundary, so a prefix cannot satisfy a longer id. */
+          const frameUrlBindsAppointment = (u) => {
+            if (!expectedAppointmentId) return false;
+            const url = String(u || '');
+            if (!/\/(?:appointment|appointments)\//i.test(url)) return false;
+            const esc = expectedAppointmentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp('(?:^|[^A-Za-z0-9])' + esc + '(?![A-Za-z0-9])').test(url);
+          };
           const frameBoundToTarget = (f) => {
             if (!want || (!wantDob && !wantMrn)) return false;
             if (identityMatchesTarget(frameIdentity[f.frameId])) return true;
+            if (frameUrlBindsAppointment(f.u)) return true;
             if (!strictNameMatch(f.t, want)) return false;
             return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
           };

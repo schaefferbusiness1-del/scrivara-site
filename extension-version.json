@@ -1,5 +1,5 @@
 {
-  "version": "3.0.28",
+  "version": "3.0.29",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.28 — Fixes the refusal that blocked chart history for most patients. athenaOne draws every appointment twice (a main schedule and a mini schedule), so looking a patient up by their appointment id found several matching elements and MLS refused the read as ambiguous - even though they were all the same appointment. Duplicate copies are now recognised as one appointment and the fuller main-grid row is used. Identity is still proven from the chart banner, exactly as before. Requires Chrome 116+."
+  "notes": "v3.0.29 — Chart history can now read the section that holds the problem list. athenaOne renders Active Problems on a view that carries no patient banner, and MLS would only accept a chart section it could tie to the patient by a banner, a date of birth or an MRN - none of which appear there - so that section was discarded on every pull. A section whose own athenaOne address contains the appointment MLS asked for is now accepted as belonging to that appointment. A different appointment is still refused, and identity is still proven from the chart banner exactly as before. Requires Chrome 116+."
 }

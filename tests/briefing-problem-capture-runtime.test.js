@@ -359,13 +359,37 @@ assert(bg.includes("if (!frameBoundToTarget(f)) { unboundClinicalFrames++; retur
 assert(bg.includes('textChars: chartTextStrict.length'), 'the coverage receipt no longer measures the bound chart text');
 assert(bg.includes('const chartTextStrict = mergedStrict;'), 'the returned chart text is no longer the merged BOUND frame text');
 
-/* DESIGN A stays closed: nothing briefing-shaped may exist anywhere between the frame
-   set being built and the coverage receipt being sealed. */
+/* DESIGN A stays closed. b755 made this guard test CODE rather than PROSE: its
+   first form counted the literal string "briefing" anywhere in the region, so it
+   fired on a COMMENT that merely explains the binding rule - the third time a
+   comment-blind scanner has reported prose as code in this repo.
+   What b753 actually needed to forbid is two specific things:
+     (a) FABRICATING a frame and injecting it into the read. Such a frame fails
+         frameBoundToTarget, is discarded before the merge, and takes the entire
+         read down through unboundClinicalFrames.
+     (b) APPENDING the captured briefing text upstream of the char-count gates.
+         Three gates compare a receipt count against the text they received, so
+         appending early refuses everything.
+   A REAL frame that athenaOne served and the reader fetched normally is neither
+   of those, and b755 permits exactly that one to bind on its own appointment id.
+   The assertions above (359, 360) still pin that the returned text is the merged
+   BOUND frame text and that textChars measures it, which is what keeps the
+   counts self-consistent. */
 const frameRegionStart = bg.indexOf('const rawFrames = (results || []).map');
 const frameRegionEnd = bg.indexOf('const chartReceiptStrict = {', frameRegionStart);
 assert(frameRegionStart > 0 && frameRegionEnd > frameRegionStart, 'the frame-binding region could not be isolated');
 const frameRegion = bg.slice(frameRegionStart, frameRegionEnd);
-assert.strictEqual(countOf(frameRegion, 'briefing'), 0, 'briefing data leaked into frame binding / merge / coverage counting');
+const frameCode = frameRegion
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/^[ \t]*\/\/.*$/gm, ' ');
+assert.strictEqual(countOf(frameCode, 'mls://'), 0,
+  'a SYNTHETIC pseudo-frame URL appears in the frame-binding region - design A was rejected ' +
+  'because such a frame fails frameBoundToTarget and is discarded before the merge, taking the ' +
+  'whole read down with it via unboundClinicalFrames');
+assert.strictEqual(countOf(frameCode, 'briefingText'), 0,
+  'the captured briefing TEXT must never enter frame binding, the merge, or coverage counting - ' +
+  'three gates compare a receipt char count against the text they received, so appending ' +
+  'upstream refuses the entire read');
 /* briefingDiag must be a SIBLING of the response, never inside the receipt: three
    separate gates re-check receipt.textChars against rd.text alone. */
 const receiptRegion = bg.slice(bg.indexOf('const chartReceiptStrict = {'), bg.indexOf('/* 3.0.2: the read lease binds'));
