@@ -17,7 +17,7 @@ const assets = [
   ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260723asst144', '20260719asst143'],
-  ['feat_mls_b121_pack.js', '20260726p2c4', '20260719p2c3'],
+  ['feat_mls_b121_pack.js', '20260728p2c5', '20260726p2c4'],
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_checker.js', '20260728chk3029', '20260728chk3028'],
