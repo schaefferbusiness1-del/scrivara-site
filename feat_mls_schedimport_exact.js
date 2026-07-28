@@ -1547,7 +1547,7 @@
         return readCalendarOnce().then(function (ed0) {
           if (ed0 && ed0.__mlsVerified === true) return ed0;
           if (n >= 3) return ed0;
-          return new Promise(function (res0) { setTimeout(res0, n === 1 ? 600 : 1500); })
+          return (window.__mlsBgSleep ? window.__mlsBgSleep(n === 1 ? 600 : 1500) : new Promise(function (res0) { setTimeout(res0, n === 1 ? 600 : 1500); }))
             .then(function () { return readCalendarAttempt(n + 1); });
         });
       };
@@ -2542,7 +2542,7 @@
         catch (vErr) {
           var racy = /save-unproven|freshness-unproven|save-request-unproven|persistence-unproven/.test(String(vErr && vErr.message || ""));
           if (!racy || round >= verifySettleWaits.length) return Promise.reject(vErr);
-          return new Promise(function (resSettle) { setTimeout(resSettle, verifySettleWaits[round]); }).then(function () { return verifyWithSettle(round + 1); });
+          return (window.__mlsBgSleep ? window.__mlsBgSleep(verifySettleWaits[round]) : new Promise(function (resSettle) { setTimeout(resSettle, verifySettleWaits[round]); })).then(function () { return verifyWithSettle(round + 1); });
         }
       }
       return verifyWithSettle(0);
@@ -3707,7 +3707,7 @@
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
             if (!bad || round >= settleWaits.length) return nav;
             onStatus("Athena is still switching days — re-checking in a moment...", "");
-            return new Promise(function (resWait) { setTimeout(resWait, settleWaits[round]); }).then(function () {
+            return (window.__mlsBgSleep ? window.__mlsBgSleep(settleWaits[round]) : new Promise(function (resWait) { setTimeout(resWait, settleWaits[round]); })).then(function () {
               return attempt(round + 1);
             });
           });

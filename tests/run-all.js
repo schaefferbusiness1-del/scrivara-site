@@ -223,6 +223,7 @@ const tests = [
   'upsert-athena-proof-carryforward.test.js',
   'upsert-attested-slice-travels-with-receipt.test.js',
   'pull-visit-bodies-default-on.test.js',
+  'pull-first-attempt-convergence.test.js',
   'writeflow-duplicate-click-guard.test.js',
   'coding-suggestion-separation-contract.test.js',
   'templates-workspace-contract.test.js',

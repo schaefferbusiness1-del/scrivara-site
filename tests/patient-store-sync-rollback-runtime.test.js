@@ -59,7 +59,12 @@ function patientStoreBlock(file) {
    day pull undoing its own field writes within milliseconds. Still the same
    fully synchronous MLSZ1 single-key writer; behaviour pinned by
    tests/upsert-attested-slice-travels-with-receipt.test.js. */
-const B448_PATIENT_STORE_SHA256 = '126d3e2fd241f4458029506d6b799f10036c067abede236086bc9bb4ca8080bc';
+/* 2026-07-28 re-pin (same day, second entry): whitespace-level shift from
+   relocating the (non-persistence) __mlsBgSleep worker-sleep helper to just
+   ABOVE this block, where the proof-guard vm harnesses cannot swallow it.
+   No store reads or writes changed; the retired-journal sweeps below still
+   prove the b429 experiment stays out. */
+const B448_PATIENT_STORE_SHA256 = '3f5ed5d40d9c8a92e315ddb2e37cd418c8eabf219ace29ade17d46e1bd28fbd2';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),
