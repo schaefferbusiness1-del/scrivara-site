@@ -400,6 +400,7 @@ const tests = [
   'phone-install-contract.test.js',
   'phone-dock-fits-and-targets-reach-44.test.js',
   'pf2-fold-contract.test.js',
+  'chart-row-status-glyphs-are-not-mojibake.test.js',
   'relay-full-notes-choice-travels.test.js',
   'relay-phone-claims-only-what-it-sees.test.js',
   'secondary-text-is-a-theme-token.test.js',
