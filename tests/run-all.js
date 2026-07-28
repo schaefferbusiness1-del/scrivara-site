@@ -396,6 +396,7 @@ const tests = [
   'review-is-a-review-not-just-orders.test.js',
   'phone-capture-survival.test.js',
   'phone-install-contract.test.js',
+  'phone-dock-fits-and-targets-reach-44.test.js',
   'relay-full-notes-choice-travels.test.js',
   'relay-phone-claims-only-what-it-sees.test.js',
   'secondary-text-is-a-theme-token.test.js',

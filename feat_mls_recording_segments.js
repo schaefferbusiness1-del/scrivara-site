@@ -386,7 +386,7 @@
       + '<button type="button" class="rs-imp" id="rsImpBtn" title="Save whatever is in the transcript box now as one labeled recording">Save current transcript</button>'
       + '</div>'
       + '<div class="rs-list">' + rows + '</div>'
-      + '<button type="button" class="rs-go" id="rsGoBtn"' + (selCount ? '' : ' disabled') + '>✨ Generate note from ' + selCount + ' selected recording' + (selCount === 1 ? '' : 's') + '</button>';
+      + '<button type="button" class="rs-go" id="rsGoBtn"' + (selCount ? '' : ' disabled') + ' title="Replaces the transcript box with only the recordings ticked above, then drafts one note from those. The green Generate Note button lower down uses the transcript box exactly as it stands.">🎙️ Combine ' + selCount + ' ticked recording' + (selCount === 1 ? '' : 's') + ' into one note</button>';
 
     /* wire */
     var kb = h.getElementsByClassName("rs-kind");
