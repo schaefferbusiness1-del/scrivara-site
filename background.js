@@ -9646,12 +9646,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (results || []).forEach(function (r) { if (!r || r.result == null) return; var sc = scoreFn(r.result); if (sc > bestScore) { bestScore = sc; best = r.result; bestFrame = r.frameId; } });
     return { result: best, frameId: bestFrame, score: bestScore };
   }
+  function mlsVisitDateKeyForHint(sv) { var t = String(sv == null ? '' : sv).trim(); var m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) return m[1] + '-' + m[2] + '-' + m[3]; m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (!m) return ''; var y = m[3].length === 2 ? ('20' + m[3]) : m[3]; return y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2); }
   function freezeVisitHint(hint) {
     hint = hint || {};
     var out = {
       name: String(hint.name || hint.patientName || '').trim(),
       dob: String(hint.dob || hint.patientDob || hint.dateOfBirth || '').trim(),
-      mrn: String(hint.mrn || hint.athenaId || '').trim()
+      mrn: String(hint.mrn || hint.athenaId || '').trim(), onlyDate: mlsVisitDateKeyForHint(hint.onlyDate)
     };
     try { return Object.freeze(out); } catch (e) { return out; }
   }
@@ -10064,7 +10065,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [];
+      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [], dateSkippedRows = [];
       async function sleepWithinReadDeadline(ms) {
         var remaining = Math.max(0, readDeadline - Date.now());
         if (!remaining) return false;
@@ -10100,6 +10101,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           emit(appTabId, frozenRequestId, 'Indexed order group ' + (i + 1) + ' of ' + total + ' (administrative row - no clinical note body).', i + 1, total);
           continue;
         }
+        if (frozenHint.onlyDate && mlsVisitDateKeyForHint(snap.date) !== frozenHint.onlyDate) { dateSkippedRows.push({ index: i, date: String(snap.date || '').slice(0, 20) }); emit(appTabId, frozenRequestId, 'Indexed encounter ' + (i + 1) + ' of ' + total + ' (outside the requested day - body not read).', i + 1, total); continue; } /* v3.0.30 scoped-day read: the fast lane captures the pulled day's own note and nothing else */
         attemptedCount++;
         emit(appTabId, frozenRequestId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
         var twoStageAthena = enumRes.selector === 'li.encounter-list-item';
@@ -10316,7 +10318,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         failures.push({ index: -1, reason: 'read-deadline-exceeded' });
       }
 
-      var clinicalTotal = Math.max(0, total - administrativeRows.length);
+      var clinicalTotal = Math.max(0, total - administrativeRows.length - dateSkippedRows.length);
       var sourceKeys = {}, stableKeysComplete = visits.length === clinicalTotal;
       for (var sk = 0; sk < visits.length; sk++) {
         var sourceKey = String(visits[sk] && visits[sk].sourceVisitKey || '');
@@ -10327,7 +10329,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete;
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
-        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, indexTotal: total,
+        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', indexTotal: total,
         attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,

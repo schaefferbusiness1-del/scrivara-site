@@ -17,7 +17,7 @@ function between(source, start, end) {
   return source.slice(a, b);
 }
 
-const manualRun = between(visits, 'function run(onStatus, patientOverride)', 'function ensureAndDone');
+const manualRun = between(visits, 'function run(onStatus, patientOverride, runOpts)', 'function ensureAndDone');
 const chartBridge = between(content, "if (d.type === 'mlsAppReadChart')", '/* v1.89: READ-ONLY');
 const visitsBridge = between(content, "if (d.type === 'mlsAppReadVisits')", '// READ-ONLY: read the open Athena REPORT');
 const genericOpenBridge = between(content, '/* (2) Search-and-navigate relay', '/* =========================================================================\n * MLS Assist v1.50');

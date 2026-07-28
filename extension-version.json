@@ -1,5 +1,5 @@
 {
-  "version": "3.0.29",
-  "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v3.0.29 — Chart history can now read the section that holds the problem list. athenaOne renders Active Problems on a view that carries no patient banner, and MLS would only accept a chart section it could tie to the patient by a banner, a date of birth or an MRN - none of which appear there - so that section was discarded on every pull. A section whose own athenaOne address contains the appointment MLS asked for is now accepted as belonging to that appointment. A different appointment is still refused, and identity is still proven from the chart banner exactly as before. Requires Chrome 116+."
+  "version": "3.0.30",
+  "minChrome": 116,
+  "notes": "v3.0.30 - Pulls finish their own visit notes. A day pull that ends with only unread encounter bodies now completes them automatically (up to two extra passes) without ever taking your screen - nothing is focused, moved, or resized, on Windows or Mac. And with Full visit notes off, the pull still saves the pulled day's own encounter note, so op-note prep for that visit always has it; every other row is indexed honestly and counted as deliberately skipped on the receipt. Requires Chrome 116+."
 }

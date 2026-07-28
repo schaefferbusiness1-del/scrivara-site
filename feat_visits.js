@@ -1481,8 +1481,9 @@
 
   // ---- main flow -------------------------------------------------------------
   var running = false;
-  function run(onStatus, patientOverride) {
+  function run(onStatus, patientOverride, runOpts) {
     if (running) return Promise.resolve();
+    runOpts = runOpts && typeof runOpts === 'object' ? runOpts : {};
     var p = patientOverride || activeP();
     if (!p) { onStatus && onStatus('Open a patient first.'); return Promise.resolve(); }
     /* Freeze the same immutable local-patient target used by the schedule pull.
@@ -1517,7 +1518,12 @@
         st('Exact patient chart verified. Reading every visit from athenaOne… (read-only)');
         return driveRequest(
           'mlsAppReadAllVisits',
-          { hint: { name: targetRef.name, dob: targetRef.dob, mrn: targetRef.mrn || targetRef.athenaId || '' } },
+          /* 2026-07-28 owner directive: with "Full visit notes" OFF, the pull
+             still saves the pulled day's OWN encounter note (op-notes need
+             it). onlyDate scopes the reader to that day; the reader's receipt
+             excludes the deliberately skipped rows from its completeness
+             arithmetic, so the exact-count gate below still closes. */
+          { hint: { name: targetRef.name, dob: targetRef.dob, mrn: targetRef.mrn || targetRef.athenaId || '', onlyDate: String(runOpts.onlyDate || '') } },
           'mlsAppAllVisitsResult',
           ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
           function (msg) { if (msg) st(msg); },

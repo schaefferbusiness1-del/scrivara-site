@@ -3041,6 +3041,26 @@
           one.visitsComplete = true;
           one.visitsSkipped = true;
           if (one.parsePipelined !== true) one.organizationComplete = one.organized;
+          /* 2026-07-28 owner directive: even with "Full visit notes" off, the
+             pulled day's OWN encounter note still saves — op-notes for that
+             visit depend on it. Day-scoped read: the reader files every other
+             row as index-only and keeps its exact-count gate on the one day.
+             Bounded, honest, and it never fails the patient. */
+          try {
+            var todayNoteDay = normDate(row.scheduleDate || row.date) || "";
+            var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
+            var pToday = todayNoteDay ? safe(function () { return findStorePatient(target.patientId); }, null) : null;
+            if (vpToday && typeof vpToday.runForPatient === "function" && pToday) {
+              var todayNoteCap = new Promise(function (rCap) { (window.__mlsBgSleep ? window.__mlsBgSleep(25000) : new Promise(function (r2) { setTimeout(r2, 25000); })).then(function () { rCap({ ok: false, reason: "today-note-time-cap" }); }); });
+              var todayNoteRes = await Promise.race([
+                Promise.resolve(vpToday.runForPatient(pToday, function () {}, { onlyDate: todayNoteDay })).then(function (r3) { return r3 || { ok: true }; }, function (e3) { return { ok: false, reason: String((e3 && e3.message) || e3).slice(0, 80) }; }),
+                todayNoteCap
+              ]);
+              one.todayNote = todayNoteRes && todayNoteRes.ok === true;
+              if (!one.todayNote) one.todayNoteReason = String((todayNoteRes && todayNoteRes.reason) || "").slice(0, 80);
+            } else if (todayNoteDay) { one.todayNote = false; one.todayNoteReason = "reader-unavailable"; }
+            else { one.todayNote = false; one.todayNoteReason = "no-day-on-row"; }
+          } catch (eTn) { one.todayNote = false; one.todayNoteReason = String((eTn && eTn.message) || eTn).slice(0, 80); }
         } else if (!stopAfterTimeout && (carryProof = visitsProofCarry(target.patientId))) {
           /* si-2.0.0: the fresh chart read just refreshed this patient's index
              and it matches the stamped verified-bodies pass — nothing new to
