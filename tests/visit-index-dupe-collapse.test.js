@@ -187,7 +187,7 @@ assert(/_getPatients\(\)\.find[\s\S]{0,260}window\.findPatient/.test(source.slic
 // 5) loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260722vis9'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  assert(text.includes('feat_visits.js?v=20260728vis10'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
 }
 
 console.log('PASS visit index dupe collapse: batch-aware findPatient, racing ingest keeps each row once, union artifacts self-heal, bodies/aliases/trust boundaries untouched, loader pins bumped');
