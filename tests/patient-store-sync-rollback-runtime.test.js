@@ -64,7 +64,15 @@ function patientStoreBlock(file) {
    ABOVE this block, where the proof-guard vm harnesses cannot swallow it.
    No store reads or writes changed; the retired-journal sweeps below still
    prove the b429 experiment stays out. */
-const B448_PATIENT_STORE_SHA256 = '3f5ed5d40d9c8a92e315ddb2e37cd418c8eabf219ace29ade17d46e1bd28fbd2';
+/* 2026-07-28 re-pin (third entry, live incident "10 saves not confirmed" on
+   a Thu Jul 30 pull): the block gains the CROSS-TAB pull shield -
+   __mlsPullShieldTick/__mlsPullShieldForeign (shared 45s heartbeat + owner
+   token in localStorage) and __mlsPtsPullActive now treats a live heartbeat
+   from ANY tab as pull-active, so the rowguard's no-removal-during-pull rule
+   finally holds across tabs (per-tab guards + the documented cross-tab 12s
+   clock fallback were the removal window). Behaviour pinned by
+   tests/cross-tab-pull-shield.test.js. Same synchronous MLSZ1 writer. */
+const B448_PATIENT_STORE_SHA256 = '178026e7d521e001469520092d9527d565a0e124c97e438c834d14e848a97cf0';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),

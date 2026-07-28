@@ -2805,6 +2805,15 @@
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
     }
+    /* 2026-07-28 cross-tab refusal: a pull running in ANOTHER tab owns the
+       shared shield - starting a second engine here is exactly how "N saves
+       not confirmed" happened (two rosters, one store, per-tab guards). The
+       refusal reuses the busy lane so every caller already handles it. */
+    if (safe(function () { return window.__mlsPullShieldForeign && window.__mlsPullShieldForeign(); }, false)) {
+      rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy-other-tab")); });
+      receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy-other-tab"; return receipt;
+    }
+    safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
     historyBatchRunning = true;
     /* si-1.7.9 (LIVE 2026-07-18, owner's machine): the MANUAL history retry
        enters this batch WITHOUT pull()'s __mlsPullBusyAt stamping, so the
@@ -2977,6 +2986,9 @@
            BEFORE any sleep is converted to a readiness poll. */
         var stageMs = { chart: 0, parseSave: 0, visits: 0, visitSave: 0 };
         var rd = null, chartAttempt = 0, overlapParse = null;
+        /* cross-tab pull shield heartbeat: every patient renews the shared
+           45s claim so no other tab's bulk write may remove rows mid-pull */
+        safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
         while (true) {
           chartAttempt++;
           var __chartT0 = Date.now(), __parseT0 = 0;
@@ -3316,6 +3328,7 @@
       for (var tn = 0; tn < receipt.patients.length; tn++) {
         var oneTn = receipt.patients[tn];
         if (!oneTn || oneTn.visitsSkipped !== true) continue;
+        safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
         var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
         var tnId = String(oneTn.patientId || "");
         var tnP = (tnDay && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;

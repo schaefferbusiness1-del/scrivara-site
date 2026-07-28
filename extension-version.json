@@ -1,5 +1,5 @@
 {
-  "version": "3.0.30",
+  "version": "3.0.31",
   "minChrome": 116,
-  "notes": "v3.0.30 - Pulls finish their own visit notes. A day pull that ends with only unread encounter bodies now completes them automatically (up to two extra passes) without ever taking your screen - nothing is focused, moved, or resized, on Windows or Mac. And with Full visit notes off, the pull still saves the pulled day's own encounter note, so op-note prep for that visit always has it; every other row is indexed honestly and counted as deliberately skipped on the receipt. Requires Chrome 116+."
+  "notes": "v3.0.31 - A write is confirmed only by change. The note-writing verifier in all three typing drivers could mistake a field that was ALREADY full for a landed paste; it now snapshots the field before writing and refuses to confirm anything that did not change it - a failed write reports failed, never saved. Also carries v3.0.30: pulls finish their own visit notes without taking your screen, and with Full visit notes off the pull still saves the pulled day's own encounter note. Requires Chrome 116+."
 }
