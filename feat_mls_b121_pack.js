@@ -4005,6 +4005,17 @@
  * TIMES WEEKLY") re-attaches to the medication above it instead of becoming
  * one. Athena receipts (athenaProfileCoverage / athenaChartSnapshot) are
  * computed before this hook runs and are never touched here.
+ *
+ * v1.3.0 (2026-07-28) - THE DENY-LIST OBEYS THE FOLD LAW. Reproduced by
+ * running THIS module's triageList: three deny-list rules were eating real
+ * diagnoses silently (no keep, no fold): the audit-label rule's bare [:\-]
+ * separator matched the hyphen in "End-stage renal disease (N18.6)"; the
+ * sync-status rule's bare \b matched "Pulled hamstring"; the unanchored
+ * staff-line rule matched "Referred to PT for pain at knee". Also
+ * "Gout (M10.9)" was demoted to the fold because the ICD code's digits
+ * diluted lettersRatio. Now: a code-bearing row is never furniture; an
+ * uncoded deny-list hit that reads like prose lands in the fold instead of
+ * vanishing; the three rules are tightened at the source. Meds unchanged.
  * ========================================================================= */
 (function () {
   'use strict';
@@ -4034,16 +4045,21 @@
     /* staleness banner */
     /\bmay be (?:outdated|out of date)\b/i,
     /\bfrom other sources\b/i,
-    /* per-row audit/date labels ("Onset Date: 03/05/2024", "Last Prescribed: ...") */
+    /* per-row audit/date labels ("Onset Date: 03/05/2024", "Last Prescribed: ...").
+       v1.3.0: the separator must be a colon or a SPACED/date-leading dash — a bare
+       [:\-] made "End-stage renal disease (N18.6)" a "label" (the 'end' + immediate
+       hyphen collision), deleting a real coded diagnosis on every persist. */
     /^onset(?:\s+date)?\b/i,
-    /^(?:start|stop|end|entered|recorded|reviewed|documented|noted|updated|prescribed|created|modified|filled|expires?|effective|last\s+\w+)(?:\s+(?:date|on|by))?\s*[:\-]/i,
+    /^(?:start|stop|end|entered|recorded|reviewed|documented|noted|updated|prescribed|created|modified|filled|expires?|effective|last\s+\w+)(?:\s+(?:date|on|by))?\s*(?::|-(?=[\s\d])|\s-)/i,
     /* date-only / number-only lines */
     /^[\d\s\/\-.:,()]+$/,
     /* pagination */
     /^(?:page\s+\d+|showing\b.*|\d+\s*(?:of|\/)\s*\d+|results?\s*:?\s*\d*)$/i,
     /* empty-state prose (allergies handles NKDA before this) */
     /^(?:no (?:active|known|current)\b.*|none recorded.*|nothing (?:found|recorded).*)$/i,
-    /^(?:as of|last synced|synced|pulled|imported)\b/i,
+    /* v1.3.0: 'pulled'/'imported' need a source/time continuation — a bare \b
+       verdict made the free-text diagnosis "Pulled hamstring" sync chrome. */
+    /^(?:as of|last synced|synced|(?:pulled|imported)\s+(?:from|on|at|by|via|\d))/i,
     /* v1.1.0 residual taxonomy (observed live 2026-07-10): group headers WITH a
        count - "Historical (0)", "HISTORICAL (0 new)", "Medications (7 new)",
        "Active (3)" (bare "Historical"/"Medications" already caught above) */
@@ -4057,8 +4073,10 @@
     /^care episodes(?:\s+and\s+tracking)?\b/i,
     /^audit history\b/i,
     /^return to (?:office|inbox|list|schedule|results?)\b/i,
-    /* staff/appointment lines: "Robert McCafferty, PA-C for EST20 at POSM CL West Chester" */
-    /\b(?:pa-?c|md|do|crnp|np|rn|dpm|pt|ot)\s+for\s+\S+\s+at\b/i,
+    /* staff/appointment lines: "Robert McCafferty, PA-C for EST20 at POSM CL West Chester".
+       v1.3.0: anchored to the ", CRED" name shape — unanchored, "Referred to PT
+       for pain at knee" matched \bpt\s+for\s+\S+\s+at\b and vanished. */
+    /,\s*(?:pa-?c|md|do|crnp|np|rn|dpm|pt|ot)\s+for\s+\S+\s+at\b/i,
     /* leaked page JS/config lines: "delete args.X;", "args.CONTENTCALLREMOTE[...]",
        "PREVENTTRAILINGCOMMA: true", "AUTOMATIC_POLLING: true,", "ONFINISH: 'response',".
        Restricted to UPPER_SNAKE keys / args. leads so real "S32.030A: Wedge ..." is SAFE */
@@ -4066,6 +4084,22 @@
     /^[A-Z_][A-Z0-9_]{2,}\s*:\s*(?:true|false|null|\[|'|")/
   ];
   function isJunk(t) { for (var i = 0; i < JUNK.length; i++) { if (JUNK[i].test(t)) return true; } return false; }
+
+  /* v1.3.0 fold-law classification. Two deny-list rules can collide with
+     clinical prose (the verb-lead rule: "Marked obesity"; the onset-lead rule:
+     "Onset of atrial fibrillation") — their uncoded hits FOLD, visible, instead
+     of vanishing. Every other rule is unambiguous furniture and still DROPS.
+     Any hard match outranks a soft one ("View problems from other sources"
+     matches the verb rule AND the from-other-sources rule: it is furniture).
+     isJunk stays the union for the legacy cleanList/allergies path. */
+  var JUNK_SOFT_IDX = { 0: 1, 5: 1 };
+  function junkClass(t) {
+    var soft = false;
+    for (var i = 0; i < JUNK.length; i++) {
+      if (JUNK[i].test(t)) { if (JUNK_SOFT_IDX[i]) soft = true; else return 'hard'; }
+    }
+    return soft ? 'soft' : '';
+  }
 
   /* narrow, exact-chrome-only list, safe to apply to SUMMARY prose lines */
   var SUMMARY_CHROME = [
@@ -4182,10 +4216,13 @@
 
   /* ---- plausible-problem shape ---- */
   var NOTE_SECTION = /^(?:discussion|discussion notes?|subjective|objective|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|hpi|history of present illness|ros|review of systems|physical exam(?:ination)?|exam|impression|procedures?|procedure note|attestation|addendum|addenda|chief complaint|interval history|medical decision making|mdm|patient instructions?|instructions?|follow[\s-]?up|return precautions|signature|electronically signed|signed|notes?|comments?|counseling|education)\s*[:.]?$/i;
-  var PLAN_LEAD = /^(?:ordered|order for|orders? placed|scheduled|referred|referral|recommended|recommend|discussed|advised|instructed|administered|performed|injected|counseled|educated|continue|continued|plan to|plan:)\b/i;
+  var PLAN_LEAD = /^(?:ordered|order for|orders? placed|scheduled|referred|referral|recommended|recommend|discussed|advised|instructed|administered|performed|injected|counseled|educated|continue|continued|plan to|plan:|seen by|evaluated by)\b/i;
   function looksLikeProblem(t) {
-    if (ICD.test(t)) return true;                         /* "M75.102 Unspecified rotator cuff tear" */
-    if (ICD_ANY.test(t) && looksName(t, 14)) return true; /* "Rotator cuff tear (M75.101)" */
+    /* v1.3.0: a code-bearing row IS a diagnosis, full stop. The old
+       looksName conjunct demoted "Gout (M10.9)" to the unsorted fold because
+       the code's digits diluted lettersRatio below 0.55 — a short-named coded
+       dx must never rank below an uncoded prose line. */
+    if (ICD.test(t) || ICD_ANY.test(t)) return true;      /* "M75.102 ..." / "Gout (M10.9)" */
     if (NOTE_SECTION.test(t) || PLAN_LEAD.test(t)) return false;  /* note furniture / plan text -> unsorted */
     if (api.mode === 'strict') return false;              /* strict: code required */
     return looksName(t, 12);                              /* balanced: name-only dx kept */
@@ -4218,7 +4255,28 @@
     for (var i = 0; i < segs.length; i++) {
       var t = trim(S(segs[i]).replace(LEAD_RE, '')).replace(/\s+/g, ' ');
       if (!t || t.length < 2) continue;
-      if (isJunk(t)) continue;                              /* v1.1.0 chrome - unchanged */
+      var junkK = junkClass(t);
+      if (junkK) {
+        /* v1.3.0 CLINICAL RESCUE (2026-07-28). Reproduced with this exact
+           function: the deny-list silently deleted real diagnoses — "End-stage
+           renal disease (N18.6)", "Pulled hamstring", "Marked obesity" — with
+           no trace, not even the fold, because this continue ran before the
+           fold was consulted. The fold exists so the cleaner "can no longer
+           lose a row it did not understand"; a deny-list hit it DID
+           misunderstand must obey the same law. A code-bearing row is never
+           page furniture: it falls through to the keep test. An uncoded SOFT
+           hit that still reads like clinical prose goes to the fold, visible.
+           HARD furniture keeps dropping. Meds behaviour is byte-identical. */
+        var rescueDx = !isMeds && (ICD.test(t) || ICD_ANY.test(t));
+        if (!rescueDx) {
+          if (junkK === 'soft' && !isMeds && looksName(t, 12)) {
+            var kr = low(t);
+            if (unsorted.length < UNSORTED_CAP && !seenU[kr]) { seenU[kr] = 1; unsorted.push(t.slice(0, 160)); }
+            lastWasKeep = false;
+          }
+          continue;
+        }
+      }
       if (isMeds && isTableChrome(t)) continue;             /* grid header row / action link */
       if (isMeds && lastWasKeep && keep.length && isSigContinuation(t)) {
         var j = keep.length - 1;
@@ -4397,7 +4455,7 @@
       }
       STATS.migrated += n;
       if (n) {
-        try { console.log('[MLS clean-sections v1.2.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary; unclassified rows under _mlsUnsortedMeds/_mlsUnsortedProblems'); } catch (e) {}
+        try { console.log('[MLS clean-sections v1.3.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary; unclassified rows under _mlsUnsortedMeds/_mlsUnsortedProblems'); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
       }
@@ -4428,7 +4486,7 @@
 
   /* ---------- public API ---------- */
   var api = {
-    version: '1.2.0',
+    version: '1.3.0',
     mode: 'balanced',            /* 'balanced' (code-or-name) | 'strict' (ICD code required) */
     stats: STATS,
     cleanPatient: cleanPatient,
@@ -4499,10 +4557,29 @@
         'Ordered sacroiliac joint injection (PROC)', 'Cervical spondylosis'].join('\n'));
       var probPass = JSON.stringify(probT.keep) === JSON.stringify(['Cervical spondylosis']) &&
         probT.unsorted.length === 3;
+      /* v1.3.0 - the deny-list obeys the fold law: coded dx always keep, an
+         uncoded deny-list hit that reads like prose is folded (never lost),
+         true furniture still drops, and every clinical input is conserved. */
+      var rescueT = api.triageProblems(['End-stage renal disease (N18.6)', 'Gout (M10.9)',
+        'Pulled hamstring', 'Marked obesity', 'Onset Date: 03/05/2024',
+        'Pulled from Athena 07/28/2026', 'Sorted by onset date', '11 problems',
+        'Referred to PT for pain at knee', 'Essential hypertension (I10)'].join('\n'));
+      var rkeep = rescueT.keep.join(' | '), runs = rescueT.unsorted.join(' | ');
+      var rescuePass =
+        rkeep.indexOf('End-stage renal disease') >= 0 &&                /* coded dx junk-collision -> keep */
+        rkeep.indexOf('Gout (M10.9)') >= 0 &&                           /* short coded dx -> keep, not fold */
+        rkeep.indexOf('Pulled hamstring') >= 0 &&                       /* tightened sync rule -> keep */
+        rkeep.indexOf('Essential hypertension') >= 0 &&
+        (rkeep + ' | ' + runs).indexOf('Marked obesity') >= 0 &&        /* conserved: kept or folded, never lost */
+        (rkeep + ' | ' + runs).indexOf('Referred to PT for pain at knee') >= 0 &&
+        rkeep.indexOf('Onset Date:') < 0 &&                             /* audit label never a dx */
+        rkeep.indexOf('Pulled from Athena') < 0 &&                      /* sync status never a dx */
+        rkeep.indexOf('Sorted by onset date') < 0 &&
+        rkeep.indexOf('11 problems') < 0;
       var pass = JSON.stringify(got) === JSON.stringify(want) &&
         JSON.stringify(medsGot) === JSON.stringify(['metformin 1000 mg tablet BID', 'lisinopril']) &&
-        JSON.stringify(algGot) === JSON.stringify(['NKDA']) && gridPass && probPass;
-      return { pass: pass, problems: got, meds: medsGot, allergies: algGot, grid: gridT, problemTriage: probT };
+        JSON.stringify(algGot) === JSON.stringify(['NKDA']) && gridPass && probPass && rescuePass;
+      return { pass: pass, problems: got, meds: medsGot, allergies: algGot, grid: gridT, problemTriage: probT, rescue: rescueT, rescuePass: rescuePass };
     },
     revert: function () {
       DISABLED = true; _scans = MAX_SCANS + 1;

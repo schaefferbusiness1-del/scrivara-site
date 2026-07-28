@@ -108,6 +108,12 @@ function createHarness(opts) {
   opts = opts || {};
   const listeners = new Set();
   const store = new Map();
+  /* 2026-07-28: visit bodies default ON. This suite proves LANE CONVERGENCE
+     (the columnless Day grid pulls at all), not the bodies stage — its fake
+     bridge serves chart cards only. Record an explicit human fast-lane choice
+     so the scenario stays what it always was. */
+  store.set('day-pull-convergence-test::pullVisitBodies', '0');
+  store.set('day-pull-convergence-test::pullVisitBodiesSet', '1');
   const posted = [];
   const statuses = [];
   const backendRows = [];

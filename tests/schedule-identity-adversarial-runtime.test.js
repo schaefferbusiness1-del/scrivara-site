@@ -491,6 +491,9 @@ assert(api && api.version === 'si-1.7.16');
      receipt order and honest failure semantics are unchanged. */
   {
     store.set('identity-test::pullVisitBodies', '0');
+    /* 2026-07-28: bodies default ON; the skip lane now requires a RECORDED
+       human choice (the ...Set marker), which this scenario simulates. */
+    store.set('identity-test::pullVisitBodiesSet', '1');
     assistMode = 'missing-coverage-once'; /* first chart read lacks coverage -> pipelined parse fails -> deferred re-run heals */
     const rowA = {
       patient_external_id: patients[0].id, _mlsTargetPatientId: patients[0].id,
@@ -525,6 +528,7 @@ assert(api && api.version === 'si-1.7.16');
     assert.strictEqual(failedPiped.failures >= 1, true, 'pipelined failures must land in the retry lane');
     assistMode = 'complete';
     store.delete('identity-test::pullVisitBodies');
+    store.delete('identity-test::pullVisitBodiesSet');
   }
 
   console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, and full visit-reader receipt');

@@ -89,9 +89,14 @@ assert(storagePos > 0, 'the device preference read vanished');
 assert(overridePos < storagePos,
   'the override must be consulted BEFORE this device\'s stored preference, or it is dead code');
 
-/* ---- the default is unchanged ---- */
-assert(/return v == null \? false : v !== "0";/.test(readBlock),
-  'with no override the stored preference (default OFF) must still govern');
+/* ---- with no override, the shared tri-state governs (2026-07-28: default
+   ON; a recorded human choice — the pullVisitBodiesSet marker — is respected;
+   the legacy code-authored '0' is ignored). The per-pull override above still
+   outranks everything, which is this suite's actual subject. ---- */
+assert(/return chosen \? v !== "0" : true;/.test(readBlock),
+  'with no override the shared tri-state preference must govern (default ON, human choice respected)');
+assert(/pullVisitBodiesSet/.test(readBlock),
+  'the no-override path must consult the human-choice marker');
 
 console.log('PASS relay full-notes choice travels: phone control -> payload -> agent -> pull() -> importer, ' +
   'override consulted before the device preference, scoped to one pull, cleared on success and failure, ' +

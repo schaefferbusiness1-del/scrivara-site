@@ -128,7 +128,7 @@ function loadCleaner() {
   return ctx.__mlsCleanSections;
 }
 const api = loadCleaner();
-assert.strictEqual(api.version, '1.2.0', 'the triage build of __mlsCleanSections is not the one shipping');
+assert.strictEqual(api.version, '1.3.0', 'the triage build of __mlsCleanSections is not the one shipping');
 assert.strictEqual(api.selfTest().pass, true, "module 7's own self-test failed");
 
 const meds = api.triageMeds(GRID_MEDS);

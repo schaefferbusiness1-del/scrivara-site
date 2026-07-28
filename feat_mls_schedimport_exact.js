@@ -2850,11 +2850,16 @@
          asked. */
       if (typeof _pullBodiesOverride === "boolean") return _pullBodiesOverride;
       var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
+      var sk = typeof window.uns === "function" ? window.uns("pullVisitBodiesSet") : "";
       var v = k ? localStorage.getItem(k) : null;
-      /* default OFF (owner 2026-07-21): bodies are the slow fragile lane;
-         an explicit opt-in persists per account. */
-      return v == null ? false : v !== "0";
-    }, false);
+      var chosen = sk ? localStorage.getItem(sk) === "1" : false;
+      /* 2026-07-28: default ON — an index-only pull is not complete history
+         (owner bar: first-pull completeness). Only an explicit human choice
+         (the ...Set marker, written by the toggles from this build on) can
+         select the fast no-bodies lane; the code-authored legacy '0' that
+         accumulated while the toggle never rendered is ignored. */
+      return chosen ? v !== "0" : true;
+    }, true);
     /* si-1.7.4 SPEED (evidence-driven): the live b319 timing run measured the
        server parse+persist at 16.6s/patient vs 9.7s for the Athena chart
        open+read — 63% of wall clock spent while the Athena tab sits idle.

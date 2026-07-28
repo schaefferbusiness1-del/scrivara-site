@@ -221,6 +221,8 @@ const tests = [
   'visit-draft-patient-identity-runtime.test.js',
   'visit-history-provenance-chip.test.js',
   'upsert-athena-proof-carryforward.test.js',
+  'upsert-attested-slice-travels-with-receipt.test.js',
+  'pull-visit-bodies-default-on.test.js',
   'writeflow-duplicate-click-guard.test.js',
   'coding-suggestion-separation-contract.test.js',
   'templates-workspace-contract.test.js',
@@ -409,6 +411,7 @@ const tests = [
   'visit-focus-keeps-every-route.test.js',
   'visit-voice-one-expands-never-decides.test.js',
   'chart-noise-never-renders-as-medication.test.js',
+  'triage-clinical-rows-never-vanish.test.js',
   'voice-reaches-one-copilot-brain.test.js',
   'capture-and-turns-are-honest.test.js'
 ];

@@ -48,7 +48,18 @@ function patientStoreBlock(file) {
    unauthorized removal happens while a managed pull runs. Same synchronous
    MLSZ1 single-key writer, no sidecars, no journal; behaviour pinned by
    tests/patient-row-loss-guard.test.js scenarios 6-7. */
-const B448_PATIENT_STORE_SHA256 = 'ed629f78b86f9f8c93fc59e3b84f75b1cb682e7fb225b198a5d5fcf813470f08';
+/* 2026-07-28 re-pin (the third problem-loss mechanism): the same-id
+   carry-forward in upsertPatient and the newest-proof index in
+   __mlsAthenaProofGuard now carry the receipt-ATTESTED clinical slice
+   (problems/meds/allergies/history/vitals/bmi/summary/athenaHistorySummary/
+   athenaHistoryFactsSnapshot/historyImportReceipt) together with the four
+   proof fields. Restoring the receipt while accepting a stale caller's older
+   clinical fields manufactured charts whose receipt said "complete" over
+   rolled-back data — 16 live patients, 61 missing problem rows, and every
+   day pull undoing its own field writes within milliseconds. Still the same
+   fully synchronous MLSZ1 single-key writer; behaviour pinned by
+   tests/upsert-attested-slice-travels-with-receipt.test.js. */
+const B448_PATIENT_STORE_SHA256 = '126d3e2fd241f4458029506d6b799f10036c067abede236086bc9bb4ca8080bc';
 const source = patientStoreBlock(path.join(root, 'ScribeFlow.html'));
 assert.strictEqual(
   crypto.createHash('sha256').update(source, 'utf8').digest('hex'),

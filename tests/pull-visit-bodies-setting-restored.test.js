@@ -27,13 +27,19 @@ assert(followIdx > 0 && Math.abs(idx - followIdx) < 4000,
 assert(!/mlsDsStrip[\s\S]{0,600}setPullVisitBodies/.test(app),
   'the restored control must NOT sit beside the pull button');
 
-/* One stored truth, both consumers served. */
-const fn = app.slice(app.indexOf('function renderPullVisitBodiesSetting()'), app.indexOf('TWO-FACTOR AUTH (enrollment'));
+/* One stored truth, both consumers served. 2026-07-28: the shared truth is
+   the tri-state pullVisitBodiesPref() — DEFAULT ON, a recorded human choice
+   (the pullVisitBodiesSet marker) respected in both directions, the legacy
+   code-authored '0' ignored. Execution-proven in
+   tests/pull-visit-bodies-default-on.test.js; source-pinned here. */
+const fn = app.slice(app.indexOf('function pullVisitBodiesPref()'), app.indexOf('TWO-FACTOR AUTH (enrollment'));
 assert(fn.includes("localStorage.getItem(uns('pullVisitBodies'))"), 'reads the same per-account key the importer reads');
 assert(fn.includes("localStorage.setItem(uns('pullVisitBodies'), cb.checked?'1':'0')"), 'writes the key the importer consults');
+assert(fn.includes("localStorage.setItem(uns('pullVisitBodiesSet'),'1')"), 'a human change must record the human-choice marker');
 assert(fn.includes("getElementById('mlsDsVisitBodies')") && fn.includes('inline.checked=cb.checked'),
   'mirrors the inline node the phone-relay job payload reads');
-assert(fn.includes("cur==null?false:cur!=='0'"), 'default stays OFF (owner 2026-07-21: fast lane first)');
+assert(fn.includes('cb.checked=pullVisitBodiesPref()'), 'the checkbox renders the shared tri-state truth');
+assert(fn.includes("return set ? raw!=='0' : true"), 'default is ON unless a recorded human choice says otherwise (2026-07-28 supersession of the 2026-07-21 fast-lane default)');
 assert(/renderTwofaSettings\(\);\s*\n\s*renderPullVisitBodiesSetting\(\);/.test(app),
   'the Settings open pipeline renders it');
 
@@ -43,4 +49,4 @@ assert(/renderTwofaSettings\(\);\s*\n\s*renderPullVisitBodiesSetting\(\);/.test(
 assert(/mlsDsVisitTgl/.test(calm), 'the calm-shell hide of the inline toggle is the reason this Settings option exists');
 assert(connect.includes('id="mlsDsVisitBodies"'), 'the inline checkbox node must keep existing for the relay lane');
 
-console.log('PASS pull-visits setting restored: separated Settings home, one stored truth, inline node mirrored, fast-lane default');
+console.log('PASS pull-visits setting restored: separated Settings home, one stored truth, inline node mirrored, bodies-on default with human choice respected');
