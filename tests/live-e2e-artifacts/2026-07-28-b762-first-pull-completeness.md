@@ -44,3 +44,15 @@ budget and the deep-history patients land in the retry lane. Two windows
 (MLS visible + Athena active) is the working setup today. Closing this for
 one-window users needs an extension-side change (e.g. explicit pull-time
 activation lease) — not shipped here.
+
+## b763 addendum — one-window auto-convergence, live-proven (owner: "no yanking")
+- 17:23:03Z single click, MLS tab front, athenaOne hidden the whole time.
+- Pass 1: 21 roster patients; bodies-class stragglers queued (5).
+- WITHOUT any click: "Finishing the last visit notes automatically" fired,
+  retry round walked 5/5 (+1 deferred sub-pass), and at 17:49:11Z the day
+  strip read "complete for every retried patient." Retry queue EMPTY.
+- No focus change, no window API touched (Mac-safe by construction); pacing
+  held while occluded via the shared worker sleep (__mlsBgSleep, 11 routed
+  call sites in the served bundle).
+- Wall clock: ~26 min including the deepest occluded charts. The two-window
+  setup remains the fast path; one-window now CONVERGES instead of failing.
