@@ -17816,13 +17816,31 @@ function _athenaChartProfileCoverage(chart,history,vitals){
   });
   return {complete:invalid.length===0,cards:cards,invalid:invalid};
 }
+/* THE COMMA IS PART OF THE PROBLEM NAME, NOT A LIST SEPARATOR.
+   _parsePatientChart asks the model for semicolon separated lists, and official
+   ICD-10 wording is comma heavy: "Spinal stenosis, lumbar region, with neurogenic
+   claudication (M48.062)" is ONE problem. Splitting on the comma unconditionally
+   shredded it into three rows - the diagnosis lost its region and its severity,
+   two meaningless fragments were stored AS PROBLEMS, and because the de-dupe
+   below keys on the row text, five problems ending in ", unspecified" collapsed
+   onto ONE "unspecified" row and four qualifiers were deleted outright. Measured
+   on this exact save path 2026-07-28: twelve problems in, four or five stored
+   intact. The tolerance the comma bought is real and is KEPT - Athena and the
+   model do sometimes hand back a comma-only list, which is what the merge note
+   above records ("A; B" vs "A, B, C"). But a value that already contains a
+   semicolon or a newline HAS declared its separator, and every comma inside it
+   is clinical text. Applies to problems, meds and allergies alike.
+   Deterministic and total: no value can lose a row by taking this branch. */
+function _athenaListSplitRe(part){
+  return /[;\r\n]/.test(String(part==null?'':part)) ? /[\r\n;]+/ : /[\r\n;,]+/;
+}
 /* Build one canonical Athena-owned chart snapshot. The managed history pull
    compares this exact payload with the patient record after save, so a sink
    cannot turn a pull green by updating only receipt metadata. */
 function _athenaChartSnapshotList(value){
   var src=Array.isArray(value)?value:[value],out=[],seen={};
   src.forEach(function(part){
-    String(part==null?'':part).split(/[\r\n;,]+/).forEach(function(item){
+    String(part==null?'':part).split(_athenaListSplitRe(part)).forEach(function(item){
       item=String(item||'').replace(/^\s*[\u2022\-*]+\s*/,'').replace(/\s+/g,' ').trim();
       var key=item.toLowerCase().replace(/[.\s]+$/,'').trim();
       if(item&&key&&!/^(?:none(?: recorded| on file)?|not recorded|unknown|n\s*\/\s*a|na|not available|not applicable|no data)$/i.test(key)&&!seen[key]){seen[key]=1;out.push(item);}
@@ -17896,7 +17914,7 @@ function _savePatientChart(name, appt, chart){
   var listItems=function(value){
     var src=Array.isArray(value)?value:[value], out=[];
     src.forEach(function(part){
-      String(part==null?'':part).split(/[\r\n;,]+/).forEach(function(item){
+      String(part==null?'':part).split(_athenaListSplitRe(part)).forEach(function(item){
         item=String(item||'').replace(/^\s*[\u2022\-*]+\s*/,'').replace(/\s+/g,' ').trim();
         if(item) out.push(item);
       });

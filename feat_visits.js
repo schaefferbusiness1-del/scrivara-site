@@ -976,7 +976,21 @@
       };
     }
 
-    var oldFacts=(p.athenaHistoryFactsSnapshot&&typeof p.athenaHistoryFactsSnapshot==='object')?p.athenaHistoryFactsSnapshot:{};
+    /* AN OWNED FACT MAY ONLY BE REMOVED BY A PASS THAT ACTUALLY RE-READ ITS
+       SOURCE. _mergeOwnedText treats every entry of the PREVIOUS facts snapshot
+       as removable, so when the exact-patient receipt gate above did not open,
+       this pass strips the whole Athena-owned slice and puts back only what it
+       can re-derive from visit bodies. Measured 2026-07-28 on the real model:
+       twelve chart problems in, SIX out (the six named in one visit assessment)
+       and with no visits at all the field went to the empty string - receipt
+       ok:true both times. The receipt is exactly the condition that is known to
+       be lost to stale bulk writes on a day pull, so this fired on roughly the
+       half of the day that lost its coverage stamp.
+       The replace-stale-Athena-data intent is UNCHANGED when the slice was read
+       (the gate below is the same one that seeded facts from the snapshot); when
+       it was not read, this pass may only add, never remove. Fails safe. */
+    var athenaSliceReRead=!!(snap&&profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id));
+    var oldFacts=(athenaSliceReRead&&p.athenaHistoryFactsSnapshot&&typeof p.athenaHistoryFactsSnapshot==='object')?p.athenaHistoryFactsSnapshot:{};
     p.problems = _mergeOwnedText(p.problems, oldFacts.problems, facts.problems);
     p.meds = _mergeOwnedText(p.meds, oldFacts.meds, facts.meds);
     p.allergies = _mergeOwnedText(p.allergies, oldFacts.allergies, facts.allergies);

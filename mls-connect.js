@@ -44712,7 +44712,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       for (var j = 0; j < SECS.length; j++) {
         var s = $(SECS[j].id); if (!s) continue;
         var bb = s.querySelector('.pf2-b');
-        var hasContent = bb && bb.children.length > 0 && (bb.innerText || '').trim().length > 0;
+        var hasContent = bb && bb.children.length > 0 && (bb.textContent || '').trim().length > 0;
         s.style.display = hasContent ? '' : 'none';
       }
     } catch (e) {}
