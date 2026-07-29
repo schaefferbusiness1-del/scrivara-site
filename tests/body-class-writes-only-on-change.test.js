@@ -188,7 +188,10 @@ const scanned = PUBLISHED.length;
    forces someone to open this file and read the measurement above. All sites at
    these counts have been read by hand; one-shot init and teardown paths are
    included and are not churn. */
-const SITES = { 'mls-connect.js': 22, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
+/* 2026-07-28: site 23 is the ez3sec0 fold toggle in renderDoctor - it
+   compares contains() to the wanted state before toggling, so a repeating
+   render pass re-commits nothing (read by hand). */
+const SITES = { 'mls-connect.js': 23, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
