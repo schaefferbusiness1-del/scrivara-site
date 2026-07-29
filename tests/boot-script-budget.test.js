@@ -255,7 +255,25 @@ const LOADER = 'mls-connect.js';
  *     and the app is exactly as it was.
  *   - It adds no interface at all: no control, no node, no markup. One
  *     <style> element and one class on <body> is its entire DOM footprint. */
-const CEILING = 246;
+/* 247 (2026-07-29): feat_mls_note_click_to_edit.js (nce-1.0.0).
+ *   WHY IT EXISTS: the owner reported that clicking in the middle of the note
+ *     did nothing useful. __mlsFormat renders a formatted PREVIEW and sets the
+ *     real editor (#noteBox) to display:none whenever the note has content, and
+ *     the only control that switched back was the Edit button inside .mlsf-bar
+ *     - which the b779 visit-focus fold hides. The note was therefore a dead
+ *     surface: the doctor could read it and not edit it. Clicking it now
+ *     reveals the editor and places the caret at the character he clicked.
+ *   WHY NOT FOLDED INTO AN EXISTING MODULE: the two candidates are the ones it
+ *     must not depend on. __mlsFormat is the module that HID the editor, and
+ *     feat_mls_visit_focus.js is the fold that hid the Edit control; putting the
+ *     recovery inside either means reverting the decoration also removes the
+ *     doctor's ability to edit his note. It stays separate so
+ *     window.__mlsNoteClickToEdit.revert() undoes exactly this and nothing more.
+ *   WHAT IT COSTS: idle-deferred, async, ~4KB, and it adds NO interface - no
+ *     control, no node, no markup, no stylesheet. One capture-phase click
+ *     listener is its entire footprint, and it never writes the note's text
+ *     (display/focus/selection only), so it cannot corrupt a note. */
+const CEILING = 247;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
