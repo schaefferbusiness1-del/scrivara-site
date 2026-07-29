@@ -1,67 +1,130 @@
 {
- "version": "reach-1.0.0",
- "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
- "note": "Every control in ui-control-manifest.json must resolve to at least one reach path in EVERY shell declared here. A control reachable only by typing its name in Ask does not count as reachable - a doctor has to be able to find it by looking. Shell-independent surfaces (auth screens, overlays opened by another control) are declared once here rather than per shell.",
- "shellIndependent": {
-  "auth": "auth",
-  "global": "overlay",
-  "dynamic": "panel"
- },
- "shells": {
-  "classic": {
-   "label": "Today's rail + header (the shell that ships default ON until S6)",
-   "viewHomes": {
-    "patientsView": "rail",
-    "visitView": "rail",
-    "historyView": "rail",
-    "ordersView": "rail",
-    "recsView": "rail",
-    "calendarView": "rail",
-    "studioView": "rail",
-    "analysisView": "rail",
-    "teamView": "rail",
-    "adminView": "rail",
-    "legalReqView": "rail",
-    "intakeView": "rail"
-   },
-   "controls": {
-    "chrome:header": "header",
-    "chrome:rail": "rail",
-    "chrome:patientbar": "patientbar"
-   }
+  "version": "reach-1.0.0",
+  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
+  "note": "Every control in ui-control-manifest.json must resolve to at least one reach path in EVERY shell declared here. A control reachable only by typing its name in Ask does not count as reachable - a doctor has to be able to find it by looking. Shell-independent surfaces (auth screens, overlays opened by another control) are declared once here rather than per shell.",
+  "shellIndependent": {
+    "auth": "auth",
+    "global": "overlay",
+    "dynamic": "panel"
   },
-  "calm": {
-   "label": "Calm Shell - five dock destinations, rail hidden by CSS",
-   "dock": {
-    "day": ["calendarView"],
-    "patient": ["patientsView", "historyView", "intakeView"],
-    "visit": ["visitView"],
-    "review": ["ordersView", "recsView"],
-    "tools": ["studioView", "analysisView", "teamView", "adminView", "legalReqView"]
-   },
-   "controls": {
-    "nav_calendar": ["dock:day"],
-    "nav_patients": ["dock:patient"],
-    "nav_visit": ["dock:visit"],
-    "nav_staffpull": ["dock:tools"],
-    "nav_orders": ["dock:review"],
-    "nav_recs": ["dock:review"],
-    "nav_history": ["dock:patient"],
-    "nav_legalreq": ["dock:tools"],
-    "nav_team": ["dock:tools"],
-    "nav_analysis": ["dock:tools"],
-    "nav_studio": ["dock:tools"],
-    "nav_help": ["dock:tools", "ask"],
-    "nav_admin": ["dock:tools"],
-    "askCopilotHdrBtn": ["dock:tools"],
-    "chrome:header::Find": ["dock:ask"],
-    "intakeBtn": ["dock:tools"],
-    "chrome:header::Templates": ["dock:tools"],
-    "customWidgetHdrBtn": ["dock:tools"],
-    "chrome:header::Settings": ["dock:tools"],
-    "chrome:header::Log out": ["dock:tools"],
-    "chrome:patientbar::Switch patient": ["rightnow", "dock:patient"]
-   }
+  "shells": {
+    "classic": {
+      "label": "Today's rail + header (the shell that ships default ON until S6)",
+      "viewHomes": {
+        "patientsView": "rail",
+        "visitView": "rail",
+        "historyView": "rail",
+        "ordersView": "rail",
+        "recsView": "rail",
+        "calendarView": "rail",
+        "studioView": "rail",
+        "analysisView": "rail",
+        "teamView": "rail",
+        "adminView": "rail",
+        "legalReqView": "rail",
+        "intakeView": "rail"
+      },
+      "controls": {
+        "chrome:header": "header",
+        "chrome:rail": "rail",
+        "chrome:patientbar": "patientbar"
+      }
+    },
+    "calm": {
+      "label": "Calm Shell - five dock destinations, rail hidden by CSS",
+      "dock": {
+        "day": [
+          "calendarView"
+        ],
+        "patient": [
+          "patientsView",
+          "historyView",
+          "intakeView"
+        ],
+        "visit": [
+          "visitView"
+        ],
+        "review": [
+          "ordersView",
+          "recsView"
+        ],
+        "tools": [
+          "analysisView",
+          "teamView",
+          "adminView",
+          "legalReqView"
+        ],
+        "studio": [
+          "studioView"
+        ]
+      },
+      "controls": {
+        "nav_calendar": [
+          "dock:day"
+        ],
+        "nav_patients": [
+          "dock:patient"
+        ],
+        "nav_visit": [
+          "dock:visit"
+        ],
+        "nav_staffpull": [
+          "dock:tools"
+        ],
+        "nav_orders": [
+          "dock:review"
+        ],
+        "nav_recs": [
+          "dock:review"
+        ],
+        "nav_history": [
+          "dock:patient"
+        ],
+        "nav_legalreq": [
+          "dock:tools"
+        ],
+        "nav_team": [
+          "dock:tools"
+        ],
+        "nav_analysis": [
+          "dock:tools"
+        ],
+        "nav_studio": [
+          "dock:tools"
+        ],
+        "nav_help": [
+          "dock:tools",
+          "ask"
+        ],
+        "nav_admin": [
+          "dock:tools"
+        ],
+        "askCopilotHdrBtn": [
+          "dock:tools"
+        ],
+        "chrome:header::Find": [
+          "dock:ask"
+        ],
+        "intakeBtn": [
+          "dock:tools"
+        ],
+        "chrome:header::Templates": [
+          "dock:tools"
+        ],
+        "customWidgetHdrBtn": [
+          "dock:tools"
+        ],
+        "chrome:header::Settings": [
+          "dock:tools"
+        ],
+        "chrome:header::Log out": [
+          "dock:tools"
+        ],
+        "chrome:patientbar::Switch patient": [
+          "rightnow",
+          "dock:patient"
+        ]
+      }
+    }
   }
- }
 }

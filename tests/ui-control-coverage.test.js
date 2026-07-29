@@ -169,6 +169,24 @@ if (fs.existsSync(SHELL_MODULE)) {
     }
   }
 
+  /* 2026-07-29 QA: the CONTRACT literal itself drifted from the shipped DEST
+     (studio added 2026-07-26, contract not moved) while this suite compared
+     only CONTRACT vs fixture. Parse the REAL DEST array too - all three must
+     agree or the reach map lies about what the dock actually ships. */
+  const dm = /var DEST = \[([\s\S]*?)\n  \];/.exec(src);
+  if (!dm) {
+    fail('feat_mls_calm_shell.js must declare var DEST = [...] where the dock is built.');
+  } else {
+    const realIds = [];
+    const idRe = /\{ id: '([a-z]+)'/g; let mm;
+    while ((mm = idRe.exec(dm[1]))) realIds.push(mm[1]);
+    const expected2 = Object.keys(reach.shells.calm.dock).sort();
+    if (realIds.slice().sort().join(',') !== expected2.join(',')) {
+      fail('The SHIPPED dock drifted from the reach map: DEST builds [' + realIds.join(', ') +
+        '], reach map declares [' + expected2.join(', ') + '].');
+    }
+  }
+
   /* The rail is hidden, never removed — removal orphans every reader and test
      that keys off .mainnav, and it is not reversible without a reload. */
   if (/mainnav[^\n]{0,120}\.remove\(\)/.test(src) || /removeChild[^\n]{0,60}mainnav/.test(src)) {

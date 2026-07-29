@@ -30,7 +30,7 @@
   /* Dock destinations. The coverage suite asserts this list matches
      tests/fixtures/ui-reach-map.json so the shipped dock and the reach
      contract cannot drift apart. */
-  var CONTRACT = { MLS_DOCK_DEST: ['day', 'patient', 'review', 'tools', 'visit'] };
+  var CONTRACT = { MLS_DOCK_DEST: ['day', 'patient', 'review', 'studio', 'tools', 'visit'] };
 
   var W = window;
   var D = document;
