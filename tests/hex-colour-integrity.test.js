@@ -54,6 +54,10 @@ const PREEXISTING = {
   '#B07636': 42,  // "b076"
   '#6b7684': 1,   // "b768"
   '#b9770a': 6,   // "b977"
+  '#b7791f': 1,   // "b779" — AuthPilot amber (--mod), byte-identical since the
+                  //          file's first upload; collided with the live build
+                  //          number on 2026-07-28 (git-verified untouched by
+                  //          any bump: same hex at 51940a2a and da2bf625)
 };
 
 /* The annotations above have rotted before: successive blanket build bumps

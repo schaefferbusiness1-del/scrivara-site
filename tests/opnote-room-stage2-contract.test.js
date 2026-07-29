@@ -26,7 +26,7 @@ const room = fs.readFileSync(path.join(root, 'feat_mls_opnote_room.js'), 'utf8')
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 /* ---- source pins ------------------------------------------------------- */
-assert(/var VERSION = 'opr-1\.\d+\.\d+';/.test(room), 'room module lost its version line');
+assert(/var VERSION = 'opr-\d+\.\d+\.\d+';/.test(room), 'room module lost its version line');
 assert(room.includes("behavior: (document.visibilityState === 'visible' ? 'smooth' : 'auto')"),
   "nav scroll must fall back to instant when occluded - smooth is rAF-driven and never moves in a hidden tab (proven live at b719)");
 assert(room.includes('w.__oprWrap = true; w.__oprOrig = orig;'), 'render wrap is not marked idempotent/revertible');
@@ -94,7 +94,7 @@ vm.createContext(ctx);
 vm.runInContext(room, ctx, { filename: 'feat_mls_opnote_room.js' });
 
 assert(ctx.__mlsOpNoteRoom && ctx.__mlsOpNoteRoom.installed, 'room api did not install');
-assert(/^opr-1\.\d+\.\d+$/.test(String(ctx.__mlsOpNoteRoom.version)), 'wrong room version installed');
+assert(/^opr-\d+\.\d+\.\d+$/.test(String(ctx.__mlsOpNoteRoom.version)), 'wrong room version installed');
 assert(ctx.opPrepRender !== ORIG && ctx.opPrepRender.__oprWrap, 'opPrepRender was not wrapped');
 
 ctx.opPrepRender();

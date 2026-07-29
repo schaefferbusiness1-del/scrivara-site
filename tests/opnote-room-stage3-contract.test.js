@@ -23,7 +23,7 @@ const room = fs.readFileSync(path.join(root, 'feat_mls_opnote_room.js'), 'utf8')
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 /* ---- source pins ------------------------------------------------------- */
-assert(/var VERSION = 'opr-1\.\d+\.\d+';/.test(room), 'room module lost its version line');
+assert(/var VERSION = 'opr-\d+\.\d+\.\d+';/.test(room), 'room module lost its version line');
 assert(room.includes('if (shown($(\'templatesModal\')) && safe(function () { return $(\'templatesModal\').parentElement !== $(\'oprPanelTpls\'); }, false)) {'),
   'the module must ADOPT a floating Templates modal that opened before it landed (the half-screen report)');
 assert(app.includes('<section id="oprPanelTpls"></section>'), 'the Templates tab panel is missing from the room markup');

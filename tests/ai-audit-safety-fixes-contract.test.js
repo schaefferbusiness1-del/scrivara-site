@@ -57,8 +57,8 @@ assert(app.includes('L.push((n.soap||n.text||\'\').trim());'),
 assert(app.includes("n.kind==='opnote'&&(n.text||'').trim()"),
   'op-note drafts must not be mislabeled Transcript-only');
 
-/* 4 - opr-1.5.1 */
-assert(room.includes("var VERSION = 'opr-1.5.1';"), 'room module is not opr-1.5.1');
+/* 4 - opr-1.5.1 hardenings (carried into the opr-2.0.0 remake, 2026-07-28) */
+assert(room.includes("var VERSION = 'opr-2.0.0';"), 'room module is not opr-2.0.0');
 assert(room.includes('safe(wrapProcOpeners);'), 'opener wraps must re-attempt at call time');
 
 /* b734 - the quality half of the audit + diarization option A */

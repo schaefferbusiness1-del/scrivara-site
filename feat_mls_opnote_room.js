@@ -42,10 +42,22 @@
  *     tpf capture interceptor and the history relabeler need THAT node).
  *   - No setInterval. No document-subtree observer. Motion tokens only,
  *     transform/opacity only. Radius 22/16/10/999.
+ *
+ * 2026-07-28 REMAKE (owner order: "I don't like the OpNotes UI - completely
+ * remake from scratch the OpNotes UI"). This module now OWNS the room's
+ * presentation - a calm one-room skin (brand greens, 16px radii, soft
+ * shadows, generous whitespace), the day/mode rail as a tidy single column,
+ * ONE patient card at a time in all-day mode (the other cards stay in the
+ * DOM, presentation-hidden by a room class; every satellite keeps its node),
+ * a Prev/Next pager, arrow-key patient navigation, and a one-field-per-row
+ * Fields panel. The PIPELINE is untouched: drafts still flow through
+ * window.opPrepGenerateOne, Draft-all through the real #opPrepGenAllBtn,
+ * saves through opPrepSave, and the per-field "Use every time" mechanism is
+ * owned by feat_mls_opnote_fill.js (this module only presents it).
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'opr-1.5.1';
+  var VERSION = 'opr-2.0.0';
   var previous = null;
   try { previous = window.__mlsOpNoteRoom; } catch (e0) {}
   if (previous && previous.installed && previous.version === VERSION) return;
@@ -59,6 +71,68 @@
   function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isFn(f) { return typeof f === 'function'; }
   function shown(el) { return !!(el && el.classList && el.classList.contains('show')); }
+
+  /* -------------------- 2026-07-28 remake: the room skin -------------------
+     Presentation ONLY, layered over the legacy inline styles by specificity
+     and !important where an inline style would otherwise win. Every id and
+     anchor the satellites grip stays byte-identical in ScribeFlow.html. */
+  var SKIN_ID = 'oprSkin';
+  function skin() {
+    if ($(SKIN_ID)) return;
+    safe(function () {
+      var st = document.createElement('style'); st.id = SKIN_ID;
+      st.textContent = [
+        '/* op-note room remake 2026-07-28 - calm one-room presentation */',
+        '#opPrepModal.opr-room .opr-top{ padding:14px 56px 14px 20px; gap:16px; }',
+        '#oprPanelProcs{ grid-template-columns:312px minmax(0,1fr); }',
+        '#oprDayRail{ padding:16px 18px 26px; }',
+        '#opPrepModeRow{ flex-direction:column; gap:6px !important; }',
+        '#opPrepModeRow button{ width:100%; text-align:left; border-radius:12px !important; padding:10px 14px !important; }',
+        '#opPrepDayRow{ flex-direction:column; align-items:stretch !important; gap:7px !important;',
+        '  background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:12px; }',
+        '#opPrepDayRow button{ border-radius:10px !important; text-align:left; background:var(--card); }',
+        '#opPrepDayRow input{ width:100%; box-sizing:border-box; border-radius:10px !important; background:var(--card); }',
+        '#oprRowNav{ gap:6px; max-height:none; }',
+        '.opr-nav-item{ background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:9px 11px; }',
+        '.opr-nav-item .opr-nav-st{ display:block; font-size:10.5px; font-weight:600; color:var(--muted); margin-top:2px; white-space:normal; }',
+        '.opr-nav-item.on{ border-color:var(--green-dk); background:var(--card); box-shadow:0 2px 10px rgba(32,64,52,.10); }',
+        '#oprEditor{ padding:22px 30px 60px; }',
+        '#oprEditor > .row{ margin:0 0 14px !important; }',
+        '#opPrepGenAllBtn{ font-size:14px !important; padding:11px 20px !important; border-radius:12px !important; }',
+        '#oprPager{ display:flex; align-items:center; gap:12px; margin:0 0 12px; }',
+        '#oprPager button{ font:700 12.5px system-ui; padding:8px 16px; border:1px solid var(--line);',
+        '  border-radius:999px; background:var(--card); color:var(--ink); cursor:pointer; }',
+        '#oprPager button:hover{ border-color:var(--green-dk); }',
+        '#oprPager button[disabled]{ opacity:.45; cursor:default; }',
+        '#oprPager .opr-pos{ font:700 12px system-ui; color:var(--muted); }',
+        '#opPrepList > div{ border-radius:16px !important; border:1px solid var(--line) !important;',
+        '  background:var(--card) !important; padding:18px 20px !important; box-shadow:0 8px 28px rgba(32,64,52,.06); }',
+        '#opPrepList.opr-solo > div{ display:none; }',
+        '#opPrepList.opr-solo > div.opr-cur{ display:block; }',
+        '#opPrepList .btn-primary{ font-size:13.5px !important; padding:10px 18px !important; border-radius:12px !important; }',
+        '#opPrepList textarea{ border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--bg); }',
+        '/* the Fields panel: one field per row, calm card, roomy controls */',
+        '#opPrepModal .onf-fillbox{ border:1px solid var(--line) !important; background:var(--card) !important;',
+        '  border-radius:16px !important; padding:14px 16px 16px !important; }',
+        '#opPrepModal .onf-fillbox .onf-h{ color:var(--ink) !important; font-size:13px !important; }',
+        '#opPrepModal .onf-fillbox .onf-grid{ display:flex !important; flex-direction:column; gap:0 !important; }',
+        '#opPrepModal .onf-fillbox .onf-field{ padding:10px 2px 11px; border-bottom:1px solid var(--line); }',
+        '#opPrepModal .onf-fillbox .onf-field:last-child{ border-bottom:0; }',
+        '#opPrepModal .onf-fillbox label{ font-size:12.5px !important; color:var(--ink) !important; gap:5px !important; }',
+        '#opPrepModal .onf-fillbox input, #opPrepModal .onf-fillbox select{ font-size:13px !important;',
+        '  padding:9px 11px !important; border-radius:10px !important; max-width:460px; }',
+        '#opPrepModal .onf-fillbox .onf-field-actions{ margin-top:6px !important; }',
+        '#opPrepModal .onf-fillbox .onf-field-actions button{ border-radius:999px !important; }',
+        '@media (max-width:700px){',
+        '  #oprEditor{ padding:14px 12px 44px; }',
+        '  #opPrepList > div{ padding:13px 12px !important; }',
+        '  #opPrepModal .onf-fillbox input, #opPrepModal .onf-fillbox select{ max-width:none; }',
+        '  #oprPager{ flex-wrap:wrap; }',
+        '}'
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(st);
+    });
+  }
 
   /* Stage 1 ESC OWNERSHIP. Two .modal-bg surfaces can be open at once (the
      room + the Templates modal over it) and two ESC handlers already exist:
@@ -111,7 +185,7 @@
         if (scroll) card.scrollIntoView({ behavior: (document.visibilityState === 'visible' ? 'smooth' : 'auto'), block: 'start' });
       }
     });
-    safe(markNav); safe(buildReceipt);
+    safe(markNav); safe(buildReceipt); safe(buildPager);
   }
 
   function markNav() {
@@ -132,12 +206,17 @@
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       var nb = blanksOf(row);
-      var cls = row.gen ? (nb ? 'blanks' : 'ready') : '';
-      var state = row.gen ? (nb ? (nb + ' blank' + (nb === 1 ? '' : 's') + ' to fill') : 'drafted') : 'not drafted yet';
-      if (row.edited) state += ' · your edits';
+      /* 2026-07-28: per-row status chip - drafted / blanks / needs a template /
+         not drafted yet - read from the row state the pipeline already keeps. */
+      var cls, state;
+      if (row.gen) { cls = nb ? 'blanks' : 'ready'; state = nb ? (nb + ' blank' + (nb === 1 ? '' : 's') + ' to fill') : 'drafted'; }
+      else if (!row.tplId) { cls = 'warn'; state = 'needs a template'; }
+      else { cls = ''; state = 'not drafted yet'; }
+      if (row.edited) state += ' - your edits';
       h += '<button type="button" class="opr-nav-item' + (i === SEL ? ' on' : '') + '" data-i="' + i + '" title="' + esc(row.appt.name + ' — ' + state) + '">'
         + '<span class="opr-dot ' + cls + '"></span>'
-        + '<span class="nm">' + esc(row.appt.name) + (row.edited ? ' ✎' : '') + '</span>'
+        + '<span class="nm">' + esc(row.appt.name)
+        + '<span class="opr-nav-st">' + esc(state) + '</span></span>'
         + '</button>';
     }
     nav.innerHTML = h;
@@ -190,8 +269,74 @@
     el.style.display = '';
   }
 
+  /* 2026-07-28: in all-day mode, ONE patient card shows at a time. The other
+     cards stay in the DOM (base render + satellites keep every anchor); a
+     room class on #opPrepList presentation-hides them, and .opr-cur - which
+     the room already maintains - is the one that shows. Guarded writes only
+     (a no-op classList write still re-commits the whole doc's styles). */
+  function markSolo() {
+    safe(function () {
+      var list = $('opPrepList'); if (!list || !list.classList) return;
+      var want = (window._opPrep || []).length >= 2;
+      if (want && !list.classList.contains('opr-solo')) list.classList.add('opr-solo');
+      if (!want && list.classList.contains('opr-solo')) list.classList.remove('opr-solo');
+    });
+  }
+
+  /* Prev/Next pager above the list - room chrome, room-owned node. It only
+     SELECTS (oprSelect); it never drafts, saves, or touches pipeline state. */
+  function buildPager() {
+    var editor = $('oprEditor'); if (!editor || !editor.insertBefore) return;
+    var rows = window._opPrep || [];
+    var pager = $('oprPager');
+    if (rows.length < 2) {
+      if (pager && pager.parentNode) pager.parentNode.removeChild(pager);
+      return;
+    }
+    if (!pager) {
+      pager = document.createElement('div');
+      pager.id = 'oprPager';
+      pager.innerHTML = '<button type="button" data-opr-nav="prev" aria-label="Previous patient">Prev</button>'
+        + '<span class="opr-pos"></span>'
+        + '<button type="button" data-opr-nav="next" aria-label="Next patient">Next</button>';
+      pager.onclick = function (e) {
+        var b = e.target && e.target.closest ? e.target.closest('[data-opr-nav]') : null;
+        if (!b) return;
+        oprSelect(SEL + (b.getAttribute('data-opr-nav') === 'next' ? 1 : -1), true);
+      };
+      var anchor = $('oprReceipt');
+      if (anchor && anchor.parentElement === editor) editor.insertBefore(pager, anchor);
+      else if ($('opPrepList') && $('opPrepList').parentElement === editor) editor.insertBefore(pager, $('opPrepList'));
+      else editor.appendChild(pager);
+    }
+    safe(function () {
+      var pos = pager.querySelector('.opr-pos');
+      if (pos) pos.textContent = 'Patient ' + (SEL + 1) + ' of ' + rows.length;
+      var prev = pager.querySelector('[data-opr-nav="prev"]'), next = pager.querySelector('[data-opr-nav="next"]');
+      if (prev) prev.disabled = SEL <= 0;
+      if (next) next.disabled = SEL >= rows.length - 1;
+    });
+  }
+
+  /* Arrow keys move between patients when the doctor is not typing in a
+     field. Esc stays with its existing owners (pinned handler + onKey). */
+  function onNavKey(e) {
+    var k = e.key;
+    if (k !== 'ArrowDown' && k !== 'ArrowUp' && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+    if (!shown($('opPrepModal')) || shown($('templatesModal'))) return;
+    var t = e.target;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable)) return;
+    var rows = window._opPrep || []; if (rows.length < 2) return;
+    var next = SEL + ((k === 'ArrowDown' || k === 'ArrowRight') ? 1 : -1);
+    if (next < 0 || next >= rows.length) return;
+    if (e.preventDefault) e.preventDefault();
+    oprSelect(next, true);
+  }
+  window.addEventListener('keydown', onNavKey);
+
   function buildRails() {
     buildNav(); buildTplRail(); buildReceipt();
+    safe(markSolo); safe(buildPager);
     /* self-heal: if the Templates tab is marked active but its modal is not
        shown (a close path we do not wrap took it down), return to Procedures */
     safe(function () {
@@ -319,6 +464,7 @@
     w.__oprWrap = true; w.__oprOrig = orig;
     window.opPrepRender = w;
   }
+  skin();
   wrapRender();
   wrapTemplates();
   wrapProcOpeners();
@@ -360,17 +506,23 @@
     rebuild: function () { safe(buildRails); },
     showTab: function (which) { safe(function () { showTab(which === 'tpls' ? 'tpls' : 'procs'); }); },
     describe: function () {
-      return 'op-note workroom, stage 3: Templates lives IN the room - ' +
-        '#templatesModal reparents whole into the Templates tab on first open ' +
-        '(own show lifecycle intact for every satellite), openTemplates/' +
-        'closeTemplates wrapped outermost (opens the room when closed, ' +
-        'switches tabs). Plus stage 2b: patient nav + template-health rails, ' +
-        'honest context receipt, synchronous onf kick on every render ' +
-        '(occluded-tab law). Stage 4 next: presentation retirement.';
+      return 'op-note workroom, 2026-07-28 remake: the room owns the ' +
+        'PRESENTATION - calm one-room skin, single-column day/mode rail, ' +
+        'patient nav with per-row status, ONE patient card at a time in ' +
+        'all-day mode (opr-solo presentation class; every anchor stays in ' +
+        'the DOM), Prev/Next pager, arrow-key navigation, one-field-per-row ' +
+        'Fields panel. Pipeline untouched: opPrepGenerateOne / ' +
+        '#opPrepGenAllBtn / opPrepSave; per-field "Use every time" is owned ' +
+        'by feat_mls_opnote_fill.js. Plus stage 3 Templates-in-the-room and ' +
+        'stage 2b rails with the synchronous onf kick (occluded-tab law).';
     },
     revert: function () {
       api.installed = false;
       try { window.removeEventListener('keydown', onKey, true); } catch (e2) {}
+      try { window.removeEventListener('keydown', onNavKey); } catch (e11) {}
+      try { var sk = $(SKIN_ID); if (sk && sk.parentNode) sk.parentNode.removeChild(sk); } catch (e12) {}
+      try { var pg = $('oprPager'); if (pg && pg.parentNode) pg.parentNode.removeChild(pg); } catch (e13) {}
+      try { var lst = $('opPrepList'); if (lst && lst.classList && lst.classList.contains('opr-solo')) lst.classList.remove('opr-solo'); } catch (e14) {}
       try {
         var w = window.opPrepRender;
         if (isFn(w) && w.__oprWrap && isFn(w.__oprOrig)) window.opPrepRender = w.__oprOrig;

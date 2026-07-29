@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-2.12.0';
+  var VERSION = 'onf-2.13.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -547,6 +547,67 @@
     safe(function () { if (ok && isFn(window.syncPrefsToServer)) window.syncPrefsToServer(); });
     return ok;
   }
+  /* 2026-07-28 (owner order: "Use every time should be available under each one
+     of these, and it should actually work"): a SECOND, EXPLICIT tier of account
+     defaults. The tier-1 allowlist above stays exactly as it is - it keeps
+     gating every SILENT path (dropdown-history learning, prior-value chips).
+     This tier stores a value ONLY when the doctor presses the button under a
+     field - an explicit, per-field human choice - and it may hold any field
+     EXCEPT facts about ONE patient or ONE encounter: identity (name/DOB/MRN/
+     age/sex/BMI), dates, chart-bound facts (diagnosis/history/meds/allergies)
+     and outcome attestations (complications/consent/timeout), which can never
+     be pinned across charts. Same account-scoped uns() key family as tier 1;
+     patient-specific values (chart, template, per-patient memory) always
+     outrank a pinned default in resolveInitialField and applyDefaultToBoxes. */
+  var USER_DEFAULTS_SUFFIX = 'opFieldDefaultsUserV1';
+  function userDefaultBlocked(label) {
+    var l = S(label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!l) return true;
+    return /(patient name|(^| )name$|\bdob\b|birth|\bmrn\b|medical record|chart (number|id|no)|account (number|no)|\bage\b|\bsex\b|\bgender\b|\bbmi\b|body mass|\bdate\b|\bday\b|today|diagnos|\bdx\b|indication|history|\bhpi\b|allerg|medication|\bmeds\b|complication|consent|time ?out)/.test(l);
+  }
+  function userDefaultEligible(label) {
+    return !!fieldIdentity(label) && !defaultEligible(label) && !userDefaultBlocked(label);
+  }
+  /* every field the button may appear under - tier 1 OR the explicit tier */
+  function defaultOffered(label) { return defaultEligible(label) || userDefaultEligible(label); }
+  function loadUserDefaultsStore() {
+    var raw = readScoped(USER_DEFAULTS_SUFFIX, ''); if (!raw) return { schema: 1, fields: {} };
+    var obj = safe(function () { return JSON.parse(raw); }, null);
+    if (!obj || typeof obj !== 'object' || !obj.fields || typeof obj.fields !== 'object') return { schema: 1, fields: {} };
+    return { schema: 1, fields: obj.fields };
+  }
+  function userFieldDefault(label) {
+    if (!userDefaultEligible(label)) return null;
+    var rec = loadUserDefaultsStore().fields[fieldIdentity(label)];
+    if (!rec || typeof rec !== 'object' || !S(rec.value).trim()) return null;
+    return { label: S(rec.label || label), value: S(rec.value).trim(), updatedAt: +rec.updatedAt || 0 };
+  }
+  function anyFieldDefault(label) { return fieldDefault(label) || userFieldDefault(label); }
+  function saveAnyFieldDefault(label, value) {
+    if (defaultEligible(label)) return saveFieldDefault(label, value);
+    label = S(label).trim(); value = S(value).trim();
+    var id = fieldIdentity(label);
+    if (!id || !value || !userDefaultEligible(label) || !scopedKey(USER_DEFAULTS_SUFFIX)) return false;
+    var store = loadUserDefaultsStore();
+    store.fields[id] = { label: label.slice(0, 160), value: value.slice(0, 2000), updatedAt: Date.now() };
+    var ok = writeScoped(USER_DEFAULTS_SUFFIX, JSON.stringify(store));
+    safe(function () { if (ok && isFn(window.syncPrefsToServer)) window.syncPrefsToServer(); });
+    return ok;
+  }
+  function clearUserFieldDefault(label) {
+    var id = fieldIdentity(label); if (!id || !scopedKey(USER_DEFAULTS_SUFFIX)) return false;
+    var store = loadUserDefaultsStore();
+    if (!Object.prototype.hasOwnProperty.call(store.fields, id)) return true;
+    delete store.fields[id];
+    var ok = writeScoped(USER_DEFAULTS_SUFFIX, JSON.stringify(store));
+    safe(function () { if (ok && isFn(window.syncPrefsToServer)) window.syncPrefsToServer(); });
+    return ok;
+  }
+  function clearAnyFieldDefault(label) {
+    var t1 = clearFieldDefault(label);
+    var t2 = clearUserFieldDefault(label);
+    return t1 && t2;
+  }
   /* onf-1.7.0: read the patient's ACTUAL chart history for the medication they
      were given, so a steroid / anesthetic NAME field is pre-filled from what is
      actually in their record -- not a generic guess. Only fills a NAME; a
@@ -899,7 +960,7 @@
   function applyDefaultToBoxes(label, value, boxes, repaint) {
     var wanted = fieldIdentity(label), changed = 0;
     boxes = boxes || [];
-    if (!wanted || !defaultEligible(label)) return 0;
+    if (!wanted || !defaultOffered(label)) return 0;
     for (var i = 0; i < boxes.length; i++) {
       var ta = boxes[i], row = rowFor(ta); if (!row || row._onfRaw == null) continue;
       var tokens = fillTokens(row._onfRaw), matched = false;
@@ -1084,7 +1145,7 @@
     if (value) return { value: value, kind: 'template' };
     value = patientMem && patientMem[S(label).toLowerCase()];
     if (value) return { value: value, kind: 'saved' };
-    var pinned = fieldDefault(label);
+    var pinned = anyFieldDefault(label);   /* tier 1 allowlist OR the 2026-07-28 explicit tier */
     if (pinned) return { value: pinned.value, kind: 'default' };
     value = smartDefault(label, spec, row);
     return value ? { value: value, kind: 'suggested' } : { value: '', kind: 'blank' };
@@ -1162,18 +1223,20 @@
       }
       var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
         : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
-        : kind === 'default' ? ' <span class="onf-default">your default</span>'
+        : kind === 'default' ? ' <span class="onf-default">applied from your defaults</span>'
         : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
         : kind === 'template' ? ' <span class="onf-hist">from template</span>'
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
-      var acts = [], recent = priorValues(label)[0] || '', def = fieldDefault(label);
+      var acts = [], recent = priorValues(label)[0] || '', def = anyFieldDefault(label);
       /* onf-2.9.0: per-field dictation (capture = pinned Dictate-Anywhere engine) */
       acts.push('<button type="button" class="onf-mic" data-onf-mic="' + esc(fid) + '" title="Dictate this field — spoken value is normalized by AI">🎙</button>');
       var reusableSurface = kind !== 'known' && kind !== 'history' && kind !== 'template';
       if (reusableSurface && recent && S(recent).toLowerCase() !== S(cur).toLowerCase()) {
         acts.push('<button type="button" class="onf-recent" data-onf-recent-control="' + esc(fid) + '" data-onf-recent-value="' + esc(recent) + '">Last used: ' + esc(recent) + ' — use</button>');
       }
-      if (reusableSurface && defaultEligible(label)) {
+      /* 2026-07-28: the control is offered under EVERY reusable field - tier 1
+         for practice/equipment identity, the explicit tier for the rest. */
+      if (reusableSurface && defaultOffered(label)) {
         if (!def) acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">☆ Use every time</button>');
         else {
           acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">Change default</button>');
@@ -1232,7 +1295,7 @@
           var label = el.getAttribute('data-onf-label'), val = S(el.value).trim();
           row._onfVals = row._onfVals || {}; row._onfVals[label.toLowerCase()] = val;
           row._onfDefaultKeys = row._onfDefaultKeys || {};
-          var pinnedNow = fieldDefault(label);
+          var pinnedNow = anyFieldDefault(label);
           if (pinnedNow && pinnedNow.value === val) row._onfDefaultKeys[label.toLowerCase()] = true;
           else delete row._onfDefaultKeys[label.toLowerCase()];
           saveFillMemValue(row, label.toLowerCase(), val);   /* per-patient memory (onf-1.7.0) */
@@ -1297,14 +1360,14 @@
     for (var d = 0; d < defBtns.length; d++) defBtns[d].addEventListener('click', function () {
       var label = S(this.getAttribute('data-onf-default-label')), act = this.getAttribute('data-onf-default-act');
       if (act === 'clear') {
-        if (!clearFieldDefault(label)) { toast('Sign in fully before changing op-note defaults.', 'err'); return; }
+        if (!clearAnyFieldDefault(label)) { toast('Sign in fully before changing op-note defaults.', 'err'); return; }
         stopDefaultInOpen(label);
         toast('Stopped using that answer automatically.', 'ok');
         return;
       }
       var ctrl = $(this.getAttribute('data-onf-default-control')), val = S(ctrl && ctrl.value).trim();
       if (!val || val === OTHER) { toast('Choose or type the answer first.', 'err'); return; }
-      if (!saveFieldDefault(label, val)) { toast(!defaultEligible(label) ? 'Only stable practice, provider, facility, or equipment identity can be saved as a reusable default.' : 'Sign in fully before saving an op-note default.', 'err'); return; }
+      if (!saveAnyFieldDefault(label, val)) { toast(!defaultOffered(label) ? 'This field is a fact about one patient or one encounter - it cannot be reused across charts.' : 'Sign in fully before saving an op-note default.', 'err'); return; }
       applyDefaultToOpen(label, val);
       toast('Saved — this answer will fill the same field in future op notes.', 'ok');
     });
@@ -1605,8 +1668,11 @@
     installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js', lastFillError: null,
     applyBulk: applyBulk, _fillTokens: fillTokens, _fieldSpec: fieldSpec, _replaceToken: replaceToken,
     _patientKey: patientKey, _loadFillMem: loadFillMem, _saveFillMemValue: saveFillMemValue, _historyMed: historyMed,
-    getDefault: function (labelOrKey) { var d = fieldDefault(labelOrKey); return d ? d.value : ''; },
+    getDefault: function (labelOrKey) { var d = anyFieldDefault(labelOrKey); return d ? d.value : ''; },
     _setDefault: saveFieldDefault, _clearDefault: clearFieldDefault, _applyDefaultToOpen: applyDefaultToOpen, _applyDefaultToBoxes: applyDefaultToBoxes,
+    /* 2026-07-28 explicit per-field tier (owner: the button under EVERY field) */
+    _setAnyDefault: saveAnyFieldDefault, _clearAnyDefault: clearAnyFieldDefault, _anyFieldDefault: anyFieldDefault,
+    _userFieldDefault: userFieldDefault, _userDefaultEligible: userDefaultEligible, _userDefaultBlocked: userDefaultBlocked, _defaultOffered: defaultOffered,
     _priorValues: priorValues, _anonymousField: anonymousField, _defaultEligible: defaultEligible,
     _scopedKey: scopedKey, _fieldDefault: fieldDefault, _applyVals: applyVals, _sigOf: sigOf,
     _adoptRenderedEdits: adoptRenderedEdits, _acceptExternalEdit: acceptExternalEdit, _existingFillBox: existingFillBox,
