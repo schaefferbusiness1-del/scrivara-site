@@ -113,4 +113,188 @@ assert.strictEqual(stripBlocksNew(unmatchedBlocks), unmatchedBlocks,
 assert(Date.now() - t0 < 200,
   'forward-only block removal exceeded 200ms on repeated unclosed openers');
 
+/* 2026-07-29: nested optional whitespace inside a repeated placeholder
+ * group made a prose miss quadratic. Extract the live classifier, compare it
+ * with the prior verdict on generated inputs, and time adversarial doublings. */
+const opnoteIntegritySrc = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_opnote_integrity.js'), 'utf8');
+const placeholderStart = opnoteIntegritySrc.indexOf('  function placeholderOnlyTail(tail){');
+const placeholderEnd = opnoteIntegritySrc.indexOf('\n  function forceFacts(', placeholderStart);
+assert(placeholderStart >= 0 && placeholderEnd > placeholderStart,
+  'could not extract the live op-note placeholder tail classifier');
+assert(!opnoteIntegritySrc.includes('/^(?:\\s*(?:\\[\\[[^\\]]+\\]\\]|\\[(?:FILL\\s*:?\\s*)?[^\\]]+\\]|\\{\\{[^}]+\\}\\}|_{2,})\\s*)+$/i'),
+  'quadratic repeated optional whitespace returned to the op-note classifier');
+const placeholderCtx = {
+  S: function (value) { return String(value == null ? '' : value); }
+};
+vm.runInNewContext(
+  opnoteIntegritySrc.slice(placeholderStart, placeholderEnd) +
+    '\nthis.placeholderOnlyTail = placeholderOnlyTail;',
+  placeholderCtx,
+  { filename: 'opnote-placeholder-tail.js' }
+);
+const placeholderOnlyTailLive = placeholderCtx.placeholderOnlyTail;
+assert.strictEqual(typeof placeholderOnlyTailLive, 'function',
+  'live op-note placeholder classifier extraction was vacuous');
+assert.strictEqual(placeholderOnlyTailLive(' [[procedure]] [FILL: side] {{level}} __ '), true,
+  'real placeholder-only tail no longer classifies as replaceable');
+assert.strictEqual(placeholderOnlyTailLive(' [[procedure]] keep this wording'), false,
+  'fixed template wording was misclassified as replaceable');
+
+function placeholderOnlyTailPrior(tail) {
+  const t = String(tail == null ? '' : tail).trim();
+  if (!t) return true;
+  return /^(?:\s*(?:\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,})\s*)+$/i.test(t);
+}
+let placeholderSeed = 0x8a5cd789;
+function nextPlaceholderRandom() {
+  placeholderSeed = (Math.imul(placeholderSeed, 1664525) + 1013904223) >>> 0;
+  return placeholderSeed;
+}
+const placeholderAlphabet = [
+  '[', ']', '{', '}', '_', 'F', 'I', 'L', ':', ' ', '\t', '\n', '\r',
+  '\u00a0', '\u2028', 'X', 'a', '1'
+];
+let placeholderTrue = 0;
+let placeholderFalse = 0;
+for (let caseIndex = 0; caseIndex < 50000; caseIndex++) {
+  const length = nextPlaceholderRandom() % 48;
+  let generated = '';
+  for (let charIndex = 0; charIndex < length; charIndex++) {
+    generated += placeholderAlphabet[nextPlaceholderRandom() % placeholderAlphabet.length];
+  }
+  const priorVerdict = placeholderOnlyTailPrior(generated);
+  const liveVerdict = placeholderOnlyTailLive(generated);
+  assert.strictEqual(liveVerdict, priorVerdict,
+    'op-note placeholder verdict changed on generated case ' + caseIndex);
+  if (liveVerdict) placeholderTrue++; else placeholderFalse++;
+}
+assert(placeholderTrue > 25 && placeholderFalse > 25000,
+  'generated op-note equivalence corpus lacked both verdict classes');
+
+const placeholderSizes = [40000, 80000, 160000, 320000];
+const placeholderTimes = [];
+placeholderSizes.forEach(function (size) {
+  const adversarial = '[[field]]' + ' '.repeat(size) + 'X';
+  const started = process.hrtime.bigint();
+  for (let repeat = 0; repeat < 5; repeat++) {
+    assert.strictEqual(placeholderOnlyTailLive(adversarial), false,
+      'adversarial prose tail must remain non-placeholder content');
+  }
+  placeholderTimes.push(Number(process.hrtime.bigint() - started) / 1e6);
+});
+assert(placeholderTimes[placeholderTimes.length - 1] < 500,
+  'linear op-note placeholder classifier exceeded 500ms at the largest doubling');
+for (let timeIndex = 1; timeIndex < placeholderTimes.length; timeIndex++) {
+  assert(placeholderTimes[timeIndex] <= placeholderTimes[timeIndex - 1] * 3.5 + 40,
+    'op-note placeholder timing grew superlinearly across adversarial doublings');
+}
+
+/* 2026-07-29: the comma lookahead rescanned the remaining list for every
+ * comma. Extract the live parser, preserve even unmatched-paren behavior on
+ * generated inputs, and time comma-heavy adversarial doublings. */
+const patientSnapshotSrc = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_patient_snapshot.js'), 'utf8');
+const snapshotParserStart = patientSnapshotSrc.indexOf('  function splitListLinear(t) {');
+const snapshotParserEnd = patientSnapshotSrc.indexOf('\n\n  /* b749:', snapshotParserStart);
+assert(snapshotParserStart >= 0 && snapshotParserEnd > snapshotParserStart,
+  'could not extract the live patient snapshot list parser');
+assert(!patientSnapshotSrc.includes('t.split(/[;\\n•\\|]+|,(?![^()]*\\))/)'),
+  'quadratic patient snapshot comma lookahead returned');
+const snapshotParserCtx = {};
+vm.runInNewContext(
+  patientSnapshotSrc.slice(snapshotParserStart, snapshotParserEnd) +
+    '\nthis.parseList = parseList;',
+  snapshotParserCtx,
+  { filename: 'patient-snapshot-list-parser.js' }
+);
+const parseSnapshotListLive = snapshotParserCtx.parseList;
+assert.strictEqual(typeof parseSnapshotListLive, 'function',
+  'live patient snapshot parser extraction was vacuous');
+assert.deepStrictEqual(
+  Array.from(parseSnapshotListLive('Alpha, Beta (left, right); Gamma\nDelta•Epsilon|Zeta')),
+  ['Alpha', 'Beta (left, right)', 'Gamma', 'Delta', 'Epsilon', 'Zeta'],
+  'real mixed patient list delimiters changed'
+);
+assert.deepStrictEqual(Array.from(parseSnapshotListLive('none.')), [],
+  'documented empty patient list no longer stays empty');
+
+function parseSnapshotListPrior(raw) {
+  const t = (raw == null ? '' : String(raw)).trim();
+  if (!t) return [];
+  if (/^(none|n\/a|na|nil)\.?$/i.test(t)) return [];
+  const parts = t.split(/[;\n•\|]+|,(?![^()]*\))/)
+    .map(function (x) { return x.trim().replace(/\.$/, ''); })
+    .filter(function (x) { return x && x.length <= 90; });
+  const seen = {};
+  const out = [];
+  parts.forEach(function (part) {
+    const key = part.toLowerCase();
+    if (!seen[key]) { seen[key] = 1; out.push(part); }
+  });
+  return out;
+}
+let snapshotSeed = 0x74b129ce;
+function nextSnapshotRandom() {
+  snapshotSeed = (Math.imul(snapshotSeed, 1664525) + 1013904223) >>> 0;
+  return snapshotSeed;
+}
+const snapshotAlphabet = [
+  'a', 'B', '1', ' ', '.', ',', ';', '\n', '•', '|', '(', ')', '[', ']', '_', '\t'
+];
+const documentedEmptyLists = ['', ' ', 'none', 'None.', 'n/a', 'NA', 'nil.'];
+let snapshotEmpty = 0;
+let snapshotNonEmpty = 0;
+let snapshotMultiple = 0;
+for (let caseIndex = 0; caseIndex < 50000; caseIndex++) {
+  let generated = '';
+  if (caseIndex % 19 === 0) {
+    generated = documentedEmptyLists[caseIndex % documentedEmptyLists.length];
+  } else {
+    const length = nextSnapshotRandom() % 80;
+    for (let charIndex = 0; charIndex < length; charIndex++) {
+      generated += snapshotAlphabet[nextSnapshotRandom() % snapshotAlphabet.length];
+    }
+  }
+  const priorParts = parseSnapshotListPrior(generated);
+  const liveParts = Array.from(parseSnapshotListLive(generated));
+  assert.deepStrictEqual(liveParts, priorParts,
+    'patient snapshot list verdict changed on generated case ' + caseIndex);
+  if (!liveParts.length) snapshotEmpty++;
+  else {
+    snapshotNonEmpty++;
+    if (liveParts.length > 1) snapshotMultiple++;
+  }
+}
+assert(snapshotEmpty > 1000 && snapshotNonEmpty > 25000 && snapshotMultiple > 10000,
+  'generated patient list corpus lacked empty, single, or split verdict classes');
+
+const snapshotSizes = [16000, 32000, 64000, 128000];
+const snapshotTimes = [];
+snapshotSizes.forEach(function (size) {
+  const adversarial = 'a,'.repeat(size / 2) + 'a';
+  const started = process.hrtime.bigint();
+  for (let repeat = 0; repeat < 5; repeat++) {
+    assert.deepStrictEqual(Array.from(parseSnapshotListLive(adversarial)), ['a'],
+      'comma-heavy patient list changed its deduplicated output');
+  }
+  snapshotTimes.push(Number(process.hrtime.bigint() - started) / 1e6);
+});
+assert(snapshotTimes[snapshotTimes.length - 1] < 500,
+  'linear patient list parser exceeded 500ms at the largest doubling');
+for (let timeIndex = 1; timeIndex < snapshotTimes.length; timeIndex++) {
+  assert(snapshotTimes[timeIndex] <= snapshotTimes[timeIndex - 1] * 3.5 + 40,
+    'patient list timing grew superlinearly across adversarial doublings');
+}
+
+const snapshotStagingConnect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.staging.js'), 'latin1');
+const snapshotProductionLoaderAt = src.indexOf('var A="feat_mls_patient_snapshot.js";');
+const snapshotStagingLoaderAt = snapshotStagingConnect.indexOf('var A="feat_mls_patient_snapshot.js";');
+assert(snapshotProductionLoaderAt >= 0 &&
+  src.slice(snapshotProductionLoaderAt, snapshotProductionLoaderAt + 500)
+    .includes('s.src=A+"?v=20260729listlinear";'),
+  'production patient snapshot immutable token did not advance');
+assert(snapshotStagingLoaderAt >= 0 &&
+  snapshotStagingConnect.slice(snapshotStagingLoaderAt, snapshotStagingLoaderAt + 500)
+    .includes('s.src=A+"?v=20260729listlinear";'),
+  'staging patient snapshot immutable token did not advance');
+
 console.log('PASS sanitize regex linear time: coordinate rule guarded+bounded (both copies verified by literal), collapse linear on NBSP/CR runs, clinical dose lines never flagged');

@@ -41,7 +41,8 @@ const assets = [
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_task3_frontsync.js', '20260727t3110', '20260727t3109'],
-  ['feat_mls_upnow_realtime.js', '20260723unr110', '20260626unr1c1']
+  ['feat_mls_upnow_realtime.js', '20260723unr110', '20260626unr1c1'],
+  ['feat_visits.js', '20260729vis11', '20260728vis10']
 ];
 
 assert.strictEqual(new Set(assets.map(entry => entry[1])).size, assets.length,

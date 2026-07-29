@@ -227,12 +227,36 @@
      failure -- an ambiguous reading is not evidence of anything. */
   var lastConnCheck = 0;
 
+  /* 2026-07-29: the bridge IS the ground truth. The indirect probes below have
+     been observed reporting 'no-extension' while the extension was answering
+     mlsPing with its version, which made this card tell the doctor to install
+     software he already had. A pong pins the row to ok. */
+  var pongOk = false, pongAt = 0;
+  function pongTruth() { return pongOk && (Date.now() - pongAt) < 120000; }
+  function kickPong() {
+    if (pongTruth()) return;
+    safe(function () {
+      var onPong = function (e) {
+        var d = e && e.data;
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return;
+        pongOk = true; pongAt = Date.now();
+        window.removeEventListener('message', onPong);
+        safe(function () { refresh(); });
+      };
+      window.addEventListener('message', onPong);
+      window.postMessage({ source: 'mls-app', type: 'mlsPing', id: 'mlsFrPing' }, '*');
+      later(function () { safe(function () { window.removeEventListener('message', onPong); }); }, 6000);
+    });
+  }
   function connTruth() {
+    if (pongTruth()) return 'ok';   /* the extension answered us - nothing else can outvote that */
     var ct = safe(function () { return window.__mlsConnTruth; }, null);
     if (ct && ct.installed) {
       if (isFn(ct.isConnected) && safe(function () { return !!ct.isConnected(); }, false)) return 'ok';
       var st = safe(function () { return ct.state && ct.state.status; }, '');
-      if (st === 'no-extension') return 'bad';
+      /* Only accuse when the bridge has NOT answered. A stale 'no-extension'
+         verdict must never tell a doctor to install what he already runs. */
+      if (st === 'no-extension') return pongTruth() ? 'ok' : 'bad';
       if (st === 'checking' || st === 'error' || st === 'no-tab' || !st) return 'wait';
       return 'wait';
     }
@@ -438,7 +462,12 @@
   function refresh() {
     var card = byId(CARD_ID);
     if (!card) return null;
-    var states = { conn: connTruth(), ath: athState, day: dayTruth() };
+    /* 2026-07-29: the Athena probe reported open:false/certain:true while
+       athenaOne was open and signed in. While the bridge is answering we do not
+       have standing to call it signed out - show 'checking', never a red
+       accusation the doctor can see is false. */
+    var athShown = (athState === 'bad' && pongTruth()) ? 'wait' : athState;
+    var states = { conn: connTruth(), ath: athShown, day: dayTruth() };
     var done = 0, k;
     for (k in states) { if (states.hasOwnProperty(k) && states[k] === 'ok') done++; }
     setText(byId('mlsFrTitle'), 'Get MLS working - ' + done + ' of 3 done');
@@ -453,6 +482,7 @@
     if (pull) { var wantHide = (states.day === 'ok'); if (pull.hidden !== wantHide) pull.hidden = wantHide; }
 
     if (done === 3) { markDone(); removeCard(); return states; }
+    kickPong();
     kickConnCheck();
     kickAthProbe();
     return states;

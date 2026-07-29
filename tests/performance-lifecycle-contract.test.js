@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
@@ -110,6 +111,69 @@ assert(!/MutationObserver/.test(wbDefaults), 'routing help must patch when opene
 const noBlink = connect.slice(connect.indexOf('if(window.__mlsNoTodayBlink)'), connect.indexOf('feat_pull_date_fix'));
 assert(noBlink.includes('setTimeout(scrub,1000)'));
 assert(!/MutationObserver|setInterval/.test(noBlink), 'Today-button polish must use CSS and bounded boot passes only');
+
+/* 2026-07-29: the enhanced visit-history owner hides the legacy history
+   section. Its exact node must short-circuit the legacy 900 ms heartbeat before
+   profile visibility and visit-array work, while removal restores fallback. */
+const visits = read('feat_visits.js');
+const visitHostStart = visits.indexOf('  function host() {');
+const visitHostEnd = visits.indexOf('  function activeP()', visitHostStart);
+const visitRenderStart = visits.indexOf('  function render(force) {', visitHostEnd);
+const visitRenderEnd = visits.indexOf('\n  function start()', visitRenderStart);
+assert(visitHostStart >= 0 && visitHostEnd > visitHostStart &&
+  visitRenderStart > visitHostEnd && visitRenderEnd > visitRenderStart,
+  'legacy visit-history runtime boundaries are missing');
+const visitHostSource = visits.slice(visitHostStart, visitHostEnd);
+const visitRenderSource = visits.slice(visitRenderStart, visitRenderEnd);
+assert(visitRenderSource.includes("if (!force && document.getElementById('mlsVisitHistoryExt')) return;"),
+  'legacy visit-history heartbeat does not stand down behind the enhanced owner');
+
+let visitLayoutReads = 0;
+let visitGetCalls = 0;
+let visitRowsScanned = 0;
+const syntheticVisits = Array.from({ length: 100 }, (_, index) => ({
+  id: 'synthetic-visit-' + index,
+  aiSummary: index % 2 ? 'summary' : ''
+}));
+const syntheticPatient = { id: 'synthetic-patient', visits: syntheticVisits };
+const profileCard = {};
+Object.defineProperty(profileCard, 'offsetParent', {
+  get() { visitLayoutReads += 1; return {}; }
+});
+const visitNodes = new Map([
+  ['profileCard', profileCard],
+  ['mlsVisitHistory', {}],
+  ['mlsVisitHistoryExt', {}]
+]);
+const visitModel = {
+  deriveFromLegacy() {},
+  getVisits() {
+    visitGetCalls += 1;
+    visitRowsScanned += syntheticVisits.length;
+    return syntheticVisits.slice();
+  }
+};
+const visitRuntime = {
+  document: { getElementById(id) { return visitNodes.get(id) || null; } },
+  M() { return visitModel; },
+  activeP() { return syntheticPatient; },
+  css() { throw new Error('unchanged fallback signature unexpectedly rebuilt'); },
+  visitCard() {},
+  _lastSig: ''
+};
+vm.runInNewContext(visitHostSource + '\n' + visitRenderSource, visitRuntime, { timeout: 1000 });
+visitRuntime.render(false);
+assert.strictEqual(visitGetCalls, 0, 'hidden legacy history still scanned visits');
+assert.strictEqual(visitRowsScanned, 0, 'hidden legacy history still walked visit rows');
+assert.strictEqual(visitLayoutReads, 0, 'hidden legacy history still forced a profile visibility read');
+
+visitNodes.delete('mlsVisitHistoryExt');
+visitRuntime._lastSig = syntheticPatient.id + ':' + syntheticVisits.length + ':' +
+  syntheticVisits.map(visit => visit.id + (visit.aiSummary ? '1' : '0')).join(',');
+visitRuntime.render(false);
+assert.strictEqual(visitGetCalls, 1, 'legacy history did not resume after enhanced-owner removal');
+assert.strictEqual(visitRowsScanned, 100, 'legacy history fallback did not inspect the exact synthetic visit set');
+assert.strictEqual(visitLayoutReads, 1, 'legacy history fallback did not recheck profile visibility');
 
 const legal = read('feat_mls_legal_paywidget.js');
 assert(legal.includes('for (var j = 1; j < all.length; j++) all[j].remove()'), 'legal payment banner must deduplicate itself');

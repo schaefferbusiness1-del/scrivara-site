@@ -40,6 +40,22 @@ const tests = [
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',
+  /* b795 — three owner-reported defects, each gated by execution not grep:
+     the Templates card could not be scrolled to its Close button; the pull
+     panel showed every in-flight patient as a warning; and the op-note room
+     had no responsive layout because a runtime skin outranked every
+     max-width rule by append order. */
+  'templates-panel-scrolls.test.js',
+  'pull-rows-say-done-not-warning.test.js',
+  'runtime-skin-cannot-outrank-responsive.test.js',
+  'checklist-cannot-accuse-on-uncertainty.test.js',
+  /* The op-note + Templates rebuild. The grip fence comes FIRST because it is
+     what makes the redesign safe: 102 structural dependencies live in those two
+     subtrees and they fail silently, so the suite that proves none of them moved
+     is more important than the one that proves the pixels changed. */
+  'opnote-templates-grips-survive-redesign.test.js',
+  'ui-clinical-pass.test.js',
+  'ui-shell-pass.test.js',
   'schedule-mutating-row-reverify-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',

@@ -78,11 +78,27 @@
     return (age >= 0 && age < 130) ? age : null;
   }
 
+  /* 2026-07-29: decide each comma from the nearest following paren once. */
+  function splitListLinear(t) {
+    var cuts=[],nextParen='';
+    for(var i=t.length-1;i>=0;i--){
+      var ch=t.charAt(i);
+      if(ch==='('||ch===')'){nextParen=ch;continue;}
+      if(ch===','&&nextParen!==')'){cuts.push(i);continue;}
+      if(ch===';'||ch==='\n'||ch==='•'||ch==='|')cuts.push(i);
+    }
+    cuts.reverse();
+    var parts=[],at=0;
+    for(var j=0;j<cuts.length;j++){parts.push(t.slice(at,cuts[j]));at=cuts[j]+1;}
+    parts.push(t.slice(at));
+    return parts;
+  }
+
   function parseList(raw) {
     var t = (raw == null ? '' : String(raw)).trim();
     if (!t) return [];
     if (/^(none|n\/a|na|nil)\.?$/i.test(t)) return [];
-    var parts = t.split(/[;\n•\|]+|,(?![^()]*\))/).map(function (x) { return x.trim().replace(/\.$/, ''); })
+    var parts = splitListLinear(t).map(function (x) { return x.trim().replace(/\.$/, ''); })
       .filter(function (x) { return x && x.length <= 90; });
     var seen = {}, out = [];
     parts.forEach(function (p) { var k = p.toLowerCase(); if (!seen[k]) { seen[k] = 1; out.push(p); } });

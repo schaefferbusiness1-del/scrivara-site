@@ -669,9 +669,19 @@
      schedule string ("L SI joint inj P") must never clobber — doing so
      deleted a required fixed fragment and made fidelity unsatisfiable. */
   var SOFT_FACTS={procedure:1};
+  /* 2026-07-29: consume each placeholder and whitespace run once. */
   function placeholderOnlyTail(tail){
     var t=S(tail).trim(); if(!t) return true;
-    return /^(?:\s*(?:\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,})\s*)+$/i.test(t);
+    var token=/\[\[[^\]]+\]\]|\[[^\]]+\]|\{\{[^}]+\}\}|_{2,}/g;
+    var at=0,any=false,m;
+    while(at<t.length){
+      while(at<t.length&&/\s/.test(t.charAt(at)))at++;
+      if(at>=t.length)break;
+      token.lastIndex=at;m=token.exec(t);
+      if(!m||m.index!==at)return false;
+      any=true;at=token.lastIndex;
+    }
+    return any;
   }
   function forceFacts(note, facts) {
     facts=facts||{};

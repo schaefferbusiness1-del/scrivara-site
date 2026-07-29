@@ -1,0 +1,190 @@
+# Op-note + Templates grip inventory  (generated b795 pre-redesign)
+
+## Ids referenced, and by whom  (23 ids)
+
+- `#opPrepList` — feat_mls_fixpack_0701.js, feat_mls_opnote_fill.js, feat_mls_opnote_integrity.js, feat_mls_opnote_prep.js, feat_mls_opnote_room.js **<-- 5 owners**
+- `#opPrepModal` — feat_mls_opnote_fill.js, feat_mls_opnote_prep.js, feat_mls_opnote_room.js, feat_opnote_history.js, mls-connect.js **<-- 5 owners**
+- `#opPrepStatus` — feat_mls_opnote_integrity.js, feat_mls_opnote_prep.js, feat_opnote_history.js, mls-connect.js **<-- 4 owners**
+- `#opPrepGenAllBtn` — feat_mls_staging_pack1.js, feat_opnote_history.js, mls-connect.js **<-- 3 owners**
+- `#opPrepPrev_` — feat_mls_opnote_integrity.js, feat_mls_opnote_prep.js, feat_mls_opnote_room.js **<-- 3 owners**
+- `#opPrepDayRow` — feat_mls_opnote_prep.js, mls-connect.js
+- `#opPrepHdr` — feat_mls_staging_pack1.js, feat_opnote_history.js
+- `#opPrepTpl_` — feat_mls_opnote_fill.js, feat_mls_opnote_integrity.js
+- `#oprTabTpls` — feat_mls_firstrun.js, feat_mls_opnote_room.js
+- `#tplFileInput` — feat_upload_templates.js, mls-connect.js
+- `#tplList` — feat_mls_staging_pack1.js, mls-connect.js
+- `#tplMultiFileInput` — feat_upload_templates.js, mls-connect.js
+- `#opPrepDayLbl` — mls-connect.js
+- `#opPrepMsg_` — feat_mls_opnote_prep.js
+- `#oprEditor` — feat_mls_opnote_room.js
+- `#oprPager` — feat_mls_opnote_room.js
+- `#oprPanelProcs` — feat_mls_opnote_room.js
+- `#oprPanelTpls` — feat_mls_opnote_room.js
+- `#oprReceipt` — feat_mls_opnote_room.js
+- `#oprRowNav` — feat_mls_opnote_room.js
+- `#oprTabProcs` — feat_mls_opnote_room.js
+- `#oprTplRail` — feat_mls_opnote_room.js
+- `#tplSearch` — mls-connect.js
+
+## Classes referenced  (5)
+
+- `.onf-fillbox` — feat_mls_opnote_fill.js
+- `.opr-cur` — feat_mls_opnote_room.js
+- `.opr-nav-item` — feat_mls_opnote_room.js
+- `.opr-pos` — feat_mls_opnote_room.js
+- `.option` — background.js, content.js
+
+## STRUCTURAL dependencies — these break SILENTLY on a nesting change  (102)
+
+- **structural selector** `background.js:1585` — `:scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > header,:scope > [role=`
+- **DOM walk** `background.js:6425` — `if(!texts.length){try{var sibH=list.previousElementSibling,hopH=0;while(sibH&&hopH<2&&!texts.length){addT(tx(sibH),4,sibH);sibH=si`
+- **structural selector** `feat_mls_analysis_exact.js:207` — `:scope > .ax-title`
+- **structural selector** `feat_mls_analysis_exact.js:247` — `:scope > .ax-title`
+- **structural selector** `feat_mls_calendar_exact.js:106` — `:scope > .cx-cta-slot`
+- **structural selector** `feat_mls_calendar_exact.js:120` — `:scope > .cx-mini`
+- **structural selector** `feat_mls_calendar_exact.js:123` — `:scope > .cx-glance`
+- **structural selector** `feat_mls_calendar_exact.js:126` — `:scope > .cx-prov`
+- **structural selector** `feat_mls_calendar_exact.js:249` — `:scope > .cx-agenda-head`
+- **structural selector** `feat_mls_calendar_exact.js:523` — `:scope > .card`
+- **structural selector** `feat_mls_calendar_exact.js:523` — `:scope > .cx-agenda-slot > .card`
+- **structural selector** `feat_mls_calendar_exact.js:525` — `:scope > .cx-main`
+- **structural selector** `feat_mls_calendar_exact.js:533` — `:scope > .cx-rail`
+- **structural selector** `feat_mls_calendar_exact.js:534` — `:scope > .cx-agenda-slot`
+- **structural selector** `feat_mls_calendar_exact.js:592` — `:scope > .cx-main`
+- **structural selector** `feat_mls_calendar_exact.js:597` — `:scope > .cx-agenda-head`
+- **structural selector** `feat_mls_header_exact.js:159` — `:scope > .hx-spacer`
+- **structural selector** `feat_mls_history_exact.js:60` — `:scope > h2`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:97` — `function tplPickers() { return safe(function () { return document.querySelectorAll('select[id^="opPrepTpl_"]'); }, []); }`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:131` — `var picker = $('opPrepTpl_' + i);`
+- **DOM walk** `feat_mls_opnote_fill.js:144` — `var list = $('opPrepList'); if (!list || !list.parentNode) return;`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:279` — `function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:310` — `return safe(function () { return (window._opPrep || [])[+ta.id.replace('opPrepNote_', '')]; }, null);`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:312` — `function isPrepBox(ta) { return !!(ta && ta.id && ta.id.indexOf('opPrepNote_') === 0); }`
+- **DOM walk** `feat_mls_opnote_fill.js:319` — `var hasBox = ta.previousElementSibling && ta.previousElementSibling.classList && ta.previousElementSibling.classList.contains('onf`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:731` — `var idx = ta.id.replace('opPrepNote_', '');`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:753` — `var idx = ta.id.replace('opPrepNote_', '');`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:951` — `return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"],#' + MAIN_ID); }, []) || [];`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:983` — `var idx = +ta.id.replace('opPrepNote_', '');`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:1155` — `var idx = prep ? ta.id.replace('opPrepNote_', '') : 'main';`
+- **DOM walk** `feat_mls_opnote_fill.js:1318` — `var lbl = el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);`
+- **DYNAMIC ID** `feat_mls_opnote_fill.js:1468` — `var rw = safe(function () { return (window._opPrep || [])[+t.id.replace('opPrepNote_', '')]; }, null);`
+- **DYNAMIC ID** `feat_mls_opnote_integrity.js:553` — `try { var el=document.getElementById('opPrepPrev_'+i); if(el && isFn(window._opPreviewHtml)) el.innerHTML=window._opPreviewHtml(va`
+- **DYNAMIC ID** `feat_mls_opnote_integrity.js:557` — `try { var sel=document.getElementById('opPrepTpl_'+i); if(sel) sel.value=row.tplId; } catch(e2) {}`
+- **DOM walk** `feat_mls_opnote_integrity.js:586` — `var row=(window._opPrep||[])[i], sel=document.getElementById('opPrepTpl_'+i); if(!row||!sel||!sel.parentElement)return;`
+- **DYNAMIC ID** `feat_mls_opnote_integrity.js:586` — `var row=(window._opPrep||[])[i], sel=document.getElementById('opPrepTpl_'+i); if(!row||!sel||!sel.parentElement)return;`
+- **DYNAMIC ID** `feat_mls_opnote_prep.js:619` — `var msg = document.getElementById('opPrepMsg_' + i);`
+- **DYNAMIC ID** `feat_mls_opnote_prep.js:649` — `var msg2 = document.getElementById('opPrepMsg_' + i);`
+- **DYNAMIC ID** `feat_mls_opnote_prep.js:669` — `var el = document.getElementById('opPrepMsg_' + i);`
+- **DYNAMIC ID** `feat_mls_opnote_prep.js:736` — `var prev = document.getElementById('opPrepPrev_' + i); if (!prev) continue;`
+- **DOM walk** `feat_mls_opnote_prep.js:771` — `if (dr.id === 'opPrepDayRow') dr.appendChild(bar); else dr.parentNode.insertBefore(bar, dr);`
+- **DYNAMIC ID** `feat_mls_opnote_room.js:178` — `var prev = $('opPrepPrev_' + i);`
+- **DOM walk** `feat_mls_opnote_room.js:326` — `else if ($('opPrepList') && $('opPrepList').parentElement === editor) editor.insertBefore(pager, $('opPrepList'));`
+- **DOM walk** `feat_mls_opnote_room.js:439` — `if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {`
+- **DOM walk** `feat_mls_opnote_room.js:497` — `if (shown($('templatesModal')) && safe(function () { return $('templatesModal').parentElement !== $('oprPanelTpls'); }, false)) {`
+- **DOM walk** `feat_mls_opnote_room.js:510` — `if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {`
+- **DOM walk** `feat_mls_opnote_room.js:541` — `try { var pg = $('oprPager'); if (pg && pg.parentNode) pg.parentNode.removeChild(pg); } catch (e13) {}`
+- **DOM walk** `feat_mls_opnote_room.js:561` — `if (tpl && TPL_HOME && tpl.parentElement === $('oprPanelTpls')) {`
+- **structural selector** `feat_mls_orders_exact.js:46` — `:scope > h2`
+- **structural selector** `feat_mls_patients_exact.js:76` — `:scope > h2`
+- **structural selector** `feat_mls_patients_exact.js:167` — `:scope > h2.px-prof-hd`
+- **structural selector** `feat_mls_recs_exact.js:34` — `:scope > h2`
+- **structural selector** `feat_mls_redesign.js:934` — `:scope > .card`
+- **structural selector** `feat_mls_redesign.js:939` — `:scope > .card`
+- **structural selector** `feat_mls_redesign.js:945` — `:scope > .card`
+- **structural selector** `feat_mls_redesign.js:970` — `:scope > .card`
+- **structural selector** `feat_mls_redesign.js:980` — `:scope > .grid`
+- **structural selector** `feat_mls_studio_exact.js:113` — `:scope > .sx-title`
+- **structural selector** `feat_mls_studio_exact.js:138` — `:scope > .sx-right`
+- **structural selector** `feat_mls_studio_exact.js:147` — `:scope > .sx-title`
+- **structural selector** `feat_mls_studio_exact.js:171` — `:scope > .note`
+- **structural selector** `feat_mls_studio_exact.js:216` — `:scope > .sx-right`
+- **structural selector** `feat_mls_studio_exact.js:218` — `:scope > .sx-title`
+- **structural selector** `feat_mls_task7_analysis_sg.js:147` — `:scope > .t7-face-note`
+- **DOM walk** `feat_mls_template_library.js:168` — `function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;va`
+- **structural selector** `feat_mls_visit_exact.js:90` — `:scope > .vx-hero-wrap`
+- **structural selector** `feat_mls_visit_exact.js:155` — `:scope > .vx-grid`
+- **structural selector** `feat_mls_visit_exact.js:162` — `:scope > .grid`
+- **structural selector** `feat_mls_visit_exact.js:199` — `:scope > h2`
+- **structural selector** `feat_mls_visit_exact.js:217` — `:scope > .vx-grid`
+- **structural selector** `feat_mls_visit_exact.js:218` — `:scope > .vx-tools`
+- **structural selector** `feat_mls_visit_exact.js:247` — `:scope > .vx-grid`
+- **structural selector** `mls-connect.js:5330` — `:scope > .ax-title`
+- **structural selector** `mls-connect.js:5341` — `:scope > .anp-glyph-row`
+- **structural selector** `mls-connect.js:5366` — `:scope > .`
+- **structural selector** `mls-connect.js:5378` — `:scope > .ax-title`
+- **structural selector** `mls-connect.js:5580` — `:scope > .stp-head`
+- **structural selector** `mls-connect.js:5591` — `:scope > span`
+- **structural selector** `mls-connect.js:5636` — `:scope > .stp-sg-lbl`
+- **DOM walk** `mls-connect.js:6919` — `if (!t || !t.closest || !t.closest('#mlsEz3,#captureCard,#noteCard,#mlsAsstPanel,#mlsDaDock,#mlsCopVoiceBtn,#mlsAsstFab')) return;`
+- **DOM walk** `mls-connect.js:10868` — `stopBtn.parentNode.insertBefore(wrap, stopBtn);`
+- **DOM walk** `mls-connect.js:10951` — `if (stopBtn && stopBtn.parentNode && stopBtn.parentNode !== c.firstElementChild) {`
+- **DOM walk** `mls-connect.js:10952` — `var wrap = stopBtn.parentNode;`
+- **DOM walk** `mls-connect.js:10953` — `wrap.parentNode.insertBefore(stopBtn, wrap);   /* put Stop back directly in the header row */`
+- **structural selector** `mls-connect.js:12897` — `:scope > .row`
+- **structural selector** `mls-connect.js:13009` — `:scope > .field`
+- **structural selector** `mls-connect.js:13014` — `:scope > .field, :scope > details.field`
+- **DYNAMIC ID** `mls-connect.js:15119` — `var pre = document.querySelectorAll("textarea[id^='opPrepNote_']");`
+- **DOM walk** `mls-connect.js:15668` — `var anchor = $("tplList"); if (!anchor || !anchor.parentElement) return;`
+- **DOM walk** `mls-connect.js:15933` — `if (t && t.closest && t.closest("#opPrepGenAllBtn")) {`
+- **structural selector** `mls-connect.js:16414` — `:scope > .sx-title`
+- **DOM walk** `mls-connect.js:22539` — `var vb = t.closest('#mlsCopVoiceBtn');`
+- **DOM walk** `mls-connect.js:31809` — `var b = ev.target && ev.target.closest && ev.target.closest('#mlsCopVoiceBtn');`
+- **DOM walk** `mls-connect.js:32212` — `if (t && t.closest && t.closest('#mlsCopVoiceBtn,.mls-b35-mic')) {`
+- **DOM walk** `mls-connect.js:34720` — `try{ var oldHost=document.getElementById('mlsCopInlineHost'); if(oldHost&&!oldHost.children.length&&oldHost.parentNode) oldHost.pa`
+- **DOM walk** `mls-connect.js:35167` — `function topPx(){ var bar=document.getElementById('mlsRdTop'); if(bar&&bar.getBoundingClientRect().height>10) return Math.round(ba`
+- **DOM walk** `mls-connect.js:35237` — `function tab(id,label,fn){ var b=document.createElement('div'); b.id='mlsPtab_'+id; b.className='navtab'; b.setAttribute('data-mls`
+- **DOM walk** `mls-connect.js:36484` — `if(t.closest('#templatesModal')) return;           // leave the modal's own upload button alone`
+- **DOM walk** `mls-connect.js:36526` — `if(n.closest&&n.closest('#mlsPtfBox,#templatesModal')) return true;`
+- **DOM walk** `mls-connect.js:43721` — `if (t.closest('#askCopilotHdrBtn,#mlsAsstFab,#mlsCopVoiceBtn')) return true;`
+- **DYNAMIC ID** `mls-opnote-pro.js:699` — `var nodes = document.querySelectorAll('textarea[id^="opPrepNote_"]');`
+- **structural selector** `teach_destination_memory.js:213` — `:scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > header,:scope > [role=`
+
+## Writes into these subtrees  (47)
+
+- `feat_b18_qa.js:494` — `ackBox.innerHTML='<label style="display:flex;gap:8px;align-items:flex-start;font:600 12.5px/1.5 system-ui;color:#B07636;background`
+- `feat_mls_opnote_fill.js:1276` — `box.innerHTML = '<div class="onf-h">' + header + '</div>' +`
+- `feat_mls_opnote_fill.js:1566` — `safe(function () { Array.prototype.forEach.call(host.querySelectorAll('[data-onf-corr]'), function (n) { n.remove(); }); });`
+- `feat_mls_opnote_fill.js:1661` — `safe(function () { Array.prototype.forEach.call(document.querySelectorAll('.onf-fillbox'), function (n) { n.remove(); }); });`
+- `feat_mls_opnote_integrity.js:553` — `try { var el=document.getElementById('opPrepPrev_'+i); if(el && isFn(window._opPreviewHtml)) el.innerHTML=window._opPreviewHtml(va`
+- `feat_mls_opnote_prep.js:620` — `if (msg) { msg.style.color = '#b4231e'; msg.innerHTML = '⛔ Not saved — ' + esc(res.warnings[0] || 'patient identity could not be c`
+- `feat_mls_opnote_prep.js:771` — `if (dr.id === 'opPrepDayRow') dr.appendChild(bar); else dr.parentNode.insertBefore(bar, dr);`
+- `feat_mls_opnote_room.js:306` — `var editor = $('oprEditor'); if (!editor || !editor.insertBefore) return;`
+- `feat_mls_opnote_room.js:326` — `else if ($('opPrepList') && $('opPrepList').parentElement === editor) editor.insertBefore(pager, $('opPrepList'));`
+- `feat_mls_opnote_room.js:567` — `try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}`
+- `feat_mls_patient_reach_v2.js:244` — `portal.appendChild(make('p', null, 'Open the existing secure portal-invite flow for the patient selected when this panel opened. N`
+- `feat_mls_patient_reach_v2.js:252` — `booking.appendChild(make('p', null, 'Use the secure portal invite. After signing in, the patient can send an appointment request f`
+- `feat_mls_template_library.js:88` — `var box=byId('tlConflict');if(!box)return;if(!state.conflict){box.style.display='none';box.innerHTML='';return;}`
+- `feat_mls_template_library.js:89` — `box.style.display='block';box.innerHTML='<b>A newer cloud version exists.</b> Your device changes were kept here and were not sile`
+- `feat_mls_writeflow.js:515` — `try { var old = document.getElementById('mlsAthenaActionConfirm'); if (old) old.remove(); } catch (e) {}`
+- `feat_mls_writeflow.js:567` — `card.innerHTML = '<div style="font-size:19px;font-weight:800;color:#204034">Confirm ' + esc(meta.label) + '</div>' +`
+- `feat_mls_writeflow.js:1239` — `try { var ov = document.getElementById('mlsAthenaUnifiedConfirm'); if (ov) ov.remove(); } catch (e) {}`
+- `feat_mls_writeflow.js:1641` — `var old = document.getElementById('mlsAthenaUnifiedConfirm'); if (old) old.remove();`
+- `feat_mls_writeflow.js:1661` — `card.innerHTML = '<style>#mlsAthenaUnifiedConfirm .mlswf-two{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:15px;align`
+- `feat_save_verify.js:636` — `if (_svUnconfirmedCard) { try { _svUnconfirmedCard.remove(); } catch (e) {} _svUnconfirmedCard = null; }`
+- `mls-connect.js:893` — `wrap.appendChild(para('ð§© MLS Assist is the bridge between MLS and your EMR (e.g. athenaOne). Install it once and MLS can pull y`
+- `mls-connect.js:5802` — `div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#EAF1EC">Bill`
+- `mls-connect.js:16450` — `b.innerHTML = "\uD83D\uDDC2\uFE0F EMR sections \u2014 review &amp; confirm" +`
+- `mls-connect.js:20139` — `function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) { try { if (m.__mlsKey) document.removeEventListener('keyd`
+- `mls-connect.js:21093` — `safe(function () { var c = $('ez3Confirm'); if (c) c.remove(); });`
+- `mls-connect.js:24977` — `function closeConfirm() { MCLICKS = {}; var m = $('ez3Confirm'); if (m) { try { if (m.__mlsKey) document.removeEventListener('keyd`
+- `mls-connect.js:26950` — `function closeConfirm() { var m = $('ez3Confirm'); if (m) m.remove(); }`
+- `mls-connect.js:28481` — `function closeConfirm() { var m = $('ez3Confirm'); if (m) m.remove(); }`
+- `mls-connect.js:29997` — `function closeConfirm() { var m = $('ez3Confirm'); if (m) m.remove(); }`
+- `mls-connect.js:31736` — `box.innerHTML = head + '<div class="mls-r44-empty">Google sign-in is not configured on the server yet (missing OAuth keys). Ask ML`
+- `mls-connect.js:33766` — `b.innerHTML = "&#128450;&#65039; EMR sections &mdash; review &amp; confirm";`
+- `mls-connect.js:35292` — `host.querySelector('#emrHint').innerHTML=any?'Organized from the current note. Edit anything, then confirm each section. Nothing i`
+- `mls-connect.js:35300` — `host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px`
+- `mls-connect.js:35324` — `function addBtn(){ if(document.getElementById('emrBtn')) return; var b=document.createElement('button'); b.id='emrBtn'; b.type='bu`
+- `mls-connect.js:39627` — `document.getElementById('mlsCsFoot').innerHTML='<div class="mlscs-foot"><span class="mlscs-tray">Validation is advisory â the pr`
+- `mls-connect.js:40888` — `if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist ran the search but read 0 rows'+(rd&&rd.pages?(' across '+rd.page`
+- `mls-connect.js:40917` — `out.innerHTML='<div class="mls-study-gate">Read the report ('+esc(String(totalParsed))+' patient row(s) parsed'+(rd&&rd.bestScore!`
+- `mls-connect.js:41436` — `if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '`
+- `mls-connect.js:41448` — `out.innerHTML='<div class="mls-study-gate">'+pageInfo+'. Parsed '+esc(String(totalParsed))+' patient row(s) but none matched <b>'+`
+- `mls-connect.js:42144` — `;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=documen`
+- `mls-connect.js:42903` — `;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=docu`
+- `mls-connect.js:43356` — `;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.cr`
+- `mls-connect.js:43383` — `;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.qu`
+- `mls-connect.js:43391` — `;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_f`
+- `mls-connect.js:43615` — `try { var prev = document.getElementById('mlsCalmConfirm'); if (prev) prev.remove(); } catch (e) {}`
+- `mls-connect.js:43682` — `try { var s = document.getElementById('mlsCalmConfirm'); if (s) s.remove(); } catch (e) {}`
+- `review_screen.js:213` — `ft.appendChild(sum); ft.appendChild(cancel); ft.appendChild(confirm);`

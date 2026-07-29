@@ -84,7 +84,19 @@
       st.textContent = [
         '/* op-note room remake 2026-07-28 - calm one-room presentation */',
         '#opPrepModal.opr-room .opr-top{ padding:14px 56px 14px 20px; gap:16px; }',
-        '#oprPanelProcs{ grid-template-columns:312px minmax(0,1fr); }',
+        /* 2026-07-29, measured at 390x844 in a PHI-free replica of this room:
+           this skin is APPENDED to <head> at runtime, so an unconditioned
+           #oprPanelProcs rule here outranks the ScribeFlow
+             @media (max-width:900px){ #oprPanelProcs{ grid-template-columns:1fr } }
+           by source order at equal specificity (a media query adds none). The
+           room's responsive collapse has therefore been dead since this skin
+           shipped: on a 390px phone the room still drew a 312px sidebar, left
+           ~78px for the editor, and pushed 9 procedure buttons past the right
+           edge of the screen. Wide-only declarations must be gated so the
+           narrow rules that already exist can do their job. */
+        '@media (min-width:901px){',
+        '  #oprPanelProcs{ grid-template-columns:312px minmax(0,1fr); }',
+        '}',
         '#oprDayRail{ padding:16px 18px 26px; }',
         '#opPrepModeRow{ flex-direction:column; gap:6px !important; }',
         '#opPrepModeRow button{ width:100%; text-align:left; border-radius:12px !important; padding:10px 14px !important; }',
@@ -92,7 +104,12 @@
         '  background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:12px; }',
         '#opPrepDayRow button{ border-radius:10px !important; text-align:left; background:var(--card); }',
         '#opPrepDayRow input{ width:100%; box-sizing:border-box; border-radius:10px !important; background:var(--card); }',
-        '#oprRowNav{ gap:6px; max-height:none; }',
+        /* Same trap: `max-height:none` here killed BOTH the base 38vh cap and
+           the narrow 22vh cap, so on a phone the patient rail grew without
+           limit and pushed the editor off the bottom. Uncapping is a deliberate
+           WIDE-screen choice, where the rail is its own column; gate it. */
+        '#oprRowNav{ gap:6px; }',
+        '@media (min-width:901px){ #oprRowNav{ max-height:none; } }',
         '.opr-nav-item{ background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:9px 11px; }',
         '.opr-nav-item .opr-nav-st{ display:block; font-size:10.5px; font-weight:600; color:var(--muted); margin-top:2px; white-space:normal; }',
         '.opr-nav-item.on{ border-color:var(--green-dk); background:var(--card); box-shadow:0 2px 10px rgba(32,64,52,.10); }',

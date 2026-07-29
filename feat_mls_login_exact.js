@@ -24,7 +24,7 @@
       "#authScreen .auth-logo{font-family:'Newsreader',Georgia,serif!important;font-weight:600!important;display:flex!important;align-items:center!important;gap:10px!important;font-size:24px!important}",
       "#authScreen .auth-sub{color:#79837C!important;font-size:13.5px!important}",
       "#authScreen .auth-tabs{display:flex!important;gap:6px!important;background:#f1f4f8!important;border-radius:11px!important;padding:4px!important;margin:14px 0!important}",
-      "#authScreen .auth-tab{flex:1!important;text-align:center!important;padding:9px 0!important;border-radius:8px!important;font-weight:600!important;font-size:13.5px!important;color:#79837C!important;cursor:pointer}",
+      "#authScreen .auth-tab{flex:1!important;text-align:center!important;padding:9px 0!important;border-radius:8px!important;font-weight:600!important;font-size:13.5px!important;color:#636E66!important;cursor:pointer}",
       "#authScreen .auth-tab.on{background:#fff!important;color:#1A211C!important;box-shadow:0 1px 2px rgba(20,33,28,.08)!important}",
       "#authScreen .field input{width:100%!important;height:46px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#FCFBF8!important;padding:0 14px!important;font-size:14px!important}",
       "#authScreen #authBtn{height:48px!important;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#2E6A4B,#204034)!important;color:#fff!important;font-weight:700!important;font-size:15px!important;box-shadow:0 12px 26px -10px rgba(32,64,52,.6)!important;margin-top:6px}",

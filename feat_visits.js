@@ -1238,6 +1238,7 @@
 
   var _lastSig = '';
   function render(force) {
+    if (!force && document.getElementById('mlsVisitHistoryExt')) return;
     var card = host(); if (!card) { _lastSig = ''; return; }
     var p = activeP(); if (!p) { var ex = document.getElementById('mlsVisitHistory'); if (ex) ex.remove(); _lastSig = ''; return; }
     try { M().deriveFromLegacy(p); } catch (e) {}

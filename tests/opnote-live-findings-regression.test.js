@@ -24,7 +24,7 @@ assert(prod.includes('canonical template-driven op-note Fields workflow owns thi
 
 for (const [name, source] of [['production', prod], ['staging', staging]]) {
   const fillAt = source.indexOf('feat_mls_opnote_fill.js?v=20260728onf2130');
-  const integrityAt = source.indexOf('feat_mls_opnote_integrity.js?v=20260728oni2170');
+  const integrityAt = source.indexOf('feat_mls_opnote_integrity.js?v=20260729phlinear');
   assert(fillAt >= 0, `${name} does not load the corrected known-field filler`);
   assert(integrityAt > fillAt, `${name} does not load the strict template owner after the field filler`);
 }

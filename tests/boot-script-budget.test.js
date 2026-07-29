@@ -291,7 +291,85 @@ const LOADER = 'mls-connect.js';
  *     key off the .view-enter class showView already sets, and every rule is
  *     transform/opacity only, excluded from clinical text, and stood down under
  *     prefers-reduced-motion by a block generated from the rule table. */
-const CEILING = 248;
+/* 249 (2026-07-29): feat_mls_magic.js (mg-1.0.0).
+ *   WHY IT EXISTS: the owner asked to "really just make the site feel majical".
+ *     Magic is not more motion - mo-1.0.0 owns the Copilot ring and pe-1.0.0 owns
+ *     everyday entrances. This owns the five MOMENTS that carry meaning: a note
+ *     arriving, a completion drawing its own check, a stage advancing, waiting,
+ *     and the banner patient changing.
+ *   WHY NOT FOLDED IN: the three layers have different blast radii and different
+ *     reasons to be switched off. A doctor who finds celebration wrong for a
+ *     medical record should be able to remove the MOMENTS without losing the
+ *     press feedback on 380 buttons (pe) or the AI ring he likes (mo).
+ *     window.__mlsMagic.revert() does exactly that and nothing else.
+ *   WHAT IT COSTS: idle-deferred, async, ~5KB, ONE <style> element - no control,
+ *     no node, no markup, no timer, no observer, no rAF. Only transform/opacity/
+ *     stroke-dashoffset animate; clinical text is excluded outright; every moment
+ *     stands down while recording; and the reduced-motion block is generated from
+ *     the MOMENTS table so a rule cannot ship without its off-switch. */
+/* 249 -> 250 at the 2026-07-29 op-note/Templates rebuild, for
+ * feat_mls_opnote_templates_ui.js (ot-1.0.0). The three questions:
+ *   WHY IT EXISTS: the owner asked for both screens redone from scratch, and a
+ *     generated inventory of those two subtrees found 23 ids referenced across
+ *     20 modules, 47 writes, and 102 STRUCTURAL dependencies (parent/sibling
+ *     walks and dynamically-built ids) that break SILENTLY on a nesting change.
+ *     Four of them carry real features: the Prev/Next pager needs #opPrepList to
+ *     stay a direct child of #oprEditor; the Fields box is found as the previous
+ *     sibling of textarea#opPrepNote_<i>; the template-health badge is written
+ *     through select#opPrepTpl_<i>.parentElement; the template-health panel
+ *     mounts as a sibling of #tplList. So the redo HAD to be a pure stylesheet,
+ *     and a stylesheet that replaces another module's stylesheet is exactly the
+ *     kind of thing that must be one file you can point at and switch off.
+ *   WHY NOT FOLDED IN: the obvious home is feat_mls_opnote_room.js, which owned
+ *     the old #oprSkin. Folding was seriously considered and rejected for one
+ *     reason: that module also owns the ESC handler, the Templates reparenting,
+ *     the opPrepRender wrapper and the Fields-box synchronous kick. If the new
+ *     look is wrong at 2am, the fix must not require reverting the reparenting
+ *     that puts Templates in the room. One revert() returns the pixels and
+ *     touches no behaviour. Folding would have made "I don't like the spacing"
+ *     and "Templates went missing" the same rollback.
+ *   WHAT IT COSTS: idle-deferred (requestIdleCallback, 1800ms timeout), async,
+ *     ONE <style> element and ONE body class. It builds no node, moves no node,
+ *     renames nothing, runs no timer, no rAF and no observer - the grip fence
+ *     tests/opnote-templates-grips-survive-redesign.test.js fails if it ever
+ *     mutates a gripped subtree. EAGER_CEILING does not move; INTERVAL_CEILING
+ *     does not move. Wide-only rules are gated behind @media (min-width:901px)
+ *     so they cannot repeat the append-order defect that killed this room's
+ *     responsive layout, and the reduced-motion block is generated from the
+ *     MOVING table. */
+/* 250 -> 252 at the same 2026-07-29 lane, for feat_mls_ui_clinical.js (uc-1.0.0)
+ * and feat_mls_ui_shell.js (uish-1.0.0). Answered together because the answers
+ * are the same, and with a caveat recorded honestly at the end.
+ *   WHY THEY EXIST: the owner's standing complaint was that only Copilot looked
+ *     finished. These two carry the rest, split by surface: uc owns the clinical
+ *     column, uish owns the shell and dialogs. uc exists because a measured
+ *     audit found four READ-ME states that the white-card equalizer at
+ *     mls-connect.js:6139 silently flattened - a COMPLETED visit-flow step was
+ *     pixel-identical to one not started (same colour, same background, same
+ *     border), the day row's hover was white-at-5% on a white card, "already
+ *     seen" was carried by opacity alone, and the amber chip family disagreed
+ *     with itself. Every one of those is state a doctor is meant to read.
+ *   WHY NOT FOLDED IN: they were written against separate contracts and each
+ *     ships its own gate (ui-clinical-pass, ui-shell-pass). More to the point
+ *     they have different blast radii: the clinical column is where a visit is
+ *     conducted, the shell is where settings and dialogs live, and "the dialogs
+ *     look wrong" must not require reverting the visit surface. Folding them
+ *     into each other, or into the op-note module above, would make one bad
+ *     judgement call cost all three.
+ *   WHAT THEY COST: both idle-deferred (2200ms / 2400ms timeouts), async, ONE
+ *     <style> and ONE body class each, no node built or moved, no timer, no rAF,
+ *     no observer, no listener but DOMContentLoaded. uish carries no animation
+ *     at all. EAGER_CEILING and INTERVAL_CEILING do not move.
+ *   THE CAVEAT, stated plainly: this lane added THREE scripts, and the standing
+ *     finding on this app is that slow login is not login - it is ~177 cached
+ *     scripts serialising, and the fix is FEWER REQUESTS. Three more idle
+ *     stylesheet fetches is the wrong direction even though each is individually
+ *     cheap. The right move is a single concatenated presentation bundle for the
+ *     whole look-and-feel layer (mo, pe, mg, ot, uc, uish - six modules, six
+ *     requests, zero behaviour between them). That needs a build step this repo
+ *     does not have, so it is recorded here as owed rather than pretended away.
+ *     Do not raise this ceiling again for a stylesheet module; bundle instead. */
+const CEILING = 252;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
