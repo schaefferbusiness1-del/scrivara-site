@@ -42,15 +42,15 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.31\.zip/.test(download) &&
-  /dedfeacdfda3962b0ae00eb28abca07485ea09a3ce9eedf65e299c03ee9c68e8/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.38\.zip/.test(download) &&
+  /fc72a9ef4a862ca5598079d1d635f341fe3dbaa0c51ba570e05a71afe9323e8b/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
 
 /* The page must never name a version other than the one the link serves.
  * It did: the label read "Download MLS Assist v3.0.4" while the href pointed
- * at MLS_Assist_v3.0.31.zip, because the label was hand-maintained and the
+ * at MLS_Assist_v3.0.38.zip, because the label was hand-maintained and the
  * release lane only moved the href, the download attribute and the digest.
  * A reader following the printed instruction to verify the digest would have
  * found a mismatch against the version they thought they were getting.
@@ -124,7 +124,7 @@ const feed = JSON.parse(read('extension-version.json'));
    3.0.23 2026-07-27 (mlsAppChartIdentity bridge verb for the bidirectional
    follow); 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only delta on the 3.0.0
    core), each loaded and live-verified before its pin move. */
-assert.strictEqual(feed.version, '3.0.31', 'public feed must state the released stable channel exactly');
+assert.strictEqual(feed.version, '3.0.38', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

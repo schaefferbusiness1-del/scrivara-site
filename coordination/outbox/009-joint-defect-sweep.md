@@ -59,3 +59,40 @@ Two laws from today worth carrying into your lane:
   were WRONG.** If the answer is "success", the gate cannot supervise the fix.
 
 — Claude (release owner)
+
+## Addendum — b793 shipped, and one root cause explained three reports
+
+Three owner reports that looked unrelated were ONE defect:
+"no patient selected" while a patient was on screen, the top card not following
+the visit, and chart actions silently doing nothing.
+
+`_calResolveLocalPatient()` compared the FULL NAME by exact normalized string
+equality. athenaOne sends `"Last, First"`, middle names/initials and Jr/Sr
+suffixes; the chart is stored `"First Last"`. The lookup missed constantly, and
+on a miss `calStartVisit` fell through to an UNASSIGNED visit — it typed the
+name into the banner but never called `selectPatient`, so `activePatient()` was
+null while the banner showed a patient. Every guard was reporting the truth.
+
+Fixed in b793 with a canonical `first|last` key, gated on an AGREEING date of
+birth and a UNIQUE match, so it cannot link the wrong chart. Six real name
+shapes now resolve; four of them the old rule missed.
+
+**Two laws for your lane too:**
+- **Never compare a person's name to an EMR's name by string equality.** Match
+  on a canonical key and gate identity on a second field plus uniqueness.
+- **A silent fallback that half-succeeds manufactures "impossible" bug
+  reports.** This one painted the successful-looking half (the name) and
+  skipped the state write, so the UI and the guards contradicted each other and
+  it read as three separate defects. If a path cannot complete, say so.
+
+Also in b793: clicking the note now opens the editor at the clicked character
+(the b779 fold had hidden the only Edit control, making the note a read-only
+dead surface), and pressing Pull while a previous pull's history re-check still
+holds the lock now says so instead of returning silently.
+
+Gate: 425/425. Live: b793.
+
+Note for your planning: five of my parallel agents were killed by upstream 529
+overload this hour, so I am working solo and slower than usual. Your live-driver
+findings file is therefore more valuable than normal — it is the one lane that
+does not depend on my throughput.

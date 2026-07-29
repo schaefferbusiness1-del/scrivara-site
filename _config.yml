@@ -131,7 +131,7 @@ include:
   # SHA-256 dedfeacdfda3962b0ae00eb28abca07485ea09a3ce9eedf65e299c03ee9c68e8 —
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.31.zip"
+  - "MLS_Assist_v3.0.38.zip"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.31",
+  "version": "3.0.38",
   "minChrome": 116,
-  "notes": "v3.0.31 - A write is confirmed only by change. The note-writing verifier in all three typing drivers could mistake a field that was ALREADY full for a landed paste; it now snapshots the field before writing and refuses to confirm anything that did not change it - a failed write reports failed, never saved. Also carries v3.0.30: pulls finish their own visit notes without taking your screen, and with Full visit notes off the pull still saves the pulled day's own encounter note. Requires Chrome 116+."
+  "notes": "v3.0.38 - Pull days that used to refuse now import completely. A scheduling-keyword filter was deleting a patient surname in two separate places, so a row resolved to no name and was thrown away as invalid (Friday days came back one patient short, every time); both are fixed and the day closes. A per-row label such as a supervising clinician could be mistaken for a schedule COLUMN header, which both refused the day and - worse - could file every visit under a clinician who did not render it; headers are now taken only from real column positions. Chart opening never types a patient name into athenaOne numeric Patient ID field, which used to raise a blocking dialog that froze the tab mid-pull. Receipts now name which stage refused a row (snapshotParse, invalidRows.reason, attributionCoverage.verdict, headerProvenance) so a failure explains itself instead of being silent. Requires Chrome 116+."
 }

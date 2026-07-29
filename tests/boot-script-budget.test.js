@@ -273,7 +273,25 @@ const LOADER = 'mls-connect.js';
  *     control, no node, no markup, no stylesheet. One capture-phase click
  *     listener is its entire footprint, and it never writes the note's text
  *     (display/focus/selection only), so it cannot corrupt a note. */
-const CEILING = 247;
+/* 248 (2026-07-29): feat_mls_polish_everywhere.js (pe-1.0.0).
+ *   WHY IT EXISTS: the owner said it plainly - "you have not added beaturifl
+ *     animation anywhere but to copiloit". He was right. mo-1.0.0 targeted the
+ *     Copilot/AI surfaces and a few narrow selectors, so the surfaces he spends
+ *     the day in - .card (42 instances), .ez3-card, the .ez3-row2 schedule rows
+ *     he taps to start a visit, .pt-item, and the 380+ btn-* controls - stayed
+ *     completely static. This applies the SAME token vocabulary to those.
+ *   WHY NOT FOLDED INTO mo-1.0.0: motion is the first thing to switch off when
+ *     a doctor says the screen feels busy, and the two layers have different
+ *     blast radii - mo-1.0.0 decorates the AI surfaces, this one touches every
+ *     card and row in the product. Keeping them separate means
+ *     window.__mlsPolishEverywhere.revert() can calm the whole app without
+ *     also removing the Siri ring he explicitly likes, and vice versa.
+ *   WHAT IT COSTS: idle-deferred, async, ~5KB, ONE <style> element and nothing
+ *     else - no control, no node, no markup, no timer, no observer. Entrances
+ *     key off the .view-enter class showView already sets, and every rule is
+ *     transform/opacity only, excluded from clinical text, and stood down under
+ *     prefers-reduced-motion by a block generated from the rule table. */
+const CEILING = 248;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

@@ -34,6 +34,7 @@ const tests = [
   'athena-write-contract.test.js',
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
+  'deselect-releases-the-visit.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',

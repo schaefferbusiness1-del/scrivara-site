@@ -4677,9 +4677,40 @@ var mlsProv = (function () {
   function S(x) { return x == null ? '' : String(x); }
   function clean(s) { return S(s).replace(/\s+/g, ' ').trim(); }
 
+  /* 3.0.37: the SAME collision that 3.0.35 fixed inside the snapshot parser
+     (okTok), at the OTHER call site. STOP carries entries that are also real
+     surnames (min/mins/minute/minutes/no/fu/np/est), so a patient whose
+     surname spells one of them lost that token here and
+     mlsMergeSchedule.filterSource discarded the row as 'single-name-token' -
+     live Friday 2026-07-31, appt 45532929, textLen 7, nameTokenCount 1,
+     deterministically 6-of-7 on every build. The shared STOP regex is NOT
+     edited (other call sites read it); the exemption is scope-local exactly as
+     3.0.35 scoped its own, and it is fail-closed three ways:
+       (a) only a token that appears as a whole CAPITALIZED word in the
+           original text may be exempted - the athena scheduling vocabulary in
+           this grid renders lowercase ("40min") or ALL-CAPS, and a
+           punctuation-welded fragment such as "Spine,No" is not a whole word;
+       (b) an ambiguous token may never OPEN a name: at least one NON-ambiguous
+           token must already have been kept, so status text ("No Show",
+           "No Answer", "No Fu") still yields fewer than two tokens and the row
+           stays refused;
+       (c) the length rule, CRED_I (which still owns "np") and STOP itself for
+           every non-surname word are untouched.
+     A wrong name is worse than a refused day: in every other case this drops
+     the token and the row is refused exactly as before. */
+  var SNAMB = /^(?:min|mins|minute|minutes|no|fu|np|est)$/i;
   function nameTokens(name) {
-    return clean(name).toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/)
-      .filter(function (t) { return t && t.length > 1 && !STOP.test(t) && !CRED_I.test(t); });
+    var text = clean(name), capWord = {};
+    text.split(/\s+/).forEach(function (w) {
+      if (/^[A-Z][a-z'\u2019-]+$/.test(w)) capWord[w.toLowerCase()] = 1;
+    });
+    var kept = [], solid = 0;
+    text.toLowerCase().replace(/[^a-z' -]/g, ' ').split(/\s+/).forEach(function (t) {
+      if (!t || t.length < 2 || CRED_I.test(t)) return;
+      if (!STOP.test(t)) { kept.push(t); solid++; return; }
+      if (solid > 0 && SNAMB.test(t) && capWord[t] === 1) kept.push(t);
+    });
+    return kept;
   }
   function hasTime(s) { return RE_TIME.test(S(s)); }
   /* Keep meridians exact and canonical.  A bare clock remains bare: guessing
@@ -5081,8 +5112,8 @@ var mlsProv = (function () {
   function mlsMergeSchedule(domRes, textRes) {
     var dom = domRes || { appts: [], providers: [], diag: {} };
     var text = textRes || { appts: [], providers: [], diag: {} };
-    function filterSource(src) {
-      var kept = [], slots = 0, empty = 0, invalid = 0;
+    function filterSource(src, lane) {
+      var kept = [], slots = 0, empty = 0, invalid = 0, invalidRows = [];
       (src && src.appts || []).forEach(function (a) {
         var n = clean(a && a.name);
         if (!n) { empty++; return; }
@@ -5091,15 +5122,40 @@ var mlsProv = (function () {
            can also contain a time; require two surviving name tokens and no
            provider credential. This rejects false rows such as "Spine,No". */
         var nt = nameTokens(n);
-        if (!firstTime(a && a.time) || nt.length < 2 || isProviderUiLabel(n) || RE_CRED.test(n)) { invalid++; return; }
+        if (!firstTime(a && a.time) || nt.length < 2 || isProviderUiLabel(n) || RE_CRED.test(n)) {
+          invalid++;
+          /* 3.0.36 DIAGNOSTIC ONLY. The accept/reject condition above is
+             unchanged - this block adds no test and removes none; it only
+             NAMES the first failing check so a live receipt can say WHICH row
+             went and why. Live Friday 2026-07-31 (three identical runs on
+             3.0.35): expectedCount 7, parsedCount 6, invalidRowsRemoved 1 and
+             nothing anywhere named the discarded row, because unverifiableRows
+             only covers rows that reach the later re-verify lane. The reasons
+             below are a CLOSED vocabulary evaluated in the exact short-circuit
+             order of the condition above. PHI rule: appointment id, canonical
+             time, provider (a clinician, not a patient), lane and LENGTH/shape
+             hints only - never patient names, DOBs, MRNs or raw row text. */
+          if (invalidRows.length < 20) invalidRows.push({
+            reason: !firstTime(a && a.time) ? 'no-time'
+              : (nt.length < 2 ? 'single-name-token'
+                : (isProviderUiLabel(n) ? 'provider-ui-label' : 'credentialed-name')),
+            time: firstTime(a && a.time),
+            provider: cleanProvider(a && a.provider),
+            appointmentId: clean(a && a.appointmentId),
+            lane: lane || '',
+            textLen: n.length,
+            nameTokenCount: nt.length
+          });
+          return;
+        }
         kept.push(a);
       });
-      return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty, invalidRowsRemoved: invalid };
+      return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty, invalidRowsRemoved: invalid, invalidRows: invalidRows };
     }
     /* Athena virtualizes schedule rows. A provider-rich DOM result can be a
        partial viewport, so union both independently validated readers instead
        of discarding the alternate whenever DOM found one provider. */
-    var domFiltered = filterSource(dom), textFiltered = filterSource(text);
+    var domFiltered = filterSource(dom, 'dom'), textFiltered = filterSource(text, 'text');
     var primary = domFiltered.appts.length >= textFiltered.appts.length ? dom : text;
     var other = primary === dom ? text : dom;
     var seen = {}, providers = [];
@@ -5271,6 +5327,7 @@ var mlsProv = (function () {
         invalidRowsRemoved: domFiltered.invalidRowsRemoved + textFiltered.invalidRowsRemoved,
         domInvalidRowsRemoved: domFiltered.invalidRowsRemoved,
         textInvalidRowsRemoved: textFiltered.invalidRowsRemoved,
+        invalidRows: domFiltered.invalidRows.concat(textFiltered.invalidRows).slice(0, 20),
         soleProviderFilled: soleProviderFilled,
         providerFillScope: scopeProvider || '',
         dom: dom.diag || {},
@@ -6356,11 +6413,36 @@ async function mlsSchedDomInline(doc, CFG){
       out.diag.legacyFilledRows=doc.querySelectorAll('[class~="filled-appointment-row"]').length;
       out.diag.providerHeaderShapes=[].slice.call(doc.querySelectorAll('div,span,h1,h2,h3,h4,th,td')).filter(function(el){var t=tx(el);return t&&t.length<=90&&lh(t)&&el.querySelectorAll('*').length<=6;}).slice(0,12).map(function(el){return{tag:String(el.tagName||'').toLowerCase(),cls:String(el.className||'').replace(/\s+/g,' ').trim().slice(0,140),parentTag:String(el.parentElement&&el.parentElement.tagName||'').toLowerCase(),parentCls:String(el.parentElement&&el.parentElement.className||'').replace(/\s+/g,' ').trim().slice(0,140)};});
     }catch(_eShape){}
-    /* Strong legacy provider-scope proof: every non-empty legacy schedule
+    /* 2026-07-29 header paint variants (next-week day views render through the week-tab dashboard where the classic appointment-header2 class is absent). Derive per-container provider header TEXT from bounded structural variants: the classic class first, then header/provider-classed nodes inside the container, the container's own data-provider-name or aria-label, its immediately preceding siblings, then parent-scoped header nodes outside any row list. EVERY candidate must still pass the credential-anchored lh() shape, so a provider is never invented; zero or ambiguous headers keep the exact fail-closed refusal. */
+    /* 2026-07-29 (3.0.38) ROW-INTERNAL HEADER EXCLUSION. Live Tue 2026-08-04, selected-provider mode: the schedule read was clean (complete:true 2/2) yet the day imported ZERO rows, because TWO credentialed provider headers were harvested over ONE container. Per-container binding requires exactly one, so neither row bound and the coverage gate refused. Tiers 1 and 2 query the WHOLE container with no row exclusion, and tier 2 matches [class*="appointment-header"] by SUBSTRING - so a per-row cell such as appointment-header-detail carrying "Supervising: <Name> DO" or "Referred by <Name> MD" registers as a COLUMN header. Skip any tier-1/tier-2 candidate that sits INSIDE a filled-appointment-row, the same discipline tier 5 already applies with !list.contains(h). This can only ever REMOVE a false header: a genuine second column still refuses the day exactly as today, and a row is NEVER bound positionally. Tiers 3, 4 and 5 are untouched. */
+    var _legacyHdrProvL=[];
+    function _legacyHeaderTextsL(list){var texts=[],seenH={};
+    function rowInternalH(n){try{return !!(n&&n.closest&&n.closest('[class~="filled-appointment-row"]'));}catch(_eRIH){return false;}}
+    function addT(t,tierH,nodeH){t=cl(t);if(!t||!lh(t))return;var rinH=rowInternalH(nodeH);if(_legacyHdrProvL.length<10)_legacyHdrProvL.push({tier:Number(tierH)||0,rowInternal:rinH,textLen:t.length});if(rinH&&Number(tierH)<=2)return;var kH=t.toLowerCase();if(seenH[kH])return;seenH[kH]=1;texts.push(t);}
+    try{[].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function(h){addT(tx(h),1,h);});}catch(_eHV1){}
+    if(!texts.length){try{[].slice.call(list.querySelectorAll('[class*="appointment-header"],[class*="provider-header"],[class*="provider-name"],[class*="schedule-provider"],[class*="column-header"],[data-provider-name],header,h1,h2,h3,h4,caption,legend')).slice(0,30).forEach(function(h){addT(tx(h),2,h);var dpv='';try{dpv=h.getAttribute&&h.getAttribute('data-provider-name')||'';}catch(_eHV2){}if(dpv)addT(dpv,2,h);});}catch(_eHV3){}}
+    if(!texts.length){try{var alv=(list.getAttribute&&(list.getAttribute('data-provider-name')||list.getAttribute('aria-label')))||'';if(alv)addT(alv,3,list);}catch(_eHV4){}}
+    if(!texts.length){try{var sibH=list.previousElementSibling,hopH=0;while(sibH&&hopH<2&&!texts.length){addT(tx(sibH),4,sibH);sibH=sibH.previousElementSibling;hopH++;}}catch(_eHV5){}}
+    if(!texts.length){try{var parH=list.parentElement;if(parH)[].slice.call(parH.querySelectorAll('[class*="appointment-header"],[class*="provider-header"],[class*="provider-name"],[class*="column-header"],header,h1,h2,h3,h4')).slice(0,20).forEach(function(h){var insideH=false;try{insideH=list.contains?list.contains(h):false;}catch(_eHV6){}if(!insideH)addT(tx(h),5,h);});}catch(_eHV7){}}
+    return texts;}
+/* 2026-07-29 SNAPSHOT identity verification. Athena's React check-in widget can replace a row's subtree continuously, so live DOM walks lose the race no matter how many settle passes run (live-proven: an appointment row vanished between two probes seconds apart while a single synchronous outerHTML capture read it intact). Capture the row's outerHTML in ONE synchronous read and parse identity from that STRING: a string cannot churn. Evidence bar unchanged: the shared confident name parse as everywhere else; a structurally patient-bound region name (encounter-link anchor, patient-name node, data-patient-name) including the First-Last capitalized-pair shape is accepted ONLY when the same row carries an appointment id - the id + confident-name bar the structured lane already uses. Conflicting ids, foreign times, multiple distinct region names, or any other ambiguity stays refused as mutating. */
+    function _snapCapture(row){try{var h=String((row&&row.outerHTML)||'');return h.length>60000?h.slice(0,60000):h;}catch(_eSC0){return '';}}
+    function _snapDecode(s){return String(s||'').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#0*39;/g,"'").replace(/&apos;/gi,"'");}
+    function _snapText(html){return cl(_snapDecode(String(html||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ')));}
+    function _snapAttr(html,names){for(var ai=0;ai<names.length;ai++){var m=new RegExp(names[ai]+'\\s*=\\s*"([^"]{1,80})"','i').exec(html);if(!m)m=new RegExp(names[ai]+"\\s*=\\s*'([^']{1,80})'",'i').exec(html);if(m&&cl(m[1]))return cl(_snapDecode(m[1]));}return '';}
+    function _snapNameRegions(html){var regions=[],m;try{var reA=/<a\b[^>]*class\s*=\s*["'][^"']*encounter-link[^"']*["'][^>]*>([\s\S]{0,400}?)<\/a>/gi;while((m=reA.exec(html))&&regions.length<4){var tA=_snapText(m[1]);if(tA)regions.push(tA);}var reP=/<[a-z][a-z0-9]*\b[^>]*class\s*=\s*["'][^"']*patient[-_ ]?name[^"']*["'][^>]*>([\s\S]{0,400}?)<\//gi;while((m=reP.exec(html))&&regions.length<6){var tP=_snapText(m[1]);if(tP)regions.push(tP);}var dpn=_snapAttr(html,['data-patient-name']);if(dpn)regions.push(dpn);}catch(_eSNR){}return regions;}
+    function _snapPairName(regionText){var candsPN=_snapPairRuns(regionText);return candsPN.length===1?candsPN[0]:'';}
+    function _snapDobValid(v){var m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(cl(v));if(!m){var iso=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(cl(v));if(iso)m=[iso[0],iso[2],iso[3],iso[1]];}if(!m)return '';var y=+m[3],mo=+m[1],d=+m[2],now=new Date(),exact=new Date(Date.UTC(y,mo-1,d));if(y<1900||exact.getUTCFullYear()!==y||exact.getUTCMonth()!==mo-1||exact.getUTCDate()!==d||exact.getTime()>now.getTime())return '';return ('0'+mo).slice(-2)+'/'+('0'+d).slice(-2)+'/'+y;}
+    function _snapSlotWordsRe(){return /^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;}
+    /* rev-3 (3.0.34) welded-token normalization. Live Friday 2026-07-31 proof (appt 45532929): the row was INTACT at rest - '9:40 AM 40min <First Last> NNyo F | NN-NN-NNNN F/U <codes>' - yet _snapIdentity extracted NOTHING, because the name only rides raw row text (no encounter-link/patient-name region) and athena welds tokens in that text ('40min'+first name with no whitespace, last name welded into 'NNyo'). Strip/normalize the known athena tokens (leading time, 'NNmin' duration, 'NNyo F/M' age-sex chip, DOB digits) BEFORE the capitalized-pair scan, then accept a SINGLE unambiguous First-Last pair run - still ONLY when the same row carries the appointment id. Multiple pair runs stay refused as ambiguous. */
+    function _snapStripAthenaTokens(text){var s=' '+cl(String(text||''))+' ';s=s.replace(/(\d)([A-Za-z])/g,'$1 $2').replace(/([A-Za-z])(\d)/g,'$1 $2');s=s.replace(/\b(min(?:ute)?s?)(?=[A-Z])/g,'$1 ');s=s.replace(/\b\d{1,2}:\d{2}\s*(?:[AaPp]\.?[Mm]\.?)?/g,' ');s=s.replace(/\b\d+\s*(?:min(?:ute)?s?|hrs?|hours?)\b/gi,' ');s=s.replace(/\bmin(?:ute)?s?\b/g,' ');s=s.replace(/\b\d{1,3}\s*(?:yo|y\/o|yrs?\.?|years?(?:\s*old)?)\b\s*(?:[MF]\b)?/gi,' ');s=s.replace(/\b\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}\b/g,' ');s=s.replace(/\b\d+\b/g,' ');s=s.replace(/[|&;:,()\[\]{}]+/g,' ');return s.replace(/\s+/g,' ').trim();}
+    function _snapPairRuns(regionText){var t=cl(String(regionText||'')).replace(SFXRE,' ').replace(RTG,' ');var toks=t.split(/\s+/).filter(Boolean),cands=[],ti;var SNAMB=/^(?:min|mins|minute|minutes|no|fu|np|est)$/i;function okTok(w){return /^[A-Z][a-z'\u2019-]+$/.test(w)&&(!STOP.test(w)||SNAMB.test(w))&&!CI.test(w.toLowerCase())&&!/^(Check|In|Out|Walk|New)$/.test(w);}function okJoin(runJ,w){if(!okTok(w))return false;var awJ=SNAMB.test(w),a0J=false,aiJ;for(aiJ=0;aiJ<runJ.length;aiJ++){if(SNAMB.test(runJ[aiJ])){a0J=true;break;}}if(!awJ&&!a0J)return true;return runJ.length===1&&!(awJ&&a0J);}for(ti=0;ti<toks.length;ti++){if(!okTok(toks[ti]))continue;var run=[toks[ti]];while(ti+1<toks.length&&okJoin(run,toks[ti+1])){ti++;run.push(toks[ti]);}if(run.length>=2)cands.push(run.slice(0,3).join(' '));}return cands;}
+    function _snapIdentity(html,expectTime,knownId){var out={ok:false,time:'',name:'',appointmentId:'',dob:'',mrn:'',noIdentity:false,snapshotParse:''};var h=String(html||'');if(!h){out.snapshotParse='empty-snapshot';return out;}var text=_snapText(h);if(!text){out.snapshotParse='empty-snapshot';return out;}out.time=ft(text);if(expectTime&&out.time&&out.time!==expectTime){out.snapshotParse='foreign-time';return out;}var snapId=_snapAttr(h,['data-appointment-id','data-appt-id','data-appointmentid']);var callerId=cl(knownId||'');if(snapId&&callerId&&snapId!==callerId){out.snapshotParse='id-conflict';return out;}out.appointmentId=snapId||callerId;var dobLabeled=/\b(?:DOB|Date\s+of\s+Birth|Birth\s+Date)\s*(?:is\s*)?[:#-]?\s*(\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4})\b/i.exec(text);if(dobLabeled)out.dob=_snapDobValid(dobLabeled[1]);var chipHit=null;if(!out.dob){chipHit=/\b(\d{1,3})\s*(?:yo|y\/o|yrs?\.?|years?(?:\s*old)?)\s*[MF]\b[^0-9A-Za-z]{0,12}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}|\d{4}-\d{1,2}-\d{1,2})/i.exec(text);if(chipHit){var chipNorm=_snapDobValid(chipHit[2]);if(chipNorm){var pmC=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(chipNorm);if(pmC){var yearsC=Math.floor((Date.now()-Date.UTC(+pmC[3],+pmC[1]-1,+pmC[2]))/31557600000);if(Math.abs(yearsC-(+chipHit[1]))<=1)out.dob=chipNorm;}}}}if(!out.dob){var dAttr=_snapAttr(h,['data-patient-dob','data-dob','data-date-of-birth','data-birth-date']);if(dAttr)out.dob=_snapDobValid(dAttr);}var mrnLabeled=/\b(?:MRN|Medical\s+Record(?:\s+(?:Number|No\.?|#|ID))?)\s*(?:is\s*)?[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]{2,47})\b/i.exec(text);var mAttr=_snapAttr(h,['data-patient-mrn','data-mrn','data-medical-record-number']);var mrnRaw=cl((mrnLabeled&&mrnLabeled[1])||mAttr||'');if(mrnRaw&&mrnRaw.length<=48&&/[0-9]/.test(mrnRaw)&&/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(mrnRaw)&&!/^\d{4}-\d{1,2}-\d{1,2}$/.test(mrnRaw)&&!/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4}$/.test(mrnRaw))out.mrn=mrnRaw;var regions=_snapNameRegions(h),rNames=[],rSeen={};for(var ri=0;ri<regions.length;ri++){var rn='';try{var prR=mlsParseName(regions[ri]);if(prR&&prR.confident&&prR.display)rn=cl(prR.display);}catch(_eSI2){}if(!rn)rn=_snapPairName(regions[ri]);rn=cl(rn);if(rn){var rkN=rn.toLowerCase();if(!rSeen[rkN]){rSeen[rkN]=1;rNames.push(rn);}}}if(rNames.length>1){out.snapshotParse='ambiguous-candidates';return out;}var nm='';if(rNames.length===1&&out.appointmentId)nm=rNames[0];if(!nm){try{var psF=mlsParseName(text);if(psF&&psF.confident&&psF.display)nm=cl(psF.display);}catch(_eSI1){}}if(!nm&&out.appointmentId){var wtRuns=_snapPairRuns(_snapStripAthenaTokens(text));if(wtRuns.length>1){out.snapshotParse='ambiguous-candidates';return out;}if(wtRuns.length===1)nm=wtRuns[0];}var tokensN=cl(nm).replace(/[^A-Za-z'\u2019\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(out.time&&tokensN.length>=2){out.ok=true;out.name=cl(nm);out.snapshotParse='accepted';return out;}var slotReN=_snapSlotWordsRe();var tailN=cl(text.replace(RTG,' '));var slotLikeN=/^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|frozen|freeze|hold|unavailable|lunch|closed|administrative|admin|reserved)(?:\b|\s|$)/i.test(tailN);var residN=tailN.replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!slotReN.test(w);});out.noIdentity=!out.appointmentId&&!nm&&!dobLabeled&&!out.dob&&!mrnRaw&&(slotLikeN||residN.length===0);out.snapshotParse=out.appointmentId?'no-name-candidate':'no-id-on-row';return out;}
+        /* Strong legacy provider-scope proof: every non-empty legacy schedule
        container owns exactly one provider header and every container agrees. */
     try{
       var _legacyLists=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]')),_legacyNames={},_legacyNameOrder=[],_legacyRows=0,_legacyBoundRows=0,_legacySafe=!!_legacyLists.length;
-      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];[].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function(header){var raw=tx(header),p=lh(raw)?cp(raw):'';if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
+      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];_legacyHeaderTextsL(list).forEach(function(raw){var p=lh(raw)?cp(raw):'';if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
       if(_legacySafe&&_legacyRows>0&&_legacyBoundRows===_legacyRows&&_legacyNameOrder.length===1){var _legacyName=_legacyNameOrder[0],_legacyKey=_legacyName.toLowerCase();out.diag.singleProviderScope=true;out.diag.singleProviderName=_legacyName;out.diag.legacyScopeContainers=_legacyLists.length;if(!provSet[_legacyKey]){provSet[_legacyKey]=1;provOrder.push(_legacyName);}var _legacyCred=_legacyName.match(RC);if(_legacyCred&&_legacyCred[1])credSet[_legacyCred[1].toUpperCase()]=1;}
     }catch(_eLegacyScope){}
     /* v2.9.8: NEVER parse schedule data out of the staff-messaging/coordinator/
@@ -6382,7 +6464,7 @@ async function mlsSchedDomInline(doc, CFG){
       var _legacyGridListsL=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]'));
       var _legacyGridRowsL=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]'));
       if(_legacyGridListsL.length&&_legacyGridRowsL.length){
-        var _legacyObsL=[],_legacyUnresolvedL=[],_legacyProvidersL={},_legacyProviderOrderL=[];
+        var _legacyObsL=[],_legacyUnresolvedL=[],_legacyProvidersL={},_legacyProviderOrderL=[],_legacyClaimedNodesL=[];
         var _legacyRawObsL=0,_legacySlotsL=0,_legacyAllBoundL=true,_legacyHeaderProofL=true;
         function _legacyNormL(v){return cl(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
         function _legacyProviderL(raw){
@@ -6403,10 +6485,11 @@ async function mlsSchedDomInline(doc, CFG){
           var tail=cl(String(raw||'').replace(RTG,' '));
           return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|frozen|freeze|hold|unavailable|lunch|closed|administrative|admin|reserved|no\b[\s,]*(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?|patients?|add[\s-]?ons?)|(?:spine|surger(?:y|ies)|clinic|cases?|appts?|appointments?)\s*,\s*no)(?:\b|\s|$)/i.test(tail);
         }
+        _legacyHdrProvL.length=0;
         _legacyGridListsL.forEach(function(list){
           var rows=[];try{rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));}catch(_eLRs){}
           if(!rows.length)return;
-          var local=[],localSeen={};try{[].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function(h){var p=_legacyProviderL(tx(h)),k=_legacyNormL(p);if(k&&!localSeen[k]){localSeen[k]=1;local.push(p);}});}catch(_eLH){}
+          var local=[],localSeen={};try{_legacyHeaderTextsL(list).forEach(function(h){var p=_legacyProviderL(h),k=_legacyNormL(p);if(k&&!localSeen[k]){localSeen[k]=1;local.push(p);}});}catch(_eLH){}
           if(local.length!==1)_legacyHeaderProofL=false;
           var provider=local.length===1?local[0]:(out.diag.singleProviderName||'');
           if(!provider)_legacyAllBoundL=false;
@@ -6418,11 +6501,16 @@ async function mlsSchedDomInline(doc, CFG){
             var parsed=null,name='';try{parsed=mlsParseName(raw);}catch(_ePN){}
             if(parsed&&parsed.confident)name=cl(parsed.display);else name=cl(pn(raw));
             var nameTokens=name.replace(/[^A-Za-z'â€™\-]+/g,' ').trim().split(/\s+/).filter(Boolean);
-            if(!tm||nameTokens.length<2){_legacyUnresolvedL.push({time:tm||'',provider:provider||'',appointmentId:appointmentId||'',rawKey:_legacyNormL(raw)});return;}
+            if(!tm||nameTokens.length<2){_legacyUnresolvedL.push({time:tm||'',provider:provider||'',appointmentId:appointmentId||'',rawKey:_legacyNormL(raw),node:row});return;}
             var rowProof=_scheduleRowProofD(row);
-            _legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true});
+            _legacyClaimedNodesL.push(row);_legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true,rawKey:_legacyNormL(raw)});
           });
         });
+        /* 2026-07-29 bounded per-row re-verify: a legacy row whose DOM changed underneath the reader lands in _legacyUnresolvedL. Re-locate THAT row by its stable key (its own still-connected node, its appointment id, else a unique unclaimed same-time row) after a short settle and re-verify, up to 2 extra passes. Rows that still refuse are classified: no-identity-cell means PROVABLY no appointment id, no patient-name shape and no DOB/MRN (a hold/block/frame row); everything else stays mutating and keeps the day incomplete. A patient row is never guessed. */
+        var _lgPassesL=0,_lgSnapRecovL=0,_lgSlotWordsL=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;
+        function _lgNoIdentityL(row,raw){try{if(_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']))return false;var proof=_scheduleRowProofD(row);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var parsed=null;try{parsed=mlsParseName(raw);}catch(_eNI1){}if(parsed&&parsed.confident)return false;var nm=cl(pn(raw));if(nm&&nm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean).length>=2)return false;if(_legacySlotL(raw))return true;var toks=cl(String(raw||'').replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_lgSlotWordsL.test(w);});return toks.length===0;}catch(_eNI0){return false;}}
+        function _lgRelocateL(u){try{if(u.node&&u.node.isConnected!==false&&(!doc.contains||doc.contains(u.node)))return u.node;}catch(_eRL0){}try{if(u.appointmentId){var el=doc.querySelector('[data-appointment-id="'+u.appointmentId+'"],[data-appointmentid="'+u.appointmentId+'"],[data-appt-id="'+u.appointmentId+'"]');if(el)return el;}}catch(_eRL1){}try{var cands=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]')).filter(function(r2){return u.time&&ft(tx(r2))===u.time&&_legacyClaimedNodesL.indexOf(r2)<0;});if(cands.length===1)return cands[0];}catch(_eRL2){}return null;}
+        while(_lgPassesL<2&&_legacyUnresolvedL.length&&__scheduleActionAllowed()){_lgPassesL++;if(!(await __scheduleActionSleep(280)))break;var _lgStillL=[];for(var _lgI=0;_lgI<_legacyUnresolvedL.length;_lgI++){var _lgU=_legacyUnresolvedL[_lgI],_lgRow=_lgRelocateL(_lgU);if(_lgRow){var _lgSnap=_snapCapture(_lgRow);if(_lgSnap){var _lgIdn=_snapIdentity(_lgSnap,_lgU.time,_lgU.appointmentId);if(_lgIdn.ok){_lgSnapRecovL++;_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgIdn.time||_lgU.time,name:_lgIdn.name,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_lgIdn.appointmentId||'',providerId:'',reason:'',dob:_lgIdn.dob||'',mrn:_lgIdn.mrn||'',dobConflict:false,mrnConflict:false,rawKey:_legacyNormL(_snapText(_lgSnap))});continue;}_lgU._unvKind=_lgIdn.noIdentity?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._snap=true;_lgU._snapParse=String(_lgIdn.snapshotParse||'');_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgRaw=tx(_lgRow),_lgTm=ft(_lgRaw);if(_legacySlotL(_lgRaw)){_lgU._unvKind='no-identity-cell';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgParsed=null,_lgNm='';try{_lgParsed=mlsParseName(_lgRaw);}catch(_ePR2){}if(_lgParsed&&_lgParsed.confident)_lgNm=cl(_lgParsed.display);else _lgNm=cl(pn(_lgRaw));var _lgTk=_lgNm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(_lgTm&&_lgTk.length>=2){var _lgProof=_scheduleRowProofD(_lgRow);_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgTm,name:_lgNm,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_legacyAttrL(_lgRow,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid'])||'',providerId:_legacyAttrL(_lgRow,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid'])||'',reason:_legacyReasonL(_lgRow),dob:_lgProof.dob||'',mrn:_lgProof.mrn||'',dobConflict:_lgProof.dobConflict===true,mrnConflict:_lgProof.mrnConflict===true,rawKey:_legacyNormL(_lgRaw)});continue;}_lgU._unvKind=_lgNoIdentityL(_lgRow,_lgRaw)?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgU.node=_lgRow;_lgStillL.push(_lgU);}else{_lgU._unvKind=_lgU._unvKind||'mutating';_lgU._relocated=false;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);}}_legacyUnresolvedL=_lgStillL;}
         var _legacyByIdL={},_legacyByKeyL={},_legacyRowsFinalL=[];
         _legacyObsL.forEach(function(a){
           var base=a.time+'|'+_legacyNormL(a.name),key=base+'|'+(a.providerKey||'')+'|'+_scheduleProofKeyD(a),prior=null;
@@ -6433,17 +6521,22 @@ async function mlsSchedDomInline(doc, CFG){
         });
         var _legacyAttributedL={};_legacyRowsFinalL.forEach(function(a){if(a.providerKey)_legacyAttributedL[a.time+'|'+_legacyNormL(a.name)+'|'+_scheduleProofKeyD(a)]=1;});
         _legacyRowsFinalL=_legacyRowsFinalL.filter(function(a){return !!a.providerKey||!_legacyAttributedL[a.time+'|'+_legacyNormL(a.name)+'|'+_scheduleProofKeyD(a)];});
-        var _legacyUnresolvedSeenL={},_legacyUnresolvedCountL=0;
-        _legacyUnresolvedL.forEach(function(a){var k=a.appointmentId?('id:'+a.appointmentId):('row:'+a.time+'|'+_legacyNormL(a.provider)+'|'+a.rawKey);if(!_legacyUnresolvedSeenL[k]){_legacyUnresolvedSeenL[k]=1;_legacyUnresolvedCountL++;}});
+                /* rev-3 (3.0.34) CONTENT-KEYED STABILITY. The live dashboard paints every appointment as TWO identical LI copies in parallel appointments-container lists (7 real ids x2 + no-id pairs = 18 visible rows, Friday 2026-07-31), and the async check-in columns re-render/re-sort one copy pair mid-walk. Judging those instances by DOM node identity/position reads healthy content as mutating. Collapse by CONTENT before the stability verdict: an unresolved instance whose appointment id already produced a parsed row, or whose normalized text equals a parsed row's normalized text, is a duplicate render of ALREADY-CAPTURED content - stable regardless of node identity or position, never kind mutating. Genuinely unaccounted content still refuses exactly as before. */
+        var _legacyParsedRawKeysL={};_legacyObsL.forEach(function(a){if(a.rawKey)_legacyParsedRawKeysL[a.rawKey]=1;});
+        var _lgDupCollapsedL=0;_legacyUnresolvedL=_legacyUnresolvedL.filter(function(a){var dupL=(a.appointmentId&&_legacyByIdL[a.appointmentId])||(a.rawKey&&_legacyParsedRawKeysL[a.rawKey]);if(dupL)_lgDupCollapsedL++;return !dupL;});
+var _legacyUnresolvedSeenL={},_legacyUnresolvedCountL=0;
+        var _legacyUnvRowsL=[];_legacyUnresolvedL.forEach(function(a){var k=a.appointmentId?('id:'+a.appointmentId):('row:'+a.time+'|'+_legacyNormL(a.provider)+'|'+a.rawKey);if(!_legacyUnresolvedSeenL[k]){_legacyUnresolvedSeenL[k]=1;_legacyUnresolvedCountL++;if(_legacyUnvRowsL.length<20)_legacyUnvRowsL.push({kind:a._unvKind||'mutating',time:a.time||'',provider:a.provider||'',appointmentId:a.appointmentId||'',relocated:a._relocated===true,passes:Number(a._passes||0),snapshot:a._snap===true,snapshotParse:a._snap===true?String(a._snapParse||''):'',lane:'legacy-day-grid'});}});
         out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||'',dob:a.dob||'',mrn:a.mrn||''};});
         out.providers=_legacyProviderOrderL.slice();
         var _legacyRosterCompleteL=_legacyHeaderProofL&&_legacyAllBoundL&&out.providers.length>0;
         out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+_legacyNormL(raw),raw:raw,name:raw,source:'athena-schedule-header'};});
         out.providerRosterReceipt={complete:!!_legacyRosterCompleteL,partial:!_legacyRosterCompleteL,reason:_legacyRosterCompleteL?'complete':(!out.providers.length?'no-provider-headers':'legacy-unverified'),expectedCount:_legacyRosterCompleteL?out.providers.length:null,observedCount:out.providers.length,horizontalScrollable:false,reachedEnd:true,capReached:false,budgetExpired:false,restored:true,boundsStable:true,steps:1};
         out.diag.via='legacy-day-grid';out.diag.strategy='legacy-day-grid';out.diag.apptCount=out.appts.length;out.diag.candidateCount=out.appts.length+_legacyUnresolvedCountL;out.diag.parsedCount=out.appts.length;out.diag.unnamedCount=_legacyUnresolvedCountL;
-        out.diag.rawCandidateObservations=_legacyRawObsL;out.diag.confidentCandidateCount=_legacyObsL.length;out.diag.duplicateRowsRemoved=Math.max(0,_legacyRawObsL-out.diag.candidateCount);out.diag.slotRowsRemoved=_legacySlotsL;
+        out.diag.unverifiableRows=_legacyUnvRowsL;out.diag.unverifiableRowCount=_legacyUnresolvedCountL;out.diag.reverifyPasses=_lgPassesL;out.diag.snapshotRecovered=_lgSnapRecovL;out.diag.duplicateUnverifiableCollapsed=_lgDupCollapsedL;out.diag.rawCandidateObservations=_legacyRawObsL;out.diag.confidentCandidateCount=_legacyObsL.length;out.diag.duplicateRowsRemoved=Math.max(0,_legacyRawObsL-out.diag.candidateCount);out.diag.slotRowsRemoved=_legacySlotsL;out.diag.headerProvenance=_legacyHdrProvL.slice(0,10);try{out.providerRosterReceipt.headerProvenance=out.diag.headerProvenance;}catch(_eHP){}
         out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;
-        if(out.appts.length||_legacyUnresolvedCountL)return out;
+                /* rev-3 (3.0.34) served-date provenance: the week-tab dashboard prints no prose date and this lane returned WITHOUT schedDate, so the handler stamped targetDate:'' onto every legacy roster receipt (both live Aug-4 receipts). The selected day tab carries the ISO day in data-date-value - the same source the weekstrip goto reader proved on the owner account. Read it here so the receipt binds to the served day. Never guessed: unreadable stays empty. */
+        try{if(!out.schedDate){var _lgDateSelsL=['.day-tab-container.selected','.day-tab.selected','[aria-selected="true"]','[class*="selected"]','[class*="active"]'];for(var _lgDsI=0;_lgDsI<_lgDateSelsL.length&&!out.schedDate;_lgDsI++){var _lgDateElsL=[];try{_lgDateElsL=[].slice.call(doc.querySelectorAll(_lgDateSelsL[_lgDsI]));}catch(_eLD0){_lgDateElsL=[];}for(var _lgDeI=0;_lgDeI<_lgDateElsL.length&&!out.schedDate;_lgDeI++){var _lgDeE=_lgDateElsL[_lgDeI],_lgDeV='';try{_lgDeV=(_lgDeE.getAttribute&&(_lgDeE.getAttribute('data-date-value')||_lgDeE.getAttribute('data-datevalue')||_lgDeE.getAttribute('data-date')))||'';}catch(_eLD1){}if(!_lgDeV){try{var _lgDeIn=_lgDeE.querySelector&&_lgDeE.querySelector('[data-date-value],[data-datevalue],[data-date]');if(_lgDeIn)_lgDeV=(_lgDeIn.getAttribute('data-date-value')||_lgDeIn.getAttribute('data-datevalue')||_lgDeIn.getAttribute('data-date'))||'';}catch(_eLD2){}}_lgDeV=cl(String(_lgDeV||''));var _lgDeM=/^(\d{4}-\d{2}-\d{2})/.exec(_lgDeV);if(_lgDeM){out.schedDate=_lgDeM[1];}else if(_lgDeV&&/\d{4}/.test(_lgDeV)&&/[-\/]/.test(_lgDeV)){var _lgDeD=new Date(_lgDeV);if(!isNaN(_lgDeD.getTime()))out.schedDate=_lgDeD.getFullYear()+'-'+('0'+(_lgDeD.getMonth()+1)).slice(-2)+'-'+('0'+_lgDeD.getDate()).slice(-2);}}}if(out.schedDate)out.diag.schedDateVia='weektab-selected-day-tab';}}catch(_eLgDateL){}
+if(out.appts.length||_legacyUnresolvedCountL)return out;
       }
     }catch(_legacyGridErrL){out.diag.legacyGridErr=String(_legacyGridErrL&&_legacyGridErrL.message||_legacyGridErrL).slice(0,100);}
     // === v1.48 STRUCTURE STRATEGY (athenaOne): appts are .PatientAppointment_appointment-container
@@ -6575,6 +6668,13 @@ async function mlsSchedDomInline(doc, CFG){
         _coverageS.complete=!_coverageS.axisCap&&!_coverageS.containerCap&&!_coverageS.budgetExpired&&_coverageS.boundsStable&&_coverageS.restored&&_coverageS.cellsVisited===_coverageS.cellsPlanned&&_coverageS.positionsReached===_coverageS.cellsPlanned&&_coverageS.verticalContainersSwept===_vWorkS.length;_coverageS.reason=_coverageS.complete?'complete':(_coverageS.budgetExpired?'sweep-budget':(_coverageS.axisCap?'axis-cap':(_coverageS.containerCap?'container-cap':(!_coverageS.boundsStable?'bounds-changed':(!_coverageS.restored?'restore-failed':(_coverageS.positionsReached!==_coverageS.cellsPlanned?'scroll-position-unreached':'incomplete-cross-product'))))));
         var _hMetaS={scrollable:!!_scS,steps:Object.keys(_hSeenS).length,reachedEnd:!!_hReachedS,capReached:!!_hAxisS.capped,budgetExpired:!!(_coverageS.budgetExpired&&!_hReachedS),restored:!!_coverageS.restored,boundsStable:!!_coverageS.boundsStable,maxScroll:_hMaxS};
         try{var _dhS=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');if(_dhS){var _dS=new Date(cl(_dhS.textContent).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(_dS.getTime())){var _p2S=function(n){n=String(n);return n.length<2?'0'+n:n;};out.schedDate=_dS.getFullYear()+'-'+_p2S(_dS.getMonth()+1)+'-'+_p2S(_dS.getDate());}}}catch(_e){}
+        /* 2026-07-29 bounded per-row re-verify: a virtualized row that re-renders mid-verification stays in _pendingS under its stable anchor key (appointment id, dom id, or time+position). After the sweep, re-run the anchor-keyed collector up to 2 extra passes with a short settle so the SAME row can re-verify through the normal parse path. Rows that still refuse are classified below; a patient row is never guessed. */
+        var _reverifyPassesS=0;
+        function _unvPendingCountS(){var n=0,tp={};Object.keys(_candS).forEach(function(ck){var a=_candS[ck];tp[a.time+'|'+(a.providerKey||'')]=1;tp[a.time+'|']=1;});Object.keys(_pendingS).forEach(function(pk2){var p=_pendingS[pk2],pkn=_normS(p.prov);if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;if(!p.strong&&tp[p.time+'|'+pkn])return;if(p.strong||p.seen>=2)n++;});return n;}
+        while(_reverifyPassesS<2&&_unvPendingCountS()>0&&__scheduleActionAllowed()){_reverifyPassesS++;if(!(await _sleepS(Math.max(240,_settleBaseS))))break;var _rvHdrS=_hdrsS();if(_rvHdrS.length)_cachedHdrS=_rvHdrS;_collectS(_cachedHdrS);}
+        /* 2026-07-29 snapshot recovery: for each still-unverified pending row, ONE synchronous outerHTML capture at relocation time, parsed as a STRING (_snapIdentity) - a string cannot lose to React subtree churn. A confident snapshot identity joins _candS through the normal dedup; anything else is classified below and never guessed. */
+        function _unvLocateS(p,k){try{if(p.appointmentId){var el=doc.querySelector('[data-appointment-id="'+p.appointmentId+'"],[data-appointmentid="'+p.appointmentId+'"],[data-appt-id="'+p.appointmentId+'"]');if(el)return el;}}catch(_eUL1){}try{if(String(k).indexOf('node:')===0){var nid=String(k).slice(5,String(k).lastIndexOf('|')),el2=null;if(nid&&doc.getElementById)el2=doc.getElementById(nid);if(!el2&&nid)el2=doc.querySelector('[data-testid="'+nid+'"]');if(el2)return el2;}}catch(_eUL2){}try{var cands=[].slice.call(doc.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).filter(function(b){var t=cl(b.textContent);if(ft(t)!==p.time)return false;var nm=_nmS(t);return !nm||_normS(nm).split(/\s+/).filter(Boolean).length<2;});if(cands.length===1)return cands[0];}catch(_eUL3){}return null;}
+        var _snapRecoveredS=0;Object.keys(_pendingS).forEach(function(pk3){var p=_pendingS[pk3];if(!(p.strong||p.seen>=2))return;if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;var elR=_unvLocateS(p,pk3);p._liveEl=elR||null;var snapR=elR?_snapCapture(elR):'';p._snapHad=!!snapR;if(!snapR)return;var idnR=_snapIdentity(snapR,p.time,p.appointmentId);if(idnR.ok){var provKeyR=_normS(p.prov),nameKeyR=_normS(idnR.name),aidR=p.appointmentId||idnR.appointmentId||'';var proofKeyR=idnR.mrn?('mrn:'+String(idnR.mrn).toLowerCase().replace(/[^a-z0-9]/g,'')):(idnR.dob?('dob:'+String(idnR.dob).replace(/[^0-9]/g,'')):'');var lkR=aidR?('appt:'+aidR):('person:'+(idnR.time||p.time)+'|'+nameKeyR+'|'+provKeyR+'|'+proofKeyR);if(!_candS[lkR])_candS[lkR]={prov:p.prov||'',time:idnR.time||p.time,name:idnR.name,reason:'',appointmentId:aidR,base:(idnR.time||p.time)+'|'+nameKeyR,providerKey:provKeyR,dob:idnR.dob||'',mrn:idnR.mrn||'',dobConflict:false,mrnConflict:false};delete _pendingS[pk3];_snapRecoveredS++;return;}p._snapNoIdentity=idnR.noIdentity===true;p._snapParse=String(idnR.snapshotParse||'');});
         var _rawRowsS=Object.keys(_candS).map(function(k){return _candS[k];}),_finalRowsS=[],_apptRowsS={},_baseRowsS={};
         _rawRowsS.forEach(function(a){
           if(a.appointmentId){
@@ -6593,7 +6693,7 @@ async function mlsSchedDomInline(doc, CFG){
           (named.length?named:ks.slice(0,1)).forEach(function(pk){_finalRowsS.push(g[pk]);});
         });
         var _resolvedTPsS={};_finalRowsS.forEach(function(a){_resolvedTPsS[a.time+'|'+(a.providerKey||'')]=1;_resolvedTPsS[a.time+'|']=1;});
-        var _unmS=0;Object.keys(_pendingS).forEach(function(k){var p=_pendingS[k],pk=_normS(p.prov);if(p.appointmentId&&_apptRowsS[p.appointmentId])return;if(!p.strong&&_resolvedTPsS[p.time+'|'+pk])return;if(p.strong||p.seen>=2)_unmS++;});
+        var _unmS=0,_unvRowsS=[],_unvSlotWordsS=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;function _unvNoIdentityS(el){if(!el)return false;var t=cl(el.textContent);try{if(cl(el.getAttribute('data-appointment-id')||el.getAttribute('data-appointmentid')||el.getAttribute('data-appt-id')))return false;}catch(_eUN1){}var proof=_scheduleRowProofD(el);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var nm=_nmS(t);if(nm&&_normS(nm).split(/\s+/).filter(Boolean).length>=2)return false;if(_slotS(t))return true;var toks=cl(String(t).replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_unvSlotWordsS.test(w);});return toks.length===0;}Object.keys(_pendingS).forEach(function(k){var p=_pendingS[k],pk=_normS(p.prov);if(p.appointmentId&&_apptRowsS[p.appointmentId])return;if(!p.strong&&_resolvedTPsS[p.time+'|'+pk])return;if(!(p.strong||p.seen>=2))return;_unmS++;if(_unvRowsS.length<20){var kindU,relocU=p._snapHad===true||!!p._liveEl;if(p._snapHad===true)kindU=p._snapNoIdentity===true?'no-identity-cell':'mutating';else{var elU=p._liveEl||_unvLocateS(p,k);relocU=relocU||!!elU;kindU=_unvNoIdentityS(elU)?'no-identity-cell':'mutating';}_unvRowsS.push({kind:kindU,time:p.time||'',provider:p.prov||'',appointmentId:p.appointmentId||'',relocated:relocU,passes:_reverifyPassesS,snapshot:p._snapHad===true,snapshotParse:p._snapHad===true?String(p._snapParse||''):'',lane:'structure-id'});}});
         out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',appointmentId:a.appointmentId||'',dob:a.dob||'',mrn:a.mrn||''};});
         if(out.appts.length||_unmS||_provOrderS.length){
           out.appts.forEach(function(a){if(a.provider)_noteProvS(a.provider);});
@@ -6604,7 +6704,7 @@ async function mlsSchedDomInline(doc, CFG){
           /* A whole-body text scan ('N providers') is weak corroboration, not an authoritative total: it may only confirm an exactly matching observed sweep. On any mismatch the proven bounds sweep carries completeness and expectedCount stays null (observed>=declared still gates _provCompleteS above). */
           out.providerRosterReceipt={complete:!!_provCompleteS,partial:!_provCompleteS,reason:_provReasonS,expectedCount:(_declProvS&&_provObservedS===_declProvS)?_declProvS:null,observedCount:_provObservedS,horizontalScrollable:_hMetaS.scrollable,reachedEnd:_hMetaS.reachedEnd,capReached:_hMetaS.capReached,budgetExpired:_hMetaS.budgetExpired,restored:_hMetaS.restored,boundsStable:_hMetaS.boundsStable,steps:_hMetaS.steps};
           out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.candidateCount=out.appts.length+_unmS;out.diag.parsedCount=out.appts.length;out.diag.unnamedCount=_unmS;
-          out.diag.rawCandidateObservations=_rawCandidateObsS;out.diag.confidentCandidateCount=_rawRowsS.length;out.diag.duplicateRowsRemoved=Math.max(0,_rawRowsS.length-out.appts.length);
+          out.diag.unverifiableRows=_unvRowsS;out.diag.unverifiableRowCount=_unmS;out.diag.reverifyPasses=_reverifyPassesS;out.diag.snapshotRecovered=_snapRecoveredS;out.diag.rawCandidateObservations=_rawCandidateObsS;out.diag.confidentCandidateCount=_rawRowsS.length;out.diag.duplicateRowsRemoved=Math.max(0,_rawRowsS.length-out.appts.length);
           out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;out.diag.viewportCoverage=_coverageS;
           /* Provider headers alone must not suppress the older table/grouped
              fallbacks.  A non-empty structure result is returned only after
@@ -6813,7 +6913,12 @@ async function mlsSchedDomInline(doc, CFG){
         var __viewportCoverage = __dd.viewportCoverage || null;
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
         var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
-        var __complete = __coverageComplete && (__authoritativeEmpty || (__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0));
+        var __unverifiableRows = Array.isArray(__dd.unverifiableRows) ? __dd.unverifiableRows.slice(0, 20) : [];
+        var __unverifiableRowCount = Number(__dd.unverifiableRowCount != null ? __dd.unverifiableRowCount : __unverifiableRows.length) || 0;
+        var __provenNonClinical = __unverifiableRows.filter(function (r) { return r && r.kind === 'no-identity-cell'; }).length;
+        /* 2026-07-29: an observed row that would not verify after bounded re-verification but PROVABLY carries no appointment id and no patient identity (a hold/block/frame row) is named in the receipt and excluded from the completeness equation: completeness then requires expectedCount - provenNonClinical === parsedCount with EVERY unverifiable row proven non-clinical. Any identity-bearing or still-mutating row keeps the day incomplete exactly as before. */
+        var __nonClinicalAccounted = __provenNonClinical > 0 && __unverifiableRows.length === __unverifiableRowCount && __unverifiableRowCount === __provenNonClinical && __unnamedCount === __provenNonClinical && (__expectedCount - __provenNonClinical) === __parsedCount;
+        var __complete = __coverageComplete && (__authoritativeEmpty || (__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0) || (__parsedCount > 0 && __nonClinicalAccounted));
         /* sfp-1.0.0 STALENESS VERDICT. Take the FRESHEST verified schedule frame:
            if any surface that produced these rows has had recent server contact,
            the grid is fresh. A full resource-timing buffer disqualifies lastNetMs
@@ -6846,13 +6951,40 @@ async function mlsSchedDomInline(doc, CFG){
           staleThresholdMs: MLS_ATH_LIVE_WINDOW_MS,
           staleRisk: __staleRisk
         };
+        /* 2026-07-29 attribution-coverage corroboration (fail-closed by construction). The week-tab day surface can never produce the structured end/bounds/restoration roster proof the legacy bar demands, but the two-dimensional proof holds by another route: a COMPLETE, REQUEST-BOUND schedule whose EVERY parsed row names a provider drawn from the observed header set IS the roster for that day. Upgrade the roster receipt to complete:true reason attribution-coverage ONLY when ALL hold: the schedule completeness verdict above is true and this reply carries the exact armed requestId on the roster receipt; at least one parsed row exists and every one carries a provider attribution; the attribution set is a subset of the observed header set; and at least one header was observed. Any missing attribution, any row provider outside the header set, an incomplete or unbound schedule, or an empty day keeps the exact refusal shipped today. */
+        try {
+          var __acNorm = function (v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+          var __acHeaders = {};
+          (__providerRoster || []).forEach(function (e) { if (e) { var n1 = __acNorm(e.raw), n2 = __acNorm(e.name); if (n1) __acHeaders[n1] = 1; if (n2) __acHeaders[n2] = 1; } });
+          var __acRows = (__mlsM && __mlsM.appts) || [];
+          var __acUnattributed = 0, __acForeign = 0;
+          __acRows.forEach(function (a) { var __acK = a ? __acNorm(a.provider) : ''; if (!__acK) __acUnattributed++; else if (__acHeaders[__acK] !== 1) __acForeign++; });
+          var __acObserved = Number(__providerRosterReceipt && __providerRosterReceipt.observedCount != null ? __providerRosterReceipt.observedCount : (__providerRoster || []).length) || 0;
+          /* rev-3 (3.0.34): the upgrade conditions are unchanged, but the receipt now ALWAYS names the FIRST failing conjunct (attributionCoverage.verdict) so a live refusal reads in one look (live Aug-4: a complete 2/2 selected-mode read still refused and the receipt could not say why). targetDate is deliberately NOT a conjunct - request binding is by requestId; the served date rides the receipt for provenance only. */
+          var __acVerdict = '';
+          if (!__providerRosterReceipt) __acVerdict = 'no-roster-receipt';
+          else if (__providerRosterReceipt.complete === true) __acVerdict = 'already-complete';
+          else if (__complete !== true) __acVerdict = 'schedule-incomplete';
+          else if (__authoritativeEmpty === true) __acVerdict = 'authoritative-empty';
+          else if (!__schedRequestId || String(__providerRosterReceipt.requestId || '') !== String(__schedRequestId)) __acVerdict = 'request-id-mismatch';
+          else if (!__acRows.length) __acVerdict = 'no-rows';
+          else if (__acObserved < 1 || !Object.keys(__acHeaders).length) __acVerdict = 'no-headers';
+          else if (__acUnattributed > 0) __acVerdict = 'row-unattributed';
+          else if (__acForeign > 0) __acVerdict = 'attribution-not-in-headers';
+          else __acVerdict = 'satisfied';
+          if (__acVerdict === 'satisfied') {
+            __providerRosterReceipt = Object.assign({}, __providerRosterReceipt, { complete: true, partial: false, reason: 'attribution-coverage', attributionCoverage: { verdict: 'satisfied', rows: __acRows.length, headerCount: (__providerRoster || []).length, corroboratedBy: 'complete-bound-schedule' } });
+          } else if (__providerRosterReceipt) {
+            __providerRosterReceipt = Object.assign({}, __providerRosterReceipt, { attributionCoverage: { verdict: __acVerdict, rows: __acRows.length, headerCount: (__providerRoster || []).length, unattributedRows: __acUnattributed, foreignRows: __acForeign } });
+          }
+        } catch (__eAC) {}
         var __receipt = {
           sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
-          expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount,
+          expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount, unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,
           countStrategy: __countStrategy,
           declaredCount: __declaredCount, declaredCountAuthoritative: __declaredCountAuthoritative, declaredCountReason: __declaredCountReason, unnamedCount: __unnamedCount,
           domValidRows: Number(__pd.domValidRows || 0), textValidRows: Number(__pd.textValidRows || 0),
-          mergedRows: Number(__pd.mergedRows || __parsedCount), invalidRowsRemoved: Number(__pd.invalidRowsRemoved || 0),
+          mergedRows: Number(__pd.mergedRows || __parsedCount), invalidRowsRemoved: Number(__pd.invalidRowsRemoved || 0), invalidRows: Array.isArray(__pd.invalidRows) ? __pd.invalidRows.slice(0, 20) : [],
           viewportCoverage: __viewportCoverage, viewportCoverageComplete: __coverageComplete
         };
         /* v2.9.11: ACCUMULATE the shadow-parser evidence across pulls/days — the per-pull
@@ -10542,10 +10674,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var r = i.getBoundingClientRect(); if (r.top < 170) s += 1; // global search usually top
           return s;
         }
-        inputs.sort(function (a, b) { return scoreInput(b) - scoreInput(a); });
-        var best = inputs[0];
-        var diag = { frame: location.hostname, inputCount: inputs.length, topScore: best ? scoreInput(best) : -1 };
-        if (!best || scoreInput(best) < 3) return { phase: 'fill', filled: false, diag: diag };
+        /* 3.0.37 P0 - a name must NEVER be typed into a numeric-only field.
+           AthenaNet answers a non-numeric value in its Patient ID box with a
+           NATIVE blocking dialog ("Patient ID must be numeric and should be
+           greater than zero."), and a native dialog halts ALL JavaScript in
+           that tab: the pull wedges AND the clinician is locked out of
+           athenaNet until he clicks OK - once per chart. The scorer above
+           cannot prevent this, because the Patient ID field matches /patient/
+           (and often id/mrn) and can WIN outright. So this is a hard
+           EXCLUSION rather than a score penalty: a penalized field still wins
+           when it is the only one on screen. Ordering among the remaining
+           legitimate name/search fields is untouched, and an all-digits search
+           string may still use a numeric field. Unreadable field = refused.
+           A skipped chart is far better than a dialog that locks the doctor
+           out of athenaNet. */
+        var typedIsNumeric = /^\d+$/.test(searchStr);
+        function numericOnlyField(i) {
+          try {
+            var ty2 = (i.type || '').toLowerCase();
+            if (ty2 === 'number') return true;
+            var im2 = String(i.getAttribute('inputmode') || '').toLowerCase();
+            if (im2 === 'numeric' || im2 === 'tel') return true;
+            var pat2 = String(i.getAttribute('pattern') || '').trim();
+            if (pat2 && /^\^?(?:\\d|\[0-9\]|\[\\d\])(?:[*+?]|\{\d+(?:,\d*)?\})?\$?$/.test(pat2)) return true;
+            var lbl2 = '';
+            try { lbl2 = (i.labels && i.labels[0] && i.labels[0].textContent) || ''; } catch (eL2) {}
+            var idHay = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.id || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.title || '') + ' ' + lbl2).toLowerCase();
+            return /\bpatient\s*(?:id|no\.?|number)\b/.test(idHay) || /\bpatient\s*#/.test(idHay) || /\bpatientid\b/.test(idHay);
+          } catch (eN2) { return true; }
+        }
+        function typableField(i) { return typedIsNumeric || !numericOnlyField(i); }
+        var usable = inputs.filter(typableField);
+        var refusedNumeric = inputs.length - usable.length;
+        usable.sort(function (a, b) { return scoreInput(b) - scoreInput(a); });
+        var best = usable[0];
+        var diag = { frame: location.hostname, inputCount: inputs.length, topScore: best ? scoreInput(best) : -1, numericFieldsRefused: refusedNumeric };
+        if (!best || scoreInput(best) < 3) return (refusedNumeric && !usable.length)
+          ? { phase: 'fill', filled: false, diag: diag, reason: 'numeric-only-field-refused' }
+          : { phase: 'fill', filled: false, diag: diag };
         try {
           var proto = window.HTMLInputElement && window.HTMLInputElement.prototype;
           var setter = proto && Object.getOwnPropertyDescriptor(proto, 'value');
@@ -10553,6 +10719,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           best.focus();
           /* v1.62: athenaOne's global search expects "lastname,firstname" (no space). */
           if (!openAllowed()) return deadlineOut();
+          /* 3.0.37 P0 belt-and-braces: re-assert the target immediately before
+             the value is dispatched. A re-render between selection and write can
+             swap the field underneath us; if it is no longer safe for this
+             string we type NOTHING and report the refusal. */
+          if (!typableField(best)) return { phase: 'fill', filled: false, diag: diag, reason: 'numeric-only-field-refused' };
           if (setter && setter.set) setter.set.call(best, searchStr); else best.value = searchStr;
           if (!openAllowed()) return deadlineOut();
           best.dispatchEvent(new Event('input', { bubbles: true }));
@@ -11431,7 +11602,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var fillRes = fillX.r || [];
           var fill = bestFrameResult(fillRes, 'fill');
           if (!fill || !fill.filled) {
-            sendResponse({ ok: false, opened: false, error: 'Could not find the Athena patient search box on this screen.', diag: fill && fill.diag });
+            sendResponse({ ok: false, opened: false, reason: (fill && fill.reason) || '', error: (fill && fill.reason === 'numeric-only-field-refused') ? 'Refused: the only patient field on this screen accepts numbers only, and typing a name there makes athenaNet raise a blocking dialog. The chart was skipped instead.' : 'Could not find the Athena patient search box on this screen.', diag: fill && fill.diag });
             return;
           }
           if (senderTab) progress(senderTab, 'Searching “' + (msg.name || '') + '”…', openGuard.token);

@@ -5,7 +5,7 @@
  * write. The landed() verifier in all three typing drivers carried a length
  * fallback ("field holds >=15 chars") that would confirm a FAILED paste into
  * any field that was already populated — a false "it saved" is the worst
- * possible outcome for a clinical note. v3.0.31: landed() snapshots the field
+ * possible outcome for a clinical note. v3.0.38: landed() snapshots the field
  * BEFORE the first write attempt and the fallback refuses when the content
  * did not change. This suite executes the shipped landed() bytes. */
 
