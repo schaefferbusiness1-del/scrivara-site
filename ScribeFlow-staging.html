@@ -10393,7 +10393,7 @@ function renderStudio(){ renderStudioSaved(); renderStudioTemplates(); _copilotI
 var _copilotHistory = [];   // {role:'user'|'ai', text, actions, followups}
 var _copilotBusy = false;
 function _ce(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
-function _copilotAutogrow(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.min(150, el.height||0||el.scrollHeight)+'px'; el.style.height=Math.min(150, el.scrollHeight)+'px'; }
+function _copilotAutogrow(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.min(150, el.scrollHeight)+'px'; }
 /* Lean, id-carrying snapshot for the copilot — derived from the rich studio
    snapshot but trimmed so the payload stays small and fast. */
 function copilotSnapshot(){
@@ -23777,6 +23777,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b785';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b786';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

@@ -12,6 +12,7 @@ const centerpiece = read('feat_mls_centerpiece.js');
 const fab = read('feat_fab_layout.js');
 const connect = read('mls-connect.js');
 const app = read('ScribeFlow.html');
+const stagingApp = read('ScribeFlow-staging.html');
 const dictate = read('feat_mls_dictate_anywhere.js');
 const theme = read('feat_mls_theme_polish.js');
 const agentActions = read('feat_agent_actions3.js');
@@ -187,7 +188,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b785' }, 'tiny version probe does not match b785');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b786' }, 'tiny version probe does not match b786');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -260,5 +261,54 @@ const swFetchStart = sw.indexOf("self.addEventListener('fetch'");
 const swFetch = sw.slice(swFetchStart);
 assert.strictEqual((swFetch.match(/e\.waitUntil\(/g) || []).length, 2, 'service-worker cache writes can be terminated after respondWith resolves');
 assert(swFetch.includes('e.waitUntil(response.then(() => cacheWrite).catch(() => {}))'), 'service-worker fetch lifetime is not tied to its deferred cache write');
+
+/* 2026-07-29: the active 700ms Easy Home poll must not rescan the roster for
+ * unused status values or replace an unchanged status subtree. */
+const easyV373Start = connect.indexOf("var VER = '3.7.3';");
+const easyV373End = connect.indexOf('window.__mlsEasyV32 = api;', easyV373Start);
+assert(easyV373Start >= 0 && easyV373End > easyV373Start, 'active Easy 3.7.3 owner slice is missing');
+const easyV373 = connect.slice(easyV373Start, easyV373End);
+const easyHomeStatusStart = easyV373.indexOf('function homeStatus() {');
+const easyHomeStatusEnd = easyV373.indexOf('\n  function homeSig() {', easyHomeStatusStart);
+const easyHomeStatus = easyV373.slice(easyHomeStatusStart, easyHomeStatusEnd);
+assert(easyHomeStatusStart >= 0 && easyHomeStatusEnd > easyHomeStatusStart,
+  'active Easy homeStatus slice is missing');
+assert(!easyHomeStatus.includes('dayRows(') && !easyHomeStatus.includes('isSeen'),
+  'homeStatus returned to unused per-appointment roster/seen work');
+assert(easyV373.includes("var hs = homeStatus(); if (st.innerHTML !== hs) st.innerHTML = hs;"),
+  'stable Easy status HTML can still be replaced every 700ms');
+assert(!easyV373.includes("if (st) st.innerHTML = homeStatus();"),
+  'unguarded Easy status subtree replacement returned');
+
+/* 2026-07-29: Copilot autogrow performs one required layout read per call. */
+function checkCopilotAutogrow(source, label, measuredHeight, expectedHeight) {
+  const start = source.indexOf('function _copilotAutogrow(el){');
+  const end = source.indexOf('\n', start);
+  assert(start >= 0 && end > start, label + ' Copilot autogrow source is missing');
+  const fnSource = source.slice(start, end);
+  assert.strictEqual((fnSource.match(/scrollHeight/g) || []).length, 1,
+    label + ' Copilot autogrow performs more than one forced layout read');
+  assert(!fnSource.includes('el.height||0||el.scrollHeight'),
+    label + ' Copilot autogrow restored the overwritten middle assignment');
+  const ctx = {};
+  vm.runInNewContext(fnSource + ';this.autogrow=_copilotAutogrow;', ctx,
+    { filename: label + '-copilot-autogrow.js' });
+  let reads = 0;
+  const writes = [];
+  const style = {};
+  Object.defineProperty(style, 'height', {
+    configurable: true,
+    get() { return writes.length ? writes[writes.length - 1] : ''; },
+    set(value) { writes.push(value); }
+  });
+  const el = { style };
+  Object.defineProperty(el, 'scrollHeight', { get() { reads++; return measuredHeight; } });
+  ctx.autogrow(el);
+  assert.strictEqual(reads, 1, label + ' Copilot autogrow must read scrollHeight once');
+  assert.deepStrictEqual(writes, ['auto', expectedHeight + 'px'],
+    label + ' Copilot autogrow changed its reset/final height writes');
+}
+checkCopilotAutogrow(app, 'production', 210, 150);
+checkCopilotAutogrow(stagingApp, 'staging', 90, 90);
 
 console.log('PASS interaction performance: native Settings scroll, loader-safe timers/calls, bounded agents, exact SW lifetime, deferred polish, and da-1.1.1');

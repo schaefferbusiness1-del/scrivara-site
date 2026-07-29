@@ -238,19 +238,17 @@ const FLOOR = 200;
    fourth, and the studio merge and the voice router the fifth and sixth, so
    EAGER_CEILING deliberately does
    NOT move with CEILING. */
-/* 234 -> 195 on 2026-07-29: the boot-deferral batch wrapped 36 single-line
- * eager loaders (Groups A/B/C of the deferral audit - report exporters, note
- * conveniences, one-shot cosmetic fixers) in the idle pattern
- * (requestIdleCallback with a 2500ms timeout, setTimeout(900) fallback,
- * s.async=true). Counted by THIS file's own detector after the change:
- * 195 eager / 50 deferred. The numbers are read from the run, never
- * hand-predicted, because the 400-char lookbehind classifies each name at its
- * FIRST occurrence in the file, which for several assets is a comment far
- * above the loader. Floor set 20 below the ceiling per the failure message's
- * own instruction, so the win is locked in and cannot erode back one feature
- * at a time. */
-const EAGER_CEILING = 195;
-const EAGER_FLOOR = 175;
+/* 234 -> 196 on 2026-07-29: the boot-deferral batch leaves 34 safe
+ * single-line loaders in the idle pattern. Patient Reach and Code Table were
+ * restored to the ordered eager tail after measured first-use dependency
+ * failures. Counted by THIS file's detector after the correction:
+ * 196 eager / 49 deferred. Patient Reach is already classified eager because
+ * its first textual reference precedes its loader; the exact loader contract
+ * is therefore enforced in late-surfaces-stay-deferred.test.js. Floor remains
+ * 20 below the ceiling per the failure message's own instruction, so the
+ * remaining win cannot erode back one feature at a time. */
+const EAGER_CEILING = 196;
+const EAGER_FLOOR = 176;
 
 /* A window of source before the reference is enough to tell how the insertion
  * is scheduled: these loader lines are single self-contained IIFEs. */

@@ -30,10 +30,10 @@ const TRANCHE = [
   'feat_mls_calbox_uniform.js',
   'feat_mls_avs_label_unify.js',
   'feat_mls_lastseen_unify.js',
-  /* 2026-07-29 boot-deferral batch: 36 more single-line eager loaders moved to
+  /* 2026-07-29 boot-deferral batch: 34 safe single-line loaders remain on
    * the idle pattern (requestIdleCallback + 2500ms timeout + s.async=true).
-   * Listed here are the 17 whose loader line carries the literal
-   * data-mls-asset="name" this check greps for; the other 19 use the
+   * Listed here are the 18 whose loader line carries the literal
+   * data-mls-asset="name" this check greps for; the other 16 use the
    * var A="name" / forEach / id-guard forms and are policed by the
    * boot-script-budget eager ceiling instead. */
   'feat_mls_history_exact.js',
@@ -45,8 +45,6 @@ const TRANCHE = [
   'feat_mls_settings_exact.js',
   'feat_mls_widgetinsert.js',
   'feat_mls_datalink_exact.js',
-  'feat_mls_patient_reach_v2.js',
-  'feat_mls_code_table.js',
   'feat_mls_contrast_fix.js',
   'feat_mls_uifix_20260624.js',
   'feat_mls_clinicaltools_scroll.js',
@@ -73,6 +71,16 @@ for (const name of TRANCHE) {
   assert(line.indexOf("s.async=true") >= 0,
     name + ' loads with async=false - it re-serializes the main thread it was moved off of');
 }
+
+/* 2026-07-29: Procedure Report snapshots RVU values on first mount, so its
+ * deferred loader must wait for the RVU script or reach a bounded fallback. */
+const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260722lib2'"));
+assert(procedureLoaderLine && procedureLoaderLine.includes('function waitForRvu(tries)') &&
+  procedureLoaderLine.includes('window.__mlsRVU||tries>=30') &&
+  procedureLoaderLine.includes('setTimeout(function(){waitForRvu(tries+1);},100)'),
+  'Procedure Report can race RVU and freeze fallback totals into its first render');
+assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260722lib2/g) || []).length, 1,
+  'Procedure Report must retain one bounded production loader');
 
 /* Patient rows now emit the exact final last-seen label themselves. Keeping
  * the old observer out of the loader is stronger than merely deferring it:

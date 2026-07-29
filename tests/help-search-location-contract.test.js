@@ -23,7 +23,7 @@ assert(!directory.includes("where:'Top bar -> Templates'") && !directory.include
 assert(directory.includes("route.indexOf('reach:') === 0") && directory.includes("mode:'dialog',source:'feature-directory'"), 'Help/Find context actions must open compact Reach dialogs');
 assert(directory.includes("if(typeof window.showView==='function') window.showView('studio')") &&
   directory.includes('function focusStudyPrompt(tries)') &&
-  directory.includes('if(tries<16)focusStudyPrompt(tries+1)') &&
+  directory.includes('if(tries<100)focusStudyPrompt(tries+1)') &&
   directory.includes("document.getElementById('mlsStudyPrompt')"),
   'Help/Find cannot navigate to and recover focus when the natural-language study builder mounts late');
 assert(directory.includes('window.__mlsFeatureDirectory = DIR') && directory.includes('window.mlsFeatureHelpAnswer = helpAnswer') && directory.includes('window.mlsOpenFeature = openFeature'), 'directory is not published to both answer and navigation owners');

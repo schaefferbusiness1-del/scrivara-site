@@ -57,6 +57,19 @@ assert(sanitize.includes('window.__mlsPullBusyAt') && sanitize.includes('.state.
   'the sanitize sweep must stand down while a pull is running');
 assert(sanitize.includes('if (pulling) { cleanRuns = 0; return; }'),
   'a stood-down pass must not count toward self-retirement');
+const continuousStart = connect.indexOf('CONTINUOUS SUMMARY SCRUB');
+const continuousEnd = connect.indexOf('var iv = null; try { iv = setInterval(scrub, 2500);', continuousStart);
+const continuous = connect.slice(continuousStart, continuousEnd);
+assert(continuous.includes('window.__mlsPullBusyAt') && continuous.includes('.state.running'),
+  'Continuous Scrub must stand down while a pull is running');
+assert(continuous.indexOf('if (pulling) return;') < continuous.indexOf('st8.lastScrubVer = v8'),
+  'Continuous Scrub must not stamp a busy store version as clean');
+const baseStart = connect.indexOf("try { if (window.__mlsSummarySanitize) return; }");
+const baseEnd = connect.indexOf('function tick() { wrapIngest(); wrapSaveChart(); scrubExisting(); }', baseStart);
+const baseSanitize = connect.slice(baseStart, baseEnd);
+assert(baseSanitize.includes('window.__mlsPullBusyAt') && baseSanitize.includes('.state.running') &&
+  baseSanitize.indexOf('if (pulling) return;') < baseSanitize.indexOf('window.getPatients'),
+  'base startup scrub must defer before reading or rewriting the roster during a pull');
 assert(si.includes('maxChanges: 12, maxDelayMs: 15000'),
   'the pull batch flushes at the clamp ceiling, not every 4 upserts');
 assert(si.includes('if (isFn(window.upsertPatient)) window.upsertPatient(arr[i]);'),

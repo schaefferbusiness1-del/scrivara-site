@@ -145,6 +145,76 @@ assert(!/if \(c && c !== s\) \{ p\.summary = c; fixed\+\+; try \{ if \(typeof wi
 assert(connect.includes('window.__mlsSanitizeV2.retired = true;'), 'sanitize sweep no longer self-retires');
 assert(connect.includes('cleanRuns >= 5'), 'sanitize self-retire threshold changed unexpectedly');
 
+/* ---------- 6c. chart structuring persists one outer batch ---------- */
+const chartStart = connect.indexOf("try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.1.0') return; }");
+const chartEnd = connect.indexOf('window.__mlsChartStructure_revert = function ()', chartStart);
+assert(chartStart >= 0 && chartEnd > chartStart, 'Chart Structure slice is missing');
+const chartStructure = connect.slice(chartStart, chartEnd);
+assert(!chartStructure.includes('if (changed) upsert(p);'),
+  'automatic chart structuring returned to one full-store upsert per patient');
+assert.strictEqual((chartStructure.match(/sweepPatient\(ps\[i\], true\)/g) || []).length, 2,
+  'automatic and manual Chart Structure callers must both defer row persistence');
+assert.strictEqual((chartStructure.match(/persistSweep\(ps, dirty\);/g) || []).length, 2,
+  'automatic and manual Chart Structure callers must both persist one outer batch');
+assert.strictEqual((chartStructure.match(/else ps\[i\]\._mlsStructuredV1 = priorStructured;/g) || []).length, 2,
+  'a shared outer save must restore unchanged rows before persisting the batch');
+assert.strictEqual((chartStructure.match(/window\.savePatients\(ps\)/g) || []).length, 1,
+  'Chart Structure must have exactly one normal-path batch save');
+const chartSweepStart = chartStructure.indexOf('function sweep() {');
+const chartVersionStamp = chartStructure.indexOf('STATS.lastSweepVer = vNow;', chartSweepStart);
+const chartBusyReturn = chartStructure.indexOf('if (pulling) return;', chartSweepStart);
+assert(chartBusyReturn >= 0 && chartBusyReturn < chartVersionStamp,
+  'Chart Structure must not stamp a pull-busy store version as clean');
+
+const persistStart = chartStructure.indexOf('function persistSweep(ps, dirty) {');
+const persistEnd = chartStructure.indexOf('\n  function sweep() {', persistStart);
+assert(persistStart >= 0 && persistEnd > persistStart, 'Chart Structure batch helper is missing');
+const persistCtx = { saveCalls: 0, syncCalls: 0, upsertCalls: 0, window: {}, Date };
+persistCtx.window.savePatients = function (rows) { persistCtx.saveCalls++; persistCtx.savedRows = rows; };
+persistCtx.window.syncPatientToServer = function () { persistCtx.syncCalls++; };
+vm.createContext(persistCtx);
+vm.runInContext(
+  "var isFn=function(f){return typeof f==='function';};" +
+  'var upsert=function(){upsertCalls++;};' +
+  chartStructure.slice(persistStart, persistEnd) +
+  ';this.persistSweep=persistSweep;',
+  persistCtx, { filename: 'chart-structure-batch.js' });
+const chartDirty = Array.from({ length: 8 }, function (_, i) {
+  return { id: 'synthetic-' + i, problems: 'Synthetic problem', meds: 'Synthetic medication',
+    proof: { sentinel: i }, visits: [{ date: '2026-07-01', raw: 'Synthetic visit' }] };
+});
+persistCtx.persistSweep(chartDirty, chartDirty.slice());
+assert.strictEqual(persistCtx.saveCalls, 1, 'eight chart repairs must produce one local save');
+assert.strictEqual(persistCtx.upsertCalls, 0, 'normal batch path must produce zero per-row upserts');
+assert.strictEqual(persistCtx.syncCalls, 8, 'every dirty chart row must retain its server mirror');
+chartDirty.forEach(function (p, i) {
+  assert(Number(p.updated) > 0 && p.proof.sentinel === i && p.visits.length === 1 && p.problems && p.meds,
+    'batch persistence changed a clinical/proof field or failed to stamp updated');
+});
+
+/* ---------- 6b. every automatic summary scrub batches its store write ---------- */
+const continuousStart = connect.indexOf('CONTINUOUS SUMMARY SCRUB');
+const continuousEnd = connect.indexOf('var iv = null; try { iv = setInterval(scrub, 2500);', continuousStart);
+assert(continuousStart >= 0 && continuousEnd > continuousStart, 'Continuous Scrub slice is missing');
+const continuousScrub = connect.slice(continuousStart, continuousEnd);
+assert(!continuousScrub.includes('upsertPatient('), 'Continuous Scrub returned to one full-store upsert per fixed patient');
+assert.strictEqual((continuousScrub.match(/savePatients\(ps\)/g) || []).length, 1,
+  'Continuous Scrub must make exactly one local batch save');
+assert(continuousScrub.includes('dirty.push(p)') && continuousScrub.includes('syncPatientToServer(dirty[d])') &&
+  continuousScrub.includes('p.updated = Date.now()'),
+  'Continuous Scrub lost dirty-row collection, timestamping, or server mirrors');
+
+const baseSanitizeStart = connect.indexOf("try { if (window.__mlsSummarySanitize) return; }");
+const baseSanitizeEnd = connect.indexOf('window.__mlsSummarySanitize_revert', baseSanitizeStart);
+assert(baseSanitizeStart >= 0 && baseSanitizeEnd > baseSanitizeStart, 'base sanitizer slice is missing');
+const baseSanitize = connect.slice(baseSanitizeStart, baseSanitizeEnd);
+assert(!baseSanitize.includes('upsertPatient('), 'base startup scrub returned to one full-store upsert per fixed patient');
+assert.strictEqual((baseSanitize.match(/savePatients\(ps\)/g) || []).length, 1,
+  'base startup scrub must make exactly one local batch save');
+assert(baseSanitize.includes('dirty.push(p)') && baseSanitize.includes('syncPatientToServer(dirty[d])') &&
+  baseSanitize.includes('p.updated = Date.now()'),
+  'base startup scrub lost dirty-row collection, timestamping, or server mirrors');
+
 /* ---------- veil floor (also pinned by boot-loading-visual-contract) ---------- */
 assert(app.includes('const SF_GATE_MIN_MS=300'), 'veil anti-flash floor regressed (owner-directed near-instant first load, 2026-07-20)');
 

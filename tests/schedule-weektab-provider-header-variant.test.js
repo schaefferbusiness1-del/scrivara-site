@@ -16,18 +16,20 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-/* 2026-07-29: this contract pins the STAGED 3.0.32 candidate reader. The
-   candidate lives in extension-candidates/ so the published 3.0.31 repo bytes
-   stay coherent with the live feed; on publish, background.js itself carries
-   these changes and the candidate path naturally wins either way. */
-const candidatePath = path.join(root, 'extension-candidates', '3.0.32', 'background.js');
-const background = fs.readFileSync(fs.existsSync(candidatePath) ? candidatePath : path.join(root, 'background.js'), 'utf8');
+/* 2026-07-29: this contract pins the STAGED candidate reader. Candidates live
+   in extension-candidates/ so the published repo bytes stay coherent with the
+   live feed; on publish, background.js itself carries these changes and the
+   candidate path naturally wins either way. Newest candidate wins. */
+const candidateChain = ['3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const background = fs.readFileSync(candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js'), 'utf8');
 
 for (const marker of [
   'function _legacyHeaderTextsL(list)',
   '_legacyHeaderTextsL(list).forEach(function(raw)',
   '_legacyHeaderTextsL(list).forEach(function(h)',
-  "list.querySelectorAll('[class~=\"appointment-header2\"]')"
+  "list.querySelectorAll('[class~=\"appointment-header2\"]')",
+  "reason: 'attribution-coverage'",
+  "corroboratedBy: 'complete-bound-schedule'"
 ]) assert(background.includes(marker), 'missing header-variant invariant: ' + marker);
 
 const nameStart = background.indexOf('function mlsParseName(raw)');
@@ -210,6 +212,67 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
     assert.deepStrictEqual(plain(result.providers), ['Matthew_Schaeffer_MD']);
     assert.strictEqual(result.providerRosterReceipt.complete, true);
     assert.strictEqual(result.appts[0].provider, 'Matthew_Schaeffer_MD');
+  }
+
+  /* 7. Attribution-coverage corroboration (rev-2, 3.0.33): the week-tab
+     surface can never produce the structured end/bounds/restoration roster
+     proof, so a legacy-unverified receipt may upgrade to complete:true with
+     reason 'attribution-coverage' ONLY when the schedule receipt is complete
+     and request-bound, EVERY parsed row carries a provider attribution, the
+     attribution set is a subset of the observed header set, and at least one
+     header was observed. Anything less keeps the exact refusal shipped today.
+     Exercised against the extracted handler block itself. */
+  {
+    const acStart = background.indexOf('/* 2026-07-29 attribution-coverage corroboration');
+    const acEnd = background.indexOf('var __receipt = {', acStart);
+    assert(acStart >= 0 && acEnd > acStart, 'could not extract the attribution-coverage block');
+    const upgrade = new Function(
+      '__providerRosterReceipt', '__complete', '__authoritativeEmpty', '__schedRequestId', '__providerRoster', '__mlsM',
+      background.slice(acStart, acEnd) + '\nreturn __providerRosterReceipt;'
+    );
+    const baseReceipt = () => ({
+      complete: false, partial: true, reason: 'legacy-unverified',
+      observedCount: 2, requestId: 'rq-77', targetDate: '2026-08-04'
+    });
+    const roster = [
+      { stableKey: 'athena:doctor one md', raw: 'Doctor_One_MD', name: 'Doctor_One_MD' },
+      { stableKey: 'athena:doctor two md', raw: 'Doctor_Two_MD', name: 'Doctor_Two_MD' }
+    ];
+    const rows = (p1, p2) => ({ appts: [
+      { time: '9:00 AM', name: 'Adams Peter', provider: p1 },
+      { time: '9:20 AM', name: 'Baker Rose', provider: p2 }
+    ] });
+
+    const upgraded = upgrade(baseReceipt(), true, false, 'rq-77', roster, rows('Doctor_One_MD', 'Doctor_Two_MD'));
+    assert.strictEqual(upgraded.complete, true, 'all-attributed bound complete schedule must corroborate the roster');
+    assert.strictEqual(upgraded.partial, false);
+    assert.strictEqual(upgraded.reason, 'attribution-coverage');
+    assert.strictEqual(upgraded.attributionCoverage.rows, 2);
+    assert.strictEqual(upgraded.attributionCoverage.corroboratedBy, 'complete-bound-schedule');
+
+    const unattributed = upgrade(baseReceipt(), true, false, 'rq-77', roster, rows('Doctor_One_MD', ''));
+    assert.strictEqual(unattributed.complete, false, 'a row missing attribution must keep the refusal');
+    assert.strictEqual(unattributed.reason, 'legacy-unverified');
+
+    const foreign = upgrade(baseReceipt(), true, false, 'rq-77', roster, rows('Doctor_One_MD', 'Doctor_Three_MD'));
+    assert.strictEqual(foreign.complete, false, 'an attribution outside the header set must keep the refusal');
+
+    const unbound = upgrade(baseReceipt(), true, false, 'rq-88', roster, rows('Doctor_One_MD', 'Doctor_Two_MD'));
+    assert.strictEqual(unbound.complete, false, 'an unbound schedule receipt must keep the refusal');
+
+    const incompleteSchedule = upgrade(baseReceipt(), false, false, 'rq-77', roster, rows('Doctor_One_MD', 'Doctor_Two_MD'));
+    assert.strictEqual(incompleteSchedule.complete, false, 'an incomplete schedule must keep the refusal');
+
+    const emptyDay = upgrade(baseReceipt(), true, true, 'rq-77', roster, { appts: [] });
+    assert.strictEqual(emptyDay.complete, false, 'an authoritative-empty day must not mint a roster');
+
+    const noRows = upgrade(baseReceipt(), true, false, 'rq-77', roster, { appts: [] });
+    assert.strictEqual(noRows.complete, false, 'zero parsed rows must not mint a roster');
+
+    const alreadyComplete = upgrade(
+      Object.assign(baseReceipt(), { complete: true, partial: false, reason: 'complete' }),
+      true, false, 'rq-77', roster, rows('Doctor_One_MD', 'Doctor_Two_MD'));
+    assert.strictEqual(alreadyComplete.reason, 'complete', 'an already-complete receipt must keep its own reason');
   }
 
   console.log('PASS week-tab header-variant roster corroboration with unchanged fail-closed refusals');

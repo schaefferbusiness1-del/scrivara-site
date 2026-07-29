@@ -10,8 +10,18 @@
  *     expectedCount - provenNonClinical === parsedCount;
  *   - any identity-bearing or still-mutating row keeps the day incomplete
  *     exactly as before (kind:'mutating'). A patient row is never guessed.
- * Live shape being pinned: Friday 2026-07-31 refused deterministically with
- * expectedCount 7 / parsedCount 6 because one declared row mutated mid-verify. */
+ *
+ * Rev-2 (3.0.33) SNAPSHOT contract: live DOM walks lose the race against
+ * Athena's React check-in widget, which continuously replaces the row subtree
+ * (live-proven Friday 2026-07-31, appt 45532929: the row vanished between two
+ * probes seconds apart while ONE synchronous outerHTML capture read it
+ * intact). The reader captures outerHTML in ONE synchronous read and parses
+ * identity from that STRING (_snapIdentity): a string cannot churn. The
+ * First-Last capitalized-pair shape is accepted ONLY when the same row
+ * carries an appointment id AND the name sits in a patient-bound region
+ * (encounter-link anchor / patient-name node / data-patient-name) - the
+ * id + confident-name bar the structured lane already uses. Conflicting ids,
+ * foreign times, and multiple distinct region names stay refused as mutating. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -19,22 +29,30 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-/* 2026-07-29: this contract pins the STAGED 3.0.32 candidate reader. The
-   candidate lives in extension-candidates/ so the published 3.0.31 repo bytes
-   stay coherent with the live feed; on publish, background.js itself carries
-   these changes and the candidate path naturally wins either way. */
-const candidatePath = path.join(root, 'extension-candidates', '3.0.32', 'background.js');
-const background = fs.readFileSync(fs.existsSync(candidatePath) ? candidatePath : path.join(root, 'background.js'), 'utf8');
+/* 2026-07-29: this contract pins the STAGED candidate reader. Candidates live
+   in extension-candidates/ so the published repo bytes stay coherent with the
+   live feed; on publish, background.js itself carries these changes and the
+   candidate path naturally wins either way. Newest candidate wins. */
+const candidateChain = ['3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const backgroundPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
+const background = fs.readFileSync(backgroundPath, 'utf8');
 
-/* ---- source markers: the receipt contract must exist verbatim ---- */
+/* ---- source markers: the receipt + snapshot contract must exist verbatim ---- */
 for (const marker of [
   "unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,",
   "kind === 'no-identity-cell'",
   '__nonClinicalAccounted',
   '__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0',
   "out.diag.unverifiableRows=_unvRowsS",
-  "out.diag.unverifiableRows=_legacyUnvRowsL"
-]) assert(background.includes(marker), 'missing re-verify receipt invariant: ' + marker);
+  "out.diag.unverifiableRows=_legacyUnvRowsL",
+  'function _snapCapture(row)',
+  'function _snapIdentity(html,expectTime,knownId)',
+  'row.outerHTML',
+  'out.diag.snapshotRecovered=_lgSnapRecovL',
+  'out.diag.snapshotRecovered=_snapRecoveredS',
+  'snapshot:a._snap===true',
+  'snapshot:p._snapHad===true'
+]) assert(background.includes(marker), 'missing re-verify/snapshot invariant: ' + marker);
 
 /* ---- extract the packaged reader (the function Chrome actually injects) ---- */
 const nameStart = background.indexOf('function mlsParseName(raw)');
@@ -73,6 +91,74 @@ function receiptFor(diag, coverageComplete) {
   );
 }
 
+/* ---- extract the snapshot toolkit and unit-test _snapIdentity directly ---- */
+const helperStart = background.indexOf('var RT=/', readerStart);
+const helperEnd = background.indexOf('function cp(s)', helperStart);
+const snapStart = background.indexOf('function _snapCapture(row)', readerStart);
+const snapEnd = background.indexOf('/* Strong legacy provider-scope proof', snapStart);
+assert(helperStart > 0 && helperEnd > helperStart && snapStart > 0 && snapEnd > snapStart,
+  'could not extract the snapshot toolkit');
+const snapKit = vm.runInContext(
+  background.slice(nameStart, readerStart) +
+  '\nvar out={diag:{}};\n' +
+  background.slice(helperStart, helperEnd) +
+  '\n' + background.slice(snapStart, snapEnd) +
+  '\n({ _snapIdentity, _snapPairName, _snapText });',
+  vm.createContext({ Date, Math }),
+  { timeout: 5000 }
+);
+
+const CHURN_HTML =
+  '<li class="filled-appointment-row" data-appointment-id="45532929">' +
+  '<span>9:40 AM</span>' +
+  '<a class="encounter-link" href="/22724/6/ax/encounter/1/checkin">Reed Piper</a>' +
+  '<span>68yo M 01-01-1958</span>' +
+  '<div class="react-app-container">Check In</div>' +
+  '</li>';
+const DEBRIS_HTML_NO_ID =
+  '<li class="filled-appointment-row">' +
+  '<span>Lobby 12 Annex 34</span><span>9:40 AM</span>' +
+  '<a class="encounter-link">Reed Piper</a>' +
+  '</li>';
+const DEBRIS_HTML_WITH_ID = DEBRIS_HTML_NO_ID.replace(
+  'class="filled-appointment-row"', 'class="filled-appointment-row" data-appointment-id="45532929"');
+
+{
+  // u1: the live Friday shape - intact snapshot verifies id + region name + chip DOB
+  const u1 = snapKit._snapIdentity(CHURN_HTML, '9:40 AM', '45532929');
+  assert.strictEqual(u1.ok, true, JSON.stringify(u1));
+  assert.strictEqual(u1.name, 'Reed Piper');
+  assert.strictEqual(u1.appointmentId, '45532929');
+  assert.strictEqual(u1.time, '9:40 AM');
+  assert.strictEqual(u1.dob, '01/01/1958', 'age+sex chip DOB was not self-validated from the string snapshot');
+
+  // u2: the SAME region name WITHOUT an appointment id is not accepted (id gate)
+  const u2 = snapKit._snapIdentity(DEBRIS_HTML_NO_ID, '9:40 AM', '');
+  assert.strictEqual(u2.ok, false, 'First-Last region name verified without an appointment id');
+  assert.strictEqual(u2.noIdentity, false, 'an identity-bearing row was classified non-clinical');
+
+  // u3: identical row WITH the id verifies through the patient-bound region
+  const u3 = snapKit._snapIdentity(DEBRIS_HTML_WITH_ID, '9:40 AM', '');
+  assert.strictEqual(u3.ok, true, JSON.stringify(u3));
+  assert.strictEqual(u3.name, 'Reed Piper');
+
+  // u4: two distinct patient-bound region names are ambiguous - refused even with id
+  const u4 = snapKit._snapIdentity(
+    CHURN_HTML.replace('</li>', '<a class="encounter-link">Sally Jones</a></li>'), '9:40 AM', '45532929');
+  assert.strictEqual(u4.ok, false, 'a two-patient row was guessed');
+
+  // u5: a snapshot showing a different time is a foreign row - refused
+  assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '8:00 AM', '45532929').ok, false);
+
+  // u6: a snapshot id conflicting with the caller's stable key is a foreign row - refused
+  assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '9:40 AM', '99999999').ok, false);
+
+  // u7: an identity-less hold snapshot classifies non-clinical
+  const u7 = snapKit._snapIdentity('<li class="filled-appointment-row"><span>9:40 AM</span> 30 min hold</li>', '9:40 AM', '');
+  assert.strictEqual(u7.ok, false);
+  assert.strictEqual(u7.noIdentity, true, JSON.stringify(u7));
+}
+
 /* ---- pure equation pins (the exact Friday arithmetic) ---- */
 {
   const nonClinical = { unverifiableRows: [{ kind: 'no-identity-cell', time: '9:40 AM' }], unverifiableRowCount: 1 };
@@ -98,6 +184,7 @@ function appointment(id, text, options = {}) {
     id: 'react-' + id,
     get textContent() { return getText(); },
     children: [],
+    outerHTML: options.outerHTML,
     getAttribute(name) {
       if (name === 'data-appointment-id') return (options.appointmentId || '');
       return '';
@@ -139,6 +226,10 @@ function scheduleDoc({ columns, headers }) {
     defaultView: { getComputedStyle() { return { overflowX: 'hidden', overflowY: 'hidden' }; } },
     getElementById(id) { return appointments.find(a => a.id === id) || null; },
     querySelector(selector) {
+      if (selector.includes('data-appointment-id="')) {
+        const m = selector.match(/data-appointment-id="([^"]+)"/);
+        return (m && appointments.find(a => a.getAttribute('data-appointment-id') === m[1])) || null;
+      }
       if (selector.includes('PatientAppointment_appointment-container')) return appointments[0] || null;
       return null;
     },
@@ -159,7 +250,8 @@ function legacyRow(text, options = {}) {
     id: options.id || '',
     get textContent() { return getText(); },
     children: [],
-    getAttribute() { return ''; },
+    outerHTML: options.outerHTML,
+    getAttribute(name) { return (options.attrs && options.attrs[name]) || ''; },
     getBoundingClientRect() { return { left: 0, right: 240, top: 0, width: 240 }; },
     querySelector() { return null; },
     querySelectorAll() { return []; }
@@ -315,5 +407,77 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
       'legacy identity-bearing unverifiable row completed the day');
   }
 
-  console.log('PASS mutating-row re-verify, non-clinical receipt naming, completeness equation, and fail-closed identity refusal');
+  /* 6. LEGACY react-churn: live reads are ALWAYS torn (the check-in widget
+     replaces the subtree), but the single synchronous outerHTML snapshot is
+     intact - the row verifies from the string with id, region name, and
+     self-validated chip DOB. This is the exact Friday 2026-07-31 shape. */
+  {
+    const provider = legacyRow('Matthew_Schaeffer_MD');
+    const good = legacyRow('10:40 AM Field, Sarah Office visit', { id: 'legacy-good-3' });
+    const churn = legacyRow(() => '9:40 AM', {
+      id: 'legacy-churn',
+      attrs: { 'data-appointment-id': '45532929' },
+      outerHTML: CHURN_HTML
+    });
+    const result = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc([legacyContainer([good, churn], provider)], [provider]), {});
+    assert.strictEqual(result.diag.parsedCount, 2, 'react-churn row was not snapshot-recovered: ' + JSON.stringify(result.diag));
+    assert.strictEqual(result.diag.unnamedCount, 0);
+    assert.strictEqual(Number(result.diag.snapshotRecovered || 0), 1, 'snapshot recovery was not accounted');
+    assert.deepStrictEqual(plain(result.diag.unverifiableRows || []), []);
+    const recovered = result.appts.find(a => a.time === '9:40 AM');
+    assert(recovered, 'snapshot-recovered row missing from appts');
+    assert.strictEqual(recovered.name, 'Reed Piper');
+    assert.strictEqual(recovered.appointmentId, '45532929');
+    assert.strictEqual(recovered.dob, '01/01/1958');
+    assert.strictEqual(recovered.provider, 'Matthew_Schaeffer_MD');
+    assert.strictEqual(receiptFor(result.diag, true).complete, true);
+  }
+
+  /* 7. STRUCTURE react-churn: same defect on the structured surface - the
+     pending anchor (appointment id) relocates the row and the snapshot
+     verifies it through the normal dedup. */
+  {
+    const counter = { pulls: 0 };
+    const good = appointment('good7', '8:00 AM Smith, John (58yo M)');
+    const churn = appointment('churn7', () => '9:40 AM', {
+      appointmentId: '45532929',
+      outerHTML: CHURN_HTML.replace('filled-appointment-row', 'PatientAppointment_appointment-container')
+    });
+    const col = countingColumn(0, [good, churn], counter);
+    const result = await runtime.mlsSchedDomInline(scheduleDoc({
+      columns: [col], headers: [header('Doctor_One_MD', 0)]
+    }), {});
+    assert.strictEqual(result.diag.parsedCount, 2, 'structure churn row was not snapshot-recovered: ' + JSON.stringify(result.diag));
+    assert.strictEqual(result.diag.unnamedCount, 0);
+    assert.strictEqual(Number(result.diag.snapshotRecovered || 0), 1);
+    const recovered = result.appts.find(a => a.appointmentId === '45532929');
+    assert(recovered, 'structure snapshot-recovered row missing');
+    assert.strictEqual(recovered.name, 'Reed Piper');
+    assert.strictEqual(recovered.provider, 'Doctor_One_MD');
+    assert.strictEqual(receiptFor(result.diag, result.diag.viewportCoverage.complete).complete, true);
+  }
+
+  /* 8. LEGACY react-churn ambiguity: a snapshot naming TWO patient-bound
+     regions is never guessed - the row stays mutating and the day refuses. */
+  {
+    const provider = legacyRow('Matthew_Schaeffer_MD');
+    const good = legacyRow('10:40 AM Field, Sarah Office visit', { id: 'legacy-good-4' });
+    const churn = legacyRow(() => '9:40 AM', {
+      id: 'legacy-churn-2',
+      attrs: { 'data-appointment-id': '45532929' },
+      outerHTML: CHURN_HTML.replace('</li>', '<a class="encounter-link">Sally Jones</a></li>')
+    });
+    const result = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc([legacyContainer([good, churn], provider)], [provider]), {});
+    assert.strictEqual(result.diag.parsedCount, 1, 'ambiguous two-patient snapshot was imported');
+    assert(!result.appts.some(a => /piper|jones/i.test(a.name || '')), 'a guessed patient name leaked');
+    const rows = plain(result.diag.unverifiableRows || []);
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].kind, 'mutating');
+    assert.strictEqual(rows[0].snapshot, true, 'refusal did not record that a snapshot was read');
+    assert.strictEqual(receiptFor(result.diag, true).complete, false);
+  }
+
+  console.log('PASS mutating-row re-verify, snapshot string verification, non-clinical receipt naming, and fail-closed identity refusal');
 })().catch(error => { console.error(error); process.exit(1); });

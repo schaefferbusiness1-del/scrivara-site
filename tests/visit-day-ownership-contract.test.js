@@ -34,13 +34,87 @@ const apptDay = functionSource(easy, 'apptDay', 'rowKey');
 assert(apptDay.includes('a.appt_date || a.day_local'),
   'active Easy must bucket exact rows by filed appt_date before recomputed day_local');
 
+const timeContext = functionSource(easy, 'timeContext', 'lateLine');
+assert(timeContext.includes('var allRows = arguments.length ? arguments[0] : dayRows(visitDay());'),
+  'Home time context cannot consume one selected-day appointment snapshot');
+assert(timeContext.includes('var rows = allRows.filter'),
+  'Home time context does not preserve seen filtering over the supplied snapshot');
+
 const homeSig = functionSource(easy, 'homeSig', 'recBannerHtml');
 assert(homeSig.includes("visitDay() + '|'"), 'Home invalidation is not selected-day owned');
-assert(homeSig.includes('dayRows(visitDay()).length'), 'Home invalidation ignores selected-day rows');
+assert(homeSig.includes('var allRows = arguments.length ? arguments[0] : dayRows(visitDay());'),
+  'Home invalidation cannot own or consume one selected-day snapshot');
+assert(homeSig.includes('var tc = arguments.length > 1 ? arguments[1] : timeContext(allRows);'),
+  'Home invalidation recomputes time context when the caller already has it');
+assert(homeSig.includes("'|' + allRows.length + '|'"),
+  'Home invalidation must count every selected-day row, including seen rows');
+assert(!homeSig.includes('dayRows(visitDay()).length'),
+  'Home invalidation returned to a second selected-day appointment scan');
 
 const renderHome = functionSource(easy, 'renderHome', 'hasPrep');
 assert(renderHome.includes('var rows = dayRows(visitDay());'), 'Home does not render the selected day');
+assert(renderHome.includes('var tc = timeContext(rows), late = lateLine(tc);'),
+  'Home render does not reuse its selected-day snapshot for time context');
+assert(renderHome.includes('S._homeSig = homeSig(rows, tc);'),
+  'Home render does not reuse its snapshot and time context for invalidation');
+assert.strictEqual((renderHome.match(/dayRows\(visitDay\(\)\)/g) || []).length, 1,
+  'Home render performs more than one selected-day appointment scan');
 assert(renderHome.includes('fmtToday()'), 'Home does not render the selected date label');
+
+const pollStart = easy.indexOf('pollIv = setInterval(function () {');
+const pollEnd = easy.indexOf('\n    }, 700);', pollStart);
+assert(pollStart >= 0 && pollEnd > pollStart, 'active Easy poll could not be bounded');
+const poll = easy.slice(pollStart, pollEnd);
+const pollHomeStart = poll.indexOf("} else if (S.mode === 'doctor' && S.screen === 'home') {");
+const pollChooseStart = poll.indexOf("} else if (S.mode === 'doctor' && S.screen === 'choose') {", pollHomeStart);
+assert(pollHomeStart >= 0 && pollChooseStart > pollHomeStart, 'active Easy Home poll branch could not be bounded');
+const pollHome = poll.slice(pollHomeStart, pollChooseStart);
+assert.strictEqual((pollHome.match(/dayRows\(visitDay\(\)\)/g) || []).length, 1,
+  'stable Home poll performs more than one selected-day appointment scan');
+assert(pollHome.includes('var rows = dayRows(visitDay()), tc = timeContext(rows);'),
+  'stable Home poll does not derive time context from its one snapshot');
+assert(pollHome.includes('homeSig(rows, tc)') && pollHome.includes('lateLine(tc)'),
+  'stable Home poll does not share one context between invalidation and lateness');
+
+/* 2026-07-29: execute the active functions with generated rows. The signature
+ * must scan once when called alone, scan zero times with a caller snapshot,
+ * and count all scheduled rows rather than only the unseen time-context rows. */
+{
+  const generatedRows = [
+    { id: 'row-a', seen: false },
+    { id: 'row-b', seen: true },
+    { id: 'row-c', seen: false }
+  ];
+  const ctx = {
+    S: { autoPull: 'idle' },
+    dayRowsCalls: 0,
+    dayRows(day) { ctx.dayRowsCalls++; assert.strictEqual(day, '2026-07-29'); return generatedRows; },
+    visitDay() { return '2026-07-29'; },
+    visitIsToday() { return false; },
+    isSeen(row) { return row.seen; },
+    rowKey(row) { return row.id; },
+    lateLine() { return ''; },
+    isRecording() { return false; },
+    isFn(value) { return typeof value === 'function'; },
+    window: { verifiedActivePatient() { return null; }, activePatient() { return null; } },
+    assert
+  };
+  vm.createContext(ctx);
+  vm.runInContext(`${timeContext}\n${homeSig}\nthis.snapshotApi = { timeContext, homeSig };`, ctx);
+
+  const standaloneSig = ctx.snapshotApi.homeSig();
+  assert.strictEqual(ctx.dayRowsCalls, 1, 'standalone Home invalidation must scan appointments exactly once');
+  assert.strictEqual(standaloneSig.split('|')[5], '3',
+    'standalone Home invalidation lost the all-row count when one row was seen');
+
+  ctx.dayRowsCalls = 0;
+  const suppliedContext = ctx.snapshotApi.timeContext(generatedRows);
+  const suppliedSig = ctx.snapshotApi.homeSig(generatedRows, suppliedContext);
+  assert.strictEqual(ctx.dayRowsCalls, 0, 'caller-supplied Home snapshot unexpectedly rescanned appointments');
+  assert.strictEqual(suppliedContext.rows.length, 2, 'time context no longer filters seen rows');
+  assert.strictEqual(suppliedSig.split('|')[5], '3',
+    'caller-supplied Home invalidation counted unseen rows instead of all rows');
+}
 
 const chooseFiltered = functionSource(easy, 'chooseFiltered', 'otherPatientMatches');
 assert(chooseFiltered.includes('dayRows(visitDay())'), 'Choose patient does not filter the selected day');
