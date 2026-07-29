@@ -44,6 +44,19 @@
  *   ax    #analysisView.ax-grid                                (1,1,0)
  *   here  body.mls-sm:not(.mls-sm-practice) #analysisView      (1,2,1)  wins
  *
+ * ONE CELL, ONE PANEL (2026-07-29, owner screenshot: "Practice trends" and the
+ * natural-language study builder painted on top of each other, text over text).
+ * sx does not give every child its own cell — feat_mls_studio_exact.js:98 puts
+ * #mlsSgPro, #mlsStudyRequest, #mls-sg-root and #mlsB39SgWrap all in row 3
+ * spanning 1/-1, and this file put #analysisView there too. So membership in
+ * SECTIONS is not a nicety: a #studioView child that belongs to no section is
+ * never hidden, and an unhidden child of row 3 paints straight through
+ * Practice. Two rules follow, and tests/studio-tabs-show-one-panel.test.js
+ * pins both:
+ *   1. every direct child sx explicitly places must belong to a section, and
+ *   2. no two panels that can be visible together may share a cell — at any
+ *      viewport width, including the stranded-switcher state below.
+ *
  * SHOWING is left to ax where ax is present — its display:grid!important beats
  * showView's inline display:none, so there is no inline fight at all. The only
  * show rule here is for the case where ax did NOT install (its prod-enable
@@ -114,7 +127,31 @@
       key: 'build',
       label: 'Build',
       hint: 'Build a tool, or run a study',
-      members: ['#studioView > .sx-right', '#studioView > #studioResultCard', '#studioView > #mlsB39SgWrap'],
+      /* THE OVERLAP THE OWNER PHOTOGRAPHED (2026-07-29): "Practice trends" and
+         the natural-language study builder painted on top of each other.
+         sx places FOUR study hosts in one full-width cell —
+           feat_mls_studio_exact.js:98
+             #studioView.sx-grid>#mlsSgPro, >#mlsStudyRequest, >#mls-sg-root,
+             >#mlsB39SgWrap { grid-column:1/-1!important; grid-row:3!important }
+         — and css() below puts Practice's #analysisView in that SAME cell.
+         Only #mlsB39SgWrap was ever named here, so #mlsSgPro (the host the
+         natural-language study builder mounts into, feat_mls_study_request.js
+         mount(): `pro.insertBefore(section, details)`) belonged to NO section,
+         got NO hide rule, and stayed visible under every tab. Measured live at
+         b788: #mlsSgPro and #analysisView both at x493 y291 w1320.
+         Every host sx places is named now, so every one of them has a hide
+         path — membership is by selector, so the three that are normally
+         nested rather than direct children cost nothing until a rebuild
+         promotes them (feat_mls_study_request revert() does exactly that to
+         #mls-sg-root). */
+      members: [
+        '#studioView > #mlsSgPro',
+        '#studioView > #mlsStudyRequest',
+        '#studioView > #mls-sg-root',
+        '#studioView > .sx-right',
+        '#studioView > #studioResultCard',
+        '#studioView > #mlsB39SgWrap'
+      ],
       focus: '#studioPrompt'
     }
   ];
@@ -130,14 +167,25 @@
     return KEYS.indexOf(k) >= 0 ? k : 'ask';
   }
 
+  /* The stranded-switcher escape: every section open at once because the way
+     back to them is not on screen. See reconcile(). */
+  function allShown() {
+    return safe(function () { return D.body.classList.contains(BODY_CLASS + '-all'); }, false);
+  }
+
   /* ------------------------------------------------------------------ css */
 
   function css() {
     var out = [];
     SECTIONS.forEach(function (sec) {
       sec.members.forEach(function (sel) {
-        /* !important and this exact specificity are load-bearing — see header. */
-        out.push('body.' + BODY_CLASS + ':not(.' + BODY_CLASS + '-' + sec.key + ') ' + sel + '{display:none!important}');
+        /* !important and this exact specificity are load-bearing — see header.
+           The extra :not(.mls-sm-all) is the stranded-switcher escape: one
+           class now opens every section instead of setting all three section
+           classes at once, which used to switch the full-width promotions on
+           together and put two panels in one cell. Specificity rises from
+           (2,2,1) to (2,3,1) — still above sx (2,1,0) and ax (1,1,0). */
+        out.push('body.' + BODY_CLASS + ':not(.' + BODY_CLASS + '-all):not(.' + BODY_CLASS + '-' + sec.key + ') ' + sel + '{display:none!important}');
       });
     });
     return out.concat([
@@ -154,14 +202,50 @@
          measured, rows 3-6 were empty and Practice opened with 300px of
          nothing under its own switcher. */
       'body.' + BODY_CLASS + ' #studioView > #analysisView{grid-column:1 / -1;grid-row:3;min-width:0}',
+
+      /* ONE CELL, ONE PANEL — the other half of the 2026-07-29 overlap fix.
+         Naming the study hosts as Build members stops them painting over
+         Practice, but sx:98 stacks all FOUR of them on row 3, so on Build
+         #mlsSgPro and #mlsB39SgWrap would still share one cell. Give each its
+         own row, counting on from the result card (sx: row 6, or row 8 at
+         <=980px) in the order mls-connect's own placeOrder() already wants —
+         "result -> advanced SG", mls-connect.js placeOrder(). Consecutive
+         rows, so no empty track is reserved; and the hosts that are normally
+         nested cost nothing while hidden, because a display:none grid item is
+         removed from the grid entirely.
+         !important here is forced, not chosen: sx writes grid-row:3!important
+         at (2,1,0), and only a MORE SPECIFIC !important rule can move it.
+         body.mls-sm #studioView.sx-grid > #X is (2,2,1). Without .sx-grid the
+         selector would be (2,1,1) — a one-element-token margin over sx, which
+         is too thin a thing to rest a layout on. */
+      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsB39SgWrap{grid-row:7!important}',
+      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mls-sg-root{grid-row:8!important}',
+      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:9!important}',
+      /* sx re-stacks itself below 980px (copilot 4, right 5, lock 6, pay 7,
+         result 8), so the study hosts follow it down or they would land on the
+         Pay Reports tile. "No overlap at any width" is the whole point. */
+      '@media (max-width:980px){',
+      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsB39SgWrap{grid-row:9!important}',
+      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mls-sg-root{grid-row:10!important}',
+      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:11!important}}',
+
       /* Only needed when ax did not install: without this Practice renders
          blank and nothing anywhere says why. */
-      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-practice #studioView > #analysisView:not(.ax-grid){display:block!important}',
+      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-practice #studioView > #analysisView:not(.ax-grid),',
+      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-all #studioView > #analysisView:not(.ax-grid){display:block!important}',
       /* When a section is alone on screen it takes the whole width. The
          two-column split existed because Copilot and Build shared the page;
-         they no longer do. */
-      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-ask #studioView > #copilotCard{grid-column:1 / -1!important}',
-      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-build #studioView > .sx-right{grid-column:1 / -1!important}',
+         they no longer do. Both promotions stand down in the stranded-switcher
+         state, where Ask and Build are on screen together: two full-width
+         panels in sx's shared row 4 is the very overlap this file now tests
+         against. */
+      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-ask:not(.' + BODY_CLASS + '-all) #studioView > #copilotCard{grid-column:1 / -1!important}',
+      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-build:not(.' + BODY_CLASS + '-all) #studioView > .sx-right{grid-column:1 / -1!important}',
+      /* Practice's own row is explicit (above) and #mlsSgPro's is sx's row 3.
+         With every section open at once those two are the last pair left in
+         one cell, so Practice auto-places instead: grid auto-placement is
+         collision-free by construction — it only ever uses a free cell. */
+      'body.' + BODY_CLASS + '.' + BODY_CLASS + '-all #studioView > #analysisView{grid-row:auto!important}',
 
       /* ---- the switcher ---- */
       '#' + TABS_ID + '{grid-column:1 / -1;display:flex;align-items:center;gap:6px;flex-wrap:wrap;',
@@ -348,7 +432,11 @@
   function syncAnalysisInline(key) {
     var an = byId('analysisView'), studio = byId('studioView');
     if (!an || !studio) return;
-    var live = key === 'practice' && studio.style.display !== 'none';
+    /* The stranded-switcher state opens every section, and a section whose
+       host is inline display:none is not open — ax would refuse to build and
+       Practice would be the one section the rescue failed to rescue. */
+    var open = key === 'practice' || allShown();
+    var live = open && studio.style.display !== 'none';
     var want = live ? 'block' : 'none';
     if (an.style.display !== want) an.style.display = want;
     if (live) {
@@ -420,19 +508,28 @@
     hoistAnalysis();
     mountTabs();
     mountStarters();
-    if (!current()) select(remembered(), false);
-    else syncAnalysisInline(current());
     /* THE SAME INVARIANT THE CALM VIEWS EARNED: a fold whose route back cannot
        be SEEN is a deleted feature. If the switcher is not rendering, show
-       everything rather than leave two of three sections unreachable. */
+       everything rather than leave two of three sections unreachable.
+       ONE class, not all three section classes: the section classes also drive
+       the full-width promotions, so setting them together used to put Ask's
+       Copilot and Build's tools in sx's shared row 4 — a rescue that recreated
+       the overlap it was rescuing from. .mls-sm-all opens every hide rule and
+       nothing else, and it is REMOVED again the moment the switcher paints, so
+       a transient first-frame measurement cannot strand the page in it. */
     var bar = byId(TABS_ID);
-    if (studio.style.display !== 'none' && bar && !visible(bar)) {
-      KEYS.forEach(function (k) { safe(function () { D.body.classList.add(BODY_CLASS + '-' + k); }); });
+    var stranded = studio.style.display !== 'none' && !!bar && !visible(bar);
+    safe(function () { D.body.classList.toggle(BODY_CLASS + '-all', stranded); });
+    if (stranded && !_warnedStranded) {
+      _warnedStranded = true;
       safe(function () {
         if (W.console && W.console.warn) W.console.warn('[MLS studio merge] the section switcher is not visible; every section is shown rather than stranded.');
       });
     }
+    if (!current()) select(remembered(), false);
+    else syncAnalysisInline(current());
   }
+  var _warnedStranded = false;
 
   function schedule() {
     if (pending) return;
@@ -470,6 +567,7 @@
     observers = [];
     safe(function () { D.body.classList.remove(BODY_CLASS); });
     KEYS.forEach(function (k) { safe(function () { D.body.classList.remove(BODY_CLASS + '-' + k); }); });
+    safe(function () { D.body.classList.remove(BODY_CLASS + '-all'); });
     safe(function () { D.body.classList.remove(BODY_CLASS + '-starters'); });
     safe(function () { D.body.removeAttribute('data-mls-sm'); });
     var bar = byId(TABS_ID); if (bar) bar.remove();

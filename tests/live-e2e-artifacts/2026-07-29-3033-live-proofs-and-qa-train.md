@@ -71,3 +71,66 @@ pong version 3.0.33.
   events, HMAC, SSRF-guarded, PHI-free logs), fail-closed key scopes
   (new keys schedule.read), idempotent external create via blinded
   external_appointment_id. 40/40 backend suites.
+
+## ROOT CAUSE of the Friday 6-of-7 (found 2026-07-29 on candidate 3.0.34)
+
+3.0.34's new `snapshotParse` receipt field named the failing stage on the first
+live run: `no-name-candidate` (id gate passed, snapshot captured, name scan
+found nothing). Replaying the shipped functions stage-by-stage against the live
+row (masked: X=upper, x=lower, 9=digit) isolated the exact rule:
+
+```
+after strip-duration (\b\d+\s*min\b/gi) : Xxx Xxx 99 xx X | 99-99-9999 X/X ...
+after strip-bare-min (\bmin(?:ute)?s?\b/gi): Xxx 99 xx X | 99-99-9999 X/X ...
+                                              ^ second name token DELETED
+```
+
+The patient's surname matches `\bmin\b` **case-insensitively**. The leftover-
+duration cleanup deletes the name, so no capitalized pair can form. Second
+instance of the same collision: `okTok`'s shared `STOP` regex is `/i` and
+contains `min|mins|minute|minutes|no|fu|np|est` — all real surnames.
+
+Three prior theories (mutating row, universal double-render, node-keyed
+stability) were all wrong. The double-render IS real but was never the cause;
+the receipt would have read 7-of-8 had position churn felled one copy.
+
+Fix staged as candidate 3.0.35: two surgical edits only (case-sensitivity on
+the bare-token cleanup; narrow surname-ambiguous exemption in okTok leaving the
+shared STOP regex untouched) + synthetic fixtures for the ambiguous class
+(Min/No/Fu) + a regression guard proving genuine duration text is still
+stripped. Owner instruction on the extension: tiny changes, re-test, no
+restructuring.
+
+## Second live defect (owner screenshot): AI Studio panels overlap
+
+`#analysisView` is a CHILD of `#studioView` and both it and `#mlsSgPro` compute
+`grid-area: 3 / 1 / auto / -1` while both are visible — same grid cell, so
+Practice trends and the natural-language study builder paint over each other.
+Tab strip `#mlsSmTabs` (owner feat_mls_studio_merge.js) carried no
+aria-pressed/data-tab state when measured. Fix + contract in progress.
+
+## Aug 4 verdict on 3.0.34 — the roster gate names its own failing conjunct
+
+Live receipt (selected-provider mode, Tue 2026-08-04):
+
+- schedule read: `complete:true, expected 2, parsed 2` (the read itself is fine)
+- `providerRosterReceipt.targetDate: "2026-08-04"` — the rev-3 plumbing fix
+  WORKED (this field was an empty string on 3.0.33)
+- `attributionCoverage: {verdict:"row-unattributed", rows:2, headerCount:2,
+  unattributedRows:2, foreignRows:0}`
+
+So the day refuses because BOTH parsed rows are unattributed while TWO
+credentialed provider headers sit over the container. Per-container binding
+requires exactly one header, so neither row can be bound and the coverage rule
+correctly declines to certify the roster. `reason` stays `legacy-unverified`,
+0 rows imported — an honest refusal, not a silent wrong answer.
+
+This confirms the rev-3 agent's code-based diagnosis (it predicted
+`row-unattributed` at medium-high confidence and deliberately did not guess
+around it — the verdict field existed precisely to settle it live).
+
+Next tiny change (3.0.36, AFTER 3.0.35's name fix is proven): multi-header
+containers must attribute rows positionally — a row belongs to the nearest
+preceding provider header within its container. Must stay fail-closed: if the
+positional walk cannot bind a row unambiguously, it stays unattributed and the
+day still refuses.

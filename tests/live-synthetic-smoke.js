@@ -463,11 +463,11 @@ async function sampleStability(cdp, phase, durationMs = 1800) {
     const samples=[];
     const end=performance.now()+${Number(durationMs)};
     while(performance.now()<end){
-      const nav=document.getElementById('mlsRdNav'), top=document.getElementById('mlsRdTop');
+      const nav=document.getElementById('mlsDock'), top=document.getElementById('mlsRdTop');
       const nr=nav&&nav.getBoundingClientRect(), tr=top&&top.getBoundingClientRect();
       samples.push({
         visibleCompeting:selectors.reduce((n,q)=>n+[...document.querySelectorAll(q)].filter(visible).length,0),
-        activeNav:[...document.querySelectorAll('#mlsRdNav .navtab.on')].filter(visible).length,
+        activeNav:[...document.querySelectorAll('#mlsDock button[data-dest][aria-current="page"]')].filter(visible).length,
         nav:nr?[Math.round(nr.x),Math.round(nr.y),Math.round(nr.width),Math.round(nr.height)]:null,
         top:tr?[Math.round(tr.x),Math.round(tr.y),Math.round(tr.width),Math.round(tr.height)]:null
       });
@@ -489,38 +489,31 @@ async function sampleStability(cdp, phase, durationMs = 1800) {
 }
 
 const ROUTES = {
-  nav_visit: { route: 'visit', view: '#visitView' },
-  nav_patients: { route: 'patients', view: '#patientsView' },
-  nav_calendar: { route: 'calendar', view: '#calendarView' },
-  nav_orders: { route: 'orders', view: '#ordersView' },
-  nav_recs: { route: 'recs', view: '#recsView' },
-  nav_history: { route: 'history', view: '#historyView' },
-  nav_analysis: { route: 'analysis', view: '#analysisView' },
-  nav_studio: { route: 'studio', view: '#studioView' },
-  nav_team: { route: 'team', view: '#teamView' },
-  nav_legalreq: { route: 'legalreq', view: '#legalReqView' },
-  nav_admin: { route: 'admin', view: '#adminView' }
+  day: { route: 'calendar', view: '#calendarView' },
+  patient: { route: 'patients', view: '#patientsView' },
+  visit: { route: 'visit', view: '#visitView' },
+  review: { route: 'orders', view: '#ordersView' },
+  studio: { route: 'studio', view: '#studioView' }
 };
-const ACTION_TABS = new Set(['nav_staffpull', 'nav_help', 'mlsPtab_reviews', 'mlsPtab_send']);
 
 async function navigateVisibleRoutes(cdp) {
   const visible = await evaluate(cdp, `(() => {
     const shown=el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
-    return [...document.querySelectorAll('#mlsRdNav .mainnav > .navtab')].filter(shown).map(el=>({id:el.id,label:(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim()}));
+    return [...document.querySelectorAll('#mlsDock button[data-dest]:not([data-dest="tools"])')].filter(shown).map(el=>({id:el.getAttribute('data-dest'),label:el.getAttribute('aria-label')||(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim()}));
   })()`);
   assert(visible.length >= 4, `Primary navigation rendered only ${visible.length} visible destinations: ${JSON.stringify(visible)}`);
-  const unknown = visible.filter((item) => !ROUTES[item.id] && !ACTION_TABS.has(item.id));
+  const unknown = visible.filter((item) => !ROUTES[item.id]);
   assert.deepStrictEqual(unknown, [], `Visible top-level navigation has no live-smoke strategy: ${JSON.stringify(unknown)}`);
   const routeResults = [];
   for (const item of visible) {
     const spec = ROUTES[item.id];
     if (!spec) continue;
     const started = Date.now();
-    await click(cdp, `#${item.id}`);
+    await click(cdp, `#mlsDock button[data-dest="${item.id}"]`);
     await waitFor(cdp, `${item.label} route`, `window.__mlsCurrentView===${JSON.stringify(spec.route)} && (()=>{const el=document.querySelector(${JSON.stringify(spec.view)});if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0})()`, 10000);
     const owners = await evaluate(cdp, `(() => {
       const shown=el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
-      return {active:[...document.querySelectorAll('#mlsRdNav .navtab.on')].filter(shown).map(el=>el.id), title:(document.getElementById('mlsRdTitle')||{}).textContent||''};
+      return {active:[...document.querySelectorAll('#mlsDock button[data-dest][aria-current="page"]')].filter(shown).map(el=>el.getAttribute('data-dest')), title:(document.getElementById('mlsRdTitle')||{}).textContent||''};
     })()`);
     assert.strictEqual(owners.active.length, 1, `${item.label}: expected one active route, saw ${JSON.stringify(owners.active)}`);
     assert.strictEqual(owners.active[0], item.id, `${item.label}: wrong active navigation owner`);
@@ -576,17 +569,28 @@ async function proveNoPatientGuard(cdp) {
     let alertText='';
     window.alert=value=>{alertText=String(value||'')};
     try { window.__mlsWriteFlow.oneClick(); } finally { window.alert=originalAlert; window.removeEventListener('message',listener); }
+    const toastNode=document.getElementById('toast');
+    const toastShown=!!(toastNode&&toastNode.classList.contains('show'));
     return {
       activePatient:!!(window.activePatient&&window.activePatient()),
       oneClickVisible:visible(document.getElementById('wf2OneClick')),
       reviewVisible:visible(document.getElementById('mlsAthenaUnifiedConfirm'))||visible(document.getElementById('emrPanel')),
-      alertText, writeMessages:messages
+      alertText,
+      toastText:toastShown?String(toastNode.textContent||''):'',
+      toastRole:toastNode?String(toastNode.getAttribute('role')||''):'',
+      toastError:!!(toastNode&&toastNode.classList.contains('err')),
+      writeMessages:messages
     };
   })()`);
   assert.strictEqual(result.activePatient, false, 'No-patient guard fixture unexpectedly has an active patient');
   assert.strictEqual(result.oneClickVisible, false, 'Athena one-click is visible without an active patient');
   assert.strictEqual(result.reviewVisible, false, 'Athena review opened without an active patient');
-  assert(/pick a patient first/i.test(result.alertText), `No-patient guard did not explain the block: ${result.alertText}`);
+  const guardText=result.toastText||result.alertText;
+  assert(/pick a patient first/i.test(guardText), `No-patient guard did not explain the block: ${guardText}`);
+  if(result.toastText){
+    assert.strictEqual(result.toastRole, 'alert', 'No-patient error toast is not announced as an alert');
+    assert.strictEqual(result.toastError, true, 'No-patient error toast is missing its error state');
+  }
   assert.deepStrictEqual(result.writeMessages, [], 'No-patient guard emitted an Athena write bridge message');
   return result;
 }
@@ -997,7 +1001,16 @@ async function proveCrossDayNativeWorkspace(cdp, todayScreenshotPath, nextScreen
     ];
     const seen={},cases=[];
     rawCases.forEach(c=>{if(!seen[c.day]){seen[c.day]=1;cases.push(c)}});
-    window.__mlsLiveCrossDayOriginal={had:Object.prototype.hasOwnProperty.call(window,'_calAppts'),value:window._calAppts,todayFn:window._acctTodayKey};
+    const providerCacheNames=['mlsProviderRosterV2','mlsSchedProviders','mlsProviderRosterReceiptV2'];
+    const providerCaches=providerCacheNames.map(name=>{const key=uns(name);return {name,key,value:localStorage.getItem(key)}});
+    window.__mlsLiveCrossDayOriginal={
+      had:Object.prototype.hasOwnProperty.call(window,'_calAppts'),value:window._calAppts,
+      providersHad:Object.prototype.hasOwnProperty.call(window,'_calProviders'),
+      providersValue:Array.isArray(window._calProviders)?window._calProviders.slice():window._calProviders,
+      providerCaches,todayFn:window._acctTodayKey
+    };
+    providerCaches.forEach(entry=>localStorage.removeItem(entry.key));
+    window._calProviders=[];_calProviders=window._calProviders;
     window.__mlsLiveCrossDayWrap=document.getElementById('ez3Wrap');
     window.__mlsLiveCrossDayStrip=document.getElementById('mlsDsStrip');
     const row=(id,day,time,name,dob,mrn)=>({
@@ -1177,7 +1190,14 @@ async function proveCrossDayNativeWorkspace(cdp, todayScreenshotPath, nextScreen
   } finally {
     await evaluate(cdp, `(() => {
       const saved=window.__mlsLiveCrossDayOriginal;
-      if(saved){if(saved.had)window._calAppts=saved.value;else delete window._calAppts;}
+      if(saved){
+        if(saved.had)window._calAppts=saved.value;else delete window._calAppts;
+        window._calProviders=saved.providersHad&&Array.isArray(saved.providersValue)?saved.providersValue:[];
+        _calProviders=window._calProviders;
+        (saved.providerCaches||[]).forEach(entry=>{
+          if(entry.value==null)localStorage.removeItem(entry.key);else localStorage.setItem(entry.key,entry.value);
+        });
+      }
       if(saved&&saved.todayFn)window._acctTodayKey=saved.todayFn;
       delete window.__mlsLiveClockDay;
       /* Remove the fixture-registered date-matrix charts so later single-patient
@@ -1453,18 +1473,10 @@ async function proveLiveSameTabAccountBoundary(cdp) {
 }
 
 async function createSyntheticPatient(cdp) {
-  await click(cdp, '#nav_patients');
+  await click(cdp, '#mlsDock button[data-dest="patient"]');
   await waitFor(cdp, 'Patients route', `window.__mlsCurrentView==='patients'`);
-  /* Use the clinician's top-bar New menu, not a fixture-only storage shortcut. */
-  await click(cdp, '#mlsRdNewBtn');
-  await waitFor(cdp, 'New menu', `document.getElementById('mlsRdNewMenu') && document.getElementById('mlsRdNewMenu').classList.contains('open')`);
-  const opened = await evaluate(cdp, `(() => {
-    const buttons=[...document.querySelectorAll('#mlsRdNewMenu button')];
-    const target=buttons.find(button=>/new patient/i.test(button.textContent||''));
-    if(!target)return {ok:false,labels:buttons.map(button=>(button.textContent||'').trim())};
-    target.click(); return {ok:true};
-  })()`);
-  assert(opened && opened.ok, `New > New patient action missing: ${JSON.stringify(opened)}`);
+  /* Use the visible Patients-surface action, not the retired top-bar New menu. */
+  await click(cdp, '#ptNewBtn');
   await waitFor(cdp, 'New patient dialog', `document.getElementById('patientModal') && document.getElementById('patientModal').classList.contains('show')`);
   await fill(cdp, '#ptName', SYNTHETIC_PATIENT.name);
   await fill(cdp, '#ptMrn', SYNTHETIC_PATIENT.mrn);
@@ -1479,7 +1491,7 @@ async function createSyntheticPatient(cdp) {
 }
 
 async function enterAndSaveSyntheticNote(cdp) {
-  await click(cdp, '#nav_visit');
+  await click(cdp, '#mlsDock button[data-dest="visit"]');
   await waitFor(cdp, 'Visit route', `window.__mlsCurrentView==='visit'`);
   await fill(cdp, '#transcript', SYNTHETIC_TRANSCRIPT);
   const result = await evaluate(cdp, `(() => {
@@ -1619,7 +1631,14 @@ async function reloadAndReopenSavedNote(cdp, noteId) {
   assert(restored.patient && restored.patient.name === SYNTHETIC_PATIENT.name, `Active synthetic patient did not survive reload: ${JSON.stringify(restored)}`);
   assert(restored.note && restored.note.soap === SYNTHETIC_NOTE && restored.note.transcript === SYNTHETIC_TRANSCRIPT, 'Exact synthetic transcript/note did not survive reload');
   assert.strictEqual(restored.note.patientId, restored.patient.id, 'Reloaded note detached from the selected synthetic patient');
-  await click(cdp, '#nav_history');
+  await click(cdp, '#mlsDock button[data-dest="visit"]');
+  await waitFor(cdp, 'Visit destination before History', `window.__mlsCurrentView==='visit'`);
+  await waitFor(cdp, 'visible View completed notes action', `(() => {
+    const el=document.getElementById('ez3Hist');if(!el)return false;
+    const s=getComputedStyle(el),r=el.getBoundingClientRect();
+    return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;
+  })()`, 10000);
+  await click(cdp, '#ez3Hist');
   await waitFor(cdp, 'History route and saved note row', `window.__mlsCurrentView==='history' && document.querySelectorAll('#histList .hist-item').length>0`, 10000);
   const rowClick = await evaluate(cdp, `(() => {
     const rows=[...document.querySelectorAll('#histList .hist-item')];
