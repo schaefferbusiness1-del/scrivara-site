@@ -230,7 +230,32 @@ const LOADER = 'mls-connect.js';
  *     safety-critical module (the same separation the room keeps from the
  *     drafter machinery).
  *   - It ADDS no controls at all — four status chips and one hint line. */
-const CEILING = 245;
+/* 245 -> 246 at the 2026-07-28 motion request, for feat_mls_motion.js
+ * (mo-1.0.0). Owner, verbatim: "I want some awesome animations aple like added
+ * to everything ... when copilot comes up have it have like a moving ranbow
+ * boarder like apple siri stuff" — and, in the same breath, "make sure not to
+ * break anything". The three questions this pin exists to force, answered:
+ *   - DEFERRED (requestIdleCallback, 4s timeout): EAGER_CEILING does not move.
+ *     It is pure decoration and must never be anywhere near first paint —
+ *     the surfaces it touches (the Copilot dock, AI Studio, modals, the
+ *     settings tabs) are all minutes-in.
+ *     It registers ZERO timers and ZERO observers of any kind, so
+ *     INTERVAL_CEILING and OBSERVER_CEILING below — both currently AT their
+ *     limit — do not move either. That is not luck: every surface it animates
+ *     is revealed by a class the app already toggles (#copilotDock.open,
+ *     .modal-bg.show, .set-tab-hidden, body.mls-sm-*), which CSS sees for
+ *     free, so there was nothing for a watcher to do.
+ *   - Not folded into feat_mls_calm_shell.js or feat_mls_theme_polish.js to
+ *     keep the count flat, and that would have been the dishonest version for
+ *     the reason recorded above the calm views: the shell owns cross-screen
+ *     navigation and is the one module you must never have to revert to undo
+ *     a decoration. Motion is the FIRST thing to switch off when a doctor
+ *     says the screen feels busy, and switching it off must cost nothing else
+ *     — window.__mlsMotion.revert() removes one stylesheet and one body class
+ *     and the app is exactly as it was.
+ *   - It adds no interface at all: no control, no node, no markup. One
+ *     <style> element and one class on <body> is its entire DOM footprint. */
+const CEILING = 246;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

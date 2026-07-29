@@ -43,8 +43,16 @@ assert(connect.includes('var startedAt = 0, hidden = true, stopped = false;'),
    bump-build run, so the pin matches the code + comment SHAPE, not the tag. */
 assert(/hidden = true; \/\* b\d+: reset to the pill DEFAULT, never to the modal \*\//.test(render),
   'pull end resets to the pill default, never slams the modal back');
-assert(connect.includes("function paintFab(S)") && connect.includes("'Pulling ' + (S.done || 0) + '/' + (S.total || 0)"),
-  'the pill carries live progress instead of a frozen label');
+/* 2026-07-29 (owner watched a live pull): the pill and the day-pull bar
+   published DIFFERENT numbers for one pull - bar "History 2/7", pill "Pulling
+   1/7" at the same instant (the bar counts the chart being worked on, the pill
+   counted charts finished). The pill now MIRRORS the bar so the two surfaces
+   can never disagree, and keeps its own state only as the fallback for screens
+   where the pull card is not mounted. */
+assert(connect.includes("function paintFab(S)") &&
+  connect.includes("document.getElementById('mlsDsPullBar')") &&
+  connect.includes("if (!n) n = (S.done || 0) + '/' + (S.total || 0);"),
+  'the pill mirrors the day-pull bar count, with its own state as the fallback');
 
 /* ---- 3. the reporter outlives sweeps (panel lives first row -> true end) ---- */
 assert(si.includes('if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);') &&

@@ -410,6 +410,7 @@ const tests = [
   'one-radius-scale.test.js',
   'motion-tokens-are-page-level-and-cannot-strand.test.js',
   'motion-that-cannot-run-is-not-motion.test.js',
+  'motion-system-contract.test.js',
   'voice-cluster-expands-never-decides.test.js',
   'review-is-a-review-not-just-orders.test.js',
   'phone-capture-survival.test.js',
