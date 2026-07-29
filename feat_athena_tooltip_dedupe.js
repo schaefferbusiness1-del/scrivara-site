@@ -1510,6 +1510,7 @@
   var STYLE_ID = 'mlsVisitControlContinuityStyle';
   var MODAL_ID = 'mlsQuickToolPopup';
   var phoneSyncT = null;
+  var pairingStartedAt = 0;
   var priorFocus = null;
   var dayStableText = '';
   var dayBusy = false;
@@ -1543,6 +1544,10 @@
          while the seen/remaining counts stay visible. */
       '#mlsCtxBar>#mlsDayProgress{box-sizing:border-box;flex:0 1 auto;min-width:0;max-width:min(361px,100%);width:max-content;align-self:flex-start;overflow:hidden;justify-content:flex-start;}',
       '#mlsCtxBar>#mlsDayProgress .mdp-next{min-width:0;overflow:hidden;text-overflow:ellipsis;}',
+      /* 2026-07-28: guard-refusal toasts and the consent dialog were buried
+         UNDER the quick-tool modal - the consent gate could never be answered. */
+      'body:has(#mlsQuickToolPopup) .toast{z-index:2147483300!important;}',
+      '#_mlsAskDialog{z-index:2147483300!important;}',
       '#mlsCtxBar>#mlsRecentPts{box-sizing:border-box;flex:0 0 auto;min-width:max-content;max-width:100%;align-self:flex-start;}',
       '#mlsCtxBar>#mlsRecentPts .mrp-btn{max-width:100%;}',
       'body.mls-has-active-pt #patientBar>#mlsDayProgress,body.mls-has-active-pt #patientBar>#mlsAgendaChip{display:none!important;}',
@@ -1670,22 +1675,37 @@
     var codeOut = ui.body.querySelector('[data-qtp-phone-code]');
     var linkOut = ui.body.querySelector('[data-qtp-phone-link]');
     var qrOut = ui.body.querySelector('[data-qtp-phone-qr]');
-    if (status) status.textContent = ready ? 'Ready. Scan the code or open the secure link on your phone.' : 'Preparing a secure phone link…';
+    var qrErr = !!(qr && qr.getAttribute && qr.getAttribute('data-qr-error'));
+    var failed = !ready && pairingStartedAt > 0 && (Date.now() - pairingStartedAt) > 12000;
+    if (status) status.textContent = ready
+      ? (qrErr ? 'Ready. QR unavailable - open the secure link on your phone instead.' : 'Ready. Scan the code or open the secure link on your phone.')
+      : (failed ? 'Could not prepare the phone link. Make sure you are signed in and a scheduled patient is open, then tap Try again.' : 'Preparing a secure phone link…');
     if (codeOut) codeOut.textContent = ready ? codeText : '------';
     if (linkOut) { linkOut.textContent = ready ? href : ''; linkOut.href = ready ? href : '#'; }
-    if (qrOut) { if (src && src !== location.href) qrOut.src = src; qrOut.style.opacity = ready ? '1' : '.35'; }
+    if (qrOut) { if (qrErr) { qrOut.style.display = 'none'; } else { qrOut.style.display = ''; if (src && src !== location.href) qrOut.src = src; } qrOut.style.opacity = ready ? '1' : '.35'; }
     return ready;
   }
 
-  function startPhonePairing() {
-    if (typeof W.startPhoneMic === 'function') { safe(function () { W.startPhoneMic(); }); return true; }
-    var real = byId('phoneMicBtn');
-    if (real) { safe(function () { real.click(); }); return true; }
-    toast('Phone recording is not available on this screen yet.', 'err');
+  function startPhonePairing(ev) {
+    /* 2026-07-28: startPhoneMic requires a TRUSTED user gesture (it silently
+       returns otherwise), so the old no-event call and the synthetic
+       synthetic click fallback could never start pairing - the modal sat on
+       "Preparing a secure phone link" forever. Thread the real click through;
+       without one, say so honestly instead of pretending. */
+    if (ev && ev.isTrusted === true && typeof W.startPhoneMic === 'function') {
+      pairingStartedAt = Date.now();
+      safe(function () { W.startPhoneMic(ev); });
+      return true;
+    }
+    var ui0 = byId(MODAL_ID);
+    var st0 = ui0 && ui0.querySelector('[data-qtp-phone-status]');
+    if (st0) st0.textContent = (typeof W.startPhoneMic === 'function')
+      ? 'Phone pairing needs a direct tap - tap Try again.'
+      : 'Phone recording is not available on this screen yet.';
     return false;
   }
 
-  function openPhonePopup() {
+  function openPhonePopup(ev) {
     var ui = popup('Record on phone', 'Pair your phone as the microphone for the active patient and visit.');
     ui.body.innerHTML =
       '<div class="mls-qtp-phone"><div><div data-qtp-phone-status>Preparing a secure phone link…</div>' +
@@ -1698,9 +1718,9 @@
       safe(function () { if (typeof W.stopPhoneMic === 'function') W.stopPhoneMic(); });
       closePopup();
     }));
-    ui.foot.appendChild(button('Try again', 'primary', startPhonePairing));
+    ui.foot.appendChild(button('Try again', 'primary', function (ev2) { startPhonePairing(ev2); }));
     var alreadyReady = syncPhonePopup(ui);
-    if (!alreadyReady) startPhonePairing();
+    if (!alreadyReady) startPhonePairing(ev);
     phoneSyncT = setInterval(function () {
       if (!byId(MODAL_ID)) { clearPhoneSync(); return; }
       syncPhonePopup(ui);
@@ -1752,7 +1772,7 @@
     var action = quickAction(btn);
     if (!action) return; // Copilot Voice, Assistant, and Dictate keep their real owners.
     safe(function () { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); });
-    action();
+    action(ev);
   }
 
   function onKeydown(ev) {

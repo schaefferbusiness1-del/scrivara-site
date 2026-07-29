@@ -35,6 +35,15 @@ assert(code.includes('ev.stopImmediatePropagation()'), 'legacy Advanced Workspac
 assert(!code.includes('openWorkspace('), 'continuity module must not route Quick Tools through Advanced Workspace');
 assert(code.includes("W.__mlsAfterVisitSummary") && code.includes("avs.open()"), 'After-visit summary must open its real review modal');
 assert(code.includes("W.startPhoneMic") && code.includes("phoneMicQR"), 'phone recording must use the real pairing flow in its popup');
+/* 2026-07-28: startPhoneMic hard-gates on a trusted gesture, so the pairing
+ * starter must thread the REAL click and never fake one - the synthetic
+ * .click() fallback left the modal on "Preparing" forever. */
+assert(/isTrusted === true[\s\S]{0,400}W\.startPhoneMic\(/.test(code), 'startPhonePairing no longer requires a trusted gesture before startPhoneMic');
+{
+  const spp = code.slice(code.indexOf('function startPhonePairing('), code.indexOf('function openPhonePopup('));
+  assert(spp.length > 0 && !/\.click\(\)/.test(spp), 'startPhonePairing regained a synthetic .click() fallback - the trusted gate silently refuses it');
+}
+assert(code.includes('action(ev);'), 'onQuickToolClick must thread the trusted event into the popup actions');
 assert(code.includes("W.showView('orders')"), 'Orders popup must lead to the dedicated Orders page');
 assert(code.includes("MODAL_ID = 'mlsQuickToolPopup'"), 'in-place Quick Tool dialog is missing');
 
