@@ -106,7 +106,12 @@
     });
     if (cur && !curListed) h += '<option value="' + esc(cur.id) + '" data-name="' + esc(cur.name) + '" selected>' + esc((cur.name || "Chosen computer") + " — not registered right now") + "</option>";
     h += "</select>";
-    if (wrap._pdpHtml !== h) { wrap.innerHTML = h; wrap._pdpHtml = h; }
+    if (wrap._pdpHtml !== h) {
+      /* never yank the select out from under an open interaction - the next 5s
+         tick repaints once focus has left (transcript-box-destroyed class) */
+      if (wrap.contains(document.activeElement)) return;
+      wrap.innerHTML = h; wrap._pdpHtml = h;
+    }
   }
 
   function onChange(ev) {

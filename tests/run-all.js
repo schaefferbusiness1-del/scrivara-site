@@ -35,6 +35,7 @@ const tests = [
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
   'default-note-format-shows-matching-body.test.js',
+  'settings-scheduling-api-contract.test.js',
   'schedule-mutating-row-reverify-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',

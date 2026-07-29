@@ -21,7 +21,25 @@
  * carries an appointment id AND the name sits in a patient-bound region
  * (encounter-link anchor / patient-name node / data-patient-name) - the
  * id + confident-name bar the structured lane already uses. Conflicting ids,
- * foreign times, and multiple distinct region names stay refused as mutating. */
+ * foreign times, and multiple distinct region names stay refused as mutating.
+ *
+ * Rev-3 (3.0.34) CONTENT-KEYED STABILITY + WELD-HARDENED SNAPSHOT PARSE:
+ * live Friday 2026-07-31 proof - the dashboard paints every appointment as
+ * TWO identical LI copies in parallel appointments-container lists, and the
+ * async check-in columns re-render/re-sort one copy pair mid-walk. (a) An
+ * unresolved instance whose appointment id (or normalized text) already
+ * produced a parsed row is a duplicate render of captured content: STABLE
+ * regardless of DOM node identity or position, never kind:'mutating'.
+ * (b) The live 9:40 row was INTACT at rest yet _snapIdentity extracted
+ * nothing: the name rides raw row text (no patient-bound region) and athena
+ * welds tokens ("40min"+first name, last name+"NNyo"). _snapIdentity now
+ * strips/normalizes the known athena tokens BEFORE a capitalized-pair scan
+ * over the whole snapshot text - accepted ONLY with the appointment id on
+ * the same row, single unambiguous pair run, 2-letter-plus tokens. (c) Every
+ * snapshot-read receipt row now names the failing stage in snapshotParse:
+ * 'no-id-on-row' | 'no-name-candidate' | 'ambiguous-candidates' | 'accepted'
+ * (plus 'foreign-time' | 'id-conflict' | 'empty-snapshot' for the early
+ * refusals), so the next live run reads the failure directly. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -33,7 +51,7 @@ const root = path.join(__dirname, '..');
    in extension-candidates/ so the published repo bytes stay coherent with the
    live feed; on publish, background.js itself carries these changes and the
    candidate path naturally wins either way. Newest candidate wins. */
-const candidateChain = ['3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const candidateChain = ['3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
 const backgroundPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
 const background = fs.readFileSync(backgroundPath, 'utf8');
 
@@ -51,7 +69,14 @@ for (const marker of [
   'out.diag.snapshotRecovered=_lgSnapRecovL',
   'out.diag.snapshotRecovered=_snapRecoveredS',
   'snapshot:a._snap===true',
-  'snapshot:p._snapHad===true'
+  'snapshot:p._snapHad===true',
+  /* rev-3 (3.0.34) invariants */
+  'function _snapStripAthenaTokens(text)',
+  'function _snapPairRuns(regionText)',
+  "snapshotParse:a._snap===true?String(a._snapParse||''):''",
+  "snapshotParse:p._snapHad===true?String(p._snapParse||''):''",
+  'var _legacyParsedRawKeysL={}',
+  'out.diag.duplicateUnverifiableCollapsed=_lgDupCollapsedL'
 ]) assert(background.includes(marker), 'missing re-verify/snapshot invariant: ' + marker);
 
 /* ---- extract the packaged reader (the function Chrome actually injects) ---- */
@@ -103,7 +128,7 @@ const snapKit = vm.runInContext(
   '\nvar out={diag:{}};\n' +
   background.slice(helperStart, helperEnd) +
   '\n' + background.slice(snapStart, snapEnd) +
-  '\n({ _snapIdentity, _snapPairName, _snapText });',
+  '\n({ _snapIdentity, _snapPairName, _snapText, _snapStripAthenaTokens, _snapPairRuns });',
   vm.createContext({ Date, Math }),
   { timeout: 5000 }
 );
@@ -157,6 +182,51 @@ const DEBRIS_HTML_WITH_ID = DEBRIS_HTML_NO_ID.replace(
   const u7 = snapKit._snapIdentity('<li class="filled-appointment-row"><span>9:40 AM</span> 30 min hold</li>', '9:40 AM', '');
   assert.strictEqual(u7.ok, false);
   assert.strictEqual(u7.noIdentity, true, JSON.stringify(u7));
+
+  /* ---- rev-3 (3.0.34): welded live shape + snapshotParse stage naming ---- */
+  // u8: the EXACT live Friday failure shape - id on a BUTTON child, NO
+  // patient-bound region, "40min" welded into the first name and the last
+  // name welded into "NNyo". Token normalization must recover the pair.
+  const LIVE_WELD =
+    '<li class="filled-appointment-row">' +
+    '<button type="button" class="appt-btn" data-stitching-url="/x/y" data-metrics-stage="s1" data-appointment-id="45532929"></button>' +
+    '<span>9:40 AM</span><span>40minRoy Lee</span><span>68yo F | 01-01-1958</span>' +
+    '<span>F/U ESI LUMBAR &amp; MBB</span>' +
+    '</li>';
+  const u8 = snapKit._snapIdentity(LIVE_WELD, '9:40 AM', '45532929');
+  assert.strictEqual(u8.ok, true, 'welded live-shape row did not verify: ' + JSON.stringify(u8));
+  assert.strictEqual(u8.name, 'Roy Lee', '2-letter/3-letter capitalized pair was not recovered');
+  assert.strictEqual(u8.appointmentId, '45532929');
+  assert.strictEqual(u8.dob, '01/01/1958', 'age+sex chip DOB was not self-validated');
+  assert.strictEqual(u8.snapshotParse, 'accepted');
+
+  // u8b: fully welded single text node ("40minRoy Lee68yo F | ...") still parses
+  const u8b = snapKit._snapIdentity(
+    '<li class="filled-appointment-row">' +
+    '<button type="button" class="appt-btn" data-appointment-id="45532929"></button>' +
+    '<span>9:40 AM 40minRoy Lee68yo F | 01-01-1958 F/U ESI LUMBAR &amp; MBB</span></li>',
+    '9:40 AM', '45532929');
+  assert.strictEqual(u8b.ok, true, JSON.stringify(u8b));
+  assert.strictEqual(u8b.name, 'Roy Lee');
+  assert.strictEqual(snapKit._snapStripAthenaTokens('9:40 AM 40minRoy Lee68yo F | 01-01-1958 F/U ESI LUMBAR & MBB'),
+    'Roy Lee F/U ESI LUMBAR MBB', 'athena token normalization drifted');
+
+  // u9: the SAME welded pair WITHOUT an appointment id anywhere is never
+  // accepted (id gate) and the receipt names the stage.
+  const u9 = snapKit._snapIdentity(LIVE_WELD.replace(' data-appointment-id="45532929"', ''), '9:40 AM', '');
+  assert.strictEqual(u9.ok, false, 'whole-text pair name verified without an appointment id');
+  assert.strictEqual(u9.snapshotParse, 'no-id-on-row');
+
+  // u10: TWO distinct pair runs with an id stay refused as ambiguous - named.
+  const u10 = snapKit._snapIdentity(LIVE_WELD.replace('</li>', '<span>Sally Jones</span></li>'), '9:40 AM', '45532929');
+  assert.strictEqual(u10.ok, false, 'a two-pair snapshot was guessed');
+  assert.strictEqual(u10.snapshotParse, 'ambiguous-candidates');
+
+  // u11: every verdict names its stage - accepted / foreign-time / id-conflict
+  assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '9:40 AM', '45532929').snapshotParse, 'accepted');
+  assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '8:00 AM', '45532929').snapshotParse, 'foreign-time');
+  assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '9:40 AM', '99999999').snapshotParse, 'id-conflict');
+  assert.strictEqual(snapKit._snapPairRuns('Roy Lee and Sally Jones').length, 2, '_snapPairRuns lost run separation');
 }
 
 /* ---- pure equation pins (the exact Friday arithmetic) ---- */
@@ -476,8 +546,75 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
     assert.strictEqual(rows.length, 1);
     assert.strictEqual(rows[0].kind, 'mutating');
     assert.strictEqual(rows[0].snapshot, true, 'refusal did not record that a snapshot was read');
+    assert.strictEqual(rows[0].snapshotParse, 'ambiguous-candidates',
+      'the receipt did not name the failing snapshot-parse stage');
     assert.strictEqual(receiptFor(result.diag, true).complete, false);
   }
 
-  console.log('PASS mutating-row re-verify, snapshot string verification, non-clinical receipt naming, and fail-closed identity refusal');
+  /* 9. LEGACY double-render collapse (rev-3): the live dashboard paints every
+     appointment as TWO identical LI copies in parallel lists. When one copy
+     parses and the other churns mid-walk, the churning copy is a duplicate
+     render of ALREADY-CAPTURED content - content-keyed stability drops it
+     instead of refusing the day as kind:'mutating'. */
+  {
+    const provider = legacyRow('Matthew_Schaeffer_MD');
+    const copyA = legacyRow('9:40 AM Doe, Bob Office visit', {
+      id: 'legacy-copy-a', attrs: { 'data-appointment-id': '45532929' }
+    });
+    /* copy B: same appointment id, torn text forever, no snapshot available */
+    const copyB = legacyRow(() => '9:40 AM', {
+      id: 'legacy-copy-b', attrs: { 'data-appointment-id': '45532929' }
+    });
+    const other = legacyRow('10:00 AM Field, Sarah Office visit', { id: 'legacy-other' });
+    const result = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc(
+        [legacyContainer([copyA, other], provider), legacyContainer([copyB], provider)],
+        [provider]), {});
+    assert.strictEqual(result.diag.parsedCount, 2, 'double-render collapse changed parsed truth: ' + JSON.stringify(result.diag));
+    assert.strictEqual(result.diag.candidateCount, 2, 'the duplicate render leaked into candidate accounting');
+    assert.strictEqual(result.diag.unnamedCount, 0, 'a duplicate render of captured content was counted unverifiable');
+    assert.deepStrictEqual(plain(result.diag.unverifiableRows || []), [],
+      'a same-id duplicate render produced a receipt refusal');
+    assert.strictEqual(Number(result.diag.duplicateUnverifiableCollapsed || 0), 1,
+      'the collapse was not accounted in diag');
+    assert.strictEqual(result.appts.filter(a => a.appointmentId === '45532929').length, 1);
+    assert.strictEqual(receiptFor(result.diag, true).complete, true,
+      'relocated-only duplicate of identical captured content must not refuse the day');
+
+    /* control: a genuinely unaccounted torn row (unique id, never parses)
+       still refuses exactly as before - the collapse is id/content-keyed,
+       not a blanket amnesty. */
+    const foreign = legacyRow(() => '11:20 AM', {
+      id: 'legacy-foreign', attrs: { 'data-appointment-id': '99911122' }
+    });
+    const refused = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc([legacyContainer([copyA, foreign], provider)], [provider]), {});
+    const refusedRows = plain(refused.diag.unverifiableRows || []);
+    assert.strictEqual(refusedRows.length, 1, 'a genuinely unaccounted row was collapsed away');
+    assert.strictEqual(refusedRows[0].kind, 'mutating');
+    assert.strictEqual(refusedRows[0].appointmentId, '99911122');
+    assert.strictEqual(receiptFor(refused.diag, true).complete, false);
+  }
+
+  /* 10. STRUCTURE double-render collapse: a pending instance whose appointment
+     id already produced a parsed candidate is skipped by the receipt build -
+     node identity and position never enter the stability judgment. */
+  {
+    const counter = { pulls: 0 };
+    const copyA = appointment('s-copy-a', '9:40 AM Doe, Bob (68yo F)', { appointmentId: '45532929' });
+    const copyB = appointment('s-copy-b', () => '9:40 AM', { appointmentId: '45532929' });
+    const good = appointment('s-good', '8:00 AM Smith, John (58yo M)');
+    const col = countingColumn(0, [good, copyA, copyB], counter);
+    const result = await runtime.mlsSchedDomInline(scheduleDoc({
+      columns: [col], headers: [header('Doctor_One_MD', 0)]
+    }), {});
+    assert.strictEqual(result.diag.parsedCount, 2, JSON.stringify(result.diag));
+    assert.strictEqual(result.diag.unnamedCount, 0,
+      'a same-id duplicate render was counted unverifiable on the structured surface');
+    assert.deepStrictEqual(plain(result.diag.unverifiableRows || []), []);
+    assert.strictEqual(result.appts.filter(a => a.appointmentId === '45532929').length, 1);
+    assert.strictEqual(receiptFor(result.diag, result.diag.viewportCoverage.complete).complete, true);
+  }
+
+  console.log('PASS mutating-row re-verify, snapshot string verification, content-keyed double-render collapse, snapshotParse stage naming, non-clinical receipt naming, and fail-closed identity refusal');
 })().catch(error => { console.error(error); process.exit(1); });

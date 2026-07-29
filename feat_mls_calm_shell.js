@@ -1225,7 +1225,19 @@
        the button, so `e.target !== anchorBtn` closed the menu and the same click
        then reopened it — the Tools button could never toggle itself shut. */
     function away(e) { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); }
-    function esc(e) { if (e.key === 'Escape') { close(); safe(function () { anchor.focus(); }); } }
+    function esc(e) {
+      if (e.key === 'Escape') { close(); safe(function () { anchor.focus(); }); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+        /* role=menu advertises arrow navigation - honour it over the grid's
+           declaration-order Tab walk */
+        var rowsK = Array.prototype.slice.call(qsa('.r', menu));
+        if (!rowsK.length) return;
+        e.preventDefault();
+        var iK = rowsK.indexOf(D.activeElement);
+        var nK = e.key === 'Home' ? 0 : e.key === 'End' ? rowsK.length - 1 : e.key === 'ArrowDown' ? (iK + 1) % rowsK.length : (iK <= 0 ? rowsK.length - 1 : iK - 1);
+        safe(function () { rowsK[nK].focus(); });
+      }
+    }
     setTimeout(function () { D.addEventListener('click', away, true); }, 0);
     menu.addEventListener('keydown', esc);
     safe(function () { var first = qs('.r', menu); if (first) first.focus(); });

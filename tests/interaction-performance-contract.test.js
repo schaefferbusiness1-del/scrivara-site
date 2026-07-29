@@ -188,7 +188,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b787' }, 'tiny version probe does not match b787');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b788' }, 'tiny version probe does not match b788');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -275,10 +275,44 @@ assert(easyHomeStatusStart >= 0 && easyHomeStatusEnd > easyHomeStatusStart,
   'active Easy homeStatus slice is missing');
 assert(!easyHomeStatus.includes('dayRows(') && !easyHomeStatus.includes('isSeen'),
   'homeStatus returned to unused per-appointment roster/seen work');
-assert(easyV373.includes("var hs = homeStatus(); if (st.innerHTML !== hs) st.innerHTML = hs;"),
-  'stable Easy status HTML can still be replaced every 700ms');
+assert(easyV373.includes("if (st) setHomeStatusHtml(st, homeStatus());"),
+  'stable Easy status HTML does not use the canonical write guard');
 assert(!easyV373.includes("if (st) st.innerHTML = homeStatus();"),
   'unguarded Easy status subtree replacement returned');
+
+const statusWriterStart = easyV373.indexOf('function setHomeStatusHtml(st, hs) {');
+const statusWriterEnd = easyV373.indexOf('\n\n  function homeStatus() {', statusWriterStart);
+assert(statusWriterStart >= 0 && statusWriterEnd > statusWriterStart,
+  'active Easy canonical status writer is missing');
+const statusWriterSource = easyV373.slice(statusWriterStart, statusWriterEnd);
+const statusWriterCtx = {};
+vm.runInNewContext(statusWriterSource + '\nthis.setHomeStatusHtml=setHomeStatusHtml;', statusWriterCtx,
+  { filename: 'easy-home-status-writer.js' });
+let statusWrites = 0, canonicalStatusHtml = '';
+const statusNode = {};
+Object.defineProperty(statusNode, 'innerHTML', {
+  configurable: true,
+  get() { return canonicalStatusHtml; },
+  set(value) {
+    statusWrites++;
+    canonicalStatusHtml = String(value)
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&');
+  }
+});
+const punctuatedStatus = '<span><b>Dr. Synthetic O&#39;Name &amp; &quot;West&quot;</b></span>';
+statusWriterCtx.setHomeStatusHtml(statusNode, punctuatedStatus);
+assert.strictEqual(statusWrites, 1, 'initial punctuated Home status was not written exactly once');
+statusWriterCtx.setHomeStatusHtml(statusNode, punctuatedStatus);
+assert.strictEqual(statusWrites, 1,
+  'browser-canonical punctuation caused a stable Home status rewrite');
+const changedStatus = '<span><b>Dr. Synthetic O&#39;Name &amp; &quot;East&quot;</b></span>';
+statusWriterCtx.setHomeStatusHtml(statusNode, changedStatus);
+assert.strictEqual(statusWrites, 2, 'changed Home status did not repaint exactly once');
+canonicalStatusHtml = '<span>external replacement</span>';
+statusWriterCtx.setHomeStatusHtml(statusNode, changedStatus);
+assert.strictEqual(statusWrites, 3, 'external Home status mutation did not self-heal');
 
 /* 2026-07-29: Copilot autogrow performs one required layout read per call. */
 function checkCopilotAutogrow(source, label, measuredHeight, expectedHeight) {

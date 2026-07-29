@@ -62,13 +62,18 @@ const continuousEnd = connect.indexOf('var iv = null; try { iv = setInterval(scr
 const continuous = connect.slice(continuousStart, continuousEnd);
 assert(continuous.includes('window.__mlsPullBusyAt') && continuous.includes('.state.running'),
   'Continuous Scrub must stand down while a pull is running');
-assert(continuous.indexOf('if (pulling) return;') < continuous.indexOf('st8.lastScrubVer = v8'),
+const continuousBusyReturn = continuous.indexOf('if (pulling) return;');
+const continuousVersionStamp = continuous.indexOf('st8.lastScrubVer = v8');
+assert(continuousBusyReturn >= 0 && continuousVersionStamp >= 0 &&
+  continuousBusyReturn < continuousVersionStamp,
   'Continuous Scrub must not stamp a busy store version as clean');
 const baseStart = connect.indexOf("try { if (window.__mlsSummarySanitize) return; }");
 const baseEnd = connect.indexOf('function tick() { wrapIngest(); wrapSaveChart(); scrubExisting(); }', baseStart);
 const baseSanitize = connect.slice(baseStart, baseEnd);
+const baseBusyReturn = baseSanitize.indexOf('if (pulling) return;');
+const baseRosterRead = baseSanitize.indexOf('window.getPatients');
 assert(baseSanitize.includes('window.__mlsPullBusyAt') && baseSanitize.includes('.state.running') &&
-  baseSanitize.indexOf('if (pulling) return;') < baseSanitize.indexOf('window.getPatients'),
+  baseBusyReturn >= 0 && baseRosterRead >= 0 && baseBusyReturn < baseRosterRead,
   'base startup scrub must defer before reading or rewriting the roster during a pull');
 assert(si.includes('maxChanges: 12, maxDelayMs: 15000'),
   'the pull batch flushes at the clamp ceiling, not every 4 upserts');

@@ -12,7 +12,7 @@ new Function(source); // syntax gate
 
 // --- wiring: satellite injected + relay module consults the picker -------
 assert(connect.includes("feat_mls_pull_device_picker.js';"), 'pdp satellite is not injected by mls-connect.js');
-assert(connect.includes('?v=20260717pdp100'), 'pdp satellite injection is not cache-busted');
+assert(connect.includes('?v=20260729pdp110'), 'pdp satellite injection is not cache-busted');
 
 // shouldRelay honors an explicit non-self target (desktop can delegate)
 assert(/shouldRelay = function \(\) \{[\s\S]{0,600}__mlsPullTarget[\s\S]{0,300}!api\.extPresent\(\)/.test(connect),

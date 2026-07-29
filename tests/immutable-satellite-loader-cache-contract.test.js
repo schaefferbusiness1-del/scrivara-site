@@ -19,6 +19,7 @@ const assets = [
   ['feat_mls_asst_fix.js', '20260723asst144', '20260719asst143'],
   ['feat_mls_b121_pack.js', '20260728p2c6', '20260728p2c5'],
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
+  ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_checker.js', '20260728chk3031', '20260728chk3030'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],

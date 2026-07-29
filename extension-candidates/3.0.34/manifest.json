@@ -1,0 +1,107 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "MLS Assist",
+  "version": "3.0.34",
+  "version_name": "3.0.34+core-sha256:130dea96f9cab3995c4f580aced2e04e842e8bc5f6264cb5c42370530a70d605",
+  "description": "Clinician companion for MLS Scribe and athenaOne. Reads only when requested, drafts notes, and requires review.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "webNavigation",
+    "alarms",
+    "system.display"
+  ],
+  "host_permissions": [
+    "https://athenanet.athenahealth.com/*",
+    "https://mlsscribe.com/*",
+    "https://*.mlsscribe.com/*",
+    "https://scrivara-backend.onrender.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://www.google.com/maps/*",
+    "https://maps.google.com/*",
+    "https://maps.app.goo.gl/*",
+    "https://g.page/*",
+    "https://*.healthgrades.com/*",
+    "https://*.vitals.com/*",
+    "https://*.webmd.com/*",
+    "https://*.ratemds.com/*",
+    "https://*.zocdoc.com/*",
+    "https://*.yelp.com/*",
+    "https://*.facebook.com/*"
+  ],
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MLS Assist — settings",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://athenanet.athenahealth.com/*"
+      ],
+      "js": [
+        "write_safety_guard.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "https://athenanet.athenahealth.com/*",
+        "https://mlsscribe.com/*",
+        "https://*.mlsscribe.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "write_safety_guard.js",
+        "review_screen.js",
+        "content.js",
+        "mls-popup.js"
+      ],
+      "css": [
+        "content.css",
+        "mls-popup.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.google.com/maps/*",
+        "https://maps.google.com/*",
+        "https://maps.app.goo.gl/*",
+        "https://g.page/*",
+        "https://*.healthgrades.com/*",
+        "https://*.vitals.com/*",
+        "https://*.webmd.com/*",
+        "https://*.ratemds.com/*",
+        "https://*.zocdoc.com/*",
+        "https://*.yelp.com/*",
+        "https://*.facebook.com/*"
+      ],
+      "js": [
+        "ext_reviews_reader.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -663,10 +663,22 @@
     safe(function () { e.preventDefault(); });
     safe(function () { e.stopPropagation(); });
   }
+  var tourReturnFocus = null;
   function onKey(e) {
     if (!tourOpen || !e) return;
     var k = S(e.key);
     if (k === 'Escape' || e.keyCode === 27) { eat(e); closeTour(); return; }
+    if (k === 'Tab' || e.keyCode === 9) {
+      /* aria-modal promises a trap: Tab cycles inside the card, never into the
+         dimmed page behind it. */
+      var card = byId(TCARD_ID); if (!card) return;
+      var f = card.querySelectorAll('button,[href],[tabindex]:not([tabindex="-1"])');
+      if (!f.length) { eat(e); return; }
+      var firstF = f[0], lastF = f[f.length - 1], a = document.activeElement;
+      if (e.shiftKey) { if (a === firstF || !card.contains(a)) { eat(e); safe(function () { lastF.focus(); }); } }
+      else if (a === lastF || !card.contains(a)) { eat(e); safe(function () { firstF.focus(); }); }
+      return;
+    }
     if (k === 'ArrowRight' || k === 'ArrowDown') { eat(e); onNext(); return; }
     if (k === 'ArrowLeft' || k === 'ArrowUp') { eat(e); onBack(); }
   }
@@ -754,6 +766,7 @@
     on(window, 'resize', onReflow);
     on(window, 'scroll', onReflow, true);
 
+    tourReturnFocus = document.activeElement || null;
     renderStep(true);
     safe(function () { var c = byId(TCARD_ID); if (c) c.focus(); });
     /* two bounded settle passes -- the view switch and late module renders can
@@ -785,6 +798,9 @@
       safe(function () { if (isFn(window.showView)) window.showView(back); });
     }
     tourReturnView = '';
+    /* the dialog took focus; give it back to the control that opened it */
+    safe(function () { if (tourReturnFocus && isFn(tourReturnFocus.focus) && document.contains(tourReturnFocus)) tourReturnFocus.focus(); });
+    tourReturnFocus = null;
   }
 
   /* --------------------------------- ensure -------------------------------- */
