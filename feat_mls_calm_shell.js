@@ -524,24 +524,69 @@
     '#mlsRightNow .seg .segbtn.on{background:#fff;color:#204034;box-shadow:0 1px 3px rgba(20,35,28,.10)}',
     '#mlsRightNow .seg .segbtn:hover{color:#204034;background:rgba(255,255,255,.6)}',
 
-    /* stages */
+    /* stages — the visit rail.
+       Owner, on a screenshot of "Prep · Record · Review · Sign · Send":
+       "this progress bar should fill very beautifully each circle as a visit
+       goes on."
+       What he was looking at is exactly what these rules produced: a 1.6px
+       #D6DED9 ring on white, at 15px, beside a --muted 12.5px label. Only the
+       CURRENT dot carried a green halo, so only the current dot read as a
+       circle at all and the rail read as one glyph followed by four grey
+       words. There was no visible difference between "done" and "still to
+       come" until you looked for a 3% scale change.
+       Three states now, and each is legible WITHOUT colour:
+         COMPLETE  filled disc carrying a drawn check
+         CURRENT   filled disc inside a halo ring, scaled up
+         UPCOMING  hollow outline, muted
+       Completed stages STAY filled, so the rail answers "how far along am I"
+       at a glance rather than only "where am I". */
     '#mlsStages{display:flex;align-items:center;gap:0;margin:0 0 14px;padding:2px}',
-    '#mlsStages .st{display:flex;align-items:center;gap:7px;color:var(--muted);font:500 12.5px inherit}',
-    '#mlsStages .st .dot{width:15px;height:15px;border-radius:50%;border:1.6px solid #D6DED9;background:#fff;',
+    '#mlsStages .st{position:relative;display:flex;align-items:center;gap:7px;color:var(--muted);font:500 12.5px inherit}',
+    '#mlsStages .st .dot{flex:none;display:flex;align-items:center;justify-content:center;',
+    'width:16px;height:16px;border-radius:50%;border:1.6px solid #D6DED9;background:#fff;',
     /* Canonical tokens, and a real spring on the transform: the dot that
        becomes `now` is the one thing on this rail that was summoned, so it
        overshoots ~1% and settles rather than easing flat into place. Colour
        stays linear — a colour that springs reads as a flicker. box-shadow
        joins the transition so the focus ring BLOOMS with the scale instead of
-       snapping on a frame ahead of it; it is paint-only and costs no layout. */
+       snapping on a frame ahead of it; it is paint-only and costs no layout.
+       The COLOUR carries a --mls-dur-1 delay and the transform does not, so
+       the connector (dur-4, no delay) and the disc it feeds finish together:
+       the fill visibly travels along the track and INTO the circle instead of
+       both ends lighting up on the same frame. The delay is a token, not a
+       fourteenth hand-picked number. */
     'transition:transform var(--mls-dur-3) var(--mls-ease-spring),',
-    'background var(--mls-dur-3) linear,border-color var(--mls-dur-3) linear,',
+    'background var(--mls-dur-3) linear var(--mls-dur-1),',
+    'border-color var(--mls-dur-3) linear var(--mls-dur-1),',
     'box-shadow var(--mls-dur-3) var(--mls-ease-out)}',
-    '#mlsStages .st.done .dot{background:#2E6A4B;border-color:#2E6A4B;transform:scale(1.05)}',
-    '#mlsStages .st.now .dot{border-color:#2E6A4B;box-shadow:0 0 0 4px rgba(46,106,75,.14);transform:scale(1.15)}',
+    /* The check is DRAWN, not typed. A glyph would inherit the font of the
+       label beside it, would need its own rule to stay legible on the fill,
+       and would be one more character for the mojibake sweep to police — this
+       repo has already shipped chart-row status glyphs as mojibake once.
+       No ASCII apostrophe anywhere in this block, deliberately: every scanner
+       that reads this stylesheet does it by matching single-quoted string
+       literals, and one apostrophe in a comment swallows the next 40 rules. */
+    '#mlsStages .st .dot svg{display:block;width:10px;height:10px;opacity:0;transform:scale(.55);',
+    'transition:opacity var(--mls-dur-2) var(--mls-ease-out) var(--mls-dur-2),',
+    'transform var(--mls-dur-2) var(--mls-ease-spring) var(--mls-dur-2)}',
+    '#mlsStages .st .dot svg path{fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}',
+    '#mlsStages .st.done .dot{background:#2E6A4B;border-color:#2E6A4B;transform:scale(1.02)}',
+    '#mlsStages .st.done .dot svg{opacity:1;transform:scale(1)}',
+    /* CURRENT is filled AND ringed. Filled alone is indistinguishable from
+       complete for anyone who cannot make out the check; ringed alone left the
+       "you are here" mark lighter than every stage behind it, which is what
+       the owner was looking at. */
+    '#mlsStages .st.now .dot{background:#2E6A4B;border-color:#2E6A4B;',
+    'box-shadow:0 0 0 4px rgba(46,106,75,.14);transform:scale(1.15)}',
     '#mlsStages .st.now{color:#204034}',
     '#mlsStages .st.done{color:#4A5B51}',
-    '#mlsStages .bar{flex:1;height:1.6px;background:#E7E5DD;margin:0 9px;border-radius:2px;overflow:hidden}',
+    /* State in words, for a screen reader, never for the eye. NOT display:none
+       — a display:none node is absent from the accessibility tree, which is
+       the same as never having written it. The check is the only signal on
+       this rail that is not colour, and it belongs to one state of three. */
+    '#mlsStages .st .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;',
+    'border:0;overflow:hidden;white-space:nowrap;clip:rect(0 0 0 0);clip-path:inset(50%)}',
+    '#mlsStages .bar{flex:1;height:2px;background:#E7E5DD;margin:0 9px;border-radius:2px;overflow:hidden}',
     /* The connector fills with transform, not width.
        It used to be `width:0` + an inline `width:100%` and a
        `transition:width` — a layout property, against law 1, animating a
@@ -606,6 +651,16 @@
     '#mlsDock,#mlsRightNow button,#mlsAskResults,#mlsToolsMenu,',
     'body.mls-calm .view-enter{animation-duration:1ms!important}',
     '#mlsBusy i{animation-duration:2s!important}',
+    /* The stage rail is the only surface in this stylesheet whose motion
+       carries a transition-DELAY, and the blanket rule below shortens
+       durations only — a 200ms delay on the check and a 120ms delay on the
+       disc colour would both survive it, so a doctor who asked the OS for less
+       motion would still watch the rail light up in pieces. Clearing the
+       shorthand zeroes delay along with duration. Every state stays exactly as
+       correct as it is with motion on: the classes and the inline scaleX are
+       what carry the picture, the transitions only decide how it arrives. */
+    '#mlsStages .st .dot,#mlsStages .st .dot svg,#mlsStages .bar i',
+    '{transition:none!important}',
     '*{transition-duration:1ms!important}}',
 
     '@keyframes mlsDockInM{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}',
@@ -2085,6 +2140,19 @@
 
   var lastStage = -2;
 
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /* THE RAIL'S WRITE SIGNATURE: the stage index AND how many stages there are.
+     Both, because the stage list is data. A rail built for four stages showing
+     index 3 is not the same picture as a five-stage rail showing index 3, and
+     a signature of the index alone would leave the old rail on screen forever
+     the day STAGES grows.
+     It is stamped on the ELEMENT rather than kept in a module variable so that
+     it travels with the nodes it describes: teardown removes the rail and the
+     stamp goes with it, and a rail rebuilt from scratch cannot inherit a
+     signature that describes markup which no longer exists. */
+  function stageSig(now) { return now + ':' + STAGES.length; }
+
   /* Build the rail's nodes ONCE.
      ------------------------------------------------------------------
      A CSS transition needs the SAME element to still be in the document when
@@ -2104,31 +2172,102 @@
      glided. The declaration was there; the motion never was. Verify on the
      running page, not the stylesheet.
 
-     So: build once, then only move classes and one transform. */
+     So: build once, then only move classes and one transform.
+
+     Built with real nodes rather than one innerHTML string. The rail is built
+     once per mount so neither form costs anything measurable, but an SVG check
+     assembled by the HTML parser has to be spelled correctly in a template
+     literal to end up in the SVG namespace at all, and this is the file where
+     a declaration that was read but never ran cost a build. Nodes are the form
+     that can be executed in a harness and counted. */
   function buildStages(el) {
-    var parts = [];
+    /* The stamp describes THESE nodes, so it dies with them — otherwise a rail
+       whose children were emptied by something else would be re-built and then
+       skipped by the paint guard, leaving five hollow circles forever. */
+    el.__mlsStageSig = '';
+    while (el.firstChild) el.removeChild(el.firstChild);
     STAGES.forEach(function (name, i) {
-      parts.push('<span class="st"><span class="dot"></span>' + name + '</span>');
-      if (i < STAGES.length - 1) parts.push('<span class="bar"><i></i></span>');
+      var st = D.createElement('span');
+      st.className = 'st';
+      var dot = D.createElement('span');
+      dot.className = 'dot';
+      var svg = D.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false');
+      var tick = D.createElementNS(SVG_NS, 'path');
+      tick.setAttribute('d', 'M4.2 8.4 6.9 11.1 11.8 5.4');
+      svg.appendChild(tick);
+      dot.appendChild(svg);
+      st.appendChild(dot);
+      st.appendChild(D.createTextNode(name));
+      /* The stage's state in words, for a screen reader. Written here empty and
+         filled by paintStages, so the state has exactly one writer. */
+      var sr = D.createElement('span');
+      sr.className = 'sr';
+      st.appendChild(sr);
+      el.appendChild(st);
+      if (i < STAGES.length - 1) {
+        var bar = D.createElement('span');
+        bar.className = 'bar';
+        /* The connector is decoration: the discs and the per-stage state text
+           carry the whole picture, so a screen reader is told nothing twice. */
+        bar.setAttribute('aria-hidden', 'true');
+        bar.appendChild(D.createElement('i'));
+        el.appendChild(bar);
+      }
     });
-    el.innerHTML = parts.join('');
   }
 
   /* Move the state onto the existing nodes. Nothing here creates or removes an
      element, which is the whole point. */
-  function paintStages(el, now) {
+  function paintStages(el, now, sig) {
+    /* WRITE-ONLY-ON-CHANGE, second tier. renderStages already returns early on
+       an unchanged stage; this guard is what makes the property true of
+       paintStages ITSELF, so a caller that arrives another way — a rebuild that
+       left lastStage stale, __mlsCalmShell.render driven from a probe — still
+       performs zero DOM writes when the picture on screen is already correct.
+       Measured in tests/visit-stage-rail-fills.test.js, which runs this region
+       in a counting stub DOM: mounting and painting the rail once is 99 writes
+       across 108 node operations, and then 50 unchanged renders are 0 and 0.
+       One repaint at an unchanged stage costs 10 operations, which is what
+       this early return is worth on every #visitView mutation. */
+    if (el.__mlsStageSig === sig) return;
+    el.__mlsStageSig = sig;
     var sts = el.querySelectorAll('.st');
     var bars = el.querySelectorAll('.bar i');
     var i;
     for (i = 0; i < sts.length; i++) {
+      var done = i < now;
+      var cur = i === now;
       /* classList.toggle(name, force) does NOT re-commit when the state is
          already correct; add/remove re-commit unconditionally and this runs on
          the shell's tick, so add/remove here would be a whole-document style
          recalculation several times a second for no visual change. */
-      sts[i].classList.toggle('done', i < now);
-      sts[i].classList.toggle('now', i === now);
+      sts[i].classList.toggle('done', done);
+      sts[i].classList.toggle('now', cur);
+      /* aria-current marks EXACTLY ONE stage, and only while a stage is
+         current: at now === -1 the view is not in a visit, and claiming a
+         current step would be this rail asserting something the view never
+         said. setAttribute fires a mutation record even for an identical
+         value, so both directions are guarded. */
+      if (cur) {
+        if (sts[i].getAttribute('aria-current') !== 'step') sts[i].setAttribute('aria-current', 'step');
+      } else if (sts[i].getAttribute('aria-current') !== null) {
+        sts[i].removeAttribute('aria-current');
+      }
+      /* Not conveyed by colour alone. The filled disc and the check are the
+         visual signal; this is the same three-way state in words. */
+      var word = done ? 'completed' : (cur ? 'current step' : 'not started');
+      var sr = sts[i].querySelector('.sr');
+      /* Assigning textContent replaces the text node and fires a childList
+         record even for a byte-identical string. */
+      if (sr && sr.textContent !== word) sr.textContent = word;
     }
     for (i = 0; i < bars.length; i++) {
+      /* The connecting track fills up TO the current stage: connector i sits
+         between stage i and stage i+1, so the filled length is a pure function
+         of the stage index. */
       var want = i < now ? 'scaleX(1)' : 'scaleX(0)';
       /* Guard the write for the same reason: an identical inline style
          assignment still dirties the element. */
@@ -2147,6 +2286,7 @@
     if (!el) return;
     if (el.style.display !== 'flex') el.style.display = 'flex';
     var now = stageNow();
+    var sig = stageSig(now);
     /* ensureStages() hands back an EMPTY div when the rail had been removed, so
        "already built" is a property of the DOM, not of lastStage. */
     var built = el.childNodes.length > 0;
@@ -2157,8 +2297,11 @@
        no previous computed value, so this lands instantly — which is correct:
        opening a visit should show the rail's true state, not replay it. Every
        LATER change transitions, because the nodes persist. */
-    paintStages(el, now);
-    if (now >= 0) el.setAttribute('aria-label', 'Visit progress: ' + STAGES[now]);
+    paintStages(el, now, sig);
+    /* Guarded like everything else in this pass: an identical setAttribute
+       still fires a mutation record, and this element carries aria-live. */
+    var label = now >= 0 ? 'Visit progress: ' + STAGES[now] : 'Visit progress';
+    if (el.getAttribute('aria-label') !== label) el.setAttribute('aria-label', label);
   }
 
   /* ------------------------------------------------------------- heads-down */

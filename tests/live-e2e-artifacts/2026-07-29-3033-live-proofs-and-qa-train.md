@@ -134,3 +134,97 @@ containers must attribute rows positionally — a row belongs to the nearest
 preceding provider header within its container. Must stay fail-closed: if the
 positional walk cannot bind a row unambiguously, it stays unattributed and the
 day still refuses.
+
+## 3.0.35 live (Friday) — the surname fix is in, the refusal MOVED to an earlier stage
+
+Installed 3.0.35 (zip SHA 40a91b20…3a99eb, pong digest
+`3.0.35+core-sha256:ee4e925a…07f5`). Friday 2026-07-31, three consecutive runs,
+identical receipts every time:
+
+```
+complete:false  expectedCount:7  candidateCount:7  parsedCount:6
+domValidRows:6  invalidRowsRemoved:1  unverifiableRowCount:0  unverifiableRows:[]
+mergedRows:6    textValidRows:0       unnamedCount:0
+```
+
+Read carefully, this is NOT the same defect as before. On 3.0.34 the 7th row
+reached the re-verify/snapshot lane and was NAMED
+(`kind:'mutating', snapshotParse:'no-name-candidate'`). Now it is discarded at
+**DOM validation** (`invalidRowsRemoved:1`) — an earlier stage — and
+`unverifiableRows` is empty because that array only captures rows that reach
+the later lane. So the row is dropped SILENTLY: expected 7, parsed 6, nothing
+named.
+
+Honest verdict: **Friday is still 6-of-7, and the surname fix is neither proven
+nor disproven by these runs** — the row no longer reaches the code 3.0.35
+changed. Two candidate readings, not yet distinguished: (a) the row genuinely
+fails an earlier validity check for an unrelated reason, or (b) the earlier
+runs' grid state differed (one run showed `gridAgeMs` ~5.4 min and
+`liveSessionProven:false`). Do not claim the surname fix works on live evidence
+until a row actually reaches the snapshot lane again.
+
+Next step commissioned: a DIAGNOSTIC-ONLY 3.0.36 adding `invalidRows[]` with a
+`reason` per removed row — the same "name the failing stage" pattern that
+cracked both earlier defects in one live run each. No behaviour change.
+
+## Aug 4 — do NOT implement positional attribution
+
+The obvious fix for `verdict:'row-unattributed'` was adversarially refuted
+before any code was written: four real shapes bind a patient to a clinician who
+did not render the visit, and in every one the receipt reads GREEN (the gate
+counts only empty and off-roster providers). Full reasoning in
+coordination/outbox/007. Safe direction: fix the header HARVEST (exclude
+row-internal nodes from tiers 1/2), never the binding.
+
+## Site: b789 + b790 shipped and live-verified
+
+- **b789** — AI Studio tabs show exactly one panel. The study-builder host
+  belonged to no tab section, so it never got a hide rule and painted through
+  Practice and Build. Contract proved non-vacuous: 420 cascade collisions
+  against the pre-fix tree, 0 after.
+- **b790** — the stranded-switcher fallback no longer latches. Live-measured on
+  b789: the fallback (`body.mls-sm-all`, which opens every section so a hidden
+  switcher cannot strand the doctor) had set itself at first paint and nothing
+  re-evaluated it, so every tab showed every panel. One bounded re-check.
+  **Verified live on b790 from a COLD LOAD**: `mls-sm-all` absent, Ask →
+  Copilot only, Practice → trends only, Build → its two study panels, zero
+  overlapping pairs in every state.
+- Also in b790: Codex 019 (birthday-classifier stand-down) and 022 (visit-pref
+  Settings poll retirement). Gate 421/421 both ships.
+
+## 3.0.36 diagnostic — the Friday row's killer is NAMED
+
+The diagnostic-only `invalidRows[]` field settled it on the first live run
+(Fri 2026-07-31):
+
+```
+complete:false expected:7 candidate:7 parsed:6 domValidRows:6 invalidRowsRemoved:1
+invalidRows:[{ reason:"single-name-token", time:"9:40 AM", appointmentId:"45532929",
+               provider:"Matthew Schaeffer, MD", lane:"dom",
+               textLen:7, nameTokenCount:1 }]
+```
+
+**It is the SAME collision class as the 3.0.35 fix, at a SECOND call site.**
+The row resolves to a named appointment (unnamedCount 0, unverifiableRowCount
+0) and is then killed in `mlsMergeSchedule.filterSource` by
+`nameTokens(n).length < 2`. `nameTokens` filters through the SHARED `STOP`
+regex — the one 3.0.35 deliberately did not touch ("other call sites depend on
+it"). `filterSource` is one of those call sites. The name is 7 characters in
+two short parts; one part matches a surname-ambiguous `STOP` entry
+case-insensitively and is deleted, so the token count falls to 1 and the merge
+rejects the row as invalid.
+
+Chain of three defects, each hiding the next, all the same root idea:
+1. snapshot parse: bare-`min` cleanup deleted the surname → `no-name-candidate`
+2. (fixed 3.0.35) → row now resolves, but
+3. merge validation: `STOP` deletes the same surname → `single-name-token`
+
+Fix commissioned as 3.0.37: exempt surname-ambiguous tokens at THIS call site
+with the same discipline 3.0.35 used (Capitalized only; a name still requires
+at least one non-ambiguous token; the shared `STOP` regex itself untouched).
+Expected live result: domValidRows 6→7, invalidRowsRemoved 1→0, Friday closes.
+
+**The method worth keeping**: three receipt fields added across three
+revisions (`snapshotParse`, `attributionCoverage.verdict`, `invalidRows[].reason`)
+each converted a multi-build guessing game into a single-run fact. Every one of
+my own hypotheses about these rows was wrong; the receipts were right every time.

@@ -148,25 +148,63 @@
         if (isFn(window.setActivePtId)) window.setActivePtId(targetId);
         if (isFn(window.selectPatient)) window.selectPatient(targetId);
       });
+      purgeAbandonedVisit(targetId);
     }, function () { abandonAsk = null; });
     return false;
   }
-  function decideSwitch(targetId) {
-    if (LOCK.capturing) { blockWhileCapturing(LOCK.snapshot && LOCK.snapshot.name); return false; }
+  /* The dialog PROMISED "it will NOT follow the new patient". Keep that promise
+   * from the module that makes it, instead of depending on another module's
+   * post-switch reset. mls-connect.js's __mlsOpenSwitchFix normally saves the old
+   * patient's work to THEIR history and then runs newVisit() once the new patient
+   * is active, so this is a no-op in the shipped configuration; it only acts if
+   * that wrapper is absent/reverted/failed and the OLD patient's transcript or
+   * note is still on screen under the NEW patient - a note from one patient
+   * displayed under another. No save is attempted here: the new patient is
+   * already active, so any save-time patient stamp would read the WRONG chart. */
+  function purgeAbandonedVisit(targetId) {
+    safe(function () {
+      if (!isFn(window.getActivePtId) || String(window.getActivePtId() || '') !== String(targetId)) return;
+      var tr = document.getElementById('transcript'), nb = document.getElementById('noteBox');
+      var leftBehind = !!((tr && String(tr.value || '').trim()) || (nb && String(nb.value || '').trim()));
+      if (!leftBehind) return;
+      if (isFn(window.newVisit)) window.newVisit();
+    });
+  }
+  /* PURE classification of a switch request - no dialogs, no toasts, no state
+   * changes, safe to call any number of times. Split out of decideSwitch so an
+   * OUTER wrapper of these same globals can ask, WITHOUT side effects, whether
+   * this switch is about to be refused (see switchWillBeRefused below).
+   *   'blocked'   - recording in progress, refuse and say so
+   *   'ask'       - unsaved work, refuse now and open the abandon dialog
+   *   'confirmed' - the doctor already answered OK; consume the token and go
+   *   'allow'     - nothing to protect */
+  function switchState(targetId) {
+    if (LOCK.capturing) return 'blocked';
     if (LOCK.hasPendingWork && LOCK.snapshot && LOCK.snapshot.id) {
       var cur = currentActive();
       var stillOnLockedPatient = cur && cur.id === LOCK.snapshot.id;
       var sameTarget = targetId != null && String(targetId) === String(LOCK.snapshot.id);
       if (stillOnLockedPatient && !sameTarget) {
-        if (pendingAbandon && String(targetId) === String(pendingAbandon.target) && Date.now() - pendingAbandon.at < 15000) {
-          pendingAbandon = null;
-          clearLock();
-        } else {
-          return confirmAbandon(LOCK.snapshot.name, targetId);
-        }
+        return (pendingAbandon && String(targetId) === String(pendingAbandon.target) && Date.now() - pendingAbandon.at < 15000) ? 'confirmed' : 'ask';
       }
     }
+    return 'allow';
+  }
+  function decideSwitch(targetId) {
+    var state = switchState(targetId);
+    if (state === 'blocked') { blockWhileCapturing(LOCK.snapshot && LOCK.snapshot.name); return false; }
+    if (state === 'confirmed') { pendingAbandon = null; clearLock(); return true; }
+    if (state === 'ask') return confirmAbandon(LOCK.snapshot.name, targetId);
     return true;
+  }
+  /* True when this exact switch is about to be REFUSED (recording block, or the
+   * abandon dialog). Published on window.__mlsPatientLock so mls-connect.js's
+   * __mlsOpenSwitchFix - which wraps these same two globals on a 250ms poll, i.e.
+   * AFTER this module's synchronous wrap, and therefore runs OUTSIDE it - can
+   * skip its preserve-then-reset sequence for a switch that never happens. */
+  function switchWillBeRefused(targetId) {
+    var state = safe(function () { return switchState(targetId); }, 'allow');
+    return state === 'blocked' || state === 'ask';
   }
   /* setActivePtId is the PRIMARY/authoritative switch point - always decides fresh and records
    * its decision briefly so a synchronously-following selectPatient() call for the SAME id (MLS
@@ -253,6 +291,8 @@
   window.__mlsPatientLock = {
     installed: true,
     version: VERSION,
+    /* pure, side-effect-free; safe for an outer wrapper to call on every switch */
+    switchWillBeRefused: switchWillBeRefused,
     _debugState: function () { return safe(function () { return JSON.parse(JSON.stringify(LOCK)); }, LOCK); },
     revert: function () { window.__mlsPatientLock.installed = false; }
   };

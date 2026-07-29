@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
@@ -152,6 +153,110 @@ assert(settingsWb.includes("var VERSION = 'swb-1.1.0'"), 'Settings writeback lif
 assert(!/new MutationObserver/.test(settingsWb), 'Settings writeback row must not observe the whole page');
 assert(settingsWb.includes("window.addEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Settings writeback row must subscribe to the unified owner');
 assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Settings writeback row must unsubscribe on revert');
+
+const pullCheckStart = connect.indexOf('if (window.__mlsPullCheck) return;');
+const pullCheckEnd = connect.indexOf('/* ===== __mlsStaffMark', pullCheckStart);
+assert(pullCheckStart >= 0 && pullCheckEnd > pullCheckStart, 'Pull-check block is missing');
+const pullCheck = connect.slice(pullCheckStart, pullCheckEnd);
+assert(!pullCheck.includes('setInterval(function () { try { ensureSettingsRow(); ensureChip(); } catch (e) {} }, 1200)'), 'Pull check still polls closed Settings while disabled');
+assert(pullCheck.includes('if (!on()) {\n        if (iv) { clearInterval(iv); iv = null; }\n        return;'), 'Pull-check recovery timer is not gated by its enabled state');
+assert(pullCheck.includes("window.addEventListener('mls:settings-reconciled', onSettingsReconciled)") && pullCheck.includes("window.removeEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Pull-check Settings lifecycle is incomplete');
+assert(pullCheck.includes("window.addEventListener('mls:active-patient-changed', onPatientLifecycle)") && pullCheck.includes("window.addEventListener('mls:view-changed', onPatientLifecycle)"), 'Pull-check chip must react immediately to canonical patient/view changes');
+assert(pullCheck.includes("window.addEventListener('storage', onStorage)") && pullCheck.includes("window.removeEventListener('storage', onStorage)"), 'Pull-check cross-tab preference lifecycle is incomplete');
+
+const pullCheckIifeStart = connect.lastIndexOf('(function () {', pullCheckStart);
+assert(pullCheckIifeStart >= 0, 'Pull-check runtime IIFE start is missing');
+const pullCheckRuntimeSource = connect.slice(pullCheckIifeStart, pullCheckEnd);
+function createPullCheckRuntime(initialValue) {
+  const values = Object.create(null);
+  if (initialValue != null) values.mls_verify_pulls = String(initialValue);
+  const listeners = Object.create(null);
+  const intervals = new Map();
+  const probes = { nextId: 0, styleReads: 0, preferenceReads: 0 };
+  const nodes = Object.create(null);
+  function makeElement(tag) {
+    return {
+      tagName: String(tag || '').toUpperCase(), id: '', className: '', style: {}, children: [],
+      appendChild(node) { node.parentElement = this; this.children.push(node); if (node.id) nodes[node.id] = node; return node; },
+      remove() { this.removed = true; if (this.id) delete nodes[this.id]; },
+      addEventListener() {},
+      querySelector() { return null; },
+      querySelectorAll() { return []; }
+    };
+  }
+  const head = makeElement('head');
+  const documentElement = makeElement('html');
+  const body = makeElement('body');
+  const settingsModal = makeElement('div');
+  settingsModal.id = 'settingsModal';
+  nodes.settingsModal = settingsModal;
+  const document = {
+    head, documentElement, body,
+    createElement: makeElement,
+    getElementById(id) { return nodes[id] || null; },
+    addEventListener() {},
+    removeEventListener() {}
+  };
+  const window = {
+    addEventListener(type, fn) { (listeners[type] || (listeners[type] = [])).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter(item => item !== fn); },
+    dispatch(type, event) { (listeners[type] || []).slice().forEach(fn => fn(event || {})); },
+    postMessage() {},
+    toast() {},
+    activePatient() { return null; }
+  };
+  const localStorage = {
+    getItem(key) { if (key === 'mls_verify_pulls') probes.preferenceReads++; return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null; },
+    setItem(key, value) { values[key] = String(value); }
+  };
+  const sandbox = {
+    window, document, localStorage,
+    getComputedStyle() { probes.styleReads++; return { display: 'none' }; },
+    setInterval(fn, ms) { const id = ++probes.nextId; intervals.set(id, { fn, ms }); return id; },
+    clearInterval(id) { intervals.delete(id); },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    Promise, Date, JSON, Array, String, Object, Math, RegExp, console
+  };
+  window.window = window;
+  window.document = document;
+  window.localStorage = localStorage;
+  vm.runInNewContext(pullCheckRuntimeSource, sandbox, { filename: 'mls-connect.js#__mlsPullCheck' });
+  return { window, values, listeners, intervals, probes };
+}
+
+const pullCheckOff = createPullCheckRuntime(null);
+assert.strictEqual(pullCheckOff.intervals.size, 0, 'Default-off Pull Check must create zero intervals');
+const settingsReadsBefore = pullCheckOff.probes.styleReads;
+pullCheckOff.window.dispatch('mls:settings-reconciled', { detail: { open: false } });
+assert.strictEqual(pullCheckOff.probes.styleReads, settingsReadsBefore + 1, 'Settings lifecycle did not reconcile the Pull Check row');
+const preferenceReadsBefore = pullCheckOff.probes.preferenceReads;
+pullCheckOff.window.dispatch('mls:active-patient-changed', { detail: { patientId: 'SYNTHETIC-ID' } });
+pullCheckOff.window.dispatch('mls:view-changed', { detail: { view: 'patients' } });
+assert.strictEqual(pullCheckOff.probes.preferenceReads, preferenceReadsBefore + 2, 'Patient/view lifecycle did not refresh the Pull Check chip');
+pullCheckOff.values.mls_verify_pulls = '1';
+pullCheckOff.window.dispatch('storage', { key: 'mls_verify_pulls' });
+assert.strictEqual(pullCheckOff.intervals.size, 1, 'Enabling Pull Check must create exactly one recovery interval');
+assert.strictEqual(Array.from(pullCheckOff.intervals.values())[0].ms, 1200, 'Pull Check recovery interval changed from 1200ms');
+const firstPullCheckInterval = Array.from(pullCheckOff.intervals.keys())[0];
+pullCheckOff.window.dispatch('storage', { key: 'mls_verify_pulls' });
+assert.strictEqual(pullCheckOff.intervals.size, 1, 'Repeated enable duplicated the Pull Check recovery interval');
+assert.strictEqual(Array.from(pullCheckOff.intervals.keys())[0], firstPullCheckInterval, 'Repeated enable replaced the live Pull Check recovery interval');
+pullCheckOff.values.mls_verify_pulls = '0';
+pullCheckOff.window.dispatch('storage', { key: 'mls_verify_pulls' });
+assert.strictEqual(pullCheckOff.intervals.size, 0, 'Disabling Pull Check did not clear its recovery interval');
+pullCheckOff.values.mls_verify_pulls = '1';
+pullCheckOff.window.dispatch('storage', { key: 'mls_verify_pulls' });
+assert.strictEqual(pullCheckOff.intervals.size, 1, 'Re-enable did not restore exactly one Pull Check interval');
+pullCheckOff.window.__mlsPullCheck.revert();
+assert.strictEqual(pullCheckOff.intervals.size, 0, 'Pull Check revert leaked its recovery interval');
+['mls:settings-reconciled', 'mls:active-patient-changed', 'mls:view-changed', 'storage'].forEach(name => {
+  assert.strictEqual((pullCheckOff.listeners[name] || []).length, 0, 'Pull Check revert leaked ' + name);
+});
+const pullCheckOn = createPullCheckRuntime(1);
+assert.strictEqual(pullCheckOn.intervals.size, 1, 'Enabled Pull Check boot must create exactly one interval');
+assert.strictEqual(Array.from(pullCheckOn.intervals.values())[0].ms, 1200, 'Enabled Pull Check boot lost its 1200ms recovery cadence');
+pullCheckOn.window.__mlsPullCheck.revert();
 
 [
   /* Patients exact now stays inert until Patients is the active view. */

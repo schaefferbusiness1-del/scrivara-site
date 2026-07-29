@@ -221,10 +221,17 @@ async function waitForFile(file, timeoutMs) {
       backendMode=function(){return true;};
       bkBase=function(){return 'https://scrivara-backend.onrender.com';};
       bkToken=function(){return 'synthetic-live-phone-token';};
-      /* This lifecycle test owns a deterministic exact-appointment fixture.
-         The separate clinical-action suite proves the production appointment
-         resolver; here we prove that phone pairing crosses both engine gates
-         in order without needing a real schedule or patient. */
+      /* 2026-07-29: this lifecycle test owns a deterministic synthetic
+         patient and appointment. The separate clinical-action suite proves
+         the production appointment resolver; this test uses the real public
+         patient and consent contracts before crossing the phone gates. */
+      var syntheticPhonePatient={id:'synthetic-live-phone-patient',name:'Synthetic Phone Patient',dob:'2000-01-01',mrn:'SYNTH-PHONE-001',problems:'',meds:'',summary:'',docs:[]};
+      var syntheticPhonePatients=getPatients();
+      if(!syntheticPhonePatients.some(function(patient){return patient&&patient.id===syntheticPhonePatient.id;})){
+        syntheticPhonePatients.push(syntheticPhonePatient);
+        savePatients(syntheticPhonePatients);
+      }
+      setActivePtId(syntheticPhonePatient.id);
       window.__mlsPhoneExactGateAllowed=true;
       window.__mlsPhoneExactGateCalls=[];
       _mlsExactScheduledClinicalAction=function(actionLabel){
@@ -233,7 +240,7 @@ async function waitForFile(file, timeoutMs) {
       };
       _athenaPrepareRecording=function(){return true;};
       _athenaAsyncBindingStillSafe=function(){return true;};
-      currentVisitAthenaBinding={id:'synthetic-live-phone-visit'};
+      currentVisitAthenaBinding={id:'synthetic-live-phone-visit',patientId:syntheticPhonePatient.id,visitContext:{appointmentId:'synthetic-live-phone-appointment'}};
       currentVisitAthenaEpoch=17;
       if(window.__mlsFFP&&window.__mlsFFP.observer) window.__mlsFFP.observer.disconnect();
       var box=document.getElementById('mlsGpQrBox');
@@ -257,6 +264,36 @@ async function waitForFile(file, timeoutMs) {
     assert.strictEqual(startsAfterExactGateProbe, startsBeforeExactGateProbe, 'trusted phone pairing without an exact scheduled appointment contacted the backend');
     const exactCallsAfterDeniedProbe = await evaluate(cdp, 'window.__mlsPhoneExactGateCalls.slice()');
     assert.deepStrictEqual(exactCallsAfterDeniedProbe, ['phone recording'], 'trusted phone pairing did not request the exact phone-recording appointment gate once');
+
+    const phoneConsent = await evaluate(cdp, `(async()=>{
+      if(typeof window._mlsRequestEncounterConsent!=='function'||typeof window._mlsHasEncounterConsent!=='function')return{ready:false,reason:'public consent hooks missing'};
+      var active=typeof activePatient==='function'?activePatient():null;
+      if(!active||active.id!=='synthetic-live-phone-patient')return{ready:false,reason:'synthetic active patient missing',activeId:active&&active.id||''};
+      var before=window._mlsHasEncounterConsent();
+      var pending=window._mlsRequestEncounterConsent('phone recording');
+      var deadline=Date.now()+5000,dialog=null;
+      while(Date.now()<deadline&&!(dialog=document.getElementById('_mlsAskDialog')))await new Promise(function(resolve){setTimeout(resolve,25);});
+      if(!dialog)return{ready:false,reason:'consent dialog missing',before:before};
+      var verbal=dialog.querySelector('input[value="patient-verbal"]');
+      var confirm=dialog.querySelector('#_mlsAskYes');
+      if(!verbal||!confirm)return{ready:false,reason:'consent controls missing',before:before};
+      verbal.click();
+      confirm.click();
+      var confirmed=await pending;
+      var after=window._mlsHasEncounterConsent();
+      var log=[];try{log=JSON.parse(localStorage.getItem(uns('consentLog'))||'[]')||[];}catch(_){}
+      var last=log[log.length-1]||null;
+      return{ready:confirmed===true&&after===true,before:before===true,confirmed:confirmed===true,after:after===true,activeId:active.id,logCount:log.length,consentType:last&&last.consentType||'',patientId:last&&last.patientId||'',encounterId:last&&last.encounterId||''};
+    })()`, true);
+    assert(phoneConsent&&phoneConsent.ready===true, 'real synthetic encounter consent did not complete: '+JSON.stringify(phoneConsent));
+    assert.strictEqual(phoneConsent.before, false, 'synthetic phone fixture began with pre-existing consent');
+    assert.strictEqual(phoneConsent.activeId, 'synthetic-live-phone-patient', 'consent was not bound to the synthetic active patient');
+    assert(phoneConsent.logCount>=1, 'consent confirmation did not write its audit record');
+    assert.strictEqual(phoneConsent.consentType, 'patient-verbal', 'synthetic consent used the wrong real consent option');
+    assert.strictEqual(phoneConsent.patientId, 'synthetic-live-phone-patient', 'consent audit record used the wrong patient');
+    assert.strictEqual(phoneConsent.encounterId, 'appt:synthetic-live-phone-appointment', 'consent audit record used the wrong encounter');
+    const startsAfterConsent = backendRequests.filter(request => new URL(request.url).pathname.endsWith('/api/mic/start') && request.method === 'POST').length;
+    assert.strictEqual(startsAfterConsent, startsAfterExactGateProbe, 'consent confirmation itself contacted the phone backend');
 
     await evaluate(cdp, 'window.__mlsPhoneExactGateAllowed=true;true');
     await trustedClick(cdp, '#mlsGpQrBox');

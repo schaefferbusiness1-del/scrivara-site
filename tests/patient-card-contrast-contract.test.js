@@ -75,7 +75,7 @@ for (const state of states) {
   assert(contrast(state.foreground, state.background) >= 4.5, `${state.name}: contrast is below WCAG AA`);
 }
 
-assert(source.includes("window.__MLS_AV = window.__MLS_AV || 'b790'"), 'shared asset version was not bumped to b790');
-assert(source.includes("var MLS_APP_BUILD='2026-07-25-b790'"), 'app build version was not bumped to b790');
+assert(source.includes("window.__MLS_AV = window.__MLS_AV || 'b791'"), 'shared asset version was not bumped to b791');
+assert(source.includes("var MLS_APP_BUILD='2026-07-25-b791'"), 'app build version was not bumped to b791');
 
 console.log('PASS patient card contrast: every metadata, verification, history, and action state uses dark AA text on the light card');

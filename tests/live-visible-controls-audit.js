@@ -34,12 +34,12 @@ const NOTE = [
 ].join('\n');
 
 const ROUTES = [
-  { id: 'nav_visit', route: 'visit', label: 'Today', view: '#visitView' },
-  { id: 'nav_patients', route: 'patients', label: 'Patients', view: '#patientsView' },
-  { id: 'nav_calendar', route: 'calendar', label: 'Calendar', view: '#calendarView' },
-  { id: 'nav_history', route: 'history', label: 'History', view: '#historyView' },
-  { id: 'nav_analysis', route: 'analysis', label: 'Practice', view: '#analysisView' },
-  { id: 'nav_studio', route: 'studio', label: 'Tools', view: '#studioView' }
+  { id: 'nav_visit', route: 'visit', dest: 'visit', entry: '#mlsDock button[data-dest="visit"]', label: 'Today', view: '#visitView' },
+  { id: 'nav_patients', route: 'patients', dest: 'patient', entry: '#mlsDock button[data-dest="patient"]', label: 'Patients', view: '#patientsView' },
+  { id: 'nav_calendar', route: 'calendar', dest: 'day', entry: '#mlsDock button[data-dest="day"]', label: 'Calendar', view: '#calendarView' },
+  { id: 'nav_history', route: 'history', dest: 'patient', entry: '', label: 'History', view: '#historyView' },
+  { id: 'nav_analysis', route: 'analysis', dest: 'studio', entry: '', label: 'Practice', view: '#analysisView' },
+  { id: 'nav_studio', route: 'studio', dest: 'studio', entry: '#mlsDock button[data-dest="studio"]', label: 'AI Studio', view: '#studioView' }
 ];
 
 function parseArgs(argv) {
@@ -222,6 +222,38 @@ async function click(cdp, selector) {
   await sleep(100);
 }
 
+function routeNamed(name) {
+  const route = ROUTES.find(item => item.route === name);
+  if (!route) throw new Error(`Unknown route ${name}`);
+  return route;
+}
+
+async function routeEntryVisible(cdp, route) {
+  return evalJs(cdp, `(() => {
+    const shown=el=>{if(!el||el.disabled||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&+s.opacity>0&&r.width>0&&r.height>0};
+    if(${JSON.stringify(route.route)}==='history'){const source=document.getElementById('nav_history'),dock=document.querySelector('#mlsDock button[data-dest="patient"]');return shown(dock)&&!!source&&!source.disabled&&!source.hidden&&!source.classList.contains('nav-feat-off');}
+    if(!${JSON.stringify(route.entry)})return false;
+    return shown(document.querySelector(${JSON.stringify(route.entry)}));
+  })()`);
+}
+
+async function openRoute(cdp, route) {
+  if (route.route === 'history') {
+    await click(cdp, routeNamed('patients').entry);
+    await wait(cdp, 'Patients route before History', `window.__mlsCurrentView==='patients'`);
+    await wait(cdp, 'visible History segment', `(() => {
+      const shown=el=>{if(!el||el.disabled||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+      const el=[...document.querySelectorAll('#mlsRightNow .segbtn')].find(x=>shown(x)&&/^history$/i.test(String(x.textContent||'').trim()));
+      if(!el)return false;el.setAttribute('data-control-audit-route','history');return true;
+    })()`);
+    await click(cdp, '#mlsRightNow [data-control-audit-route="history"]');
+  } else {
+    assert(route.entry, `No visible route driver is declared for ${route.route}`);
+    await click(cdp, route.entry);
+  }
+  await wait(cdp, `${route.label} route`, `window.__mlsCurrentView===${JSON.stringify(route.route)}`);
+}
+
 async function fill(cdp, selector, value) {
   const result = await evalJs(cdp, `(() => {const el=document.querySelector(${JSON.stringify(selector)});if(!el)return null;el.focus();const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));el.dispatchEvent(new Event('change',{bubbles:true}));return el.value;})()`);
   assert.strictEqual(result, value, `Could not fill ${selector}`);
@@ -283,12 +315,12 @@ async function collect(cdp, label) {
     const name=el=>{const by=el.getAttribute('aria-labelledby');return norm(el.getAttribute('aria-label')||(by&&by.split(/\\s+/).map(id=>(document.getElementById(id)||{}).textContent||'').join(' '))||[...(el.labels||[])].map(x=>x.textContent||'').join(' ')||el.getAttribute('title')||el.innerText||el.textContent||el.value||el.placeholder)};
     const all=[...document.querySelectorAll('button,a[href],input:not([type="hidden"]),textarea,select,[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])')].filter(shown);
     const counts={};all.forEach(el=>{const fp=[el.tagName,el.id||'',name(el),el.getAttribute('data-action')||'',el.getAttribute('data-act')||'',el.getAttribute('data-view')||''].join('|');counts[fp]=(counts[fp]||0)+1});
-    const controls=all.map((el,index)=>{const r=el.getBoundingClientRect(),label=name(el),fp=[el.tagName,el.id||'',label,el.getAttribute('data-action')||'',el.getAttribute('data-act')||'',el.getAttribute('data-view')||''].join('|');let owner='global';for(const spec of ${JSON.stringify(ROUTES)}){const v=document.querySelector(spec.view);if(v&&v.contains(el)){owner=spec.route;break;}}if(el.closest('#mlsRdNav'))owner='primary-nav';else if(el.closest('#mlsRdTop'))owner='topbar';else if(el.closest('[role="dialog"],.modal-bg.show,.mlsvnd-modal'))owner='dialog';let p=el,parts=[];for(let depth=0;p&&depth<6;depth++,p=p.parentElement){if(p.id)parts.push('#'+p.id);if(p.className&&typeof p.className==='string')parts.push('.'+p.className.trim().replace(/\s+/g,'.'));}const states={expanded:el.getAttribute('aria-expanded'),pressed:el.getAttribute('aria-pressed'),selected:el.getAttribute('aria-selected'),checked:el.getAttribute('aria-checked'),current:el.getAttribute('aria-current')};return{index,tag:el.tagName,id:el.id||'',label,title:el.getAttribute('title')||'',href:el.getAttribute('href')||'',onclick:el.getAttribute('onclick')||'',classes:String(el.className||''),context:parts.join(' '),states,type:el.type||'',disabled:!!el.disabled,owner,fp,fpCount:counts[fp],rect:{left:+r.left.toFixed(1),top:+r.top.toFixed(1),right:+r.right.toFixed(1),bottom:+r.bottom.toFixed(1),width:+r.width.toFixed(1),height:+r.height.toFixed(1)},inViewport:r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight,fullyInViewport:r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1};});
+    const controls=all.map((el,index)=>{const r=el.getBoundingClientRect(),label=name(el),fp=[el.tagName,el.id||'',label,el.getAttribute('data-action')||'',el.getAttribute('data-act')||'',el.getAttribute('data-view')||''].join('|');let owner='global';for(const spec of ${JSON.stringify(ROUTES)}){const v=document.querySelector(spec.view);if(v&&v.contains(el)){owner=spec.route;break;}}if(el.closest('#mlsRdNav,#mlsDock'))owner='primary-nav';else if(el.closest('#mlsRdTop'))owner='topbar';else if(el.closest('[role="dialog"],.modal-bg.show,.mlsvnd-modal'))owner='dialog';let p=el,parts=[];for(let depth=0;p&&depth<6;depth++,p=p.parentElement){if(p.id)parts.push('#'+p.id);if(p.className&&typeof p.className==='string')parts.push('.'+p.className.trim().replace(/\s+/g,'.'));}const states={expanded:el.getAttribute('aria-expanded'),pressed:el.getAttribute('aria-pressed'),selected:el.getAttribute('aria-selected'),checked:el.getAttribute('aria-checked'),current:el.getAttribute('aria-current')};return{index,tag:el.tagName,id:el.id||'',label,title:el.getAttribute('title')||'',href:el.getAttribute('href')||'',onclick:el.getAttribute('onclick')||'',classes:String(el.className||''),context:parts.join(' '),states,type:el.type||'',disabled:!!el.disabled,owner,fp,fpCount:counts[fp],rect:{left:+r.left.toFixed(1),top:+r.top.toFixed(1),right:+r.right.toFixed(1),bottom:+r.bottom.toFixed(1),width:+r.width.toFixed(1),height:+r.height.toFixed(1)},inViewport:r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight,fullyInViewport:r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1};});
     const ids={};[...document.querySelectorAll('[id]')].filter(shown).forEach(el=>{ids[el.id]=(ids[el.id]||0)+1});Object.keys(ids).forEach(id=>{if(ids[id]<2)delete ids[id]});
     const surfaceSelector='[role="dialog"],.modal-bg.show,.mlsvnd-scrim,.mls-qf-pro,#mlsRdNewMenu.open,[role="menu"],.mlsTbPanel.open,.mls-account-popover.open,#copilotDock.open,#copilotDockScrim.open';
     const surfaces=[...document.querySelectorAll(surfaceSelector)].filter(shown).map(el=>{const r=el.getBoundingClientRect();return{id:el.id||'',role:el.getAttribute('role')||'',cls:String(el.className||''),label:name(el),rect:{left:+r.left.toFixed(1),top:+r.top.toFixed(1),right:+r.right.toFixed(1),bottom:+r.bottom.toFixed(1),width:+r.width.toFixed(1),height:+r.height.toFixed(1)},intersects:r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight,reachable:(r.width<=innerWidth+2&&r.left>=-2&&r.right<=innerWidth+2)||(getComputedStyle(el).overflowX==='auto'),topReachable:r.top>=-2||(['auto','scroll'].includes(getComputedStyle(el).overflowY))};});
     const covering=[...document.querySelectorAll('body *')].filter(shown).filter(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.position==='fixed'&&r.left<=2&&r.top<=2&&r.right>=innerWidth-2&&r.bottom>=innerHeight-2}).map(el=>{const s=getComputedStyle(el);return{id:el.id||'',cls:String(el.className||''),role:el.getAttribute('role')||'',background:s.backgroundColor,opacity:s.opacity,pointerEvents:s.pointerEvents,zIndex:s.zIndex,label:name(el).slice(0,100)}});
-    const nav=[...document.querySelectorAll('#mlsRdNav [data-mlsrd-primary="1"]')].filter(shown).map(el=>({id:el.id,label:name(el),on:el.classList.contains('on')}));
+    const nav=[...document.querySelectorAll('#mlsDock button[data-dest]')].filter(shown).map(el=>({id:el.getAttribute('data-dest')||'',label:name(el),on:el.getAttribute('aria-current')==='page'}));
     const visibleViews=${JSON.stringify(ROUTES)}.filter(spec=>{const el=document.querySelector(spec.view);return shown(el)}).map(spec=>spec.route);
     const statuses=[...document.querySelectorAll('[role="status"],#toast,[id*="Toast"],[class*="toast"]')].filter(shown).map(el=>({id:el.id||'',text:norm(el.innerText||el.textContent).slice(0,180),cls:String(el.className||'')}));
     const activeSpec=${JSON.stringify(ROUTES)}.find(spec=>spec.route===(window.__mlsCurrentView||''));const activeView=activeSpec&&document.querySelector(activeSpec.view);const content=activeView?norm(activeView.innerText||activeView.textContent):'';let viewDigest=2166136261;for(let i=0;i<content.length;i++){viewDigest^=content.charCodeAt(i);viewDigest=Math.imul(viewDigest,16777619);}viewDigest=(viewDigest>>>0).toString(16)+':'+content.length;
@@ -325,8 +357,9 @@ async function dimState(cdp) {
 }
 
 async function probeDimTransition(cdp, artifactDir) {
-  await reloadReady(cdp); await click(cdp, '#nav_patients'); await wait(cdp, 'Patients route before dim probe', `window.__mlsCurrentView==='patients'`);
-  await evalJs(cdp, `window.__controlAuditDimStart=performance.now();document.getElementById('nav_visit').click();true`);
+  const patientsRoute = routeNamed('patients'), visitRoute = routeNamed('visit');
+  await reloadReady(cdp); await openRoute(cdp, patientsRoute);
+  await evalJs(cdp, `window.__controlAuditDimStart=performance.now();document.querySelector(${JSON.stringify(visitRoute.entry)}).click();true`);
   const samples = [];
   samples.push({ delayMs: 0, state: await dimState(cdp) });
   for (const delay of [16, 32]) { await sleep(16); samples.push({ delayMs: delay, state: await dimState(cdp) }); }
@@ -335,7 +368,7 @@ async function probeDimTransition(cdp, artifactDir) {
   await shot(cdp, path.join(artifactDir, 'dim-probe-settled.png'));
   const cycles = [];
   for (let i = 0; i < 12; i++) {
-    await evalJs(cdp, `document.getElementById('nav_patients').click();window.__controlAuditDimStart=performance.now();document.getElementById('nav_visit').click();true`);
+    await evalJs(cdp, `document.querySelector(${JSON.stringify(patientsRoute.entry)}).click();window.__controlAuditDimStart=performance.now();document.querySelector(${JSON.stringify(visitRoute.entry)}).click();true`);
     await sleep(36); const immediate = await dimState(cdp); await sleep(360); const settled = await dimState(cdp);
     cycles.push({ run: i + 1, immediate, settled });
   }
@@ -356,7 +389,7 @@ async function probeDimTransition(cdp, artifactDir) {
 }
 
 async function auditNoPatient(cdp, artifactDir) {
-  await click(cdp, '#nav_visit'); await wait(cdp, 'no-patient Today route', `window.__mlsCurrentView==='visit'`); await sleep(450);
+  await openRoute(cdp, routeNamed('visit')); await sleep(450);
   const state = await collect(cdp, 'no-patient Today');
   const detail = await evalJs(cdp, `(() => {
     const shown=el=>{if(!el||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&+s.opacity>0&&r.width>0&&r.height>0};
@@ -375,7 +408,7 @@ async function auditNoPatient(cdp, artifactDir) {
   const decisions = controls.map(control => ({ control, ...classify(control) }));
   const clusterLabels = new Set(detail.clusters.flatMap(x => x.controls.map(y => y.label)));
   const clusterActions = [];
-  const route = { id: 'nav_visit', route: 'visit', label: 'Today' };
+  const route = routeNamed('visit');
   const safeClusterControls = controls.filter(control => clusterLabels.has(control.label) && control.fpCount === 1 && classify(control).disposition === 'exercise');
   for (let i = 0; i < safeClusterControls.length; i++) {
     const control = safeClusterControls[i];
@@ -409,15 +442,13 @@ async function auditPhoneLifecycle(cdp) {
 
 async function prepareFixture(cdp) {
   await reloadReady(cdp);
-  await click(cdp, '#nav_patients'); await wait(cdp, 'Patients route', `window.__mlsCurrentView==='patients'`);
-  await click(cdp, '#mlsRdNewBtn'); await wait(cdp, 'New menu', `document.getElementById('mlsRdNewMenu').classList.contains('open')`);
-  const marked = await evalJs(cdp, `(() => {const b=[...document.querySelectorAll('#mlsRdNewMenu button')].find(x=>/new patient/i.test(x.textContent||''));if(!b)return false;b.id='controlAuditNewPatient';return true})()`);
-  assert(marked, 'New patient action missing'); await click(cdp, '#controlAuditNewPatient');
+  await openRoute(cdp, routeNamed('patients'));
+  await click(cdp, '#ptNewBtn');
   await wait(cdp, 'New patient dialog', `document.getElementById('patientModal').classList.contains('show')`);
   await fill(cdp, '#ptName', PATIENT.name); await fill(cdp, '#ptMrn', PATIENT.mrn); await fill(cdp, '#ptDob', PATIENT.dob); await select(cdp, '#ptSex', PATIENT.sex);
   await click(cdp, '#patientModal button[onclick="savePatient()"]');
   const patient = await wait(cdp, 'saved patient', `(() => {const p=window.activePatient&&window.activePatient();return p&&p.name===${JSON.stringify(PATIENT.name)}?p:false})()`, 10000);
-  await click(cdp, '#nav_visit'); await wait(cdp, 'Visit route', `window.__mlsCurrentView==='visit'`); await fill(cdp, '#transcript', TRANSCRIPT);
+  await openRoute(cdp, routeNamed('visit')); await fill(cdp, '#transcript', TRANSCRIPT);
   const saved = await evalJs(cdp, `(() => {const note=${JSON.stringify(NOTE)};currentSoap=note;currentInsurance='';currentFormat='soap';currentCoding={em:'99213',em_just:'Synthetic fixture only',icd:['M54.50'],cpt:[]};lastEMR={cc:'Synthetic back follow-up',dx:'M54.50 - synthetic fixture',meds:'None',orders:'None',fu:'Reviewed',em:'99213',icd:'M54.50',cpt:'None'};const box=document.getElementById('noteBox');box.value=note;box.style.display='block';box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));const simple=document.getElementById('mls-note');if(simple){simple.value=note;simple.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));}const empty=document.getElementById('noteEmpty');if(empty)empty.style.display='none';if(typeof populateEMR==='function')populateEMR(lastEMR,currentCoding);if(typeof renderCoding==='function')renderCoding(currentCoding);if(typeof enableOutputs==='function')enableOutputs(true);saveCurrentNote(false);const p=activePatient(),n=getNotes().find(row=>row.patientId===p.id&&row.soap===note);return n&&{id:n.id,patientId:n.patientId};})()`);
   assert(saved && saved.id, `Synthetic note did not save: ${JSON.stringify(saved)}`);
   return { patient: { id: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn }, note: saved };
@@ -443,7 +474,7 @@ async function clickFingerprint(cdp, fp) {
 async function exerciseCandidate(cdp, route, candidate, artifactDir, serial) {
   await reloadReady(cdp);
   await evalJs(cdp, `(() => {if(typeof getPatients!=='function'||typeof setActivePtId!=='function')return false;const p=getPatients().find(x=>x&&x.name===${JSON.stringify(PATIENT.name)}&&x.mrn===${JSON.stringify(PATIENT.mrn)});if(!p)return false;setActivePtId(p.id);if(typeof renderPatients==='function')renderPatients();if(typeof renderProfile==='function')renderProfile();if(typeof renderPatientBar==='function')renderPatientBar();if(typeof updateNavCounts==='function')updateNavCounts();return p.id})()`);
-  await click(cdp, `#${route.id}`); await wait(cdp, `${route.label} route`, `window.__mlsCurrentView===${JSON.stringify(route.route)}`);
+  await openRoute(cdp, route);
   const setupStarted = Date.now(); await sleep(350);
   const marker = `${route.route}-${serial}`;
   /* Study Groups is deliberately a late, ordered satellite asset and its own boot
@@ -482,9 +513,12 @@ async function exerciseCandidate(cdp, route, candidate, artifactDir, serial) {
 
 async function auditNewMenu(cdp, artifactDir) {
   const results = [];
+  await reloadReady(cdp); await openRoute(cdp, routeNamed('patients'));
+  const offered = await evalJs(cdp, `(() => {const el=document.getElementById('mlsRdNewBtn');if(!el||el.disabled||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0})()`);
+  if (!offered) return results;
   const expected = ['New patient', 'New visit', 'New appointment'];
   for (let i = 0; i < expected.length; i++) {
-    const label = expected[i]; await reloadReady(cdp); await click(cdp, '#nav_patients'); await wait(cdp, 'Patients route', `window.__mlsCurrentView==='patients'`);
+    const label = expected[i]; await reloadReady(cdp); await openRoute(cdp, routeNamed('patients'));
     await click(cdp, '#mlsRdNewBtn'); await wait(cdp, 'New menu open', `document.getElementById('mlsRdNewMenu').classList.contains('open')`);
     const menu = await collect(cdp, `New menu: ${label}`);
     const surface = menu.surfaces.find(x => x.id === 'mlsRdNewMenu');
@@ -557,7 +591,8 @@ async function main() {
     if (noPatientQuickTools.actionFailures.length) routeFailures.push(...noPatientQuickTools.actionFailures.map(x => ({ kind: 'no-patient-quick-tool-action', ...x })));
     if (noPatientQuickTools.autoChanges.length) routeFailures.push({ kind: 'no-patient-surprise-auto-status-change', changes: noPatientQuickTools.autoChanges });
     if (dimTransition.status !== 'PASS') routeFailures.push({ kind: 'route-dim-or-cover-transition-present', detail: dimTransition });
-    const visibleRouteIds = await evalJs(cdp, `(() => {const shown=el=>{if(!el||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&+s.opacity>0&&r.width>0&&r.height>0};return ${JSON.stringify(ROUTES)}.filter(spec=>shown(document.getElementById(spec.id))).map(spec=>spec.id)})()`);
+    const visibleRouteIds = [];
+    for (const route of ROUTES) if (await routeEntryVisible(cdp, route)) visibleRouteIds.push(route.id);
     const requiredDemoRouteIds = ['nav_visit', 'nav_patients', 'nav_history', 'nav_studio'];
     for (const requiredId of requiredDemoRouteIds) {
       assert(visibleRouteIds.includes(requiredId), `Required demo clinician route is not visible: #${requiredId}`);
@@ -572,13 +607,13 @@ async function main() {
       disposition: visibleRouteIds.includes(route.id) ? 'live-audited' : 'hosted-role-only'
     }));
     for (let i = 0; i < routesToAudit.length; i++) {
-      const route = routesToAudit[i]; await click(cdp, `#${route.id}`); await wait(cdp, `${route.label} route`, `window.__mlsCurrentView===${JSON.stringify(route.route)}`); await sleep(350);
+      const route = routesToAudit[i]; await openRoute(cdp, route); await sleep(350);
       const state = await collect(cdp, `${route.label} first visit`); await shot(cdp, path.join(artifactDir, `route-${String(i + 1).padStart(2, '0')}-${route.route}.png`));
       await sleep(1500); const quiet = await collect(cdp, `${route.label} quiet window`);
       const stableState = quiet;
       if (stableState.duplicateVisibleIds && Object.keys(stableState.duplicateVisibleIds).length) routeFailures.push({ kind: 'duplicate-visible-ids', route: route.route, ids: stableState.duplicateVisibleIds });
       if (stableState.visibleViews.length !== 1 || stableState.visibleViews[0] !== route.route) routeFailures.push({ kind: 'competing-route-surfaces', route: route.route, visibleViews: stableState.visibleViews });
-      const active = stableState.nav.filter(x => x.on); if (active.length !== 1 || active[0].id !== route.id) routeFailures.push({ kind: 'wrong-or-competing-nav-owner', route: route.route, nav: stableState.nav });
+      const active = stableState.nav.filter(x => x.on); if (active.length !== 1 || active[0].id !== route.dest) routeFailures.push({ kind: 'wrong-or-competing-nav-owner', route: route.route, nav: stableState.nav });
       routeFailures.push(...surfaceFailures(stableState, `${route.route}:stable`));
       const missingNames = stableState.controls.filter(x => !x.label); if (missingNames.length) routeFailures.push({ kind: 'visible-controls-without-name', route: route.route, controls: missingNames });
       const surfaceKeys = new Set(state.surfaces.map(x => JSON.stringify(x))); const statusKeys = new Set(state.statuses.map(x => JSON.stringify(x)));
@@ -593,7 +628,7 @@ async function main() {
         else candidates.push({ route, control, reviewOnly: decision.disposition === 'exercise-review-only' });
       }
       routeInventories.push({ route: route.route, label: route.label, controlCount: stableState.controls.length, routeControlCount: routeControls.length, controls: stableState.controls, surfaces: stableState.surfaces, statuses: stableState.statuses, nav: stableState.nav });
-      const next = routesToAudit[(i + 1) % routesToAudit.length]; await click(cdp, `#${next.id}`); await wait(cdp, `${next.label} route`, `window.__mlsCurrentView===${JSON.stringify(next.route)}`); await click(cdp, `#${route.id}`); await wait(cdp, `${route.label} revisit`, `window.__mlsCurrentView===${JSON.stringify(route.route)}`); await sleep(1850);
+      const next = routesToAudit[(i + 1) % routesToAudit.length]; await openRoute(cdp, next); await openRoute(cdp, route); await sleep(1850);
       const revisit = await collect(cdp, `${route.label} revisit`); const firstKeys = stableState.controls.filter(x => x.owner === route.route).map(x => x.fp).sort(); const revisitKeys = revisit.controls.filter(x => x.owner === route.route).map(x => x.fp).sort();
       if (JSON.stringify(firstKeys) !== JSON.stringify(revisitKeys)) routeFailures.push({ kind: 'route-dependent-control-inconsistency', route: route.route, first: firstKeys, revisit: revisitKeys });
     }
@@ -630,7 +665,7 @@ async function main() {
       summary: { routesInventoried: routeInventories.length, hostedRoleRoutesExcluded: routeAvailability.filter(x => !x.visibleInDemo).length, controlsInventoried: routeInventories.reduce((n, x) => n + x.routeControlCount, 0), safeControlsExercised: exercises.length, safeControlFailures: exerciseFailures.length, newMenuActionsExercised: newMenu.length, newMenuFailures: newMenuFailures.length, fieldsInspected: inspected.length, explicitlyExcluded: exclusions.length, totalFailures: failures.length },
       failures, noPatientQuickTools, phoneLifecycle, dimTransition, routeAvailability, routeInventories, newMenu, exercises, inspected, exclusions, blockedRequests, cdpExceptions, consoleErrors, finalPageErrors: finalState.errors,
       coverageBoundary: {
-        liveAutomated: ['real Google Chrome', 'fresh temporary profile', 'extensions disabled', 'local ?demo=1 account', `${routesToAudit.length} canonical clinician routes visible to the demo role`, 'visible control inventory', 'safe reversible control clicks', 'New menu actions', 'route revisit consistency', 'handler exceptions', 'duplicate visible IDs', 'competing route owners', 'off-screen dialog/menu surfaces', 'surprise auto-surfaces'],
+        liveAutomated: ['real Google Chrome', 'fresh temporary profile', 'extensions disabled', 'local ?demo=1 account', `${routesToAudit.length} canonical clinician routes visible to the demo role`, 'visible control inventory', 'safe reversible control clicks', 'visible creation controls', 'route revisit consistency', 'handler exceptions', 'duplicate visible IDs', 'competing route owners', 'off-screen dialog/menu surfaces', 'surprise auto-surfaces'],
         explicitlyNotClaimed: ['hosted-role-only routes hidden from the no-backend demo role', 'Athena or other EMR page/data/write', 'MLS Assist extension', 'production or local backend', 'real account/session', 'PHI', 'microphone/camera', 'communications', 'downloads/uploads/printing/clipboard', 'destructive actions', 'payments/subscriptions', 'legal terms/signing', 'API/AI-generated results']
       }
     };
@@ -638,7 +673,7 @@ async function main() {
     const md = [
       '# Live clinician-visible controls audit', '', `Status: **${report.status}**`, '', `Generated: ${report.generatedAt}`, '',
       `Chrome: ${report.chrome}`, '',
-      `Inventoried ${report.summary.controlsInventoried} route-owned visible controls across ${report.summary.routesInventoried} routes. Exercised ${report.summary.safeControlsExercised} safe controls plus ${report.summary.newMenuActionsExercised} New-menu actions.`, '',
+      `Inventoried ${report.summary.controlsInventoried} route-owned visible controls across ${report.summary.routesInventoried} routes. Exercised ${report.summary.safeControlsExercised} safe controls plus ${report.summary.newMenuActionsExercised} separately visible New-menu actions when offered.`, '',
       `Failures: ${report.summary.totalFailures}. Explicit exclusions: ${report.summary.explicitlyExcluded}.`, '',
       '## Failures', '', ...(failures.length ? failures.map((x, i) => `${i + 1}. \`${x.kind || x.status}\` — ${x.route || x.label || x.context || 'global'}${x.control ? ` — ${x.control.id || x.control.label}` : ''}`) : ['None.']), '',
       '## Safety boundary', '', 'Fresh-profile local demo only. Non-loopback requests were failed before transmission. The extension, Athena, backend, real accounts, PHI, microphone, communications, destructive actions, payments, and legal signing were not used.', '',

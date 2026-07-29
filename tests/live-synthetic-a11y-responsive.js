@@ -20,6 +20,10 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const ACCOUNT = { email: 'clinician.a11y-smoke@mls.local', password: 'SyntheticA11y2026!' };
 const PATIENT = { name: 'Synthetic A11y Patient', dob: '1980-01-02', mrn: 'SYN-A11Y-0001', sex: 'Female' };
+const VISIBLE_ROUTE = Object.freeze({
+  visit: '#mlsDock button[data-dest="visit"]',
+  patients: '#mlsDock button[data-dest="patient"]'
+});
 const TRANSCRIPT = 'Synthetic fixture only. Follow-up for mechanical back discomfort. No real patient data is represented.';
 const NOTE = [
   'SUBJECTIVE:', 'Synthetic fixture only. Mechanical back discomfort follow-up.', '',
@@ -192,6 +196,24 @@ async function key(cdp, value, shift = false) {
   await sleep(80);
 }
 
+async function keyboardRoute(cdp, route) {
+  let selector = VISIBLE_ROUTE[route] || '';
+  if (route === 'history') {
+    await keyboardRoute(cdp, 'patients');
+    await wait(cdp, 'visible keyboard History segment', `(() => {
+      const shown=el=>{if(!el||el.disabled||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+      const el=[...document.querySelectorAll('#mlsRightNow .segbtn')].find(x=>shown(x)&&/^history$/i.test(String(x.textContent||'').trim()));
+      if(!el)return false;el.setAttribute('data-live-a11y-route','history');return true;
+    })()`);
+    selector = '#mlsRightNow [data-live-a11y-route="history"]';
+  }
+  assert(selector, `No visible keyboard route is declared for ${route}`);
+  await focus(cdp, selector);
+  await key(cdp, 'Enter');
+  await wait(cdp, `${route} route`, `window.__mlsCurrentView===${JSON.stringify(route)}`);
+  return selector;
+}
+
 async function click(cdp, selector) {
   const ok = await evalJs(cdp, `(() => { const el=document.querySelector(${JSON.stringify(selector)}); if(!el)return false; el.focus(); el.click(); return true; })()`);
   assert(ok, `Could not click ${selector}`);
@@ -311,32 +333,27 @@ async function focusState(cdp, selector) {
 }
 
 async function keyboardPatient(cdp) {
-  await focus(cdp, '#nav_patients'); await key(cdp, 'Enter');
-  await wait(cdp, 'Patients route', `window.__mlsCurrentView==='patients'`);
-  await focus(cdp, '#mlsRdNewBtn'); await key(cdp, 'Enter');
-  await wait(cdp, 'keyboard New menu focus', `document.getElementById('mlsRdNewBtn').getAttribute('aria-expanded')==='true'&&document.activeElement&&document.activeElement.getAttribute('role')==='menuitem'`);
-  const menuFocus = await evalJs(cdp, `({text:(document.activeElement.textContent||'').trim(),role:document.activeElement.getAttribute('role')})`);
-  for (let i = 0; i < 6 && !/new patient/i.test(await evalJs(cdp, `(document.activeElement.textContent||'').trim()`)); i++) await key(cdp, 'ArrowDown');
-  assert(/new patient/i.test(await evalJs(cdp, `(document.activeElement.textContent||'').trim()`)), `New patient was not keyboard-reachable from the New menu: ${JSON.stringify(menuFocus)}`);
+  await keyboardRoute(cdp, 'patients');
+  await focus(cdp, '#ptNewBtn');
+  const triggerFocus = await focusState(cdp, '#ptNewBtn');
+  assert(triggerFocus.active && triggerFocus.focusVisible, `Visible New patient control lacks keyboard focus: ${JSON.stringify(triggerFocus)}`);
   await key(cdp, 'Enter'); await wait(cdp, 'new-patient dialog', `document.getElementById('patientModal').classList.contains('show')&&document.activeElement===document.getElementById('ptName')`);
   const semantics = await evalJs(cdp, `(() => {const m=document.getElementById('patientModal');return{role:m.getAttribute('role'),ariaModal:m.getAttribute('aria-modal'),label:m.getAttribute('aria-labelledby'),hidden:m.getAttribute('aria-hidden'),focus:document.activeElement.id,labels:['ptName','ptMrn','ptDob','ptSex'].map(id=>({id,count:(document.getElementById(id).labels||[]).length}))}})()`);
   assert.deepStrictEqual({ role: semantics.role, ariaModal: semantics.ariaModal, label: semantics.label, hidden: semantics.hidden, focus: semantics.focus }, { role: 'dialog', ariaModal: 'true', label: 'patientModalTitle', hidden: 'false', focus: 'ptName' });
   assert(semantics.labels.every((row) => row.count > 0), `New-patient fields lost labels: ${JSON.stringify(semantics.labels)}`);
   await focus(cdp, '#patientModal .btn-ghost'); await key(cdp, 'Tab');
   assert.strictEqual(await evalJs(cdp, `document.activeElement===document.querySelector('#patientModal .modal-x')`), true, 'New-patient dialog did not wrap Tab to its first control');
-  await key(cdp, 'Escape'); await wait(cdp, 'Escape closes patient dialog', `!document.getElementById('patientModal').classList.contains('show')&&document.activeElement===document.getElementById('mlsRdNewBtn')`);
-  await key(cdp, 'Enter'); await wait(cdp, 'New menu reopens', `document.activeElement&&document.activeElement.getAttribute('role')==='menuitem'`);
-  for (let i = 0; i < 6 && !/new patient/i.test(await evalJs(cdp, `(document.activeElement.textContent||'').trim()`)); i++) await key(cdp, 'ArrowDown');
+  await key(cdp, 'Escape'); await wait(cdp, 'Escape closes patient dialog', `!document.getElementById('patientModal').classList.contains('show')&&document.activeElement===document.getElementById('ptNewBtn')`);
   await key(cdp, 'Enter');
   await wait(cdp, 'patient dialog reopens', `document.getElementById('patientModal').classList.contains('show')&&document.activeElement.id==='ptName'`);
   await fill(cdp, '#ptName', PATIENT.name); await fill(cdp, '#ptMrn', PATIENT.mrn); await fill(cdp, '#ptDob', PATIENT.dob); await select(cdp, '#ptSex', PATIENT.sex);
   await focus(cdp, '#patientModal button[onclick="savePatient()"]'); await key(cdp, 'Enter');
-  const patient = await wait(cdp, 'saved synthetic patient and focus restore', `(() => {const p=window.activePatient&&window.activePatient();return p&&p.name===${JSON.stringify(PATIENT.name)}&&!document.getElementById('patientModal').classList.contains('show')&&document.activeElement===document.getElementById('mlsRdNewBtn')?p:false})()`, 10000);
-  return { menuFocus, semantics, patient: { id: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn } };
+  const patient = await wait(cdp, 'saved synthetic patient and focus restore', `(() => {const p=window.activePatient&&window.activePatient();return p&&p.name===${JSON.stringify(PATIENT.name)}&&!document.getElementById('patientModal').classList.contains('show')&&document.activeElement===document.getElementById('ptNewBtn')?p:false})()`, 10000);
+  return { triggerFocus, semantics, patient: { id: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn } };
 }
 
 async function saveSyntheticNote(cdp) {
-  await focus(cdp, '#nav_visit'); await key(cdp, 'Enter'); await wait(cdp, 'Visit route', `window.__mlsCurrentView==='visit'`);
+  await keyboardRoute(cdp, 'visit');
   await fill(cdp, '#transcript', TRANSCRIPT);
   const saved = await evalJs(cdp, `(() => {
     const note=${JSON.stringify(NOTE)}; currentSoap=note; currentInsurance=''; currentFormat='soap';
@@ -352,7 +369,7 @@ async function saveSyntheticNote(cdp) {
 }
 
 async function keyboardHistory(cdp) {
-  await focus(cdp, '#nav_history'); await key(cdp, 'Enter');
+  await keyboardRoute(cdp, 'history');
   await wait(cdp, 'History row', `window.__mlsCurrentView==='history'&&[...document.querySelectorAll('#histList .hist-item')].some(el=>(el.textContent||'').includes(${JSON.stringify(PATIENT.name)}))`);
   const selector = '#histList .hist-item[data-live-a11y-history="1"]';
   const row = await evalJs(cdp, `(() => {const el=[...document.querySelectorAll('#histList .hist-item')].find(x=>(x.textContent||'').includes(${JSON.stringify(PATIENT.name)}));if(!el)return null;el.setAttribute('data-live-a11y-history','1');return{role:el.getAttribute('role'),tabindex:el.getAttribute('tabindex'),label:el.getAttribute('aria-label')}})()`);
@@ -368,7 +385,7 @@ async function keyboardHistory(cdp) {
 }
 
 async function keyboardAthenaReview(cdp, noteId) {
-  await focus(cdp, '#nav_visit'); await key(cdp, 'Enter'); await wait(cdp, 'Visit route for Athena review', `window.__mlsCurrentView==='visit'`);
+  await keyboardRoute(cdp, 'visit');
   await evalJs(cdp, `(() => {const n=getNotes().find(x=>x.id===${JSON.stringify(noteId)});if(n&&typeof loadRecordIntoEditor==='function')loadRecordIntoEditor(n);return !!n})()`);
   const markTrigger = `(() => {const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.disabled&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};let el=document.getElementById('pushAllEmrBtn');if(!shown(el))el=[...document.querySelectorAll('button')].find(x=>shown(x)&&/review athena actions/i.test(x.textContent||''));if(!shown(el))return null;el.setAttribute('data-live-a11y-athena','1');return{id:el.id||'',text:(el.textContent||'').trim()}})()`;
   let trigger = await evalJs(cdp, markTrigger);
@@ -442,7 +459,7 @@ async function main() {
     assert.strictEqual(await evalJs(cdp, `new URL(location.href).searchParams.get('demo')==='1'&&typeof _SF_DEMO!=='undefined'&&_SF_DEMO===true&&typeof backendMode==='function'&&backendMode()===false`), true, 'Audit escaped local demo/no-backend mode');
 
     await viewport(cdp, 1440, 1000); const baseline = await audit(cdp, '1440x1000 baseline'); await shot(cdp, path.join(artifactDir, '01-1440-baseline.png'));
-    const navFocus = await (async()=>{await focus(cdp,'#nav_visit');await key(cdp,'Enter');return focusState(cdp,'#nav_visit')})();
+    const navSelector = await keyboardRoute(cdp, 'visit'); const navFocus = await focusState(cdp, navSelector);
     assert(navFocus.active && navFocus.focusVisible && (navFocus.outline !== 'none' || navFocus.shadow !== 'none'), `Primary navigation lacks visible keyboard focus: ${JSON.stringify(navFocus)}`);
     const patient = await keyboardPatient(cdp); await shot(cdp, path.join(artifactDir, '02-patient-created.png'));
     const note = await saveSyntheticNote(cdp); const history = await keyboardHistory(cdp);
@@ -463,7 +480,7 @@ async function main() {
     assert.deepStrictEqual(unsafeExternal, [], `Synthetic proof attempted an unsafe external request: ${JSON.stringify(unsafeExternal)}`);
     assert.deepStrictEqual(exceptions, [], `Browser exceptions occurred: ${JSON.stringify(exceptions)}`);
 
-    report = { status:'PASS', generatedAt:new Date().toISOString(), syntheticOnly:true, chrome:await evalJs(cdp,'navigator.userAgent'), appUrl, patient, note, history, athena, navFocus, baseline, responsive, mobileNotices, zoom, reducedMotion, externalRequests:external, unsafeExternalRequests:unsafeExternal, exceptions, coverageBoundary:{liveAutomated:['real isolated Chrome','keyboard-only primary navigation','New menu and patient dialog','saved History row and detail dialog','Athena review dialog without write','normal-flow/deduped mobile status and persistent failure alert','360px unclipped top-bar controls/title','360x800','768x1024','1440x1000','200% zoom','prefers-reduced-motion','unique IDs','visible labels','primary 24px targets','horizontal overflow','top-bar overlap','contrast scan'],notClaimed:['real Athena data or write','extension lifecycle','production backend','PHI','microphone transcription']}};
+    report = { status:'PASS', generatedAt:new Date().toISOString(), syntheticOnly:true, chrome:await evalJs(cdp,'navigator.userAgent'), appUrl, patient, note, history, athena, navFocus, baseline, responsive, mobileNotices, zoom, reducedMotion, externalRequests:external, unsafeExternalRequests:unsafeExternal, exceptions, coverageBoundary:{liveAutomated:['real isolated Chrome','keyboard-only primary navigation','visible New patient control and patient dialog','saved History row and detail dialog','Athena review dialog without write','normal-flow/deduped mobile status and persistent failure alert','360px unclipped top-bar controls/title','360x800','768x1024','1440x1000','200% zoom','prefers-reduced-motion','unique IDs','visible labels','primary 24px targets','horizontal overflow','top-bar overlap','contrast scan'],notClaimed:['real Athena data or write','extension lifecycle','production backend','PHI','microphone transcription']}};
     fs.writeFileSync(path.join(artifactDir,'report.json'),`${JSON.stringify(report,null,2)}\n`);
     const contrastCount=[baseline,...responsive].reduce((n,row)=>n+row.contrast.length,0);
     const md=[`# Live synthetic accessibility and responsive audit`,``,`Status: **PASS**`,``,`Generated: ${report.generatedAt}`,``,`Chrome: ${report.chrome}`,``,`All hard checks passed in isolated real Chrome. The audit was local-demo and synthetic-only; it did not load MLS Assist or Athena.`,``,`## Covered`,``,`- Keyboard-only primary navigation, New patient, saved History detail, and Athena review`,`- Focus entry, trapping, Escape, restoration, accessible dialog names, input labels, and unique IDs`,`- Phone statuses render in normal flow, duplicate success collapses, stale success retires, and persistent failures stay announced`,`- 360px top-bar controls and full title remain inside the header row`,`- 360x800, 768x1024, 1440x1000, 200% page zoom, reduced motion`,`- Horizontal overflow, top-bar overlap, and 24px primary target checks`,``,`## Advisory contrast samples`,``,`The heuristic recorded ${contrastCount} low-contrast samples for human review. Gradient/translucent backgrounds can produce false positives; exact samples are in report.json.`,``,`## Safety boundary`,``,`No extension, Athena page, backend, real account, or PHI was used.`].join('\n');
