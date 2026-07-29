@@ -25,3 +25,11 @@
 ## Still open
 
 Advanced-section reveal rework (plan chosen: rework what the reveal shows — the row itself is already invisible), screen-size pass, perf loader consolidation, final all-hands bug sweep (especially op notes end-to-end with a real template), practice-login diagnosis (owner-side credentials), Chrome Web Store publish of any future extension change (owner action, extension frozen at 3.0.31 tonight).
+
+## Addendum (late evening, b779 live)
+
+- **b779 note-card fold verified live** with a real note: #noteEmpty / .mlsf-note / .mls-fp-fmt / .mls-as-ind all `display:none 0x0`; the note-actions row (568x93), #visitOrdersCard (568x138), preview (568x38) and visit-tools toggle (568x42) kept their exact measured sizes.
+- **b778 Copilot roster answers verified live**: "Who has lumbar spondylosis?" -> 67 of 1526 stored patients with names+fields, honesty line, Open-Patients action; aggregate starter chips still reach the AI; "gout" -> 2 of 1526.
+- **End-to-end op-note draft verified live (generate-only, nothing saved)**: chart-verified patient, template auto-matched FROM THE PATIENT'S VISIT HISTORY (match source `history:keyword margin`), backend call through the retry-armored cascade, note 1087 chars, **template fidelity PASS**, procedure + technique sections present, zero unfilled boxes, empty error channel. The whole b769+backend chain works first-attempt on real data.
+- Screen-size pass DEFERRED with reason: the shared Chrome window is maximized and ignores programmatic resizes (innerWidth never moved); the walkthrough's mobile sheet was DOM-verified at 375px in its build harness. A human 30-second look at phone width remains worthwhile.
+- Convergence note: one bodies re-check round was interrupted by a QA-tab reload (mine); re-pulls re-converge idempotently and the day receipt was already complete.
