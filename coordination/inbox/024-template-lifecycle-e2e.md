@@ -28,6 +28,10 @@ Add one isolated local-demo step that:
 7. Requires every unique heading in order, the fixed sentinel exactly once, the correct synthetic patient, no known foreign synthetic facts, a stable visit binding, and no Athena or extension write message.
 8. Saves locally, reloads, verifies the template and formatted note persisted under the same patient, then removes only this step's synthetic objects and restores prior settings.
 
+The step is appended after the existing phone checks. A real product failure in
+this new lane therefore cannot contaminate the earlier patient-lock or phone
+fixtures and create misleading secondary failures.
+
 The controlled stub proves UI, import, selection, patient binding, prompt plumbing, output application, and persistence. It does **not** prove hosted-model quality; that remains a separate post-deploy test in a dedicated synthetic AI-enabled account.
 
 No runtime, UI, backend, manifest, extension, or live-site file changes.
@@ -47,9 +51,29 @@ No runtime, UI, backend, manifest, extension, or live-site file changes.
 
 ## Validation
 
-Pending Claude application in a disposable snapshot:
+In a disposable combined-optimization snapshot:
 
-- `node --check coordination/inbox/024-template-lifecycle-e2e.js`
-- apply the patch once; a second application must fail on the missing anchor
-- `node --check tests/e2e/run-e2e.js`
-- `$env:MLS_E2E_REQUIRED='1'; node tests/e2e/run-e2e.js`
+- the patch and patched E2E file both passed `node --check`;
+- the patch applied once;
+- a second application exited nonzero before writing and left the target
+  SHA-256 unchanged; and
+- strict Chrome execution used `MLS_E2E_REQUIRED=1`, so a missing browser or
+  Puppeteer dependency could not be reported as a pass.
+
+The new step reached real import preview and commit, reload persistence, the
+visible template row, visible default action, enabled Templates state, an exact
+synthetic scheduled-visit binding, and both application calls. It then exposed
+product defect QA-003: `mls-template-stdline.js:205-219` forwards only
+`template, visitText`, dropping the required `expectedBinding, expectedEpoch`
+arguments. Both automatic and manual application therefore refuse safely with
+`Open or generate this note inside the correct patient visit before applying a
+template. Nothing changed in Athena.`
+
+The base note still generated and the binding remained exact; zero Athena or
+extension writes occurred. This test is expected to remain red until
+Claude/Opus fixes QA-003. Codex did not change the affected runtime or UI code.
+
+With the new step placed last, strict execution reported 31 steps and exactly
+2 failures: the independently reproduced baseline phone long-press defect
+QA-002 and this template defect QA-003. The prior patient-lock/isolation step
+passed, confirming the new fixture no longer contaminates later state.

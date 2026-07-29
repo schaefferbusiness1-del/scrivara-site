@@ -520,6 +520,18 @@
     var bar = byId(TABS_ID);
     var stranded = studio.style.display !== 'none' && !!bar && !visible(bar);
     safe(function () { D.body.classList.toggle(BODY_CLASS + '-all', stranded); });
+    /* The escape must not LATCH. Measured live at b789: the switcher reports
+       0x0 on its first paint, this ran once, and nothing re-evaluated it — so
+       every tab showed every panel for the rest of the session. One bounded
+       re-check (never more than one pending, and it only re-arms while the
+       flag is actually set) keeps the header comment's promise that the class
+       is removed the moment the switcher paints. */
+    if (stranded && !_strandedRecheck) {
+      _strandedRecheck = true;
+      safe(function () {
+        W.setTimeout(function () { _strandedRecheck = false; safe(reconcile); }, 400);
+      });
+    }
     if (stranded && !_warnedStranded) {
       _warnedStranded = true;
       safe(function () {
@@ -530,6 +542,7 @@
     else syncAnalysisInline(current());
   }
   var _warnedStranded = false;
+  var _strandedRecheck = false;
 
   function schedule() {
     if (pending) return;

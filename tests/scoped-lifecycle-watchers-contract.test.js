@@ -67,6 +67,86 @@ assert(legacySettings.includes("window.addEventListener('mls:settings-reconciled
 assert(legacySettings.includes("window.removeEventListener('mls:settings-reconciled', passAll)"), 'Legacy Settings cleanup must unsubscribe on revert');
 assert(!legacySettings.includes("window.__mlsUiUnification.reconcileSettings()"), 'Legacy Settings cleanup must not recursively call the unified owner');
 
+const visitPrefStart = connect.indexOf('if (window.__mlsVisitSavePref) return;');
+const visitPrefEnd = connect.indexOf('/* ===== __mlsPullCheck', visitPrefStart);
+assert(visitPrefStart >= 0 && visitPrefEnd > visitPrefStart, 'Visit-save preference block is missing');
+const visitPref = connect.slice(visitPrefStart, visitPrefEnd);
+assert(!visitPref.includes('setInterval(function () { ensureSettings(); wrapSinglePull(); }'), 'Visit-save preference still polls Settings forever');
+assert(visitPref.includes("window.addEventListener('mls:settings-reconciled', onSettingsReconciled)") && visitPref.includes("window.removeEventListener('mls:settings-reconciled', onSettingsReconciled)"), 'Visit-save preference Settings lifecycle is incomplete');
+assert(visitPref.includes('if (wrapped && iv) { clearInterval(iv); iv = null; }'), 'Visit-save preference late-dependency poll does not retire after wrapping');
+
+const visitPrefVm = require('vm');
+const visitPrefIifeStart = connect.lastIndexOf('(function () {', visitPrefStart);
+assert(visitPrefIifeStart >= 0, 'Visit-save preference runtime IIFE start is missing');
+const visitPrefRuntimeSource = connect.slice(visitPrefIifeStart, visitPrefEnd);
+function createVisitPrefRuntime(dependency) {
+  const listeners = Object.create(null);
+  const intervals = new Map();
+  const probes = { nextId: 0, styleReads: 0 };
+  const settingsModal = {
+    id: 'settingsModal',
+    querySelectorAll() { return []; }
+  };
+  const nodes = { settingsModal };
+  const document = {
+    getElementById(id) { return nodes[id] || null; },
+    createElement() { return { id: '', className: '', innerHTML: '', appendChild() {}, addEventListener() {}, remove() {} }; }
+  };
+  const window = {
+    addEventListener(type, fn) { (listeners[type] || (listeners[type] = [])).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter(item => item !== fn); },
+    dispatch(type, event) { (listeners[type] || []).slice().forEach(fn => fn(event || {})); },
+    toast() {},
+    activePatient() { return null; }
+  };
+  if (typeof dependency === 'function') window.pullPatientChartViaAssist = dependency;
+  const localStorage = { getItem() { return null; }, setItem() {} };
+  const sandbox = {
+    window, document, localStorage,
+    getComputedStyle() { probes.styleReads++; return { display: 'none' }; },
+    setInterval(fn, ms) { const id = ++probes.nextId; intervals.set(id, { fn, ms }); return id; },
+    clearInterval(id) { intervals.delete(id); },
+    Promise, Date, JSON, Array, String, Object, Math, RegExp, console
+  };
+  window.window = window;
+  window.document = document;
+  window.localStorage = localStorage;
+  visitPrefVm.runInNewContext(visitPrefRuntimeSource, sandbox, { filename: 'mls-connect.js#__mlsVisitSavePref' });
+  return { window, listeners, intervals, probes };
+}
+
+const bootDependency = function () { return Promise.resolve(true); };
+const visitPrefReady = createVisitPrefRuntime(bootDependency);
+assert.strictEqual(visitPrefReady.intervals.size, 0, 'Present pull dependency must not create a permanent interval');
+assert.notStrictEqual(visitPrefReady.window.pullPatientChartViaAssist, bootDependency, 'Present pull dependency was not wrapped at boot');
+assert.strictEqual(visitPrefReady.window.pullPatientChartViaAssist.__mlsFullVisitPref, true, 'Boot wrapper marker is missing');
+visitPrefReady.window.__mlsVisitSavePref.revert();
+
+const visitPrefLate = createVisitPrefRuntime(null);
+assert.strictEqual(visitPrefLate.intervals.size, 1, 'Missing pull dependency must create one late-dependency interval');
+assert.strictEqual(Array.from(visitPrefLate.intervals.values())[0].ms, 1200, 'Late-dependency interval changed from 1200ms');
+const visitSettingsReadsBefore = visitPrefLate.probes.styleReads;
+visitPrefLate.window.dispatch('mls:settings-reconciled', { detail: { open: false } });
+assert.strictEqual(visitPrefLate.probes.styleReads, visitSettingsReadsBefore + 1, 'Settings lifecycle did not reconcile the visit preference row');
+const lateDependency = function () { return Promise.resolve(true); };
+visitPrefLate.window.pullPatientChartViaAssist = lateDependency;
+const lateTick = Array.from(visitPrefLate.intervals.values())[0].fn;
+lateTick();
+assert.strictEqual(visitPrefLate.intervals.size, 0, 'Late-dependency interval did not clear after wrapping');
+const installedVisitWrapper = visitPrefLate.window.pullPatientChartViaAssist;
+assert.notStrictEqual(installedVisitWrapper, lateDependency, 'Late dependency was not wrapped on the next tick');
+assert.strictEqual(installedVisitWrapper.__mlsFullVisitPref, true, 'Late wrapper marker is missing');
+lateTick();
+assert.strictEqual(visitPrefLate.window.pullPatientChartViaAssist, installedVisitWrapper, 'Late dependency was wrapped more than once');
+visitPrefLate.window.__mlsVisitSavePref.revert();
+assert.strictEqual(visitPrefLate.window.pullPatientChartViaAssist, lateDependency, 'Revert did not restore the original late dependency');
+
+const visitPrefRevert = createVisitPrefRuntime(null);
+assert.strictEqual(visitPrefRevert.intervals.size, 1, 'Revert fixture did not start with one late-dependency interval');
+visitPrefRevert.window.__mlsVisitSavePref.revert();
+assert.strictEqual(visitPrefRevert.intervals.size, 0, 'Visit preference revert leaked its late-dependency interval');
+assert.strictEqual((visitPrefRevert.listeners['mls:settings-reconciled'] || []).length, 0, 'Visit preference revert leaked its Settings listener');
+
 assert(!/setInterval\s*\(/.test(settingsWb), 'Settings writeback row must not retain a permanent poll');
 assert(settingsWb.includes("var VERSION = 'swb-1.1.0'"), 'Settings writeback lifecycle release version was not advanced');
 assert(!/new MutationObserver/.test(settingsWb), 'Settings writeback row must not observe the whole page');

@@ -72,6 +72,7 @@ assert(!connect.includes("document.addEventListener('click',onMaybeFlip,true)"),
 const messageFix = connect.slice(connect.indexOf('if(window.__mlsAthenaMsgFix)'), connect.indexOf('/* feat_canon_provider'));
 assert(!messageFix.includes("document.querySelectorAll('div,span,p,li,small,em')"), 'one status-text mutation still triggers a whole-document text scan');
 assert(messageFix.includes('function queue(node,deep)') && messageFix.includes('fix(batch[i].node,batch[i].deep)'), 'status text repair is not scoped to changed subtrees');
+assert(connect.includes("if (!c.birthdays) [].forEach.call(document.querySelectorAll('span,em,i,b,div')"), 'visible birthdays still trigger a full-document classification scan every two seconds');
 assert(app.includes("window.scrollTo({top:0,behavior:'auto'})"), 'view switches still fight an animated document scroll');
 
 assert(!app.includes('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>'), 'optional PDF tooling still blocks first paint');
@@ -188,7 +189,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b789' }, 'tiny version probe does not match b789');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b790' }, 'tiny version probe does not match b790');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);

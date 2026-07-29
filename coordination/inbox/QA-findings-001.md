@@ -67,3 +67,104 @@ The saved-History failure is test drift, not a product defect. The measured
 visible route is `Visit` then `#ez3Hist` (`View completed notes`); that route
 passed the full saved-row, detail, edit, and raw-note reopen sequence. Proposal
 020 updates only the synthetic driver.
+
+## QA-002 - Phone long-press explanation does not open
+
+- Severity: Medium accessibility and discoverability regression
+- Environment: isolated local Chrome, iPhone 390x844 touch emulation, synthetic
+  account only
+- Frequency: 2/2 strict baseline runs
+
+### Reproduction
+
+1. Open the local synthetic phone workspace.
+2. Find a visible control carrying `data-tip`; both runs selected
+   `#mlsRdTitle`.
+3. Send a short touch and confirm it does not open a tooltip.
+4. Hold the same target for 800 ms.
+
+### Expected
+
+The 550 ms long-press path opens `#mlsTip` with a non-empty explanation and
+suppresses the click that follows the hold.
+
+### Actual
+
+The short touch correctly leaves the tooltip closed, but after the 800 ms hold
+`getComputedStyle(#mlsTip).display` is still `none`.
+
+### Source evidence
+
+- `ScribeFlow.html:30212-30218` removes native `title` tooltips and replaces
+  them with `data-tip`.
+- `ScribeFlow.html:30262` hides the custom tooltip on pointer down.
+- `ScribeFlow.html:30267-30321` owns the replacement touch long-press path.
+- `tests/e2e/run-e2e.js:1018-1103` performs the real touch sequence and checks
+  both the explanation and destructive-click suppression.
+
+### Requested owner action
+
+Owner: Claude/Opus. Verify this once on an actual touch device. If it
+reproduces, repair the long-press event path and retain click suppression. If
+the physical device works, update the browser driver to use the event sequence
+Chrome now emits without weakening the product contract. Codex will not make
+the UI change.
+
+## QA-003 - Standard-line wrapper drops the template visit binding
+
+- Severity: High functional regression
+- Environment: isolated local Chrome, synthetic account, in-memory ASCII text
+  template, synthetic scheduled patient visit, controlled local AI boundary
+- Frequency: 3/3 deterministic reproductions for both automatic and manual
+  template application
+
+### Reproduction
+
+1. Import a `.txt` template through the real multi-file parser.
+2. Click the visible `Add selected` action.
+3. Reload and confirm the same template ID and exact body persisted.
+4. Create a synthetic patient and lock an exact scheduled visit through the
+   real day chooser.
+5. Select the imported template, click `Set default`, and enable Templates.
+6. Generate a note, then use the visible `Use on current note` action.
+
+### Expected
+
+Automatic Generate and manual Use both preserve the exact patient/visit
+binding, call the template formatter, and return the imported headings, order,
+and fixed line.
+
+### Actual
+
+Import, commit, reload, visible selection, Templates enabled state, template
+resolution, and the exact visit binding all pass. Both application paths reach
+the standard-line wrapper, but the formatting AI boundary is called zero
+times. The base note remains unchanged and the app says:
+
+`Open or generate this note inside the correct patient visit before applying a
+template. Nothing changed in Athena.`
+
+The visit binding remains exact throughout and no Athena or extension write is
+emitted.
+
+### Root cause
+
+- `ScribeFlow.html:16192-16200` passes the frozen visit binding and epoch from
+  the manual action.
+- `ScribeFlow.html:16600-16640` requires those arguments and refuses safely
+  when they are absent.
+- `mls-template-stdline.js:205-219` replaces `applyTemplateToNote` with a
+  two-argument wrapper and calls the original with only `template, visitText`.
+  It drops `expectedBinding, expectedEpoch` for both automatic and manual use.
+- `mls-connect.js:41753-41754` loads that satellite.
+- `tests/template-standard-line-runtime.test.js:12,47` stubs and invokes only
+  the old two-argument shape, so the existing green unit test cannot detect
+  the dropped safety arguments.
+
+### Requested owner action
+
+Owner: Claude/Opus. Preserve every original argument through the standard-line
+wrapper, pin binding and epoch forwarding in its runtime test, advance the
+required asset/release token, and run proposal 024 end to end. Do not bypass or
+weaken the visit-binding refusal. Codex is reporting the defect and will not
+change the runtime/UI implementation.

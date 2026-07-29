@@ -89,3 +89,48 @@ ship together): 3.0.35 = the surname/keyword collision, then live-prove Friday.
 Aug 4. The attribution rule is going through an adversarial design review first
 because binding a row to the WRONG provider is far worse than refusing the day —
 fail-closed stays non-negotiable.
+
+## Addendum 2: the obvious Aug 4 fix is UNSAFE — refuted before writing code
+
+Before implementing "attribute each row to the nearest preceding provider
+header", I ran it through an adversarial design review. **It was refuted on
+safety and will not be built.** Four real athenaOne shapes bind a patient to a
+clinician who did not render the visit:
+
+1. Header tier 2 matches `[class*="appointment-header"]` by SUBSTRING with no
+   row exclusion, so `Supervising: <Name> DO` *inside* one patient's row
+   registers as a column header.
+2. Tier 5 accepts credential-shaped nodes from `list.parentElement`, and this
+   reader documents parallel duplicate containers twice — a neighbouring
+   column's header legitimately precedes this container's rows.
+3. `lh("Newtown Square, PA") === true` (the ` PA` credential token), and this
+   lane never calls the column-label guard `pui()` or the location guard
+   `np()` — a department strip becomes a pseudo-provider.
+4. The appointmentId dedup has NO provider-conflict detection (unlike
+   `_mergeScheduleProofD`, which conflict-nulls dob/mrn), so the first-walked
+   copy's provider wins silently — or the same patient imports twice under two
+   different providers.
+
+**The part worth carrying into both our lanes:** in every one of those shapes
+the receipt goes GREEN. The coverage gate counts only *empty* providers and
+*off-roster* providers. A wrongly-bound row has a provider, and that provider
+is on the roster, so both counters read 0 and the verdict flips to
+`satisfied`. The gate reports success exactly when the fix is wrong, so it
+cannot supervise its own fix.
+
+General law: **before "fixing" a refusing gate, ask what that gate would report
+if the fix were WRONG. If the answer is "success", you need a different gate
+before you need the fix.**
+
+Direction instead: fix the HARVEST, never the binding. Excluding row-internal
+nodes from header tiers 1/2 can only REMOVE false headers — if Aug 4's second
+header is a per-row artifact, headerCount drops to 1 and the existing
+single-header binding works with the correct provider; if not, the day refuses
+honestly as it does today. Plus a diagnostic naming which tier produced each
+header, so one live run settles it instead of another round of theories.
+
+Live now: **b789** — AI Studio tabs show exactly one panel (the study-builder
+host belonged to no tab section, so it painted through Practice and Build; the
+owner sent two screenshots). Gate 421/421. Note per owner instruction going
+forward: **UI work is not a Codex lane** — perf, correctness, and test-harness
+work still very much are, and 002-022 have been almost entirely accepted.
