@@ -147,7 +147,15 @@
     var titleEl = v.querySelector(":scope > .sx-title");
     var seq = [];
     if (titleEl) seq.push(titleEl);
-    if (copilot) seq.push(copilot);
+    /* 2026-07-28 blank-dock fix: while the Copilot dock is OPEN it owns
+       #copilotCard. This reorder used to re-append the card into #studioView
+       160ms after every dock open (the studio observer saw its own card
+       leave, scheduled, and stole it back), so the dock sat open and hollow.
+       closeCopilotDock re-homes the card at #copilotHomeAnchor, after which
+       this owner resumes. */
+    var dockEl = $("copilotDock");
+    var dockOwnsCopilot = !!(dockEl && dockEl.classList && dockEl.classList.contains("open"));
+    if (copilot && !dockOwnsCopilot) seq.push(copilot);
     if (right) seq.push(right);
     if (result) seq.push(result);
     var cur = Array.prototype.filter.call(v.children, function (c) { return seq.indexOf(c) >= 0; });

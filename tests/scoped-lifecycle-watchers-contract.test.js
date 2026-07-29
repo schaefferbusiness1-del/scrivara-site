@@ -76,7 +76,7 @@ assert(settingsWb.includes("window.removeEventListener('mls:settings-reconciled'
 [
   /* Patients exact now stays inert until Patients is the active view. */
   'feat_mls_patients_exact.js?v=20260727px130',
-  'feat_mls_studio_exact.js?v=20260716sx240',
+  'feat_mls_studio_exact.js?v=20260728sx241',
   'feat_mls_patientpick.js?v=20260716pick161',
   'feat_mls_simple_exact.js?v=20260719simx142'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
