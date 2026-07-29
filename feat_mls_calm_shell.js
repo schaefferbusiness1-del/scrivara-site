@@ -746,8 +746,12 @@
        as a target it would become the landing tab (duplicating the Visit dock
        item) and would keep Review alive on accounts that have neither orders
        nor recommendations. As `extra` it is a segment and nothing more. */
+    /* 2026-07-28 owner order "put history into the review tab": History rides
+       the same extra-segment pattern as The note - clicking it clicks the real
+       #nav_history, so #historyView stays the one renderer and the Patient
+       destination keeps its own route. nav_visit stays first (pinned). */
     { id: 'review', label: 'Review', targets: ['nav_orders', 'nav_recs'],
-      extra: ['nav_visit'], as: { nav_visit: 'The note' }, count: 'navOrdCount' },
+      extra: ['nav_visit', 'nav_history'], as: { nav_visit: 'The note', nav_history: 'History' }, count: 'navOrdCount' },
     /* Owner 2026-07-26: "add AI Studio to bottom tool bar." Tools cannot be
        that route: go('tools') opens the shortcuts MENU and never navigates, so
        studioView was reachable from the dock only via a second hop. This is a

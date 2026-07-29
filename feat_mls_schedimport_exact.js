@@ -2814,6 +2814,11 @@
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy-other-tab"; return receipt;
     }
     safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
+    /* 2026-07-28: the athena-doctor toaster needs to know a managed batch is
+       running - its per-row bridge results (including the post-sweep todayNote
+       reads) are not mlssi-tagged, so a transient row failure inside a batch
+       that ultimately succeeds used to toast "That Athena pull didn't work". */
+    try { window.__mlsSIBatchActive = true; } catch (eBA) {}
     historyBatchRunning = true;
     /* si-1.7.9 (LIVE 2026-07-18, owner's machine): the MANUAL history retry
        enters this batch WITHOUT pull()'s __mlsPullBusyAt stamping, so the
@@ -3246,6 +3251,7 @@
       batchBodyCompleted = true;
     } finally {
       historyBatchRunning = false;
+      try { window.__mlsSIBatchActive = false; } catch (eBA2) {}
       /* b744 #36: the progress reporter's lifecycle belongs to the OUTER
          batch AND outlives its automatic sweeps. Closing it here killed and
          re-created the whole panel at every sweep boundary - the elapsed

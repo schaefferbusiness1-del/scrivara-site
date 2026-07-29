@@ -462,6 +462,11 @@
 
   function isManagedPullResult(d) {
     d = d || {};
+    /* 2026-07-28: any result arriving while the schedule-import batch window
+       is open belongs to that batch (its own summary reports honestly) - the
+       per-row reads are not mlssi-tagged, and their transient failures used
+       to toast a scary generic warning over a run that succeeded. */
+    try { if (window.__mlsSIBatchActive === true) return true; } catch (eB) {}
     var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
     if (/^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(resultRequestId(d))) return true;
     if (d.managed === true || d.background === true || d.silent === true ||

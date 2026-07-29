@@ -33,6 +33,7 @@ const tests = [
   'local-qr-secret-boundary.test.js',
   'athena-write-contract.test.js',
   'write-confirm-requires-change.test.js',
+  'one-canonical-stop.test.js',
   'athena-action-contract.test.js',
   'athena-confirmation-runtime.test.js',
   'sign-claim-requires-receipt.test.js',
