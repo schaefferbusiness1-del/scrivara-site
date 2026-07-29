@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_firstrun.js  ->  window.__mlsFirstRun   (fr-1.0.0, 2026-07-28)
+ * feat_mls_firstrun.js  ->  window.__mlsFirstRun   (fr-2.0.0, 2026-07-28)
  * -----------------------------------------------------------------------------
  * A new doctor signs in and has to discover three separate things before MLS
  * can do anything at all: the MLS Assist extension has to be installed and
@@ -25,13 +25,22 @@
  *        window.__mlsSI.authoritativeStatusForDay(todayIso()).available===true
  *        fallback: any row in window._calAppts
  *
- * SURFACE B -- a 5 step on-demand tour, __mlsFirstRun.tour(). Steps point at
- * the real controls (sign in, pull, dictate, generate, review). A target that
- * is missing or not rendered degrades to a centered card; a highlight is never
- * drawn at a guessed position. NO AUTO LAUNCH EVER: the policy flag
- * window.__mlsManualToursOnly is the standing rule in this app, and this module
- * registers no automatic path at all. The tour opens from the card button or
- * from an explicit __mlsFirstRun.tour() call, and from nowhere else.
+ * SURFACE B -- an anchored guided tour, __mlsFirstRun.tour() (reworked to
+ * fr-2.0.0 on 2026-07-28). Eight coach-mark steps spotlight the ACTUAL
+ * controls -- the dock tabs, Pull today, the Start visit CTA, Start Recording,
+ * Generate, Review, Templates, and the Settings extension link -- with a
+ * dimmed backdrop, a positioned brand card (title, one to two sentences, step
+ * dots, Back / Next / Skip), and keyboard support (Esc closes, arrow keys
+ * navigate). Every step looks its anchor up AT SHOW TIME, because these
+ * controls render late and re-render often; no element or rect is ever stored
+ * across frames. A step whose anchor is missing or hidden is skipped silently
+ * in the direction of travel, and the spotlight ring is never drawn at a
+ * guessed position. The card repositions on resize and scroll through one
+ * rAF-coalesced handler; every listener is bounded and removed on close.
+ * NO AUTO LAUNCH EVER: the policy flag window.__mlsManualToursOnly is the
+ * standing rule in this app, and this module registers no automatic path at
+ * all. The tour opens from the card button or from an explicit
+ * __mlsFirstRun.tour() call, and from nowhere else.
  *
  * GATES (all must hold BEFORE the card is created):
  *   - uns('firstRunDone') !== '1'          (per account, permanent)
@@ -58,7 +67,7 @@
   'use strict';
   if (window.__mlsFirstRun) return;
 
-  var VERSION = 'fr-1.0.0';
+  var VERSION = 'fr-2.0.0';
   var CARD_ID = 'mlsFrCard';
   var CSS_ID = 'mlsFrCss';
   var TOUR_ID = 'mlsFrTour';
@@ -68,6 +77,7 @@
   var SESSION_KEY = 'mls_fr_shown';
   var DONE_KEY = 'firstRunDone';
   var DOCK_CLEAR = 96;          /* px of bottom clearance for the fixed dock */
+  var SHEET_BP = 700;           /* below this width the tour card is a bottom sheet */
   var LADDER = [800, 2500, 6000];
   var ATH_CACHE_MS = 30000;
   var CONN_CHECK_MS = 20000;
@@ -325,26 +335,45 @@
       '#mlsFrCard button:hover{color:var(--ink,#1A211C)}',
       '#mlsFrCard button.mlsfr-primary{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);font-weight:700}',
       '#mlsFrCard .mlsfr-pull{padding:3px 10px;font-size:12.5px;margin-left:8px;white-space:nowrap}',
-      /* --- tour --- */
+      /* --- tour (fr-2.0.0, 2026-07-28): spotlight ring + brand coach card --- */
       '#mlsFrTour{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;',
       'font:400 14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}',
-      '#mlsFrDim{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.40)}',
-      '#mlsFrRing{position:fixed;display:none;border-radius:12px;pointer-events:none;',
-      'box-shadow:0 0 0 9999px rgba(0,0,0,.40),inset 0 0 0 2px var(--brand,#2E6A4B)}',
-      '#mlsFrTourCard{position:fixed;box-sizing:border-box;width:340px;max-width:calc(100vw - 24px);',
-      'background:var(--card,#ffffff);color:var(--ink,#1A211C);border:1px solid var(--line,#E7E5DD);',
-      'border-top:3px solid var(--brand,#2E6A4B);border-radius:12px;padding:14px 16px;',
-      'box-shadow:0 10px 30px rgba(0,0,0,.20);outline:none}',
-      '#mlsFrTourCard .mlsfr-tstep{font-size:12px;font-weight:700;letter-spacing:.02em;',
-      'text-transform:uppercase;color:var(--brand,#2E6A4B);margin:0 0 4px}',
-      '#mlsFrTourCard .mlsfr-ttitle{font-size:15.5px;font-weight:700;margin:0 0 6px}',
-      '#mlsFrTourCard .mlsfr-tbody{font-size:13.5px;color:var(--muted,#636E66)}',
-      '#mlsFrTourCard .mlsfr-tnav{display:flex;align-items:center;gap:8px;margin:12px 0 0}',
+      '#mlsFrDim{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(15,26,20,.45)}',
+      /* The 9999px spread paints the dim AROUND the anchored control, so the
+         spotlight and the backdrop can never disagree about where the hole is. */
+      '#mlsFrRing{position:fixed;display:none;border-radius:14px;pointer-events:none;',
+      'box-shadow:0 0 0 9999px rgba(15,26,20,.45),0 0 0 3px var(--brand,#2E6A4B),0 0 0 8px rgba(46,106,75,.30);',
+      'transition:left .18s ease,top .18s ease,width .18s ease,height .18s ease}',
+      '#mlsFrTourCard{position:fixed;box-sizing:border-box;width:380px;max-width:calc(100vw - 24px);',
+      'background:var(--card,#ffffff);color:var(--ink,#1A211C);border:1px solid #DCE7DF;',
+      'border-radius:16px;padding:16px 18px 14px;overflow:hidden;outline:none;',
+      'box-shadow:0 18px 48px rgba(18,38,28,.28),0 2px 10px rgba(18,38,28,.12)}',
+      '#mlsFrTourCard:before{content:"";position:absolute;left:0;top:0;right:0;height:4px;',
+      'background:linear-gradient(90deg,#204034,#2E6A4B 55%,#5C8F72)}',
+      '#mlsFrTourCard .mlsfr-tstep{font-size:11px;font-weight:800;letter-spacing:.08em;',
+      'text-transform:uppercase;color:var(--brand,#2E6A4B);margin:4px 0 5px}',
+      '#mlsFrTourCard .mlsfr-ttitle{font-size:16.5px;font-weight:800;color:#204034;margin:0 0 6px}',
+      '#mlsFrTourCard .mlsfr-tbody{font-size:13.5px;line-height:1.55;color:var(--muted,#636E66)}',
+      '#mlsFrTourDots{display:flex;align-items:center;gap:6px;margin:13px 0 0}',
+      '#mlsFrTourDots .mlsfr-dot{width:7px;height:7px;border-radius:999px;background:#D6E7DC;',
+      'cursor:pointer;transition:background .15s ease,width .15s ease}',
+      '#mlsFrTourDots .mlsfr-dot.on{width:18px;background:var(--brand,#2E6A4B)}',
+      '#mlsFrTourCard .mlsfr-tnav{display:flex;align-items:center;gap:8px;margin:13px 0 0}',
       '#mlsFrTourCard .mlsfr-spacer{flex:1}',
-      '#mlsFrTourCard button{font:inherit;font-size:13px;cursor:pointer;border-radius:9px;padding:6px 12px;',
-      'border:1px solid var(--line,#E7E5DD);background:transparent;color:var(--muted,#636E66)}',
-      '#mlsFrTourCard button:hover{color:var(--ink,#1A211C)}',
-      '#mlsFrTourCard button.mlsfr-primary{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);font-weight:700}',
+      '#mlsFrTourCard button{font:inherit;font-size:13px;cursor:pointer;border-radius:10px;padding:7px 13px;',
+      'border:1px solid #DCE7DF;background:transparent;color:var(--muted,#636E66)}',
+      '#mlsFrTourCard button:hover{color:#204034;border-color:var(--brand,#2E6A4B)}',
+      '#mlsFrTourCard button.mlsfr-ghost{border-color:transparent}',
+      '#mlsFrTourCard button.mlsfr-primary{background:var(--brand,#2E6A4B);border-color:var(--brand,#2E6A4B);',
+      'color:#ffffff;font-weight:700}',
+      '#mlsFrTourCard button.mlsfr-primary:hover{background:#204034;border-color:#204034;color:#ffffff}',
+      /* Mobile: the coach card becomes a full-width bottom sheet. !important on
+         the geometry beats the inline left/top the desktop positioner writes. */
+      '@media (max-width:699.98px){',
+      '#mlsFrTourCard{left:0!important;right:0!important;top:auto!important;bottom:0!important;',
+      'width:auto;max-width:none;border-radius:16px 16px 0 0;padding:16px 16px 14px;',
+      'box-shadow:0 -12px 36px rgba(18,38,28,.30)}',
+      '}',
       '@media (max-width:520px){#mlsFrCard{padding:11px 12px}}'
     ].join('');
     safe(function () { (document.head || document.documentElement).appendChild(s); });
@@ -448,42 +477,71 @@
     safe(function () { b.click(); });
   }
 
-  /* ----------------------------------- tour -------------------------------- */
+  /* ----------------------------------- tour --------------------------------
+   * fr-2.0.0 (2026-07-28). Anchored coach marks over the real controls. The
+   * contract in three lines:
+   *   - anchors are looked up AT SHOW TIME, on every positioning pass; no
+   *     element and no rect survives a frame boundary in this module
+   *   - a step whose anchor is missing or hidden is skipped silently in the
+   *     direction of travel; the ring is never drawn at a guessed position
+   *   - Esc closes, arrows navigate, resize/scroll reposition through one
+   *     rAF-coalesced handler; every listener is removed on close
+   * ------------------------------------------------------------------------ */
   var STEPS = [
     {
-      key: 'connect',
-      targets: ['#assistInstallBanner', '#mlsAthenaStatusDot'],
-      title: 'Sign in to athenaOne through MLS Assist',
-      body: 'MLS reads your schedule and charts through the MLS Assist browser extension. Install it, open athenaOne in another tab, and sign in there. The status here turns green once MLS can see it.'
+      key: 'navigate',
+      targets: ['#mlsDock', '.mainnav'],
+      title: 'Get around MLS',
+      body: 'Every part of MLS is one tap away here: your day, the patient, the visit, review and tools.'
     },
     {
       key: 'pull',
       targets: ['#mlsDsPullBtn'],
       title: 'Pull today',
-      body: 'One tap brings the day schedule and each patient chart from athenaOne into MLS. Pulling again later the same day updates rows, it never duplicates them.'
+      body: 'One tap imports the day schedule and each patient chart from athenaOne. Pulling again later refreshes rows and never duplicates them.'
     },
     {
-      key: 'dictate',
-      targets: ['#ez3Rec', '#ez3Rec2', '#ez3QDictate'],
-      title: 'Dictate',
-      body: 'Pick the patient, press record, and talk to them as you normally would. No mic in the room? Use Dictate and speak the note yourself instead.'
+      key: 'start',
+      targets: ['#ez3StartActive'],
+      title: 'Start the visit',
+      body: 'This locks in the selected patient and opens the visit workspace. Record, generate, review, sign and send all flow from here.'
+    },
+    {
+      key: 'record',
+      targets: ['#ez3Rec', '#ez3Rec2', '#ez3QDictate', '#captureBtn'],
+      title: 'Start Recording',
+      body: 'Press record and talk with the patient as you normally would. No mic in the room? Use Dictate and speak the note yourself.'
     },
     {
       key: 'generate',
       targets: ['#ez3Adv'],
-      title: 'Generate',
-      body: 'When the visit ends, Generate writes the structured note from what was heard, with codes, ready for you to read.'
+      title: 'Generate the note',
+      body: 'When the visit ends, Generate turns what was heard into a structured note with codes, ready for your read.'
     },
     {
       key: 'review',
       targets: ['#noteCard', '#ez3Note'],
-      title: 'Review and send',
-      body: 'Read it, edit anything inline, then sign. Nothing is final until you sign it, and nothing goes back to the chart until you send it.'
+      title: 'Review and sign',
+      body: 'Read the note and edit anything inline, then sign. Nothing goes back to the chart until you send it.'
+    },
+    {
+      key: 'templates',
+      targets: ['#templatesBtn', '#oprTabTpls'],
+      title: 'Templates',
+      body: 'Import a blank form and MLS shapes generated notes to match it. Optional, and off by default.'
+    },
+    {
+      key: 'settings',
+      targets: ['[data-mls-extension-version]', '#mlsDock button[data-dest="tools"]', '#rectab_settings'],
+      title: 'Settings and MLS Assist',
+      body: 'Settings holds the MLS Assist extension link, the bridge that lets MLS read athenaOne. Keep it installed and the status stays green.'
     }
   ];
 
   var tourOpen = false, tourIdx = 0, tourReturnView = '', rafPending = false;
 
+  /* Show-time lookup, every time. Returns the first target that exists, is
+     visible by computed style, and has a real box -- or null. */
   function targetOf(step) {
     if (!step || !step.targets) return null;
     for (var i = 0; i < step.targets.length; i++) {
@@ -495,20 +553,33 @@
     }
     return null;
   }
+  function stepAvailable(i) {
+    return i >= 0 && i < STEPS.length && !!targetOf(STEPS[i]);
+  }
+  /* Silent skip: walk from `from` in `dir` until a step whose anchor answers
+     RIGHT NOW is found. -1 means nothing remains in that direction. */
+  function seek(from, dir) {
+    for (var i = from; i >= 0 && i < STEPS.length; i += dir) {
+      if (stepAvailable(i)) return i;
+    }
+    return -1;
+  }
 
-  function positionStep() {
+  function positionStep(scrollTo) {
     var card = byId(TCARD_ID), ring = byId(RING_ID), dim = byId(DIM_ID);
     if (!card || !ring || !dim) return;
     var step = STEPS[tourIdx];
-    var el = targetOf(step);
+    var el = targetOf(step);        /* fresh lookup, never a held reference */
     var vw = safe(function () { return window.innerWidth || 0; }, 0);
     var vh = safe(function () { return window.innerHeight || 0; }, 0);
 
     /* Capture the rect and place in ONE pass: a subtree that re-renders between
-       two measurements makes the second reading describe a different box. */
+       two measurements makes the second reading describe a different box.
+       scrollIntoView runs only on step navigation -- a reposition triggered BY
+       a scroll must never scroll back, or the user cannot move the page. */
     var r = null;
     if (el) {
-      safe(function () { el.scrollIntoView({ block: 'center', inline: 'nearest' }); });
+      if (scrollTo) safe(function () { el.scrollIntoView({ block: 'center', inline: 'nearest' }); });
       r = safe(function () { return el.getBoundingClientRect(); }, null);
       if (r && (r.width <= 0 || r.height <= 0)) r = null;
     }
@@ -516,127 +587,199 @@
 
     if (onScreen) {
       ring.style.display = 'block';
-      ring.style.left = Math.max(0, r.left - 6) + 'px';
-      ring.style.top = Math.max(0, r.top - 6) + 'px';
-      ring.style.width = (r.width + 12) + 'px';
-      ring.style.height = (r.height + 12) + 'px';
+      ring.style.left = Math.max(0, r.left - 7) + 'px';
+      ring.style.top = Math.max(0, r.top - 7) + 'px';
+      ring.style.width = (r.width + 14) + 'px';
+      ring.style.height = (r.height + 14) + 'px';
       dim.style.background = 'transparent';
     } else {
       ring.style.display = 'none';
-      dim.style.background = 'rgba(0,0,0,.40)';
+      dim.style.background = '';       /* back to the stylesheet dim */
     }
 
+    /* Below the sheet breakpoint the media query pins the card to the bottom
+       edge with !important geometry; writing left/top would only be overruled. */
+    if (vw > 0 && vw < SHEET_BP) return;
+
     var cr = safe(function () { return card.getBoundingClientRect(); }, null);
-    var cw = cr ? cr.width : 340, ch = cr ? cr.height : 200;
+    var cw = cr ? cr.width : 380, ch = cr ? cr.height : 210;
     var maxTop = Math.max(12, vh - ch - DOCK_CLEAR);   /* never over the dock */
 
-    /* A missing or off-screen target degrades to a centered card. A highlight
-       is never drawn at a guessed position. */
-    if (!onScreen || vw < 380 || vh < 320) {
+    /* An off-screen anchor degrades to a centered card, ring hidden. */
+    if (!onScreen || vh < 320) {
       card.style.left = Math.max(12, Math.round((vw - cw) / 2)) + 'px';
       card.style.top = Math.max(12, Math.min(maxTop, Math.round((vh - ch) / 2))) + 'px';
       return;
     }
-    var top = r.bottom + 14;
+    var top = r.bottom + 16;
     if (top > maxTop) {
-      var above = r.top - ch - 14;
+      var above = r.top - ch - 16;
       top = (above >= 12) ? above : Math.min(maxTop, Math.max(12, top));
     }
-    var left = r.left;
+    var left = r.left + (r.width / 2) - (cw / 2);
     if (left + cw > vw - 12) left = vw - cw - 12;
     if (left < 12) left = 12;
     card.style.left = Math.round(left) + 'px';
     card.style.top = Math.round(Math.max(12, top)) + 'px';
   }
 
-  function renderStep() {
+  function renderStep(scrollTo) {
     var total = STEPS.length;
     if (tourIdx < 0) tourIdx = 0;
     if (tourIdx > total - 1) tourIdx = total - 1;
     var step = STEPS[tourIdx];
-    setText(byId('mlsFrTourStep'), 'Step ' + (tourIdx + 1) + ' of ' + total);
+
+    /* Number the step within what is REACHABLE right now, not within the raw
+       list: silently skipped anchors must not leave holes in the count. The
+       current step is always counted even if its anchor just vanished. */
+    var avail = [];
+    for (var i = 0; i < total; i++) {
+      if (i === tourIdx || stepAvailable(i)) avail.push(i);
+    }
+    var pos = avail.indexOf(tourIdx);
+
+    setText(byId('mlsFrTourStep'), 'Step ' + (pos + 1) + ' of ' + avail.length);
     setText(byId('mlsFrTourTitle'), step.title);
     setText(byId('mlsFrTourBody'), step.body);
+
+    var dots = byId('mlsFrTourDots');
+    if (dots) {
+      var dh = '';
+      for (var d = 0; d < avail.length; d++) {
+        dh += '<span class="mlsfr-dot' + (avail[d] === tourIdx ? ' on' : '') + '" data-step="' + avail[d] + '"></span>';
+      }
+      if (dots.innerHTML !== dh) dots.innerHTML = dh;
+    }
+
     var back = byId('mlsFrTourBack'), next = byId('mlsFrTourNext');
-    if (back) { var hb = (tourIdx === 0); if (back.hidden !== hb) back.hidden = hb; }
-    if (next) { var hn = (tourIdx === total - 1); if (next.hidden !== hn) next.hidden = hn; }
-    positionStep();
+    var noBack = (seek(tourIdx - 1, -1) < 0);
+    if (back && back.hidden !== noBack) back.hidden = noBack;
+    if (next) setText(next, (seek(tourIdx + 1, 1) < 0) ? 'Done' : 'Next');
+
+    positionStep(scrollTo !== false);
   }
 
+  function eat(e) {
+    safe(function () { e.preventDefault(); });
+    safe(function () { e.stopPropagation(); });
+  }
   function onKey(e) {
-    if (!e) return;
-    if (e.key === 'Escape' || e.keyCode === 27) { closeTour(); }
+    if (!tourOpen || !e) return;
+    var k = S(e.key);
+    if (k === 'Escape' || e.keyCode === 27) { eat(e); closeTour(); return; }
+    if (k === 'ArrowRight' || k === 'ArrowDown') { eat(e); onNext(); return; }
+    if (k === 'ArrowLeft' || k === 'ArrowUp') { eat(e); onBack(); }
   }
   function onReflow() {
     if (!tourOpen || rafPending) return;
     rafPending = true;
     var raf = safe(function () { return window.requestAnimationFrame; }, null);
-    var run = function () { rafPending = false; if (tourOpen) positionStep(); };
+    var run = function () { rafPending = false; if (tourOpen) positionStep(false); };
     if (isFn(raf)) { safe(function () { window.requestAnimationFrame(run); }); }
     else { later(run, 16); }
   }
-  function onNext() { tourIdx++; renderStep(); }
-  function onBack() { tourIdx--; renderStep(); }
-  function onDone() { closeTour(); }
+  function onNext() {
+    var i = seek(tourIdx + 1, 1);
+    if (i < 0) { closeTour(); return; }
+    tourIdx = i;
+    renderStep(true);
+  }
+  function onBack() {
+    var i = seek(tourIdx - 1, -1);
+    if (i < 0) return;
+    tourIdx = i;
+    renderStep(true);
+  }
+  function onSkip() { closeTour(); }
+  function onDimClick() { closeTour(); }
+  function onDots(e) {
+    var t = e && e.target;
+    if (!t || !t.getAttribute) return;
+    var s = t.getAttribute('data-step');
+    if (s == null) return;
+    var i = parseInt(s, 10);
+    if (isNaN(i) || i === tourIdx || !stepAvailable(i)) return;
+    tourIdx = i;
+    renderStep(true);
+  }
 
   function openTour(startAt) {
-    if (tourOpen) { tourIdx = 0; renderStep(); return true; }
+    if (tourOpen) { renderStep(true); return true; }
     css();
     var host = safe(function () { return document.body || document.documentElement; }, null);
     if (!host) return false;
-    var wrap = safe(function () { return document.createElement('div'); }, null);
-    if (!wrap) return false;
-    wrap.id = TOUR_ID;
-    wrap.setAttribute('role', 'dialog');
-    wrap.setAttribute('aria-modal', 'true');
-    wrap.setAttribute('aria-label', 'MLS quick tour');
-    wrap.innerHTML = '<div id="' + DIM_ID + '"></div><div id="' + RING_ID + '"></div>' +
-      '<div id="' + TCARD_ID + '" tabindex="-1">' +
-      '<div class="mlsfr-tstep" id="mlsFrTourStep"></div>' +
-      '<div class="mlsfr-ttitle" id="mlsFrTourTitle"></div>' +
-      '<div class="mlsfr-tbody" id="mlsFrTourBody"></div>' +
-      '<div class="mlsfr-tnav">' +
-      '<button type="button" id="mlsFrTourBack">Back</button>' +
-      '<span class="mlsfr-spacer"></span>' +
-      '<button type="button" id="mlsFrTourDone">Done</button>' +
-      '<button type="button" class="mlsfr-primary" id="mlsFrTourNext">Next</button>' +
-      '</div></div>';
-    safe(function () { host.appendChild(wrap); });
-    tourOpen = true;
-    tourIdx = (typeof startAt === 'number' && startAt >= 0 && startAt < STEPS.length) ? startAt : 0;
 
-    /* Every step after the first points at a Visit view control. Take the user
-       there for the tour and put the previous view back on close. */
+    /* Most steps point at Visit view controls. Take the user there for the
+       tour and put the previous view back on close. */
     tourReturnView = safe(function () { return S(window.__mlsCurrentView); }, '');
     if (tourReturnView && tourReturnView !== 'visit') {
       safe(function () { if (isFn(window.showView)) window.showView('visit'); });
     }
 
+    var wrap = safe(function () { return document.createElement('div'); }, null);
+    if (!wrap) return false;
+    wrap.id = TOUR_ID;
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-label', 'MLS guided tour');
+    wrap.innerHTML = '<div id="' + DIM_ID + '"></div><div id="' + RING_ID + '"></div>' +
+      '<div id="' + TCARD_ID + '" tabindex="-1">' +
+      '<div class="mlsfr-tstep" id="mlsFrTourStep"></div>' +
+      '<div class="mlsfr-ttitle" id="mlsFrTourTitle"></div>' +
+      '<div class="mlsfr-tbody" id="mlsFrTourBody"></div>' +
+      '<div class="mlsfr-tdots" id="mlsFrTourDots" aria-hidden="true"></div>' +
+      '<div class="mlsfr-tnav">' +
+      '<button type="button" class="mlsfr-ghost" id="mlsFrTourSkip">Skip tour</button>' +
+      '<span class="mlsfr-spacer"></span>' +
+      '<button type="button" id="mlsFrTourBack">Back</button>' +
+      '<button type="button" class="mlsfr-primary" id="mlsFrTourNext">Next</button>' +
+      '</div></div>';
+    safe(function () { host.appendChild(wrap); });
+    tourOpen = true;
+
+    /* Open on the first step whose anchor answers, skipping dead ones
+       silently. If nothing answers yet (controls still rendering), fall back
+       to the requested step centered; navigation seeks live anchors from
+       there and the settle pass below re-reads the world. */
+    var from = (typeof startAt === 'number' && startAt >= 0 && startAt < STEPS.length) ? startAt : 0;
+    var first = seek(from, 1);
+    tourIdx = (first >= 0) ? first : from;
+
     on(byId('mlsFrTourNext'), 'click', onNext);
     on(byId('mlsFrTourBack'), 'click', onBack);
-    on(byId('mlsFrTourDone'), 'click', onDone);
+    on(byId('mlsFrTourSkip'), 'click', onSkip);
+    on(byId('mlsFrTourDots'), 'click', onDots);
+    on(byId(DIM_ID), 'click', onDimClick);
     on(document, 'keydown', onKey, true);
     on(window, 'resize', onReflow);
     on(window, 'scroll', onReflow, true);
 
-    renderStep();
-    safe(function () { byId(TCARD_ID).focus(); });
-    /* one bounded settle pass: a view switch can relayout after this frame */
-    later(function () { if (tourOpen) positionStep(); }, 120);
+    renderStep(true);
+    safe(function () { var c = byId(TCARD_ID); if (c) c.focus(); });
+    /* two bounded settle passes -- the view switch and late module renders can
+       move or reveal anchors after this frame. No polling beyond these. */
+    later(function () { if (tourOpen) positionStep(false); }, 160);
+    later(function () { if (tourOpen) renderStep(false); }, 650);
     return true;
   }
 
   function closeTour() {
-    if (!tourOpen) { var stray = byId(TOUR_ID); if (stray) safe(function () { stray.parentNode.removeChild(stray); }); return; }
+    if (!tourOpen) {
+      var stray = byId(TOUR_ID);
+      if (stray && stray.parentNode) safe(function () { stray.parentNode.removeChild(stray); });
+      return;
+    }
     tourOpen = false;
     offOne(byId('mlsFrTourNext'), 'click', onNext);
     offOne(byId('mlsFrTourBack'), 'click', onBack);
-    offOne(byId('mlsFrTourDone'), 'click', onDone);
+    offOne(byId('mlsFrTourSkip'), 'click', onSkip);
+    offOne(byId('mlsFrTourDots'), 'click', onDots);
+    offOne(byId(DIM_ID), 'click', onDimClick);
     offOne(document, 'keydown', onKey);
     offOne(window, 'resize', onReflow);
     offOne(window, 'scroll', onReflow);
     var wrap = byId(TOUR_ID);
-    if (wrap) safe(function () { wrap.parentNode.removeChild(wrap); });
+    if (wrap && wrap.parentNode) safe(function () { wrap.parentNode.removeChild(wrap); });
     if (tourReturnView && tourReturnView !== 'visit') {
       var back = tourReturnView;
       safe(function () { if (isFn(window.showView)) window.showView(back); });
@@ -687,6 +830,8 @@
     _steps: STEPS,
     _rows: ROWS,
     _closeTour: closeTour,
+    _stepAvailable: stepAvailable,
+    _seek: seek,
     _gates: {
       isDone: isDone, signedIn: signedIn, setupOpen: setupOpen,
       pullBusy: pullBusy, recording: recording,
@@ -698,12 +843,16 @@
        reading; a cached verdict is not evidence of the current state */
     _resetProbeCache: function () { athAt = 0; athInFlight = false; athState = 'wait'; lastConnCheck = 0; },
     describe: function () {
-      return 'first run setup checklist (#mlsFrCard above #visitHero) plus a 5 step ' +
-        'on demand tour. Rows read live truth only: __mlsConnTruth readiness, ' +
-        '__mlsAthenaGuard signed in probe (certain negatives only), and ' +
-        '__mlsSI.authoritativeStatusForDay for the day pull. Gated on done flag, ' +
-        'session, setup modal, pull busy, recording and once per browser session. ' +
-        'No auto launch, no setInterval, no observers, no network, no PHI.';
+      return 'first run setup checklist (#mlsFrCard above #visitHero) plus an eight ' +
+        'step anchored guided tour: spotlight ring on the real controls, dimmed ' +
+        'backdrop, brand coach card with step dots and Back / Next / Skip, Esc ' +
+        'closes and arrow keys navigate. Anchors are looked up at show time and ' +
+        'a missing or hidden anchor skips its step silently. Rows read live ' +
+        'truth only: __mlsConnTruth readiness, __mlsAthenaGuard signed in probe ' +
+        '(certain negatives only), and __mlsSI.authoritativeStatusForDay for the ' +
+        'day pull. Gated on done flag, session, setup modal, pull busy, ' +
+        'recording and once per browser session. No auto launch, no setInterval, ' +
+        'no observers, no network, no PHI.';
     }
   };
   window.__mlsFirstRun = api;
