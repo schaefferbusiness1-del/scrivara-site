@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.16.1';
+  var VERSION = 'oni-2.17.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -657,7 +657,7 @@
   function parseResult(raw) {
     var s=S(raw).replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim(), obj=null;
     try{obj=JSON.parse(s);}catch(e){try{var m=s.match(/\{[\s\S]*\}/);if(m)obj=JSON.parse(m[0]);}catch(e2){}}
-    if(!obj||typeof obj!=='object') return {note:s,missing:[]};
+    if(!obj||typeof obj!=='object') return {note:s,missing:[],__mlsRawFallback:true};
     return {note:S(obj.note),missing:Array.isArray(obj.missing)?obj.missing:[]};
   }
 
@@ -1039,6 +1039,9 @@
        fidelity passes failed for a reason no message named. 4096 fits the
        longest real op note with JSON overhead. */
     var opts={freeform:true,maxTokens:4096,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
+    /* oni-2.17.0: the op-note lane had NO timeout - one hung /api/complete
+       held the whole Draft-all run. 180s matches the 3-minute progress budget. */
+    try{var __oniAc=new AbortController();opts.signal=__oniAc.signal;setTimeout(function(){try{__oniAc.abort();}catch(eA){}},180000);}catch(eAC){}
     if(S(selectedTpl&&(selectedTpl.id||selectedTpl.templateId)).trim())opts.mlsOpNoteTemplateId=S(selectedTpl.id||selectedTpl.templateId).trim();
     var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
@@ -1053,6 +1056,7 @@
     if(ctx.__mlsProgressHandle)opts.mlsRequestId=ctx.__mlsProgressHandle.requestId;
     generationStage(ctx,'Drafting procedure section','The model is drafting the complete template-owned procedure note.');
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
+    if(first&&first.__mlsRawFallback&&S(first.note).length>11000){var teA=new Error('The AI reply was cut off mid-note - this template is too long for one draft. Shorten or split the template, then re-try.');teA.code='MLS_OPNOTE_TRUNCATED';throw teA;}
     generationStage(ctx,'Drafting findings','Preserving chart-grounded findings and filling explicit clinical slots.');
     first.note=fillChartSlots(fillProcedureSlots(forceFacts(first.note,facts),procedure),p,ctx,procedure);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
@@ -1145,6 +1149,14 @@
            template, network/server) surfaces its actionable reason on the same
            channel the fidelity failures already use, so the UI never has to
            fall back to a generic "try again". */
+        /* oni-2.17.0: also classify into __mlsLastOpErrorCode so Draft-all
+           retries ONLY transient failures. */
+        try{
+          var __m=S(err&&err.message||''), __code=S(err&&err.code||'');
+          if(!__code){ if(err&&err.name==='AbortError'){__code='TIMEOUT';} else if(/failed to fetch|networkerror|network error|load failed/i.test(__m)){__code='NETWORK';} else { var __h=/(?:^|[^\d])([45]\d\d)(?:[^\d]|$)/.exec(__m.slice(0,60)); if(__h)__code='HTTP_'+__h[1]; } }
+          window.__mlsLastOpErrorCode=__code;
+          if(__code==='TIMEOUT'&&!window.__mlsLastOpFidelityError)window.__mlsLastOpFidelityError='AI call timed out after 3 minutes - the AI service may be busy; a retry usually works.';
+        }catch(e3){}
         try{ if(!window.__mlsLastOpFidelityError) window.__mlsLastOpFidelityError=S(err&&err.message||'').trim()||'Op-note generation failed.'; }catch(e2){}
       }
       throw err;
@@ -1193,7 +1205,7 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
         /* oni-2.14.0 owner directive: warn but still go through. Auto-matched
            rows first try a reroute to a genuinely compatible template ("its
            best fix"); manual picks are respected and adapted in place. */
