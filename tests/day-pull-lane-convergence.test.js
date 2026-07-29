@@ -57,7 +57,10 @@ const ds = connect.slice(dsStart, dsEnd);
 
 assert(ds.includes("typeof si.dayPull === 'function'"),
   'the Visit lane must feature-detect dayPull before calling it');
-assert(ds.includes('si.dayPull({ date: day, includeHistory: true, onStatus: dsOnStatus })'),
+/* 2026-07-29: the call builds dpOpts so the LAST auto-retry can escalate to
+   provider 'all' (whole-grid read) - the guarded entry, day, history-on and
+   status sink are unchanged. */
+assert(ds.includes("var dpOpts = { date: day, includeHistory: true, onStatus: dsOnStatus };") && ds.includes('si.dayPull(dpOpts)'),
   'the Visit pull button must call the guarded dayPull entry with the day, history on, and its status sink');
 assert(/var p = \(si && typeof si\.dayPull === 'function'\)\s*\r?\n?\s*\? si\.dayPull\(/.test(ds),
   'dayPull must be the PRIMARY route the visible Visit pull takes, not a branch below si.pull');
