@@ -69,7 +69,7 @@
  * order where specificity ties.
  * ========================================================================== */
 (function () {
-  var VER = 'vf-1.1.0';
+  var VER = 'vf-1.2.0';
   var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus', PTMORE = 'vf-ptmore', TOOLS = 'vf-tools';
   /* vf-1.1.0: the state that replaced the Advanced-visit-workspace door. It is
      a FACT about the document - #noteBox holds a real note - never a claim
@@ -161,7 +161,29 @@
       why: 'a read-only paste-into-your-EMR table is not part of writing or sending this note; measured 390x423 behind the door' },
     { sel: '#visitView #outcomesCard',
       route: 'dock > Tools - pain and function scores are per-visit data entry, not a step in the note',
-      why: 'measured 1216x253 behind the door; nothing in the record/generate/review/sign/send ladder needs it' }
+      why: 'measured 1216x253 behind the door; nothing in the record/generate/review/sign/send ladder needs it' },
+    /* vf-1.2.0: the curated fold inside the revealed #noteCard. */
+    { sel: '#visitView #noteCard #noteEmpty',
+      route: 'the engine note ladder (#ez3Note) shows the live note this hint wrongly claims is absent',
+      why: 'measured 568x179 painting an empty-state hint WHILE a real note was live in the card' },
+    { sel: '#visitView #noteCard .mlsf-bar',
+      route: 'the engine note ladder (#ez3Note) with its Edit and Copy controls is the one note surface',
+      why: 'format bar for the duplicate formatted rendering folded below it' },
+    { sel: '#visitView #noteCard .mlsf-note',
+      route: 'the engine note ladder (#ez3Note) renders the same note text',
+      why: 'measured 568x752 - a full second rendering of the note stacked over the ladder' },
+    { sel: '#visitView #noteCard .mls-fp-fmt',
+      route: 'the engine note ladder (#ez3Note) renders the same note text',
+      why: 'measured 568x378 - a THIRD rendering of the same note in the same card' },
+    { sel: '#visitView #noteCard .mls-as-ind',
+      route: 'the engine ladder shows save state on its own controls',
+      why: 'autosave chips for the hidden editor; three of them painted beside the duplicates' },
+    { sel: '#visitView #noteCard .mls-opaddword',
+      route: 'editing happens in the engine note ladder (#ez3Note)',
+      why: 'editor chrome for the hidden #noteBox; 29px of controls with no visible editor' },
+    { sel: '#visitView #noteCard .mls-nm-meter',
+      route: 'the engine ladder is the live note surface; its content is the measure',
+      why: 'a 19px meter for the hidden editor below duplicates it measured' }
   ];
 
   /* ------------------------------------------------------------------ CSS --
@@ -434,6 +456,21 @@
     'body.' + BODY + ' #visitView #mlsEz3 .ez3fl-openws,' +
     'body.' + BODY + ' #visitView #mlsEz3 .ez3-advrow{display:none!important}',
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard{display:block!important}',
+    /* vf-1.2.0 (2026-07-28, owner: the advanced section "screws everything
+       up"): the revealed card stacked a SECOND rendering of the note over the
+       engine ladder. Measured live with a real note in the 568px column: an
+       empty-state hint painting 179px DESPITE the live note, two formatted
+       note renderings (752px and 378px), and editor chrome - about 1450px of
+       duplication. The review essentials stay visible: the preview button,
+       the note-actions row (sign / copy / Review Athena actions), the orders
+       card, and the visit-tools toggle. */
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard #noteEmpty,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mlsf-bar,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mlsf-note,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-fp-fmt,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-as-ind,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-opaddword,' +
+    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-nm-meter{display:none!important}',
     'body.' + BODY + ' #visitView #emrCard,' +
     'body.' + BODY + ' #visitView #outcomesCard{display:none!important}'
   ].join('\n');
