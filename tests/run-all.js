@@ -34,6 +34,8 @@ const tests = [
   'athena-write-contract.test.js',
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
+  'schedule-mutating-row-reverify-contract.test.js',
+  'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',
   'athena-action-contract.test.js',
   'athena-confirmation-runtime.test.js',

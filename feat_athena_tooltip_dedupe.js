@@ -1677,9 +1677,11 @@
     var qrOut = ui.body.querySelector('[data-qtp-phone-qr]');
     var qrErr = !!(qr && qr.getAttribute && qr.getAttribute('data-qr-error'));
     var failed = !ready && pairingStartedAt > 0 && (Date.now() - pairingStartedAt) > 12000;
+    var refused = !ready && pairingStartedAt === -1;
     if (status) status.textContent = ready
       ? (qrErr ? 'Ready. QR unavailable - open the secure link on your phone instead.' : 'Ready. Scan the code or open the secure link on your phone.')
-      : (failed ? 'Could not prepare the phone link. Make sure you are signed in and a scheduled patient is open, then tap Try again.' : 'Preparing a secure phone link…');
+      : (refused ? 'Phone pairing needs a direct tap - tap Try again.'
+        : (failed ? 'Could not prepare the phone link. Make sure you are signed in and a scheduled patient is open, then tap Try again.' : 'Preparing a secure phone link…'));
     if (codeOut) codeOut.textContent = ready ? codeText : '------';
     if (linkOut) { linkOut.textContent = ready ? href : ''; linkOut.href = ready ? href : '#'; }
     if (qrOut) { if (qrErr) { qrOut.style.display = 'none'; } else { qrOut.style.display = ''; if (src && src !== location.href) qrOut.src = src; } qrOut.style.opacity = ready ? '1' : '.35'; }
@@ -1697,6 +1699,7 @@
       safe(function () { W.startPhoneMic(ev); });
       return true;
     }
+    pairingStartedAt = -1; /* 2026-07-29: persistent refusal - the 250ms sync used to repaint Preparing over this within a quarter second */
     var ui0 = byId(MODAL_ID);
     var st0 = ui0 && ui0.querySelector('[data-qtp-phone-status]');
     if (st0) st0.textContent = (typeof W.startPhoneMic === 'function')
