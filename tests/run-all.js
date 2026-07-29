@@ -35,6 +35,7 @@ const tests = [
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
   'schedule-mutating-row-reverify-contract.test.js',
+  'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',
   'athena-action-contract.test.js',
