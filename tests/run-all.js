@@ -85,6 +85,13 @@ const tests = [
   /* b799 — the Templates UI proved by execution: no dead buttons, and the six new
      animations emitted, off-switched, and their wrappers actually run. */
   'templates-ui-proved-working.test.js',
+  /* ot-2.0.0 — the owner, a fourth time: "make a completely working new UI the
+     templates tab only of op notes as I love the other tabs but just hate the
+     templates UI". The three previous passes were paint; this one PLACES the
+     children so his library stops being the last thing on a twenty-block stack.
+     Paint could be proved by reading the stylesheet. A composition cannot, so
+     this suite measures the rectangles in a real Chrome. */
+  'templates-tab-layout-proved.test.js',
   'opnote-room-walkthrough-runtime.test.js',
   /* 2026-07-30 — the owner: the op-note room "is this full thing screen thats
      hard to get out of ... the bottom menu button should still be there". The

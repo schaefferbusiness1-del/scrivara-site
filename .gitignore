@@ -16,3 +16,4 @@ tests/live-phone-artifacts/
 tests/live-sensitive-workflow-artifacts/
 tests/live-smoke-artifacts/
 tests/live-visible-controls-artifacts/
+tests/live-ui-sweep-artifacts/
