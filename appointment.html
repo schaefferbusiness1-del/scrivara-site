@@ -115,13 +115,13 @@
     </div>
 
     <div id="apptErr" class="err hide" role="status" aria-live="polite" aria-atomic="true"></div>
-    <p class="note">🔒 This secure page is just for you — no password needed. Please don't include medical details. For anything urgent, call the office or 911.</p>
+    <p class="note" data-office-call="🔒 This secure page is just for you — no password needed. Please don&#39;t include medical details. For anything urgent, {{call}} or 911.">🔒 This secure page is just for you — no password needed. Please don't include medical details. For anything urgent, call the office or 911.</p>
   </div>
 
   <div id="cancelled" class="card hide">
     <div class="center"><div class="big">🗓️</div>
       <h1>Appointment cancelled</h1>
-      <p class="sub">We've let the office know. If this was a mistake, please book again or call the office.</p>
+      <p class="sub" data-office-call="We&#39;ve let the office know. If this was a mistake, please book again or {{call}}.">We've let the office know. If this was a mistake, please book again or call the office.</p>
     </div>
   </div>
 </div>
@@ -131,10 +131,24 @@ var BACKEND_URL = 'https://scrivara-backend.onrender.com';
 var ptoken = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.t) || '';
 function show(id){ ['loading','notfound','offline','reopen','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
 
+/* This page says "call the office" in four places and could not say WHICH office
+   or on WHAT number. The server now sends practice_phone from the practice's own
+   Settings, so every one of those lines can carry it. Absent phone => the wording
+   is exactly what it was. */
+var OFFICE_PHONE = '';
+function callOffice(prefix){
+  return (prefix || 'call the office') + (OFFICE_PHONE ? (' at ' + OFFICE_PHONE) : '');
+}
 function render(a){
+  OFFICE_PHONE = String((a && a.practice_phone) || '').trim();
   document.getElementById('whenText').textContent = a.when || a.date || 'Time to be confirmed';
   document.getElementById('providerText').textContent = a.provider ? ('with ' + a.provider) : '';
   document.getElementById('practiceText').textContent = a.practice || 'your care team';
+  /* the static copy, once the number is known */
+  document.querySelectorAll('[data-office-call]').forEach(function(el){
+    var t = el.getAttribute('data-office-call');
+    el.textContent = t.replace('{{call}}', callOffice());
+  });
   if(a.name){ document.getElementById('hello').textContent = 'Hi ' + a.name.split(' ')[0] + ', your appointment'; }
   if(a.reason){ document.getElementById('reasonText').textContent = a.reason; } else { document.getElementById('reasonRow').classList.add('hide'); }
   var pill = document.getElementById('statusPill');
@@ -214,8 +228,8 @@ function cancelAppt(){
   _cancelArmedAt = 0; _cancelBusy = true;
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
     .then(function(r){ return r.json(); })
-    .then(function(j){ _cancelBusy = false; if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please call the office.'); } })
-    .catch(function(){ _cancelBusy = false; showErr("We couldn't reach the office. Check your connection and try again, or call the office."); });
+    .then(function(j){ _cancelBusy = false; if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please ' + callOffice() + '.'); } })
+    .catch(function(){ _cancelBusy = false; showErr("We couldn't reach the office. Check your connection and try again, or " + callOffice() + '.'); });
 }
 
 function showErr(t){ var e=document.getElementById('apptErr'); e.textContent=t; e.className='err'; }

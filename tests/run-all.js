@@ -395,6 +395,10 @@ const tests = [
      used the login/account display name as the clinical provider, two of them
      reading docname BEFORE providerName. */
   'exports-carry-the-practice-identity.test.js',
+  /* b806 — the same law on the three pages a PATIENT sees. The portal resolved
+     the practice from a localStorage key written only on the doctor's device and
+     a global assigned nowhere, so every real patient saw "your care team". */
+  'patient-pages-name-their-practice.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

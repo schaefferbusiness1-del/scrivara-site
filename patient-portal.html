@@ -423,6 +423,9 @@
       return r.json();
     }).then(function(j){
       j = j || {};
+      /* BEFORE renderPatient, so the practice name is already resolved for every
+         string it draws rather than arriving after them. */
+      noteServerOffice(j.practice);
       var patient = Object.assign({}, j.patient || j, {
         medications: j.medications || (j.patient && j.patient.medications) || [],
         problems: j.problems || (j.patient && j.patient.problems) || [],
@@ -434,9 +437,21 @@
   }
 
   function checkSession(){
+    /* api() resolves to a raw Response, so the body has to be read before the
+       practice is known. Resolve it FIRST, then enter the app, so office() is
+       already populated for the strings enterApp and renderPatient draw. A
+       missing or unparseable body must not block sign-in: it only means the
+       wording stays what it was. */
     api("/api/patient/me").then(function(r){
-      if(r.ok){ enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below."); }
-      else if(r.status===401 && PSESS){ setSess(null); } // stale bearer token — clear so a fresh sign-in starts clean
+      if(!r.ok){
+        if(r.status===401 && PSESS){ setSess(null); }
+        return null;
+      }
+      return r.json().catch(function(){ return null; }).then(function(j){
+        noteServerOffice(j && j.practice);
+        enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below.");
+        return null;
+      });
     }).catch(function(){});
   }
 
@@ -793,10 +808,38 @@
       if (el) el.type = on ? "text" : "password";
     }
   };
+  /* THE PRACTICE, FROM THE SERVER THAT KNOWS IT.
+     This used to resolve entirely from localStorage "mlsEasyBook" - a key written
+     only on the DOCTOR's device, by the retired staff booking page - and
+     window.MLS_OFFICE, which is assigned nowhere in the repo. On a patient's
+     phone neither exists, so
+     office().practice was ALWAYS the literal "your care team" and office().phone
+     was ALWAYS empty, across fifteen patient-visible strings, seven of which tell
+     the patient to go ask that unnamed practice for something.
+     /api/patient/me was already being called on load and the session already
+     identified the practice; it simply was never asked. The two legacy sources
+     are kept as overrides for a doctor previewing the portal on their own
+     machine. */
+  var SERVER_OFFICE = null;
   function office(){
     var c={}; try{ c=JSON.parse(localStorage.getItem("mlsEasyBook")||"{}"); }catch(e){}
     try{ if(window.MLS_OFFICE) c=Object.assign({},c,window.MLS_OFFICE); }catch(e){}
-    return { phone:c.phone||"", email:c.email||"", practice:c.practice||"your care team" };
+    var s = SERVER_OFFICE || {};
+    return {
+      phone: c.phone || s.phone || "",
+      email: c.email || "",
+      address: c.address || s.address || "",
+      practice: c.practice || s.name || "your care team"
+    };
+  }
+  /* Record whatever the server told us about the practice. Tolerant of an older
+     backend that does not send it: absent stays absent and the wording is
+     exactly what it was. */
+  function noteServerOffice(p){
+    if(!p || typeof p !== "object") return;
+    var name=String(p.name||"").trim(), phone=String(p.phone||"").trim(), address=String(p.address||"").trim();
+    if(!name && !phone && !address) return;
+    SERVER_OFFICE = { name:name, phone:phone, address:address };
   }
   function tel(p){ return String(p||"").replace(/[^0-9+]/g,""); }
   function requestId(){

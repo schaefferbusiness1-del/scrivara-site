@@ -207,10 +207,49 @@
       .then(function(d){
         if(d===null) return;
         if(d && d.__unreadable){ show('offline'); return; }
-        if(d && d.ok){ show('formWrap'); } else { show('invalid'); }
+        if(d && d.ok){ applyPracticeIdentity(d.practice); show('formWrap'); } else { show('invalid'); }
       })
       .catch(function(){ show('offline'); });                            /* timeout / abort / offline */
   }
+  /* WHOSE FORM IS THIS?
+     The doctor sends this link to their own patients, and until now the page
+     could not say who it was from: the header showed the vendor's mark, the copy
+     said "your care team", and two "contact the clinic" lines gave no number -
+     while the token had resolved the clinician server-side the whole time and the
+     practice name, phone and address were sitting in Settings.
+     Tolerant by construction: an older backend that returns only {ok:true} sends
+     no practice object, and every line below then stays exactly as it was. */
+  function applyPracticeIdentity(p){
+    if(!p || typeof p!=='object') return;
+    var name=String(p.name||'').trim(), phone=String(p.phone||'').trim();
+    if(name){
+      var brand=document.querySelector('.top b');
+      if(brand) brand.textContent=name;                       /* textContent: never parsed as markup */
+      var sub=document.querySelector('.top small');
+      if(sub) sub.textContent='Secure pre-visit intake';
+      try{ document.title=name+' — pre-visit intake'; }catch(e){}
+      /* "your care team" is correct generic clinical-safety copy in most places;
+         these two are the ones that are ABOUT this practice specifically. */
+      var lead=document.querySelector('#formWrap .lead');
+      if(lead) lead.innerHTML=lead.innerHTML.replace('Your care team will go through it all with you.',
+        esc(name)+' will go through it all with you.');
+      var done=document.querySelector('#done .lead');
+      if(done) done.textContent='Your intake has been sent securely to '+name+". You're all done — you can close this page. See you at your visit!";
+    }
+    if(phone){
+      /* Three places told the patient to contact the clinic or office and none
+         of them could say how. */
+      ['invalid','offline'].forEach(function(id){
+        var el=document.querySelector('#'+id+' .lead');
+        if(el && /contact the clinic/i.test(el.textContent)) el.textContent=el.textContent.replace(/contact the clinic/i,'call the office at '+phone);
+      });
+      OFFICE_PHONE = phone;
+    }
+  }
+  var OFFICE_PHONE='';
+  /* "or contact the clinic" with a number, when we have one. */
+  function contactLine(){ return OFFICE_PHONE ? ('or call the office at '+OFFICE_PHONE+'.') : 'or contact the clinic.'; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   window.retryIntakeLink=checkIntakeLink;
   checkIntakeLink();
 
@@ -278,7 +317,7 @@
         else {
           try{ if(res.j&&res.j.error) console.warn('[intake] submission declined:',res.j.error); }catch(e){}
           btn.disabled=false; btn.textContent='Submit to my care team';
-          $('formErr').textContent='We could not send your intake. Check your entries and try again, or contact the clinic.';
+          $('formErr').textContent='We could not send your intake. Check your entries and try again, '+contactLine();
         }
       })
       .catch(function(){ btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent='Connection issue — please check your signal and try again.'; });
