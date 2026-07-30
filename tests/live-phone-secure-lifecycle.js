@@ -170,14 +170,20 @@ async function waitForFile(file, timeoutMs) {
   fs.mkdirSync(artifacts, { recursive: true });
   const server = await serve();
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const chrome = spawn(chromePath, [
+  /* Chrome's setuid/namespace sandbox refuses to start as uid 0, and it fails by
+     never writing DevToolsActivePort - so this suite did not report "cannot run
+     here", it reported a timeout that reads exactly like a hung app. Gated on
+     being root rather than on the platform: everywhere the sandbox CAN work it
+     stays on. The sibling live harnesses already carry this flag. */
+  const sandboxFlags = (typeof process.getuid === 'function' && process.getuid() === 0) ? ['--no-sandbox'] : [];
+  const chrome = spawn(chromePath, sandboxFlags.concat([
     '--headless=new', '--hide-scrollbars', '--remote-debugging-port=0', '--remote-allow-origins=*',
     `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
     '--disable-component-update', '--disable-default-apps', '--disable-domain-reliability', '--disable-sync',
     '--metrics-recording-only', '--password-store=basic', '--use-mock-keychain', '--use-fake-ui-for-media-stream',
     '--use-fake-device-for-media-stream', '--window-size=430,900',
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', 'about:blank'
-  ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+  ]), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   let stderr = '';
   chrome.stderr.on('data', chunk => { stderr += chunk.toString(); });
   let cdp;

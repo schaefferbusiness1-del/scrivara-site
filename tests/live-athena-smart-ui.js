@@ -578,10 +578,29 @@ async function settingsState(cdp) {
   })()`);
 }
 
+/* THE DOCK IS THE MENU NOW, and this function was still opening the old one.
+   The 2026-07-28 owner sweep hides #mlsTbMenu outright - feat_mls_redesign.js:114
+   puts it in a `display:none !important` list next to the search slot and the
+   quick-create button, because the top bar was duplicating the dock. The nodes
+   are hidden and never deleted precisely so satellites and tests can still
+   reach them, and feat_mls_calm_shell.js already adapted: its Tools row drives
+   the canonical Menu row inside the hidden subtree and dispatches
+   mls:menu-staff-prep-request.
+   This harness had not adapted. It clicked #mlsTbMenuBtn, which measures 0x0
+   inside a display:none parent, so every run died on "Could not click" before a
+   single Athena assertion ran - a whole suite reporting nothing at all.
+   Nothing about Athena is touched here. Only the way IN changes, and it changes
+   to the app's own current route: activate the canonical Staff-prep item where
+   it actually lives. The item is still clicked rather than its handler called,
+   so a Staff prep entry that stops working still fails this suite. */
 async function openStaffPrep(cdp) {
-  await click(cdp, '#mlsTbMenuBtn');
-  await waitFor(cdp, 'open Menu for Staff Prep', `document.getElementById('mlsTbMenuPanel').classList.contains('open')`);
-  await click(cdp, '#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"]');
+  const opened = await evaluate(cdp, `(() => {
+    const item = document.querySelector('#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"]');
+    if (!item) return { ok: false, why: 'the canonical Staff prep menu item is gone' };
+    item.click();
+    return { ok: true };
+  })()`);
+  assert(opened && opened.ok, 'Could not reach Staff prep: ' + JSON.stringify(opened));
   await waitFor(cdp, 'Staff Prep workspace', `!!document.getElementById('ez3PullStart')&&!!document.getElementById('ez3Seg')`);
 }
 

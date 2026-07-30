@@ -111,12 +111,20 @@ class Cdp {
 }
 
 async function launch(chromePath, profile) {
-  const child = spawn(chromePath, [
+  /* Chrome's setuid/namespace sandbox refuses to start as uid 0, and it fails by
+     never writing DevToolsActivePort - so this suite did not report "cannot run
+     here", it reported a 30-second timeout that reads exactly like a hung app.
+     Gated on being root rather than on the platform: everywhere the sandbox CAN
+     work it stays on, which is the opposite of the usual blanket --no-sandbox.
+     The sibling live harnesses already carry this flag; these two did not, which
+     is the only reason they were unrunnable in a container. */
+  const sandboxFlags = (typeof process.getuid === 'function' && process.getuid() === 0) ? ['--no-sandbox'] : [];
+  const child = spawn(chromePath, sandboxFlags.concat([
     '--headless=new', '--remote-debugging-port=0', '--remote-allow-origins=*',
     `--user-data-dir=${profile}`, '--no-first-run', '--disable-background-networking',
     '--disable-component-update', '--disable-default-apps', '--disable-sync',
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', 'about:blank'
-  ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+  ]), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   const portFile = path.join(profile, 'DevToolsActivePort');
   await waitFile(portFile);
   const port = Number(fs.readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0]);

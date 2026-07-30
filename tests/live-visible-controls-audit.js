@@ -377,14 +377,47 @@ async function probeDimTransition(cdp, artifactDir) {
   const coveringSamples = samples.filter(x => x.state.covers.length > 0);
   const first = firstState.visit || {}; const transient = animatedSamples.length ? animatedSamples[0].state.visit : null; const last = lastState.visit || {};
   const persistent = last.opacity < 0.99 || last.filter !== 'none' || last.pointerEvents === 'none' || lastState.covers.some(x => x.pointerEvents !== 'none');
-  const cycleTransitionFailures = cycles.filter(x => !x.immediate.visit || x.immediate.visit.opacity < 0.99 || (x.immediate.visit.animationName && x.immediate.visit.animationName !== 'none') || x.immediate.covers.some(y => y.pointerEvents !== 'none'));
+
+  /* AN ENTRANCE ANIMATION IS NOT A DIM ROUTE.
+     This probe exists to catch a route you navigate to and cannot use: one that
+     stays faded, stays filtered, stays pointer-events:none, or sits under
+     something. It used to fail on ANY animation running with opacity < 1 at 36ms
+     - and the app now has exactly that, deliberately: #visitView enters on
+     `mlsViewIn` for 0.3s, which is the owner's standing instruction that the
+     whole site carry Apple-like motion. The probe's own diagnosis field said
+     "route-entry-animation" and its own `persistent` field said false, and it
+     failed anyway, so this harness has reported FAIL on every run it has ever
+     made. A check that cannot pass teaches nothing.
+     The teeth move rather than come out: a fade is allowed to happen and
+     REQUIRED TO FINISH. Sampled past twice its declared duration (floor 600ms,
+     and there are samples at 320ms and 800ms), the route must be at full
+     opacity. A 0.3s fade still running at 800ms is a stuck animation, which is
+     the same trap by a different mechanism - and that case now fails where
+     before it was indistinguishable from the healthy one. */
+  const declaredMs = animatedSamples.reduce((max, x) => {
+    const d = String((x.state.visit && x.state.visit.animationDuration) || '0s').trim();
+    const n = /^([\d.]+)(ms|s)$/.exec(d);
+    return Math.max(max, n ? Number(n[1]) * (n[2] === 's' ? 1000 : 1) : 0);
+  }, 0);
+  const settleBudgetMs = Math.max(600, declaredMs * 2);
+  const unsettledEntrance = samples.filter((x) => x.delayMs >= settleBudgetMs &&
+    x.state.visit && (x.state.visit.opacity < 0.99 || x.state.visit.filter !== 'none' || x.state.visit.pointerEvents === 'none'));
+
+  /* The per-cycle immediate sample keeps every structural check it had - the
+     view must EXIST and must not be covered the instant the route opens - and
+     gives up only the "is anything animating" clause, which is the entrance. */
+  const cycleTransitionFailures = cycles.filter(x => !x.immediate.visit || x.immediate.covers.some(y => y.pointerEvents !== 'none'));
   const settledFailures = cycles.filter(x => !x.settled.visit || x.settled.visit.opacity < 0.99 || x.settled.visit.filter !== 'none' || x.settled.visit.pointerEvents === 'none' || x.settled.covers.some(y => y.pointerEvents !== 'none'));
   return {
-    status: persistent || animatedSamples.length || coveringSamples.length || cycleTransitionFailures.length || settledFailures.length ? 'FAIL' : 'PASS',
-    diagnosis: animatedSamples.length ? 'route-entry-animation' : (coveringSamples.length ? 'covering-overlay' : 'unexplained'),
+    status: persistent || coveringSamples.length || unsettledEntrance.length || cycleTransitionFailures.length || settledFailures.length ? 'FAIL' : 'PASS',
+    diagnosis: unsettledEntrance.length ? 'entrance-animation-never-settles'
+      : (coveringSamples.length ? 'covering-overlay' : (persistent ? 'persistently-dim' : 'clear')),
+    entranceAnimation: animatedSamples.length
+      ? { observed: true, name: (transient && transient.animationName) || '', declaredMs, settleBudgetMs, settled: !unsettledEntrance.length }
+      : { observed: false },
     transientObserved: animatedSamples.length > 0 || coveringSamples.length > 0, persistent, first, transient, last,
     minOpacity: Math.min(...samples.map(x => x.state.visit ? x.state.visit.opacity : 1)),
-    samples, cycles, cycleTransitionFailures, settledFailures
+    samples, cycles, cycleTransitionFailures, settledFailures, unsettledEntrance
   };
 }
 
@@ -484,15 +517,50 @@ async function exerciseCandidate(cdp, route, candidate, artifactDir, serial) {
      the tighter six-second consistency budget. */
   const setupBudgetMs = candidate.id === 'mlsB39SgHead' ? 30000 : 6000;
   let marked = null;
+  let disclosureOpened = null;
   while (Date.now() - setupStarted < setupBudgetMs) {
     marked = await markByFingerprint(cdp, candidate.fp, marker);
     if (marked.ok || marked.count > 1) break;
+    /* FOLDED IS NOT MISSING.
+       The inventory pass walks the route with disclosures already opened, then
+       this pass reloads and re-finds each control from a clean state - with the
+       disclosures closed again. Every control that lives behind one therefore
+       looked like it had vanished, and three did, on every run this harness has
+       ever made: "Paste a transcript", "After-visit summary" and "Orders", all
+       inside the Visit-shortcuts fold that feat_mls_visit_focus.js puts them in
+       ON PURPOSE (its rule 2: everything but the primary leaves the surface into
+       a disclosure that already exists, and its route gate fails the build if
+       any hidden control has no named way back).
+       MEASURED before writing this: all three are in the DOM after a fresh load,
+       display:none behind the collapsed fold, and display:flex the moment
+       #ez3flToolsToggle is pressed. So the fix is to press the app's own
+       disclosure - once, only after a plain search has already failed, and
+       recorded in the result - rather than to lower the bar. A control that is
+       genuinely absent still exhausts the budget and still fails, and the report
+       now distinguishes the two cases by name. */
+    if (!disclosureOpened) {
+      disclosureOpened = await evalJs(cdp, `(() => {
+        const opened = [];
+        const toggles = [document.getElementById('ez3flToolsToggle')]
+          .concat([...document.querySelectorAll('[aria-expanded="false"]')]);
+        for (const t of toggles) {
+          if (!t) continue;
+          const s = getComputedStyle(t), r = t.getBoundingClientRect();
+          if (s.display === 'none' || s.visibility === 'hidden' || r.width <= 0 || r.height <= 0) continue;
+          if (t.getAttribute('aria-expanded') === 'true') continue;
+          t.click();
+          opened.push(t.id || String(t.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40));
+        }
+        return opened;
+      })()`);
+      if (disclosureOpened && disclosureOpened.length) { await sleep(300); continue; }
+    }
     await sleep(200);
   }
   const setupWaitMs = Date.now() - setupStarted;
   if (!marked || !marked.ok) {
     const readiness = candidate.id === 'mlsB39SgHead' ? await evalJs(cdp, `(() => {const s=document.querySelector('script[data-mls-asset="feat_mls_studygroups.js"]'),h=document.getElementById('mlsB39SgHead'),cs=h&&getComputedStyle(h),r=h&&h.getBoundingClientRect();return{ownerScript:!!s,ownerSrc:s&&s.src||'',apiReady:!!window.__mlsStudyGroups,rootReady:!!document.getElementById('mls-sg-root'),wrapperReady:!!document.getElementById('mlsB39SgWrap'),headReady:!!h,headName:h&&String(h.innerText||h.textContent||'').replace(/\s+/g,' ').trim()||'',headDisplay:cs&&cs.display||'',headVisibility:cs&&cs.visibility||'',headRect:r?{left:r.left,top:r.top,width:r.width,height:r.height}:null,launcherReady:!!document.getElementById('mls-sg-launch'),view:window.__mlsCurrentView||''}})()`) : null;
-    return { status: 'FAIL', kind: 'route-inconsistent-control', route: route.route, control: candidate, setupWaitMs, setupBudgetMs, detail: Object.assign({}, marked || {}, readiness ? { readiness } : {}) };
+    return { status: 'FAIL', kind: 'route-inconsistent-control', route: route.route, control: candidate, setupWaitMs, setupBudgetMs, disclosuresOpened: disclosureOpened || [], detail: Object.assign({}, marked || {}, readiness ? { readiness } : {}) };
   }
   const before = await collect(cdp, `${route.route}:before:${candidate.label}`);
   const errorCount = before.errors.length;
