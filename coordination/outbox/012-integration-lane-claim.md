@@ -202,4 +202,106 @@ synonyms, so it was asked for on every note that used it.
   bump only needs to skip `/* */` and `//` spans — and because citations are how this repo
   reasons.
 
+---
+
+## SHIPPED — b808 and b809, both live on main
+
+Five commits in this repo, two in `scrivara-backend` (both merged to its main).
+`npm test` → **450 local regression suites** here, **39** there.
+
+| what | where |
+|---|---|
+| the visit home always offers the banner patient | `mls-connect.js` renderHome + the four handlers |
+| Settings identity reaches the op note | `feat_mls_opnote_fill.js`, `feat_mls_opnote_prep.js`, `ScribeFlow.html` |
+| every export carries the practice's identity | `mls-opnote-pro.js`, `mls-procedure-report.js`, `mls-rvu.js`, `ScribeFlow.html` |
+| the three patient pages name their practice | `patient-portal.html`, `intake.html`, `appointment.html` |
+| the marketing console is not a stale fork | `mls-marketing-console.html` |
+| the practice's name reaches patients | backend: `server.js`, `patientPortal.js`, `patientPortalInvites.js`, `reviewRequests.js` |
+
+**The loader tokens are the part worth your attention.** Five of the modules I
+changed carry their own fixed `?v=` token rather than `?v=__MLS_AV`, so bumping
+`app-version.json` alone would have published this whole lane as files nobody
+loads — shipped, green, and invisible. Advanced together with every pin, live and
+staging: `onf2130→onf2140`, `opnp170→opnp180`, `lib2→lib3`, `bc1→bc2`. If you
+touch any of those five modules, move the token too.
+
+`sw.js`'s `mls-v188` deliberately did NOT move: all three patient pages are in
+`NETWORK_ONLY_HTML_PATHS`, so they never come from the SW cache.
+
+### The verification boundary, stated plainly
+
+This container's network policy blocks outbound to `mlsscribe.com` (the proxy
+answers 403 to CONNECT), so I could not run the ship skill's step 5/6 live check.
+What I *can* evidence: `2912f11` is on main, and its **`pages build and
+deployment` run completed with conclusion `success`** at 21:54:30Z
+(`actions/runs/30585214243`). What I have NOT done: read the served bytes, or
+probe the owner's signed-in tab. Per the skill, that means nobody should be told
+this "works live" until someone reloads that tab and checks `window.__MLS_AV`.
+
+### Five findings I did not go looking for
+
+Each was found by a suite while proving something else, and each wrote a specific
+clinical or identity claim the app had no basis for:
+
+1. The account's credential appended to **another clinician's** name —
+   `Kelly Carter, PA-C` + account cred `MD` → **`Kelly Carter, PA-C, MD`**. An
+   operative note asserting a physician assistant is a physician.
+2. The **assistant line filled with the primary surgeon** ("Assistant surgeon"
+   contains "surgeon"). There is no assistant source in this app at all.
+3. The phone line reading **"Dr. \<last token of the login name\>'s office"**
+   aloud to a patient — a surname guess plus an invented doctoral title.
+4. The review-request snapshot storing an **empty** identity, which
+   `patient-review.html` renders as "my doctor at this office" into a review the
+   patient posts **publicly**.
+5. `provProfile`'s hardcoded `facility: ''`, which made a correct, shipped
+   facility rule permanently unreachable.
+
+**2, 3 and 4 are one class**: the app inventing a specific claim where it had no
+data, in text a human then signs or publishes. Worth a lane of its own — a sweep
+for "what else do we fabricate rather than leave blank?" would likely find more.
+
+### Instrument errors, because there were four and they all cost time
+
+All four were probes that could not detect what they reported:
+
+- `indexOf('});')` truncated a handler mid-body on `{ record: true });`.
+- A comment naming the function it explains inverted three separate `indexOf`
+  ORDER verdicts (`getName`, `lockAndStartPatient`, `renderPatient`).
+- `indexOf('};')` truncated `serverProvider` on `|| {};` — producing a **false
+  failure** on correct code, which is the worse direction.
+- Cross-realm `deepStrictEqual`: arrays and objects built inside a `vm` realm are
+  never deep-equal to ones built outside it, and the mismatch reads as a content
+  difference.
+
+Every order check in the new suites now strips comments first and carries a
+control proving the strip removed prose and not code. `outbox/011` recorded the
+first of these; this is the same trap four more times, so it is probably worth a
+shared test helper rather than five independent rediscoveries.
+
+### Still open, deliberately, and none of it is mine to decide
+
+- `getLicense` / `getDea` / `getFacilityPhone` — called in
+  `feat_mls_opnote_prep.js:182-189`, defined nowhere. A DEA number is a
+  controlled-substance credential; deciding to persist one in `localStorage` plus
+  an encrypted cloud blob is an owner call.
+- `appMeta()` has no date of procedure, so a normalized header can print
+  `Date of Procedure: [not dictated]`. Filling it with today's date would
+  fabricate a clinical fact for any note about a past procedure, and nothing in
+  that module's inputs carries the encounter date.
+- Two live `getProviderName` definitions with different semantics —
+  `ScribeFlow.html:7857` returns the stored value, `mls-connect.js:33741` returns
+  `""` on roster ambiguity and wins at runtime because the bundle loads later.
+- `AuthPilot.html:623` instructs the model to emit `[Practice Name]`,
+  `[Provider Name, Credentials]` and `[NPI]` blanks. It is fully standalone with
+  its own key and reads zero MLS settings, so wiring it is a real change.
+- `mls-outcome-study.js:1088` asks the doctor to retype patient names and dates of
+  service that `getPatients()` already holds. Needs a pick-from-charts builder.
+- The marketing **listing audit** still takes identity from the client request
+  body. Different shape from everything above — not a missing lookup but an absent
+  authority.
+- `bump-build` falsifies provenance comments (b803 rewrote 65 references that
+  correctly said "b802 did X"). Measured and deliberately unfixed per
+  `HONEST_STATE_2026-07-28`, but it is now corrupting newly written citations, and
+  the fix is small: skip `/* */` and `//` spans.
+
 — integration lane

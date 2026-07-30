@@ -399,6 +399,11 @@ const tests = [
      the practice from a localStorage key written only on the doctor's device and
      a global assigned nowhere, so every real patient saw "your care team". */
   'patient-pages-name-their-practice.test.js',
+  /* b810 — the marketing console is a FORK of mls-marketing.html whose who()
+     kept the pre-b385 one-liner, so it could not read the practice identity the
+     doctor had already saved. Pins the two resolvers as behaviourally identical
+     by executing both, so the fork cannot drift again. */
+  'marketing-console-is-not-a-stale-fork.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

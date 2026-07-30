@@ -282,7 +282,29 @@ a{color:var(--blue)}
   function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
   function jget(k){ try{ return JSON.parse(lsGet(k)||'null'); }catch(e){ return null; } }
   function tok(){ try{ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }catch(e){ return ''; } }
-  function who(){ var rf=jget('mlsRF'); var d=(rf&&rf.doc)||{}; return {doctor:d.name||'',practice:d.practice||'',city:d.city||'',site:d.site||''}; }
+  /* PORTED from mls-marketing.html (b385). This file is a fork of that page and
+     the fork kept the PRE-b385 one-liner, so doctor/practice/city came back EMPTY
+     unless the review-finder form had been filled first on this device - and that
+     empty value flowed straight into the GBP listing summary below. Identical
+     implementation, deliberately, so the two cannot drift again without the
+     stale-fork suite noticing. */
+  function who(){
+    var rf=jget('mlsRF'); var d=(rf&&rf.doc)||{};
+    /* b385: fall back to the MLS Settings the doctor already saved (account-
+       namespaced sf_u::<email>:: keys) so this console works without filling
+       the review-finder form first. Explicit mlsRF entries always win. */
+    var pf={};
+    try{
+      var prefixes={};
+      for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); var m=/^(sf_u::.+::)(?:practiceName|providerName|docname)$/.exec(k); if(m&&localStorage.getItem(k)) prefixes[m[1]]=1; }
+      var pre=Object.keys(prefixes);
+      if(pre.length===1){
+        var g=function(sfx){ try{ return localStorage.getItem(pre[0]+sfx)||''; }catch(e){ return ''; } };
+        pf={doctor:g('providerName')||g('docname'),practice:g('practiceName'),city:(function(){var a=g('clinicAddress');if(!a)return '';var p=a.split(',');return p.length>=2?p.slice(-2).join(',').trim():a;})()};
+      }
+    }catch(e){}
+    return {doctor:d.name||pf.doctor||'',practice:d.practice||pf.practice||'',city:d.city||pf.city||'',site:d.site||''};
+  }
   function api(path, opts, cb){
     var t=tok(); var h={'Content-Type':'application/json'}; if(t) h['Authorization']='Bearer '+t;
     opts=opts||{}; opts.headers=h;
