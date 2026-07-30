@@ -362,6 +362,117 @@ async function main() {
     ok(!afterGen.advancedOpen.length, '4c. generating did not throw open an advanced-tools panel',
       'opened: ' + JSON.stringify(afterGen.advancedOpen));
 
+    /* ---- 5pre. THE CONTROL THE OWNER ACTUALLY CALLS "REVIEW & SIGN" ----
+       Everything below presses #signBtn, which is the SIGN half. The owner's
+       words were "why do u have to clikc review and sign twice", and the button
+       he is looking at while saying that is the lane's own
+       "Next: Review & send to Athena" (#ez3flReview) - the single most
+       prominent thing on the screen once a note exists. This harness never
+       touched it, so it could not have seen his complaint even in principle.
+       Press it ONCE and record exactly what a doctor would see happen: did the
+       review surface open, did anything move, or did the press land on nothing?
+       No verdict is asserted here yet - the measurement comes first. */
+    const reviewProbe = await evalJs(cdp, `(()=>{
+      const b=document.getElementById('ez3flReview');
+      if(!b) return {present:false};
+      const s=getComputedStyle(b), r=b.getBoundingClientRect();
+      const send=document.getElementById('pushAllEmrBtn');
+      const sr=send?send.getBoundingClientRect():null, ss=send?getComputedStyle(send):null;
+      return {present:true, label:String(b.innerText||'').trim(),
+        visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0,
+        sendPresent:!!send, sendInlineHidden: !!(send&&send.style&&send.style.display==='none'),
+        sendVisible: !!(send&&ss.display!=='none'&&ss.visibility!=='hidden'&&sr.width>0&&sr.height>0),
+        sendInViewport: !!(sr&&sr.top>=0&&sr.bottom<=(window.innerHeight||0)),
+        adv: document.body.classList.contains('ez3adv'), scrollY: Math.round(window.scrollY||0)};
+    })()`);
+    note('BEFORE pressing the lane Review control: ' + JSON.stringify(reviewProbe));
+    if (reviewProbe.present && reviewProbe.visible) {
+      /* WHO MOVES THE PAGE? Trap every scroll API with a stack, so the culprit
+         names itself instead of being guessed at.
+         This is not decoration. The first version of this check reported the
+         page jumping 575px on one press of Review and I began fixing the app
+         for it - a quiet-flag race in mls-connect.js that I could argue for and
+         could not demonstrate. The trace then attributed the entire movement,
+         unambiguously, to `scrollIntoView` on #ez3flReview called by this
+         harness's own press() helper. The app had never moved the page. The
+         fix was reverted and this trace stayed, because a scroll assertion
+         without one is an assertion about the instrument. */
+      await evalJs(cdp, `(()=>{
+        window.__scrollTrace=[];
+        const rec=(how,extra)=>{ try{ window.__scrollTrace.push({how, y:Math.round(window.scrollY||0),
+          extra:extra||'', stack:String(new Error().stack||'').split('\\n').slice(1,7).join(' | ')}); }catch(e){} };
+        const sivEl=Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView=function(){ rec('scrollIntoView', (this.id||this.className||this.tagName)); return sivEl.apply(this,arguments); };
+        const st=window.scrollTo; window.scrollTo=function(){ rec('scrollTo', JSON.stringify([].slice.call(arguments).slice(0,2))); return st.apply(window,arguments); };
+        const sb=window.scrollBy; window.scrollBy=function(){ rec('scrollBy', JSON.stringify([].slice.call(arguments).slice(0,2))); return sb.apply(window,arguments); };
+        const fo=HTMLElement.prototype.focus; HTMLElement.prototype.focus=function(o){ if(!(o&&o.preventScroll)) rec('focus(no preventScroll)', (this.id||this.tagName)); return fo.apply(this,arguments); };
+        addEventListener('scroll',()=>{ try{ if(window.__scrollTrace.length<60) window.__scrollTrace.push({how:'(scroll event)', y:Math.round(window.scrollY||0)}); }catch(e){} }, {passive:true});
+        return 1; })()`);
+      /* PRESS IT WITHOUT SCROLLING IT. press() calls scrollIntoView first, which
+         is right for a control that may be off-screen and fatal for a probe that
+         measures scroll: the first version of this check blamed the app for
+         575px of movement that the SCROLL TRACE then attributed, unambiguously,
+         to the harness's own scrollIntoView on #ez3flReview. The control is
+         already visible here (asserted above), so it is clicked where it sits
+         and the baseline is taken in the same expression as the click. */
+      const clickBase = await evalJs(cdp, `(()=>{
+        const b=document.getElementById('ez3flReview');
+        const y=Math.round(window.scrollY||0);
+        b.click();
+        return {yAtClick:y};})()`);
+      await sleep(2200);
+      const trace = await evalJs(cdp, `(()=>{
+        const t=(window.__scrollTrace||[]).filter(x=>x.how!=='(scroll event)');
+        return {calls:t.slice(0,8), scrollEvents:(window.__scrollTrace||[]).filter(x=>x.how==='(scroll event)').length,
+                finalY:Math.round(window.scrollY||0)}; })()`);
+      note('SCROLL TRACE: ' + JSON.stringify(trace));
+      const afterReview = await evalJs(cdp, `(()=>{
+        const send=document.getElementById('pushAllEmrBtn');
+        const sr=send?send.getBoundingClientRect():null, ss=send?getComputedStyle(send):null;
+        return {sendVisible: !!(send&&ss.display!=='none'&&ss.visibility!=='hidden'&&sr.width>0&&sr.height>0),
+          sendInViewport: !!(sr&&sr.top>=0&&sr.bottom<=(window.innerHeight||0)),
+          sendFocused: document.activeElement===send,
+          adv: document.body.classList.contains('ez3adv'),
+          scrollY: Math.round(window.scrollY||0),
+          openPanels: [...document.querySelectorAll('.modal-bg.show')].map(e=>e.id).filter(Boolean),
+          toast: (()=>{const t=document.getElementById('toast');
+            return (t&&t.classList.contains('show'))?String(t.textContent||'').slice(0,160):'';})()};
+      })()`);
+      note('AFTER one press of "' + reviewProbe.label + '": ' + JSON.stringify(afterReview));
+      /* The press has to DO something a doctor can see. Any of these counts:
+         a review panel opened, the send control came into view, or the app said
+         something. If none of them is true the button looked broken, and a
+         button that looks broken gets pressed again - which is the report. */
+      const didSomething = afterReview.openPanels.length > 0 || afterReview.toast ||
+        (afterReview.sendInViewport && !reviewProbe.sendInViewport) ||
+        (afterReview.sendVisible && !reviewProbe.sendVisible);
+      ok(didSomething, '5pre. one press of the lane Review control visibly does something',
+        'pressing "' + reviewProbe.label + '" opened no panel, said nothing, and moved nothing into view: '
+          + JSON.stringify({ before: reviewProbe, after: afterReview })
+          + '. A press with no visible result is the one that gets pressed twice.');
+
+      /* THE PAGE MUST NOT MOVE. Owner, twice: "when I click review and sign it
+         should not scroll me down", and "why in the world does it jump me to
+         the advanced tools section". Measured before the fix: scrollY 157 ->
+         732 on a single press, 575px of unrequested movement, while the toast
+         printed "the page has been left exactly where you are". */
+      const scrolled = Math.abs((afterReview.scrollY || 0) - (clickBase.yAtClick || 0));
+      ok(scrolled <= 4, '5pre-b. pressing Review does not move the page',
+        'the page jumped ' + scrolled + 'px (' + reviewProbe.scrollY + ' -> ' + afterReview.scrollY
+          + ') on one press of "' + reviewProbe.label + '", measured from the scroll position at the instant of the click. '
+          + 'Scroll trace: ' + JSON.stringify(trace));
+
+      /* AND THE TOAST MUST NOT CLAIM OTHERWISE. A promise about the viewport is
+         checkable, so it gets checked: the app may only say it left the page
+         alone if it did. */
+      const claimsStill = /left exactly where you are/i.test(afterReview.toast || '');
+      ok(!(claimsStill && scrolled > 4), '5pre-c. the app does not claim it left the page still while moving it',
+        'the toast said "left exactly where you are" after moving the page ' + scrolled + 'px: '
+          + JSON.stringify(afterReview.toast));
+    } else {
+      note('the lane Review control is not offered in this state: ' + JSON.stringify(reviewProbe));
+    }
+
     /* ---- 5. REVIEW & SIGN - the owner says this takes two presses ---- */
     const s1 = await press(cdp, 'signBtn');
     let signPresses = 1, signed = s1.after.signVisible;
