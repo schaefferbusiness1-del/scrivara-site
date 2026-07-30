@@ -15,6 +15,22 @@ jobs:
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # FULL history, deliberately. Two suites in the registry are history
+          # aware, and the default shallow (depth 1) checkout does not merely
+          # weaken them - it breaks one and silently voids the other:
+          #
+          #   tree-contains-everything-published.test.js fetches origin/main and
+          #   asserts it is an ancestor of HEAD. Against a grafted shallow clone
+          #   there is no common ancestor, so it reports a tree that is 0 behind
+          #   locally as "behind 2335 commit(s)" and fails EVERY pull request.
+          #
+          #   build-bump-names-its-build.test.js needs a cutoff commit that a
+          #   shallow clone does not contain, and prints "THIS SUITE CHECKED
+          #   NOTHING" - a green check standing in for an unrun gate.
+          #
+          # fetch-depth: 0 is what makes both of them mean what they say in CI.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
