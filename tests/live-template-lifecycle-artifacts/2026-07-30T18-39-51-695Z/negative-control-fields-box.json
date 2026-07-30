@@ -1,0 +1,69 @@
+{
+  "box": true,
+  "fields": [
+    {
+      "field": "Needle gauge",
+      "value": "25-gauge, 1.5-inch",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    },
+    {
+      "field": "Injectate volume",
+      "value": "0.25% bupivacaine + dexamethasone, 1 mL per point",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    },
+    {
+      "field": "Imaging modality",
+      "value": "Fluoroscopy",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    },
+    {
+      "field": "Provider name",
+      "value": "",
+      "tag": "onf-need:needs value",
+      "visible": true
+    },
+    {
+      "field": "Provider npi",
+      "value": "",
+      "tag": "onf-need:needs value",
+      "visible": true
+    },
+    {
+      "field": "Facility name",
+      "value": "",
+      "tag": "onf-need:needs value",
+      "visible": true
+    }
+  ],
+  "tagged": [
+    {
+      "field": "Needle gauge",
+      "value": "25-gauge, 1.5-inch",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    },
+    {
+      "field": "Injectate volume",
+      "value": "0.25% bupivacaine + dexamethasone, 1 mL per point",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    },
+    {
+      "field": "Imaging modality",
+      "value": "Fluoroscopy",
+      "tag": "onf-sug:suggested",
+      "visible": true
+    }
+  ],
+  "header": "✏️ 6 fields need you (3 blank · 3 suggested)",
+  "html": "<div class=\"onf-h\">✏️ 6 fields need you (3 blank · 3 suggested)</div><div class=\"onf-grid\"><div class=\"onf-field\"><label class=\"onf-has\">Needle gauge <span class=\"onf-sug\">suggested</span><select data-onf-idx=\"0\" data-onf-label=\"needle gauge\" id=\"onfF_0_needle_gauge\"><option value=\"25-gauge, 1.5-inch\" selected=\"\">25-gauge, 1.5-inch</option><option value=\"25-gauge\">25-gauge</option><option value=\"22-gauge\">22-gauge</option><option value=\"27-gauge\">27-gauge</option><option value=\"__onf_other__\">Other (type custom)…</option></select></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-mic=\"onfF_0_needle_gauge\" data-tip=\"Dictate this field — spoken value is normalized by AI\">🎙</button><button type=\"button\" data-onf-default-act=\"save\" data-onf-default-control=\"onfF_0_needle_gauge\" data-onf-default-label=\"needle gauge\">☆ Use every time</button></div></div><div class=\"onf-field\"><label class=\"onf-has\">Injectate volume <span class=\"onf-sug\">suggested</span><select data-onf-idx=\"0\" data-onf-label=\"injectate volume\" id=\"onfF_0_injectate_volume\"><option value=\"0.25% bupivacaine + dexamethasone, 1 mL per point\" selected=\"\">0.25% bupivacaine + dexamethasone, 1 mL per point</option><option value=\"1% lidocaine, 1 mL per point\">1% lidocaine, 1 mL per point</option><option value=\"0.25% bupivacaine, 1 mL\">0.25% bupivacaine, 1 mL</option><option value=\"0.5% bupivacaine, 0.5 mL per point\">0.5% bupivacaine, 0.5 mL per point</option><option value=\"__onf_other__\">Other (type custom)…</option></select></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-mic=\"onfF_0_injectate_volume\" data-tip=\"Dictate this field — spoken value is normalized by AI\">🎙</button><button type=\"button\" data-onf-default-act=\"save\" data-onf-default-control=\"onfF_0_injectate_volume\" data-onf-default-label=\"injectate volume\">☆ Use every time</button></div></div><div class=\"onf-field\"><label class=\"onf-has\">Imaging modality <span class=\"onf-sug\">suggested</span><select data-onf-idx=\"0\" data-onf-label=\"imaging modality\" id=\"onfF_0_imaging_modality\"><option value=\"Fluoroscopy\" selected=\"\">Fluoroscopy</option><option value=\"Ultrasound\">Ultrasound</option><option value=\"CT guidance\">CT guidance</option><option value=\"__onf_other__\">Other (type custom)…</option></select></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-mic=\"onfF_0_imaging_modality\" data-tip=\"Dictate this field — spoken value is normalized by AI\">🎙</button><button type=\"button\" data-onf-default-act=\"save\" data-onf-default-control=\"onfF_0_imaging_modality\" data-onf-default-label=\"imaging modality\">☆ Use every time</button></div></div><div class=\"onf-field\"><label class=\"\">Provider name <span class=\"onf-need\">needs value</span><input type=\"text\" data-onf-idx=\"0\" data-onf-label=\"provider name\" id=\"onfF_0_provider_name\" value=\"\" placeholder=\"type value\"></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-mic=\"onfF_0_provider_name\" data-tip=\"Dictate this field — spoken value is normalized by AI\">🎙</button></div></div><div class=\"onf-field\"><label class=\"\">Provider npi <span class=\"onf-need\">needs value</span><input type=\"text\" data-onf-idx=\"0\" data-onf-label=\"provider npi\" id=\"onfF_0_provider_npi\" value=\"\" placeholder=\"type value\"></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-mic=\"onfF_0_provider_npi\" data-tip=\"Dictate this field — spoken value is normalized by AI\">🎙</button><button type=\"button\" data-onf-default-act=\"save\" data-onf-default-control=\"onfF_0_provider_npi\" data-onf-default-label=\"provider npi\">☆ Use every time</button></div></div><div class=\"onf-field\"><label class=\"\">Facility name <span class=\"onf-need\">needs value</span><input type=\"text\" data-onf-idx=\"0\" data-onf-label=\"facility name\" id=\"onfF_0_facility_name\" value=\"\" placeholder=\"type value\"></label><div class=\"onf-field-actions\"><button type=\"button\" class=\"onf-mic\" data-onf-m",
+  "pending": [
+    "needle gauge",
+    "injectate volume",
+    "imaging modality"
+  ],
+  "reviewed": false
+}

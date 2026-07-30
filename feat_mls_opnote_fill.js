@@ -1268,7 +1268,30 @@
           row._onfSuggestedPending = row._onfSuggestedPending || {};
           row._onfSuggestedPending[key] = lab;
         }
-      } else meta[key] = vals[key] ? ((row && row._onfDefaultKeys && row._onfDefaultKeys[key]) ? 'default' : 'set') : 'blank';
+      }
+      /* 2026-07-30 — AN UNREVIEWED SUGGESTION MUST STAY AMBER ON EVERY RENDER.
+         The branch above assigns `suggested` only on the FIRST pass, when
+         vals[key] is still null. Every later render fell into the `else` and
+         downgraded the same value to `set`, which carries NO tag - so the field
+         rendered identical to one the doctor had confirmed, and because a
+         non-suggested filled value is collapsed into the "filled automatically"
+         expander, it also left the screen.
+
+         MEASURED (tests/live-template-lifecycle.js step 6d): a note carried
+         "25-gauge", "bupivacaine" and "Fluoroscopy" - a needle gauge, a drug and
+         an imaging modality that were NEVER dictated - under a header reading
+         "3 fields need you · 3 filled automatically", with all three tagged
+         (none). The app knew: row._onfSuggestedPending still listed all three
+         and the save gate correctly refused the first Save over them. Only the
+         DISPLAY had forgotten, which is the worst place to forget it - the save
+         warning names fields the doctor can no longer see marked.
+
+         _onfSuggestedPending is the right source because it is deleted the
+         moment the clinician touches the field (:1390), so it means exactly
+         "still an unreviewed machine suggestion" - the same fact the save gate
+         reads. One state, one meaning, both ends. */
+      else if (row && row._onfSuggestedPending && row._onfSuggestedPending[key] && vals[key]) meta[key] = 'suggested';
+      else meta[key] = vals[key] ? ((row && row._onfDefaultKeys && row._onfDefaultKeys[key]) ? 'default' : 'set') : 'blank';
     }
     if (row) row._onfVals = vals;
     /* render the note from raw + current values */
