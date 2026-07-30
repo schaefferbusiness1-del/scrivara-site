@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b795) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b796) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -873,7 +873,7 @@
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
   #opPrepModal.opr-room{ padding:0; }
-  /* b795 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b796 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show > .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -892,7 +892,7 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b795 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b796 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -1401,7 +1401,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b795) ----
+  /* ---- Copilot calm polish (b796) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1615,7 +1615,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b795 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b796 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -4724,7 +4724,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b795: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b796: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4842,7 +4842,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b795: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b796: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -5739,7 +5739,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b795): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b796): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6356,7 +6356,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b795: METHOD-AWARE. The login response now reports every second factor the
+/* b796: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6489,7 +6489,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b795: a texted code completes at its own sibling route; the TOTP and
+    /* b796: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6697,7 +6697,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b795: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b796: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8400,7 +8400,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b795: the restored "Pull full visit notes" Settings option. One stored
+/* b796: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change.
@@ -8408,7 +8408,7 @@ async function loadPrefsFromServer(opts){
    Every visit on 47 of 51 snapshot patients in the live store was an
    index-only stub — the encounter bodies were never read — because this
    preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b795 finding). A pull without encounter bodies is
+   it never rendered (the b796 finding). A pull without encounter bodies is
    not "complete available history" (owner bar 2026-07-28: first-pull
    completeness, no silent omissions), so absence of a recorded HUMAN choice
    now means ON. The uns('pullVisitBodiesSet') marker records that a human
@@ -8457,7 +8457,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b795: texted-codes card, from the same server truth (/api/me projection). */
+  /* b796: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -13331,7 +13331,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b795: the auto-save commits HERE - the one door that knows the tool
+        /* b796: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13582,7 +13582,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b795: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b796: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14040,7 +14040,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b795 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b796 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -14939,7 +14939,7 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
-  /* b795 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+  /* b796 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
      15 of 19 scheduled patients had no landed Athena chart, yet every
      clinical card still rendered a generic "No ... recorded." line. That is
      the same sentence a REVIEWED-and-clear chart shows, so the panel was
@@ -14988,7 +14988,7 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
-/* b795: one honest, actionable line above the clinical grid when NOTHING has
+/* b796: one honest, actionable line above the clinical grid when NOTHING has
    been read for this patient and the clinician has typed nothing either. It
    reuses the exact Pull-chart verb the History view owns
    (pullPatientChartViaAssist), so there is no second pull path to keep in
@@ -15538,7 +15538,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b795 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b796 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -15636,7 +15636,13 @@ function dedupeSavedTemplates(announce){
   try{
     var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(list.length<2) return list;
     var seen={}, out=[];
-    list.forEach(function(t){ if(!t) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'||'+String(t.text||'').replace(/\s+/g,' ').trim().toLowerCase().slice(0,400); if(!seen[k]){ seen[k]=1; out.push(t); } });
+    /* 2026-07-29: the key used to be name + text.slice(0,400). Two different
+       operative-note templates that share a name and a >400-char standard
+       preamble hashed IDENTICALLY, so one was deleted as a "duplicate" while
+       differing in the part that matters - the procedure itself. The whole text
+       is compared now. Only a byte-for-byte identical template (after whitespace
+       normalisation) counts as a duplicate. */
+    list.forEach(function(t){ if(!t) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'||'+String(t.text||'').replace(/\s+/g,' ').trim().toLowerCase(); if(!seen[k]){ seen[k]=1; out.push(t); } });
     var removed=list.length-out.length;
     if(removed>0){ setTemplates(out); if(announce){ try{ toast('Removed '+removed+' duplicate template'+(removed===1?'':'s')+'.','ok'); }catch(e){} } }
     return out;
@@ -15675,8 +15681,17 @@ function opPrepRender(){
   var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
   // Reflect which mode is active in the switcher (blue = on).
   try{ var _mp=document.getElementById('opPrepModePatient'), _ma=document.getElementById('opPrepModeAll'); var _on='background:#204034;color:#fff;border-color:#204034;font-weight:700', _off='background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600';
-    if(_mp) _mp.style.cssText='font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid;cursor:pointer;'+(window._opPrepMode==='patient'?_on:_off);
-    if(_ma) _ma.style.cssText='font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid;cursor:pointer;'+(window._opPrepMode!=='patient'?_on:_off);
+    /* 2026-07-29: the active mode was carried by background+colour+font-weight
+       and NOTHING else - no class, no aria - so (a) a screen reader was told
+       nothing about which mode was in effect, and (b) any stylesheet that
+       overrode the background left white text on a near-white button, which is
+       exactly what shipped in b796 (measured ~1.03:1: the selected mode read as
+       an empty box). aria-pressed is now the machine-readable truth, so
+       presentation can key off state instead of guessing, and the state survives
+       a background override. */
+    var _pOn = (window._opPrepMode==='patient');
+    if(_mp){ _mp.style.cssText='font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid;cursor:pointer;'+(_pOn?_on:_off); _mp.setAttribute('aria-pressed', _pOn?'true':'false'); }
+    if(_ma){ _ma.style.cssText='font-size:13px;padding:7px 13px;border-radius:10px;border:1px solid;cursor:pointer;'+(!_pOn?_on:_off); _ma.setAttribute('aria-pressed', !_pOn?'true':'false'); }
   }catch(e){}
   // Day picker — only when prepping ALL patients; reflects the chosen day.
   try{ var _dr=document.getElementById('opPrepDayRow'); if(_dr) _dr.style.display=(window._opPrepMode==='patient')?'none':'flex';
@@ -15686,7 +15701,18 @@ function opPrepRender(){
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
   if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b> — pick a different day, or pull it from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
-  try{ dedupeSavedTemplates(); }catch(e){}   // keep the template list clean — no duplicates in the dropdown
+  /* 2026-07-29 DATA LOSS REMOVED. This line used to call dedupeSavedTemplates()
+     on EVERY op-note render, with announce falsy - so it deleted templates and
+     persisted the deletion through setTemplates() with no toast, no undo and no
+     record. The duplicate key was name + only the FIRST 400 CHARACTERS of the
+     text, and two genuinely different operative-note templates from one practice
+     routinely share a name and an identical preamble longer than that (patient /
+     date / surgeon / anaesthesia / indication headings). Opening this screen was
+     therefore enough to destroy one of them from local storage.
+     Deduplication is now ONLY what the doctor explicitly asks for, via the
+     "Remove duplicates" button, which announces what it did. A duplicate sitting
+     in the dropdown is a cosmetic annoyance; deleting an op-note template is not
+     recoverable. Do not put an automatic call back here. */
   if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; return; }
   var tplOpts=function(sel){ return '<option value="">— pick a template —</option>'+getTemplates().map(function(t){ return '<option value="'+t.id+'"'+(t.id===sel?' selected':'')+'>'+esc(t.name||'Template')+'</option>'; }).join(''); };
   box.innerHTML=rows.map(function(row,i){
@@ -15822,13 +15848,33 @@ async function opPrepGenerateAll(){
   var rows=window._opPrep||[]; var st=document.getElementById('opPrepStatus');
   if(!getTemplates().length){ try{ toast('Upload your op-note templates first (📄 Templates).','err'); }catch(e){} return; }
   /* b392: "Draft all" never touches a row the doctor hand-edited. */
-  var skipped=0, drafted=0;
+  /* 2026-07-29: `drafted++` used to run whenever opPrepGenerateOne did not THROW
+     — and it never throws on failure. It returns normally after "pick a template
+     first", after an unverified patient identity, and after a backend error. So a
+     day where the backend was down or no template matched reported
+     "✅ Drafted 19 op notes" with zero notes produced, while the row chips beside
+     it correctly said "not drafted yet". The same screen contradicted itself, and
+     the green line is the one a doctor reads.
+     A draft is now counted only when the row's GENERATED text actually changed —
+     confirm-by-change, the same rule this codebase already applies to chart
+     writes, because "the call returned" is not evidence that anything happened. */
+  var skipped=0, drafted=0, failed=0;
   for(var i=0;i<rows.length;i++){
     if(rows[i].edited){ skipped++; continue; }
     if(st) st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';
-    try{ await opPrepGenerateOne(i); drafted++; }catch(e){}
+    var _before=rows[i]._genNote;
+    try{ await opPrepGenerateOne(i); }catch(e){}
+    if(rows[i].gen && rows[i]._genNote && rows[i]._genNote!==_before) drafted++; else failed++;
   }
-  if(st) st.textContent='✅ Drafted '+drafted+' op note'+(drafted===1?'':'s')+(skipped?(' — '+skipped+' with your manual edits left untouched'):'')+'. Fill any blanks, then save each to the chart.';
+  if(st){
+    var _parts=[];
+    if(drafted) _parts.push('Drafted '+drafted+' op note'+(drafted===1?'':'s'));
+    if(failed)  _parts.push(failed+' could not be drafted — see each one for the reason');
+    if(skipped) _parts.push(skipped+' with your manual edits left untouched');
+    if(!_parts.length) _parts.push('Nothing to draft');
+    /* the tick is earned, not decorative: only when every attempted row landed */
+    st.textContent=(failed?'⚠ ':(drafted?'✅ ':''))+_parts.join(' — ')+(drafted?'. Fill any blanks, then save each to the chart.':'.');
+  }
 }
 /* ===== GUIDED BLANK FILLER — walk DOWN the op note, prompting for each missing detail one at
    a time (in document order), until none are left. ===== */
@@ -16990,7 +17036,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b795 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b796 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -17281,7 +17327,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b795 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b796 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -17612,7 +17658,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b795 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b796 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -20083,7 +20129,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b795 (diarization, option A): turn labels ride the USER payload — the one
+  /* b796 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -20779,7 +20825,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b795 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b796 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -21137,7 +21183,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b795 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b796 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -21406,7 +21452,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b795 (audit): op notes save their body to .text, not .soap — every prior
+    /* b796 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -25830,7 +25876,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b795: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b796: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -25965,7 +26011,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b795 — THE LOADING SCREEN MUST ALWAYS END.
+/* b796 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -30777,7 +30823,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b795';
+  window.__MLS_AV='b796';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -54,6 +54,7 @@ const tests = [
      subtrees and they fail silently, so the suite that proves none of them moved
      is more important than the one that proves the pixels changed. */
   'opnote-templates-grips-survive-redesign.test.js',
+  'opnote-template-rail-is-clickable.test.js',
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',
   'schedule-mutating-row-reverify-contract.test.js',

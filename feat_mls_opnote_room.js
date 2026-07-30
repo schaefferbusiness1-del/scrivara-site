@@ -79,6 +79,15 @@
   var SKIN_ID = 'oprSkin';
   function skin() {
     if ($(SKIN_ID)) return;
+    /* 2026-07-29: feat_mls_opnote_templates_ui.js (ot-1.0.0) owns this room's
+       presentation now and removes #oprSkin once at its install. Both modules
+       arrive on `async` script tags, so if that one executed FIRST this function
+       would recreate the old skin after it and the two would coexist - and in
+       that state the old rules win wherever they carry an id, including
+       `#opPrepModal.opr-room .opr-top`, which is the header the findable-exit
+       work depends on. Removal alone was never a guarantee; this closes the race
+       from the other side, so order genuinely cannot matter. */
+    if (safe(function () { return !!window.__mlsOpNoteTemplatesUi; }, false)) return;
     safe(function () {
       var st = document.createElement('style'); st.id = SKIN_ID;
       st.textContent = [
@@ -187,6 +196,7 @@
     var rows = window._opPrep || [];
     if (!rows.length) return;
     if (i < 0) i = 0; if (i >= rows.length) i = rows.length - 1;
+    if (SEL !== i) ARMED_TPL = '';
     SEL = i;
     safe(function () {
       var list = $('opPrepList'); if (!list) return;
@@ -244,25 +254,237 @@
     };
   }
 
+  /* ---------------------------------------------------------------------------
+     2026-07-29, OWNER: "let me click on my templates on the left side that come
+     up to change them if I want".
+
+     He was right that it looked clickable and was not. Every item was a plain
+     <div class="opr-tpl-item"> with no id, no data attribute, no tabindex and no
+     handler; this function ended at rail.innerHTML and never bound anything,
+     while its sibling buildNav bound nav.onclick two functions below. No
+     document-level delegation in the app could reach a bare div either. So the
+     rail was a list of his own templates that read like something to press and
+     did nothing - a dead affordance sitting in the middle of the workflow.
+
+     Now each item is a real button carrying its template id, and the rail does
+     two things:
+       CLICK  - apply that template to the procedure he is on, through the
+                EXISTING select#opPrepTpl_<i>, so the one pipeline runs rather
+                than a second copy of it.
+       EDIT   - open the Templates tab to change the template itself.
+
+     Two other defects are fixed in the same pass, both measured:
+       - Template health was a 9px coloured dot ALONE. healthOf already returns a
+         glyphed sentence and it was being thrown into a title attribute, which
+         never appears on touch. It is printed as text now, like the patient rows
+         directly above it already do.
+       - Only the first SIX templates rendered, with "+N more on the Templates
+         tab". If the rail is the place he picks from, it has to show all of them;
+         the rail scrolls instead (capped in CSS, narrow viewports included).
+     ------------------------------------------------------------------------- */
+  /* Which template is armed for a confirm-swap on an edited draft. Cleared on
+     any row change, so it can never apply to a patient he has moved away from. */
+  var ARMED_TPL = '';
+  function curRow() {
+    var rows = window._opPrep || [];
+    if (!rows.length) return null;
+    var i = (SEL >= 0 && SEL < rows.length) ? SEL : 0;
+    return { i: i, row: rows[i] };
+  }
+
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
     var list = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
-    var h = '<div class="opr-rail-title">Your templates — ' + list.length + '</div>';
+    var cur = curRow();
+    var appliedId = cur && cur.row ? S(cur.row.tplId || '') : '';
+    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + '</div>';
     if (!list.length) {
-      h += '<div class="opr-tpl-empty">None uploaded yet. Drafts follow your templates — add them on the Templates tab.</div>';
+      h += '<div class="opr-tpl-empty">None uploaded yet. Drafts follow your templates &mdash; add them on the Templates tab.</div>';
     } else {
       var hOf = safe(function () { return window.__mlsTplPrepFix && isFn(window.__mlsTplPrepFix.healthOf) ? window.__mlsTplPrepFix.healthOf : null; }, null);
-      var shownN = Math.min(list.length, 6);
-      for (var i = 0; i < shownN; i++) {
+      for (var i = 0; i < list.length; i++) {
         var t = list[i];
-        var health = hOf ? safe(function () { return hOf(t); }, null) : null;
+        var health = hOf ? safe((function (tt) { return function () { return hOf(tt); }; })(t), null) : null;
         var cls = health ? health.cls : '';
         var lbl = health ? health.label : '';
-        h += '<div class="opr-tpl-item" title="' + esc(lbl) + '"><span class="opr-dot ' + esc(cls) + '"></span><span class="nm">' + esc(t.name || 'Template') + '</span></div>';
+        var on = appliedId && S(t.id) === appliedId;
+        /* "in use" is a WORD, not only the highlight - the same rule the patient
+           rows follow. A doctor must never have to infer state from colour. */
+        var armed = ARMED_TPL && S(t.id) === ARMED_TPL;
+        var state = armed ? 'click again to switch - your text stays'
+          : ((on ? 'in use for this procedure' : '') + (on && lbl ? ' · ' : '') + (lbl || ''));
+        h += '<button type="button" class="opr-tpl-item' + (on ? ' on' : '') + (armed ? ' armed' : '') + '"'
+          + ' data-tpl-id="' + esc(S(t.id)) + '"'
+          + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' title="' + esc((t.name || 'Template') + (state ? ' — ' + state : '')) + '">'
+          + '<span class="opr-dot ' + esc(cls) + '"></span>'
+          + '<span class="nm">' + esc(t.name || 'Template')
+          + (state ? '<span class="opr-nav-st">' + esc(state) + '</span>' : '')
+          + '</span>'
+          + '<span class="opr-tpl-edit" data-tpl-edit="' + esc(S(t.id)) + '" role="button" tabindex="0"'
+          + ' aria-label="Edit template ' + esc(t.name || '') + '" title="Open this template to edit it">Edit</span>'
+          + '</button>';
       }
-      if (list.length > shownN) h += '<div class="opr-tpl-empty">+ ' + (list.length - shownN) + ' more on the Templates tab</div>';
     }
     rail.innerHTML = h;
+
+    /* One delegated listener, re-attached with every innerHTML rebuild - the
+       idiom buildNav already uses. Detached in revert() alongside the nav. */
+    rail.onclick = function (e) {
+      var tgt = e.target;
+      if (!tgt || !tgt.closest) return;
+      var ed = tgt.closest('[data-tpl-edit]');
+      if (ed) { e.preventDefault(); e.stopPropagation(); openTemplateForEdit(ed.getAttribute('data-tpl-edit')); return; }
+      var b = tgt.closest('.opr-tpl-item');
+      if (b) applyTemplateToCurrentRow(b.getAttribute('data-tpl-id'));
+    };
+  }
+
+  /* Apply a template to the procedure currently on screen, by driving the
+     EXISTING picker. Deliberately not a second write path: sel.value + the row
+     fields + a real change event means every satellite that watches that select
+     (the integrity badge writer, the auto-match bookkeeping) behaves exactly as
+     it does when the doctor uses the dropdown. The direct row write is the
+     guarantee, because a synthetic event can be ignored by a listener that
+     checks isTrusted; the event is the courtesy. */
+  function applyTemplateToCurrentRow(id) {
+    id = S(id);
+    var cur = curRow();
+    if (!cur || !cur.row) {
+      safe(function () { if (isFn(window.toast)) window.toast('Open a procedure first, then pick a template for it.', 'err'); });
+      return;
+    }
+    if (S(cur.row.tplId) === id) return;   /* already in use - no-op, no churn */
+
+    /* A DRAFT HE HAS EDITED IS NOT OURS TO REPLACE. Changing the template is the
+       first half of a re-draft, and this app has already shipped a bug where a
+       refused switch destroyed a note.
+       Confirmation is a TWO-STEP ARM on the button itself, not a dialog. The
+       suite `no-native-blocking-dialogs` rejects confirm/alert/prompt in
+       production scripts, and it is right to: a blocking dialog freezes the tab,
+       and a frozen modal over the EMR is a defect this product has already had.
+       Arming is also better here - it needs no reading, it is undone by clicking
+       anything else, and it says what will happen in place. */
+    if (cur.row.gen && cur.row.edited && ARMED_TPL !== id) {
+      ARMED_TPL = id;
+      safe(buildTplRail);
+      safe(function () {
+        if (isFn(window.toast)) window.toast('You have edited this draft. Click that template again to switch - your text stays until you re-draft.', '');
+      });
+      return;
+    }
+    ARMED_TPL = '';
+
+    var sel = $('opPrepTpl_' + cur.i);
+    cur.row.tplId = id;
+    cur.row.tplManual = true;
+    if (sel) {
+      safe(function () { sel.value = id; });
+      safe(function () { sel.dispatchEvent(new Event('change', { bubbles: true })); });
+    }
+    safe(buildTplRail);
+    safe(buildReceipt);
+    safe(function () { if (isFn(window.opPrepRenderBadges)) window.opPrepRenderBadges(); });
+    safe(function () {
+      if (!isFn(window.toast)) return;
+      var list = safe(function () { return window.getTemplates() || []; }, []);
+      var t = null, k;
+      for (k = 0; k < list.length; k++) if (S(list[k].id) === id) { t = list[k]; break; }
+      var nm = t && t.name ? t.name : 'Template';
+      window.toast(cur.row.gen
+        ? ('Template set to ' + nm + '. Re-draft this procedure to apply it.')
+        : ('Template set to ' + nm + '.'), 'ok');
+    });
+  }
+
+  /* ---------------------------------------------------------------------------
+     2026-07-29, OWNER: "give ioptiopns on how I want the op nopte to follow those
+     tempaltes".
+
+     Three modes, and each one is real at BOTH ends of the pipeline - the prompt
+     clause and the deterministic fidelity gate (feat_mls_opnote_integrity.js).
+     A prompt-only control would have been refused by that gate and silently
+     killed drafts, so this is deliberately not just a stored preference.
+
+     'adapt' is the default and adds no clause at all, so a doctor who never opens
+     this control gets byte-for-byte the behaviour that shipped before it existed.
+
+     What these do NOT touch, in any mode: "never invent a fact", the placeholder
+     rules, and the network-layer strict dictation rule. Wording fidelity is a
+     style choice; what may be asserted about a patient is not.
+     ------------------------------------------------------------------------- */
+  var TPL_MODES = [
+    ['strict', 'Follow it closely', 'Keeps your wording. Fills only what varies.'],
+    ['adapt', 'Adapt to the case', 'Keeps your structure, adapts the wording. Recommended.'],
+    ['guide', 'Use it as a guide', 'Keeps your headings, writes the prose its own way.']
+  ];
+  var TPL_MODE_KEY = 'opNoteTemplateMode';
+
+  function tplModeGet() {
+    return safe(function () {
+      var raw = (isFn(window.uns)) ? localStorage.getItem(window.uns(TPL_MODE_KEY)) : null;
+      var m = S(raw).trim();
+      return (m === 'strict' || m === 'guide' || m === 'adapt') ? m : 'adapt';
+    }, 'adapt');
+  }
+  function tplModeSet(m) {
+    if (m !== 'strict' && m !== 'guide' && m !== 'adapt') return;
+    /* Write, then READ BACK before saying anything. A storage write can fail on a
+       restricted or full profile, and "saved" is a claim this app has been caught
+       making without proof more than once. */
+    var landed = safe(function () {
+      if (!isFn(window.uns)) return false;
+      localStorage.setItem(window.uns(TPL_MODE_KEY), m);
+      return S(localStorage.getItem(window.uns(TPL_MODE_KEY))) === m;
+    }, false);
+    safe(buildTplMode);
+    safe(function () {
+      if (!isFn(window.toast)) return;
+      if (!landed) { window.toast('That setting could not be saved on this device.', 'err'); return; }
+      var lbl = '';
+      for (var k = 0; k < TPL_MODES.length; k++) if (TPL_MODES[k][0] === m) lbl = TPL_MODES[k][1];
+      window.toast('Drafts will now ' + lbl.toLowerCase() + '. Re-draft to apply it.', 'ok');
+    });
+  }
+
+  function buildTplMode() {
+    var railHost = $('oprDayRail'); if (!railHost) return;
+    var box = $('oprTplMode');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'oprTplMode';
+      /* appended to the room-owned rail, AFTER the template list. No gripped
+         subtree is touched: nothing in the repo walks #oprDayRail children. */
+      var anchor = $('oprTplRail');
+      if (anchor && anchor.parentNode === railHost) railHost.insertBefore(box, anchor.nextSibling);
+      else railHost.appendChild(box);
+    }
+    var cur = tplModeGet();
+    var h = '<div class="opr-rail-title">How drafts follow your template</div>';
+    for (var i = 0; i < TPL_MODES.length; i++) {
+      var m = TPL_MODES[i], on = (m[0] === cur);
+      h += '<button type="button" class="opr-tplmode' + (on ? ' on' : '') + '"'
+        + ' data-tplmode="' + esc(m[0]) + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+        + ' title="' + esc(m[1] + ' — ' + m[2]) + '">'
+        + '<span class="nm">' + esc(m[1])
+        + '<span class="opr-nav-st">' + esc(m[2]) + '</span></span>'
+        + '</button>';
+    }
+    box.innerHTML = h;
+    box.onclick = function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-tplmode]') : null;
+      if (b) tplModeSet(b.getAttribute('data-tplmode'));
+    };
+  }
+
+  /* "change them if I want" - the second reading. Open the Templates tab with
+     this template selected, which is the one door that owns editing. */
+  function openTemplateForEdit(id) {
+    id = S(id);
+    safe(function () { if (window._tplUI) window._tplUI.selectedId = id; });
+    safe(function () { if (isFn(window.openTemplates)) window.openTemplates(); });
+    safe(function () { if (isFn(window.renderTemplateList)) window.renderTemplateList(); });
+    safe(function () { if (isFn(window.renderTplDetail)) window.renderTplDetail(); });
   }
 
   function buildReceipt() {
@@ -352,7 +574,7 @@
   window.addEventListener('keydown', onNavKey);
 
   function buildRails() {
-    buildNav(); buildTplRail(); buildReceipt();
+    buildNav(); buildTplRail(); buildTplMode(); buildReceipt();
     safe(markSolo); safe(buildPager);
     /* self-heal: if the Templates tab is marked active but its modal is not
        shown (a close path we do not wrap took it down), return to Procedures */
@@ -483,6 +705,23 @@
   }
   skin();
   wrapRender();
+  /* 2026-07-29: #oprTabProcs was a DEAD CONTROL. Its sibling #oprTabTpls carries
+     onclick="openTemplates()" inline; Procedures carried nothing, and a repo-wide
+     grep found the id only in the markup and inside showTab, which WRITES its
+     class and never reads a click. So on the Templates tab the obvious way back
+     did nothing, leaving only ESC or a Close button at the bottom of a long
+     scroll. Wired to the showTab it should always have called; idempotent, and
+     cleared in revert(). */
+  function wireProcTab() {
+    var a = $('oprTabProcs');
+    if (!a || a.__oprWired) return;
+    a.__oprWired = true;
+    a.onclick = function () {
+      safe(function () { if (shown($('templatesModal')) && isFn(window.closeTemplates)) window.closeTemplates(); });
+      safe(function () { showTab('procs'); });
+    };
+  }
+  wireProcTab();
   wrapTemplates();
   wrapProcOpeners();
   /* If the drafter is already open when this module lands (idle-deferred
@@ -565,7 +804,12 @@
         showTab('procs');
       } catch (e9) {}
       try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}
-      try { var b = $('oprTplRail'); if (b) b.innerHTML = ''; } catch (e5) {}
+      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.onclick = null; } } catch (e5) {}
+      /* the mode control is a node THIS module created, so revert removes it
+         entirely rather than emptying it - leaving an orphan box would be a
+         visible artefact of a module that is supposed to be gone. */
+      try { var mb = $('oprTplMode'); if (mb && mb.parentNode) { mb.onclick = null; mb.parentNode.removeChild(mb); } } catch (e5b) {}
+      try { var pt = $('oprTabProcs'); if (pt) { pt.onclick = null; pt.__oprWired = false; } } catch (e5c) {}
       try { var c = $('oprReceipt'); if (c) { c.textContent = ''; c.style.display = 'none'; } } catch (e6) {}
       try { if (window.__mlsOpNoteRoom === api) delete window.__mlsOpNoteRoom; } catch (e7) {}
     }

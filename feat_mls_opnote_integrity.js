@@ -1002,6 +1002,39 @@
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
     var selectedResolution=resolveSelectedTemplate(procedure,tplText,ctx),selectedTpl=selectedResolution.tpl;
     if(!selectedTpl){var tie=new Error(selectedResolution.error||'The selected template identity could not be verified.');tie.code=selectedResolution.code||'MLS_OPNOTE_TEMPLATE_IDENTITY';throw tie;}
+    /* -----------------------------------------------------------------------
+       2026-07-29 OWNER: "give options on how I want the op note to follow those
+       templates."
+
+       Until now there was exactly ONE behaviour. Three constraints shaped what
+       these options can honestly be:
+
+       1. A PROMPT-ONLY OPTION WOULD BE REFUSED BY THE GATE. fidelity() below
+          hard-fails a draft whose heading set/order or fixed template wording
+          changed, so a looser instruction without a matching gate relaxation
+          would just kill drafts. Every mode here is consistent across BOTH.
+       2. NOTHING MAY NEWLY REFUSE TO DRAFT. The 2026-07-23 directive recorded a
+          few lines below is explicit that compatibility problems warn and go
+          through. So no mode makes a draft fail that would have succeeded.
+       3. THE ANTI-FABRICATION GUARDS ARE NOT NEGOTIABLE. "Never invent a fact",
+          the placeholder rules, and the network-layer STRICT DICTATION RULE stay
+          byte-identical in every mode. These options change how closely the
+          PROSE follows the template, never what may be asserted about a patient.
+
+       That last point bounds the loosest mode honestly: a separate fetch-layer
+       rule appends "Keep every heading", and weakening an anti-fabrication guard
+       to allow re-ordering is not a trade worth making. So 'guide' means reword
+       freely WITHIN the template headings - which is what its label says.
+
+       Default is 'adapt', which is byte-for-byte today's behaviour, so an
+       existing user who never touches this control sees no change. */
+    var tplMode=(function(){
+      try{
+        var raw=(typeof window.uns==='function')?localStorage.getItem(window.uns('opNoteTemplateMode')):null;
+        var m=String(raw||'').trim();
+        return (m==='strict'||m==='guide'||m==='adapt')?m:'adapt';
+      }catch(e){ return 'adapt'; }
+    })();
     var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx),crossAdapt=false;
     if(!tplCheck.pass){
       var tplAdapt=closeCallAdaptation(tplCheck,selectedTpl||{},ctx);
@@ -1036,6 +1069,16 @@
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Every placeholder must be SPECIFIC and clinician-friendly: the key names the exact clinical datum (e.g. lesion_temperature_and_time, injectate_per_level, fluoroscopy_time — never value/details/info), the label is what a physician would call it, and the example is a realistic clinical value for THIS procedure. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
     if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
+
+    /* One clause per mode. 'adapt' adds NOTHING, so it is provably identical to
+       the behaviour that shipped before this option existed. */
+    var TPL_MODE_CLAUSE={
+      strict:' TEMPLATE FIDELITY - CLOSEST: preserve the template PROSE verbatim wherever it is not a variable slot. Do not paraphrase, tighten, modernise or re-order its sentences. Fill the case-specific slots and change nothing else. If a template sentence does not apply to this case, keep it and leave its variable slot as a placeholder rather than rewriting the sentence.',
+      guide:' TEMPLATE FIDELITY - LOOSER: treat the template prose as a guide rather than as fixed wording. You may rewrite sentences in clearer clinical language and merge or split sentences within a section. KEEP every heading, the heading order, and the section order exactly as given. Every factual constraint above still applies without exception: never invent a fact, and never state a value that was not dictated or documented.',
+      adapt:''
+    };
+    if(TPL_MODE_CLAUSE[tplMode])sys+=TPL_MODE_CLAUSE[tplMode];
+    if(ctx&&typeof ctx==='object')ctx.__mlsTplMode=tplMode;   /* for the receipt */
     generationStage(ctx,'Applying facility defaults','Applying only the current facility identity and validated facility scope.');
     var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
     /* When the verified-history owner is ready it is the sole history source;
@@ -1077,9 +1120,18 @@
     generationStage(ctx,'Checking side and level','Comparing procedure type, region, side, exact levels, level count, and approach.');
     var check=fidelity(first.note,tplForModel), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
     if(crossAdapt){check={pass:true,adapted:true,details:check};clinical=adaptedClinical(clinical);}
+    /* 2026-07-29: the looser mode is allowed to change template WORDING, and
+       fidelity() fails on changed fixed fragments - so a prompt-only version of
+       this option would have silently killed every draft in that mode. The
+       heading check is deliberately NOT relaxed: the clause promises headings and
+       order are kept, so if they changed that is a real failure and must still be
+       caught. Wording-only relaxation, and it is recorded on the result. */
+    else if(tplMode==='guide'&&check&&!check.pass&&/fixed template wording/.test(String(check.reason||''))){
+      check={pass:true,adapted:true,reworded:true,details:check};
+    }
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
-    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.clinicalConsistency=clinical;if(tplTruncated)first.templateTruncated=true;return first;}
+    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.templateMode=tplMode;first.clinicalConsistency=clinical;if(tplTruncated)first.templateTruncated=true;return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */

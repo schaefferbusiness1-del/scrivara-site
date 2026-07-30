@@ -103,3 +103,43 @@ extract it by scanning for quoted strings, **strip `/* */` comments first** — 
 apostrophe inside a comment (the module had `ScribeFlow's`) terminates the scan
 early and silently swallows the next rule, so the replica renders a layout the
 app never produces. My first two measurements were artifacts of exactly that.
+
+---
+
+## Addendum — proposal 051 APPLIED (shipped in b795)
+
+Accepted. The measurement is good: 2,020,000 sort comparisons and 4,000
+`offsetParent` layout reads per hour, for a section the clinician cannot see.
+
+I did push on the one thing that worried me, because this repo has a scar there.
+Your guard returns early when the non-forced heartbeat runs AND
+`#mlsVisitHistoryExt` EXISTS. Gating behaviour on a node's mere existence is the
+exact shape of a defect that went fleet-wide here once before: retiring an app id
+unfolded a whole pill fleet because an extension folded on node existence rather
+than on the node doing its job. So "the enhanced owner exists" is not, in
+general, evidence that the enhanced owner is WORKING.
+
+It is safe here, and here is the reason — which is worth stating because it is a
+property of the other module, not of your patch:
+`feat_visit_history_ext.js:165` hides the legacy list with
+`#mlsVisitHistory{display:none !important}` inside the stylesheet it injects **at
+install**, not per render, and it un-hides at `:687` only in its revert path.
+So ext existing already implies the legacy section is invisible. Suppressing a
+scan whose output is invisible cannot create new blindness, and a revert restores
+both the visibility and the scan on the next tick. Your preserved forced
+refreshes cover the rest.
+
+The one residual is a partial-revert state — node removed but stylesheet left, or
+vice versa — which that module does not produce. Acceptable, and now written
+down.
+
+Five suites re-run green: full-visit-reader-runtime, visit-index-dupe-collapse,
+visit-history-provenance-chip, immutable-satellite-loader-cache-contract,
+performance-lifecycle-contract.
+
+**A request for the next perf proposal.** When a guard keys off a node's
+existence, please include the sentence that closes the gap: *why does that node
+existing imply the thing you are skipping is genuinely unnecessary?* You had the
+answer here — it is in the other module — but the proposal asserted the guard
+rather than the implication, and I had to go find it. That sentence is the whole
+review.

@@ -142,10 +142,20 @@
 
     /* mode + day pickers: full-width, left-aligned, one decision per row */
     B + '#opPrepModeRow{ flex-direction:column; gap:6px !important; margin:2px 0 12px; }',
+    /* 2026-07-29 REGRESSION FIX. b795 set `background:var(--bg) !important` here.
+       opPrepRender rewrites style.cssText on these two buttons on EVERY render
+       with `background:#204034;color:#fff` for the ACTIVE mode - so the
+       background lost to my !important while the inline `color:#fff` survived,
+       leaving white text on #FBFAF7 at about 1.03:1. The selected mode read as an
+       empty box, on every open of the room. Measured, shipped, and mine.
+       The rule now claims only SHAPE and leaves every colour to the inline
+       writer that owns the state. State also gets a non-colour marker via the
+       aria-pressed attribute now written alongside it, so it survives any future
+       background override and a screen reader can read it. */
     B + '#opPrepModeRow button{ width:100%; text-align:left; padding:11px 14px !important;' +
-      ' border-radius:12px !important; border:1.5px solid var(--line) !important;' +
-      ' background:var(--bg) !important; font-weight:650; font-size:13px; }',
-    B + '#opPrepModeRow button:hover{ border-color:var(--green-dk) !important; }',
+      ' border-radius:12px !important; font-weight:650; font-size:13px; }',
+    B + '#opPrepModeRow button[aria-pressed="true"]:before{ content:"\\2713\\00a0"; font-weight:800; }',
+    B + '#opPrepModeRow button[aria-pressed="false"]:before{ content:"\\00a0\\00a0\\00a0"; }',
     B + '#opPrepDayRow{ flex-direction:column; align-items:stretch !important;' +
       ' gap:8px !important; background:var(--bg); border:1px solid var(--line);' +
       ' border-radius:16px; padding:12px; margin:0 0 12px; }',
@@ -168,6 +178,68 @@
     B + '.opr-nav-item.on:before{ content:""; position:absolute; left:0; top:10px; bottom:10px;' +
       ' width:3px; border-radius:0 3px 3px 0; background:var(--green-dk); pointer-events:none; }',
     B + '.opr-dot{ width:9px; height:9px; margin-top:4px; }',
+
+    /* ---- the template rail: now real buttons he can press ----------------
+       2026-07-29. These items became <button data-tpl-id> so clicking one applies
+       it to the procedure on screen. They need to LOOK pressable, which the old
+       divs never did - the sibling patient rows had cursor:pointer and a hover
+       and these had neither. */
+    B + '#oprTplRail{ display:flex; flex-direction:column; gap:5px; }',
+    B + '.opr-tpl-item{ display:flex; align-items:flex-start; gap:8px; width:100%;' +
+      ' text-align:left; cursor:pointer; border:1.5px solid var(--line);' +
+      ' background:var(--bg); color:var(--ink); font:600 12.5px system-ui;' +
+      ' position:relative; }',
+    B + '.opr-tpl-item:hover{ border-color:var(--green-dk); background:var(--card); }',
+    B + '.opr-tpl-item.on{ border-color:var(--green-dk); background:var(--card);' +
+      ' box-shadow:0 2px 12px rgba(32,64,52,.10); }',
+    B + '.opr-tpl-item.on:before{ content:""; position:absolute; left:0; top:10px;' +
+      ' bottom:10px; width:3px; border-radius:0 3px 3px 0; background:var(--green-dk);' +
+      ' pointer-events:none; }',
+    B + '.opr-tpl-item .opr-nav-st{ display:block; font-size:10.5px; font-weight:700;' +
+      ' color:var(--muted); margin-top:3px; white-space:normal; }',
+    B + '.opr-tpl-item.on .opr-nav-st{ color:var(--green-dk); }',
+    /* the Edit affordance: quiet until the row is hovered or focused, never hidden
+       from a keyboard, and it must never look like the primary action */
+    B + '.opr-tpl-edit{ flex:0 0 auto; align-self:center; font:700 10.5px system-ui;' +
+      ' color:var(--muted); border:1px solid var(--line); border-radius:999px;' +
+      ' padding:3px 9px; background:var(--card); opacity:.55; }',
+    B + '.opr-tpl-item:hover .opr-tpl-edit, ' + B + '.opr-tpl-edit:focus-visible{' +
+      ' opacity:1; color:var(--ink); border-color:var(--green-dk); }',
+    B + '.opr-tpl-edit:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }',
+
+    /* ---- how drafts follow the template: three real choices --------------
+       Stacked cards rather than a segmented pill, because each option needs its
+       one-line explanation visible - a doctor should not have to hover to learn
+       what "Follow it closely" will do to his note. State is the tick plus the
+       accent bar, never the colour alone. */
+    B + '#oprTplMode{ display:flex; flex-direction:column; gap:5px; margin-top:6px; }',
+    B + '.opr-tplmode{ position:relative; display:block; width:100%; text-align:left;' +
+      ' cursor:pointer; border:1.5px solid var(--line); border-radius:12px;' +
+      ' background:var(--bg); color:var(--ink); padding:9px 11px 9px 13px;' +
+      ' font:600 12.5px system-ui; }',
+    B + '.opr-tplmode:hover{ border-color:var(--green-dk); background:var(--card); }',
+    B + '.opr-tplmode .opr-nav-st{ display:block; font-size:10.5px; font-weight:600;' +
+      ' color:var(--muted); margin-top:3px; white-space:normal; line-height:1.4; }',
+    B + '.opr-tplmode.on{ border-color:var(--green-dk); background:var(--card);' +
+      ' box-shadow:0 2px 12px rgba(32,64,52,.10); }',
+    B + '.opr-tplmode.on .nm{ font-weight:750; }',
+    B + '.opr-tplmode[aria-pressed="true"] .nm:before{ content:"\\2713\\00a0"; color:var(--green-dk); font-weight:800; }',
+    B + '.opr-tplmode.on:before{ content:""; position:absolute; left:0; top:9px; bottom:9px;' +
+      ' width:3px; border-radius:0 3px 3px 0; background:var(--green-dk); pointer-events:none; }',
+    B + '.opr-tplmode:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }',
+
+    /* ---- NEVER TRUNCATE A CLINICAL NAME --------------------------------------
+       ScribeFlow.html:924 puts `overflow:hidden; text-overflow:ellipsis;
+       white-space:nowrap` on `.opr-nav-item .nm, .opr-tpl-item .nm` inside a rail
+       that is 290-312px wide. "Left L4-L5 transforaminal epidural steroid
+       injection" and "Left L5-S1 transforaminal epidural steroid injection"
+       truncate to the SAME visible string there, and picking the wrong one is a
+       wrong-level operative note. Patient names truncate the same way. Wrapping to
+       two or three lines costs a little vertical space in a rail that scrolls;
+       an ambiguous name costs more than that. */
+    B + '.opr-nav-item .nm, ' + B + '.opr-tpl-item .nm{ white-space:normal !important;' +
+      ' overflow:visible !important; text-overflow:clip !important;' +
+      ' overflow-wrap:anywhere; line-height:1.35; }',
 
     /* ---- the editor: one procedure at a time, on a sheet ---- */
     B + '#oprEditor{ padding:24px 28px 72px; }',
@@ -208,9 +280,18 @@
     /* THE OPERATIVE NOTE ITSELF. Comfortable measure and line-height; never
        smaller than the app default. This is a legal medical record being read
        under time pressure. */
+    /* 2026-07-29: font-size and line-height carried NO !important in b795, and
+       opPrepRender builds this node with inline `font-size:12.5px;
+       font-family:ui-monospace,...`. So the one property the safety argument
+       above was written about was the one that did not apply - the note kept
+       rendering at 12.5px while padding and radius changed, and the header
+       claimed the opposite. Measured and corrected: !important on the two
+       properties that decide legibility. The monospace FAMILY is deliberately
+       left alone - it aligns the template's columns and he is used to it; this
+       raises the size, it does not restyle his record. */
     B + '#opPrepList textarea{ border:1px solid var(--line); border-radius:16px;' +
-      ' padding:16px 18px; background:var(--bg); font-size:15px; line-height:1.62;' +
-      ' color:var(--ink); }',
+      ' padding:16px 18px; background:var(--bg); font-size:15px !important;' +
+      ' line-height:1.62 !important; color:var(--ink); }',
     B + '#opPrepList textarea:focus{ background:var(--card); border-color:var(--green-dk);' +
       ' outline:2px solid color-mix(in srgb, var(--green-dk) 30%, transparent);' +
       ' outline-offset:1px; }',
@@ -273,12 +354,22 @@
        were added: this element kept radius 10px and padding 16px while the
        stylesheet asked for 16px and 26px 20px. A body class does not help - only
        !important does. */
-    B + '#tplDropZone{ border:2px dashed var(--line) !important;' +
+    /* 2026-07-29 REGRESSION FIX. b795 put !important on `border` (which carries
+       border-color) and on `background`. _tplDragOver provides the drag feedback
+       by writing exactly those two inline - `z.style.borderColor` and
+       `z.style.background` (ScribeFlow.html:16320) - so the zone stopped
+       responding when a file was dragged over it: the standard signal that a drop
+       will not be accepted, killed. The sibling #tplMultiDrop, which this module
+       never restyled, still worked, so the two zones behaved differently on one
+       screen.
+       This rule now claims SHAPE only - width, style, radius, padding - and
+       leaves border-COLOUR and background to the writer that animates them.
+       Function over polish: the app's own #cfe0f5 / #fafcff are perfectly fine. */
+    B + '#tplDropZone{ border-width:2px !important; border-style:dashed !important;' +
       ' border-radius:16px !important; padding:26px 20px !important;' +
-      ' background:var(--bg) !important; color:var(--muted) !important;' +
-      ' font-size:13px !important; font-weight:600; line-height:1.5; }',
-    B + '#tplDropZone:hover{ border-color:var(--green-dk) !important;' +
-      ' background:var(--card) !important; color:var(--ink) !important; }',
+      ' color:var(--muted) !important; font-size:13px !important;' +
+      ' font-weight:600; line-height:1.5; }',
+    B + '#tplDropZone:hover{ color:var(--ink) !important; }',
 
     /* The extracted text is editable content the doctor proofreads - readable,
        never condensed. Inline style sets min-height:120px and font-size:13px. */
@@ -295,9 +386,24 @@
        and contradicted the invariant its own gate asserts. Measurement caught
        it; only the padding is ours. */
     B + '#tplList{ padding-right:2px; }',
-    B + '#tplList > div, ' + B + '.opr-tpl-item{ border-radius:12px;' +
-      ' border:1.5px solid transparent; padding:10px 12px; }',
-    B + '#tplList > div:hover{ border-color:var(--line); background:var(--card); }',
+    /* 2026-07-29 REGRESSION FIX. Every declaration here was dead in b795 - no
+       !important against an inline style, so the library rows rendered
+       byte-identical to b794 (10px radius, 8px 10px padding, no hover) while the
+       module header called Templates "a library". Measured.
+       Shape is reclaimed with !important. Border-COLOUR and background are NOT:
+       renderTemplateList encodes state in them - `border:1px solid
+       (isSel?#2E6A4B:var(--line))` and `background:(isSel?#f2f8f4:(isActive?
+       #f7fbff:transparent))` - so overriding them would erase which template is
+       selected and which is the default. Hover therefore uses box-shadow, which
+       no inline style sets, so it can never fight state. */
+    B + '#tplList > div{ border-radius:12px !important; padding:10px 12px !important; }',
+    B + '#tplList > div:hover{ box-shadow:0 2px 10px rgba(32,64,52,.12); }',
+    B + '.opr-tpl-item{ border-radius:12px; padding:10px 12px; }',
+    /* Those two state backgrounds are hard-coded near-whites, so in dark theme a
+       selected or default row became a white slab with --ink text on it. Restated
+       in tokens for dark only; light keeps the values the renderer chose. */
+    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f2f8f4"]{ background:var(--soft) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f7fbff"]{ background:var(--card) !important; }',
     B + '.opr-tpl-empty{ font-size:12px; color:var(--muted); line-height:1.5; }',
 
     /* Inline style here sets border, border-radius:10px, padding:12px,
@@ -320,6 +426,10 @@
      the narrow rules in ScribeFlow.html still apply - an unconditioned rule here
      is exactly what killed the responsive layout before. */
   var WIDE = [
+    /* On a wide screen the rail is its own column, so it can be generous - but
+       still bounded, because the template list is now complete rather than the
+       first six and the patient nav sits above it in the same column. */
+    B + '#oprTplRail{ max-height:42vh; overflow:auto; }',
     B + '#oprDayRail{ border-right:1px solid var(--line); }',
     B + '#oprEditor{ padding:26px 34px 80px; }',
     B + '#oprPanelTpls{ padding:24px 30px 48px; }',
@@ -332,6 +442,12 @@
 
   /* Narrow: give the sheet its space back and stop the rail eating the screen. */
   var NARROW = [
+    /* b795 capped #oprRowNav at 22vh on narrow because an uncapped rail "grew
+       without limit and pushed the editor off the bottom" - and left its SIBLING
+       #oprTplRail, in the same auto-sized grid row, with no cap at all. The rail
+       now lists EVERY template rather than the first six, so that omission got
+       worse, not better. Capped and scrollable, same mechanism, same reason. */
+    B + '#oprTplRail{ max-height:26vh; overflow:auto; }',
     B + '#oprEditor{ padding:16px 14px 56px; }',
     B + '#oprPanelTpls{ padding:14px 14px 32px; }',
     B + '#opPrepList > div{ padding:16px 15px !important; }',
