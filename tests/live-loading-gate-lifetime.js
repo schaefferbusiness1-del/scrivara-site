@@ -80,19 +80,18 @@ function findChrome() {
   return c.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } }) || '';
 }
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
-const EXCLUDED = new Set();
-(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
-  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
-/* SERVE_ALL=1 lifts the publication exclusions for one run. It exists to answer
+/* The published tree, read from the inventory CI verifies against a real Jekyll
+   build - never re-derived here. See tests/published-tree.js. */
+const isPublished = require('./published-tree.js').makeIsPublished();
+/* SERVE_ALL=1 lifts the publication boundary for one run. It exists to answer
    one question and no other: does a script that 404s in production hold the
-   loading gate up? Default OFF, because the published build is the build the
-   doctor receives and that is what this file exists to time. */
+   loading gate up? (It does not - measured.) Default OFF, because the published
+   build is the build the doctor receives and that is what this file times. */
 const SERVE_ALL = process.env.SERVE_ALL === '1';
-if (SERVE_ALL) EXCLUDED.clear();
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
-    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
+    if (!SERVE_ALL && !isPublished(rel)) { res.writeHead(404); return res.end('not published by GitHub Pages'); }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('nf'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });

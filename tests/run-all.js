@@ -184,6 +184,7 @@ const tests = [
   'easy-transcript-continuity.test.js',
   'transcript-mirror-merge-runtime.test.js',
   'no-merge-conflict-markers-in-shipped-assets.test.js',
+  'no-speculative-preload-of-js-strings.test.js',
   'build-bump-names-its-build.test.js',
   'tree-contains-everything-published.test.js',
   'review-control-clears-fixed-furniture.test.js',

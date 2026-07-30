@@ -69,13 +69,14 @@ function findChrome() {
   return c.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } }) || '';
 }
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
-const EXCLUDED = new Set();
-(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
-  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
+/* The published tree, read from the inventory CI verifies against a real Jekyll
+   build - never re-derived here. See tests/published-tree.js for the two ways
+   deriving it went wrong. */
+const isPublished = require('./published-tree.js').makeIsPublished();
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
-    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
+    if (!isPublished(rel)) { res.writeHead(404); return res.end('not published by GitHub Pages'); }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('nf'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });

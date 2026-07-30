@@ -108,23 +108,32 @@ function findChrome(explicit) {
   return hit;
 }
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
-/* SERVE ONLY WHAT GITHUB PAGES PUBLISHES.
-   _config.yml excludes some feat_*.js from publication, so a harness that serves
-   the whole repo audits a build the doctor never receives. That is not
-   hypothetical: serving the repo wholesale reported 13 "duplicate visible
-   control" defects on the Templates tab - two Upload buttons, two Upload-folder,
-   two Delete-all - every one of them contributed by feat_mls_staging_pack1.js,
-   which is on the exclude list and therefore 404s live. An instrument that
-   invents defects is worse than no instrument. */
-const EXCLUDED = new Set();
-(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
-  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
+/* SERVE ONLY WHAT GITHUB PAGES PUBLISHES - and ask the inventory, not a regex.
+   A harness that serves the whole repo audits a build the doctor never receives:
+   that produced 13 phantom "duplicate visible control" defects on the Templates
+   tab, all contributed by feat_mls_staging_pack1.js, which is excluded and 404s
+   live. The first fix over-corrected by matching `- "x.js"` across the whole of
+   _config.yml, which also swept up its `include:` allowlist and began 404ing
+   public-preview-policy.js and public-preview-runtime.js - two files
+   ScribeFlow.html loads in <head> on every page. tests/published-tree.js reads
+   the inventory CI verifies against a real Jekyll build instead. */
+const isPublished = require('./published-tree.js').makeIsPublished();
+/* Every 404 this server hands back is a file the running app asked for and
+   production does not have. That is a finding in its own right - and, when the
+   run goes wrong, the first thing worth reading. Keep the list. */
+const NOT_PUBLISHED = new Map();
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
-    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
+    if (!isPublished(rel)) {
+      NOT_PUBLISHED.set(rel, (NOT_PUBLISHED.get(rel) || 0) + 1);
+      res.writeHead(404); return res.end('not published by GitHub Pages');
+    }
     const file = path.join(ROOT, rel);
-    if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('not found'); }
+    if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      NOT_PUBLISHED.set(rel + ' (in inventory, missing on disk)', (NOT_PUBLISHED.get(rel) || 0) + 1);
+      res.writeHead(404); return res.end('not found');
+    }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(fs.readFileSync(file));
   });
@@ -531,6 +540,15 @@ async function main() {
     console.log('surfaces opened : ' + visited.filter((v) => v.opened).length + ' of ' + visited.length);
     visited.filter((v) => !v.opened).forEach((v) => console.log('  not opened   : ' + v.where + '  (' + v.why + ')'));
     console.log('external reqs   : ' + externalRequests.length + '   console errors: ' + consoleErrors.length + '   page exceptions: ' + exceptions.length);
+    /* Printed on SUCCESS too, not only on abort. Every entry is a file the
+       running app asked for and production does not have - which is how the
+       preload scanner's speculative fetch of a JavaScript string literal was
+       found (see tests/no-speculative-preload-of-js-strings.test.js). A 404 the
+       doctor never sees is still a 404 the doctor's browser makes. */
+    if (NOT_PUBLISHED.size) {
+      console.log('requested but NOT published:');
+      for (const [rel, n] of NOT_PUBLISHED) console.log('  404 x' + n + '  ' + rel);
+    }
     console.log('\ndefects by kind:');
     Object.keys(byKind).sort((a, b) => byKind[b] - byKind[a]).forEach((k) => console.log('  ' + String(byKind[k]).padStart(4) + '  ' + k));
     if (!defects.length) console.log('  (none)');
@@ -546,4 +564,11 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error('\nUI SWEEP ABORTED: ' + (e && e.stack || e)); process.exit(1); });
+main().catch((e) => {
+  console.error('\nUI SWEEP ABORTED: ' + (e && e.stack || e));
+  if (NOT_PUBLISHED.size) {
+    console.error('\nfiles the app requested that GitHub Pages does not publish:');
+    for (const [rel, n] of NOT_PUBLISHED) console.error('  404 x' + n + '  ' + rel);
+  }
+  process.exit(1);
+});
