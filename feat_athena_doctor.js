@@ -559,7 +559,33 @@
       // genuine failure — show honest line AND auto-open the diagnostic
       markPullNoticeHandled(d, 'doctor');
       var ref = manualFailureRef(d, kind);
-      showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…', {
+      /* 2026-07-30 — OWNER: "just get ride of this notification its so annoying
+         and wrong anyway". Both halves of that are true, and both are fixed
+         here rather than by deleting the warning.
+
+         WRONG: resultMeta treats any result whose ok !== true as a breakage
+         (:425), but the reason vocabulary is mostly PRECONDITIONS - no-tab,
+         no-ext, provider-required, readonly. For every one of those "re-run"
+         is the wrong advice: re-running without athenaOne open fails again,
+         identically. The line now names the actual precondition and what to do.
+
+         ANNOYING: a warn toast never auto-retires (:623 retires only ok/info),
+         so one refused pull left an orange bar on screen indefinitely. It now
+         retires on a timer like every other notice, and the red status dot -
+         which is the durable signal - stays exactly as it was.
+
+         NOT DELETED, deliberately: tests/athena-pull-notification-ownership.js
+         :138 and tests/athena-pull-toast-lifecycle.js:104 both pin that a
+         MANUAL pull failure produces exactly one actionable warning. A doctor
+         who presses Pull and is told nothing believes the chart loaded. */
+      var why = String((m && m.stage) || '').toLowerCase();
+      var line;
+      if (/no-?(athena-?)?tab/.test(why)) line = '⚠ athenaOne isn\'t open in this browser — open it, sign in, then pull again. (Troubleshoot Athena)';
+      else if (/no-?ext|ext-?missing/.test(why)) line = '⚠ MLS Assist isn\'t answering — check the extension is installed and enabled. (Troubleshoot Athena)';
+      else if (/provider-?required/.test(why)) line = '⚠ Pick a provider first, then pull again. (Troubleshoot Athena)';
+      else if (/readonly|refused/.test(why)) line = '⚠ athenaOne refused that read — nothing was changed. Tap Troubleshoot Athena if it repeats.';
+      else line = '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…';
+      showToast('warn', line, {
         key: kind + '|' + (m.stage || 'failed') + '|' + ref.requestId,
         pullFailure: true,
         requestId: ref.requestId,
@@ -622,6 +648,14 @@
     (document.body || document.documentElement).appendChild(t);
     if (kind === 'ok' || kind === 'info') {
       setTimeout(function () { if (t && t.parentNode) t.parentNode.removeChild(t); }, 6500);
+    } else if (kind === 'warn') {
+      /* 2026-07-30: a warn used to live forever, so one refused pull left an
+         orange bar on screen for the rest of the session (owner: "so annoying").
+         It now retires like every other notice. This does NOT lose the signal:
+         the Athena status dot stays red, the Troubleshoot Athena control stays
+         where it is, and a repeat failure re-raises the toast. 20s is long
+         enough to read and act on, short enough not to become furniture. */
+      setTimeout(function () { if (t && t.parentNode) t.parentNode.removeChild(t); }, 20000);
     }
     // mirror the worst signal: nothing else needed
     return t;

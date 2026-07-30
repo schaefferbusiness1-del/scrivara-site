@@ -31,6 +31,18 @@ exclude:
   - "tmp/"
   - "tools/"
   - "_ws_tools/"
+  # 2026-07-30 — NEITHER OF THESE IS AN APP ASSET, AND BOTH WERE BEING PUBLISHED.
+  # The shipped app references them ZERO times (grep of ScribeFlow.html and
+  # mls-connect.js), yet Jekyll was copying both into the public site: 51
+  # coordination/inbox/*.js working notes, and extension candidate SOURCE for
+  # 3.0.32-3.0.38 including MLS_Assist_v3.0.38.zip. The Pages audit was flagging
+  # all of it as "unexpected/unreviewed", and that audit has not run since
+  # 2026-07-19, so nobody saw the flag.
+  # This changes no extension byte and no extension behaviour - the files stay
+  # exactly where they are and every extension test still reads them from the
+  # working tree. It only stops GitHub Pages serving them to the public.
+  - "coordination/"
+  - "extension-candidates/"
   - "*.md"
   - "**/*.md"
   - "package.json"

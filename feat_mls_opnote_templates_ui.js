@@ -65,7 +65,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'ot-2.0.0';
+  var VERSION = 'ot-2.1.0';
   var STYLE_ID = 'mlsOpNoteTemplatesUiCss';
   var BODY_CLASS = 'mls-ot3';
   var OLD_SKIN_ID = 'oprSkin';
@@ -113,7 +113,14 @@
        rows, which is exactly why it is the property used for hover - it can
        never fight the selected/default state the renderer writes inline. */
     [B + '#tplList > div', 'transition:box-shadow ' + D2 + ' ' + EO],
-    [B + '.onf-fillbox', 'transition:box-shadow ' + D3 + ' ' + EO]
+    [B + '.onf-fillbox', 'transition:box-shadow ' + D3 + ' ' + EO],
+    /* the two re-draft buttons on the receipt line. Registered HERE rather than
+       written beside their own rule, because this table is what generates the
+       prefers-reduced-motion off-switch - a rule that moves and is not in this
+       list ships motion a doctor cannot turn off. */
+    [B + '.opr-us-redo',
+     'transition:border-color ' + D1 + ' ' + EO + ', background ' + D1 + ' ' + EO],
+    [B + '.opr-us-redo:active', 'transform:scale(.97)']
   ];
 
   /* ======================= OP NOTES ======================================= */
@@ -345,7 +352,42 @@
       ' font-size:12px; padding:6px 13px; }',
 
     /* status line stays quiet but readable */
-    B + '#opPrepStatus{ font-size:12.5px; color:var(--muted); }'
+    B + '#opPrepStatus{ font-size:12.5px; color:var(--muted); }',
+
+    /* =====================================================================
+       THE "STYLE USED" RECEIPT AND ITS TWO RE-DRAFT BUTTONS
+       OWNER, with a screenshot: "mane these buttons are so ugly pretty them up
+       and amke srue they copnnect correclty to the buttons in the bottom left
+       of this page".
+
+       They were ugly for the plainest possible reason: .opr-usedstyle,
+       .opr-us-lbl and .opr-us-redo are written by feat_mls_opnote_room (:670)
+       and a repo-wide grep finds NO rule for any of the three. They were raw
+       user-agent buttons - grey bevels next to a styled surface.
+
+       And the label really did read "Style usedAdapt to the case": the markup
+       is <span>Style used</span><b>...</b> with no separator between them. That
+       is fixed here structurally rather than by editing the string - a flex row
+       with a gap spaces every child, so it cannot come back if another chip is
+       added to the line later.
+
+       They now speak the SAME vocabulary as the day rail on the left and the
+       Back button above them - card face, 1.5px hairline, the shared radius,
+       green on hover, and the 44px tap floor these selectors out-specify and
+       therefore have to satisfy themselves. */
+    B + '.opr-usedstyle{ display:flex; align-items:center; gap:9px; flex-wrap:wrap;' +
+      ' margin-top:10px; }',
+    B + '.opr-us-lbl{ font-size:11px; font-weight:800; letter-spacing:.08em;' +
+      ' text-transform:uppercase; color:var(--muted); }',
+    B + '.opr-usedstyle > b{ font-size:13.5px; font-weight:750; color:var(--ink);' +
+      ' padding:5px 12px; border-radius:999px; background:var(--soft);' +
+      ' border:1px solid var(--line); }',
+    B + '.opr-us-redo{ font: 650 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;' +
+      ' min-height:44px; padding:11px 16px; border-radius:12px;' +
+      ' border:1.5px solid var(--line); background:var(--card); color:var(--ink);' +
+      ' cursor:pointer; }',
+    B + '.opr-us-redo:hover{ border-color:var(--green-dk); background:var(--soft); }',
+    B + '.opr-us-redo:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }'
   ];
 
   /* ======================= TEMPLATES ======================================
@@ -975,111 +1017,106 @@
   /* ONE COLUMN, LIBRARY FIRST. Applies at every width; the two-column block
      below refines it from 1100px up. `order` is the whole mechanism, so the
      DOM keeps the order every walker expects and only the paint moves. */
+  /* ot-2.1.0 - REBUILT AGAIN, SIMPLER, AFTER SEEING THE REAL SCREEN.
+     OWNER on the 2.0.0 composition: "very glitchy and not very well made
+     completly try again and make it more intuitive and simple and pretty".
+
+     HE IS RIGHT, AND THE CAUSE WAS A TESTING FAILURE, NOT A TASTE FAILURE.
+     2.0.0 placed each child in an explicit grid ROW (grid-area:7 / 1 / 17 / 2
+     and so on). That is only safe if you know every child. Six modules inject
+     into this card at runtime, and the suite that "proved" the layout built a
+     REPLICA out of the static markup alone - so it never saw one of them.
+
+     Booted against the real app the difference is not subtle.
+     #mls-stdline-section ("Add a standard line to templates") renders 451px
+     tall, and 2.0.0 had pinned it to row 3 - ABOVE the library. Measured at
+     1440x900: the library did not begin until y=987, the right-hand column was
+     630px of dead space, and the card ran to 2142px. The composition was worse
+     than the plain stack it replaced.
+
+     SO THE ROW MATH IS GONE. This is a flex column ordered by `order`, which
+     has no indices to get wrong: every child is an item, and a panel this file
+     has never heard of takes the catch-all order and lands in the maintenance
+     band - never on top of the library.
+
+     AND THE SHAPE IS SIMPLER: one column, not two. #tplWorkspace already splits
+     itself into list + preview, so the screen still reads as a workspace, and a
+     single column cannot develop a dead second column when content moves.
+
+     THE ORDER IS THE WHOLE DESIGN, top to bottom:
+       title + one lead line
+       YOUR LIBRARY        search, list, preview - what he opened the tab for
+       settings            use-templates, active template
+       add one / import    the intake he needs occasionally
+       standard lines      maintenance
+       anything injected   catch-all, never above the library
+       Close */
   var TAB_ONECOL = [
-    R + '.modal{ display:grid; grid-template-columns:minmax(0,1fr); row-gap:0; }',
-    /* unknown/injected children: full width, and after the intake */
-    RM + '*{ grid-column:1; min-width:0; order:45; }',
+    R + '.modal{ display:flex; flex-direction:column; align-items:stretch; }',
+    /* THE CATCH-ALL, and it sits BELOW the intake so an unnamed panel can never
+       outrank the library the way #mls-stdline-section did. */
+    RM + '*{ order:60; min-width:0; }',
 
     RM + 'h3{ order:1; }',
     RM + 'p.note{ order:2; }',
-    R + '#mls-stdline-section{ order:3; }',
-    /* the two switches are setup, and they are two lines, so they stay at the
-       top where they read as the state of the screen rather than as a form */
-    RM + '.field:has(#tplUseToggle){ order:4; }',
-    RM + '#tplActiveWrap{ order:5; }',
-    /* THE LIBRARY, hoisted over everything it used to sit under */
-    RM + 'div:has(> h4){ order:6; }',
-    RM + '.field:has(#tplSearch){ order:7; }',
-    R + '#tplWorkspace{ order:8; }',
-    /* then intake */
-    RM + 'h4{ order:20; }',
-    RM + '.field:has(#tplName){ order:21; }',
-    RM + '.field:has(#tplKeywords){ order:22; }',
-    RM + '.row.tight{ order:23; }',
-    R + '#tplDropZone{ order:24; }',
-    R + '#tplText{ order:25; }',
-    RM + '.row:has(> button[onclick^="saveTemplateFromForm"]){ order:26; }',
-    RM + 'div[style*="linear-gradient"]{ order:27; }',
+
+    /* THE LIBRARY, first, because it is the reason the tab exists */
+    RM + 'div:has(> h4){ order:10; }',
+    RM + '.field:has(#tplSearch){ order:11; }',
+    R + '#tplWorkspace{ order:12; }',
+
+    /* settings */
+    RM + '.field:has(#tplUseToggle){ order:20; }',
+    RM + '#tplActiveWrap{ order:21; }',
+
+    /* add one, then the bulk path */
+    RM + 'h4{ order:30; }',
+    RM + '.field:has(#tplName){ order:31; }',
+    RM + '.field:has(#tplKeywords){ order:32; }',
+    RM + '.row.tight{ order:33; }',
+    R + '#tplDropZone{ order:34; }',
+    R + '#tplText{ order:35; }',
+    RM + '.row:has(> button[onclick^="saveTemplateFromForm"]){ order:36; }',
+    RM + 'div[style*="linear-gradient"]{ order:37; }',
+
+    /* maintenance: 451px of form belongs under the work, not over it */
+    R + '#mls-stdline-section{ order:50; }',
+
     RM + '.row:has(> button[onclick^="closeTemplates"]){ order:90; }',
-    /* The two <hr>s existed to separate three stacked bands. There are no
-       stacked bands any more, so they are noise. Their inline
-       `border-top:1px solid var(--line)` needs !important to silence. */
-    RM + 'hr{ display:none !important; }'
+
+    /* the two <hr>s separated three bands that no longer exist; their inline
+       border-top needs !important to silence */
+    RM + 'hr{ display:none !important; }',
+
+    /* --- one measure, one rhythm -----------------------------------------
+       A single column at 1380px would set 13.5px prose the width of the room,
+       so the reading column is bounded - and the LIBRARY deliberately is not,
+       because the list and the preview want the room. */
+    RM + 'h3, ' + RM + 'p.note, ' + RM + '.field, ' + RM + '.row, ' +
+    RM + 'h4, ' + R + '#tplDropZone, ' + R + '#tplText, ' +
+    RM + 'div[style*="linear-gradient"], ' + R + '#mls-stdline-section{' +
+      ' max-width:var(--ot-col); }',
+    R + '#tplWorkspace{ max-width:none; margin-top:10px; }',
+    R + '#tplList{ max-height:min(56vh,620px) !important; }',
+    R + '#tplDetail{ top:8px; }',
+
+    /* --- AND THE SAME PROBLEM ONE LEVEL DOWN -----------------------------
+       Ordering the CARD's children was not enough. Two more panels mount
+       INSIDE #tplWorkspace rather than beside it: #tpfPanel (template health,
+       mls-connect) and #tlPanel (versioned library, feat_mls_template_library)
+       both do anchor.parentElement.insertBefore(panel, #tplList), so they land
+       between the search box and the list. Measured after the card was
+       reordered: "TEMPLATE HEALTH" and "VERSIONED TEMPLATE LIBRARY" occupied
+       the entire first screen under the search and the list still was not
+       visible - the same defect as #mls-stdline-section, one level deeper.
+       #tplWorkspace is display:grid, and grid honours `order`, so the two panes
+       are pulled ahead of anything injected. The catch-all is again LAST so a
+       future panel lands under the library instead of over it. */
+    R + '#tplWorkspace > *{ order:5; }',
+    R + '#tplWorkspace > #tplList{ order:1; }',
+    R + '#tplWorkspace > #tplDetail{ order:1; }'
   ];
 
-  /* TWO COLUMNS from 1100px. Below that the sidebar would be narrower than the
-     drop zone it holds, so the one-column order above is the better screen. */
-  var TAB_TWOCOL = [
-    /* THE ROW STRUCTURE, AND THE ONE RULE THAT DECIDES IT.
-       A grid row is shared by both columns and is sized by its TALLEST cell. So
-       every row that holds an item in each column opens a gap under whichever of
-       the two is shorter. Measured on the first cut of this layout: the library
-       heading sat in the same row as the "Active template" select and the gap
-       under it was 106px, with another 152px under the search field. The screen
-       had two columns and still looked broken.
-
-       The fix is structural, not cosmetic: COLUMN 1 CONTRIBUTES EXACTLY ONE ITEM
-       to the two-column region. Everything above the library - the master switch,
-       the library heading and its search - spans the full width instead, and the
-       sidebar is the only stack of many rows. Nothing can then be short beside
-       something tall.
-
-       Row 16 is the slack absorber. #tplWorkspace spans rows 7-16 while the
-       sidebar occupies 7-15; when the library is the taller of the two, a grid
-       distributes the surplus across every row the spanning item covers, which
-       would re-open the same gap under each sidebar control. A flexible track is
-       excluded from that intrinsic distribution and takes the remainder instead
-       (CSS Grid 12.6/12.7), so the surplus lands in one empty row underneath the
-       sidebar. Measured after: every sidebar gap 16px, the design value. */
-    R + '.modal{ grid-template-columns:minmax(0,1fr) 384px; column-gap:40px;' +
-      ' align-items:start; grid-template-rows:repeat(15,auto) 1fr auto; }',
-    RM + '*{ grid-column:1 / -1; }',
-
-    /* FULL WIDTH - the masthead */
-    RM + 'h3{ grid-area:1 / 1 / 2 / -1; }',
-    RM + 'p.note{ grid-area:2 / 1 / 3 / -1; }',
-    R + '#mls-stdline-section{ grid-area:3 / 1 / 4 / -1; }',
-
-    /* COLUMN 1 - the master switch, the library header, then the library. Only
-       ONE of these (the workspace) shares a row with the sidebar stack, which is
-       what keeps the left edge gap-free. */
-    RM + '.field:has(#tplUseToggle){ grid-area:4 / 1 / 5 / 2; }',
-    RM + 'div:has(> h4){ grid-area:5 / 1 / 6 / 2; }',
-    RM + '.field:has(#tplSearch){ grid-area:6 / 1 / 7 / 2; }',
-    R + '#tplWorkspace{ grid-area:7 / 1 / 17 / 2; }',
-
-    /* COLUMN 2, rows 4-6: which template is in force. It SPANS the three header
-       rows rather than taking one of its own, so it fills what would otherwise be
-       400px of dead space beside them and still cannot stretch a row - a spanning
-       item sits at the top of its span and only grows the tracks if it is taller
-       than all three together, which the left-column gap assertion pins. */
-    RM + '#tplActiveWrap{ grid-area:4 / 2 / 7 / 3; }',
-    /* rows 7+: adding one, then the bulk path */
-    RM + 'h4{ grid-area:7 / 2 / 8 / 3; }',
-    RM + '.field:has(#tplName){ grid-area:8 / 2 / 9 / 3; }',
-    RM + '.field:has(#tplKeywords){ grid-area:9 / 2 / 10 / 3; }',
-    RM + '.row.tight{ grid-area:10 / 2 / 11 / 3; }',
-    R + '#tplDropZone{ grid-area:11 / 2 / 12 / 3; }',
-    R + '#tplText{ grid-area:12 / 2 / 13 / 3; }',
-    RM + '.row:has(> button[onclick^="saveTemplateFromForm"]){ grid-area:13 / 2 / 14 / 3; }',
-    RM + 'div[style*="linear-gradient"]{ grid-area:14 / 2 / 15 / 3; }',
-
-    /* the exit, under both columns */
-    RM + '.row:has(> button[onclick^="closeTemplates"]){ grid-area:17 / 1 / 18 / -1; }',
-
-    /* the library is the hero now, so it gets the height. The inline
-       `max-height:420px` on #tplList and the 600px raise in WIDE are both
-       out-specified here on purpose: with the intake beside it rather than
-       above it, the list finally has the room to show a real library. */
-    R + '#tplList{ max-height:min(62vh,720px) !important; }',
-    /* the sidebar's own controls stop pretending they have 760px to spend */
-    R + '#tplText{ min-height:150px !important; }',
-    R + '#tplDropZone{ padding:26px 18px !important; }',
-    /* the preview pane holds still while the list scrolls - the inline
-       `position:sticky; top:0` already does this; it only needs somewhere to
-       stick FROM, which the taller column now gives it. */
-    R + '#tplDetail{ top:8px; }'
-  ];
 
   /* Wide-only: the two-pane template workspace and the roomier editor. Gated so
      the narrow rules in ScribeFlow.html still apply - an unconditioned rule here
@@ -1160,13 +1197,16 @@
     out = out.concat(OPNOTE, TEMPLATES);
     out.push('@media (min-width:901px){' + WIDE.join('') + '}');
     out.push('@media (max-width:900px){' + NARROW.join('') + '}');
-    /* ot-2.0.0: the composition goes LAST so that where it ties on specificity
+    /* ot-2.1.0: the composition goes LAST so that where it ties on specificity
        with a rule above (the WIDE #tplList ceiling is the only one) it wins by
-       source order rather than by an !important nobody can later unwind. The
-       @supports gate is on both blocks: partial placement is worse than none. */
+       source order rather than by an !important nobody can later unwind.
+       ONE block now, at every width. The 1100px two-column tier is gone: it was
+       the half of 2.0.0 that developed a 630px dead column on the real screen,
+       and a single ordered column needs no breakpoint to stay correct.
+       Still behind @supports selector(:has(*)) - six of the ordered children
+       have no id and no class, so a browser without :has() must get NONE of the
+       order rather than half of it. */
     out.push('@supports selector(:has(*)){' + TAB_ONECOL.join('') + '}');
-    out.push('@media (min-width:1100px){@supports selector(:has(*)){' +
-      TAB_TWOCOL.join('') + '}}');
     out.push(GUARDS);
     /* GENERATED off-switch: derived from MOVING, never hand-maintained. */
     out.push('@media (prefers-reduced-motion: reduce){' +
