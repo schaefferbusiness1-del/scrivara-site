@@ -55,19 +55,60 @@
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 
   /* ---------------------------------------------------------------
-     LETTERHEAD CONFIG — set this once to put your practice letterhead on
-     every exported op-note PDF. Leave clinicName empty for a clean
-     default header (provider name + date). Example to set later:
+     LETTERHEAD — resolved LIVE from the practice identity the doctor
+     already entered in Settings → Practice & provider.
 
-       window.MLS_OPNOTE_LETTERHEAD = {
-         clinicName: 'MLS Spine & Pain Center',
-         addressLines: ['1234 Example Blvd, Suite 200',
-                        'Phoenix, AZ 85016',
-                        'Tel (480) 555-0100 · Fax (480) 555-0101'],
-       };
+     WHY THIS CHANGED. The comment here used to say "set this once", and
+     nothing ever did: `window.MLS_OPNOTE_LETTERHEAD` was initialised to
+     `{clinicName:'', addressLines:[]}` and the only assignment anywhere in
+     the repo outside this line was a synthetic test fixture. Five separate
+     PDF letterheads read it and every one of them is written as
+     `if (lh.clinicName) { …practice… } else { …hardcoded vendor… }`, so the
+     else branch was the ONLY branch that ever ran, and every exported
+     op note, procedure report, full-history PDF and after-visit summary was
+     stamped with the vendor's name and specialty instead of the practice's.
+     A doctor who filled in "Chester County Spine Care" got "MLS" on their
+     letterhead forever, with no way to notice why.
+
+     Accessor properties rather than a snapshot, because Settings can change
+     between page load and export, and because every consumer already reads
+     `.clinicName` / `.addressLines` — so nothing downstream has to change.
+     Setters are kept so the documented "set it yourself" contract still
+     works: an explicit assignment (a white-label host, a test fixture)
+     overrides the Settings value for that field only.
      --------------------------------------------------------------- */
+  function lhSetting(fn) {
+    return safe(function () {
+      return typeof window[fn] === 'function' ? String(window[fn]() || '').trim() : '';
+    }, '') || '';
+  }
   if (!window.MLS_OPNOTE_LETTERHEAD) {
-    window.MLS_OPNOTE_LETTERHEAD = { clinicName: '', addressLines: [] };
+    var lhOverride = { clinicName: null, addressLines: null };
+    var letterhead = {};
+    try {
+      Object.defineProperty(letterhead, 'clinicName', {
+        enumerable: true, configurable: true,
+        get: function () { return lhOverride.clinicName != null ? lhOverride.clinicName : lhSetting('getPracticeName'); },
+        set: function (v) { lhOverride.clinicName = v; }
+      });
+      Object.defineProperty(letterhead, 'addressLines', {
+        enumerable: true, configurable: true,
+        get: function () {
+          if (lhOverride.addressLines != null) return lhOverride.addressLines;
+          var out = [];
+          var addr = lhSetting('getClinicAddress'); if (addr) out.push(addr);
+          var phone = lhSetting('getClinicPhone'); if (phone) out.push('Tel ' + phone);
+          return out;
+        },
+        set: function (v) { lhOverride.addressLines = v; }
+      });
+    } catch (e) {
+      /* No defineProperty (ancient engine): fall back to the old static shape
+         rather than leaving the object without the two properties its five
+         consumers read. */
+      letterhead = { clinicName: '', addressLines: [] };
+    }
+    window.MLS_OPNOTE_LETTERHEAD = letterhead;
   }
 
   var NOT_DICTATED = '[not dictated]';
@@ -277,7 +318,13 @@
       var ap = (typeof activePatient === 'function') ? activePatient() : null;
       if (ap) { meta.patient = ap.name || ''; meta.dob = ap.dob || ''; meta.mrn = ap.mrn || ''; }
     });
-    safe(function () { if (typeof getName === 'function') meta.provider = getName() || ''; });
+    /* getProviderName, not getName. getName() is uns('docname') - the
+       login/account display name - and this value is printed on an operative
+       note as who performed the work (owner goal 2026-07-21, pinned by
+       tests/provider-identity-separation-contract). The letterhead renderer
+       already degrades to 'Clinician' when this is empty, which is honest;
+       naming the account holder is not. */
+    safe(function () { if (typeof getProviderName === 'function') meta.provider = getProviderName() || ''; });
     safe(function () { if (typeof getSpec === 'function') meta.spec = getSpec() || ''; });
     return meta;
   }

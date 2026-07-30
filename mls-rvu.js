@@ -348,8 +348,14 @@ try{
     });
     return rows;
   }
+  /* providerName BEFORE docname - same inversion as mls-procedure-report.js:
+     the login/account display name was outranking the configured clinical
+     provider in the productivity table's Provider column. */
   function providerName() {
-    try { var k = 'sf_u::' + curEmail() + '::docname'; return localStorage.getItem(k) || localStorage.getItem('sf_u::' + curEmail() + '::providerName'); } catch (e) { return null; }
+    try {
+      var base = 'sf_u::' + curEmail() + '::';
+      return localStorage.getItem(base + 'providerName') || localStorage.getItem(base + 'docname');
+    } catch (e) { return null; }
   }
 
   var PROD = { gran: 'month', drafts: false };

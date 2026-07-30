@@ -389,6 +389,12 @@ const tests = [
      found: the account credential being appended to another clinician's name,
      and the assistant line being filled with the primary surgeon. */
   'settings-identity-reaches-the-op-note.test.js',
+  /* b806 — the same law on the way OUT of the app. Five PDF letterheads read a
+     shared config object that nothing ever populated, so every export was
+     stamped with the vendor's name instead of the practice's; and four surfaces
+     used the login/account display name as the clinical provider, two of them
+     reading docname BEFORE providerName. */
+  'exports-carry-the-practice-identity.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

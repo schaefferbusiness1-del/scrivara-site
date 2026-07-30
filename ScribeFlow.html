@@ -7892,6 +7892,18 @@ function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; 
    Falls back to the clinic when no separate site is configured, because a
    practice that operates where it sees patients should not have to say so
    twice. */
+/* THE clinical provider identity, and only that.
+   getName() is uns('docname') - the login/account display name - and it is
+   never an acceptable answer to "who performed this work". Owner goal
+   2026-07-21, pinned by tests/provider-identity-separation-contract: the
+   account holder who filled in the signup form is not necessarily the
+   clinician. Three surfaces were each making that substitution independently
+   (the prior-auth letter, the procedure-note builder, and the patient home-care
+   handout), so the decision now lives in one function instead of three.
+   Callers supply their own fallback, because the right fallback differs: a
+   bracketed blank the doctor completes on a clinical document, a practice name
+   on something a patient reads. */
+function clinicalProviderName(){ try{ return String((typeof getProviderName==='function'?getProviderName():'')||'').trim(); }catch(e){ return ''; } }
 function getFacilityName(){ return localStorage.getItem(uns('facilityName'))||getPracticeName(); }
 function getFacilityAddress(){ return localStorage.getItem(uns('facilityAddress'))||(localStorage.getItem(uns('facilityName'))?'':getClinicAddress()); }
 /* Branded exports (Premium): upload + downscale a practice logo to a small
@@ -22944,7 +22956,7 @@ async function generatePriorAuth(){
     const appealNow=paMode==='appeal';
     return {
       service:paSelectedService(), isAppeal:appealNow, ptLine:ptLineNow,
-      provider:getName()||'[Provider name]', spec:getPreset()||getSpec()||'',
+      provider:clinicalProviderName()||'[Provider name]', spec:getPreset()||getSpec()||'',
       dxLine:dxLineNow, note:noteNow, noteFormat:currentFormat,
       pctx:buildPatientContext(),
       denialReason:appealNow?(((document.getElementById('paDenialReason')||{}).value)||'Not medically necessary'):'',
@@ -24386,7 +24398,7 @@ function generateProcNote(opts){
   const comps=((document.getElementById('procComplications')||{}).value||'').trim()||'None';
   const consent=!!(document.getElementById('procConsent')||{}).checked;
   const ap=activePatient();
-  const provider=getName()||'[Provider]';
+  const provider=clinicalProviderName()||'[Provider]';
   const spec=getSpec()||getPreset()||'';
   const dx=noteDiagnosisText();
   const dxLine=[dx.text,(dx.icd&&dx.icd.length)?('ICD-10: '+dx.icd.join('; ')):''].filter(Boolean).join(' · ')||(ordersDx.text||'[indication / diagnosis — provider to complete]');
@@ -25107,7 +25119,7 @@ function printHandout(){
   if(!text.trim()){ toast('Generate a handout first.','err'); return; }
   const ap=activePatient();
   const patient=ap?ap.name:(document.getElementById('patientLabel').value.trim()||'Patient');
-  const docName=getName()||'Your care team';
+  const docName=clinicalProviderName()||getPracticeName()||'Your care team';
   const now=new Date().toLocaleDateString();
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Home Care Instructions — ${esc(patient)}</title>
 <style>

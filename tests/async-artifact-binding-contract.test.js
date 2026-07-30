@@ -150,6 +150,13 @@ async function main() {
     backendMode() { return true; },
     getKey() { return 'test-key'; },
     getName() { return providerName; },
+    /* b806: the prior-auth request captures the CLINICAL provider identity
+       (clinicalProviderName -> uns('providerName')), not the login/account
+       display name. Driven by the SAME variable as getName so the mid-flight
+       provider change below still exercises the request-details guard it was
+       written to exercise — the point of that mutation is "a source used for the
+       request changed", and which source it is does not matter here. */
+    clinicalProviderName() { return providerName; },
     getPreset() { return 'Pain medicine'; },
     getSpec() { return ''; },
     activePatient() { return { name: 'Patient A', dob: '01/01/1970', sex: 'F', mrn: '100' }; },

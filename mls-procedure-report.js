@@ -455,8 +455,18 @@
   function pdfSafe(s) {
     return S(s).replace(/[‘’‚‛]/g, "'").replace(/[“”„]/g, '"').replace(/[–—−]/g, '-').replace(/…/g, '...').replace(/[•●▪·]/g, '-').replace(/[^\x00-\x7F]/g, '');
   }
+  /* providerName BEFORE docname. This read them the other way round, so the
+     login/account display name outranked the configured clinical provider on
+     every exported Procedure Report - the exact inversion
+     tests/provider-identity-separation-contract forbids, on a surface it does
+     not cover. docname stays as a last resort here (this is a productivity
+     report attributed to an account, not a clinical attestation) but it can no
+     longer win while a real provider identity exists. */
   function providerName() {
-    try { var k = 'sf_u::' + curEmail() + '::docname'; return localStorage.getItem(k) || localStorage.getItem('sf_u::' + curEmail() + '::providerName') || ''; } catch (e) { return ''; }
+    try {
+      var base = 'sf_u::' + curEmail() + '::';
+      return localStorage.getItem(base + 'providerName') || localStorage.getItem(base + 'docname') || '';
+    } catch (e) { return ''; }
   }
   function exportPDF() {
     ensureJsPdf().then(function (ns) {
