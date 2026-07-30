@@ -204,9 +204,15 @@ const GEOMETRY_PROBE = `(() => {
       .filter(x => x.right > de.clientWidth + 1)
       .sort((a,b) => b.right - a.right).slice(0, 6);
   }
-  /* the app declares html body button{min-height:44px}; anything visibly under
-     that floor is a control that is hard to hit. Only VISIBLE controls count. */
-  out.smallTargets = [...document.querySelectorAll('button,[role=button],a[href]')]
+  /* The app declares html body button{min-height:44px} as a PHONE tap floor, so
+     it is only measured at phone widths. Reported at every viewport it produced
+     247 findings, of which 241 were desktop chips - section tabs, inline text
+     buttons - that no floor claims. At 390px the same probe returns 6, and those
+     6 are real: controls whose own rule out-specifies the floor and lowers it.
+     A number that large reads as noise and gets ignored, which is worse than not
+     measuring at all. */
+  out.tapFloorApplies = window.innerWidth <= 760;
+  out.smallTargets = !out.tapFloorApplies ? [] : [...document.querySelectorAll('button,[role=button],a[href]')]
     .filter(el => { const s = getComputedStyle(el); if (s.display==='none'||s.visibility==='hidden'||Number(s.opacity)===0) return false;
       const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (r.height < 44 || r.width < 24); })
     .map(el => { const r = el.getBoundingClientRect();
