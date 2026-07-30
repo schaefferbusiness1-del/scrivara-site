@@ -191,7 +191,17 @@ const scanned = PUBLISHED.length;
 /* 2026-07-28: site 23 is the ez3sec0 fold toggle in renderDoctor - it
    compares contains() to the wanted state before toggling, so a repeating
    render pass re-commits nothing (read by hand). */
-const SITES = { 'mls-connect.js': 23, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
+/* 2026-07-29: site 24 is the body.mls-recording toggle beside the live-pill
+   toggle in the flow-bar painter. THREE modules (magic, polish-everywhere,
+   ui-clinical) stand down while that class is present and NOTHING ever added it,
+   so every one of those guards was dead - and a guard that cannot fire reads in
+   review as a safety property already handled. This is the one place that already
+   knows whether capture is live, so it is the honest place to say so.
+   It DOES run on a repeating pass, and it is guarded exactly like the pill
+   beside it: `if (contains('mls-recording') !== live)` before toggling, so an
+   unchanged pass re-commits nothing and cannot cost a whole-document style
+   recalc (read by hand). */
+const SITES = { 'mls-connect.js': 24, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;

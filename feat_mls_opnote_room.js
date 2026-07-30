@@ -227,8 +227,17 @@
   function buildNav() {
     var nav = $('oprRowNav'); if (!nav) return;
     var rows = window._opPrep || [];
-    if (rows.length < 2) { nav.innerHTML = ''; return; }   /* single-patient mode needs no nav */
+    /* 2026-07-29: THE CLAMP MUST COME FIRST. These two lines were the other way
+       round, so the single-row early return skipped the clamp entirely - and
+       switching from "All scheduled patients" (say SEL=2) to "This patient" (one
+       row) left SEL pointing past the end of the array. Everything that reads
+       _opPrep[SEL] then found undefined, and the context receipt #oprReceipt hid
+       itself and never came back for the rest of the session. Clamping before any
+       return keeps SEL a valid index no matter which branch is taken.
+       Found by tests/opnote-room-walkthrough-runtime.test.js. */
     if (SEL >= rows.length) SEL = rows.length - 1;
+    if (SEL < 0) SEL = 0;
+    if (rows.length < 2) { nav.innerHTML = ''; return; }   /* single-patient mode needs no nav */
     var h = '<div class="opr-rail-title">Patients — ' + rows.length + '</div>';
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
@@ -934,7 +943,11 @@
         showTab('procs');
       } catch (e9) {}
       try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}
-      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.onclick = null; } } catch (e5) {}
+      /* onkeydown as well as onclick: the keyboard handler was added in the same
+         change that made the Edit affordance reachable, and revert() forgot it -
+         so a reverted module left a live key handler on a node it no longer owns.
+         Found by tests/opnote-room-walkthrough-runtime.test.js. */
+      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
       /* the mode control is a node THIS module created, so revert removes it
          entirely rather than emptying it - leaving an orphan box would be a
          visible artefact of a module that is supposed to be gone. */

@@ -55,6 +55,14 @@ const tests = [
      is more important than the one that proves the pixels changed. */
   'opnote-templates-grips-survive-redesign.test.js',
   'opnote-template-rail-is-clickable.test.js',
+  /* b798 — the owner named the fill-in-the-blank path and the missing animations
+     explicitly. The first pins the placeholder mechanism across every new
+     template-follow mode; the second is the general law that caught why the
+     magic layer animated nothing: it styled five classes and set none. */
+  'fill-in-the-blank-survives.test.js',
+  'styled-trigger-classes-have-writers.test.js',
+  'opnote-room-walkthrough-runtime.test.js',
+  'opnote-follow-modes-differ.test.js',
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',
   'schedule-mutating-row-reverify-contract.test.js',

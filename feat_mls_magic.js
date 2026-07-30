@@ -55,9 +55,11 @@
     ['body.mls-note-live #noteCard',
      'animation:mgArrive ' + D4 + ' ' + EO + ' both'],
 
-    /* 2. completion — a check that draws itself, and one settle */
-    ['.mg-drawn',
-     'animation:mgDraw ' + D4 + ' ' + EO + ' both'],
+    /* 2. completion - one dignified settle.
+       `.mg-drawn` (a check drawing itself via stroke-dashoffset) was REMOVED on
+       2026-07-29: nothing ever added the class, and the visit stage rail already
+       draws its own SVG check, so there was no element left for it to drive. A
+       rule that cannot fire is deleted, not kept for the look of it. */
     ['.mg-settle',
      'animation:mgSettle ' + D3 + ' ' + EO + ' both'],
 
@@ -65,10 +67,16 @@
     ['#mlsStages .st.now .dot',
      'animation:mgPulse ' + D4 + ' ' + EO + ' both'],
 
-    /* 4. waiting — a shimmer that TRAVELS, never a background-position tween */
-    ['.mg-wait',
+    /* 4. waiting — a shimmer that TRAVELS, never a background-position tween.
+       RETARGETED 2026-07-29: this used to require a `.mg-wait` class that NOTHING
+       in the repo ever added, so the moment could not fire. `.pp-wait` is a class
+       the pull panel really emits for a patient being read right now, so the
+       shimmer now lands on the one place in the app that genuinely means
+       "waiting". A moment keyed to a class no writer sets is decoration, not a
+       feature. */
+    ['#mlsPullProgPanel .pp-wait',
      'position:relative;overflow:hidden'],
-    ['.mg-wait::after',
+    ['#mlsPullProgPanel .pp-wait::after',
      'content:"";position:absolute;inset:0;pointer-events:none;' +
      'background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);' +
      'transform:translateX(-100%);animation:mgShimmer 1.4s linear infinite'],
@@ -82,7 +90,6 @@
 
   var KEYFRAMES = [
     '@keyframes mgArrive{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}',
-    '@keyframes mgDraw{from{stroke-dashoffset:var(--mg-len,24)}to{stroke-dashoffset:0}}',
     '@keyframes mgSettle{0%{transform:scale(.94);opacity:.6}60%{transform:scale(1.01)}100%{transform:none;opacity:1}}',
     '@keyframes mgPulse{0%{transform:scale(1)}45%{transform:scale(1.18)}100%{transform:scale(1.15)}}',
     '@keyframes mgShimmer{to{transform:translateX(100%)}}'
@@ -93,8 +100,8 @@
   var GUARDS =
     '#noteBox, #transcript, textarea, [contenteditable="true"], .mlsf-note, .mlsf-note *' +
     '{animation:none!important}' +
-    'body.mls-recording .mg-drawn, body.mls-recording .mg-settle,' +
-    'body.mls-recording #mlsStages .st.now .dot, body.mls-recording .mg-wait::after' +
+    'body.mls-recording .mg-settle,' +
+    'body.mls-recording #mlsStages .st.now .dot, body.mls-recording #mlsPullProgPanel .pp-wait::after' +
     '{animation:none!important}';
 
   function build() {
@@ -107,8 +114,7 @@
     out.push('@media (prefers-reduced-motion: reduce){' +
       kill.join(',') + '{animation:none!important;transition:none!important}' +
       'body.mls-note-live #noteCard{opacity:1!important;transform:none!important}' +
-      '.mg-drawn{stroke-dashoffset:0!important}' +
-      '.mg-wait::after{animation:none!important;opacity:0!important}' +
+      '#mlsPullProgPanel .pp-wait::after{animation:none!important;opacity:0!important}' +
       '#mlsStages .st.now .dot{transform:scale(1.15)!important}' +
       '}');
     return out.join('\n');
@@ -123,13 +129,79 @@
     (document.head || document.documentElement).appendChild(st);
   });
 
+  /* =========================================================================
+     2026-07-29 — THE MOMENTS ARE WIRED. Owner: "WHERE IS ALL THE MAJIC".
+
+     He was right and the answer was embarrassing: this module shipped a
+     stylesheet and NOTHING ELSE. A repo-wide sweep found ZERO writers for every
+     class it keys off — `.mg-drawn` 0, `.mg-settle` 0, `.mg-wait` 0,
+     `body.mg-pt-swap` 0 (its only mention was the remove() in revert), and
+     `body.mls-note-live` 0 despite FOUR modules styling on it. Five moments,
+     none of which could ever fire. It was dead CSS.
+
+     Now it listens to events the app REALLY dispatches, verified by grep:
+       mls:generation-complete  — ScribeFlow.html:19484, :19487, :19543
+       mls:active-patient-changed
+     No polling, no observer, no rAF. Two window listeners, both removed by
+     revert(). The transient swap class is cleared on `transitionend` — the
+     animation's own completion — with ONE bounded fallback timeout in case
+     reduced-motion means no transition ever runs, so the class cannot latch.
+     A single one-shot is not the timer LOOP the header forbids.
+
+     body.mls-note-live is the valuable one: setting it truthfully also makes the
+     stand-downs in three other modules real for the first time. */
+  var listeners = [];
+  var swapTimer = 0;
+  function on(target, name, fn) {
+    safe(function () { target.addEventListener(name, fn, false); listeners.push([target, name, fn]); });
+  }
+
+  function noteLive(yes) {
+    safe(function () { document.body.classList.toggle('mls-note-live', !!yes); });
+  }
+
+  /* A note just arrived: the card lifts in, and the whole app now knows a note is
+     on screen. */
+  on(window, 'mls:generation-complete', function () {
+    noteLive(true);
+    safe(function () {
+      var card = document.getElementById('noteCard');
+      if (!card) return;
+      /* restart the entrance even if the class is already there */
+      card.classList.remove('mg-settle');
+      void card.offsetWidth;
+      card.classList.add('mg-settle');
+    });
+  });
+
+  /* The patient changed: crossfade what the banner already shows, and stand the
+     note-live state down because the new patient has no note yet. */
+  on(window, 'mls:active-patient-changed', function () {
+    noteLive(false);
+    safe(function () {
+      var b = document.body;
+      b.classList.add('mg-pt-swap');
+      var clear = function () { safe(function () { b.classList.remove('mg-pt-swap'); }); };
+      var label = document.getElementById('patientLabel');
+      if (label) safe(function () { label.addEventListener('transitionend', clear, { once: true }); });
+      if (swapTimer) clearTimeout(swapTimer);
+      swapTimer = setTimeout(clear, 700);   /* one bounded fallback, not a loop */
+    });
+  });
+
   api.revert = function () {
+    safe(function () { if (swapTimer) clearTimeout(swapTimer); swapTimer = 0; });
+    safe(function () {
+      listeners.forEach(function (l) { safe(function () { l[0].removeEventListener(l[1], l[2], false); }); });
+      listeners.length = 0;
+    });
+    safe(function () { document.body.classList.remove('mls-note-live'); });
     safe(function () {
       var st = document.getElementById(STYLE_ID);
       if (st && st.parentNode) st.parentNode.removeChild(st);
     });
     safe(function () {
-      ['mg-drawn', 'mg-settle', 'mg-wait'].forEach(function (c) {
+      ['mg-settle'].forEach(function (c) {
         var els = document.querySelectorAll('.' + c);
         for (var i = 0; i < els.length; i++) els[i].classList.remove(c);
       });
