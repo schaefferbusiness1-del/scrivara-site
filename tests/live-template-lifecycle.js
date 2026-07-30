@@ -1014,7 +1014,179 @@ async function main() {
     record('4b. MANUAL PICK beats the auto-match and survives a re-render', 'PASS',
       `clicked "${otherTemplate.name}" in the left rail -> tplManual=true, tplId=${manual.tplId}; after window.opPrepRender() it is still ${afterRender.tplId} with aria-pressed on that rail item and badge "${afterRender.badge}"`);
 
+    /* ---- STEP 4c: A KEYWORD, AND ONLY A KEYWORD, CAN WIN THE MATCH ----
+       The owner asked to "allow you to set key words (optional) in the
+       templates for auto matching, MAKE IT EASY AND NOT NESSASARRY". The field
+       exists and round-trips (step 2 proves that), but round-tripping is not
+       the feature - the feature is that a word a doctor typed ONLY into the
+       keywords box changes which template gets picked. Nothing above tested
+       that: step 4a matches on words the template NAME already contains, so it
+       would pass with keyword scoring deleted entirely.
+       This writes a nonsense token no template name or body can contain, saves
+       it as a keyword on the SECOND template through the app's own detail
+       editor, then types that token as the procedure and asks the matcher. */
+    const KW = 'zzsynthkw' + String(templateId).replace(/[^a-z0-9]/gi, '').slice(-6);
+    const kwSaved = await evaluate(cdp, `(() => {
+      const list = getTemplates() || [];
+      const t = list.find(x => x && String(x.id) === ${JSON.stringify(otherTemplate.id)});
+      if (!t) return { ok:false, why:'the second template vanished' };
+      /* through the real editor: select it, type into #tplDetKw, press Save */
+      if (typeof tplSelect === 'function') tplSelect(t.id);
+      return { ok:true, selected:String(t.id) };
+    })()`, { userGesture: false });
+    assert(kwSaved && kwSaved.ok, `could not select the template to give it a keyword: ${JSON.stringify(kwSaved)}`);
+    await sleep(250);
+    const kwWritten = await evaluate(cdp, `(() => {
+      const box = document.getElementById('tplDetKw');
+      if (!box) return { ok:false, why:'the keywords editor is not on screen' };
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      proto.set.call(box, ${JSON.stringify(KW)});
+      box.dispatchEvent(new InputEvent('input', { bubbles:true, inputType:'insertText' }));
+      if (typeof tplDetailSave !== 'function') return { ok:false, why:'tplDetailSave is gone' };
+      tplDetailSave();
+      const after = (getTemplates() || []).find(x => x && String(x.id) === ${JSON.stringify(otherTemplate.id)});
+      return { ok:true, stored: after ? (after.keywords || []) : null };
+    })()`, { userGesture: false });
+    assert(kwWritten && kwWritten.ok, `could not save a keyword through the app's own editor: ${JSON.stringify(kwWritten)}`);
+    assert(Array.isArray(kwWritten.stored) && kwWritten.stored.indexOf(KW) >= 0,
+      `the keyword did not persist through the detail editor: ${JSON.stringify(kwWritten)}`);
+
+    const kwMatch = await evaluate(cdp, `(() => {
+      const rank = window._opRankTemplates(${JSON.stringify(KW)});
+      const top = rank && rank[0];
+      /* prove the token really is unique to the keywords field */
+      const leaks = (getTemplates() || []).filter(t => t &&
+        (String(t.name||'') + ' ' + String(t.text||'')).toLowerCase().indexOf(${JSON.stringify(KW)}) >= 0).length;
+      return { topId: top && top.tpl ? String(top.tpl.id) : '', topScore: top ? top.score : null, leaks };
+    })()`, { userGesture: false });
+    assert.strictEqual(kwMatch.leaks, 0, `the probe token appears outside the keywords field, so this proves nothing: ${JSON.stringify(kwMatch)}`);
+    assert.strictEqual(kwMatch.topId, otherTemplate.id, `a keyword-only term did not win the match: ${JSON.stringify(kwMatch)}`);
+    assert(kwMatch.topScore > 0, `the keyword match scored zero, i.e. it was a fallback rather than a match: ${JSON.stringify(kwMatch)}`);
+    record('4c. KEYWORDS: a term typed only into the optional keywords box wins the match', 'PASS',
+      `wrote "${KW}" into #tplDetKw on "${otherTemplate.name}" and pressed the real Save; stored as ${JSON.stringify(kwWritten.stored)}; ` +
+      `the token appears in 0 template names or bodies; _opRankTemplates("${KW}") ranks that template first with score ${kwMatch.topScore}`);
+
+    /* ---- STEP 4d: NO CONFIDENT MATCH DOES NOT MEAN NO TEMPLATE ----
+       Verbatim: "fix up the auto match system where it doesnt give up if it
+       cant find a match and just warns the user but finds the closet option".
+       The old behaviour returned tplId:'' and left the doctor to hunt the
+       dropdown.
+
+       The procedure below is the owner's actual case, not a nonsense string: it
+       names a real, specific operation whose terms DO land on a template
+       (levels, laterality, approach) without ever reaching the confidence
+       margin. That is what "can't find a match" means at the keyboard.
+       Pure noise is a different case and is asserted separately in 4e - a row
+       with no procedure signal at all has nothing to be close TO, and guessing
+       there would attach an operative template to a routine follow-up. */
+    /* WHICH string is a near miss depends on the library, so the harness finds
+       one instead of asserting a guess about it. The list is fixed in source
+       (no drift); the search only decides which of these this particular
+       library cannot resolve confidently. Requiring score > 0 AND
+       confident === false is the definition of a near miss, and the run records
+       which string qualified so the evidence names itself. */
+    const NEAR_MISS_CANDIDATES = [
+      'Lumbar paraspinal injection under ultrasound guidance',
+      'Bilateral paraspinal injection, levels to be determined',
+      'Lumbar injection for myofascial pain',
+      'Paraspinal muscle injection'
+    ];
+    const nearPick = await evaluate(cdp, `(() => {
+      const api = window.__mlsOpNoteIntegrity;
+      return ${JSON.stringify(NEAR_MISS_CANDIDATES)}.map(s => {
+        const d = api.best(s);
+        return { s, confident: !!d.confident, score: d.score, hasCandidate: !!d.candidate,
+                 noProcedure: !!d.noProcedure, multi: !!d.multi, conflicts: !!d.conflicts };
+      });
+    })()`, { userGesture: false });
+    const near = (nearPick || []).find((x) => !x.confident && x.score > 0 && x.hasCandidate && !x.noProcedure && !x.multi && !x.conflicts);
+    assert(near, `no candidate string is a near miss against this library, so 4d cannot be proven: ${JSON.stringify(nearPick)}`);
+    const NEAR_MISS = near.s;
+
+    const noMatch = await evaluate(cdp, `(() => {
+      const api = window.__mlsOpNoteIntegrity;
+      const direct = api.best(${JSON.stringify(NEAR_MISS)});
+      const r = (window._opPrep || [])[0];
+      const before = { tplId:String(r.tplId||''), guess: !!r._tplClosestGuess };
+      /* drive the real button handler, not the ranker */
+      r.tplManual = false;
+      r.proc = ${JSON.stringify(NEAR_MISS)};
+      window._opAutoTpl(0);
+      const after = (window._opPrep || [])[0];
+      return {
+        confident: !!direct.confident, score: direct.score, hadCandidate: !!direct.candidate,
+        before, afterTplId: String(after.tplId||''), afterGuess: !!after._tplClosestGuess,
+        afterSource: String(after.tplMatchSource||'')
+      };
+    })()`, { userGesture: false });
+    assert.strictEqual(noMatch.confident, false, `the near-miss probe matched confidently, so it proves nothing: ${JSON.stringify(noMatch)}`);
+    assert(noMatch.score > 0, `the near-miss probe scored zero, i.e. it is noise rather than a near miss: ${JSON.stringify(noMatch)}`);
+    assert(noMatch.afterTplId, `Match template gave up and left the row with no template: ${JSON.stringify(noMatch)}`);
+    assert.strictEqual(noMatch.afterSource, 'closest', `the row was not recorded as a closest match: ${JSON.stringify(noMatch)}`);
+    assert.strictEqual(noMatch.afterGuess, true, `the row was not flagged as a closest-guess, so nothing downstream can warn: ${JSON.stringify(noMatch)}`);
+    record('4d. A NEAR MISS still lands on the closest template, flagged as a guess', 'PASS',
+      `"${NEAR_MISS}" scored ${noMatch.score} against the library but never reached confidence; _opAutoTpl(0) still set ` +
+      `tplId=${noMatch.afterTplId}, tplMatchSource="closest" and row._tplClosestGuess=true (the flag the draft ledger reads ` +
+      `to warn, and the flag the card reads to show its amber "check this" line). It no longer refuses and leaves the row empty.`);
+
+    /* ---- STEP 4e: THE TWO REFUSALS THAT MUST SURVIVE THE FALLBACK ----
+       4d loosened the matcher on purpose, and this is the guard that keeps the
+       loosening honest. feat_mls_opnote_integrity.js refuses to match in two
+       cases that are NOT ambiguity and must never become a guess:
+
+         "no procedure was performed" - attaching a procedure template to a
+           visit that states none happened is fabricating an operation.
+         a row naming TWO procedures - guessing is picking one operation over
+           another by coin flip, which is worse than asking.
+
+       If the closest-guess fallback ever swallows these, an op note gets
+       written for surgery that did not happen, or for the wrong surgery. That
+       is the most serious thing in this file, so it is asserted directly
+       against the canonical matcher rather than inferred from the UI. */
+    const refusals = await evaluate(cdp, `(() => {
+      const api = window.__mlsOpNoteIntegrity;
+      if (!api || typeof api.bestFor !== 'function') return { ok:false, why:'the canonical matcher is not exposed' };
+      const none = api.bestFor('Synthetic Refusal Patient', 'No procedure was performed today; visit was consultation only.', '1970-01-01', '');
+      const two  = api.bestFor('Synthetic Refusal Patient', 'TFESI vs medial branch block — decide at visit', '1970-01-01', '');
+      const noise = api.bestFor('Synthetic Refusal Patient', 'Routine follow-up', '1970-01-01', '');
+      const near  = api.bestFor('Synthetic Refusal Patient', ${JSON.stringify(NEAR_MISS)}, '1970-01-01', '');
+      return { ok:true, none:{tplId:String(none.tplId||''), source:String(none.source||'')},
+        two:{tplId:String(two.tplId||''), source:String(two.source||'')},
+        noise:{tplId:String(noise.tplId||''), source:String(noise.source||''), facts:api.parseProcedureFacts('Routine follow-up')},
+        nearFacts:api.parseProcedureFacts(${JSON.stringify(NEAR_MISS)}),
+        near:{tplId:String(near.tplId||''), source:String(near.source||'')} };
+    })()`, { userGesture: false });
+    assert(refusals && refusals.ok, `could not reach the canonical matcher: ${JSON.stringify(refusals)}`);
+    assert.strictEqual(refusals.none.tplId, '', `a visit stating NO procedure was given a procedure template: ${JSON.stringify(refusals)}`);
+    assert.strictEqual(refusals.none.source, 'no-procedure', `the no-procedure refusal lost its reason: ${JSON.stringify(refusals)}`);
+    assert.strictEqual(refusals.two.tplId, '', `a row naming two different procedures was auto-matched to one of them: ${JSON.stringify(refusals)}`);
+    /* The third refusal is not a safety rule, it is an honesty rule: a row with
+       no procedure signal has nothing to be CLOSE to, so rank[0] is whichever
+       template sorts first, and calling that "the closest" would be a lie told
+       on a visit with no operation in it. */
+    assert.strictEqual(refusals.noise.tplId, '', `a routine follow-up with no procedure signal was given a procedure template: ${JSON.stringify(refusals)}`);
+    /* Pin the DISCRIMINATOR too, not just the outcome. If procedureFacts ever
+       starts returning a region for "Routine follow-up", the assertion above
+       would fail with no clue why; this says which fact went missing. */
+    assert.deepStrictEqual(
+      { type: refusals.noise.facts.procedureType, region: refusals.noise.facts.region, side: refusals.noise.facts.side,
+        levels: refusals.noise.facts.levelCount, approach: refusals.noise.facts.approach },
+      { type: '', region: '', side: '', levels: 0, approach: '' },
+      `"Routine follow-up" parsed a procedure fact, so the noise/near-miss discriminator no longer separates them: ${JSON.stringify(refusals)}`);
+    assert(refusals.nearFacts.procedureType || refusals.nearFacts.region || refusals.nearFacts.side ||
+      refusals.nearFacts.levelCount > 0 || refusals.nearFacts.approach,
+      `the near miss parsed NO procedure fact, so it should not have been guessed either: ${JSON.stringify(refusals)}`);
+    assert.strictEqual(refusals.near.source, 'closest', `a real near miss did not produce a closest guess, so 4d passed for the wrong reason: ${JSON.stringify(refusals)}`);
+    record('4e. THE REFUSALS SURVIVE the closest-guess fallback', 'PASS',
+      `"No procedure was performed" -> tplId:"" source:"${refusals.none.source}"; ` +
+      `"TFESI vs medial branch block" -> tplId:"" source:"${refusals.two.source}"; ` +
+      `"Routine follow-up" (no signal at all) -> tplId:"" source:"${refusals.noise.source}"; ` +
+      `a real near miss -> source:"${refusals.near.source}" with a template. The fallback reaches near misses only.`);
+
     /* put the uploaded template back - also a manual pick, so drafting is deterministic */
+    await evaluate(cdp, `(() => { const r=(window._opPrep||[])[0];
+      r.proc=${JSON.stringify(SYNTHETIC_PROCEDURE)}; delete r._tplClosestGuess; window.opPrepRender(); return true; })()`, { userGesture: false });
+    await sleep(200);
     await click(cdp, `#oprTplRail .opr-tpl-item[data-tpl-id="${templateId}"]`);
     await sleep(200);
     const restored = await evaluate(cdp, `(() => {

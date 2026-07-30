@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "step": "1. synthetic signup + login on an isolated origin",
+      "verdict": "PASS",
+      "evidence": "demo=1, backendMode=false, model stub installed (7 non-AI fetches passed through)"
+    },
+    {
+      "step": "2. upload a template through the real Templates UI",
+      "verdict": "PASS",
+      "evidence": "opened via #mlsDock [data-dest=\"tools\"] > Tools > \"Prep op notes\" -> #oprTabTpls; saved id=tpl17854534139081t1; text round-tripped byte-for-byte (763 chars); keywords=[\"trigger point\",\"paraspinal\",\"synthetic fixture\"]; visible library row present; library now holds 4 templates"
+    },
+    {
+      "step": "3. synthetic patient + a procedure the template can match",
+      "verdict": "PASS",
+      "evidence": "patient id=p17854534149370do (synthetic, dob=1979-03-04); one op-note row; procedure typed into the real #opPrepProc_0 field: \"Bilateral lumbar paraspinal trigger point injections\"; row template before typing was {\"tplId\":\"\",\"tplManual\":false,\"proc\":\"\",\"source\":\"unmatched\"}"
+    },
+    {
+      "step": "4a. AUTO-PICKER: no manual pick, row resolves to the uploaded template",
+      "verdict": "PASS",
+      "evidence": "procedure classified as \"trigger_point\"; row.tplId=tpl17854534139081t1 (=uploaded), tplManual=false, source=\"reason\" (procedure class); visible picker shows it; badge reads \"(matched from procedure)\""
+    },
+    {
+      "step": "4b. MANUAL PICK beats the auto-match and survives a re-render",
+      "verdict": "PASS",
+      "evidence": "clicked \"Caudal Epidural Steroid Injection\" in the left rail -> tplManual=true, tplId=pkg_caudal_epidural_steroid_injection; after window.opPrepRender() it is still pkg_caudal_epidural_steroid_injection with aria-pressed on that rail item and badge \"(your selection)\""
+    },
+    {
+      "step": "4c. KEYWORDS: a term typed only into the optional keywords box wins the match",
+      "verdict": "PASS",
+      "evidence": "wrote \"zzsynthkw9081t1\" into #tplDetKw on \"Caudal Epidural Steroid Injection\" and pressed the real Save; stored as [\"zzsynthkw9081t1\"]; the token appears in 0 template names or bodies; _opRankTemplates(\"zzsynthkw9081t1\") ranks that template first with score 3"
+    },
+    {
+      "step": "4d. A NEAR MISS still lands on the closest template, flagged as a guess",
+      "verdict": "PASS",
+      "evidence": "\"Lumbar paraspinal injection under ultrasound guidance\" scored 6 against the library but never reached confidence; _opAutoTpl(0) still set tplId=pkg_lumbar_facet_joint_injection, tplMatchSource=\"closest\" and row._tplClosestGuess=true (the flag the draft ledger reads to warn, and the flag the card reads to show its amber \"check this\" line). It no longer refuses and leaves the row empty."
+    }
+  ],
+  "defects": []
+}

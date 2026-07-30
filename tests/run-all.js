@@ -54,6 +54,11 @@ const tests = [
      subtrees and they fail silently, so the suite that proves none of them moved
      is more important than the one that proves the pixels changed. */
   'opnote-templates-grips-survive-redesign.test.js',
+  /* b813 — the owner asked the matcher to stop giving up and offer the closest
+     template. That is a deliberate loosening of a matcher whose whole job is to
+     refuse when unsure, so this is its fence: four refusals that must survive
+     it, each written because the first version of the fallback broke it. */
+  'closest-guess-never-invents-a-procedure.test.js',
   'opnote-template-rail-is-clickable.test.js',
   /* b798 — the owner named the fill-in-the-blank path and the missing animations
      explicitly. The first pins the placeholder mechanism across every new

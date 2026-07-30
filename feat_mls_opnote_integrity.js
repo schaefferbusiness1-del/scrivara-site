@@ -516,12 +516,112 @@
     parts.push(S(p.reason), S(p.summary), S(p.problems));
     return parts.join(' ').replace(/\s+/g,' ').slice(0,2200);
   }
+  /* THE CLOSEST OPTION, WHEN THERE IS ONE THAT IS SAFE TO OFFER.
+     OWNER, verbatim: "fix up the auto match system where it doesnt give up if
+     it cant find a match and just warns the user but finds the closet option".
+
+     best() already computes the closest template and already hands it back as
+     `candidate` - and bestFor threw it away, returning tplId:'' so the row sat
+     empty and the doctor went hunting in the dropdown. Nothing new is computed
+     here; a value that was being discarded is now offered, marked as a guess.
+
+     TWO OF best()'s REFUSALS ARE SAFETY REFUSALS AND NEVER GUESS, which is the
+     whole reason this is a filter rather than "use rank[0]":
+
+       noProcedure - the visit text SAYS no procedure was performed. Attaching a
+         procedure template to that is fabricating an operation. It carries no
+         candidate, deliberately, and must not acquire one.
+       multi - the row names two different procedures ("TFESI vs MBB - decide at
+         visit"). Guessing is picking one operation over another by coin flip,
+         which is worse than asking. Also carries no candidate.
+       conflicts - the closest template was measured as INCOMPATIBLE with the
+         requested procedure (wrong side, wrong region, wrong approach). It does
+         carry a candidate, and that candidate is the one thing we know is
+         wrong, so it is excluded by name.
+
+     What is left is genuine ambiguity - "no classified procedure signal",
+     "ambiguous", a thin keyword margin - and there the closest template with a
+     visible warning is exactly what was asked for. */
+  /* THERE HAS TO BE SOMETHING TO BE CLOSE TO.
+     Caught by tests/opnote-verified-history-repair-runtime.test.js, which feeds
+     the procedure "Routine follow-up" and requires that it match nothing. It is
+     right, and the first two versions of this fallback broke it. Attaching an
+     operative-note template to a visit whose text names no operation is the
+     same failure as the noProcedure case, arrived at by a different road.
+
+     A score threshold was tried and rejected on the measurements: real near
+     misses in the live library score 3, 4, 6 and 6, and "Routine follow-up"
+     scores 2 - not because anything about it is procedural, but because the
+     word "follow" appears in the FOLLOW-UP heading inside template bodies. Two
+     points of incidental prose is not a signal, and no number between 2 and 3
+     is defensible.
+
+     So the question is asked of the module's own clinical parser instead of a
+     scoreboard. MEASURED:
+       "Routine follow-up"                      -> type "", region "", side "",
+                                                   0 levels, approach ""
+       "Lumbar paraspinal injection under
+        ultrasound guidance"                    -> region "lumbar"
+     One parsed procedure fact - a type, a region, a side, a level or an
+     approach - is the difference between "he named an operation and nothing
+     quite matched it" and "he named no operation at all". The first is the case
+     the owner asked to stop giving up on; the second must keep refusing. The
+     positive score is kept as well, so a fact with no template support anywhere
+     still does not manufacture a closest. */
+  function hasProcedureSignal(text) {
+    var f; try { f = procedureFacts(text); } catch (e) { return false; }
+    return !!(f && (f.procedureType || f.region || f.side || f.levelCount > 0 || f.approach));
+  }
+  /* A GUESS MAY NOT INVENT AN APPROACH.
+     Caught by tests/opnote-workflow-hardening-runtime.test.js: "Lumbar ESI"
+     with several lumbar candidates must refuse, and this fallback made it pick
+     one. That refusal is not fussiness. "Lumbar ESI" is the family PARENT
+     (generic_esi); its children - transforaminal, interlaminar, caudal - are
+     three different operations through three different needles. Silently
+     resolving the parent to one child writes a note asserting an approach the
+     doctor never said, and the fidelity layer downstream would then treat that
+     invented approach as the requested fact and defend it.
+     Narrowing WITHIN a family is the one direction that is never a near miss,
+     so it is the one direction a guess may not travel. The reverse is
+     untouched: a specific request against a generic template is safe, because
+     the approach then comes from the procedure text and not from the template. */
+  function narrowsWithinFamily(text, tpl) {
+    var pc, tc;
+    try { pc = procClass(text); tc = templateClass(tpl); } catch (e) { return false; }
+    if (!pc || !tc || pc === tc) return false;
+    return pc === 'generic_esi' && !!ESI_FAMILY[tc];
+  }
+  function closestGuess(r, text) {
+    if (!r || r.confident) return null;
+    if (r.noProcedure || r.multi || r.conflicts) return null;
+    if (!(r.score > 0)) return null;
+    if (!hasProcedureSignal(text)) return null;
+    if (r.candidate && narrowsWithinFamily(text, r.candidate)) return null;
+    return r.candidate || null;
+  }
   function bestFor(name, reason, dob, patientId) {
     var direct = best(reason);
     if (direct.noProcedure) return { tplId:'', source:'no-procedure', score:0, reason:'The visit text states no procedure was performed' };
     if (direct.confident) return { tplId:direct.tpl.id, source:'reason', score:direct.score, reason:direct.reason };
     var p = exactPatient(name, dob, patientId), hs = historySignal(p), fromHistory = best(hs);
     if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason };
+    /* GUESS FROM THE PROCEDURE TEXT ONLY, NEVER FROM HISTORY.
+       Caught by the 4e guard on the first attempt at this, which fell back to
+       the history branch when the direct one produced nothing: for a row naming
+       TWO procedures, the direct branch correctly refused - and then the history
+       branch rescued it. historySignal() on a patient with no chart returns '',
+       best('') is not a safety refusal, so it hands back the first template in
+       the library as its `candidate`, and a row that says "TFESI vs medial
+       branch block" was auto-matched to one of them on the strength of nothing
+       at all.
+       A guess is only meaningful against what the doctor actually typed, so it
+       comes from `direct` alone. History still matches - it just has to be
+       CONFIDENT to do it, which is the branch above. */
+    var guess = closestGuess(direct, reason);
+    if (guess) {
+      return { tplId:guess.id, source:'closest', guess:true, score:direct.score || 0,
+        reason:'closest match only (' + S(direct.reason || 'ambiguous') + ') — check it, or add a keyword to that template' };
+    }
     return { tplId:'', source:'unmatched', score:0, reason:'No unambiguous procedure signal' };
   }
   /* ONE matcher for every surface: preview, prep, note formatting, and safety
@@ -543,7 +643,12 @@
        proven live: the b717 base carried it, THIS owner ran, every row lost
        its day and the cc silently dropped its date segment. */
     scope = scope || {};
-    return { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId), providerId:S(scope.providerId||scope.provider_id||''), providerName:S(scope.providerName||scope.provider_name||scope.provider||''), facilityId:S(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:S(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:reason||'', dateStr:dateStr||'', dateKey:S(dateKey||''), tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
+    var built = { patientId:S(patientId), appt:{name:name,reason:reason||'',dob:dob||'',patientId:S(patientId), providerId:S(scope.providerId||scope.provider_id||''), providerName:S(scope.providerName||scope.provider_name||scope.provider||''), facilityId:S(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:S(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:reason||'', dateStr:dateStr||'', dateKey:S(dateKey||''), tplId:m.tplId, tplManual:false, tplMatchSource:m.source, tplMatchReason:m.reason, note:'', missing:[], values:{}, gen:false };
+    /* A row born on a closest-guess carries the flag from birth. Without this
+       the day view would fill with guessed templates that the draft ledger
+       reports as confident, which is the one outcome worse than an empty row. */
+    markGuess(built, m);
+    return built;
   }
   newRow.__omb = true;
 
@@ -554,17 +659,38 @@
     if (row.tplManual) return;
     var m=bestFor(row.appt.name,value,row.appt.dob,row.patientId);
     row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason;
+    markGuess(row, m);
     try { var sel=document.getElementById('opPrepTpl_'+i); if(sel) sel.value=row.tplId; } catch(e2) {}
     syncTplStatus(i);
+  }
+  /* ONE writer for the guess flag. mls-connect.js's draft ledger reads
+     row._tplClosestGuess to decide whether a drafted row is announced as
+     low-confidence, and the base ScribeFlow matcher sets it too - so a second
+     spelling of "this was a guess" would make the two disagree. Keyed off the
+     source this module already records, and cleared on any confident match so a
+     row cannot stay flagged after the doctor fixes the procedure text. */
+  function markGuess(row, m) {
+    if (!row) return;
+    if (m && m.source === 'closest') { row._tplClosestGuess = true; return; }
+    try { delete row._tplClosestGuess; } catch (e) {}
   }
   function autoTpl(i) {
     var row=(window._opPrep||[])[i]; if(!row) return;
     row.tplManual=false;
     var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);
     row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason;
+    markGuess(row, m);
     if(isFn(window.opPrepRender)) window.opPrepRender();
-    if(m.tplId) toast('Matched '+(m.source==='history'?'from this patient’s history: ':'')+(isFn(window.getTemplateById)&&window.getTemplateById(m.tplId)?window.getTemplateById(m.tplId).name:'template'),'ok');
-    else toast('No unambiguous match yet — choose the procedure template once, or add the planned procedure to the appointment.','err');
+    var nm=(isFn(window.getTemplateById)&&window.getTemplateById(m.tplId))?window.getTemplateById(m.tplId).name:'template';
+    if(m.source==='closest'){
+      /* 'warn', not 'err'. The doctor got something usable and needs to check
+         it; a red toast on a successful-if-uncertain action reads as a failure
+         and teaches him to stop pressing the button. */
+      toast('No exact match — used the closest: '+nm+'. Check it, or add a keyword to that template.','warn');
+    }
+    else if(m.tplId) toast('Matched '+(m.source==='history'?'from this patient’s history: ':'')+nm,'ok');
+    else if(m.source==='no-procedure') toast('This visit states no procedure was performed, so no procedure template was applied.','err');
+    else toast('This row names more than one procedure — choose the template once so the note cannot be for the wrong operation.','err');
   }
 
   function statusText(row) {
@@ -577,6 +703,11 @@
       return { text:'(⚠ draft below is from “'+((wasTpl&&wasTpl.name)||'the previous template')+'” — Re-draft to apply this template)', color:'#b4231e' };
     }
     if (row.tplManual || row.tplMatchSource === 'manual') return { text:'(your selection)', color:'#2456d3' };
+    /* A GUESS HAS TO LOOK LIKE A GUESS. The toast that announced it is gone
+       seconds later, and the row then reads identically to a confident match -
+       so the one state that needs checking would be the one state with no
+       standing evidence on screen. Amber, and it says what to do about it. */
+    if (row.tplMatchSource === 'closest') return { text:'(closest match — check this, or add a keyword to that template)', color:'#8A5A00' };
     if (row.tplMatchSource === 'history') return { text:"(matched from this patient's history)", color:'#127a55' };
     if (row.tplMatchSource === 'reason') return { text:'(matched from procedure)', color:'#127a55' };
     return { text:'(template selected)', color:'#127a55' };
@@ -1279,7 +1410,7 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;markGuess(row,m);syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
         /* oni-2.14.0 owner directive: warn but still go through. Auto-matched
            rows first try a reroute to a genuinely compatible template ("its
            best fix"); manual picks are respected and adapted in place. */
