@@ -61,6 +61,13 @@ const tests = [
      magic layer animated nothing: it styled five classes and set none. */
   'fill-in-the-blank-survives.test.js',
   'styled-trigger-classes-have-writers.test.js',
+  /* The DYNAMIC counterpart: dispatch the real event, assert the class lands on
+     the real node. A writer that exists but is unreachable passes the static
+     check and fails this one. */
+  'magic-moments-actually-fire.test.js',
+  /* b799 — the Templates UI proved by execution: no dead buttons, and the six new
+     animations emitted, off-switched, and their wrappers actually run. */
+  'templates-ui-proved-working.test.js',
   'opnote-room-walkthrough-runtime.test.js',
   'opnote-follow-modes-differ.test.js',
   'ui-clinical-pass.test.js',

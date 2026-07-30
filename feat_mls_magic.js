@@ -81,10 +81,19 @@
      'background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);' +
      'transform:translateX(-100%);animation:mgShimmer 1.4s linear infinite'],
 
-    /* 5. the banner patient changing — crossfade the EXISTING content */
-    ['#patientLabel, .mls-pt-banner-name',
+    /* 5. the banner patient changing — crossfade the EXISTING content.
+       RETARGETED 2026-07-29 after a read-only audit caught TWO errors here, both
+       mine and both the defect class this module exists to avoid:
+         - `#patientLabel` is a text INPUT (ScribeFlow.html:3020), not the banner.
+           Fading a form field the doctor may be typing in is wrong on every axis.
+         - `.mls-pt-banner-name` existed in NO file except this one. A class only
+           its own stylesheet mentions is the definition of dead CSS.
+       `#patientBarInner` is the element renderPatientBar actually writes
+       (ScribeFlow.html:12213 -> getElementById('patientBarInner')), so the
+       crossfade now lands on the content that genuinely changes. */
+    ['#patientBarInner',
      'transition:opacity ' + D2 + ' ' + EO],
-    ['body.mg-pt-swap #patientLabel, body.mg-pt-swap .mls-pt-banner-name',
+    ['body.mg-pt-swap #patientBarInner',
      'opacity:.35']
   ];
 
@@ -104,11 +113,78 @@
     'body.mls-recording #mlsStages .st.now .dot, body.mls-recording #mlsPullProgPanel .pp-wait::after' +
     '{animation:none!important}';
 
+  /* =========================================================================
+     2026-07-29 — SIX MORE MOMENTS, EACH WITH A CITED TRIGGER.
+     Owner: "make apple like magical animatioons all over ... to make thiungs
+     ifelel intuitive" / "at least 5 new amazing anumations".
+
+     The rule this module learned the hard way: a keyframe with no trigger is
+     decoration that animates nothing. So every entry names the exact thing that
+     fires it, and tests/magic-moments-actually-fire.test.js dispatches that thing
+     and asserts the class lands on the real node.
+
+     WHY THESE SIX. Each answers a question a doctor is actually asking:
+       did my pick land?           -> the applied template commits
+       which one am I reading?     -> the preview sheet arrives FROM the list
+       did my upload save?         -> the new template lands in the library
+       will it take this file?     -> the drop zone leans in
+       what did I just choose?     -> the mode tile confirms
+       is this patient done?       -> the saved row settles
+     Motion that answers a question is intuition; motion that does not is noise on
+     a medical record, and was rejected. */
+  var MX = [
+    /* 1. THE APPLIED TEMPLATE COMMITS. Trigger: buildTplRail writes
+          .opr-tpl-item.on (feat_mls_opnote_room.js) on every apply. */
+    ['.opr-tpl-item.on', 'animation:mgxCommit ' + D3 + ' ' + EO + ' both'],
+    /* the armed state leans forward so "click again to switch" is felt, not read */
+    ['.opr-tpl-item.armed', 'animation:mgxArm ' + D2 + ' ' + EO + ' both'],
+
+    /* 2. THE PREVIEW SHEET ARRIVES. Trigger: the renderTplDetail wrapper below. */
+    ['#tplDetail.mgx-arrive', 'animation:mgxSheet ' + D3 + ' ' + EO + ' both'],
+
+    /* 3. A TEMPLATE LANDS IN THE LIBRARY. Trigger: the saveTemplateFromForm
+          wrapper below. The list settles ONCE, not per row - renderTemplateList
+          rebuilds by innerHTML, so a per-row stagger would replay on every
+          keystroke in the search box. That is the nausea case. */
+    ['#tplList.mgx-landed', 'animation:mgxSettleIn ' + D4 + ' ' + EO + ' both'],
+
+    /* 4. THE DROP ZONE LEANS IN. Trigger: a real hover. _tplDragOver owns the
+          COLOUR inline (ScribeFlow.html:16320), so only transform is ours -
+          animating colour here would fight the drag feedback. */
+    ['#tplDropZone, #tplMultiDrop', 'transition:transform ' + D2 + ' ' + EO],
+    ['#tplDropZone:hover, #tplMultiDrop:hover', 'transform:scale(1.006)'],
+
+    /* 5. THE MODE TILE CONFIRMS. Trigger: aria-pressed, written by buildTplMode
+          on every click. */
+    ['.opr-tplmode[aria-pressed="true"]', 'animation:mgxPick ' + D3 + ' ' + EO + ' both'],
+
+    /* 6. A PATIENT'S CHART LANDED. Trigger: .pp-ok, emitted by the pull panel's
+          own row renderer for a row that saved. */
+    ['#mlsPullProgPanel .pp-ok', 'animation:mgxDone ' + D3 + ' ' + EO + ' both']
+  ];
+
+  var MX_KEYFRAMES = [
+    /* a commit is a short confident settle - never a bounce on a medical record */
+    '@keyframes mgxCommit{0%{transform:scale(.985)}55%{transform:scale(1.004)}100%{transform:none}}',
+    '@keyframes mgxArm{from{transform:none}to{transform:translateX(2px)}}',
+    /* the sheet enters from the LEFT because that is where the list is - the
+       direction IS the message: it says where this content came from */
+    '@keyframes mgxSheet{from{opacity:0;transform:translateX(-6px) scale(.995)}to{opacity:1;transform:none}}',
+    '@keyframes mgxSettleIn{from{opacity:.55;transform:translateY(-4px)}to{opacity:1;transform:none}}',
+    '@keyframes mgxPick{0%{transform:scale(.99)}60%{transform:scale(1.006)}100%{transform:none}}',
+    '@keyframes mgxDone{from{opacity:.4;transform:scale(.96)}to{opacity:1;transform:none}}'
+  ].join('\n');
+
   function build() {
-    var out = [KEYFRAMES], kill = [];
-    MOMENTS.forEach(function (m) {
+    var out = [KEYFRAMES, MX_KEYFRAMES], kill = [];
+    /* MOMENTS and MX go through the SAME loop, so a rule added to either table
+       cannot ship without its generated reduced-motion off-switch. The filter
+       matches rules that turn motion ON: `animation:none` is an off-switch, not
+       an animation, and counting those was a real false positive earlier today. */
+    MOMENTS.concat(MX).forEach(function (m) {
       out.push(m[0] + '{' + m[1] + '}');
-      if (/animation|transition/.test(m[1])) kill.push(m[0]);
+      if (/animation\s*:\s*(?!none)[a-zA-Z]/.test(m[1]) ||
+          /transition\s*:\s*(?!none)[a-zA-Z-]+\s/.test(m[1])) kill.push(m[0]);
     });
     out.push(GUARDS);
     out.push('@media (prefers-reduced-motion: reduce){' +
@@ -162,7 +238,27 @@
 
   /* A note just arrived: the card lifts in, and the whole app now knows a note is
      on screen. */
+  /* mls:generation-complete DOES NOT MEAN A NOTE ARRIVED. An audit traced its
+     three dispatch sites and it means generation SETTLED - it fires on the
+     no-API-key refusal (ScribeFlow.html:19497), on the offline-example path
+     (:19501), and from the `finally` block of the real generate (:19553), which
+     runs on timeout and on error too. Celebrating that unconditionally is the
+     same lie as a toast over a silent failure, and this module was congratulating
+     the doctor on a note that did not exist.
+     So the moment now asks the DOM whether there is actually a note. That is a
+     fact, not a claim - and an animation should never assert more than the app
+     can back. */
+  function haveNote() {
+    return safe(function () {
+      var box = document.getElementById('noteBox');
+      if (box && String(box.value == null ? '' : box.value).trim().length > 20) return true;
+      var card = document.getElementById('noteCard');
+      return !!(card && String(card.textContent || '').trim().length > 20);
+    }, false);
+  }
+
   on(window, 'mls:generation-complete', function () {
+    if (!haveNote()) { noteLive(false); return; }   /* settled, but empty-handed */
     noteLive(true);
     safe(function () {
       var card = document.getElementById('noteCard');
@@ -189,7 +285,64 @@
     });
   });
 
+  /* WRAP-AND-EMIT. The Templates surface dispatches no events of its own, and an
+     observer is banned here (this app has been measured wedging the main thread
+     for minutes). So we wrap its own render functions - the idiom this codebase
+     already uses everywhere - and emit the moment after the real work returns.
+     That is a genuine trigger: it fires exactly when the thing it describes
+     happens, costs one call, and unwraps cleanly on revert. */
+  var wrapped = [];
+  function wrapEmit(name, nodeId, cls) {
+    safe(function () {
+      var orig = window[name];
+      if (typeof orig !== 'function' || orig.__mgxWrap) return;
+      var w = function () {
+        var r = orig.apply(this, arguments);
+        safe(function () {
+          var el = document.getElementById(nodeId);
+          if (!el) return;
+          /* remove -> reflow -> add, so the animation REPLAYS on a second
+             selection instead of sitting there already-classed */
+          el.classList.remove(cls);
+          void el.offsetWidth;
+          el.classList.add(cls);
+        });
+        return r;
+      };
+      w.__mgxWrap = true;
+      w.__mgxOrig = orig;
+      window[name] = w;
+      wrapped.push(name);
+    });
+  }
+  function wireTemplatesMoments() {
+    wrapEmit('renderTplDetail', 'tplDetail', 'mgx-arrive');
+    wrapEmit('saveTemplateFromForm', 'tplList', 'mgx-landed');
+  }
+  wireTemplatesMoments();
+  /* Templates loads late, so re-attempt when a view changes - event-driven, never
+     a poll, and idempotent because wrapEmit refuses an already-wrapped function. */
+  on(window, 'mls:view-changed', function () { safe(wireTemplatesMoments); });
+
+  api.moments = function () {
+    return { rules: MOMENTS.length + MX.length, wrapped: wrapped.slice() };
+  };
+
   api.revert = function () {
+    safe(function () {
+      wrapped.forEach(function (n) {
+        safe(function () {
+          if (window[n] && window[n].__mgxWrap && window[n].__mgxOrig) window[n] = window[n].__mgxOrig;
+        });
+      });
+      wrapped.length = 0;
+    });
+    safe(function () {
+      ['tplDetail', 'tplList'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) { el.classList.remove('mgx-arrive'); el.classList.remove('mgx-landed'); }
+      });
+    });
     safe(function () { if (swapTimer) clearTimeout(swapTimer); swapTimer = 0; });
     safe(function () {
       listeners.forEach(function (l) { safe(function () { l[0].removeEventListener(l[1], l[2], false); }); });
