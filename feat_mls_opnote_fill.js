@@ -123,17 +123,29 @@
   }
   function applyBulk(onlyBlank) {
     var sel = $('mlsOnfBulkSel'); if (!sel || !sel.value) { toast('Pick a procedure template first.', 'err'); return; }
-    var id = sel.value, op = window._opPrep || [], n = 0;
+    var id = sel.value, op = window._opPrep || [], n = 0, replacedManual = 0;
     for (var i = 0; i < op.length; i++) {
       if (!op[i]) continue;
       if (onlyBlank && op[i].tplId) continue;
+      /* 2026-07-29: "Apply to all" wrote tplId over rows the doctor had PICKED
+         himself while leaving tplManual true - so his choice was replaced and the
+         replacement was then locked in as if he had made it. Two honest changes:
+         a row written here is marked manual (this IS a deliberate human action,
+         and the row must not fall back to the auto-matcher afterwards), and the
+         count of hand-picked rows it replaced is reported below rather than
+         swallowed. Skipping them silently would be just as surprising in the
+         other direction - "apply to all" that did not. */
+      if (op[i].tplManual && String(op[i].tplId || '') !== String(id)) replacedManual++;
       op[i].tplId = id;
+      op[i].tplManual = true;
       var picker = $('opPrepTpl_' + i);
       if (picker) { picker.value = id; safe(function () { picker.dispatchEvent(new Event('change', { bubbles: true })); }); }
       n++;
     }
     updateBarCount();
-    toast('Assigned "' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'template') + '" to ' + n + ' patient' + (n === 1 ? '' : 's') + '. Press "Draft all op notes".', 'ok');
+    toast('Assigned "' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'template') + '" to ' + n + ' patient' + (n === 1 ? '' : 's')
+      + (replacedManual ? (' — this replaced ' + replacedManual + ' template' + (replacedManual === 1 ? '' : 's') + ' you had picked by hand') : '')
+      + '. Press "Draft all op notes".', replacedManual ? '' : 'ok');
   }
   function updateBarCount() {
     var c = safe(function () { return document.querySelector('#' + BAR_ID + ' .onf-count'); });

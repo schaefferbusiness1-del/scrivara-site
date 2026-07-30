@@ -419,7 +419,141 @@
     B + '#templatesModal .btn-green{ font-weight:750; border-radius:12px;' +
       ' min-height:42px; }',
     B + '#templatesModal .btn-ghost, ' + B + '#templatesModal .edit{' +
-      ' border-radius:12px; min-height:40px; font-weight:650; }'
+      ' border-radius:12px; min-height:40px; font-weight:650; }',
+
+    /* =====================================================================
+       2026-07-29 TEMPLATES TAB, REBUILT. Owner: "The templates tab looks
+       aweful so defantly completely re do taht and fix it."
+
+       He is right, and the reason is mechanical rather than a matter of taste.
+       This one screen is assembled by SIX owners - the base markup, the health
+       panel, the cloud library, the stdline section, the multi-upload block and
+       the list renderer - and they never agreed on anything. A measured
+       inventory of the subtree found THIRTEEN ids carrying inline styles across
+       28 distinct properties, plus runtime writers emitting hardcoded #204034,
+       #2E6A4B, #127a55, #f2f8f4 and #f7fbff. So: every radius, padding and font
+       size differs from its neighbour, nothing reads as the primary action, and
+       in dark theme the hardcoded near-whites become white slabs.
+
+       Two consequences for how this is written:
+         - !important is used deliberately and only where the inventory proves an
+           inline style would otherwise win. It is not decoration.
+         - NO new markup. Six modules inject into this subtree and four of them
+           walk it, so grouping is done with spacing, dividers and weight rather
+           than with wrapper elements. tests/opnote-templates-grips-survive-
+           redesign.test.js fails the build if that rule is broken.
+
+       The screen is made to read top-to-bottom as: ADD ONE -> YOUR LIBRARY ->
+       THE ONE YOU PICKED.
+       ===================================================================== */
+
+    /* --- the whole surface gets one rhythm --------------------------------- */
+    B + '#templatesModal .modal > h3{ font-size:19px; letter-spacing:-.015em;' +
+      ' margin:0 0 6px !important; }',
+    /* the <hr> between intake and library becomes a real section break */
+    B + '#templatesModal hr{ border:0 !important; border-top:1px solid var(--line) !important;' +
+      ' margin:26px 0 20px !important; }',
+    B + '#templatesModal h4{ font-size:15px !important; font-weight:750;' +
+      ' letter-spacing:-.01em; margin:0 !important; }',
+
+    /* --- ADD ONE: the intake reads as a single grouped task ---------------- */
+    B + '#templatesModal .row.tight{ gap:8px; flex-wrap:wrap; }',
+    /* Upload is the primary way in; paste is the alternative. Same size, clearly
+       different weight - never two co-equal primaries. */
+    B + '#templatesModal .edit{ background:var(--soft) !important;' +
+      ' border:1.5px solid var(--green-dk) !important; color:var(--ink) !important;' +
+      ' font-weight:750 !important; }',
+    B + '#templatesModal .edit:hover{ background:var(--card) !important; }',
+
+    /* --- YOUR LIBRARY ------------------------------------------------------ */
+    /* The search box is how a real library is used, so it gets prominence. */
+    B + '#tplSearch{ border:1.5px solid var(--line) !important; min-height:42px !important;' +
+      ' font-size:14px !important; }',
+    B + '#tplSearch:focus{ border-color:var(--green-dk) !important; }',
+
+    /* Rows: a real target, a wrapped name, and state that is never colour alone.
+       Padding and radius need !important (the renderer writes both inline);
+       border-COLOUR and background do not, because they encode selected/default
+       and overriding them would erase which template is which. */
+    /* 2026-07-29 SELF-CORRECTION, caught by audit before it reached the owner.
+       The first draft of this rule set `display:flex; align-items:center` here.
+       The row has THREE stacked block children (name+badge line, keywords, meta),
+       so that turned it into a row-direction flex container, flattened all three
+       onto one line and made the truncation below WORSE rather than better. The
+       row stays normal flow; only the target size and rhythm are ours. */
+    B + '#tplList > div{ min-height:46px; cursor:pointer;' +
+      ' margin-bottom:7px !important; }',
+    /* NEVER TRUNCATE A TEMPLATE NAME. The renderer puts
+       `flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`
+       on the name, and in this pane two templates differing only at the end -
+       "... L4-L5 ..." vs "... L5-S1 ..." - render as the SAME string. Choosing
+       the wrong one there is a wrong-level operative note. Same fix as the rail.
+
+       SELF-CORRECTION: the first draft of this used a CHILD combinator,
+       `#tplList > div > strong`, which matched ZERO elements - the renderer nests
+       the name one level deeper inside a `<div style="display:flex...">`. The
+       anti-truncation rule was dead, which is the same class of mistake as the
+       whole b795 batch: a rule that reads as shipped and changes nothing.
+       Descendant combinator, verified against the renderer's actual markup. */
+    B + '#tplList > div strong{ white-space:normal !important; overflow:visible !important;' +
+      ' text-overflow:clip !important; overflow-wrap:anywhere; line-height:1.35;' +
+      ' font-size:13.5px; font-weight:700; }',
+    /* the "DEFAULT" marker becomes a pill instead of loose green text */
+    B + '#tplList > div span[style*="#127a55"]{ background:var(--soft);' +
+      ' border:1px solid var(--green-dk); border-radius:999px;' +
+      ' padding:2px 8px; font-size:10px !important; letter-spacing:.03em; }',
+
+    /* --- THE ONE YOU PICKED: the preview pane ----------------------------- */
+    B + '#tplDetail h4, ' + B + '#tplDetail #tplDetName{ font-size:15px;' +
+      ' letter-spacing:-.01em; }',
+    B + '#tplDetail textarea{ border:1px solid var(--line); border-radius:12px;' +
+      ' padding:13px 15px; background:var(--bg); font-size:14px !important;' +
+      ' line-height:1.6; }',
+    B + '#tplDetail textarea:focus{ background:var(--card); border-color:var(--green-dk); }',
+    B + '#tplDetail .row{ gap:8px; flex-wrap:wrap; margin-top:12px !important; }',
+
+    /* --- the second drop zone must match the first ------------------------ */
+    B + '#tplMultiDrop{ border-width:2px !important; border-style:dashed !important;' +
+      ' border-radius:16px !important; padding:22px 18px !important;' +
+      ' font-size:13px !important; font-weight:600; line-height:1.5; }',
+    B + '#tplMultiStatus, ' + B + '#tplMultiResult{ font-size:12.5px !important;' +
+      ' line-height:1.5; }',
+
+    /* --- the injected panels join the same design ------------------------- */
+    B + '#tpfPanel, ' + B + '#tlPanel{ border:1px solid var(--line); border-radius:16px;' +
+      ' background:var(--card); padding:16px 18px; margin:14px 0;' +
+      ' box-shadow:0 6px 22px rgba(32,64,52,.05); }',
+    B + '#tpfPanel h4, ' + B + '#tlPanel h4{ margin:0 0 8px !important; }',
+
+    /* --- the two checkboxes read as settings, not as stray text ----------- */
+    B + '#templatesModal label:has(#tplUseToggle), ' +
+    B + '#templatesModal label:has(#tplAutoChoose){ display:flex; align-items:center;' +
+      ' gap:9px; min-height:40px; padding:6px 11px; border-radius:12px;' +
+      ' background:var(--bg); border:1px solid var(--line); font-size:13px;' +
+      ' font-weight:600; margin:6px 0 !important; cursor:pointer; }',
+    /* SELF-CORRECTION: both checkboxes carry an INLINE `width:auto`, so without
+       !important the width lost and the height won - a 17px-tall, auto-wide
+       checkbox, i.e. visibly non-square. Both dimensions must be forced. */
+    B + '#tplUseToggle, ' + B + '#tplAutoChoose{ width:17px !important;' +
+      ' height:17px !important; accent-color:var(--green-dk); flex:0 0 auto;' +
+      ' cursor:pointer; }',
+    /* And the master on/off switch must not be typeset like its own caption. My
+       `.field label` rule set 12px/--muted, which is exactly the caption style
+       beneath it - so "Use templates" read as small print rather than as the
+       setting that governs the whole screen. */
+    B + '#templatesModal label:has(#tplUseToggle), ' +
+    B + '#templatesModal label:has(#tplAutoChoose){ font-size:13.5px !important;' +
+      ' color:var(--ink) !important; font-weight:700 !important;' +
+      ' letter-spacing:0 !important; }',
+
+    /* --- DARK THEME: the hardcoded near-whites and greens the renderers emit.
+       Without these the pane is a set of white slabs with pale-green text on a
+       dark shell - which is most of why this screen "looks awful" for anyone in
+       dark mode. Attribute-matched, so light mode keeps the renderer's values. */
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#204034"]{ color:var(--green-dk) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#127a55"]{ color:var(--green-dk) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#fafcff"]{ background:var(--bg) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#cfe0f5"]{ border-color:var(--line) !important; }'
   ];
 
   /* Wide-only: the two-pane template workspace and the roomier editor. Gated so

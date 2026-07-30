@@ -285,6 +285,86 @@
   /* Which template is armed for a confirm-swap on an edited draft. Cleared on
      any row change, so it can never apply to a patient he has moved away from. */
   var ARMED_TPL = '';
+  /* ---------------------------------------------------------------------------
+     2026-07-29: A PICK THAT EVAPORATES IS NOT A PICK.
+
+     `tplManual` lived only in memory on the row object, and EVERY one of these
+     rebuilds window._opPrep from _opNewRow with `tplManual:false` plus a fresh
+     auto-match: switching between "This patient" and "All scheduled patients"
+     (opPrepSetMode), changing the day, opening whole-month mode, and simply
+     re-opening the room. So a template he deliberately chose was silently handed
+     back to the auto-matcher the moment he changed day - and the rail would then
+     show a different template as "in use" with no explanation.
+
+     The pick is remembered per PATIENT + PROCEDURE, not per row index, because
+     row order changes with the day. Restored on rebuild, and only ever used to
+     re-assert something he chose himself - it never invents a pick, so auto
+     matching still owns every row he has not touched.
+
+     Stored under the account namespace via window.uns (a satellite must call it
+     through window: `session` is a top-level let and is NOT on window). Bounded
+     to the most recent 400 entries so it cannot grow without limit. */
+  var PICK_KEY = 'opNoteTemplatePicks';
+
+  function pickIdFor(row) {
+    if (!row) return '';
+    var pid = S(row.patientId || (row.appt && row.appt.patientId) || '');
+    var nm = S(row.appt && row.appt.name ? row.appt.name : '').trim().toLowerCase();
+    var proc = S(row.proc || (row.appt && row.appt.reason) || '').trim().toLowerCase();
+    if (!pid && !nm) return '';
+    /* patient identity first, procedure second - the same procedure for the same
+       patient is the thing he was choosing a template for */
+    return (pid || nm) + '||' + proc;
+  }
+  function picksLoad() {
+    return safe(function () {
+      if (!isFn(window.uns)) return {};
+      var raw = localStorage.getItem(window.uns(PICK_KEY));
+      if (!raw) return {};
+      var o = JSON.parse(raw);
+      return (o && o.schema === 1 && o.picks && typeof o.picks === 'object') ? o.picks : {};
+    }, {});
+  }
+  function rememberPick(row, tplId) {
+    var k = pickIdFor(row);
+    if (!k || !tplId) return;
+    safe(function () {
+      if (!isFn(window.uns)) return;
+      var picks = picksLoad();
+      picks[k] = { tplId: S(tplId), at: Date.now() };
+      var keys = Object.keys(picks);
+      if (keys.length > 400) {
+        keys.sort(function (a, b) { return (picks[a].at || 0) - (picks[b].at || 0); });
+        for (var i = 0; i < keys.length - 400; i++) delete picks[keys[i]];
+      }
+      localStorage.setItem(window.uns(PICK_KEY), JSON.stringify({ schema: 1, picks: picks }));
+    });
+  }
+  /* Re-assert remembered picks onto a freshly built _opPrep. Only touches a row
+     whose remembered template STILL EXISTS, and never clears anything. */
+  function restorePicks() {
+    var rows = window._opPrep || [];
+    if (!rows.length) return 0;
+    var picks = picksLoad();
+    if (!picks || !Object.keys(picks).length) return 0;
+    var have = {};
+    safe(function () {
+      (window.getTemplates() || []).forEach(function (t) { if (t && t.id) have[S(t.id)] = 1; });
+    });
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || row.tplManual) continue;            /* already his - leave alone */
+      var rec = picks[pickIdFor(row)];
+      if (!rec || !rec.tplId || !have[S(rec.tplId)]) continue;
+      row.tplId = S(rec.tplId);
+      row.tplManual = true;                            /* it WAS his choice */
+      row.tplMatchSource = 'remembered';
+      n++;
+    }
+    return n;
+  }
+
   function curRow() {
     var rows = window._opPrep || [];
     if (!rows.length) return null;
@@ -330,6 +410,19 @@
 
     /* One delegated listener, re-attached with every innerHTML rebuild - the
        idiom buildNav already uses. Detached in revert() alongside the nav. */
+    /* 2026-07-29: the Edit affordance is a span with role=button and tabindex=0,
+       so a keyboard user can focus it and hear it announced as a button. Without
+       a keydown handler it did nothing on Enter or Space - a control that lies
+       about being a control. Space is preventDefault-ed so it cannot scroll. */
+    rail.onkeydown = function (e) {
+      if (!e || (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar')) return;
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var ed = t.closest('[data-tpl-edit]');
+      if (!ed) return;
+      e.preventDefault(); e.stopPropagation();
+      openTemplateForEdit(ed.getAttribute('data-tpl-edit'));
+    };
     rail.onclick = function (e) {
       var tgt = e.target;
       if (!tgt || !tgt.closest) return;
@@ -354,7 +447,21 @@
       safe(function () { if (isFn(window.toast)) window.toast('Open a procedure first, then pick a template for it.', 'err'); });
       return;
     }
-    if (S(cur.row.tplId) === id) return;   /* already in use - no-op, no churn */
+    /* 2026-07-29 BLOCKER FIX (this was my b796 bug, and it was exactly the thing
+       the owner asked for: "when u click and select a procidure it acatlly uised
+       that").
+       This line used to `return` when the clicked template already equalled
+       row.tplId - which is TRUE for every AUTO-MATCHED row, and the rail labels
+       that row "in use for this procedure". So clicking it to CONFIRM the choice
+       recorded nothing: tplManual stayed false, and a row without that flag is
+       still owned by the auto-matcher - feat_mls_opnote_integrity.js re-matches
+       at :1270 and can auto-reroute to a different template at :1282, both gated
+       only on `!row.tplManual`. The pick looked accepted and was not.
+       Confirming an auto-match is now a REAL act: it records the same manual flag
+       a dropdown pick does, which is what takes the row out of the matcher's
+       hands. Auto-matching is untouched for rows he has never touched - he asked
+       to keep it, and this is what makes "keep auto, but my pick wins" true. */
+    var alreadyThis = (S(cur.row.tplId) === id);
 
     /* A DRAFT HE HAS EDITED IS NOT OURS TO REPLACE. Changing the template is the
        first half of a re-draft, and this app has already shipped a bug where a
@@ -365,7 +472,7 @@
        and a frozen modal over the EMR is a defect this product has already had.
        Arming is also better here - it needs no reading, it is undone by clicking
        anything else, and it says what will happen in place. */
-    if (cur.row.gen && cur.row.edited && ARMED_TPL !== id) {
+    if (!alreadyThis && cur.row.gen && cur.row.edited && ARMED_TPL !== id) {
       ARMED_TPL = id;
       safe(buildTplRail);
       safe(function () {
@@ -378,6 +485,7 @@
     var sel = $('opPrepTpl_' + cur.i);
     cur.row.tplId = id;
     cur.row.tplManual = true;
+    safe(function () { rememberPick(cur.row, id); });
     if (sel) {
       safe(function () { sel.value = id; });
       safe(function () { sel.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -391,9 +499,11 @@
       var t = null, k;
       for (k = 0; k < list.length; k++) if (S(list[k].id) === id) { t = list[k]; break; }
       var nm = t && t.name ? t.name : 'Template';
-      window.toast(cur.row.gen
-        ? ('Template set to ' + nm + '. Re-draft this procedure to apply it.')
-        : ('Template set to ' + nm + '.'), 'ok');
+      window.toast(alreadyThis
+        ? (nm + ' is locked in for this procedure. Auto-matching will not change it.')
+        : (cur.row.gen
+          ? ('Template set to ' + nm + '. Re-draft this procedure to apply it.')
+          : ('Template set to ' + nm + '.')), 'ok');
     });
   }
 
@@ -481,6 +591,21 @@
      this template selected, which is the one door that owns editing. */
   function openTemplateForEdit(id) {
     id = S(id);
+    /* 2026-07-29: this wrote _tplUI.selectedId directly and never looked at
+       _tplUI.dirty, so opening another template from the rail THREW AWAY text he
+       had typed into the detail pane without a word. The base UI has a
+       mid-edit guard; honour it rather than reaching past it. Refusing loudly is
+       correct here - his unsaved wording is the thing of value. */
+    var dirty = safe(function () {
+      return !!(window._tplUI && window._tplUI.dirty && S(window._tplUI.selectedId) && S(window._tplUI.selectedId) !== id);
+    }, false);
+    if (dirty) {
+      safe(function () {
+        if (isFn(window.toast)) window.toast('You have unsaved changes in the template open below. Save or clear them first.', 'err');
+      });
+      safe(function () { if (isFn(window.openTemplates)) window.openTemplates(); });
+      return;
+    }
     safe(function () { if (window._tplUI) window._tplUI.selectedId = id; });
     safe(function () { if (isFn(window.openTemplates)) window.openTemplates(); });
     safe(function () { if (isFn(window.renderTemplateList)) window.renderTemplateList(); });
@@ -574,6 +699,11 @@
   window.addEventListener('keydown', onNavKey);
 
   function buildRails() {
+    /* BEFORE the rails are drawn, so the rail shows the template that will
+       actually be used rather than the auto-match it is about to be corrected
+       from. Returns a count; zero when he has never picked anything. */
+    var restored = safe(restorePicks, 0);
+    if (restored) safe(function () { if (isFn(window.opPrepRenderBadges)) window.opPrepRenderBadges(); });
     buildNav(); buildTplRail(); buildTplMode(); buildReceipt();
     safe(markSolo); safe(buildPager);
     /* self-heal: if the Templates tab is marked active but its modal is not

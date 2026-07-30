@@ -247,6 +247,56 @@ if (modeBox) {
   ok(typeof modeBox.onclick === 'function', 'the mode control is wired');
 }
 
+/* ---- CONFIRMING AN AUTO-MATCH MUST RECORD THE PICK --------------------
+   This was a real blocker shipped in b796. applyTemplateToCurrentRow early-
+   returned when the clicked template already equalled row.tplId - which is
+   exactly the state of every AUTO-MATCHED row, and the rail labels that row "in
+   use for this procedure". So clicking it to confirm recorded NOTHING: tplManual
+   stayed false, and feat_mls_opnote_integrity.js only leaves a row alone when
+   that flag is true (it re-matches at :1270 and can auto-reroute at :1282,
+   both gated on !row.tplManual). The pick looked accepted and was not - which is
+   precisely what the owner reported. */
+const rowsC = [{ appt: { name: 'AA BB' }, tplId: 'tpl-a', tplManual: false, gen: false, note: '', edited: false }];
+const rC = runRoom(TPLS, rowsC, true);
+clickRail(rC, 'tpl-a');                       /* the template ALREADY shown as in use */
+ok(rowsC[0].tplManual === true,
+  'CONFIRMING THE ALREADY-APPLIED TEMPLATE RECORDS IT AS A MANUAL PICK',
+  'tplManual is ' + rowsC[0].tplManual + ' - without this the auto-matcher still owns the row and can reroute it to a different template at draft time');
+ok(rowsC[0].tplId === 'tpl-a', 'and the template itself is unchanged');
+ok(rC.toasts.some(t => /locked in/.test(t.m)),
+  'and he is told it is locked in, rather than nothing happening');
+
+/* ---- A PICK MUST SURVIVE A REBUILD ----------------------------------------
+   tplManual lived only on the row object, and a mode switch, day change, month
+   open or reopen rebuilds _opPrep from _opNewRow with tplManual:false plus a
+   fresh auto-match. So a deliberate choice was silently handed back to the
+   matcher the moment he changed day. */
+const rowsD = [{ appt: { name: 'CC DD' }, patientId: 'p-9', proc: 'knee scope', tplId: 'tpl-a', tplManual: false, gen: false, note: '', edited: false }];
+const rD = runRoom(TPLS, rowsD, true);
+clickRail(rD, 'tpl-c');
+ok(rowsD[0].tplId === 'tpl-c' && rowsD[0].tplManual === true, 'a pick is applied');
+/* simulate the rebuild: a brand-new row array from _opNewRow, auto-matched back */
+const rebuilt = [{ appt: { name: 'CC DD' }, patientId: 'p-9', proc: 'knee scope', tplId: 'tpl-a', tplManual: false, gen: false, note: '', edited: false }];
+rD.win._opPrep = rebuilt;
+rD.api.rebuild();
+ok(rebuilt[0].tplId === 'tpl-c',
+  'HIS PICK IS RESTORED AFTER A REBUILD (mode switch / day change / reopen)',
+  'got ' + rebuilt[0].tplId + ' - a pick that evaporates on a day change is not a pick');
+ok(rebuilt[0].tplManual === true, 'and it is still flagged as his, so auto-match leaves it alone');
+
+/* auto-matching is UNTOUCHED for a row he never picked - he asked to keep it */
+const rowsE = [{ appt: { name: 'ZZ ZZ' }, patientId: 'p-77', proc: 'other', tplId: 'tpl-b', tplManual: false, gen: false, note: '', edited: false }];
+const rE = runRoom(TPLS, rowsE, true);
+rE.api.rebuild();
+ok(rowsE[0].tplManual !== true && rowsE[0].tplId === 'tpl-b',
+  'A ROW HE NEVER PICKED IS LEFT TO THE AUTO-MATCHER ("Still keep auto templates tho fs")',
+  'restore must never invent a pick');
+
+/* the Edit affordance answers the keyboard */
+ok(typeof rC.doc.getElementById('oprTplRail').onkeydown === 'function',
+  'the rail answers Enter/Space, so the Edit control is not keyboard-dead',
+  'it is a span with role=button and tabindex=0 - focusable and announced as a button');
+
 /* ======= PART 2 — the mode is real at BOTH ends of the generator ======== */
 const GEN = fs.readFileSync(path.join(ROOT, 'feat_mls_opnote_integrity.js'), 'utf8');
 
