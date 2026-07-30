@@ -143,9 +143,9 @@ function testPrepIdentityAndAddressScope() {
 }
 
 async function main() {
-  const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260723opnp170');
+  const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260730opnp180');
   const integrityAt = connector.indexOf('feat_mls_opnote_integrity.js?v=20260729phlinear');
-  const fillAt = connector.indexOf('feat_mls_opnote_fill.js?v=20260728onf2130');
+  const fillAt = connector.indexOf('feat_mls_opnote_fill.js?v=20260730onf2140');
   assert(prepAt >= 0 && prepAt < fillAt && fillAt < integrityAt, 'staging op-note assets are not loaded prep → canonical fill → final integrity owner');
   assert(connector.includes('window.__mlsCanonicalOpNoteFillRequested'), 'legacy fill fallback is not suppressed when canonical Fields is requested');
   assert(staging.includes('row.missing&&row.missing.length&&!_opCanonicalFillOwns()'), 'legacy one-at-a-time blank walker still renders beside canonical Fields');

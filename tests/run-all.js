@@ -376,26 +376,26 @@ const tests = [
   'copilot-panel-calm-contract.test.js',
   'opnote-graded-against-what-model-saw.test.js',
   'home-hero-follows-the-banner-patient.test.js',
-  /* b803 — the same law as the line above, on the day shape that law never
+  /* b808 — the same law as the line above, on the day shape that law never
      covered. home-hero-follows-the-banner-patient pins the EMPTY day; the owner
      found the working day, where the hero followed the schedule and the banner
      patient had no record offer at all. This one executes renderHome over
      twelve day-shape/selection combinations. */
   'visit-home-always-offers-the-banner-patient.test.js',
   'sweep-fixes-b711-contract.test.js',
-  /* b805 — the owner's own sentence, as a suite: "if a provider sets their name
+  /* b808 — the owner's own sentence, as a suite: "if a provider sets their name
      in settings then they go to do an op note it should fill in automatically."
      Executes the shipped resolution ladder. Also pins the two fabrications it
      found: the account credential being appended to another clinician's name,
      and the assistant line being filled with the primary surgeon. */
   'settings-identity-reaches-the-op-note.test.js',
-  /* b806 — the same law on the way OUT of the app. Five PDF letterheads read a
+  /* b808 — the same law on the way OUT of the app. Five PDF letterheads read a
      shared config object that nothing ever populated, so every export was
      stamped with the vendor's name instead of the practice's; and four surfaces
      used the login/account display name as the clinical provider, two of them
      reading docname BEFORE providerName. */
   'exports-carry-the-practice-identity.test.js',
-  /* b806 — the same law on the three pages a PATIENT sees. The portal resolved
+  /* b808 — the same law on the three pages a PATIENT sees. The portal resolved
      the practice from a localStorage key written only on the doctor's device and
      a global assigned nowhere, so every real patient saw "your care team". */
   'patient-pages-name-their-practice.test.js',
