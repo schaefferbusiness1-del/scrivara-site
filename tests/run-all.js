@@ -383,6 +383,12 @@ const tests = [
      twelve day-shape/selection combinations. */
   'visit-home-always-offers-the-banner-patient.test.js',
   'sweep-fixes-b711-contract.test.js',
+  /* b805 — the owner's own sentence, as a suite: "if a provider sets their name
+     in settings then they go to do an op note it should fill in automatically."
+     Executes the shipped resolution ladder. Also pins the two fabrications it
+     found: the account credential being appended to another clinician's name,
+     and the assistant line being filled with the primary surgeon. */
+  'settings-identity-reaches-the-op-note.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

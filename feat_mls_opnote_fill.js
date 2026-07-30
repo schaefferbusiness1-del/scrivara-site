@@ -434,10 +434,32 @@
       cred: canonicalSetting('getProviderCred'),
       npi: canonicalSetting('getNpi'),
       practice: canonicalSetting('getPracticeName'),
-      facility: ''
+      /* Was hardcoded ''. That single empty string made the facility rule in
+         knownValue below - which matches facility/clinic/location/site/hospital/
+         center/ASC - permanently dead: it is guarded on S(prof.facility).trim()
+         and could never be non-empty. So the app asked for the site of service
+         on every operative note. getFacilityName() is now a real getter backed
+         by a real Settings field (it was called in three files and defined in
+         none); an appointment that names its own department still outranks it,
+         in knownValue. */
+      facility: canonicalSetting('getFacilityName')
     };
   }
-  function apptProvider(appt) { return S((appt && (appt.provider_raw || appt.provider_key || appt.provider)) || '').replace(/_/g, ' ').trim(); }
+  /* The op-note room's own rows write `providerName` (ScribeFlow.html
+     _opNewRow), while this read list covered only the calendar/board shapes -
+     so for every row built by the room itself, the appointment's provider was
+     invisible here and the answer silently fell through to Settings, then to
+     commonApptProvider(). On an all-providers day that means a colleague's case
+     could be attributed to whoever is signed in. The new keys go LAST so the
+     existing precedence between provider_raw / provider_key / provider is
+     byte-for-byte unchanged. */
+  function apptProvider(appt) { return S((appt && (appt.provider_raw || appt.provider_key || appt.provider || appt.providerName || appt.provider_name)) || '').replace(/_/g, ' ').trim(); }
+  /* Where this case actually happened. The appointment's own department is the
+     stronger claim than the account-wide default, so it is read first. */
+  function apptFacility(appt) {
+    return S((appt && (appt.facilityName || appt.facility_name || appt.departmentName ||
+      appt.department_name || appt.location || appt.facility)) || '').replace(/_/g, ' ').trim();
+  }
   function commonApptProvider() {
     return safe(function () {
       var appts = window._calAppts || [], t = {};
@@ -793,18 +815,49 @@
     var l = S(label).toLowerCase().replace(/[^a-z0-9 \/]/g, ' ').replace(/\s+/g, ' ').trim();
     var appt = (row && row.appt) || {};
     var prof = seedProfile();   /* onf-2.3.0: Settings-backed (name/practice/NPI) */
-    var prov = apptProvider(appt) || S(prof.name).trim();
-    if (prov && S(prof.cred).trim() && prov.toLowerCase().indexOf(S(prof.cred).trim().toLowerCase()) < 0) prov += ', ' + S(prof.cred).trim();
+    /* A CREDENTIAL BELONGS TO THE PERSON NAMED. This used to append the
+       signed-in account's credential to whatever provider string it ended up
+       with, guarded only against repeating the SAME credential twice - which
+       says nothing about a DIFFERENT one. Measured: an appointment provider of
+       "Kelly Carter, PA-C" with the account credential "MD" produced
+       "Kelly Carter, PA-C, MD" - an operative note asserting that a physician
+       assistant is a physician. Only the account's OWN name may be decorated
+       with the account's own credential; an appointment-supplied provider
+       already carries whatever credential the EMR recorded. */
+    var apptProv = apptProvider(appt);
+    var prov = apptProv || S(prof.name).trim();
+    if (!apptProv && prov && S(prof.cred).trim() && prov.toLowerCase().indexOf(S(prof.cred).trim().toLowerCase()) < 0) prov += ', ' + S(prof.cred).trim();
     var pname = S(appt.name).trim();
     var dob = S(appt.dob).trim();
+    /* chartPatient(row) is the identity-PROVED patient (immutable id ownership
+       plus name and DOB agreement), so it is a safe last resort for an MRN the
+       schedule row did not carry. Without it the op-note room could not resolve
+       an inline [[mrn]] token at all: nothing in that path sets athenaId or
+       mrn on the appointment. */
     var mrn = S(appt.athenaId || appt.mrn || '').trim();
+    if (!mrn) mrn = safe(function () { var cp = chartPatient(row); return cp ? S(cp.mrn || '').trim() : ''; }, '') || '';
     var dt = S((row && row.dateStr) || '').replace(/^[A-Za-z]+,\s*/, '').trim();
-    var isProv = /(provider|physician|surgeon|\bdoctor\b|operator|attending|clinician|proceduralist|performed by|operating|rendering)/.test(l);
+    /* A SECOND person's role is not the operating provider's, and the app does
+       not know who it was. "Assistant surgeon" contains "surgeon", so the
+       generic provider rule below claimed it and wrote the PRIMARY provider's
+       name and credentials into the assistant line - a fabricated attestation
+       that a specific named clinician assisted a case, in a signed operative
+       note. There is no assistant source anywhere in the app, so the honest
+       answer is empty and the Fields box asks. Checked BEFORE isProv so no
+       provider synonym can leak through a role qualifier. */
+    var isOtherRole = /(assistant|assisting|first assist|co[\s-]?surgeon|resident|fellow|scrub|circulator|anesthesiologist|anesthetist|crna)/.test(l);
+    /* "dictated by" is a real operative-note header (it is in the shipped
+       template vocabulary) and was absent from this list, so it was asked for on
+       every note that used it. */
+    var isProv = !isOtherRole && /(provider|physician|surgeon|\bdoctor\b|operator|attending|clinician|proceduralist|performed by|performing|dictated by|operating|rendering)/.test(l);
     /* An NPI field may only receive an actual NPI. Falling through to the
        generic provider-name rule put "Matthew Schaeffer, MD" in NPI blanks. */
     if (/\bnpi\b/.test(l)) return S(prof.npi).trim();
     if (/(practice name|\bpractice\b|group name|group practice)/.test(l) && S(prof.practice).trim()) return S(prof.practice).trim();
-    if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l) && S(prof.facility).trim()) return S(prof.facility).trim();
+    if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l)) {
+      var fac = apptFacility(appt) || S(prof.facility).trim();
+      if (fac) return fac;
+    }
     if (isProv && prov) return prov;
     if (/(date of birth|birth ?date|\bdob\b)/.test(l) && dob) return dob;
     if (/(date of procedure|procedure date|date of service|service date|\bdos\b|date of operation|operation date|encounter date|todays date|today s date)/.test(l) && dt) return dt;

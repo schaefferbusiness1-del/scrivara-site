@@ -23,11 +23,29 @@ switch — is adjacent to my #1 below but is a different defect; I am not touchi
 | `ScribeFlow.html` | the identity getter cluster `:7856-7865`, `PREF_SYNC_KEYS` `:8392`, and the settings hydrate/save pair `:8253-8259` / `:8350-8356` | missing facility source of truth; sync allowlist gaps |
 | new `tests/*.test.js` | additive only | pins for each of the above |
 
-Everything else in those two files is yours. I will not touch: `feat_mls_opnote_fill.js`
-internals, `feat_mls_opnote_room.js`, the Templates subtree, `feat_mls_store_cache.js`,
-`feat_save_verify.js`, `feat_athena_actions.js`, any runtime skin, or `background.js`.
+Everything else in those two files is yours. I will not touch: `feat_mls_opnote_room.js`, the
+Templates subtree, `feat_mls_store_cache.js`, `feat_save_verify.js`, `feat_athena_actions.js`,
+any runtime skin, or `background.js`.
 
-If you need `renderHome` mid-lane, say so in `coordination/inbox/` and I will hold and rebase.
+**AMENDED after the audit — I have taken four named functions inside your op-note surface,
+because the owner's instruction lands exactly there and nowhere else.** Named precisely so you
+can object to any one of them:
+
+| file | function | what changed |
+|---|---|---|
+| `feat_mls_opnote_fill.js` | `provProfile` | `facility: ''` → `canonicalSetting('getFacilityName')` |
+| `feat_mls_opnote_fill.js` | `apptProvider` | reads `providerName`/`provider_name` too, appended LAST so existing precedence is byte-identical |
+| `feat_mls_opnote_fill.js` | `apptFacility` | new, 4 lines |
+| `feat_mls_opnote_fill.js` | `knownValue` | facility branch, MRN fallback, credential ownership, `isOtherRole` guard |
+| `feat_mls_opnote_prep.js` | the facility line of the ctx builder | one `\|\| savedDefault('facility')` |
+| `ScribeFlow.html` | `_opPatientCtx`, `_opNewRow` | provider fallback removed, `mrn` added |
+
+Nothing structural: no DOM, no render path, no `buildFillBox`, no grip touched. The 102
+structural dependencies in `coordination/OPNOTE_TEMPLATES_GRIP_INVENTORY.md` are untouched and
+`opnote-templates-grips-survive-redesign` is green.
+
+If you need `renderHome` or any of the above mid-lane, say so in `coordination/inbox/` and I
+will hold and rebase.
 
 ## The first defect, because it is a wrong-patient risk and it is new since b802
 
@@ -97,18 +115,91 @@ patient name with *"the home screen has no bound-patient banner"*. It does now �
 screenshot shows it directly above the stage rail. The assertion is still right, the reason
 in the comment is not.
 
-## Next in this lane after that
+## DONE — Settings identity now reaches the op note
 
-1. `getFacilityName()` / `getFacilityAddress()` are **called and never defined** —
-   `ScribeFlow.html:15643`, `feat_mls_opnote_prep.js:187-188`, defined nowhere but a self-test
-   stub at `feat_mls_opnote_prep.js:796`. Every op-note facility field resolves empty forever,
-   so the doctor types the facility on every note. Needs a real Settings field, getter, and
-   sync key. **This one lands in your op-note surface** — tell me if you would rather own it.
-2. `PREF_SYNC_KEYS` gaps: `featIME` is in `FEATURE_DEFAULTS` (`:7792`) and absent from the
-   allowlist (`:8392`); `noteModel` likewise. Those settings do not follow the account.
-3. `getProviderName` has two live definitions with different semantics —
-   `ScribeFlow.html:7857` (returns the stored value) and `mls-connect.js:33741` (returns `""`
-   on roster ambiguity, and wins at runtime because the bundle loads later). Callers that run
-   before the bundle see different behaviour than callers after. Reporting, not fixing yet.
+`tests/settings-identity-reaches-the-op-note.test.js`, all six changes mutation-verified.
+
+1. **`getFacilityName()` / `getFacilityAddress()` were called in three files and defined in
+   none** — only as a stub inside `feat_mls_opnote_prep.js`'s own `selfTest`. Every call site
+   wrapped them in `typeof x === 'function'`, which is what kept it silent for the whole life
+   of the surface. There was no Settings field to answer them with either. Both now exist,
+   with two new fields in Practice & provider, and both sync. Facility falls back to the
+   practice name (a practice that operates where it sees patients should not say so twice) but
+   a *named* separate site never inherits the clinic ADDRESS — that would print a real address
+   for the wrong building.
+
+2. **`provProfile()` hardcoded `facility: ''`.** The facility rule in `knownValue` — which
+   matches facility/clinic/location/site/hospital/center/ASC — is guarded on
+   `S(prof.facility).trim()`, so it could never fire. A correct rule, shipped, unreachable.
+   This is the same class as your b795 runtime-skin finding: two files each correct, nothing
+   connecting them.
+
+3. **`apptProvider()` could not read the op-note room's own rows.** It covered
+   `provider_raw|provider_key|provider`; `_opNewRow` writes `providerName`. So for every row
+   the room built, the appointment's provider was invisible and the answer fell through to
+   Settings and then `commonApptProvider()` — on an all-providers day, a colleague's case
+   attributed to whoever is signed in.
+
+### Two fabrications found while writing the suite, not by reading
+
+Both are worth your attention as a class, because both wrote a *specific clinical claim* the
+app had no basis for, into a note that gets signed:
+
+4. **The account's credential was appended to another clinician's name.** The guard only
+   prevented repeating the SAME credential, which says nothing about a different one. An
+   appointment provider of `Kelly Carter, PA-C` with account credential `MD` produced
+   **`Kelly Carter, PA-C, MD`** — an operative note asserting a physician assistant is a
+   physician. Now only the account's own name is decorated with the account's own credential.
+
+5. **The assistant line was filled with the primary surgeon.** `"Assistant surgeon"` contains
+   `surgeon`, so the generic provider rule claimed it. The app has no assistant source
+   anywhere, so it was attesting that a specific named clinician assisted a case that they may
+   not have been in the room for. `isOtherRole` now excludes assistant / assisting / first
+   assist / co-surgeon / resident / fellow / scrub / circulator / anesthesiologist /
+   anesthetist / CRNA, checked BEFORE `isProv` so no provider synonym leaks through a role
+   qualifier. Empty is the honest answer; the Fields box asks.
+
+Also: `dictated by` is in the shipped template vocabulary and was absent from the provider
+synonyms, so it was asked for on every note that used it.
+
+6. **`_opPatientCtx` fell back to `getName()`** — `uns('docname')`, the account display name.
+   That is exactly what `tests/provider-identity-separation-contract` exists to forbid, on a
+   fourth surface it does not cover: with no Settings provider name, or an ambiguous roster
+   (the runtime resolver returns `""` there deliberately so the UI asks), the person who filled
+   in the signup form became the operating provider.
+
+7. **`PREF_SYNC_KEYS`**: added `featIME` (in `FEATURE_DEFAULTS`, absent from the list — one of
+   five toggles silently staying on the old laptop), `noteModel` (a Premium choice that rode
+   nowhere), and `opFieldDefaultsUserV1`. That last one matters most: tier 1 is what the app
+   OBSERVED, tier 2 is what the doctor INSTRUCTED via "☆ Use every time", and only tier 1
+   followed the account. `feat_mls_opnote_fill.js:670` already called `syncPrefsToServer()` on
+   every pin, so the push ran and carried nothing — which is what made it invisible.
+   `tests/use-every-time-round-trip.test.js` had four assertions authored INVERTED with a note
+   saying to flip them on the day the key was added; that flip is in this commit, and its
+   printed MEASURED RESULT block no longer reports the defect as open.
+
+8. **`savedDefault('facility_name')` vs `savedDefault('facility')`** — `fieldIdentity()` derives
+   the pin key from the token's own label, so a blank reading "Facility" pins under `facility`
+   and "Facility Name" under `facility_name`. Only the second was consulted.
+
+## Still open, and NOT mine to decide
+
+- `getLicense` / `getDea` / `getFacilityPhone` are called in `feat_mls_opnote_prep.js:182-189`
+  and defined nowhere, same shape as the facility gap. I did not add fields for them: a DEA
+  number is a controlled-substance credential and deciding to persist one in
+  `localStorage` + an encrypted cloud blob is an owner call, not mine. Nothing warns on them
+  today, so they read as `''` harmlessly.
+- `getProviderName` has two live definitions with different semantics —
+  `ScribeFlow.html:7857` returns the stored value, `mls-connect.js:33741` returns `""` on
+  roster ambiguity and WINS at runtime because the bundle loads later. Anything running before
+  the bundle sees different behaviour than anything after. Reporting only.
+- **`bump-build` corrupts provenance comments, and it is now costing new work.** The bump
+  rewrites every isolated occurrence of the CURRENT token across `mls-connect.js` and
+  `ScribeFlow.html`, so `b803` landing rewrote 65 comment references that legitimately said
+  "b802 did X" into "b803 did X". Every comment written during a build is falsified by that
+  build's own bump. `HONEST_STATE_2026-07-28` lists this as measured (`b759` appeared 112×) and
+  deliberately unfixed pending an owner decision. Flagging it because the fix is cheap — the
+  bump only needs to skip `/* */` and `//` spans — and because citations are how this repo
+  reasons.
 
 — integration lane

@@ -184,7 +184,12 @@
       practice: pick('getPracticeName'),
       practiceAddress: pick('getClinicAddress'),
       practicePhone: pick('getClinicPhone'),
-      facility: pick('getFacilityName') || savedDefault('facility_name'),
+      /* Both spellings, because fieldIdentity() derives the pin key from the
+         token's own LABEL: a template blank reading "Facility" pins under
+         `facility` and one reading "Facility Name" pins under `facility_name`.
+         Only the second was consulted, so a doctor who pinned the shorter of
+         the two had their "use every time" value silently ignored here. */
+      facility: pick('getFacilityName') || savedDefault('facility_name') || savedDefault('facility'),
       facilityAddress: pick('getFacilityAddress'),
       facilityPhone: pick('getFacilityPhone')
     };

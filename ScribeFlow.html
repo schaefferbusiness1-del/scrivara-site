@@ -4528,6 +4528,24 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <label for="clinicAddress">Clinic address</label>
         <input type="text" id="clinicAddress" placeholder="Street, City, State ZIP">
       </div>
+      <!-- Facility = the SITE OF SERVICE, which is not the same thing as the
+           practice. Operative and procedure notes have a Facility line and had
+           no source of truth for it anywhere in the app: getFacilityName() was
+           called in three places and defined in none, so every op note asked
+           the doctor to type it again. An appointment that names its own
+           department still outranks this - this is the default for cases that
+           do not. -->
+      <div class="set-grid2">
+        <div class="field">
+          <label for="facilityName">Facility / site of service</label>
+          <input type="text" id="facilityName" placeholder="e.g. Brandywine Surgery Center">
+          <p class="set-desc" style="margin-top:5px">Where procedures are performed, if different from the clinic. Fills the Facility line on operative and procedure notes.</p>
+        </div>
+        <div class="field">
+          <label for="facilityAddress">Facility address</label>
+          <input type="text" id="facilityAddress" placeholder="Street, City, State ZIP">
+        </div>
+      </div>
       <div class="field">
         <label for="googleBusinessUrl">Google Business / Maps link</label>
         <input type="url" id="googleBusinessUrl" placeholder="https://maps.google.com/...">
@@ -7863,6 +7881,19 @@ function getProviderCred(){ return localStorage.getItem(uns('providerCred'))||''
 function getNpi(){ return localStorage.getItem(uns('npi'))||''; }
 function getClinicAddress(){ return localStorage.getItem(uns('clinicAddress'))||''; }
 function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; }
+/* Facility = SITE OF SERVICE, which is not the practice. These two were the
+   longest-standing hole in this cluster: getFacilityName() and
+   getFacilityAddress() were CALLED in three places - _opPatientCtx below,
+   feat_mls_opnote_prep.js's attest block and its readiness strip - and defined
+   in none of them, existing only as a stub inside that file's own selfTest. So
+   every operative note's Facility line resolved empty, the readiness strip
+   warned about it forever, and the doctor retyped it per note. A `typeof
+   ... === 'function'` guard at each call site is what kept it silent.
+   Falls back to the clinic when no separate site is configured, because a
+   practice that operates where it sees patients should not have to say so
+   twice. */
+function getFacilityName(){ return localStorage.getItem(uns('facilityName'))||getPracticeName(); }
+function getFacilityAddress(){ return localStorage.getItem(uns('facilityAddress'))||(localStorage.getItem(uns('facilityName'))?'':getClinicAddress()); }
 /* Branded exports (Premium): upload + downscale a practice logo to a small
    data URL, kept device-local (NOT in PREF_SYNC_KEYS, so it can never bloat or
    break the prefs/widget sync). Rendered on the printed/PDF letterhead. */
@@ -8260,6 +8291,11 @@ function openSettings(){
   const _npi=document.getElementById('npi'); if(_npi) _npi.value=getNpi();
   const _cad=document.getElementById('clinicAddress'); if(_cad) _cad.value=getClinicAddress();
   const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
+  /* Show what was actually STORED, not the clinic fallback getFacilityName()
+     resolves to — otherwise opening Settings once and saving would silently
+     copy the practice name into the facility key and freeze the fallback. */
+  const _fac=document.getElementById('facilityName'); if(_fac) _fac.value=localStorage.getItem(uns('facilityName'))||'';
+  const _facA=document.getElementById('facilityAddress'); if(_facA) _facA.value=localStorage.getItem(uns('facilityAddress'))||'';
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) _gbu.value=localStorage.getItem(uns('googleBusinessUrl'))||'';
   if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
@@ -8357,6 +8393,8 @@ function saveSettings(){
   const _npi=document.getElementById('npi'); if(_npi) localStorage.setItem(uns('npi'),(_npi.value||'').trim());
   const _cad=document.getElementById('clinicAddress'); if(_cad) localStorage.setItem(uns('clinicAddress'),(_cad.value||'').trim());
   const _cph=document.getElementById('clinicPhone'); if(_cph) localStorage.setItem(uns('clinicPhone'),(_cph.value||'').trim());
+  const _fac=document.getElementById('facilityName'); if(_fac) localStorage.setItem(uns('facilityName'),(_fac.value||'').trim());
+  const _facA=document.getElementById('facilityAddress'); if(_facA) localStorage.setItem(uns('facilityAddress'),(_facA.value||'').trim());
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
   const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(_nm.value==='gpt-4o-mini')?'gpt-4o-mini':'gpt-4o');
@@ -8395,9 +8433,21 @@ function saveSettings(){
    ========================================================= */
 const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
-  'providerCred','npi','clinicAddress','clinicPhone','googleBusinessUrl','defaultFormat','noteStyle',
-  'featMME','featSurgical','featUR','featCost',
-  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1',
+  'providerCred','npi','clinicAddress','clinicPhone','facilityName','facilityAddress','googleBusinessUrl','defaultFormat','noteStyle',
+  /* featIME was in FEATURE_DEFAULTS and absent here, so of the five feature
+     toggles exactly one silently stayed on the old laptop. Nothing distinguishes
+     it from its four siblings; it was a transcription gap, not a decision. */
+  'featMME','featSurgical','featUR','featIME','featCost',
+  /* noteModel is a Premium CHOICE the doctor paid to make. It rode nowhere. */
+  'noteModel',
+  /* opFieldDefaultsUserV1 is the explicit "☆ Use every time" tier - the
+     strongest statement a doctor can make about an op-note field. Its sibling
+     opFieldDefaultsV1 was already here; the deliberate one was not, so the
+     app remembered its own guesses across devices and forgot the doctor's
+     instructions. feat_mls_opnote_fill.js:670 already calls
+     syncPrefsToServer() after writing it, which is what made the omission
+     invisible: the push ran and carried nothing. */
+  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1','opFieldDefaultsUserV1',
   'studio_widgets'];
 /* A tool the doctor built and saved is their work product — it must survive a new
    laptop, a cleared cache, or a reinstall, not just live in one browser. It rides
@@ -15657,7 +15707,17 @@ function _opPatientCtx(name,dob,patientId){
     var history='';
     try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
     if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||''),'Vitals: '+String(p.vitals||''),'History & background: '+String(p.background||p.history||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
-    var provider=(typeof getProviderName==='function'?getProviderName():'')||(typeof getName==='function'?getName():'');
+    /* Identity separation (owner goal 2026-07-21, pinned by
+       tests/provider-identity-separation-contract): a LOGIN/account name is not
+       a clinical provider identity. getName() is uns('docname') - the account
+       display name - and it was the fallback here, so on any account whose
+       Settings provider name was blank, or whose roster resolution was
+       ambiguous (the runtime resolver returns '' on purpose in that case so the
+       UI asks), the person who filled in the signup form became the operating
+       provider on an operative note. That is the exact defect the contract
+       exists to forbid; this surface simply was not covered by it. Empty is the
+       honest answer - the Fields box then asks, and the readiness strip warns. */
+    var provider=(typeof getProviderName==='function'?getProviderName():'');
     var facility=(typeof getFacilityName==='function'?getFacilityName():'');
     return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000), provider:String(provider||''), providerName:String(provider||''), providerNpi:String(typeof getNpi==='function'?getNpi():''), providerCredentials:String(typeof getProviderCred==='function'?getProviderCred():''), practice:String(typeof getPracticeName==='function'?getPracticeName():''), facility:String(facility||''), facilityName:String(facility||'') };
   }catch(e){ return {}; }
@@ -15665,7 +15725,11 @@ function _opPatientCtx(name,dob,patientId){
 function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
   var rank=_opRankTemplates(reason||'');
   scope=scope||{};
-  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||''), providerId:String(scope.providerId||scope.provider_id||''), providerName:String(scope.providerName||scope.provider_name||scope.provider||''), facilityId:String(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:String(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:(reason||''), dateStr:(dateStr||''), dateKey:String(dateKey||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+  /* mrn rides the row when the schedule carried one. knownValue's MRN rule
+     reads appt.athenaId||appt.mrn and this object supplied neither, so in the
+     op-note room an inline [[mrn]] token could never resolve even though
+     _opPatientCtx reads p.mrn off the same patient a few lines above. */
+  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||'', mrn:String(scope.mrn||scope.athenaId||''), patientId:String(patientId||''), providerId:String(scope.providerId||scope.provider_id||''), providerName:String(scope.providerName||scope.provider_name||scope.provider||''), facilityId:String(scope.facilityId||scope.facility_id||scope.departmentId||scope.department_id||''), facilityName:String(scope.facilityName||scope.facility_name||scope.departmentName||scope.department_name||scope.location||'')}, proc:(reason||''), dateStr:(dateStr||''), dateKey:String(dateKey||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }

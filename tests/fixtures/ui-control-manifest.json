@@ -3977,12 +3977,12 @@
    "domId": "clinicLogoRemove",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4541,
+   "line": 4559,
    "gated": true,
    "handler": "removeClinicLogo()"
   },
   {
-   "id": "scribeflow-html-4592-add",
+   "id": "scribeflow-html-4610-add",
    "label": "+ Add",
    "accessibleName": "+ Add",
    "title": "",
@@ -3991,12 +3991,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4592,
+   "line": 4610,
    "gated": false,
    "handler": "addDocPrefFromInput()"
   },
   {
-   "id": "scribeflow-html-4794-disable-2fa",
+   "id": "scribeflow-html-4812-disable-2fa",
    "label": "Disable 2FA",
    "accessibleName": "Disable 2FA",
    "title": "",
@@ -4005,12 +4005,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4794,
+   "line": 4812,
    "gated": false,
    "handler": "twofaDisable()"
   },
   {
-   "id": "scribeflow-html-4799-enable-2fa",
+   "id": "scribeflow-html-4817-enable-2fa",
    "label": "Enable 2FA",
    "accessibleName": "Enable 2FA",
    "title": "",
@@ -4019,12 +4019,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4799,
+   "line": 4817,
    "gated": false,
    "handler": "twofaSetup()"
   },
   {
-   "id": "scribeflow-html-4811-verify-turn-on",
+   "id": "scribeflow-html-4829-verify-turn-on",
    "label": "Verify & turn on",
    "accessibleName": "Verify & turn on",
    "title": "",
@@ -4033,12 +4033,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4811,
+   "line": 4829,
    "gated": false,
    "handler": "twofaEnable()"
   },
   {
-   "id": "scribeflow-html-4812-cancel",
+   "id": "scribeflow-html-4830-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -4047,12 +4047,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4812,
+   "line": 4830,
    "gated": false,
    "handler": "twofaCancelEnroll()"
   },
   {
-   "id": "scribeflow-html-4825-turn-off-texted-codes",
+   "id": "scribeflow-html-4843-turn-off-texted-codes",
    "label": "Turn off texted codes",
    "accessibleName": "Turn off texted codes",
    "title": "",
@@ -4061,12 +4061,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4825,
+   "line": 4843,
    "gated": false,
    "handler": "smsTwofaDisable()"
   },
   {
-   "id": "scribeflow-html-4831-text-me-a-code",
+   "id": "scribeflow-html-4849-text-me-a-code",
    "label": "Text me a code",
    "accessibleName": "Text me a code",
    "title": "",
@@ -4075,12 +4075,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4831,
+   "line": 4849,
    "gated": false,
    "handler": "smsTwofaSetup()"
   },
   {
-   "id": "scribeflow-html-4839-verify-turn-on",
+   "id": "scribeflow-html-4857-verify-turn-on",
    "label": "Verify & turn on",
    "accessibleName": "Verify & turn on",
    "title": "",
@@ -4089,12 +4089,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4839,
+   "line": 4857,
    "gated": false,
    "handler": "smsTwofaVerify()"
   },
   {
-   "id": "scribeflow-html-4840-cancel",
+   "id": "scribeflow-html-4858-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -4103,12 +4103,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4840,
+   "line": 4858,
    "gated": false,
    "handler": "smsTwofaCancelEnroll()"
   },
   {
-   "id": "scribeflow-html-4850-copy",
+   "id": "scribeflow-html-4868-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -4117,12 +4117,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4850,
+   "line": 4868,
    "gated": false,
    "handler": "twofaCopyRecovery()"
   },
   {
-   "id": "scribeflow-html-4851-download-txt",
+   "id": "scribeflow-html-4869-download-txt",
    "label": "Download .txt",
    "accessibleName": "Download .txt",
    "title": "",
@@ -4131,12 +4131,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4851,
+   "line": 4869,
    "gated": false,
    "handler": "twofaDownloadRecovery()"
   },
   {
-   "id": "scribeflow-html-4852-i-ve-saved-them",
+   "id": "scribeflow-html-4870-i-ve-saved-them",
    "label": "I've saved them",
    "accessibleName": "I've saved them",
    "title": "",
@@ -4145,12 +4145,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4852,
+   "line": 4870,
    "gated": false,
    "handler": "twofaDismissRecovery()"
   },
   {
-   "id": "scribeflow-html-4861-clear-saved-data",
+   "id": "scribeflow-html-4879-clear-saved-data",
    "label": "Clear saved data",
    "accessibleName": "Clear saved data",
    "title": "",
@@ -4159,12 +4159,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4861,
+   "line": 4879,
    "gated": false,
    "handler": "clearDeviceData()"
   },
   {
-   "id": "scribeflow-html-4887-legal-profile-unavailable",
+   "id": "scribeflow-html-4905-legal-profile-unavailable",
    "label": "Legal profile unavailable",
    "accessibleName": "Legal profile unavailable",
    "title": "",
@@ -4173,7 +4173,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4887,
+   "line": 4905,
    "gated": true,
    "handler": null
   },
@@ -4187,7 +4187,7 @@
    "domId": "athApiRefreshBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4905,
+   "line": 4923,
    "gated": false,
    "handler": "updateAthenaStatus('clinician-click')"
   },
@@ -4201,7 +4201,7 @@
    "domId": "athApiConnectBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4906,
+   "line": 4924,
    "gated": true,
    "handler": "connectAthenaApi()"
   },
@@ -4215,12 +4215,12 @@
    "domId": "athApiDisconnectBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4907,
+   "line": 4925,
    "gated": true,
    "handler": "disconnectAthenaApi()"
   },
   {
-   "id": "scribeflow-html-4959-generate-api-key",
+   "id": "scribeflow-html-4977-generate-api-key",
    "label": "Generate API key",
    "accessibleName": "Generate API key",
    "title": "",
@@ -4229,12 +4229,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4959,
+   "line": 4977,
    "gated": false,
    "handler": "genApiKey()"
   },
   {
-   "id": "scribeflow-html-4960-refresh",
+   "id": "scribeflow-html-4978-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -4243,12 +4243,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4960,
+   "line": 4978,
    "gated": false,
    "handler": "loadApiKeys()"
   },
   {
-   "id": "scribeflow-html-4966-copy",
+   "id": "scribeflow-html-4984-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -4257,12 +4257,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4966,
+   "line": 4984,
    "gated": false,
    "handler": "copyApiKey()"
   },
   {
-   "id": "scribeflow-html-4976-pull-current-emr-patient-into-mls",
+   "id": "scribeflow-html-4994-pull-current-emr-patient-into-mls",
    "label": "Pull current EMR patient into MLS",
    "accessibleName": "Pull current EMR patient into MLS",
    "title": "",
@@ -4271,12 +4271,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 4976,
+   "line": 4994,
    "gated": false,
    "handler": "captureFromEMR(this)"
   },
   {
-   "id": "scribeflow-html-5005-copy",
+   "id": "scribeflow-html-5023-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -4285,7 +4285,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5005,
+   "line": 5023,
    "gated": false,
    "handler": "schedApiCopyBase()"
   },
@@ -4299,7 +4299,7 @@
    "domId": "schedApiCheckBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5006,
+   "line": 5024,
    "gated": false,
    "handler": "schedApiCheckStatus()"
   },
@@ -4313,12 +4313,12 @@
    "domId": "schedApiGenBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5013,
+   "line": 5031,
    "gated": false,
    "handler": "schedApiGenKey()"
   },
   {
-   "id": "scribeflow-html-5028-copy",
+   "id": "scribeflow-html-5046-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -4327,7 +4327,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5028,
+   "line": 5046,
    "gated": false,
    "handler": "schedApiCopyKey()"
   },
@@ -4341,12 +4341,12 @@
    "domId": "schedApiHookAddBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5042,
+   "line": 5060,
    "gated": false,
    "handler": "schedApiAddWebhook()"
   },
   {
-   "id": "scribeflow-html-5048-copy",
+   "id": "scribeflow-html-5066-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -4355,12 +4355,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5048,
+   "line": 5066,
    "gated": false,
    "handler": "schedApiCopyHookSecret()"
   },
   {
-   "id": "scribeflow-html-5090-import-patients",
+   "id": "scribeflow-html-5108-import-patients",
    "label": "Import patients",
    "accessibleName": "Import patients",
    "title": "",
@@ -4369,12 +4369,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5090,
+   "line": 5108,
    "gated": false,
    "handler": "importPatients()"
   },
   {
-   "id": "scribeflow-html-5118-save-schedule",
+   "id": "scribeflow-html-5136-save-schedule",
    "label": "Save schedule",
    "accessibleName": "Save schedule",
    "title": "",
@@ -4383,12 +4383,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5118,
+   "line": 5136,
    "gated": false,
    "handler": "saveEmrSync(this)"
   },
   {
-   "id": "scribeflow-html-5119-run-backup-now",
+   "id": "scribeflow-html-5137-run-backup-now",
    "label": "Run backup now",
    "accessibleName": "Run backup now",
    "title": "",
@@ -4397,12 +4397,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5119,
+   "line": 5137,
    "gated": false,
    "handler": "runEmrSyncNow(this)"
   },
   {
-   "id": "scribeflow-html-5127-save",
+   "id": "scribeflow-html-5145-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -4411,12 +4411,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5127,
+   "line": 5145,
    "gated": false,
    "handler": "saveSettings()"
   },
   {
-   "id": "scribeflow-html-5128-close",
+   "id": "scribeflow-html-5146-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -4425,12 +4425,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5128,
+   "line": 5146,
    "gated": false,
    "handler": "closeSettings()"
   },
   {
-   "id": "scribeflow-html-5137-button",
+   "id": "scribeflow-html-5155-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -4439,12 +4439,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5137,
+   "line": 5155,
    "gated": false,
    "handler": "closeView()"
   },
   {
-   "id": "scribeflow-html-5142-reopen-in-editor",
+   "id": "scribeflow-html-5160-reopen-in-editor",
    "label": "Reopen in editor",
    "accessibleName": "Reopen in editor",
    "title": "",
@@ -4453,12 +4453,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5142,
+   "line": 5160,
    "gated": false,
    "handler": "reopenViewed()"
   },
   {
-   "id": "scribeflow-html-5143-close",
+   "id": "scribeflow-html-5161-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -4467,12 +4467,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5143,
+   "line": 5161,
    "gated": false,
    "handler": "closeView()"
   },
   {
-   "id": "scribeflow-html-5151-button",
+   "id": "scribeflow-html-5169-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -4481,12 +4481,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5151,
+   "line": 5169,
    "gated": false,
    "handler": "closeCountersign()"
   },
   {
-   "id": "scribeflow-html-5159-clear-signature",
+   "id": "scribeflow-html-5177-clear-signature",
    "label": "Clear signature",
    "accessibleName": "Clear signature",
    "title": "",
@@ -4495,7 +4495,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5159,
+   "line": 5177,
    "gated": false,
    "handler": "sigPadClear('csSigPad');csSyncState()"
   },
@@ -4509,12 +4509,12 @@
    "domId": "csSubmitBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5162,
+   "line": 5180,
    "gated": true,
    "handler": "submitCountersign()"
   },
   {
-   "id": "scribeflow-html-5163-close",
+   "id": "scribeflow-html-5181-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -4523,12 +4523,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5163,
+   "line": 5181,
    "gated": false,
    "handler": "closeCountersign()"
   },
   {
-   "id": "scribeflow-html-5171-button",
+   "id": "scribeflow-html-5189-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -4537,12 +4537,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5171,
+   "line": 5189,
    "gated": false,
    "handler": "closeTemplates()"
   },
   {
-   "id": "scribeflow-html-5198-upload-templates-one-pdf-or-many-files",
+   "id": "scribeflow-html-5216-upload-templates-one-pdf-or-many-files",
    "label": "Upload templates (one PDF or many files)",
    "accessibleName": "Upload templates (one PDF or many files)",
    "title": "",
@@ -4551,7 +4551,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5198,
+   "line": 5216,
    "gated": false,
    "handler": "document.getElementById('tplMultiFileInput').click()"
   },
@@ -4565,12 +4565,12 @@
    "domId": "tplMultiDrop",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5200,
+   "line": 5218,
    "gated": false,
    "handler": "document.getElementById('tplMultiFileInput').click()"
   },
   {
-   "id": "scribeflow-html-5215-upload-template-word-pdf-image-text",
+   "id": "scribeflow-html-5233-upload-template-word-pdf-image-text",
    "label": "Upload template (Word / PDF / image / text)",
    "accessibleName": "Upload template (Word / PDF / image / text)",
    "title": "",
@@ -4579,12 +4579,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5215,
+   "line": 5233,
    "gated": false,
    "handler": "document.getElementById('tplFileInput').click()"
   },
   {
-   "id": "scribeflow-html-5216-type-or-paste-below",
+   "id": "scribeflow-html-5234-type-or-paste-below",
    "label": "Type or paste below",
    "accessibleName": "Type or paste below",
    "title": "",
@@ -4593,7 +4593,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5216,
+   "line": 5234,
    "gated": false,
    "handler": "tplPasteText()"
   },
@@ -4607,12 +4607,12 @@
    "domId": "tplDropZone",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5219,
+   "line": 5237,
    "gated": false,
    "handler": "document.getElementById('tplFileInput').click()"
   },
   {
-   "id": "scribeflow-html-5222-save-template",
+   "id": "scribeflow-html-5240-save-template",
    "label": "Save template",
    "accessibleName": "Save template",
    "title": "",
@@ -4621,12 +4621,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5222,
+   "line": 5240,
    "gated": false,
    "handler": "saveTemplateFromForm()"
   },
   {
-   "id": "scribeflow-html-5223-clear",
+   "id": "scribeflow-html-5241-clear",
    "label": "Clear",
    "accessibleName": "Clear",
    "title": "",
@@ -4635,12 +4635,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5223,
+   "line": 5241,
    "gated": false,
    "handler": "clearTplForm()"
   },
   {
-   "id": "scribeflow-html-5228-rename-by-note-type",
+   "id": "scribeflow-html-5246-rename-by-note-type",
    "label": "Rename by note type",
    "accessibleName": "Rename by note type",
    "title": "Rename your saved templates by NOTE TYPE (the procedure) instead of patient name — fixes op notes you already uploaded",
@@ -4649,12 +4649,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5228,
+   "line": 5246,
    "gated": false,
    "handler": "fixTemplateNames()"
   },
   {
-   "id": "scribeflow-html-5229-remove-duplicates",
+   "id": "scribeflow-html-5247-remove-duplicates",
    "label": "Remove duplicates",
    "accessibleName": "Remove duplicates",
    "title": "Remove duplicate templates (same name + same text)",
@@ -4663,12 +4663,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5229,
+   "line": 5247,
    "gated": false,
    "handler": "dedupeSavedTemplates(true)"
   },
   {
-   "id": "scribeflow-html-5242-close",
+   "id": "scribeflow-html-5260-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -4677,12 +4677,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5242,
+   "line": 5260,
    "gated": false,
    "handler": "closeTemplates()"
   },
   {
-   "id": "scribeflow-html-5250-button",
+   "id": "scribeflow-html-5268-button",
    "label": "×",
    "accessibleName": "Close op-note prep",
    "title": "",
@@ -4691,7 +4691,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5250,
+   "line": 5268,
    "gated": false,
    "handler": "closeOpPrep()"
   },
@@ -4705,7 +4705,7 @@
    "domId": "oprBack",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5252,
+   "line": 5270,
    "gated": false,
    "handler": "closeOpPrep()"
   },
@@ -4719,7 +4719,7 @@
    "domId": "oprTabProcs",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5255,
+   "line": 5273,
    "gated": false,
    "handler": null
   },
@@ -4733,7 +4733,7 @@
    "domId": "oprTabTpls",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5256,
+   "line": 5274,
    "gated": false,
    "handler": "openTemplates()"
   },
@@ -4747,7 +4747,7 @@
    "domId": "opPrepModePatient",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5263,
+   "line": 5281,
    "gated": false,
    "handler": "opPrepSetMode('patient')"
   },
@@ -4761,12 +4761,12 @@
    "domId": "opPrepModeAll",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5264,
+   "line": 5282,
    "gated": false,
    "handler": "opPrepSetMode('all')"
   },
   {
-   "id": "scribeflow-html-5268-today",
+   "id": "scribeflow-html-5286-today",
    "label": "Today",
    "accessibleName": "Today",
    "title": "",
@@ -4775,12 +4775,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5268,
+   "line": 5286,
    "gated": false,
    "handler": "opPrepSetDayToday()"
   },
   {
-   "id": "scribeflow-html-5269-tomorrow",
+   "id": "scribeflow-html-5287-tomorrow",
    "label": "Tomorrow",
    "accessibleName": "Tomorrow",
    "title": "",
@@ -4789,7 +4789,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5269,
+   "line": 5287,
    "gated": false,
    "handler": "opPrepSetDayTomorrow()"
   },
@@ -4803,12 +4803,12 @@
    "domId": "opPrepGenAllBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5279,
+   "line": 5297,
    "gated": false,
    "handler": "opPrepGenerateAll()"
   },
   {
-   "id": "scribeflow-html-5301-button",
+   "id": "scribeflow-html-5319-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -4817,7 +4817,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5301,
+   "line": 5319,
    "gated": false,
    "handler": "closeWidgetBuilder()"
   },
@@ -4831,12 +4831,12 @@
    "domId": "cwDesignBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5310,
+   "line": 5328,
    "gated": false,
    "handler": "designCustomWidget()"
   },
   {
-   "id": "scribeflow-html-5311-browse-library",
+   "id": "scribeflow-html-5329-browse-library",
    "label": "Browse library",
    "accessibleName": "Browse library",
    "title": "Add a ready-made clinical widget in one click",
@@ -4845,12 +4845,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5311,
+   "line": 5329,
    "gated": false,
    "handler": "cwShowLibrary()"
   },
   {
-   "id": "scribeflow-html-5318-close-library",
+   "id": "scribeflow-html-5336-close-library",
    "label": "Close library",
    "accessibleName": "Close library",
    "title": "",
@@ -4859,12 +4859,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5318,
+   "line": 5336,
    "gated": false,
    "handler": "cwHideLibrary()"
   },
   {
-   "id": "scribeflow-html-5348-use-simple-format-instead",
+   "id": "scribeflow-html-5366-use-simple-format-instead",
    "label": "Use simple format instead",
    "accessibleName": "Use simple format instead",
    "title": "",
@@ -4873,7 +4873,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5348,
+   "line": 5366,
    "gated": false,
    "handler": "cwRemoveLayout()"
   },
@@ -4887,12 +4887,12 @@
    "domId": "cwSaveBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5370,
+   "line": 5388,
    "gated": false,
    "handler": "saveCustomWidget()"
   },
   {
-   "id": "scribeflow-html-5371-cancel",
+   "id": "scribeflow-html-5389-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -4901,12 +4901,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5371,
+   "line": 5389,
    "gated": false,
    "handler": "hideWidgetPreview()"
   },
   {
-   "id": "scribeflow-html-5380-close",
+   "id": "scribeflow-html-5398-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -4915,93 +4915,9 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5380,
+   "line": 5398,
    "gated": false,
    "handler": "closeWidgetBuilder()"
-  },
-  {
-   "id": "scribeflow-html-5388-button",
-   "label": "×",
-   "accessibleName": "×",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": null,
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5388,
-   "gated": false,
-   "handler": "closeMlsHelp()"
-  },
-  {
-   "id": "helpAskBtn",
-   "label": "Ask",
-   "accessibleName": "Ask",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": "helpAskBtn",
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5392,
-   "gated": false,
-   "handler": "askMlsHelp()"
-  },
-  {
-   "id": "scribeflow-html-5394-change-password",
-   "label": "change password",
-   "accessibleName": "change password",
-   "title": "",
-   "kind": "handler",
-   "tag": "a",
-   "domId": null,
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5394,
-   "gated": false,
-   "handler": "helpEx('How do I change my password?');return false"
-  },
-  {
-   "id": "scribeflow-html-5395-booking-link",
-   "label": "booking link",
-   "accessibleName": "booking link",
-   "title": "",
-   "kind": "handler",
-   "tag": "a",
-   "domId": null,
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5395,
-   "gated": false,
-   "handler": "helpEx('Where is the booking link?');return false"
-  },
-  {
-   "id": "scribeflow-html-5396-generate-a-note",
-   "label": "generate a note",
-   "accessibleName": "generate a note",
-   "title": "",
-   "kind": "handler",
-   "tag": "a",
-   "domId": null,
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5396,
-   "gated": false,
-   "handler": "helpEx('How do I generate a note?');return false"
-  },
-  {
-   "id": "scribeflow-html-5397-athena-month-pull",
-   "label": "Athena month pull",
-   "accessibleName": "Athena month pull",
-   "title": "",
-   "kind": "handler",
-   "tag": "a",
-   "domId": null,
-   "view": "global",
-   "file": "ScribeFlow.html",
-   "line": 5397,
-   "gated": false,
-   "handler": "helpEx('How do I pull a month from Athena?');return false"
   },
   {
    "id": "scribeflow-html-5406-button",
@@ -5015,10 +4931,94 @@
    "file": "ScribeFlow.html",
    "line": 5406,
    "gated": false,
+   "handler": "closeMlsHelp()"
+  },
+  {
+   "id": "helpAskBtn",
+   "label": "Ask",
+   "accessibleName": "Ask",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "helpAskBtn",
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5410,
+   "gated": false,
+   "handler": "askMlsHelp()"
+  },
+  {
+   "id": "scribeflow-html-5412-change-password",
+   "label": "change password",
+   "accessibleName": "change password",
+   "title": "",
+   "kind": "handler",
+   "tag": "a",
+   "domId": null,
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5412,
+   "gated": false,
+   "handler": "helpEx('How do I change my password?');return false"
+  },
+  {
+   "id": "scribeflow-html-5413-booking-link",
+   "label": "booking link",
+   "accessibleName": "booking link",
+   "title": "",
+   "kind": "handler",
+   "tag": "a",
+   "domId": null,
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5413,
+   "gated": false,
+   "handler": "helpEx('Where is the booking link?');return false"
+  },
+  {
+   "id": "scribeflow-html-5414-generate-a-note",
+   "label": "generate a note",
+   "accessibleName": "generate a note",
+   "title": "",
+   "kind": "handler",
+   "tag": "a",
+   "domId": null,
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5414,
+   "gated": false,
+   "handler": "helpEx('How do I generate a note?');return false"
+  },
+  {
+   "id": "scribeflow-html-5415-athena-month-pull",
+   "label": "Athena month pull",
+   "accessibleName": "Athena month pull",
+   "title": "",
+   "kind": "handler",
+   "tag": "a",
+   "domId": null,
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5415,
+   "gated": false,
+   "handler": "helpEx('How do I pull a month from Athena?');return false"
+  },
+  {
+   "id": "scribeflow-html-5424-button",
+   "label": "×",
+   "accessibleName": "×",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "global",
+   "file": "ScribeFlow.html",
+   "line": 5424,
+   "gated": false,
    "handler": "closeSetup()"
   },
   {
-   "id": "scribeflow-html-5434-auto-fill-from-above",
+   "id": "scribeflow-html-5452-auto-fill-from-above",
    "label": "Auto-fill from above",
    "accessibleName": "Auto-fill from above",
    "title": "",
@@ -5027,12 +5027,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5434,
+   "line": 5452,
    "gated": false,
    "handler": "su_autoSig()"
   },
   {
-   "id": "scribeflow-html-5449-show-staff-prep-in-menu",
+   "id": "scribeflow-html-5467-show-staff-prep-in-menu",
    "label": "Show Staff Prep in Menu",
    "accessibleName": "Show Staff Prep in Menu",
    "title": "",
@@ -5041,12 +5041,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5449,
+   "line": 5467,
    "gated": false,
    "handler": "su_showStaffPrepMenu()"
   },
   {
-   "id": "scribeflow-html-5460-get-my-booking-link",
+   "id": "scribeflow-html-5478-get-my-booking-link",
    "label": "Get my booking link",
    "accessibleName": "Get my booking link",
    "title": "",
@@ -5055,12 +5055,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5460,
+   "line": 5478,
    "gated": false,
    "handler": "copyBookingLink(this)"
   },
   {
-   "id": "scribeflow-html-5468-update-password",
+   "id": "scribeflow-html-5486-update-password",
    "label": "Update password",
    "accessibleName": "Update password",
    "title": "",
@@ -5069,12 +5069,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5468,
+   "line": 5486,
    "gated": false,
    "handler": "suChangePassword(this)"
   },
   {
-   "id": "scribeflow-html-5469-more-security-options",
+   "id": "scribeflow-html-5487-more-security-options",
    "label": "More security options",
    "accessibleName": "More security options",
    "title": "",
@@ -5083,7 +5083,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5469,
+   "line": 5487,
    "gated": false,
    "handler": "su_openSettings()"
   },
@@ -5097,7 +5097,7 @@
    "domId": "su_backBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5491,
+   "line": 5509,
    "gated": true,
    "handler": "suBack()"
   },
@@ -5111,7 +5111,7 @@
    "domId": "su_nextBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5492,
+   "line": 5510,
    "gated": false,
    "handler": "suNext(this)"
   },
@@ -5125,12 +5125,12 @@
    "domId": "su_skipBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5493,
+   "line": 5511,
    "gated": false,
    "handler": "closeSetup()"
   },
   {
-   "id": "scribeflow-html-5502-button",
+   "id": "scribeflow-html-5520-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5139,7 +5139,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5502,
+   "line": 5520,
    "gated": false,
    "handler": "closeLegal()"
   },
@@ -5153,12 +5153,12 @@
    "domId": "legalGenBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5558,
+   "line": 5576,
    "gated": false,
    "handler": "generateLegalReport()"
   },
   {
-   "id": "scribeflow-html-5559-close",
+   "id": "scribeflow-html-5577-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -5167,12 +5167,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5559,
+   "line": 5577,
    "gated": false,
    "handler": "closeLegal()"
   },
   {
-   "id": "scribeflow-html-5570-button",
+   "id": "scribeflow-html-5588-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5181,12 +5181,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5570,
+   "line": 5588,
    "gated": false,
    "handler": "closeLegalFill()"
   },
   {
-   "id": "scribeflow-html-5575-insert-into-report",
+   "id": "scribeflow-html-5593-insert-into-report",
    "label": "Insert into report",
    "accessibleName": "Insert into report",
    "title": "",
@@ -5195,12 +5195,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5575,
+   "line": 5593,
    "gated": false,
    "handler": "applyLegalFill()"
   },
   {
-   "id": "scribeflow-html-5576-cancel",
+   "id": "scribeflow-html-5594-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -5209,12 +5209,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5576,
+   "line": 5594,
    "gated": false,
    "handler": "closeLegalFill()"
   },
   {
-   "id": "scribeflow-html-5584-button",
+   "id": "scribeflow-html-5602-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5223,12 +5223,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5584,
+   "line": 5602,
    "gated": false,
    "handler": "closeTeamPt()"
   },
   {
-   "id": "scribeflow-html-5590-close",
+   "id": "scribeflow-html-5608-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -5237,12 +5237,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5590,
+   "line": 5608,
    "gated": false,
    "handler": "closeTeamPt()"
   },
   {
-   "id": "scribeflow-html-5598-button",
+   "id": "scribeflow-html-5616-button",
    "label": "×",
    "accessibleName": "Close new patient dialog",
    "title": "",
@@ -5251,12 +5251,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5598,
+   "line": 5616,
    "gated": false,
    "handler": "closePatientModal()"
   },
   {
-   "id": "scribeflow-html-5622-save-patient",
+   "id": "scribeflow-html-5640-save-patient",
    "label": "Save patient",
    "accessibleName": "Save patient",
    "title": "",
@@ -5265,12 +5265,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5622,
+   "line": 5640,
    "gated": false,
    "handler": "savePatient()"
   },
   {
-   "id": "scribeflow-html-5623-cancel",
+   "id": "scribeflow-html-5641-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -5279,12 +5279,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5623,
+   "line": 5641,
    "gated": false,
    "handler": "closePatientModal()"
   },
   {
-   "id": "scribeflow-html-5631-button",
+   "id": "scribeflow-html-5649-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5293,7 +5293,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5631,
+   "line": 5649,
    "gated": false,
    "handler": "closeDocModal()"
   },
@@ -5307,12 +5307,12 @@
    "domId": "docMergeBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5638,
+   "line": 5656,
    "gated": false,
    "handler": "mergeDocIntoProfile()"
   },
   {
-   "id": "scribeflow-html-5639-copy-summary",
+   "id": "scribeflow-html-5657-copy-summary",
    "label": "Copy summary",
    "accessibleName": "Copy summary",
    "title": "",
@@ -5321,7 +5321,7 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5639,
+   "line": 5657,
    "gated": false,
    "handler": "copyDocSummary()"
   },
@@ -5335,12 +5335,12 @@
    "domId": "docAnalyzeBtn",
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5645,
+   "line": 5663,
    "gated": false,
    "handler": "analyzeDoc()"
   },
   {
-   "id": "scribeflow-html-5646-close",
+   "id": "scribeflow-html-5664-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -5349,12 +5349,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5646,
+   "line": 5664,
    "gated": false,
    "handler": "closeDocModal()"
   },
   {
-   "id": "scribeflow-html-5655-button",
+   "id": "scribeflow-html-5673-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5363,12 +5363,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5655,
+   "line": 5673,
    "gated": false,
    "handler": "closeShareModal()"
   },
   {
-   "id": "scribeflow-html-5660-copy",
+   "id": "scribeflow-html-5678-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -5377,12 +5377,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5660,
+   "line": 5678,
    "gated": false,
    "handler": "copyShare()"
   },
   {
-   "id": "scribeflow-html-5661-print",
+   "id": "scribeflow-html-5679-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -5391,12 +5391,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5661,
+   "line": 5679,
    "gated": false,
    "handler": "printShare()"
   },
   {
-   "id": "scribeflow-html-5662-download-txt",
+   "id": "scribeflow-html-5680-download-txt",
    "label": "Download .txt",
    "accessibleName": "Download .txt",
    "title": "",
@@ -5405,12 +5405,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5662,
+   "line": 5680,
    "gated": false,
    "handler": "downloadShare()"
   },
   {
-   "id": "scribeflow-html-5663-referral-summary-letter",
+   "id": "scribeflow-html-5681-referral-summary-letter",
    "label": "Referral / summary letter",
    "accessibleName": "Referral / summary letter",
    "title": "",
@@ -5419,12 +5419,12 @@
    "domId": null,
    "view": "global",
    "file": "ScribeFlow.html",
-   "line": 5663,
+   "line": 5681,
    "gated": false,
    "handler": "generatePatientLetter()"
   },
   {
-   "id": "scribeflow-html-7287-grant",
+   "id": "scribeflow-html-7305-grant",
    "label": "Grant",
    "accessibleName": "Grant",
    "title": "",
@@ -5433,12 +5433,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7287,
+   "line": 7305,
    "gated": false,
    "handler": "adminGrantPlan( , this)"
   },
   {
-   "id": "scribeflow-html-7288-clear-override",
+   "id": "scribeflow-html-7306-clear-override",
    "label": "Clear override",
    "accessibleName": "Clear override",
    "title": "",
@@ -5447,12 +5447,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7288,
+   "line": 7306,
    "gated": false,
    "handler": "adminClearPlan( , this)"
   },
   {
-   "id": "scribeflow-html-7307-retry",
+   "id": "scribeflow-html-7325-retry",
    "label": "Retry",
    "accessibleName": "Retry",
    "title": "",
@@ -5461,12 +5461,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7307,
+   "line": 7325,
    "gated": false,
    "handler": "loadAdminBilling()"
   },
   {
-   "id": "scribeflow-html-7345-wksp",
+   "id": "scribeflow-html-7363-wksp",
    "label": "Wksp",
    "accessibleName": "Wksp",
    "title": "Clinical workspace access is GRANTED — click to revoke (takes effect immediately)",
@@ -5475,12 +5475,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7345,
+   "line": 7363,
    "gated": false,
    "handler": "adminWkspRevoke(' ',' ')"
   },
   {
-   "id": "scribeflow-html-7346-wksp-grant",
+   "id": "scribeflow-html-7364-wksp-grant",
    "label": "Wksp Grant",
    "accessibleName": "Wksp Grant",
    "title": "Grant clinical workspace access under the configured legal release",
@@ -5489,12 +5489,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7346,
+   "line": 7364,
    "gated": false,
    "handler": "adminWkspGrant(' ')"
   },
   {
-   "id": "scribeflow-html-7356-toggle-the-premium-data-study-add-on",
+   "id": "scribeflow-html-7374-toggle-the-premium-data-study-add-on",
    "label": "Toggle the premium Data Study add-on",
    "accessibleName": "Toggle the premium Data Study add-on",
    "title": "Toggle the premium Data Study add-on",
@@ -5503,12 +5503,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7356,
+   "line": 7374,
    "gated": false,
    "handler": "adminSetPremium(' ', )"
   },
   {
-   "id": "scribeflow-html-7359-comp",
+   "id": "scribeflow-html-7377-comp",
    "label": "Comp",
    "accessibleName": "Comp",
    "title": "",
@@ -5517,12 +5517,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7359,
+   "line": 7377,
    "gated": false,
    "handler": "adminSetAccess(' ','comp')"
   },
   {
-   "id": "scribeflow-html-7360-trial",
+   "id": "scribeflow-html-7378-trial",
    "label": "Trial…",
    "accessibleName": "Trial…",
    "title": "",
@@ -5531,12 +5531,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7360,
+   "line": 7378,
    "gated": false,
    "handler": "adminSetTrial(' ')"
   },
   {
-   "id": "scribeflow-html-7362-reset-pw",
+   "id": "scribeflow-html-7380-reset-pw",
    "label": "Reset PW",
    "accessibleName": "Reset PW",
    "title": "",
@@ -5545,12 +5545,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7362,
+   "line": 7380,
    "gated": false,
    "handler": "adminResetPassword(' ',' ')"
   },
   {
-   "id": "scribeflow-html-7363-block",
+   "id": "scribeflow-html-7381-block",
    "label": "Block",
    "accessibleName": "Block",
    "title": "",
@@ -5559,12 +5559,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7363,
+   "line": 7381,
    "gated": false,
    "handler": "adminSetAccess(' ','blocked')"
   },
   {
-   "id": "scribeflow-html-7468-download",
+   "id": "scribeflow-html-7486-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -5573,12 +5573,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7468,
+   "line": 7486,
    "gated": false,
    "handler": "downloadAdminBackup(''+esc(name).replace(/'/g,"
   },
   {
-   "id": "scribeflow-html-7541-doctor",
+   "id": "scribeflow-html-7559-doctor",
    "label": "Doctor",
    "accessibleName": "Doctor",
    "title": "",
@@ -5587,12 +5587,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7541,
+   "line": 7559,
    "gated": false,
    "handler": "adminSetRole(' ','doctor')"
   },
   {
-   "id": "scribeflow-html-7542-head-dr",
+   "id": "scribeflow-html-7560-head-dr",
    "label": "Head Dr",
    "accessibleName": "Head Dr",
    "title": "",
@@ -5601,12 +5601,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7542,
+   "line": 7560,
    "gated": false,
    "handler": "adminSetRole(' ','head')"
   },
   {
-   "id": "scribeflow-html-7543-lawyer",
+   "id": "scribeflow-html-7561-lawyer",
    "label": "Lawyer",
    "accessibleName": "Lawyer",
    "title": "",
@@ -5615,12 +5615,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7543,
+   "line": 7561,
    "gated": false,
    "handler": "adminSetRole(' ','lawyer')"
   },
   {
-   "id": "scribeflow-html-7626-revoke",
+   "id": "scribeflow-html-7644-revoke",
    "label": "Revoke",
    "accessibleName": "Revoke",
    "title": "",
@@ -5629,12 +5629,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7626,
+   "line": 7644,
    "gated": false,
    "handler": "adminRevokeCode(' ')"
   },
   {
-   "id": "scribeflow-html-7744-button",
+   "id": "scribeflow-html-7762-button",
    "label": "×",
    "accessibleName": "×",
    "title": "Remove",
@@ -5643,12 +5643,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 7744,
+   "line": 7762,
    "gated": false,
    "handler": "removeDocPref( )"
   },
   {
-   "id": "scribeflow-html-8779-next-patient",
+   "id": "scribeflow-html-8829-next-patient",
    "label": "Next patient",
    "accessibleName": "Next patient",
    "title": "",
@@ -5657,12 +5657,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8779,
+   "line": 8829,
    "gated": false,
    "handler": "var b=document.getElementById('nextActionsBar');if(b)b.style.display='none';newV"
   },
   {
-   "id": "scribeflow-html-8780-create-orders",
+   "id": "scribeflow-html-8830-create-orders",
    "label": "Create orders",
    "accessibleName": "Create orders",
    "title": "",
@@ -5671,12 +5671,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8780,
+   "line": 8830,
    "gated": false,
    "handler": "showView('orders')"
   },
   {
-   "id": "scribeflow-html-8781-book-follow-up",
+   "id": "scribeflow-html-8831-book-follow-up",
    "label": "Book follow-up",
    "accessibleName": "Book follow-up",
    "title": "",
@@ -5685,12 +5685,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8781,
+   "line": 8831,
    "gated": false,
    "handler": "calScheduleForPatient()"
   },
   {
-   "id": "scribeflow-html-8782-back-to-chart",
+   "id": "scribeflow-html-8832-back-to-chart",
    "label": "Back to chart",
    "accessibleName": "Back to chart",
    "title": "",
@@ -5699,12 +5699,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8782,
+   "line": 8832,
    "gated": false,
    "handler": "showView('patients')"
   },
   {
-   "id": "scribeflow-html-8783-calendar",
+   "id": "scribeflow-html-8833-calendar",
    "label": "Calendar",
    "accessibleName": "Calendar",
    "title": "",
@@ -5713,12 +5713,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8783,
+   "line": 8833,
    "gated": false,
    "handler": "showView('calendar')"
   },
   {
-   "id": "scribeflow-html-8797-handler",
+   "id": "scribeflow-html-8847-handler",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -5727,12 +5727,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8797,
+   "line": 8847,
    "gated": false,
    "handler": "var d=document.getElementById('_mlsInfoDialog');if(d)d.remove()"
   },
   {
-   "id": "scribeflow-html-8799-got-it",
+   "id": "scribeflow-html-8849-got-it",
    "label": "Got it",
    "accessibleName": "Got it",
    "title": "",
@@ -5741,7 +5741,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8799,
+   "line": 8849,
    "gated": false,
    "handler": "var d=document.getElementById('_mlsInfoDialog');if(d)d.remove()"
   },
@@ -5755,7 +5755,7 @@
    "domId": "_mlsAskNo",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8860,
+   "line": 8910,
    "gated": false,
    "handler": null
   },
@@ -5769,7 +5769,7 @@
    "domId": "_mlsAskYes",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8861,
+   "line": 8911,
    "gated": false,
    "handler": null
   },
@@ -5783,7 +5783,7 @@
    "domId": "_mlsAskNo",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8878,
+   "line": 8928,
    "gated": false,
    "handler": null
   },
@@ -5797,7 +5797,7 @@
    "domId": "_mlsAskYes",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8879,
+   "line": 8929,
    "gated": false,
    "handler": null
   },
@@ -5811,7 +5811,7 @@
    "domId": "_mlsAskNo",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8966,
+   "line": 9016,
    "gated": false,
    "handler": null
   },
@@ -5825,12 +5825,12 @@
    "domId": "_mlsAskYes",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 8967,
+   "line": 9017,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-10091-g-isme-esc-g-label-patient-note",
+   "id": "scribeflow-html-10141-g-isme-esc-g-label-patient-note",
    "label": "'+ ' '+(g.isMe?' ':' ')+esc(g.label)+' '+ ' patient · note '+ '",
    "accessibleName": "'+ ' '+(g.isMe?' ':' ')+esc(g.label)+' '+ ' patient · note '+ '",
    "title": "",
@@ -5839,12 +5839,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 10091,
+   "line": 10141,
    "gated": false,
    "handler": "selectTeamDoctor('+JSON.stringify(g.key).replace(/"
   },
   {
-   "id": "scribeflow-html-10107-handler",
+   "id": "scribeflow-html-10157-handler",
    "label": "'+ '",
    "accessibleName": "'+ '",
    "title": "",
@@ -5853,12 +5853,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 10107,
+   "line": 10157,
    "gated": false,
    "handler": "openTeamPatient( )"
   },
   {
-   "id": "scribeflow-html-10414-download-marketing-one-pager-pdf",
+   "id": "scribeflow-html-10464-download-marketing-one-pager-pdf",
    "label": "Download marketing one-pager (PDF)",
    "accessibleName": "Download marketing one-pager (PDF)",
    "title": "",
@@ -5867,12 +5867,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 10414,
+   "line": 10464,
    "gated": false,
    "handler": "downloadOutcomesOnePager()"
   },
   {
-   "id": "scribeflow-html-10415-copy-headline-stat",
+   "id": "scribeflow-html-10465-copy-headline-stat",
    "label": "Copy headline stat",
    "accessibleName": "Copy headline stat",
    "title": "",
@@ -5881,12 +5881,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 10415,
+   "line": 10465,
    "gated": false,
    "handler": "copyOutcomesStat()"
   },
   {
-   "id": "scribeflow-html-11497-open-this-day",
+   "id": "scribeflow-html-11547-open-this-day",
    "label": "Open this day",
    "accessibleName": "Open this day",
    "title": "Open this day",
@@ -5895,12 +5895,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11497,
+   "line": 11547,
    "gated": false,
    "handler": "_calRefDate=' ';calSetMode('day')"
   },
   {
-   "id": "scribeflow-html-11506-for-var-tl-rng-startmin-tl",
+   "id": "scribeflow-html-11556-for-var-tl-rng-startmin-tl",
    "label": "'; for(var tl=rng.startMin;tl",
    "accessibleName": "'; for(var tl=rng.startMin;tl",
    "title": "Click an empty time to book here",
@@ -5909,12 +5909,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11506,
+   "line": 11556,
    "gated": false,
    "handler": "_calGridClick(event,' ', , )"
   },
   {
-   "id": "scribeflow-html-11508-click-for-details-drag-to-reschedule",
+   "id": "scribeflow-html-11558-click-for-details-drag-to-reschedule",
    "label": "Click for details · drag to reschedule",
    "accessibleName": "Click for details · drag to reschedule",
    "title": "Click for details · drag to reschedule",
@@ -5923,12 +5923,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11508,
+   "line": 11558,
    "gated": false,
    "handler": "event.stopPropagation();calChipOpen( ,' ')"
   },
   {
-   "id": "scribeflow-html-11509-no-time",
+   "id": "scribeflow-html-11559-no-time",
    "label": "no-time",
    "accessibleName": "no-time",
    "title": "with no set time",
@@ -5937,12 +5937,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11509,
+   "line": 11559,
    "gated": false,
    "handler": "calOpenDay(' ')"
   },
   {
-   "id": "scribeflow-html-11528-for-var-t-rng-startmin-t",
+   "id": "scribeflow-html-11578-for-var-t-rng-startmin-t",
    "label": "'; for(var t=rng.startMin; t",
    "accessibleName": "'; for(var t=rng.startMin; t",
    "title": "Click an empty time to book an appointment here",
@@ -5951,12 +5951,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11528,
+   "line": 11578,
    "gated": false,
    "handler": "_calGridClick(event,' ', , )"
   },
   {
-   "id": "scribeflow-html-11531-esc-callabelof-a-a-reason",
+   "id": "scribeflow-html-11581-esc-callabelof-a-a-reason",
    "label": "'+esc(_calLabelOf(a))+(a.reason?' · ':'')+'",
    "accessibleName": "'+esc(_calLabelOf(a))+(a.reason?' · ':'')+'",
    "title": "Click for a quick preview",
@@ -5965,12 +5965,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11531,
+   "line": 11581,
    "gated": false,
    "handler": "calApptPeek( ,event)"
   },
   {
-   "id": "scribeflow-html-11559-esc-callabelof-a",
+   "id": "scribeflow-html-11609-esc-callabelof-a",
    "label": "':'')+esc(_calLabelOf(a))+'",
    "accessibleName": "':'')+esc(_calLabelOf(a))+'",
    "title": "Click for a quick preview · drag to reschedule",
@@ -5979,12 +5979,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11559,
+   "line": 11609,
    "gated": false,
    "handler": "calApptPeek( ,event)"
   },
   {
-   "id": "scribeflow-html-11560-more",
+   "id": "scribeflow-html-11610-more",
    "label": "+ more",
    "accessibleName": "+ more",
    "title": "See all appointments this day",
@@ -5993,12 +5993,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11560,
+   "line": 11610,
    "gated": false,
    "handler": "event.stopPropagation();calOpenDay(' ')"
   },
   {
-   "id": "scribeflow-html-11580-handler",
+   "id": "scribeflow-html-11630-handler",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -6007,12 +6007,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11580,
+   "line": 11630,
    "gated": false,
    "handler": "var p=document.getElementById('calApptPeek');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-11587-start-visit",
+   "id": "scribeflow-html-11637-start-visit",
    "label": "Start visit",
    "accessibleName": "Start visit",
    "title": "",
@@ -6021,12 +6021,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11587,
+   "line": 11637,
    "gated": false,
    "handler": "calStartVisit( );var p=document.getElementById('calApptPeek');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-11588-pull-chart",
+   "id": "scribeflow-html-11638-pull-chart",
    "label": "Pull chart",
    "accessibleName": "Pull chart",
    "title": "",
@@ -6035,12 +6035,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11588,
+   "line": 11638,
    "gated": false,
    "handler": "calPullChartFor( )"
   },
   {
-   "id": "scribeflow-html-11589-details",
+   "id": "scribeflow-html-11639-details",
    "label": "Details ›",
    "accessibleName": "Details ›",
    "title": "",
@@ -6049,12 +6049,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11589,
+   "line": 11639,
    "gated": false,
    "handler": "calOpenDay(' ');setTimeout(function(){calApptInfo( );},70);var p=document.getEle"
   },
   {
-   "id": "scribeflow-html-11605-close",
+   "id": "scribeflow-html-11655-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -6063,12 +6063,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11605,
+   "line": 11655,
    "gated": false,
    "handler": "document.getElementById('calDayPanel').style.display='none'"
   },
   {
-   "id": "scribeflow-html-11620-add",
+   "id": "scribeflow-html-11670-add",
    "label": "Add",
    "accessibleName": "Add",
    "title": "",
@@ -6077,12 +6077,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11620,
+   "line": 11670,
    "gated": false,
    "handler": "calAddAppt(' ',this)"
   },
   {
-   "id": "scribeflow-html-11670-schedule-it",
+   "id": "scribeflow-html-11720-schedule-it",
    "label": "Schedule it",
    "accessibleName": "Schedule it",
    "title": "",
@@ -6091,12 +6091,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11670,
+   "line": 11720,
    "gated": false,
    "handler": "calCreateAppt(this)"
   },
   {
-   "id": "scribeflow-html-11670-close",
+   "id": "scribeflow-html-11720-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -6105,12 +6105,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11670,
+   "line": 11720,
    "gated": false,
    "handler": "calNewAppt()"
   },
   {
-   "id": "scribeflow-html-11792-save-changes",
+   "id": "scribeflow-html-11842-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -6119,12 +6119,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11792,
+   "line": 11842,
    "gated": false,
    "handler": "calSaveAppt( )"
   },
   {
-   "id": "scribeflow-html-11793-check-in",
+   "id": "scribeflow-html-11843-check-in",
    "label": "Check in",
    "accessibleName": "Check in",
    "title": "",
@@ -6133,12 +6133,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11793,
+   "line": 11843,
    "gated": false,
    "handler": "calCheckIn( )"
   },
   {
-   "id": "scribeflow-html-11794-start-visit",
+   "id": "scribeflow-html-11844-start-visit",
    "label": "Start visit",
    "accessibleName": "Start visit",
    "title": "",
@@ -6147,12 +6147,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11794,
+   "line": 11844,
    "gated": false,
    "handler": "calStartVisit( )"
   },
   {
-   "id": "scribeflow-html-11795-open-patient",
+   "id": "scribeflow-html-11845-open-patient",
    "label": "Open patient",
    "accessibleName": "Open patient",
    "title": "",
@@ -6161,12 +6161,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11795,
+   "line": 11845,
    "gated": false,
    "handler": "calOpenPatientFor( )"
   },
   {
-   "id": "scribeflow-html-11796-pull-chart",
+   "id": "scribeflow-html-11846-pull-chart",
    "label": "Pull chart",
    "accessibleName": "Pull chart",
    "title": "Open this patient and import their chart/history from your Athena tab",
@@ -6175,12 +6175,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11796,
+   "line": 11846,
    "gated": false,
    "handler": "calPullChartFor( )"
   },
   {
-   "id": "scribeflow-html-11797-cancel-appt",
+   "id": "scribeflow-html-11847-cancel-appt",
    "label": "Cancel appt",
    "accessibleName": "Cancel appt",
    "title": "",
@@ -6189,12 +6189,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11797,
+   "line": 11847,
    "gated": false,
    "handler": "calCancelAppt( )"
   },
   {
-   "id": "scribeflow-html-11798-delete",
+   "id": "scribeflow-html-11848-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -6203,12 +6203,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11798,
+   "line": 11848,
    "gated": false,
    "handler": "calDeleteAppt( )"
   },
   {
-   "id": "scribeflow-html-11799-close",
+   "id": "scribeflow-html-11849-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -6217,12 +6217,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11799,
+   "line": 11849,
    "gated": false,
    "handler": "calApptInfo( )"
   },
   {
-   "id": "scribeflow-html-11928-start-visit",
+   "id": "scribeflow-html-11978-start-visit",
    "label": "Start visit",
    "accessibleName": "Start visit",
    "title": "",
@@ -6231,12 +6231,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11928,
+   "line": 11978,
    "gated": false,
    "handler": "calStartVisit( )"
   },
   {
-   "id": "scribeflow-html-11951-waiting-room",
+   "id": "scribeflow-html-12001-waiting-room",
    "label": "Waiting room",
    "accessibleName": "Waiting room",
    "title": "",
@@ -6245,12 +6245,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11951,
+   "line": 12001,
    "gated": false,
    "handler": "showView('visit')"
   },
   {
-   "id": "scribeflow-html-11952-see-schedule",
+   "id": "scribeflow-html-12002-see-schedule",
    "label": "See schedule",
    "accessibleName": "See schedule",
    "title": "",
@@ -6259,12 +6259,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11952,
+   "line": 12002,
    "gated": false,
    "handler": "showView('calendar')"
   },
   {
-   "id": "scribeflow-html-11953-new-appointment",
+   "id": "scribeflow-html-12003-new-appointment",
    "label": "New appointment",
    "accessibleName": "New appointment",
    "title": "",
@@ -6273,12 +6273,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 11953,
+   "line": 12003,
    "gated": false,
    "handler": "calScheduleForPatient()"
   },
   {
-   "id": "scribeflow-html-12594-show-staff-prep-in-menu",
+   "id": "scribeflow-html-12644-show-staff-prep-in-menu",
    "label": "Show Staff Prep in Menu",
    "accessibleName": "Show Staff Prep in Menu",
    "title": "",
@@ -6287,12 +6287,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12594,
+   "line": 12644,
    "gated": false,
    "handler": "su_showStaffPrepMenu()"
   },
   {
-   "id": "scribeflow-html-12723-refresh",
+   "id": "scribeflow-html-12773-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -6301,12 +6301,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12723,
+   "line": 12773,
    "gated": false,
    "handler": "loadBoard(true)"
   },
   {
-   "id": "scribeflow-html-12739-button",
+   "id": "scribeflow-html-12789-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Previous day",
@@ -6315,12 +6315,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12739,
+   "line": 12789,
    "gated": false,
    "handler": "changeBoardDate(-1)"
   },
   {
-   "id": "scribeflow-html-12741-button",
+   "id": "scribeflow-html-12791-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Next day",
@@ -6329,12 +6329,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12741,
+   "line": 12791,
    "gated": false,
    "handler": "changeBoardDate(1)"
   },
   {
-   "id": "scribeflow-html-12742-today",
+   "id": "scribeflow-html-12792-today",
    "label": "Today",
    "accessibleName": "Today",
    "title": "",
@@ -6343,12 +6343,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12742,
+   "line": 12792,
    "gated": false,
    "handler": "jumpBoardDate(' ')"
   },
   {
-   "id": "scribeflow-html-12743-refresh",
+   "id": "scribeflow-html-12793-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -6357,12 +6357,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12743,
+   "line": 12793,
    "gated": false,
    "handler": "loadBoard(true)"
   },
   {
-   "id": "scribeflow-html-12758-check-in",
+   "id": "scribeflow-html-12808-check-in",
    "label": "Check in",
    "accessibleName": "Check in",
    "title": "",
@@ -6371,12 +6371,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12758,
+   "line": 12808,
    "gated": false,
    "handler": "apptUpdate( ,{status:'checked_in'},this)"
   },
   {
-   "id": "scribeflow-html-12759-room",
+   "id": "scribeflow-html-12809-room",
    "label": "Room",
    "accessibleName": "Room",
    "title": "",
@@ -6385,12 +6385,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12759,
+   "line": 12809,
    "gated": false,
    "handler": "apptRoom( )"
   },
   {
-   "id": "scribeflow-html-12760-done",
+   "id": "scribeflow-html-12810-done",
    "label": "Done",
    "accessibleName": "Done",
    "title": "",
@@ -6399,12 +6399,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12760,
+   "line": 12810,
    "gated": false,
    "handler": "apptUpdate( ,{status:'completed'},this)"
   },
   {
-   "id": "scribeflow-html-12761-cancel",
+   "id": "scribeflow-html-12811-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -6413,7 +6413,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12761,
+   "line": 12811,
    "gated": false,
    "handler": "apptUpdate( ,{status:'cancelled'},this)"
   },
@@ -6427,12 +6427,12 @@
    "domId": "bAddBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12771,
+   "line": 12821,
    "gated": false,
    "handler": "addApptFromBoard()"
   },
   {
-   "id": "scribeflow-html-12849-copy",
+   "id": "scribeflow-html-12899-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -6441,12 +6441,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12849,
+   "line": 12899,
    "gated": false,
    "handler": "copyRecCreds()"
   },
   {
-   "id": "scribeflow-html-12857-remove",
+   "id": "scribeflow-html-12907-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "",
@@ -6455,7 +6455,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12857,
+   "line": 12907,
    "gated": false,
    "handler": "removeReceptionist( )"
   },
@@ -6469,12 +6469,12 @@
    "domId": "recAddBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12868,
+   "line": 12918,
    "gated": false,
    "handler": "addReceptionist()"
   },
   {
-   "id": "scribeflow-html-12996-mon-fri-9-5",
+   "id": "scribeflow-html-13046-mon-fri-9-5",
    "label": "Mon–Fri 9–5",
    "accessibleName": "Mon–Fri 9–5",
    "title": "",
@@ -6483,12 +6483,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12996,
+   "line": 13046,
    "gated": false,
    "handler": "avQuick('weekdays')"
   },
   {
-   "id": "scribeflow-html-12997-every-day-8-6",
+   "id": "scribeflow-html-13047-every-day-8-6",
    "label": "Every day 8–6",
    "accessibleName": "Every day 8–6",
    "title": "",
@@ -6497,12 +6497,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12997,
+   "line": 13047,
    "gated": false,
    "handler": "avQuick('all')"
   },
   {
-   "id": "scribeflow-html-12998-clear-all",
+   "id": "scribeflow-html-13048-clear-all",
    "label": "Clear all",
    "accessibleName": "Clear all",
    "title": "",
@@ -6511,7 +6511,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 12998,
+   "line": 13048,
    "gated": false,
    "handler": "avQuick('clear')"
   },
@@ -6525,12 +6525,12 @@
    "domId": "avDay'+d+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13006,
+   "line": 13056,
    "gated": false,
    "handler": "toggleAvDay( )"
   },
   {
-   "id": "scribeflow-html-13012-save-availability",
+   "id": "scribeflow-html-13062-save-availability",
    "label": "Save availability",
    "accessibleName": "Save availability",
    "title": "",
@@ -6539,12 +6539,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13012,
+   "line": 13062,
    "gated": false,
    "handler": "saveAvailability(this)"
   },
   {
-   "id": "scribeflow-html-13013-close",
+   "id": "scribeflow-html-13063-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -6553,7 +6553,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13013,
+   "line": 13063,
    "gated": false,
    "handler": "avCloseEditor(this)"
   },
@@ -6567,12 +6567,12 @@
    "domId": "fuSendBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13099,
+   "line": 13149,
    "gated": false,
    "handler": "sendFollowups()"
   },
   {
-   "id": "scribeflow-html-13158-remove",
+   "id": "scribeflow-html-13208-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "",
@@ -6581,7 +6581,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13158,
+   "line": 13208,
    "gated": false,
    "handler": "removeDoctorSeat( )"
   },
@@ -6595,12 +6595,12 @@
    "domId": "docSeatAddBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13166,
+   "line": 13216,
    "gated": false,
    "handler": "addDoctorSeat()"
   },
   {
-   "id": "scribeflow-html-13223-copy-full-invite",
+   "id": "scribeflow-html-13273-copy-full-invite",
    "label": "Copy full invite",
    "accessibleName": "Copy full invite",
    "title": "",
@@ -6609,12 +6609,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13223,
+   "line": 13273,
    "gated": false,
    "handler": "copyLawyerInvite()"
   },
   {
-   "id": "scribeflow-html-13223-copy-link-only",
+   "id": "scribeflow-html-13273-copy-link-only",
    "label": "Copy link only",
    "accessibleName": "Copy link only",
    "title": "",
@@ -6623,12 +6623,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13223,
+   "line": 13273,
    "gated": false,
    "handler": "copyLawyerLink()"
   },
   {
-   "id": "scribeflow-html-13223-email-the-invite",
+   "id": "scribeflow-html-13273-email-the-invite",
    "label": "Email the invite",
    "accessibleName": "Email the invite",
    "title": "",
@@ -6637,12 +6637,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13223,
+   "line": 13273,
    "gated": false,
    "handler": "emailLawyerInvite()"
   },
   {
-   "id": "scribeflow-html-13231-remove",
+   "id": "scribeflow-html-13281-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "",
@@ -6651,7 +6651,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13231,
+   "line": 13281,
    "gated": false,
    "handler": "removeLawyer( )"
   },
@@ -6665,12 +6665,12 @@
    "domId": "lawAddBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13242,
+   "line": 13292,
    "gated": false,
    "handler": "addLawyer()"
   },
   {
-   "id": "scribeflow-html-13512-refresh",
+   "id": "scribeflow-html-13562-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "Reload with the latest data",
@@ -6679,12 +6679,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13512,
+   "line": 13562,
    "gated": false,
    "handler": "pinnedRefresh()"
   },
   {
-   "id": "scribeflow-html-13513-fullscreen",
+   "id": "scribeflow-html-13563-fullscreen",
    "label": "Fullscreen",
    "accessibleName": "Fullscreen",
    "title": "",
@@ -6693,12 +6693,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13513,
+   "line": 13563,
    "gated": false,
    "handler": "pinnedFullscreen()"
   },
   {
-   "id": "scribeflow-html-13514-studio",
+   "id": "scribeflow-html-13564-studio",
    "label": "Studio",
    "accessibleName": "Studio",
    "title": "",
@@ -6707,12 +6707,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13514,
+   "line": 13564,
    "gated": false,
    "handler": "showView('studio')"
   },
   {
-   "id": "scribeflow-html-13976-open",
+   "id": "scribeflow-html-14026-open",
    "label": "Open",
    "accessibleName": "Open",
    "title": "",
@@ -6721,12 +6721,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13976,
+   "line": 14026,
    "gated": false,
    "handler": "openStudioSaved(' ')"
   },
   {
-   "id": "scribeflow-html-13980-fullscreen",
+   "id": "scribeflow-html-14030-fullscreen",
    "label": "Fullscreen",
    "accessibleName": "Fullscreen",
    "title": "",
@@ -6735,12 +6735,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13980,
+   "line": 14030,
    "gated": false,
    "handler": "openStudioSavedFullscreen(' ')"
   },
   {
-   "id": "scribeflow-html-13981-rename",
+   "id": "scribeflow-html-14031-rename",
    "label": "Rename",
    "accessibleName": "Rename",
    "title": "",
@@ -6749,12 +6749,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13981,
+   "line": 14031,
    "gated": false,
    "handler": "renameStudioSaved(' ')"
   },
   {
-   "id": "scribeflow-html-13982-download",
+   "id": "scribeflow-html-14032-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -6763,12 +6763,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13982,
+   "line": 14032,
    "gated": false,
    "handler": "downloadStudioSaved(' ')"
   },
   {
-   "id": "scribeflow-html-13983-delete",
+   "id": "scribeflow-html-14033-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -6777,12 +6777,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 13983,
+   "line": 14033,
    "gated": false,
    "handler": "deleteStudioSaved(' ')"
   },
   {
-   "id": "scribeflow-html-14056-ask-copilot",
+   "id": "scribeflow-html-14106-ask-copilot",
    "label": "Ask Copilot",
    "accessibleName": "Ask Copilot",
    "title": "",
@@ -6791,12 +6791,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14056,
+   "line": 14106,
    "gated": false,
    "handler": "copilotChipText('Who are my patients overdue for follow-up?')"
   },
   {
-   "id": "scribeflow-html-14057-review",
+   "id": "scribeflow-html-14107-review",
    "label": "Review",
    "accessibleName": "Review",
    "title": "",
@@ -6805,12 +6805,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14057,
+   "line": 14107,
    "gated": false,
    "handler": "copilotChipText('Which patients have rising pain?')"
   },
   {
-   "id": "scribeflow-html-14340-about",
+   "id": "scribeflow-html-14390-about",
    "label": "About",
    "accessibleName": "About",
    "title": "",
@@ -6819,12 +6819,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14340,
+   "line": 14390,
    "gated": false,
    "handler": "copilotChipText('Give me a quick rundown on '+_ce(String(ap.name).replace(/\\x27/"
   },
   {
-   "id": "scribeflow-html-14408-copy-email-draft",
+   "id": "scribeflow-html-14458-copy-email-draft",
    "label": "Copy email draft",
    "accessibleName": "Copy email draft",
    "title": "",
@@ -6833,7 +6833,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14408,
+   "line": 14458,
    "gated": false,
    "handler": "copilotArtifactEmail( )"
   },
@@ -6847,12 +6847,12 @@
    "domId": "cTwBtn_'+i+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14412,
+   "line": 14462,
    "gated": false,
    "handler": "copilotTweak( )"
   },
   {
-   "id": "scribeflow-html-14413-copy",
+   "id": "scribeflow-html-14463-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -6861,12 +6861,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14413,
+   "line": 14463,
    "gated": false,
    "handler": "copilotCopyArtifact( )"
   },
   {
-   "id": "scribeflow-html-14413-review-emr-route",
+   "id": "scribeflow-html-14463-review-emr-route",
    "label": "Review EMR route",
    "accessibleName": "Review EMR route",
    "title": "",
@@ -6875,12 +6875,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14413,
+   "line": 14463,
    "gated": false,
    "handler": "copilotArtifactToEMR( ,this)"
   },
   {
-   "id": "scribeflow-html-14413-build-a-tool",
+   "id": "scribeflow-html-14463-build-a-tool",
    "label": "Build a tool",
    "accessibleName": "Build a tool",
    "title": "",
@@ -6889,12 +6889,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14413,
+   "line": 14463,
    "gated": false,
    "handler": "copilotArtifactToTool( )"
   },
   {
-   "id": "scribeflow-html-14455-cancel",
+   "id": "scribeflow-html-14505-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -6903,7 +6903,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14455,
+   "line": 14505,
    "gated": false,
    "handler": "_copilotCloseEmail()"
   },
@@ -6917,12 +6917,12 @@
    "domId": "cMailCopy",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14455,
+   "line": 14505,
    "gated": false,
    "handler": "copilotCopyEmailDraft()"
   },
   {
-   "id": "scribeflow-html-14608-close",
+   "id": "scribeflow-html-14658-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -6931,12 +6931,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14608,
+   "line": 14658,
    "gated": false,
    "handler": "closeStudioFullscreen()"
   },
   {
-   "id": "scribeflow-html-14705-attach-to-chart",
+   "id": "scribeflow-html-14755-attach-to-chart",
    "label": "Attach to chart",
    "accessibleName": "Attach to chart",
    "title": "",
@@ -6945,12 +6945,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14705,
+   "line": 14755,
    "gated": false,
    "handler": "attachIntake( ,' ')"
   },
   {
-   "id": "scribeflow-html-14706-attach-to",
+   "id": "scribeflow-html-14756-attach-to",
    "label": "Attach to",
    "accessibleName": "Attach to",
    "title": "",
@@ -6959,12 +6959,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14706,
+   "line": 14756,
    "gated": false,
    "handler": "attachIntake( ,' ')"
   },
   {
-   "id": "scribeflow-html-14706-new-chart-instead",
+   "id": "scribeflow-html-14756-new-chart-instead",
    "label": "New chart instead",
    "accessibleName": "New chart instead",
    "title": "",
@@ -6973,12 +6973,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14706,
+   "line": 14756,
    "gated": false,
    "handler": "attachIntake( ,'')"
   },
   {
-   "id": "scribeflow-html-14707-create-new-chart",
+   "id": "scribeflow-html-14757-create-new-chart",
    "label": "Create new chart",
    "accessibleName": "Create new chart",
    "title": "",
@@ -6987,12 +6987,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14707,
+   "line": 14757,
    "gated": false,
    "handler": "attachIntake( ,'')"
   },
   {
-   "id": "scribeflow-html-14708-create-attach",
+   "id": "scribeflow-html-14758-create-attach",
    "label": "Create & attach",
    "accessibleName": "Create & attach",
    "title": "",
@@ -7001,12 +7001,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14708,
+   "line": 14758,
    "gated": false,
    "handler": "attachIntake( ,'')"
   },
   {
-   "id": "scribeflow-html-14714-dismiss",
+   "id": "scribeflow-html-14764-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -7015,12 +7015,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14714,
+   "line": 14764,
    "gated": false,
    "handler": "dismissIntake( )"
   },
   {
-   "id": "scribeflow-html-14849-add-as-a-new-patient",
+   "id": "scribeflow-html-14899-add-as-a-new-patient",
    "label": "Add “ ” as a new patient",
    "accessibleName": "Add “ ” as a new patient",
    "title": "",
@@ -7029,7 +7029,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14849,
+   "line": 14899,
    "gated": false,
    "handler": "newPatientFromSearch()"
   },
@@ -7043,12 +7043,12 @@
    "domId": "${esc(p.id)}",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14917,
+   "line": 14967,
    "gated": false,
    "handler": "selectPatient(' ')"
   },
   {
-   "id": "scribeflow-html-14926-record",
+   "id": "scribeflow-html-14976-record",
    "label": "Record",
    "accessibleName": "Record",
    "title": "Start recording a visit for this patient",
@@ -7057,12 +7057,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14926,
+   "line": 14976,
    "gated": false,
    "handler": "event.stopPropagation();ptQuickVisit(' ')"
   },
   {
-   "id": "scribeflow-html-14927-delete-patient",
+   "id": "scribeflow-html-14977-delete-patient",
    "label": "Delete patient",
    "accessibleName": "Delete patient",
    "title": "Delete patient",
@@ -7071,7 +7071,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 14927,
+   "line": 14977,
    "gated": false,
    "handler": "event.stopPropagation();deletePatient(' ')"
   },
@@ -7085,12 +7085,12 @@
    "domId": "profUnpulledPull",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15149,
+   "line": 15199,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-15207-save",
+   "id": "scribeflow-html-15257-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -7099,12 +7099,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15207,
+   "line": 15257,
    "gated": false,
    "handler": "saveProfField(' ')"
   },
   {
-   "id": "scribeflow-html-15208-cancel",
+   "id": "scribeflow-html-15258-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -7113,12 +7113,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15208,
+   "line": 15258,
    "gated": false,
    "handler": "cancelProfField()"
   },
   {
-   "id": "scribeflow-html-15283-save",
+   "id": "scribeflow-html-15333-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -7127,12 +7127,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15283,
+   "line": 15333,
    "gated": false,
    "handler": "saveInsurance()"
   },
   {
-   "id": "scribeflow-html-15284-cancel",
+   "id": "scribeflow-html-15334-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -7141,12 +7141,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15284,
+   "line": 15334,
    "gated": false,
    "handler": "cancelInsurance()"
   },
   {
-   "id": "scribeflow-html-15338-delete-document",
+   "id": "scribeflow-html-15388-delete-document",
    "label": "Delete document",
    "accessibleName": "Delete document",
    "title": "Delete document",
@@ -7155,7 +7155,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15338,
+   "line": 15388,
    "gated": false,
    "handler": "event.stopPropagation();deleteDoc(' ')"
   },
@@ -7169,7 +7169,7 @@
    "domId": "docPasteCancel",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15410,
+   "line": 15460,
    "gated": false,
    "handler": null
   },
@@ -7183,12 +7183,12 @@
    "domId": "docPasteAdd",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15411,
+   "line": 15461,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-15903-match-template",
+   "id": "scribeflow-html-15967-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -7197,12 +7197,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15903,
+   "line": 15967,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "scribeflow-html-15913-save-to-s-chart",
+   "id": "scribeflow-html-15977-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -7211,12 +7211,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 15913,
+   "line": 15977,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "scribeflow-html-16120-skip",
+   "id": "scribeflow-html-16184-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -7225,12 +7225,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16120,
+   "line": 16184,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "scribeflow-html-16121-fill-all-at-once",
+   "id": "scribeflow-html-16185-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -7239,12 +7239,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16121,
+   "line": 16185,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "scribeflow-html-16218-open-in-history",
+   "id": "scribeflow-html-16282-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -7253,12 +7253,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16218,
+   "line": 16282,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-16223-open-in-history",
+   "id": "scribeflow-html-16287-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -7267,12 +7267,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16223,
+   "line": 16287,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-16315-save-changes",
+   "id": "scribeflow-html-16379-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -7281,12 +7281,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16315,
+   "line": 16379,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "scribeflow-html-16316-use-on-current-note",
+   "id": "scribeflow-html-16380-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -7295,12 +7295,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16316,
+   "line": 16380,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "scribeflow-html-16318-duplicate",
+   "id": "scribeflow-html-16382-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -7309,12 +7309,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16318,
+   "line": 16382,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-16319-delete",
+   "id": "scribeflow-html-16383-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -7323,12 +7323,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16319,
+   "line": 16383,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-16321-restore",
+   "id": "scribeflow-html-16385-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -7337,12 +7337,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16321,
+   "line": 16385,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "scribeflow-html-16531-undo-delete",
+   "id": "scribeflow-html-16595-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -7351,12 +7351,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16531,
+   "line": 16595,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "scribeflow-html-16855-add-selected-to-my-templates",
+   "id": "scribeflow-html-16919-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -7365,12 +7365,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16855,
+   "line": 16919,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "scribeflow-html-17456-remove-the-extras",
+   "id": "scribeflow-html-17520-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -7379,12 +7379,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17456,
+   "line": 17520,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "scribeflow-html-17505-clear-search",
+   "id": "scribeflow-html-17569-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -7393,12 +7393,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17505,
+   "line": 17569,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "scribeflow-html-17550-attach",
+   "id": "scribeflow-html-17614-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -7407,12 +7407,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17550,
+   "line": 17614,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "scribeflow-html-17553-review-athena-actions",
+   "id": "scribeflow-html-17617-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -7421,12 +7421,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17553,
+   "line": 17617,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "scribeflow-html-17554-handler",
+   "id": "scribeflow-html-17618-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -7435,12 +7435,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17554,
+   "line": 17618,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "scribeflow-html-17562-delete",
+   "id": "scribeflow-html-17626-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -7449,12 +7449,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17562,
+   "line": 17626,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "scribeflow-html-17565-athena-chart-import-receipt",
+   "id": "scribeflow-html-17629-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -7463,12 +7463,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17565,
+   "line": 17629,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "scribeflow-html-17965-maybe-later",
+   "id": "scribeflow-html-18029-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -7477,12 +7477,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17965,
+   "line": 18029,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
   {
-   "id": "scribeflow-html-18835-iscur-meta",
+   "id": "scribeflow-html-18899-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -7491,12 +7491,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18835,
+   "line": 18899,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "scribeflow-html-18879-button",
+   "id": "scribeflow-html-18943-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -7505,12 +7505,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18879,
+   "line": 18943,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "scribeflow-html-18880-button",
+   "id": "scribeflow-html-18944-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -7519,12 +7519,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18880,
+   "line": 18944,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "scribeflow-html-18888-view-tomorrow",
+   "id": "scribeflow-html-18952-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -7533,12 +7533,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18888,
+   "line": 18952,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "scribeflow-html-21463-button",
+   "id": "scribeflow-html-21527-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -7547,12 +7547,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21463,
+   "line": 21527,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-21467-close-plan",
+   "id": "scribeflow-html-21531-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -7561,12 +7561,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21467,
+   "line": 21531,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-21564-times",
+   "id": "scribeflow-html-21628-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -7575,7 +7575,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21564,
+   "line": 21628,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -7589,7 +7589,7 @@
    "domId": "athenaReceiptWrite",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21569,
+   "line": 21633,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -7603,12 +7603,12 @@
    "domId": "athenaReceiptSave",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21570,
+   "line": 21634,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "scribeflow-html-21572-close-review",
+   "id": "scribeflow-html-21636-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -7617,12 +7617,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 21572,
+   "line": 21636,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-22085-add-this-order",
+   "id": "scribeflow-html-22149-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -7631,12 +7631,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22085,
+   "line": 22149,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "scribeflow-html-22103-add-this-order",
+   "id": "scribeflow-html-22167-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -7645,12 +7645,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22103,
+   "line": 22167,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "scribeflow-html-22251-review-for-athena",
+   "id": "scribeflow-html-22315-review-for-athena",
    "label": "Review for Athena",
    "accessibleName": "Review for Athena",
    "title": "Review this frozen proposal, then complete the exact order directly in Athena. MLS does not place it.",
@@ -7659,12 +7659,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22251,
+   "line": 22315,
    "gated": false,
    "handler": "event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(' '),this"
   },
   {
-   "id": "scribeflow-html-22271-remove-order",
+   "id": "scribeflow-html-22335-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -7673,12 +7673,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22271,
+   "line": 22335,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "scribeflow-html-22509-remove",
+   "id": "scribeflow-html-22573-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -7687,7 +7687,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22509,
+   "line": 22573,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -7701,7 +7701,7 @@
    "domId": "ikExitCancel",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23367,
+   "line": 23431,
    "gated": false,
    "handler": null
   },
@@ -7715,12 +7715,12 @@
    "domId": "ikExitGo",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23368,
+   "line": 23432,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-23732-handler",
+   "id": "scribeflow-html-23796-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -7729,12 +7729,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23732,
+   "line": 23796,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "scribeflow-html-24004-add-selected",
+   "id": "scribeflow-html-24068-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -7743,12 +7743,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 24004,
+   "line": 24068,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "scribeflow-html-24005-dismiss",
+   "id": "scribeflow-html-24069-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -7757,12 +7757,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 24005,
+   "line": 24069,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "scribeflow-html-24229-remove",
+   "id": "scribeflow-html-24293-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -7771,12 +7771,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 24229,
+   "line": 24293,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "scribeflow-html-26753-executed-pdf",
+   "id": "scribeflow-html-26817-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -7785,12 +7785,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 26753,
+   "line": 26817,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "scribeflow-html-26754-receipt",
+   "id": "scribeflow-html-26818-receipt",
    "label": "Receipt",
    "accessibleName": "Receipt",
    "title": "",
@@ -7799,12 +7799,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 26754,
+   "line": 26818,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-26757-review-countersign",
+   "id": "scribeflow-html-26821-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -7813,12 +7813,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 26757,
+   "line": 26821,
    "gated": false,
    "handler": "openCountersign( ,''+esc(String(r.name_signed||'')).replace(/\\x27/g,"
   },
   {
-   "id": "scribeflow-html-26762-download",
+   "id": "scribeflow-html-26826-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -7827,12 +7827,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 26762,
+   "line": 26826,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-27344-open-chart",
+   "id": "scribeflow-html-27408-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -7841,12 +7841,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27344,
+   "line": 27408,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "scribeflow-html-27345-text",
+   "id": "scribeflow-html-27409-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -7855,12 +7855,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27345,
+   "line": 27409,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "scribeflow-html-27346-mark-done",
+   "id": "scribeflow-html-27410-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -7869,12 +7869,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27346,
+   "line": 27410,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "scribeflow-html-27362-send-text",
+   "id": "scribeflow-html-27426-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -7883,12 +7883,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27362,
+   "line": 27426,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "scribeflow-html-27362-call-read-it-aloud",
+   "id": "scribeflow-html-27426-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -7897,12 +7897,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27362,
+   "line": 27426,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "scribeflow-html-27404-save-settings",
+   "id": "scribeflow-html-27468-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -7911,12 +7911,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27404,
+   "line": 27468,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "scribeflow-html-27501-revoke",
+   "id": "scribeflow-html-27565-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -7925,12 +7925,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27501,
+   "line": 27565,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "scribeflow-html-27556-remove",
+   "id": "scribeflow-html-27620-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -7939,12 +7939,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27556,
+   "line": 27620,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "scribeflow-html-27733-case-intake-unavailable",
+   "id": "scribeflow-html-27797-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -7953,12 +7953,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27733,
+   "line": 27797,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-27789-button",
+   "id": "scribeflow-html-27853-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -7967,12 +7967,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27789,
+   "line": 27853,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "scribeflow-html-27790-messages",
+   "id": "scribeflow-html-27854-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -7981,12 +7981,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27790,
+   "line": 27854,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "scribeflow-html-27794-report-delivery-unavailable",
+   "id": "scribeflow-html-27858-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -7995,12 +7995,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27794,
+   "line": 27858,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-27796-release-unavailable",
+   "id": "scribeflow-html-27860-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -8009,12 +8009,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27796,
+   "line": 27860,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-27802-request-testimony",
+   "id": "scribeflow-html-27866-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -8023,12 +8023,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27802,
+   "line": 27866,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "scribeflow-html-27812-open-chart",
+   "id": "scribeflow-html-27876-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -8037,12 +8037,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27812,
+   "line": 27876,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "scribeflow-html-27813-schedule",
+   "id": "scribeflow-html-27877-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -8051,12 +8051,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27813,
+   "line": 27877,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "scribeflow-html-27820-release-unavailable",
+   "id": "scribeflow-html-27884-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -8065,12 +8065,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27820,
+   "line": 27884,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-27823-delete",
+   "id": "scribeflow-html-27887-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -8079,7 +8079,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27823,
+   "line": 27887,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -8093,12 +8093,12 @@
    "domId": "attachUploadBtn-'+safeId+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 27899,
+   "line": 27963,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-28054-download",
+   "id": "scribeflow-html-28118-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -8107,12 +8107,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28054,
+   "line": 28118,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "scribeflow-html-28097-download",
+   "id": "scribeflow-html-28161-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -8121,7 +8121,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28097,
+   "line": 28161,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -8135,12 +8135,12 @@
    "domId": "docAttachBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28117,
+   "line": 28181,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-28257-set-up-direct-payouts-to-receive-this",
+   "id": "scribeflow-html-28321-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -8149,7 +8149,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28257,
+   "line": 28321,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -8163,12 +8163,12 @@
    "domId": "srSubmit",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28300,
+   "line": 28364,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "scribeflow-html-28301-cancel",
+   "id": "scribeflow-html-28365-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -8177,12 +8177,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28301,
+   "line": 28365,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "scribeflow-html-28366-save-draft-and-review-choice",
+   "id": "scribeflow-html-28430-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -8191,12 +8191,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28366,
+   "line": 28430,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "scribeflow-html-28396-manage-payout-account",
+   "id": "scribeflow-html-28460-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -8205,12 +8205,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28396,
+   "line": 28460,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-28399-finish-payout-setup",
+   "id": "scribeflow-html-28463-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -8219,12 +8219,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28399,
+   "line": 28463,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-28401-set-up-direct-payouts",
+   "id": "scribeflow-html-28465-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -8233,12 +8233,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28401,
+   "line": 28465,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-28645-add-line",
+   "id": "scribeflow-html-28709-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -8247,12 +8247,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28645,
+   "line": 28709,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "scribeflow-html-28649-save-invoice",
+   "id": "scribeflow-html-28713-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -8261,12 +8261,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28649,
+   "line": 28713,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "scribeflow-html-28650-download-pdf",
+   "id": "scribeflow-html-28714-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -8275,12 +8275,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28650,
+   "line": 28714,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "scribeflow-html-28768-refresh",
+   "id": "scribeflow-html-28832-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -8289,12 +8289,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28768,
+   "line": 28832,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-28782-send",
+   "id": "scribeflow-html-28846-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -8303,12 +8303,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28782,
+   "line": 28846,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-29718-edit",
+   "id": "scribeflow-html-29782-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -8317,12 +8317,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29718,
+   "line": 29782,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "scribeflow-html-29719-delete",
+   "id": "scribeflow-html-29783-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -8331,7 +8331,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29719,
+   "line": 29783,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -8345,12 +8345,12 @@
    "domId": "cwRefresh_'+w.id+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29748,
+   "line": 29812,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "scribeflow-html-29749-add-to-note",
+   "id": "scribeflow-html-29813-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -8359,12 +8359,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29749,
+   "line": 29813,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "scribeflow-html-29750-copy",
+   "id": "scribeflow-html-29814-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -8373,12 +8373,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29750,
+   "line": 29814,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "scribeflow-html-29751-print",
+   "id": "scribeflow-html-29815-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -8387,7 +8387,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29751,
+   "line": 29815,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -10688,7 +10688,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1340-dictate-this-field-spoken-value-is-normalized-by",
+   "id": "feat-mls-opnote-fill-js-1393-dictate-this-field-spoken-value-is-normalized-by",
    "label": "Dictate this field — spoken value is normalized by AI",
    "accessibleName": "Dictate this field — spoken value is normalized by AI",
    "title": "Dictate this field — spoken value is normalized by AI",
@@ -10697,12 +10697,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1340,
+   "line": 1393,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1343-last-used-use",
+   "id": "feat-mls-opnote-fill-js-1396-last-used-use",
    "label": "Last used: — use",
    "accessibleName": "Last used: — use",
    "title": "",
@@ -10711,12 +10711,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1343,
+   "line": 1396,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1348-use-every-time",
+   "id": "feat-mls-opnote-fill-js-1401-use-every-time",
    "label": "Use every time",
    "accessibleName": "Use every time",
    "title": "",
@@ -10725,12 +10725,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1348,
+   "line": 1401,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1350-change-default",
+   "id": "feat-mls-opnote-fill-js-1403-change-default",
    "label": "Change default",
    "accessibleName": "Change default",
    "title": "",
@@ -10739,12 +10739,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1350,
+   "line": 1403,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1351-stop-using",
+   "id": "feat-mls-opnote-fill-js-1404-stop-using",
    "label": "Stop using",
    "accessibleName": "Stop using",
    "title": "",
@@ -10753,12 +10753,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1351,
+   "line": 1404,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1366-looks-right-save-to-history-blanks-blank-left",
+   "id": "feat-mls-opnote-fill-js-1419-looks-right-save-to-history-blanks-blank-left",
    "label": "Looks right — save to History' + (blanks ? (' ( blank left)') : '') + '",
    "accessibleName": "Looks right — save to History' + (blanks ? (' ( blank left)') : '') + '",
    "title": "",
@@ -10767,7 +10767,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1366,
+   "line": 1419,
    "gated": false,
    "handler": null
   },
@@ -10781,7 +10781,7 @@
    "domId": "mlsOnfDictBtn_' + idx + '",
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1369,
+   "line": 1422,
    "gated": false,
    "handler": null
   },
@@ -10795,12 +10795,12 @@
    "domId": "mlsOnfDictGo_' + idx + '",
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1370,
+   "line": 1423,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-prep-js-768-next-procedure-day",
+   "id": "feat-mls-opnote-prep-js-773-next-procedure-day",
    "label": "Next procedure day",
    "accessibleName": "Next procedure day",
    "title": "Next day that has scheduled procedures",
@@ -10809,12 +10809,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_prep.js",
-   "line": 768,
+   "line": 773,
    "gated": false,
    "handler": "__mlsOpNotePrep.gotoNextProcedureDay()"
   },
   {
-   "id": "feat-mls-opnote-prep-js-769-mon",
+   "id": "feat-mls-opnote-prep-js-774-mon",
    "label": "Mon",
    "accessibleName": "Mon",
    "title": "Prep the coming Monday (Sunday Monday procedures)",
@@ -10823,12 +10823,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_prep.js",
-   "line": 769,
+   "line": 774,
    "gated": false,
    "handler": "__mlsOpNotePrep.gotoWeekday(1)"
   },
   {
-   "id": "feat-mls-opnote-prep-js-770-thu",
+   "id": "feat-mls-opnote-prep-js-775-thu",
    "label": "Thu",
    "accessibleName": "Thu",
    "title": "Prep the coming Thursday",
@@ -10837,7 +10837,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_prep.js",
-   "line": 770,
+   "line": 775,
    "gated": false,
    "handler": "__mlsOpNotePrep.gotoWeekday(4)"
   },

@@ -419,20 +419,37 @@ eq(store.has(KEY_T1), true, 'tier 1 was not restored from the account — the sy
 const P = loadFill();
 eq(P.api.getDefault('equipment model'), 'OEC Elite 9900', 'tier-1 pin did not come back after sign-out + sign-in');
 
-/* THE DEFECT: the explicit tier is not in the sync list, so it is gone for good */
-eq(tier2Synced, false,
-  'GOOD NEWS: opFieldDefaultsUserV1 is now in PREF_SYNC_KEYS — delete this assertion and flip the two below');
-eq(store.has(KEY_USER), false, 'unexpected: the explicit tier came back');
+/* THE DEFECT, FIXED. opFieldDefaultsUserV1 joined PREF_SYNC_KEYS, so the
+ * EXPLICIT tier now follows the account exactly as tier 1 already did.
+ *
+ * The two tiers are not equals, and that is why the omission was worth fixing
+ * rather than accepting: tier 1 is a value the app OBSERVED the doctor using,
+ * tier 2 is a value the doctor INSTRUCTED it to reuse ("☆ Use every time"). The
+ * app was carrying its own guesses to a new laptop and leaving the doctor's
+ * instructions behind. feat_mls_opnote_fill.js:670 had always called
+ * syncPrefsToServer() right after writing this key, which is exactly what made
+ * the gap invisible for so long — the push ran on every pin and carried nothing.
+ *
+ * These four assertions were authored inverted, with a note saying to flip them
+ * on the day the key was added. This is that flip; the shape of the check is
+ * unchanged, only its expected side. */
+eq(tier2Synced, true,
+  'opFieldDefaultsUserV1 must be in PREF_SYNC_KEYS — the explicit tier is the doctor\'s own ' +
+  'instruction and must follow the account, not just the browser');
+eq(store.has(KEY_USER), true, 'the explicit tier did not come back after sign-out + sign-in');
 const after = P.api._resolveInitialField('needle gauge', { patientId: '', appt: {} }, {});
-eq(after.kind === 'default', false, 'unexpected: the pin reapplied after sign-out');
-eq(P.api.getDefault('needle gauge'), '', 'unexpected: the pin is still readable');
+eq(after.kind === 'default', true, 'the pin did not reapply after sign-out + sign-in');
+eq(P.api.getDefault('needle gauge'), PIN, 'the pin is not readable after sign-out + sign-in');
 
 const RAW3 = 'Needle: [FILL: needle gauge]\n';
 P.ctx._opPrep = [{ patientId: '', tplId: '', proc: 'Right L4-L5 transforaminal ESI', appt: {}, note: RAW3 }];
 const ta3 = makeDraft(P.dom, 0, RAW3);
 P.api._buildFillBox(ta3);
-ok(ta3.value.indexOf(PIN) < 0, 'unexpected: the draft still carries the pinned value');
-ok(/☆ Use every time/.test(boxOf(P.dom, ta3).innerHTML), 'the button is back to unpinned — the doctor must pin it again');
+ok(ta3.value.indexOf(PIN) >= 0,
+  'the draft did not carry the pinned value on a new device — draft reads: ' + JSON.stringify(ta3.value));
+ok(!/☆ Use every time/.test(boxOf(P.dom, ta3).innerHTML),
+  'the field is offering "Use every time" again, so the doctor is being asked to re-pin something ' +
+  'they already pinned — the restore did not reach the button state');
 
 S('STEP 11 — a TEMPLATE line silently outranks the pin, and the pin loses its own controls');
 account = 'doctor-c@example.test';
@@ -504,20 +521,24 @@ console.log('');
 console.log('  ================= MEASURED RESULT =================');
 console.log('  same session      : PIN APPLIES      (button -> store -> new row)');
 console.log('  after reload      : PIN APPLIES      (localStorage, account-scoped)');
-console.log('  after SIGN-OUT    : PIN IS DESTROYED and CANNOT be restored');
-console.log('     logout() -> __mlsClinicalStatePurge.purge() removes every');
-console.log('     sf_u::<email>::* key (clinical-state-purge.js:41-47), and');
-console.log('     ScribeFlow.html PREF_SYNC_KEYS carries opFieldDefaultsV1 but');
-console.log('     NOT opFieldDefaultsUserV1 — so tier 1 comes back from the');
-console.log('     account and every button-pressed pin does not.');
+console.log('  after SIGN-OUT    : PIN SURVIVES and is restored from the account');
+console.log('     logout() -> __mlsClinicalStatePurge.purge() still removes every');
+console.log('     sf_u::<email>::* key (clinical-state-purge.js:41-47) — unchanged —');
+console.log('     but PREF_SYNC_KEYS now carries opFieldDefaultsUserV1 alongside');
+console.log('     opFieldDefaultsV1, so BOTH tiers come back on the next sign-in.');
 console.log('     Same path fires on the 15-minute idle logout (ScribeFlow.html:8029)');
-console.log('     and on token expiry (ScribeFlow.html:7036-7038), neither of which asks.');
-console.log('     FIX: add \'opFieldDefaultsUserV1\' to PREF_SYNC_KEYS (ScribeFlow.html:8311).');
+console.log('     and on token expiry (ScribeFlow.html:7036-7038); neither asks, and');
+console.log('     neither now costs the doctor their pins.');
+console.log('     WAS: tier 1 (what the app observed) came back and tier 2 (what the');
+console.log('     doctor instructed) did not. feat_mls_opnote_fill.js:670 already called');
+console.log('     syncPrefsToServer() on every pin, so the push ran and carried nothing —');
+console.log('     which is what kept the gap invisible.');
 console.log('  template speaks   : PIN IS IGNORED, silently, and its own Change/Stop');
 console.log('                      controls are not rendered (feat_mls_opnote_fill.js:1157 + 1246).');
+console.log('                      STILL OPEN — untouched by the sync fix.');
 console.log('  side / level      : PINNABLE, and the pin OVERRIDES the procedure-derived');
 console.log('                      laterality, folded into the collapsed block.');
 console.log('  ==================================================');
 console.log('');
-console.log('PASS use-every-time round trip: writer, reader, reload proven by execution;');
-console.log('     sign-out loss, template shadowing and the laterality hazard all proven the same way.');
+console.log('PASS use-every-time round trip: writer, reader, reload and SIGN-OUT SURVIVAL proven by');
+console.log('     execution; template shadowing and the laterality hazard proven the same way.');
