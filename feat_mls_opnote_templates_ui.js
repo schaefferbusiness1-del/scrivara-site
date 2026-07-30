@@ -127,7 +127,17 @@
     B + '.opr-top{ padding:14px 60px 14px 20px; gap:18px; background:var(--card);' +
       ' border-bottom:1px solid var(--line); }',
     B + '.opr-top h3{ font-size:17px; letter-spacing:-.01em; white-space:nowrap; }',
-    B + '.opr-back{ min-height:40px; padding:9px 16px; border-radius:12px;' +
+    /* 44, NOT 40. `html body button{min-height:44px}` is the app-wide phone tap
+       floor at (0,0,3); this selector out-specifies it, so declaring 40 here
+       silently LOWERED the floor on the one control that gets you out of the
+       room. b800's own commit message reported it ("measured 40px on a phone,
+       under the 44px tap floor, on the control that gets you OUT") and it stayed
+       at 40. It went on passing locally because
+       tests/opnote-room-does-not-trap.test.js measures it in Chrome and skips
+       silently when there is no Chrome on the machine - CI has one, and fails
+       all four of its assertions. This module's own comment at the injected
+       panels below already names this trap; the Back button is where it bit. */
+    B + '.opr-back{ min-height:44px; padding:9px 16px; border-radius:12px;' +
       ' border:1.5px solid var(--line); background:var(--card); font-weight:700; }',
     B + '.opr-back:hover{ border-color:var(--green-dk); }',
 
