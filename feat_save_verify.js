@@ -305,8 +305,15 @@
       '.mls-sv-icon{font-size:18px;line-height:1.2;flex:0 0 auto;}' +
       '.mls-sv-body{flex:1 1 auto;min-width:0;}.mls-sv-title{font-weight:700;letter-spacing:.1px;}' +
       '.mls-sv-lines{margin-top:3px;opacity:.97;font-size:13px;white-space:pre-line;word-break:break-word;}' +
+      /* 2026-07-30: measured 13x16 - under a third of the app's own 44px tap
+         floor, on a dismiss control. The hit area is enlarged with a positioned
+         pseudo-element rather than by growing the button, so the banner's
+         height and the glyph's size are byte-identical and nothing reflows.
+         position:relative is required for the ::after to anchor to it. */
       '.mls-sv-x{pointer-events:auto;flex:0 0 auto;background:transparent;border:0;color:#fff;opacity:.8;' +
-      'cursor:pointer;font-size:16px;line-height:1;padding:0 2px;margin-left:4px;}.mls-sv-x:hover{opacity:1;}' +
+      'cursor:pointer;font-size:16px;line-height:1;padding:0 2px;margin-left:4px;position:relative;}' +
+      '.mls-sv-x::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;' +
+      'transform:translate(-50%,-50%);}.mls-sv-x:hover{opacity:1;}' +
       '@keyframes mlsSvIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:none;}}' +
       '.mls-sv-verifybtn{display:inline-flex;align-items:center;gap:7px;margin:8px 0;padding:9px 14px;' +
       'border-radius:10px;border:1px solid #204034;background:#204034;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +

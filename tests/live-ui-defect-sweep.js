@@ -98,9 +98,21 @@ function findChrome(explicit) {
   return hit;
 }
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+/* SERVE ONLY WHAT GITHUB PAGES PUBLISHES.
+   _config.yml excludes some feat_*.js from publication, so a harness that serves
+   the whole repo audits a build the doctor never receives. That is not
+   hypothetical: serving the repo wholesale reported 13 "duplicate visible
+   control" defects on the Templates tab - two Upload buttons, two Upload-folder,
+   two Delete-all - every one of them contributed by feat_mls_staging_pack1.js,
+   which is on the exclude list and therefore 404s live. An instrument that
+   invents defects is worse than no instrument. */
+const EXCLUDED = new Set();
+(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
+  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
+    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
