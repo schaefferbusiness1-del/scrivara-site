@@ -156,6 +156,23 @@
 "#mlsRdNav .navtab.on .nbadge{ background:var(--brand) !important; color:#fff !important; }",
 "#mlsRdNav .navtab:not([style*='display:none']):not([style*='display: none']):not(.nav-feat-off){ display:flex !important; }",
 "body.mls-redesign #mlsRdNav .mainnav > .navtab[data-mlsrd-primary-hidden='1']{ display:none !important; }",
+/* A FOLDED rail tab is hidden BY THIS SHELL, and it has to be hidden by a rule,
+   never by writing inline display:none on the app's own element. Measured
+   2026-07-29 in real Chrome: the inline write made the Calm Shell's available()
+   read nav_history as a tab the APP had gated off, so the owner's 2026-07-28
+   order "put history into the review tab" silently produced a Review segmented
+   row of exactly ["Orders", "The note"] - no History anywhere in the product.
+   Clearing that one inline byte and re-rendering produced the third segment
+   ("History", 74.9x29, visible) with nothing else changed.
+   The rule must out-specify the :not([style*='display:none']) force-flex rule
+   one line above, which is why it carries the same body+#id+attribute shape as
+   the primary-hidden rule: (1,4,1) beats (1,4,0), both !important. The second
+   rule covers the classic rail, where #mlsRdNav does not exist.
+   Doing it this way also keeps inline display:none meaning ONE thing - the app
+   or a role gate hid this - so mlsRoleHide() on a receptionist/Lite account
+   still makes History unavailable and still keeps it out of the segmented row. */
+"html body.mls-redesign #mlsRdNav .mainnav > .navtab[data-mlsrd-folded='1']{ display:none !important; }",
+"html .mainnav > .navtab[data-mlsrd-folded='1']{ display:none !important; }",
 "#mlsRdRailLogo{ display:flex; align-items:center; gap:10px; padding:4px 8px 14px; flex:none; }",
 "#mlsRdRailFoot{ margin-top:auto; flex:none; border-top:1px solid #EAE6DB; padding-top:10px; display:flex; flex-direction:column; gap:2px; }",
 "body.theme-dark #mlsRdRailFoot{ border-top-color:#2B342D; }",
@@ -539,8 +556,12 @@
         try{
           var foldTab=$(FOLDED_NAV[f]);
           if(foldTab&&foldTab.getAttribute('data-mlsrd-folded')!=='1'){
+            /* Attribute only. The stylesheet hides it (see the
+               [data-mlsrd-folded='1'] rules). Writing display:none on the
+               element here is what killed the History segment in the Review
+               row - inline display:none is the app's OWN "this feature is
+               gated" signal and this shell must not forge it. */
             foldTab.setAttribute('data-mlsrd-folded','1');
-            if(foldTab.style) foldTab.style.display='none';
           }
         }catch(eFold){}
       }

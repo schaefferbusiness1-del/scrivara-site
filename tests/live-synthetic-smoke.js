@@ -744,16 +744,58 @@ async function exerciseStaffPrepMenu(cdp, screenshotPath) {
   assert.deepStrictEqual(setupBefore.buttons, ['Show Staff Prep in Menu'], `Setup exposed a Staff activation control: ${JSON.stringify(setupBefore)}`);
   assert.strictEqual(setupBefore.state.mode, 'doctor', 'opening Setup changed Easy mode');
   await click(cdp, '#su_step3 button');
-  const setupGuidance = await waitFor(cdp, 'Setup guidance opened Menu without Staff', `(() => {
-    const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+  /* 2026-07-30. This step used to require #mlsTbMenuPanel.open with its row
+     VISIBLE, i.e. it named ONE surface as the owner. That predicate went red
+     when the 2026-07-28 owner sweep hid #mlsTbMenu (the dock is the menu now) -
+     and it was right to: a live probe then found ZERO visible controls labelled
+     "Staff prep" anywhere in the document, so the capability really had no
+     route. What a doctor needs is not that one particular panel: it is that
+     pressing this Setup button lands them on a Staff prep control they can SEE
+     and CLICK, on whichever surface owns it, without Staff opening itself. So
+     the assertion is surface-agnostic and now also hit-tests the control -
+     focused is not clickable - and still refuses more than one route and any
+     silent activation.
+     The launcher rides in on an entry animation, and this Chrome window is never
+     the foreground window, so those animations sit frozen at frame 0 (opacity 0)
+     for the whole run: geometry says the row is there while nothing is painted.
+     Finishing the animations is how this repo measures a settled frame, and it
+     is what lets the predicate demand the owning surface be PAINTED rather than
+     merely present. */
+  await evaluate(cdp, `(() => {document.getAnimations().forEach(a=>{try{a.finish()}catch(e){}});return true})()`);
+  const setupGuidance = await waitFor(cdp, 'Setup guidance landed on one reachable Staff prep control without opening Staff', `(() => {
+    document.getAnimations().forEach(a=>{try{a.finish()}catch(e){}});
+    const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0.01&&r.width>0&&r.height>0};
+    const label=el=>(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
+    const hittable=el=>{const r=el.getBoundingClientRect();const p=document.elementFromPoint(Math.round(r.x+r.width/2),Math.round(r.y+r.height/2));return !!p&&(p===el||el.contains(p))};
     const state=window.__mlsEasyV3.state();
     const staff=[...document.querySelectorAll('.ez3-h1')].some(el=>shown(el)&&/Staff prep/i.test(el.textContent||''));
-    const panel=document.getElementById('mlsTbMenuPanel'),row=panel&&panel.querySelector('.mlsTbItem[data-mls-action="staff-prep"]');
-    return panel&&panel.classList.contains('open')&&shown(row)&&state.mode==='doctor'&&!staff?{menuOpen:true,state,staffVisible:staff,focused:document.activeElement===row}:false;
+    const offers=[...document.querySelectorAll('button,[role="menuitem"],[role="button"],.navtab,.mlsTbItem')].filter(el=>shown(el)&&/staff\\s*prep/i.test(label(el)));
+    const reachable=offers.filter(hittable);
+    const focused=reachable.some(el=>el===document.activeElement||el.contains(document.activeElement));
+    if(state.mode!=='doctor'||staff||offers.length!==1||reachable.length!==1||!focused)return false;
+    const el=reachable[0];
+    const owner=el.closest('#mlsToolsMenu')||el.closest('#mlsTbMenuPanel');
+    if(!shown(owner))return false;
+    return {offered:offers.length,reachable:reachable.length,focused:true,staffVisible:staff,state,
+      label:label(el).slice(0,60),ownerPainted:true,
+      surface:owner.id==='mlsToolsMenu'?'tools':'menu'};
   })()`, 5000);
-  assert.strictEqual(setupGuidance.focused, true, `Setup did not focus the one Menu-owned Staff row: ${JSON.stringify(setupGuidance)}`);
-  await evaluate(cdp, `window.__mlsTopbar.closeMenu();true`);
-  await waitFor(cdp, 'close Setup-guided Menu', `!document.getElementById('mlsTbMenuPanel').classList.contains('open')`);
+  assert.strictEqual(setupGuidance.focused, true, `Setup guidance did not focus the one reachable Staff prep control: ${JSON.stringify(setupGuidance)}`);
+  assert.strictEqual(setupGuidance.reachable, 1, `Setup guidance did not leave exactly one reachable Staff prep control: ${JSON.stringify(setupGuidance)}`);
+  assert(setupGuidance.surface === 'tools' || setupGuidance.surface === 'menu', `Setup guidance landed on an unowned surface: ${JSON.stringify(setupGuidance)}`);
+  /* Close whichever launcher the guidance opened. The Tools sheet must be
+     dismissed through its own owner: it keeps a module-level toolsClose, so
+     removing the node by hand leaves that stale and the NEXT go('tools') closes
+     nothing and opens nothing. */
+  await evaluate(cdp, `(() => {
+    try{ if(window.__mlsTopbar&&typeof window.__mlsTopbar.closeMenu==='function') window.__mlsTopbar.closeMenu(); }catch(e){}
+    try{ if(document.getElementById('mlsToolsMenu')&&window.__mlsCalmShell&&typeof window.__mlsCalmShell.go==='function') window.__mlsCalmShell.go('tools'); }catch(e){}
+    return true;
+  })()`);
+  await waitFor(cdp, 'close the Setup-guided Staff prep launcher', `(() => {
+    const panel=document.getElementById('mlsTbMenuPanel');
+    return !(panel&&panel.classList.contains('open'))&&!document.getElementById('mlsToolsMenu');
+  })()`);
 
   await waitFor(cdp, 'canonical doctor day controls before Staff', `(() => {
     const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
@@ -772,7 +814,14 @@ async function exerciseStaffPrepMenu(cdp, screenshotPath) {
       const duplicateVisibleIds=Object.keys(counts).filter(id=>counts[id]>1).sort();
       const staffHeading=[...document.querySelectorAll('.ez3-h1')].find(el=>shown(el)&&/Staff prep/i.test(el.textContent||''));
       const visibleToasts=[...document.querySelectorAll('#toast')].filter(shown).map(el=>(el.textContent||'').replace(/\s+/g,' ').trim());
-      const directStaffOutsideMenu=controls.filter(el=>!el.closest('#mlsTbMenuPanel')&&(/Staff prep/i.test(controlLabel(el))||el.id==='nav_staffpull'||el.id==='ez3ModeStaff'||el.classList.contains('ez3fl-staffLink'))).map(el=>({id:el.id||'',label:controlLabel(el)}));
+      /* 2026-07-30: the owning surface is no longer only #mlsTbMenuPanel. The
+         dock's Tools launcher now carries the row that drives that same
+         canonical panel row, because the top-bar Menu is hidden. The three
+         LEGACY direct activators are still refused everywhere, including inside
+         an owning surface, and the Setup-guidance step still refuses more than
+         one visible Staff prep control at a time. */
+      const staffOwned=el=>!!(el.closest&&el.closest('#mlsTbMenuPanel,#mlsToolsMenu'));
+      const directStaffOutsideMenu=controls.filter(el=>el.id==='nav_staffpull'||el.id==='ez3ModeStaff'||el.classList.contains('ez3fl-staffLink')||(/Staff prep/i.test(controlLabel(el))&&!staffOwned(el))).map(el=>({id:el.id||'',label:controlLabel(el)}));
       const sample={
         label,at:performance.now(),mode:state&&state.mode||document.body.getAttribute('data-mls-easy-mode')||'',screen:state&&state.screen||'',
         eventPhase:detail&&detail.phase||'',eventReason:detail&&detail.reason||'',
@@ -808,10 +857,33 @@ async function exerciseStaffPrepMenu(cdp, screenshotPath) {
   })()`, 5000);
   assert.strictEqual(staleToast.visibleToastCount, 1, `live proof could not seed a stale global toast: ${JSON.stringify(staleToast)}`);
 
-  await click(cdp, '#mlsTbMenuBtn');
-  await waitFor(cdp, 'open Menu panel', `document.getElementById('mlsTbMenuPanel').classList.contains('open')`);
-  await click(cdp, '#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"]');
-  await waitFor(cdp, 'Staff prep screen from Menu', `(() => {
+  /* Activate Staff prep the way a doctor can: press the VISIBLE launcher that
+     owns the row, then the visible row. This used to press #mlsTbMenuBtn, which
+     the 2026-07-28 sweep hides - click() refuses a 0x0 control, so this step
+     could never have passed either. Whichever surface carries it, the row that
+     is pressed is the one canonical Staff intent owner. */
+  const staffLauncher = await waitFor(cdp, 'a visible launcher that owns the Staff prep row', `(() => {
+    const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0.01&&r.width>0&&r.height>0};
+    const menuBtn=document.getElementById('mlsTbMenuBtn');
+    if(shown(menuBtn))return {selector:'#mlsTbMenuBtn',surface:'menu'};
+    const toolsBtn=document.querySelector('#mlsDock button[data-dest="tools"]');
+    if(shown(toolsBtn))return {selector:'#mlsDock button[data-dest="tools"]',surface:'tools'};
+    return false;
+  })()`, 10000);
+  await click(cdp, staffLauncher.selector);
+  const staffRow = await waitFor(cdp, 'the one visible, hit-testable Staff prep row in that launcher', `(() => {
+    const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0.01&&r.width>0&&r.height>0};
+    const hittable=el=>{const r=el.getBoundingClientRect();const p=document.elementFromPoint(Math.round(r.x+r.width/2),Math.round(r.y+r.height/2));return !!p&&(p===el||el.contains(p))};
+    document.querySelectorAll('[data-mls-live-staff-row]').forEach(el=>el.removeAttribute('data-mls-live-staff-row'));
+    const rows=[...document.querySelectorAll('#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"],#mlsToolsMenu .r')]
+      .filter(el=>shown(el)&&/staff\\s*prep/i.test((el.innerText||el.textContent||'')));
+    if(rows.length!==1||!hittable(rows[0]))return false;
+    rows[0].setAttribute('data-mls-live-staff-row','1');
+    return {surface:rows[0].closest('#mlsToolsMenu')?'tools':'menu',label:(rows[0].innerText||rows[0].textContent||'').replace(/\\s+/g,' ').trim().slice(0,60)};
+  })()`, 10000);
+  assert.strictEqual(staffRow.surface, staffLauncher.surface, `the Staff prep row did not appear in the launcher that was pressed: ${JSON.stringify({staffLauncher,staffRow})}`);
+  await click(cdp, '[data-mls-live-staff-row="1"]');
+  await waitFor(cdp, 'Staff prep screen from its Menu-owned row', `(() => {
     const start=document.getElementById('ez3PullStart');
     const h=[...document.querySelectorAll('.ez3-h1')].find(el=>/Staff prep/i.test(el.textContent||''));
     const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
@@ -894,7 +966,7 @@ async function exerciseStaffPrepMenu(cdp, screenshotPath) {
     assert.strictEqual(sample.easyOwnerCount, 1, `canonical Easy owner count changed during transition: ${JSON.stringify(sample)}`);
     assert.strictEqual(sample.legacyModeButtonCount, 0, `legacy mode control appeared during transition: ${JSON.stringify(sample)}`);
     assert.deepStrictEqual(sample.duplicateVisibleIds, [], `visible controls had duplicate ids: ${JSON.stringify(sample)}`);
-    assert.deepStrictEqual(sample.directStaffOutsideMenu, [], `a direct Staff control appeared outside Menu: ${JSON.stringify(sample)}`);
+    assert.deepStrictEqual(sample.directStaffOutsideMenu, [], `a direct Staff control appeared outside the surfaces that own it: ${JSON.stringify(sample)}`);
   }
   const doctorBefore=transitionAudit.samples.find(sample=>sample.label==='doctor-before');
   const staffSettled=transitionAudit.samples.find(sample=>sample.label==='staff-settled');
@@ -1749,9 +1821,42 @@ async function exerciseSearch(cdp) {
     assert.strictEqual(setup.view, 'calendar', `Find fixture did not start outside Visit: ${JSON.stringify(setup)}`);
     await waitFor(cdp, 'the prior synthetic chart to be active', `getActivePtId()===${JSON.stringify(decoyId)}&&activePatient()&&activePatient().id===${JSON.stringify(decoyId)}&&window.__mlsCurrentView==='calendar'`, 5000);
 
-    /* The visible top-bar field must launch Find Anything Pro; testing a
-       hidden/direct engine would miss a broken clinician entry point. */
-    await click(cdp, '#mlsPqsInput');
+    /* A VISIBLE find field must launch Find Anything Pro; testing a hidden field
+       or calling mlsQuickFind() directly would miss a broken clinician entry
+       point, which is the whole point of this step.
+       2026-07-30: that field is no longer #mlsPqsInput. The 2026-07-28 sweep
+       hides the top bar's search slot as a duplicate of the dock Ask bar, and a
+       live sweep of this page for visible find/search controls returned exactly
+       ONE: #mlsDockAsk. So the step asks the page which visible field owns Find
+       and drives that one. The query typed here is deliberately a non-control
+       phrase - the ask bar indexes control NAMES, and a patient name can also be
+       a visible control on some screens, which would take a route this step is
+       not testing. The patient name is typed into the finder itself below,
+       exactly as before. */
+    const findEntry = await waitFor(cdp, 'the one visible field that owns Find', `(() => {
+      document.getAnimations().forEach(a=>{try{a.finish()}catch(e){}});
+      const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0.01&&r.width>0&&r.height>0};
+      const top=document.getElementById('mlsPqsInput');
+      if(shown(top))return {selector:'#mlsPqsInput',kind:'top-bar'};
+      const ask=document.getElementById('mlsDockAsk');
+      if(shown(ask))return {selector:'#mlsDockAsk',kind:'dock-ask'};
+      return false;
+    })()`, 10000);
+    await click(cdp, findEntry.selector);
+    if (findEntry.kind === 'dock-ask') {
+      await fill(cdp, findEntry.selector, 'Zzq unmatched phrase');
+      const findRow = await waitFor(cdp, 'the ask bar to offer the patient finder', `(() => {
+        const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0.01&&r.width>0&&r.height>0};
+        const hittable=el=>{const r=el.getBoundingClientRect();const p=document.elementFromPoint(Math.round(r.x+r.width/2),Math.round(r.y+r.height/2));return !!p&&(p===el||el.contains(p))};
+        document.querySelectorAll('[data-mls-live-find-row]').forEach(el=>el.removeAttribute('data-mls-live-find-row'));
+        const rows=[...document.querySelectorAll('#mlsAskResults .r')].filter(el=>shown(el)&&/find a patient or screen/i.test(el.textContent||''));
+        if(rows.length!==1||!hittable(rows[0]))return false;
+        rows[0].setAttribute('data-mls-live-find-row','1');
+        return {rows:rows.length,text:(rows[0].innerText||rows[0].textContent||'').replace(/\\s+/g,' ').trim().slice(0,80)};
+      })()`, 5000);
+      assert.strictEqual(findRow.rows, 1, `the one visible find field did not offer the patient finder: ${JSON.stringify(findRow)}`);
+      await click(cdp, '[data-mls-live-find-row="1"]');
+    }
     let surface;
     try {
       surface = await waitFor(cdp, 'Find search surface', `(() => {

@@ -852,11 +852,17 @@
     }
     if (typeof window.mlsQuickFind === 'function' && !window.mlsQuickFind.__fpWrap) {
       FP._orig.quickFind = window.mlsQuickFind;
-      var qfOpen = function () {
+      /* An OPTIONAL prefill, so a caller that already has the words the doctor
+         typed can hand them over instead of asking for them twice. Every existing
+         caller passes nothing (and inline onclick handlers can pass an Event), so
+         only a real string is honoured - anything else opens empty exactly as
+         before. Rendered through qfRender, never by faking an input event. */
+      var qfOpen = function (prefill) {
         qfEnsure();
         qfIndex = buildIndex(); /* fresh every open - fixes stale-after-one-use */
         var o = qfEl(); o.style.display = 'flex';
-        var inp = $('mlsFpQfInput'); inp.value = ''; qfClearError(); qfRender(''); setTimeout(function () { inp.focus(); }, 30);
+        var q = (typeof prefill === 'string') ? prefill : '';
+        var inp = $('mlsFpQfInput'); inp.value = q; qfClearError(); qfRender(q); setTimeout(function () { inp.focus(); }, 30);
       };
       qfOpen.__fpWrap = true;
       window.mlsQuickFind = qfOpen;

@@ -98,7 +98,21 @@
     [B + '#oprPager button', 'transition:transform ' + D1 + ' ' + EO + ', border-color ' + D1 + ' ' + EO],
     [B + '#oprPager button:active:not([disabled])', 'transform:scale(.97)'],
     [B + '#opPrepList > div', 'transition:box-shadow ' + D3 + ' ' + EO],
-    [B + '#tplDropZone', 'transition:border-color ' + D2 + ' ' + EO + ', background ' + D2 + ' ' + EO],
+    /* 2026-07-30. These two carried NO !important and were therefore DEAD:
+       both drop zones ship an inline `transition:all .12s`, and an inline
+       declaration beats any selector. Measured on the replica - all five
+       transition longhands resolved to the inline value.
+       !important here is safe and is NOT the mistake b795 made: what the drag
+       handlers write inline is `borderColor` and `background`, which this rule
+       does not set - it only says how long a change to them takes. So the drag
+       feedback keeps its colours and gains the fade it was always meant to have. */
+    [B + '#tplDropZone, ' + B + '#tplMultiDrop',
+     'transition:border-color ' + D2 + ' ' + EO + ', background ' + D2 + ' ' + EO +
+     ', box-shadow ' + D2 + ' ' + EO + ' !important'],
+    /* library rows: hover lift only. box-shadow has no inline owner on these
+       rows, which is exactly why it is the property used for hover - it can
+       never fight the selected/default state the renderer writes inline. */
+    [B + '#tplList > div', 'transition:box-shadow ' + D2 + ' ' + EO],
     [B + '.onf-fillbox', 'transition:box-shadow ' + D3 + ' ' + EO]
   ];
 
@@ -324,236 +338,555 @@
     B + '#opPrepStatus{ font-size:12.5px; color:var(--muted); }'
   ];
 
-  /* ======================= TEMPLATES ====================================== */
+  /* ======================= TEMPLATES ======================================
+     2026-07-30 — THE TEMPLATES TAB, REBUILT FOR THE THIRD TIME, AND THIS TIME
+     IT HAD BETTER LOOK DIFFERENT.
+
+     OWNER, twice: "The templates tab looks aweful so defantly completely re do
+     taht and fix it" — and after two builds: he still does not see a change.
+
+     He is right, and the two previous attempts failed for two different
+     reasons. b795 shipped rules that LOST to inline styles: nine of twenty
+     intended values never applied, so the file read as shipped and the screen
+     was byte-identical. b799 fixed the !important problem but only spent it on
+     spacing, radii and type at the SAME SIZE — correct, and invisible.
+     TIMIDITY IS THE DEFECT BEING CORRECTED HERE.
+
+     WHAT WAS MEASURED (PHI-free replica of this exact subtree, real shipped CSS
+     and markup, headless Chrome, 1440/1280/390, light and dark):
+
+       11 distinct font sizes, and NOTHING on the screen bigger than 15px. The
+          page title rendered 15px/600 — the same size as, and LIGHTER than, its
+          own sub-headings, because `h3{font-size:15px!important}` (the app-wide
+          typography clamp) killed both of the previous title rules.
+        8 distinct corner radii on 246 painted corners, five of them inside one
+          190px band.
+       15 background colours, 14 border colours, 9 different vertical gaps.
+       17 of 17 top-level blocks full-bleed at 1380px — no column, no measure.
+          The biggest control on the screen was the Close button at 57,960px2.
+       28 surfaces still painting LIGHT under body.theme-dark, 1.2M px2 in
+          total, with one heading at 1.21:1.
+
+     THE SHAPE OF THE ANSWER. One anchor at the top the eye can land on, then
+     three bands — ADD ONE / YOUR LIBRARY / THE ONE YOU PICKED — separated by
+     the two <hr>s that are already in the markup, each led by a heading with a
+     visible accent rule. A bounded intake column against a full-width library,
+     so the page has a composition instead of nineteen stacked full-bleed rows.
+     One primary action per band. And a type ramp and a radius vocabulary small
+     enough to be learnable.
+
+     THE TWO CONSTRAINTS THAT DECIDE HOW IT IS WRITTEN:
+
+     1. NO NEW MARKUP. Six modules assemble this screen and four walk it — two
+        of them anchor by HEADING TEXT rather than by id (mountSection scans for
+        /template/i then hops to the next <p>; moveStandardLine matches /add a
+        standard line to templates/i and walks up to six parents), the health
+        panel and the cloud library both mount with
+        anchor.parentElement.insertBefore against #tplList, #tplText's
+        nextElementSibling must stay the Save/Clear row, and role gating selects
+        button[onclick="openTemplates()"] by exact string. So grouping is done
+        with spacing, rules, weight and surface — never with a wrapper.
+        tests/opnote-templates-grips-survive-redesign.test.js is the fence.
+
+     2. AN INLINE STYLE BEATS EVERY SELECTOR. Thirteen ids here carry 21
+        authored inline declarations = 58 longhands = 142 (id, longhand) pairs.
+        Every rule below states whether an inline style owns that property, and
+        !important appears ONLY where the measurement proves it is needed. Where
+        a property is owned by a runtime writer that encodes STATE, it is left
+        alone and said so.
+
+     WHAT IS DELIBERATELY NOT CLAIMED, because claiming it would break a feature:
+       - #tplDropZone / #tplMultiDrop border-COLOUR and background. _tplDragOver
+         and _tplMultiDragOver provide the only "this drop will be accepted"
+         signal by writing exactly those two inline (ScribeFlow.html:16502,
+         :16610). b795 put !important on them and killed the feedback. This
+         rebuild claims SHAPE only — and re-tokens BOTH drag states for dark
+         mode by attribute-matching the four literal colours those two handlers
+         write, so dark mode is fixed without touching the mechanism.
+       - #tplList row border-colour and background. renderTemplateList encodes
+         SELECTED (#2E6A4B / #f2f8f4) and DEFAULT (#f7fbff) there. Selected
+         state is made visible instead with an inset box-shadow, which no inline
+         style sets, plus the aria-selected attribute that is already written.
+       - Input font-size at <=760px: `html body input,textarea,select{font-size:
+         16px!important}` is the iOS zoom guard. These rules carry NO !important
+         on input font-size, so the guard still wins on a phone.
+     ====================================================================== */
   var TEMPLATES = [
     /* Embedded in the room, the card is plain flow content and the PANEL
        scrolls. Restated here deliberately: a nested .modal inheriting
        height:100dvh + overflow:hidden is what made this unscrollable twice. */
-    B + '#oprPanelTpls{ padding:20px 24px 40px; }',
+    B + '#oprPanelTpls{ padding:22px 26px 44px; }',
     B + '#oprPanelTpls #templatesModal .modal{ height:auto; max-height:none;' +
       ' display:block; overflow:visible; background:transparent; box-shadow:none;' +
-      ' border:0; padding:0 0 24px; }',
+      ' border:0; padding:0 0 28px; }',
 
-    B + '#templatesModal h3{ font-size:17px; letter-spacing:-.01em; margin:0 0 4px; }',
-    B + '#templatesModal h4{ font-size:14px; letter-spacing:-.005em; }',
-
-    /* --- ADD A TEMPLATE: the intake --- */
-    B + '#templatesModal .field{ margin-bottom:12px; }',
-    B + '#templatesModal .field label{ font-size:12px; font-weight:750;' +
-      ' letter-spacing:.02em; color:var(--muted); }',
-    B + '#tplName, ' + B + '#tplKeywords, ' + B + '#tplSearch{ min-height:40px;' +
-      ' border-radius:10px; font-size:13.5px; padding:9px 13px; }',
-    B + '#tplName:focus, ' + B + '#tplKeywords:focus, ' + B + '#tplSearch:focus{' +
-      ' border-color:var(--green-dk); }',
-
-    /* The drop zone is the hero: a real target, not a hint.
-       !important throughout, and this is NOT decoration: ScribeFlow.html carries
-       an INLINE style on this node (margin-top, border, border-radius, padding,
-       text-align, colour, font-size, background), and an inline style beats any
-       selector regardless of specificity. Measured in a replica before these
-       were added: this element kept radius 10px and padding 16px while the
-       stylesheet asked for 16px and 26px 20px. A body class does not help - only
-       !important does. */
-    /* 2026-07-29 REGRESSION FIX. b795 put !important on `border` (which carries
-       border-color) and on `background`. _tplDragOver provides the drag feedback
-       by writing exactly those two inline - `z.style.borderColor` and
-       `z.style.background` (ScribeFlow.html:16320) - so the zone stopped
-       responding when a file was dragged over it: the standard signal that a drop
-       will not be accepted, killed. The sibling #tplMultiDrop, which this module
-       never restyled, still worked, so the two zones behaved differently on one
-       screen.
-       This rule now claims SHAPE only - width, style, radius, padding - and
-       leaves border-COLOUR and background to the writer that animates them.
-       Function over polish: the app's own #cfe0f5 / #fafcff are perfectly fine. */
-    B + '#tplDropZone{ border-width:2px !important; border-style:dashed !important;' +
-      ' border-radius:16px !important; padding:26px 20px !important;' +
-      ' color:var(--muted) !important; font-size:13px !important;' +
-      ' font-weight:600; line-height:1.5; }',
-    B + '#tplDropZone:hover{ color:var(--ink) !important; }',
-
-    /* The extracted text is editable content the doctor proofreads - readable,
-       never condensed. Inline style sets min-height:120px and font-size:13px. */
-    B + '#tplText{ min-height:150px !important; border-radius:16px; padding:14px 16px;' +
-      ' background:var(--bg); font-size:14px !important; line-height:1.6; }',
-    B + '#tplText:focus{ background:var(--card); border-color:var(--green-dk); }',
-
-    /* --- YOUR TEMPLATES: the library --- */
-    B + '#tplSearch{ background:var(--bg); }',
-    /* The inline max-height:420px + overflow-y:auto on #tplList is CORRECT and
-       deliberately left alone: it gives the list its own scroller so a long
-       library cannot push the preview pane off the screen. An earlier draft of
-       this module set max-height:none here, which would have stretched the page
-       and contradicted the invariant its own gate asserts. Measurement caught
-       it; only the padding is ours. */
-    B + '#tplList{ padding-right:2px; }',
-    /* 2026-07-29 REGRESSION FIX. Every declaration here was dead in b795 - no
-       !important against an inline style, so the library rows rendered
-       byte-identical to b794 (10px radius, 8px 10px padding, no hover) while the
-       module header called Templates "a library". Measured.
-       Shape is reclaimed with !important. Border-COLOUR and background are NOT:
-       renderTemplateList encodes state in them - `border:1px solid
-       (isSel?#2E6A4B:var(--line))` and `background:(isSel?#f2f8f4:(isActive?
-       #f7fbff:transparent))` - so overriding them would erase which template is
-       selected and which is the default. Hover therefore uses box-shadow, which
-       no inline style sets, so it can never fight state. */
-    B + '#tplList > div{ border-radius:12px !important; padding:10px 12px !important; }',
-    B + '#tplList > div:hover{ box-shadow:0 2px 10px rgba(32,64,52,.12); }',
-    B + '.opr-tpl-item{ border-radius:12px; padding:10px 12px; }',
-    /* Those two state backgrounds are hard-coded near-whites, so in dark theme a
-       selected or default row became a white slab with --ink text on it. Restated
-       in tokens for dark only; light keeps the values the renderer chose. */
-    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f2f8f4"]{ background:var(--soft) !important; }',
-    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f7fbff"]{ background:var(--card) !important; }',
-    B + '.opr-tpl-empty{ font-size:12px; color:var(--muted); line-height:1.5; }',
-
-    /* Inline style here sets border, border-radius:10px, padding:12px,
-       min-height and position:sticky. The sticky is kept - the preview holding
-       still while the list scrolls is the point of the two-pane layout - but the
-       chrome needs !important or the pane keeps its old 10px/12px look. */
-    B + '#tplDetail{ border:1px solid var(--line) !important; border-radius:16px !important;' +
-      ' padding:20px 22px !important; background:var(--card); min-height:220px !important;' +
-      ' box-shadow:0 8px 28px rgba(32,64,52,.06); }',
-    B + '#tplDetail p{ font-size:13px; line-height:1.6; }',
-
-    /* Buttons in this surface answer a press and read as a hierarchy. */
-    B + '#templatesModal .btn-green{ font-weight:750; border-radius:12px;' +
-      ' min-height:42px; }',
-    B + '#templatesModal .btn-ghost, ' + B + '#templatesModal .edit{' +
-      ' border-radius:12px; min-height:40px; font-weight:650; }',
+    /* ---------------------------------------------------------------------
+       ONE VOCABULARY, DECLARED ONCE. Eight radii became three; the ramp is
+       named so a future rule cannot quietly invent a ninth. Custom properties
+       inherit, so the three injected panels below pick them up too.
+       No inline style sets a custom property anywhere in this subtree. */
+    B + '#templatesModal{ --ot-r-lg:22px; --ot-r-md:14px; --ot-col:760px; }',
 
     /* =====================================================================
-       2026-07-29 TEMPLATES TAB, REBUILT. Owner: "The templates tab looks
-       aweful so defantly completely re do taht and fix it."
-
-       He is right, and the reason is mechanical rather than a matter of taste.
-       This one screen is assembled by SIX owners - the base markup, the health
-       panel, the cloud library, the stdline section, the multi-upload block and
-       the list renderer - and they never agreed on anything. A measured
-       inventory of the subtree found THIRTEEN ids carrying inline styles across
-       28 distinct properties, plus runtime writers emitting hardcoded #204034,
-       #2E6A4B, #127a55, #f2f8f4 and #f7fbff. So: every radius, padding and font
-       size differs from its neighbour, nothing reads as the primary action, and
-       in dark theme the hardcoded near-whites become white slabs.
-
-       Two consequences for how this is written:
-         - !important is used deliberately and only where the inventory proves an
-           inline style would otherwise win. It is not decoration.
-         - NO new markup. Six modules inject into this subtree and four of them
-           walk it, so grouping is done with spacing, dividers and weight rather
-           than with wrapper elements. tests/opnote-templates-grips-survive-
-           redesign.test.js fails the build if that rule is broken.
-
-       The screen is made to read top-to-bottom as: ADD ONE -> YOUR LIBRARY ->
-       THE ONE YOU PICKED.
+       THE ANCHOR. 30px, and it needs !important twice.
+       `h1,h2,h3{letter-spacing:-.01em!important}` and
+       `h3{font-family:...!important; font-weight:600!important;
+       font-size:15px!important}` sit in ScribeFlow.html at :805 and :808 — the
+       app-wide typography clamp. Specificity (0,0,1) with !important beats any
+       polite rule at any specificity, which is exactly why the previous two
+       title rules (17px, then 19px) were both dead and the title rendered at
+       the same 15px as its own sub-headings. An !important at (1,1,3) is the
+       smallest thing that reaches it. NO inline style on this h3.
        ===================================================================== */
+    B + '#templatesModal .modal > h3{ font-size:30px !important; font-weight:800 !important;' +
+      ' letter-spacing:-.028em !important; line-height:1.1; color:var(--ink);' +
+      ' align-items:baseline; gap:10px; margin:2px 0 12px !important; }',
+    /* the "(optional output formatting)" span carries INLINE font-weight:400,
+       font-size:14px and color:var(--muted) — all three need !important. It
+       becomes the title's kicker rather than a fragment of the title. */
+    B + '#templatesModal .modal > h3 > span{ font-size:11.5px !important;' +
+      ' font-weight:800 !important; letter-spacing:.09em; text-transform:uppercase;' +
+      ' color:var(--muted) !important; }',
 
-    /* --- the whole surface gets one rhythm --------------------------------- */
-    B + '#templatesModal .modal > h3{ font-size:19px; letter-spacing:-.015em;' +
-      ' margin:0 0 6px !important; }',
-    /* the <hr> between intake and library becomes a real section break */
-    B + '#templatesModal hr{ border:0 !important; border-top:1px solid var(--line) !important;' +
-      ' margin:26px 0 20px !important; }',
-    B + '#templatesModal h4{ font-size:15px !important; font-weight:750;' +
-      ' letter-spacing:-.01em; margin:0 !important; }',
+    /* The lead paragraph. `.modal p.note` (ScribeFlow.html:1041) gives it a
+       --soft slab at 13.5px; no inline style, so no !important is needed. A
+       measure-bound rule-in-the-margin reads as a lead, and dropping the slab
+       RAISES contrast (muted-on-soft measured 4.75:1; muted-on-page is higher). */
+    B + '#templatesModal .modal > p.note{ background:transparent; border:0;' +
+      ' border-left:3px solid var(--green-dk); border-radius:0; padding:2px 0 2px 16px;' +
+      ' margin:0 0 26px; font-size:15px; line-height:1.62; max-width:var(--ot-col); }',
 
-    /* --- ADD ONE: the intake reads as a single grouped task ---------------- */
-    B + '#templatesModal .row.tight{ gap:8px; flex-wrap:wrap; }',
-    /* Upload is the primary way in; paste is the alternative. Same size, clearly
-       different weight - never two co-equal primaries. */
-    B + '#templatesModal .edit{ background:var(--soft) !important;' +
-      ' border:1.5px solid var(--green-dk) !important; color:var(--ink) !important;' +
-      ' font-weight:750 !important; }',
-    B + '#templatesModal .edit:hover{ background:var(--card) !important; }',
+    /* =====================================================================
+       THE THREE BANDS. There is no wrapper to give them, so the separation is
+       carried by the two <hr>s that already exist plus a real accent rule above
+       each band heading. Both <hr>s carry INLINE
+       `border:none;border-top:1px solid var(--line);margin:14px 0`, so every
+       one of those longhands needs !important or the band break stays a 1px
+       hairline with 14px of air.
+       ===================================================================== */
+    B + '#templatesModal hr{ border:0 !important; border-top:2px solid var(--line) !important;' +
+      ' margin:36px 0 26px !important; }',
 
-    /* --- YOUR LIBRARY ------------------------------------------------------ */
-    /* The search box is how a real library is used, so it gets prominence. */
-    B + '#tplSearch{ border:1.5px solid var(--line) !important; min-height:42px !important;' +
-      ' font-size:14px !important; }',
-    B + '#tplSearch:focus{ border-color:var(--green-dk) !important; }',
+    /* Band headings. h4 has NO app-wide !important clamp (the clamp at :805
+       covers h1,h2,h3 only), so font-size and weight land without one. margin
+       DOES need !important: both are authored inline (`margin:0 0 8px` on "Add
+       a template", `margin:0` on "Saved templates").
+       Two selectors because the second h4 sits one level deeper, inside the
+       flex row that also holds Rename/Remove-duplicates. */
+    B + '#templatesModal .modal > h4, ' + B + '#templatesModal .modal > div > h4{' +
+      ' font-size:21px; font-weight:800; letter-spacing:-.022em; line-height:1.2;' +
+      ' color:var(--ink); margin:0 0 16px !important; max-width:var(--ot-col); }',
+    /* the accent rule that makes a band start. Pure form, no invented words. */
+    B + '#templatesModal .modal > h4:before, ' + B + '#templatesModal .modal > div > h4:before{' +
+      ' content:""; display:block; width:38px; height:4px; border-radius:999px;' +
+      ' background:var(--green-dk); margin:0 0 12px; }',
+    /* the "Saved templates" heading row itself: the two maintenance buttons
+       stop floating 1300px away from the heading they belong to. Its inline
+       style sets display/align-items/gap/flex-wrap/margin — margin needs
+       !important, the rest is left as authored. */
+    B + '#templatesModal .modal > div:has(> h4){ max-width:var(--ot-col);' +
+      ' margin:0 0 16px !important; align-items:flex-end !important; }',
 
-    /* Rows: a real target, a wrapped name, and state that is never colour alone.
-       Padding and radius need !important (the renderer writes both inline);
-       border-COLOUR and background do not, because they encode selected/default
-       and overriding them would erase which template is which. */
-    /* 2026-07-29 SELF-CORRECTION, caught by audit before it reached the owner.
-       The first draft of this rule set `display:flex; align-items:center` here.
-       The row has THREE stacked block children (name+badge line, keywords, meta),
-       so that turned it into a row-direction flex container, flattened all three
-       onto one line and made the truncation below WORSE rather than better. The
-       row stays normal flow; only the target size and rhythm are ours. */
-    B + '#tplList > div{ min-height:46px; cursor:pointer;' +
-      ' margin-bottom:7px !important; }',
-    /* NEVER TRUNCATE A TEMPLATE NAME. The renderer puts
-       `flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`
-       on the name, and in this pane two templates differing only at the end -
-       "... L4-L5 ..." vs "... L5-S1 ..." - render as the SAME string. Choosing
-       the wrong one there is a wrong-level operative note. Same fix as the rail.
+    /* =====================================================================
+       A COLUMN, NOT A WALL. Every one of the 17 top-level blocks measured
+       >=96% of the 1380px card. Capping the intake at 760px and leaving the
+       library full width is what turns a stack of rows into a composition —
+       and a 13.5px paragraph 1380px wide was never readable anyway.
+       `.field` and `.row` are classes with no inline width; #tplDropZone,
+       #tplText and #mls-stdline-section have no inline max-width either. So
+       none of this needs !important. Unconditioned is safe: at 390px the card
+       is 362px, far below the cap, and max-width is not a property any
+       max-width @media rule in ScribeFlow.html claims for these elements.
+       ===================================================================== */
+    B + '#templatesModal .modal > .field, ' + B + '#templatesModal .modal > .row, ' +
+    B + '#templatesModal .modal > div[style*="linear-gradient"], ' +
+    B + '#templatesModal #tplDropZone, ' + B + '#templatesModal #tplText, ' +
+    B + '#templatesModal #mls-stdline-section{ max-width:var(--ot-col); }',
+    /* a search box 1380px wide reads as broken; no inline max-width. */
+    B + '#tplSearch{ max-width:560px; }',
 
-       SELF-CORRECTION: the first draft of this used a CHILD combinator,
-       `#tplList > div > strong`, which matched ZERO elements - the renderer nests
-       the name one level deeper inside a `<div style="display:flex...">`. The
-       anti-truncation rule was dead, which is the same class of mistake as the
-       whole b795 batch: a rule that reads as shipped and changes nothing.
-       Descendant combinator, verified against the renderer's actual markup. */
-    B + '#tplList > div strong{ white-space:normal !important; overflow:visible !important;' +
-      ' text-overflow:clip !important; overflow-wrap:anywhere; line-height:1.35;' +
-      ' font-size:13.5px; font-weight:700; }',
-    /* the "DEFAULT" marker becomes a pill instead of loose green text */
-    B + '#tplList > div span[style*="#127a55"]{ background:var(--soft);' +
-      ' border:1px solid var(--green-dk); border-radius:999px;' +
-      ' padding:2px 8px; font-size:10px !important; letter-spacing:.03em; }',
-
-    /* --- THE ONE YOU PICKED: the preview pane ----------------------------- */
-    B + '#tplDetail h4, ' + B + '#tplDetail #tplDetName{ font-size:15px;' +
-      ' letter-spacing:-.01em; }',
-    B + '#tplDetail textarea{ border:1px solid var(--line); border-radius:12px;' +
-      ' padding:13px 15px; background:var(--bg); font-size:14px !important;' +
-      ' line-height:1.6; }',
-    B + '#tplDetail textarea:focus{ background:var(--card); border-color:var(--green-dk); }',
-    B + '#tplDetail .row{ gap:8px; flex-wrap:wrap; margin-top:12px !important; }',
-
-    /* --- the second drop zone must match the first ------------------------ */
-    B + '#tplMultiDrop{ border-width:2px !important; border-style:dashed !important;' +
-      ' border-radius:16px !important; padding:22px 18px !important;' +
-      ' font-size:13px !important; font-weight:600; line-height:1.5; }',
-    B + '#tplMultiStatus, ' + B + '#tplMultiResult{ font-size:12.5px !important;' +
-      ' line-height:1.5; }',
-
-    /* --- the injected panels join the same design ------------------------- */
-    B + '#tpfPanel, ' + B + '#tlPanel{ border:1px solid var(--line); border-radius:16px;' +
-      ' background:var(--card); padding:16px 18px; margin:14px 0;' +
-      ' box-shadow:0 6px 22px rgba(32,64,52,.05); }',
-    B + '#tpfPanel h4, ' + B + '#tlPanel h4{ margin:0 0 8px !important; }',
-
-    /* --- the two checkboxes read as settings, not as stray text ----------- */
+    /* --- BAND A: the setup switches ---------------------------------------
+       Two checkboxes and a select. They are settings, so they read as settings.
+       `.field label` would otherwise typeset the master switch at caption size,
+       which is how "Use templates" ended up looking like its own small print. */
+    B + '#templatesModal .field{ margin-bottom:16px; }',
+    B + '#templatesModal .field label{ font-size:11.5px; font-weight:800;' +
+      ' letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }',
+    /* the parenthetical inside the Keywords label is a sentence, not a
+       micro-label - uppercasing it would be unreadable. It carries INLINE
+       font-weight:400 and color, which are left exactly as authored. */
+    B + '#templatesModal .field > label[for] > span{ text-transform:none;' +
+      ' letter-spacing:0; font-size:11.5px; font-weight:600; }',
     B + '#templatesModal label:has(#tplUseToggle), ' +
     B + '#templatesModal label:has(#tplAutoChoose){ display:flex; align-items:center;' +
-      ' gap:9px; min-height:40px; padding:6px 11px; border-radius:12px;' +
-      ' background:var(--bg); border:1px solid var(--line); font-size:13px;' +
-      ' font-weight:600; margin:6px 0 !important; cursor:pointer; }',
-    /* SELF-CORRECTION: both checkboxes carry an INLINE `width:auto`, so without
-       !important the width lost and the height won - a 17px-tall, auto-wide
-       checkbox, i.e. visibly non-square. Both dimensions must be forced. */
-    B + '#tplUseToggle, ' + B + '#tplAutoChoose{ width:17px !important;' +
-      ' height:17px !important; accent-color:var(--green-dk); flex:0 0 auto;' +
+      ' gap:11px; min-height:48px; padding:9px 15px; border-radius:var(--ot-r-md);' +
+      ' background:var(--card); border:1.5px solid var(--line);' +
+      ' margin:8px 0 !important; cursor:pointer; font-size:15px !important;' +
+      ' color:var(--ink) !important; font-weight:650 !important;' +
+      ' letter-spacing:0 !important; text-transform:none !important; }',
+    B + '#templatesModal label:has(#tplUseToggle):hover, ' +
+    B + '#templatesModal label:has(#tplAutoChoose):hover{ border-color:var(--green-dk); }',
+    /* SELF-CORRECTION kept from b799: both checkboxes carry an INLINE
+       `width:auto`, so without !important the width lost while the height won
+       and the box rendered visibly non-square. Both dimensions must be forced. */
+    B + '#tplUseToggle, ' + B + '#tplAutoChoose{ width:19px !important;' +
+      ' height:19px !important; accent-color:var(--green-dk); flex:0 0 auto;' +
       ' cursor:pointer; }',
-    /* And the master on/off switch must not be typeset like its own caption. My
-       `.field label` rule set 12px/--muted, which is exactly the caption style
-       beneath it - so "Use templates" read as small print rather than as the
-       setting that governs the whole screen. */
-    B + '#templatesModal label:has(#tplUseToggle), ' +
-    B + '#templatesModal label:has(#tplAutoChoose){ font-size:13.5px !important;' +
-      ' color:var(--ink) !important; font-weight:700 !important;' +
-      ' letter-spacing:0 !important; }',
+    B + '#tplActiveSel{ min-height:46px; border-radius:var(--ot-r-md); font-size:15px; }',
+    /* the explanatory caption under the master switch carries an INLINE
+       font-size:12px, so it needs !important to join the ramp. */
+    B + '#templatesModal .modal > .field > div[style*="12px"]{ font-size:13px !important;' +
+      ' line-height:1.55; color:var(--muted); margin-top:8px !important; max-width:66ch; }',
 
-    /* --- DARK THEME: the hardcoded near-whites and greens the renderers emit.
-       Without these the pane is a set of white slabs with pale-green text on a
-       dark shell - which is most of why this screen "looks awful" for anyone in
-       dark mode. Attribute-matched, so light mode keeps the renderer's values. */
+    /* --- BAND B: adding one -----------------------------------------------
+       The bulk-import card first, then the single-template path. The card is
+       the loudest colour on the screen today and it is not even in the app's
+       palette: INLINE `background:linear-gradient(135deg,#eef4ff,#f3ecff)` with
+       an INLINE `border:1px solid #EAF1EE`, `border-radius:10px`,
+       `padding:13px 14px` and `margin-bottom:14px`. Every one of those needs
+       !important; there is no other way to reach an inline declaration. */
+    B + '#templatesModal .modal > div[style*="linear-gradient"]{' +
+      ' background:var(--soft) !important; border:1.5px solid var(--line) !important;' +
+      ' border-radius:var(--ot-r-lg) !important; padding:18px 20px !important;' +
+      ' margin:0 0 26px !important; }',
+    /* its own title/sub lines carry INLINE font-weight:700/font-size:14px and
+       font-size:12.5px + margin — !important on each. */
+    B + '#templatesModal div[style*="linear-gradient"] > div[style*="font-weight:700"]{' +
+      ' font-size:15px !important; font-weight:800 !important; letter-spacing:-.015em;' +
+      ' color:var(--ink); }',
+    B + '#templatesModal div[style*="linear-gradient"] > div[style*="12.5px"]{' +
+      ' font-size:13px !important; line-height:1.55; margin:5px 0 14px !important;' +
+      ' max-width:62ch; }',
+    /* ONE primary in this card. Inline font-size:13px and padding:8px 14px. */
+    B + '#templatesModal div[style*="linear-gradient"] .btn-primary{ font-size:15px !important;' +
+      ' font-weight:750; padding:13px 22px !important; border-radius:var(--ot-r-md) !important;' +
+      ' min-height:48px; }',
+
+    /* the two drop zones. SHAPE ONLY — border-colour and background belong to
+       the drag handlers (see the header). Inline sets border-radius:10px and
+       padding:14/16px and font-size, so those three need !important; the
+       2px dashed border width/style is restated with !important because the
+       inline shorthand carries it too. */
+    B + '#tplDropZone, ' + B + '#tplMultiDrop{ border-width:2px !important;' +
+      ' border-style:dashed !important; border-radius:var(--ot-r-lg) !important;' +
+      ' font-weight:650; line-height:1.55; }',
+    B + '#tplDropZone{ padding:34px 24px !important; font-size:15px !important;' +
+      ' color:var(--muted) !important; margin-top:16px !important; }',
+    B + '#tplMultiDrop{ padding:26px 20px !important; font-size:13px !important;' +
+      ' margin-top:16px !important; }',
+    B + '#tplDropZone:hover, ' + B + '#tplMultiDrop:hover{ color:var(--ink) !important;' +
+      ' box-shadow:0 6px 22px rgba(32,64,52,.10); }',
+    B + '#tplMultiStatus, ' + B + '#tplMultiResult{ font-size:13px !important;' +
+      ' line-height:1.55; }',
+
+    /* THE DROP ZONE AS THE HERO WHILE THE LIBRARY IS EMPTY.
+       #tplList:empty is NOT the state to key on: renderTemplateList writes a
+       <p> into the list when there is nothing to show (ScribeFlow.html:16219
+       and :16223), so the list is never :empty after the first render. The
+       honest selector is "the list is showing a message instead of rows". */
+    B + '#templatesModal:has(#tplList > p) #tplDropZone{ padding:70px 26px !important;' +
+      ' font-size:17px !important; font-weight:750 !important; border-width:3px !important;' +
+      ' color:var(--ink) !important; }',
+    /* and the empty message itself stays quiet, so the hero is the hero. */
+    B + '#tplList > p{ font-size:13.5px !important; line-height:1.6; margin:6px 2px !important;' +
+      ' color:var(--muted); }',
+
+    /* name / keywords / search. NO !important on font-size: at <=760px
+       `html body input[...]{font-size:16px!important}` is the iOS zoom guard
+       and must keep winning. No inline styles on these three except
+       #tplSearch's width:100%, which is left alone. */
+    B + '#tplName, ' + B + '#tplKeywords, ' + B + '#tplSearch{ min-height:48px;' +
+      ' border-radius:var(--ot-r-md); font-size:15px; padding:12px 15px;' +
+      ' border:1.5px solid var(--line); }',
+    B + '#tplName:focus, ' + B + '#tplKeywords:focus, ' + B + '#tplSearch:focus{' +
+      ' border-color:var(--green-dk); }',
+    B + '#tplName:focus-visible, ' + B + '#tplKeywords:focus-visible, ' +
+    B + '#tplSearch:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }',
+
+    /* the extracted text the doctor proofreads. INLINE min-height:120px,
+       font-size:13px and margin-top:8px, and the app-wide input rule also
+       declares font-size !important — so this one DOES need !important to
+       reach a legible size, and it is the only input here that gets it,
+       because a textarea does not trigger the iOS zoom the guard exists for. */
+    B + '#tplText{ min-height:170px !important; border-radius:var(--ot-r-lg);' +
+      ' padding:16px 18px; background:var(--card); border:1.5px solid var(--line);' +
+      ' font-size:15px !important; line-height:1.62; margin-top:16px !important; }',
+    B + '#tplText:focus{ border-color:var(--green-dk); }',
+    B + '#tplText:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }',
+
+    /* --- ONE PRIMARY PER BAND --------------------------------------------
+       b799 promoted `.edit` with a green border and a soft fill, which put it
+       in direct competition with the drop zone directly beneath it AND with
+       Save. Upload has a 760x100 dashed target one row down; it does not also
+       need to be a primary. It goes quiet, and 💾 Save template is the single
+       primary of this band. */
+    /* NO !important anywhere in this rule, and that is a correction, not an
+       oversight. b799 wrote `color:var(--ink) !important` here - and an
+       !important stylesheet declaration beats a NON-important inline one, so
+       that would have silently repainted the preview pane's DELETE control,
+       whose red is written inline as `color:#a12c2c`, in ordinary ink.
+       `.btn-ghost` and `.edit` are only ever declared at (0,1,0) or by the bare
+       `button{}` base, so (1,2,1) reaches them politely and the inline red
+       survives. min-height is 44, not 40: `html body button{min-height:44px}` is
+       the phone tap floor at (0,0,3) and this selector OUT-SPECIFIES it, so it
+       has to satisfy the floor itself. */
+    B + '#templatesModal .edit, ' + B + '#templatesModal .btn-ghost{' +
+      ' background:var(--card); border:1.5px solid var(--line);' +
+      ' color:var(--ink); font-weight:650;' +
+      ' border-radius:var(--ot-r-md); min-height:44px; font-size:13px; }',
+    B + '#templatesModal .edit:hover, ' + B + '#templatesModal .btn-ghost:hover{' +
+      ' border-color:var(--green-dk); background:var(--soft); }',
+    B + '#templatesModal .btn-green{ font-weight:750; border-radius:var(--ot-r-md);' +
+      ' min-height:52px; font-size:15px; }',
+    B + '#templatesModal .modal > .row{ gap:10px; margin-top:16px !important;' +
+      ' align-items:center; }',
+    B + '#templatesModal .row.tight{ gap:10px; flex-wrap:wrap; margin-top:16px !important; }',
+    /* focus must stay visible on every control this module restyles */
+    B + '#templatesModal button:focus-visible{ outline:2px solid var(--green-dk);' +
+      ' outline-offset:2px; }',
+
+    /* THE CLOSE ROW. The Close button measured 1380x42 = 57,960px2, the biggest
+       control on the screen, purely because it carries an INLINE `flex:1` in a
+       full-width row. flex needs !important; the row's `margin-top:14px` is
+       inline too. A quiet, right-hand, auto-width exit under a hairline. */
+    B + '#templatesModal .modal > .row:last-child{ justify-content:flex-end;' +
+      ' border-top:1px solid var(--line); padding-top:20px; margin-top:26px !important; }',
+    B + '#templatesModal .modal > .row:last-child > button{ flex:0 0 auto !important;' +
+      ' min-width:170px; }',
+
+    /* --- BAND C: your library --------------------------------------------
+       The two maintenance buttons beside the heading are tertiary. Inline
+       font-size:12.5px and padding:6px 11px on both, so both need !important. */
+    B + '#templatesModal .modal > div:has(> h4) > .btn-ghost{ font-size:13px !important;' +
+      ' padding:12px 16px !important; min-height:44px; font-weight:700; }',
+
+    /* The inline `max-height:420px; overflow-y:auto` on #tplList is CORRECT and
+       stays: it gives the list its own scroller so a long library cannot push
+       the preview pane off the screen. Only the padding is ours here; the
+       wide-screen ceiling is raised in the min-width block below, because the
+       rows are now taller and 420px would show fewer of them than before. */
+    B + '#tplList{ padding-right:4px; }',
+    /* the search field's own bottom margin is INLINE (8px); rather than fight
+       it with !important, the workspace supplies the other 8 itself. */
+    B + '#tplWorkspace{ margin-top:8px; }',
+
+    /* A ROW THAT LOOKS LIKE A ROW.
+       renderTemplateList writes border, border-radius, padding, margin-bottom,
+       background and cursor INLINE on every row, so radius/padding/margin all
+       need !important — that is precisely what was measured dead in b795, where
+       the rows rendered byte-identical to b794 while the header called this "a
+       library". border-COLOUR and background are NOT claimed: they encode
+       selected (#2E6A4B / #f2f8f4) and default (#f7fbff).
+       SELF-CORRECTION kept from b799: no display:flex here. The row has three
+       stacked block children and turning it into a row-direction flex container
+       flattens all three onto one line. */
+    B + '#tplList > div{ min-height:76px; border-radius:var(--ot-r-md) !important;' +
+      ' padding:15px 17px !important; margin-bottom:10px !important; cursor:pointer; }',
+    B + '#tplList > div:hover{ box-shadow:0 4px 16px rgba(32,64,52,.14); }',
+    /* SELECTED, visible at a glance and WITHOUT touching the state colours: an
+       inset left bar. No inline style sets box-shadow on these rows, so it can
+       never fight the renderer. aria-selected is already written by
+       renderTemplateList, so the hook needs no new markup. */
+    B + '#tplList > div[aria-selected="true"]{ box-shadow:inset 4px 0 0 var(--green-dk),' +
+      ' 0 4px 16px rgba(32,64,52,.12); }',
+    B + '#tplList > div:focus-visible{ outline:2px solid var(--green-dk); outline-offset:2px; }',
+    /* NEVER TRUNCATE A TEMPLATE NAME. The renderer puts
+       `flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`
+       on the name, and two templates differing only at the end — "... L4-L5 ..."
+       vs "... L5-S1 ..." — render as the SAME string in a 524px pane. Choosing
+       the wrong one there is a wrong-level operative note. All four of those
+       longhands are inline, so all four need !important.
+       SELF-CORRECTION kept from b799: DESCENDANT combinator. `> strong` matched
+       zero elements because the name is nested one level deeper inside the
+       renderer's own flex div — a dead anti-truncation rule. */
+    B + '#tplList > div strong{ white-space:normal !important; overflow:visible !important;' +
+      ' text-overflow:clip !important; overflow-wrap:anywhere; line-height:1.32;' +
+      ' font-size:15px; font-weight:750; letter-spacing:-.012em; }',
+    /* the two sub-lines carry INLINE font-size (11.5px keywords, 11px meta). */
+    B + '#tplList > div div[style*="11.5px"]{ font-size:13px !important; margin-top:5px;' +
+      ' color:var(--muted); }',
+    B + '#tplList > div div[style*="font-size:11px"]{ font-size:13px !important;' +
+      ' margin-top:4px; color:var(--muted); }',
+    /* the DEFAULT marker becomes a real pill. Inline font-size:10px + colour. */
+    B + '#tplList > div span[style*="#127a55"]{ background:var(--soft);' +
+      ' border:1px solid var(--green-dk); border-radius:999px; padding:3px 10px;' +
+      ' font-size:11.5px !important; font-weight:800; letter-spacing:.06em; }',
+
+    /* --- THE ONE YOU PICKED: the preview pane -----------------------------
+       Inline sets border, border-radius:10px, padding:12px, min-height:200px
+       and position:sticky. The sticky stays — the preview holding still while
+       the list scrolls is the whole point of the two-pane layout — but radius,
+       padding and min-height each need !important. This is the only raised card
+       in the band, which is what makes it read as a different surface from the
+       flat rows beside it. */
+    B + '#tplDetail{ border:1.5px solid var(--line) !important;' +
+      ' border-radius:var(--ot-r-lg) !important; padding:24px 26px !important;' +
+      ' background:var(--card); min-height:260px !important;' +
+      ' box-shadow:0 14px 40px rgba(32,64,52,.09); }',
+    B + '#tplDetail p{ font-size:14px; line-height:1.6; color:var(--muted); }',
+    B + '#tplDetail .field{ margin-bottom:14px !important; }',
+    B + '#tplDetail #tplDetName, ' + B + '#tplDetail #tplDetKw{ min-height:46px;' +
+      ' border-radius:var(--ot-r-md); font-size:15px; }',
+    /* #tplDetText carries an INLINE `font:12.5px/1.5 ui-monospace,...` shorthand,
+       which sets font-size and line-height inline — both need !important. The
+       monospace FAMILY is deliberately left alone: it aligns the template's own
+       columns and the owner is used to it. */
+    B + '#tplDetail textarea{ border:1.5px solid var(--line); border-radius:var(--ot-r-md);' +
+      ' padding:15px 17px; background:var(--bg); font-size:15px !important;' +
+      ' line-height:1.6 !important; }',
+    B + '#tplDetail textarea:focus{ background:var(--card); border-color:var(--green-dk); }',
+    B + '#tplDetail #tplDetStatus{ font-size:13px !important; margin:10px 0 !important; }',
+    /* the pane's action row: one primary (Save changes), the rest quiet. Each
+       of those five buttons carries INLINE font-size:12.5px and padding:7px 12px. */
+    B + '#tplDetail button{ font-size:13px !important; padding:11px 16px !important;' +
+      ' min-height:44px; border-radius:var(--ot-r-md); }',
+    B + '#tplDetail .btn-green{ font-size:15px !important; padding:12px 20px !important;' +
+      ' min-height:48px; }',
+    B + '#tplDetail > div:last-child{ gap:8px !important; margin-top:16px; }',
+
+    /* --- the three injected panels join the same design -------------------
+       #tpfPanel (template health, mls-connect.js), #tlPanel (cloud library,
+       feat_mls_template_library.js) and #mls-stdline-section (standard lines)
+       each ship their own stylesheet with their own palette — a blue-purple
+       gradient, a green-blue gradient and a blue card, none of them the app's.
+       Together they were 15 of the 15 measured background colours and most of
+       the 1.2M px2 that stayed light in dark mode.
+       They are MAINTENANCE, so they go flat and quiet: no card face, a hairline
+       rule to separate them, and a small uppercase heading. Every declaration
+       in their own sheets is at (1,0,x) or (1,1,x); these selectors are one
+       class higher, so none of this needs !important except where THEY used it. */
+    B + '#tpfPanel, ' + B + '#tlPanel{ background:transparent; border:0;' +
+      ' border-top:1px solid var(--line); border-radius:0; padding:20px 0 4px;' +
+      ' margin:10px 0 0; box-shadow:none; color:var(--ink); }',
+    B + '#mls-stdline-section{ background:transparent; border:0;' +
+      ' border-left:3px solid var(--line); border-radius:0; padding:2px 0 2px 16px;' +
+      ' margin:0 0 26px; color:var(--ink); }',
+    /* ONE type size across all three, so the 11 sizes on this screen can come
+       down. Their own rules are at (1,0,1)/(1,1,0); these are (1,1,1). */
+    B + '#tpfPanel *, ' + B + '#tlPanel *, ' + B + '#mls-stdline-section *{ font-size:13px; }',
+    B + '#tpfPanel h4, ' + B + '#tpfPanel summary, ' + B + '#tlPanel h4, ' +
+    B + '#mls-stdline-section .mls-sl-h{ font-size:11.5px !important; font-weight:800 !important;' +
+      ' letter-spacing:.09em; text-transform:uppercase; color:var(--muted) !important;' +
+      ' margin:0 0 8px !important; }',
+    B + '#tpfPanel .tpf-sub, ' + B + '#tlPanel .tl-sub, ' +
+    B + '#mls-stdline-section .mls-sl-sub{ color:var(--muted); line-height:1.55;' +
+      ' max-width:74ch; }',
+    B + '#tpfPanel label, ' + B + '#tlPanel label, ' +
+    B + '#mls-stdline-section label.mls-sl-lab{ color:var(--muted); font-size:11.5px;' +
+      ' font-weight:800; letter-spacing:.06em; text-transform:uppercase; }',
+    /* their controls onto the shared radius + a real target height. 44 for the
+       buttons, not the 30-33px they ship at: these selectors out-specify the
+       `html body button{min-height:44px}` phone floor, so they have to meet it
+       themselves - the same trap that left the room's Back button at 40px. */
+    B + '#tpfPanel button, ' + B + '#tlPanel button, ' +
+    B + '#mls-stdline-section .mls-sl-btn{ border-radius:var(--ot-r-md);' +
+      ' border:1px solid var(--line); background:var(--card); color:var(--ink);' +
+      ' min-height:44px; padding:9px 14px; }',
+    B + '#tlPanel input, ' + B + '#tlPanel select, ' +
+    B + '#mls-stdline-section textarea.mls-sl-text{ border-radius:var(--ot-r-md);' +
+      ' border:1px solid var(--line); background:var(--card); color:var(--ink);' +
+      ' min-height:42px; }',
+    B + '#tpfPanel button:hover, ' + B + '#tlPanel button:hover{ background:var(--soft);' +
+      ' border-color:var(--green-dk); }',
+    B + '#mls-stdline-section .mls-sl-btn{ background:var(--green) !important;' +
+      ' color:#fff !important; font-weight:750; padding:10px 18px; min-height:44px; }',
+    B + '#tpfPanel .tpf-row, ' + B + '#tpfPanel .tpf-prev, ' + B + '#tlPanel .tl-active, ' +
+    B + '#mls-stdline-section .mls-sl-tpls, ' + B + '#mls-stdline-section .mls-sl-item, ' +
+    B + '#mls-stdline-section .mls-sl-chk{ border-radius:var(--ot-r-md);' +
+      ' border:1px solid var(--line); background:var(--card); color:var(--ink); }',
+    /* .tl-warn declares background and colour with !important, so the only way
+       to re-token it is with !important. */
+    B + '#tlPanel .tl-warn{ background:var(--gold-bg) !important; color:var(--ink) !important;' +
+      ' border:1px solid var(--gold) !important; border-left:4px solid var(--gold) !important; }',
+    /* pills stay pills — the third and last radius in the vocabulary */
+    B + '#tpfPanel .tpf-badge, ' + B + '#tlPanel .tl-count, ' +
+    B + '#mls-stdline-section .mls-sl-pill{ border-radius:999px; font-size:11.5px;' +
+      ' font-weight:800; letter-spacing:.04em; padding:3px 10px; }',
+    B + '#mls-stdline-section .mls-sl-chk.on{ background:var(--green) !important;' +
+      ' border-color:var(--green) !important; color:#fff !important; }',
+    B + '#tpfPanel button:focus-visible, ' + B + '#tlPanel button:focus-visible, ' +
+    B + '#mls-stdline-section .mls-sl-btn:focus-visible{ outline:2px solid var(--green-dk);' +
+      ' outline-offset:2px; }',
+
+    /* the op-note rail row keeps the same radius vocabulary. It lives OUTSIDE
+       #templatesModal so the custom property is not in scope; literal 14px. */
+    B + '.opr-tpl-item{ border-radius:14px; padding:10px 12px; }',
+    B + '.opr-tpl-empty{ font-size:13px; color:var(--muted); line-height:1.55; }',
+
+    /* =====================================================================
+       DARK THEME. Measured before this pass: 28 surfaces totalling 1,202,031px2
+       still painted LIGHT under body.theme-dark, and 11 text nodes fell below
+       4.5:1 — the worst a heading at 1.21:1, i.e. unreadable.
+       Everything above already re-tokens the three injected panels, so what is
+       left here is the colours that are written INLINE by a renderer or forced
+       with !important by a foreign sheet. Attribute-matched, so light mode
+       keeps exactly the values the renderers chose.
+       ===================================================================== */
+    /* the two green-on-white buttons. In dark, --brand-dk and --green resolve to
+       LIGHT greens (#7CC4A0, #5FAF87) and `.btn-primary{color:#fff}` /
+       `.btn-green{color:#fff}` then measure 2.05:1 and 2.64:1. Dark ink on the
+       light green is the fix; the backgrounds stay as the app chose them.
+       `.btn-primary`'s colour is not !important, so (1,3,1) is enough. */
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal .btn-primary, ' +
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal .btn-green, ' +
+    'body.theme-dark.' + BODY_CLASS + ' #mls-stdline-section .mls-sl-btn, ' +
+    'body.theme-dark.' + BODY_CLASS + ' #mls-stdline-section .mls-sl-chk.on{' +
+      ' color:#10231A !important; }',
+    /* the renderers' hardcoded greens read as ink-on-dark otherwise */
     'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#204034"]{ color:var(--green-dk) !important; }',
     'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#127a55"]{ color:var(--green-dk) !important; }',
-    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#fafcff"]{ background:var(--bg) !important; }',
-    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#cfe0f5"]{ border-color:var(--line) !important; }'
+    /* the Delete affordance in the preview pane is INLINE `color:#a12c2c`,
+       which measured 2.23:1 on the dark card. */
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="#a12c2c"]{ color:var(--red) !important; }',
+    /* BOTH DRAG STATES of BOTH drop zones. This is the one place the rebuild
+       overrides a background the drag handlers own — and it does it by matching
+       the specific literal each handler writes, so the resting state and the
+       armed state are each re-tokened and the FEEDBACK STILL WORKS. The rgb()
+       twins are required because the moment JS assigns el.style.background the
+       whole style attribute is re-serialised out of hex. */
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="#fafcff"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="250, 252, 255"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="#fbfbff"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="251, 251, 255"]{' +
+      ' background:var(--bg) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="#EAF1EE"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="234, 241, 238"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="#eef0ff"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="238, 240, 255"]{' +
+      ' background:var(--soft) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="#cfe0f5"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplDropZone[style*="207, 224, 245"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="#EAF1EE"], ' +
+    'body.theme-dark.' + BODY_CLASS + ' #tplMultiDrop[style*="234, 241, 238"]{' +
+      ' border-color:var(--line) !important; }',
+    /* the two row state colours are hardcoded near-whites; in dark a selected or
+       default row would be a white slab under --ink text. Restated in tokens for
+       dark ONLY, so light keeps exactly what the renderer chose. */
+    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f2f8f4"]{ background:var(--soft) !important; }',
+    'body.theme-dark.' + BODY_CLASS + ' #tplList > div[style*="#f7fbff"]{ background:var(--card) !important; }',
+    /* the neutral text colours those three panels hardcode. These are NOT
+       state colours - #5a6c82, #13283f, #16233a, #5a6b80, #29493d and
+       #7a8aa0 are just greys and navies - so they are re-tokened in BOTH
+       themes. Measured: '.mls-sl-empty' was the last text node under 4.5:1
+       in dark, at 3.31:1. The .tpf-badge / .tl-count status chips are left
+       exactly as they are: they encode ok/bad/warn and they already pass. */
+    B + '#tpfPanel .tpf-name, ' + B + '#tpfPanel .tpf-prev, ' + B + '#tpfMatchOut, ' +
+    B + '#tlPanel .tl-import-review, ' + B + '#mls-stdline-section .mls-sl-item .txt{' +
+      ' color:var(--ink); }',
+    B + '#tpfPanel .tpf-meta, ' + B + '#tpfLedgerList .pend, ' +
+    B + '#mls-stdline-section .mls-sl-empty, ' + B + '#mls-stdline-section .mls-sl-none{' +
+      ' color:var(--muted); }',
+    B + '#mls-stdline-section .mls-sl-pill{ background:var(--soft); border:1px solid var(--line);' +
+      ' color:var(--ink); }',
+    B + '#mls-stdline-section .mls-sl-mini.edit{ background:var(--soft); color:var(--ink); }',
+    B + '#mls-stdline-section .mls-sl-mini.del{ background:var(--soft); color:var(--red); }',
+    /* the disclosure that opens the health panel is a 1380px-wide row only
+       27px tall; padding, not min-height, so the marker survives. */
+    B + '#tpfPanel summary{ padding:11px 0; cursor:pointer; }',
+
+    /* the bulk-import card's inline gradient */
+    'body.theme-dark.' + BODY_CLASS + ' #templatesModal [style*="linear-gradient"]{' +
+      ' background:var(--soft) !important; }'
   ];
 
   /* Wide-only: the two-pane template workspace and the roomier editor. Gated so
@@ -570,7 +903,14 @@
     /* grid-template-columns is INLINE on #tplWorkspace and stays inline (the
        narrow rules in ScribeFlow.html already override it with !important); only
        the gap is ours, and it needs !important for the same inline reason. */
-    B + '#tplWorkspace{ gap:16px !important; }',
+    B + '#tplWorkspace{ gap:22px !important; }',
+    /* The rows are now 76px tall instead of ~46px, so the inline
+       `max-height:420px` would show FEWER templates than before the rebuild -
+       a density regression hiding inside a visual improvement. Raised on wide
+       screens only, and it needs !important because that ceiling is inline.
+       Gated deliberately: a phone keeps the 420px scroller so the preview pane
+       underneath is still reachable without a long scroll. */
+    B + '#tplList{ max-height:600px !important; }',
     B + '#opPrepList > div{ padding:24px 28px !important; }'
   ];
 
@@ -581,6 +921,21 @@
        #oprTplRail, in the same auto-sized grid row, with no cap at all. The rail
        now lists EVERY template rather than the first six, so that omission got
        worse, not better. Capped and scrollable, same mechanism, same reason. */
+    /* ---- Templates on a phone -------------------------------------------
+       At <=640px the workspace collapses to one column and #tplList keeps its
+       own inline 420px scroller. A 101px row would show barely four templates
+       before an inner scroll, which is FEWER than before this rebuild - a
+       density regression hiding inside a visual improvement, measured at 390px.
+       Rows tighten, the ceiling lifts, and the 30px title comes down one step
+       so its kicker does not wrap twice. Everything here is inside the
+       max-width block, so none of it can out-rank a narrow rule. */
+    B + '#tplList{ max-height:520px !important; }',
+    B + '#tplList > div{ min-height:64px; padding:12px 14px !important; }',
+    B + '#templatesModal .modal > h3{ font-size:26px !important; }',
+    B + '#tplDetail{ padding:18px 18px !important; }',
+    B + '#tplText{ min-height:150px !important; }',
+    B + '#tplDropZone{ padding:26px 16px !important; }',
+    B + '#templatesModal hr{ margin:28px 0 22px !important; }',
     B + '#oprTplRail{ max-height:26vh; overflow:auto; }',
     B + '#oprEditor{ padding:16px 14px 56px; }',
     B + '#oprPanelTpls{ padding:14px 14px 32px; }',

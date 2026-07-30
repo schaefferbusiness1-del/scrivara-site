@@ -681,6 +681,27 @@ let unguardedOps = 0;
   });
 }
 
+
+/* 2026-07-30 owner: 'started recording but indicater at the top stayed at prep'.
+   Record was detected only while a STOP control existed, so pausing sent the rail
+   BACK to Prep and discarded the fact that recording had happened - while the chip
+   row on the same screen already showed a ticked Record. A Resume control cannot
+   exist unless recording started, so it is evidence the stage was reached. */
+{
+  const src = require('fs').readFileSync(require('path').join(__dirname,'..','feat_mls_calm_shell.js'),'utf8');
+  const a = src.indexOf('function stageNow()'), b = src.indexOf('function ensureStages()');
+  const fn = src.slice(a,b);
+  const mk = (labels, ta) => new Function('qs','qsa','visible','findControl', fn + ' return stageNow;')(
+    sel => sel === '#visitView' ? {} : null,
+    () => ta === null ? [] : [{ value: ta }],
+    () => true,
+    opt => labels.find(l => opt.label.test(l)) ? {} : null)();
+  assert.strictEqual(mk(['Recording… Stop Visit'],''), 1, 'during recording the rail must read Record');
+  assert.strictEqual(mk(['Resume recording'],'So'), 1, 'AFTER STOPPING the rail must STILL read Record, not fall back to Prep');
+  assert.strictEqual(mk(['Generate one note'],''), 0, 'a fresh visit must still read Prep - no false advance');
+  console.log('  pass  the stage never falls back to Prep once recording has happened');
+}
+
 console.log('PASS visit-stage-rail-fills: 5 stages render as complete/current/upcoming with ' +
   'completed circles staying filled, the connector fill equals the stage index (0/4 -> 4/4), ' +
   'aria-current="step" marks exactly one stage beside a visually-hidden state word, the rail ' +

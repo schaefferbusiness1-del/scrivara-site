@@ -45,7 +45,19 @@ assert(connect.includes('API.healthOf = healthOf;'),
 /* ---- runtime: run the module against a stub page ----------------------- */
 function stubNode(id) {
   return {
-    id: id, innerHTML: '', textContent: '', style: {},
+    /* 2026-07-30: this stub kept innerHTML and textContent as two INDEPENDENT
+       strings, which a real DOM never does - setting innerHTML updates
+       textContent. The receipt now writes innerHTML (it carries the style-used
+       widget as well as the context line), so the assertion below read an empty
+       textContent and reported the product as dishonest when it was not. The
+       stub was wrong, so the stub is fixed; the assertion is untouched and still
+       demands the verified-visit count. */
+    id: id, _html: '', textContent: '', style: {},
+    get innerHTML() { return this._html; },
+    set innerHTML(v) {
+      this._html = String(v);
+      this.textContent = String(v).replace(/<[^>]*>/g, '');
+    },
     _cls: {},
     classList: {
       add: function (c) { this._parent._cls[c] = 1; },

@@ -202,18 +202,49 @@
   }
   /* onf-1.6.0: auto-populate the VISIBLE editable "Procedure" input on each
      op-prep card with the matched procedure (row.proc) instead of leaving it
-     blank. The input carries onchange="_opProcChanged(N,this.value)", so N maps
-     it to its row. We only fill an EMPTY input (never override manual entry). */
+     blank. We only fill an EMPTY input (never override manual entry).
+
+     WHY IT EARNS ITS TICK. syncProcedure() above writes row.proc from the
+     assigned template so the readiness checklist can show "Procedure" filled.
+     Nothing re-renders the card at that moment — "Apply to all" only dispatches
+     change on each opPrepTpl_<i> select, and neither the base renderer nor the
+     integrity module's change listener repaints the list — so the input the
+     doctor is looking at keeps the value it was BORN with (empty, because the
+     Athena pull carries no procedure text: PROBLEM A at the top of this file).
+     Without this the checklist says Procedure ✓ over a visibly empty box.
+
+     2026-07-30 — DEAD GUARD, FIXED. The row index was read out of
+     getAttribute('onchange'), but the shipped renderer emits the handler as
+     oninput (ScribeFlow.html:15858). Measured across the whole app:
+     `onchange="_opProcChanged` occurs 0 times, `oninput="_opProcChanged` once.
+     The regex therefore never matched, and this function had never filled a
+     single visible Procedure input on any tick since onf-1.6.0.
+     The index now comes from the input's OWN id — `opPrepProc_<i>`, the shape
+     ScribeFlow.html:15858 emits — which cannot rot when a handler attribute is
+     renamed. The inline-handler read survives as a fallback for the staging and
+     _test renderers, which emit the same input with no id, and it now accepts
+     EITHER attribute name. Proved by tests/opnote-proc-input-prefill.test.js. */
+  function procRowIndex(inp) {
+    if (!inp) return -1;
+    var byId = S(inp.id).match(/^opPrepProc_(\d+)$/);
+    if (byId) return +byId[1];
+    var handler = S(inp.getAttribute('oninput')) + ' ' + S(inp.getAttribute('onchange'));
+    var m = handler.match(/_opProcChanged\(\s*(\d+)/);
+    return m ? +m[1] : -1;
+  }
   function fillProcInputs() {
     try {
       var op = window._opPrep || [], modal = $('opPrepModal'); if (!modal) return;
       var inputs = modal.querySelectorAll('input');
       for (var i = 0; i < inputs.length; i++) {
-        var inp = inputs[i], m = S(inp.getAttribute('onchange')).match(/_opProcChanged\((\d+)/);
-        if (!m) continue;
-        var idx = +m[1], row = op[idx];
+        var inp = inputs[i], idx = procRowIndex(inp);
+        if (idx < 0) continue;
+        var row = op[idx];
         if (!row || !S(row.proc).trim() || S(inp.value).trim()) continue;
         inp.value = row.proc;
+        /* tell the app exactly what typing would: _opProcChanged repaints the
+           card's live preview and keeps row.proc authoritative. The renderer
+           binds it to `input`, so that is the event to raise. */
         safe(function () { inp.dispatchEvent(new Event('input', { bubbles: true })); });
       }
     } catch (e) {}
@@ -349,6 +380,48 @@
     var v = (ta && ta.value) || '';
     return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length
       + (v.match(new RegExp(CAPS_TOKEN_SRC, 'g')) || []).length) + '|' + textSig(v);
+  }
+  /* 2026-07-30 — THE SETTLED STAMP LIVES ON THE NODE, NOT IN A MAP KEYED BY ID.
+     (VERSION is deliberately NOT moved: onf-2.13.0 is pinned by four test files
+     other lanes are editing; this is a behaviour fix inside that build.)
+     OWNER 2026-07-30: "the fill in the balnks should still show up even in the
+     all scchaefualed patients view."
+
+     MEASURED MECHANISM (tests/fields-box-shows-in-all-day-view.test.js).
+     The tick used to skip a textarea when a module-level _sig[ta.id] matched
+     sigOf(ta). But opPrepRender repaints the WHOLE list with
+     box.innerHTML = rows.map(...) (ScribeFlow.html:15748) — that destroys every
+     card and every .onf-fillbox inside it, then hands back a BRAND NEW textarea
+     carrying the SAME id and the SAME value. An id-keyed cache cannot see a node
+     replacement: the signature still matched, so the row was skipped and its
+     Fields box never came back.
+     "Draft all" makes this the normal case, because opPrepGenerateOne ends in
+     opPrepRender (ScribeFlow.html:15843) — once PER ROW. Each draft therefore
+     wiped the previous row's box and the gate refused to rebuild it, so after an
+     N-patient day exactly ONE box survived: the LAST row drafted. The room opens
+     on the FIRST patient, so the doctor saw a card with the template picker, the
+     Re-draft button, the preview and Save — and no Fields box. Single-patient
+     mode looked healthy only because its one row is always the last one drafted.
+     It was never the .opr-solo presentation-hide: the tick has no visibility or
+     offsetParent filter (offsetParent is read once, at mainBoxWithBlanks(), and
+     only for the MAIN editor), and `#opPrepList.opr-solo > div` matches the CARD,
+     never the box nested inside it.
+
+     A stamp written on the node is self-invalidating: a replaced node arrives
+     with no stamp, so it rebuilds. __onfHadBox closes the other half — a box that
+     disappeared while its textarea survived is rebuilt as well, and a note with
+     no tokens (which correctly has no box) still settles in one pass. */
+  function boxPresent(ta) {
+    var p = ta && ta.previousElementSibling;
+    return !!(p && p.classList && p.classList.contains('onf-fillbox'));
+  }
+  function settled(ta) {
+    if (!ta) return true;
+    return ta.__onfSig === sigOf(ta) && (!ta.__onfHadBox || boxPresent(ta));
+  }
+  function stampSettled(ta) {
+    if (!ta) return;
+    safe(function () { ta.__onfSig = sigOf(ta); ta.__onfHadBox = boxPresent(ta); });
   }
 
   /* Auto-fill only identity already known from this visit or canonical Settings. */
@@ -1425,7 +1498,7 @@
   }
 
   /* ---------------- tick (freeze-safe: cheap, gated, write-if-changed) ---------------- */
-  var _sig = {}, iv = null, _wireN = 0;
+  var iv = null, _wireN = 0;
   /* onf-2.11.0: buildFillBox failures land on the export (queryable) and warn
      once - a bare safe() swallowed them and the stored signature then skipped
      every retry, so one throw killed the Fields box for the whole session. */
@@ -1448,14 +1521,11 @@
        Skipped while the op modal is open — the modal owns the screen then. */
     if (!open) {
       var main = safe(mainBoxWithBlanks, null);
-      if (main) {
-        var ms = sigOf(main);
-        if (_sig[MAIN_ID] !== ms) {
-          /* onf-2.11.0: same not-silent rule as the prep loop below */
-          try { buildFillBox(main); clearFillError(); }
-          catch (eMB) { noteFillError(MAIN_ID, eMB); }
-          _sig[MAIN_ID] = sigOf(main);
-        }
+      if (main && !settled(main)) {
+        /* onf-2.11.0: same not-silent rule as the prep loop below */
+        try { buildFillBox(main); clearFillError(); }
+        catch (eMB) { noteFillError(MAIN_ID, eMB); }
+        stampSettled(main);
       }
       return;
     }
@@ -1474,8 +1544,9 @@
     var tas = noteBoxes();
     for (var i = 0; i < tas.length; i++) {
       var ta = tas[i]; if (!ta.id) continue;
-      var s = sigOf(ta);
-      if (_sig[ta.id] === s) continue;                   /* unchanged -> skip */
+      /* unchanged AND its Fields box is still standing -> skip. A textarea the
+         list rebuild replaced arrives with no stamp, so it is never skipped. */
+      if (settled(ta)) continue;
       (function (t) {
         var rw = safe(function () { return (window._opPrep || [])[+t.id.replace('opPrepNote_', '')]; }, null);
         safe(function () { syncProcedure(rw); });         /* readiness "Procedure" = the matched template */
@@ -1484,7 +1555,7 @@
            no console error, nobody told. Not silent any more. */
         try { buildFillBox(t); clearFillError(); }
         catch (eFB) { noteFillError(t.id, eFB); }
-        _sig[t.id] = sigOf(t);                            /* store the POST-render signature (settles the tick) */
+        stampSettled(t);                                  /* store the POST-render signature ON THE NODE (settles the tick) */
       })(ta);
     }
   }

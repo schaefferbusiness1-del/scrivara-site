@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b799) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b800) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -872,8 +872,23 @@
      class-toggled open; only the PRESENTATION changes. The shell fills the
      backdrop completely, so no .modal-bg pixel can ever be a mousedown target
      (theme_polish closes modals on backdrop mousedown). */
-  #opPrepModal.opr-room{ padding:0; }
-  /* b799 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* --opr-dock-clear is the room's own clearance for the app dock (see THE ROOM
+     MUST NOT TRAP, below). Declared HERE because it must inherit down to every
+     scrolling region inside the room, and overridden in the min-width block at
+     the end of this section — so the value is responsive even though the rules
+     that consume it are not.
+     THIS VALUE'S BREAKPOINT IS THE DOCK'S, NOT THE ROOM'S. The dock reshapes at
+     760px (feat_mls_calm_shell.js: left:8px right:8px bottom:8px, labels 10.5px)
+     and measured 65px tall occupying 73px of the viewport there, against 91px
+     tall occupying 109px at every width above it — including the 761-900 band,
+     where the ROOM has already collapsed to one column. Keying the clearance to
+     900 would leave that whole band short. env() and --mls-kbd mirror the dock's
+     own `bottom:calc(8px + env(safe-area-inset-bottom) + var(--mls-kbd))`, so the
+     clearance follows it over a home indicator and over an iOS keyboard; both
+     carry a 0px fallback, so nothing moves on a device with neither. */
+  #opPrepModal.opr-room{ padding:0;
+    --opr-dock-clear:calc(104px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)); }
+  /* b800 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show > .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -892,7 +907,7 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b799 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b800 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -956,6 +971,76 @@
     #oprPanelProcs{ grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); }
     #oprDayRail{ border-right:0; border-bottom:1px solid var(--line); }
     #oprRowNav{ max-height:22vh; }
+  }
+  /* ===== THE ROOM MUST NOT TRAP (owner, live 2026-07-30) =====================
+     "the op notes is this full thing screen thats hard to get out of ... the
+     bottom menu button should still be there."
+
+     b794 answered the previous report of this by adding exits INSIDE the room
+     (a ‹ Back button and a 44px ✕). He is saying that is still not enough: what
+     he wants back is the app's own navigation, not a third door out of one room.
+
+     MEASURED, room open, in a PHI-free replica built from this file's <style>
+     blocks + feat_mls_calm_shell.js's own CSS table + feat_mls_opnote_templates_ui.js
+     executed (tests/opnote-room-does-not-trap.test.js runs the same replica):
+
+       1440x900   #mlsDock  position:fixed  z-index:920  display:flex
+                            visibility:visible  opacity:1  rect 356.3,791 712.5x91
+                  document.elementFromPoint(713,837) -> textarea#opPrepNote_2
+                  7 of 7 dock buttons hit-test FALSE
+       390x844    #mlsDock  rect 8,757 359x79
+                  document.elementFromPoint(188,797) -> textarea#opPrepNote_1
+                  7 of 7 dock buttons hit-test FALSE
+
+     THE MECHANISM IS STACKING, NOT VISIBILITY. Nothing hides the dock — it is
+     display:flex, opacity 1, fully on screen, and every naive "is it visible"
+     check passes. `.modal-bg{position:fixed;inset:0;z-index:9400}` (this file,
+     above) and the room's own opaque `width:100vw;height:100dvh` card paint an
+     unbroken sheet over it in the SAME root stacking context, and 9400 beats the
+     dock's 920 at every pixel. So the answer is z-index, and deliberately NOT
+     display: feat_mls_redesign.js just had to stop hiding nav items with inline
+     display:none because the Calm Shell reads that as "the app gated this
+     feature off". Nothing here writes display, on the dock or on anything else.
+
+     SCOPED WITH :has() SO IT LIFTS ONLY FOR THIS ROOM. Every other .modal-bg is
+     a centred card over a scrim and wants the dock underneath it; this one is a
+     full-screen takeover of the whole app and does not. The dock lands at 9401,
+     one above this room and below nothing else that was already above it, and
+     the two surfaces the dock itself opens (#mlsToolsMenu z-index:930,
+     #copilotDock z-index:9310) come with it — otherwise Tools and Copilot would
+     be clickable buttons that open a panel behind the room, which is the same
+     defect wearing a different hat. Specificity is (2 ids, 2 classes, 1 type)
+     against the calm shell's `#mlsDock{z-index:920}` at (1,0,0), so this wins on
+     rank and never depends on which async module appended its stylesheet last.
+
+     AND THE ROOM GIVES THE DOCK ITS SPACE. Lifting the dock alone would bury the
+     bottom of whatever is scrolling underneath it — measured before the
+     clearance existed, the Templates Close button sat at y 785.7-827.7 with the
+     dock band at 791-882, and the last editor button at 715.4-759.4 on a phone
+     with the dock band at 757-836. The room is NOT shrunk (its card stays
+     100vw x 100dvh, which is what keeps every backdrop pixel out of
+     theme_polish's mousedown-to-close); the SCROLLING REGIONS get bottom
+     padding, so the content that used to sit under the dock can now be scrolled
+     above it. #oprDayRail is wide-only: on a phone it is the top row of the grid
+     and nowhere near the dock, so padding there would be dead space in a 229px
+     box. The value itself is responsive via --opr-dock-clear. */
+  html:has(#opPrepModal.opr-room.show) #mlsDock{ z-index:9401; }
+  html:has(#opPrepModal.opr-room.show) #mlsToolsMenu,
+  html:has(#opPrepModal.opr-room.show) #copilotDockScrim,
+  html:has(#opPrepModal.opr-room.show) #copilotDock{ z-index:9402; }
+  html:has(#opPrepModal.opr-room.show) #oprEditor,
+  html:has(#opPrepModal.opr-room.show) #oprPanelTpls{ padding-bottom:var(--opr-dock-clear); }
+  @media (min-width:761px){
+    #opPrepModal.opr-room{ --opr-dock-clear:calc(124px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)); }
+  }
+  @media (min-width:901px){
+    /* A different question, so a different gate: this one is about the ROOM's
+       layout, which collapses to one column at 900px. Above it the rail is a
+       full-height left column whose bottom the centred dock overlaps on any
+       window narrower than ~1292px; below it the rail is the TOP row of the
+       grid, nowhere near the dock, and clearance there would be dead space
+       inside a ~229px box. */
+    html:has(#opPrepModal.opr-room.show) #oprDayRail{ padding-bottom:var(--opr-dock-clear); }
   }
   body.theme-dark .opr-top{ background:var(--card); }
   #settingsModal #settingsTabBar{ position:absolute; top:54px; right:18px; width:230px; display:flex; flex-direction:column; gap:5px; align-items:stretch; max-height:calc(94vh - 74px); overflow-y:auto; scrollbar-width:none; padding-left:14px; border-left:1px solid var(--line); }
@@ -1401,7 +1486,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b799) ----
+  /* ---- Copilot calm polish (b800) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1615,7 +1700,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b799 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b800 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -4724,7 +4809,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b799: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b800: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4842,7 +4927,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b799: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b800: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -5739,7 +5824,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b799): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b800): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6356,7 +6441,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b799: METHOD-AWARE. The login response now reports every second factor the
+/* b800: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6489,7 +6574,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b799: a texted code completes at its own sibling route; the TOTP and
+    /* b800: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6697,7 +6782,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b799: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b800: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8400,7 +8485,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b799: the restored "Pull full visit notes" Settings option. One stored
+/* b800: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change.
@@ -8408,7 +8493,7 @@ async function loadPrefsFromServer(opts){
    Every visit on 47 of 51 snapshot patients in the live store was an
    index-only stub — the encounter bodies were never read — because this
    preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b799 finding). A pull without encounter bodies is
+   it never rendered (the b800 finding). A pull without encounter bodies is
    not "complete available history" (owner bar 2026-07-28: first-pull
    completeness, no silent omissions), so absence of a recorded HUMAN choice
    now means ON. The uns('pullVisitBodiesSet') marker records that a human
@@ -8457,7 +8542,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b799: texted-codes card, from the same server truth (/api/me projection). */
+  /* b800: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -12410,15 +12495,44 @@ function su_autoSig(){
 }
 function su_openFollowups(){ try{ toast('Automated follow-ups are not released. Nothing was sent.','err'); }catch(e){} return false; }
 function su_openReceptionists(){ try{ toast('Staff account provisioning is not released. Nothing was created.','err'); }catch(e){} return false; }
+/* This button SHOWS the doctor where Staff prep lives; it never activates it.
+   It has to land on a control they can actually see. Measured 2026-07-30: it
+   called openMenu() unconditionally, and where the dock owns the menu the
+   2026-07-28 owner sweep hides #mlsTbMenu, so it opened a display:none panel,
+   focused a 0x0 row and toasted "choose it from Menu" - an instruction pointing
+   at nothing. Menu first when Menu is genuinely on screen; otherwise the dock's
+   Tools launcher, which carries the same canonical row. */
+function su_mlsVisibleEl(el){
+  try{
+    if(!el) return false;
+    var s=getComputedStyle(el), r=el.getBoundingClientRect();
+    return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;
+  }catch(e){ return false; }
+}
 function su_showStaffPrepMenu(){
   closeSetup();
   try{
-    if(window.__mlsTopbar&&typeof window.__mlsTopbar.openMenu==='function'){
+    if(su_mlsVisibleEl(document.getElementById('mlsTbMenuBtn'))&&window.__mlsTopbar&&typeof window.__mlsTopbar.openMenu==='function'){
       window.__mlsTopbar.openMenu();
       var row=document.querySelector('#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"]');
       if(row&&typeof row.focus==='function') row.focus();
-      try{ toast('Choose Staff prep & Athena month pull from Menu.','ok'); }catch(e0){}
-      return true;
+      if(su_mlsVisibleEl(row)){
+        try{ toast('Choose Staff prep & Athena month pull from Menu.','ok'); }catch(e0){}
+        return true;
+      }
+    }
+  }catch(e){}
+  try{
+    if(window.__mlsCalmShell&&typeof window.__mlsCalmShell.go==='function'){
+      /* go('tools') TOGGLES, so an already-open launcher must not be closed. */
+      if(!document.getElementById('mlsToolsMenu')) window.__mlsCalmShell.go('tools');
+      var rows=document.querySelectorAll('#mlsToolsMenu .r'), hit=null;
+      for(var i=0;i<rows.length;i++){ if(/staff\s*prep/i.test(rows[i].textContent||'')){ hit=rows[i]; break; } }
+      if(su_mlsVisibleEl(hit)){
+        if(typeof hit.focus==='function') hit.focus();
+        try{ toast('Choose Staff prep from Tools.','ok'); }catch(e1){}
+        return true;
+      }
     }
   }catch(e){}
   try{ toast('Menu is still loading. Close Setup, then open Menu.','err'); }catch(e){}
@@ -13331,7 +13445,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b799: the auto-save commits HERE - the one door that knows the tool
+        /* b800: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13582,7 +13696,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b799: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b800: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14040,7 +14154,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b799 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b800 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -14939,7 +15053,7 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
-  /* b799 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+  /* b800 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
      15 of 19 scheduled patients had no landed Athena chart, yet every
      clinical card still rendered a generic "No ... recorded." line. That is
      the same sentence a REVIEWED-and-clear chart shows, so the panel was
@@ -14988,7 +15102,7 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
-/* b799: one honest, actionable line above the clinical grid when NOTHING has
+/* b800: one honest, actionable line above the clinical grid when NOTHING has
    been read for this patient and the clinician has typed nothing either. It
    reuses the exact Pull-chart verb the History view owns
    (pullPatientChartViaAssist), so there is no second pull path to keep in
@@ -15538,7 +15652,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b799 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b800 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -15590,6 +15704,27 @@ document.addEventListener('keydown',function(e){
     var first=rows[0],last=rows[rows.length-1],cur=document.activeElement;
     if(e.shiftKey&&(cur===first||!m.contains(cur))){ e.preventDefault(); last.focus(); }
     else if(!e.shiftKey&&(cur===last||!m.contains(cur))){ e.preventDefault(); first.focus(); }
+  }catch(_){}
+},true);
+/* THE ROOM MUST NOT TRAP, part two (owner, live 2026-07-30). The CSS above puts
+   the app dock back on top of the room, but showView() does not close modals —
+   so tapping Visit would switch the view BEHIND a room still covering the whole
+   screen, i.e. a control that visibly does nothing. A dock DESTINATION is a
+   decision to leave, so the room stands down first and the calm shell's own
+   go() then navigates normally.
+   Capture phase, so this runs before feat_mls_calm_shell.js's own click handler.
+   Deliberately NOT for data-dest="tools": that button opens a menu and navigates
+   nowhere, and #mlsToolsMenu is lifted above the room by the rule above so it is
+   readable with the room still open. Same for Copilot and the Ask box, which are
+   panels over the app rather than routes away from it. */
+document.addEventListener('click',function(e){
+  try{
+    var m=document.getElementById('opPrepModal');
+    if(!m||!m.classList.contains('show')) return;
+    var t=e.target; if(!t||!t.closest) return;
+    var b=t.closest('#mlsDock button[data-dest]');
+    if(!b||b.getAttribute('data-dest')==='tools') return;
+    closeOpPrep();
   }catch(_){}
 },true);
 /* Smart entry: a patient is selected → prep THAT patient's op note; otherwise prep all scheduled procedures. */
@@ -15685,7 +15820,7 @@ function opPrepRender(){
        and NOTHING else - no class, no aria - so (a) a screen reader was told
        nothing about which mode was in effect, and (b) any stylesheet that
        overrode the background left white text on a near-white button, which is
-       exactly what shipped in b799 (measured ~1.03:1: the selected mode read as
+       exactly what shipped in b800 (measured ~1.03:1: the selected mode read as
        an empty box). aria-pressed is now the machine-readable truth, so
        presentation can key off state instead of guessing, and the state survives
        a background override. */
@@ -15794,7 +15929,7 @@ async function opPrepGenerateOne(i){
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
-    /* b799: an unambiguous "the generator ran and produced this" stamp. Draft-all
+    /* b800: an unambiguous "the generator ran and produced this" stamp. Draft-all
        counts successes by watching it change. Comparing the note TEXT instead was
        almost right, but a re-draft that produced identical text would have been
        counted as a failure - a false negative in the honest direction, which is
@@ -15802,6 +15937,11 @@ async function opPrepGenerateOne(i){
        above returns before this line, so a changed _genSeq means exactly one
        thing: this row was drafted just now. */
     row._genSeq=(row._genSeq||0)+1;
+    /* 2026-07-30: the style this draft actually followed. The generator stamps
+       it on its result and nothing was reading it, so the app could not tell him
+       which style produced the note in front of him. Recorded per row so the
+       receipt above the editor can name it and offer a re-draft in another. */
+    row.tplModeUsed=String((out&&out.templateMode)||'');
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
@@ -17058,7 +17198,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b799 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b800 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -17349,7 +17489,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b799 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b800 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -17680,7 +17820,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b799 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b800 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -20151,7 +20291,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b799 (diarization, option A): turn labels ride the USER payload — the one
+  /* b800 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -20847,7 +20987,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b799 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b800 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -21205,7 +21345,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b799 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b800 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -21474,7 +21614,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b799 (audit): op notes save their body to .text, not .soap — every prior
+    /* b800 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -25898,7 +26038,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b799: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b800: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -26033,7 +26173,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b799 — THE LOADING SCREEN MUST ALWAYS END.
+/* b800 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -30845,7 +30985,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b799';
+  window.__MLS_AV='b800';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

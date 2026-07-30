@@ -1013,7 +1013,26 @@
          route the coverage suite already knows about. */
       { id: 'nav_analysis', as: 'Practice trends (AI Studio)' },
       { id: 'nav_team' },
-      { id: 'nav_staffpull' }, { id: 'nav_legalreq' }
+      /* 2026-07-30, MEASURED on a running page: Staff prep had NO visible route
+         anywhere in the product. A document-wide sweep for a visible control
+         labelled "Staff prep" returned ZERO, and this menu rendered 15 rows,
+         none of them Staff prep.
+         Two correct decisions collided. #nav_staffpull is retired BY THE APP
+         (ScribeFlow.html ships it `hidden` with display:none !important and the
+         title "Retired: use Menu for Staff prep and Athena schedule pulls"), so
+         available() rightly refused it and this row was dropped silently - the
+         same "offered in the spec list is not offered on screen" trap the
+         Full-visit-notes row already fell into. Meanwhile the Menu the app's own
+         copy points at is itself hidden: the 2026-07-28 owner sweep hides
+         #mlsTbMenu because the dock is the menu now. Each owner deferred to the
+         other and the capability landed nowhere.
+         So Tools drives the CANONICAL Menu row directly. available() ignoring
+         "hidden by a shell" is exactly what that function exists for, textOf()
+         reads textContent so it resolves inside a hidden subtree, and the row's
+         own handler still dispatches mls:menu-staff-prep-request - one Staff
+         activation owner, no duplicated handler, and nothing un-retired. */
+      { label: /staff prep/i, within: '#mlsTbMenuPanel', as: 'Staff prep' },
+      { id: 'nav_legalreq' }
     ] },
     { id: 'data', label: 'Data', items: [
       { label: /^verify saved data$/i, within: '#profileCard' },
@@ -2104,6 +2123,20 @@
        be detected at all. */
     var stopping = findControl({ label: /\bstop\b/i, within: '#visitView' });
     if (stopping) return 1;
+    /* 2026-07-30, owner: "started recording but indicater at the top stayed at
+       prep and did not go to record".
+       Record was detected ONLY while a Stop control was on screen - that is, only
+       DURING active capture. The moment he paused or stopped, that control becomes
+       "Resume recording", the Stop match fails, and the rail fell all the way back
+       to Prep: the stage went BACKWARDS and threw away the fact that recording had
+       happened. The chip row at the bottom of the same screen was showing
+       "check Record" at that moment, so two progress indicators on one screen
+       disagreed - and the rail was the wrong one.
+       A Resume control cannot exist unless recording already started, so its
+       presence is the app's own evidence that the Record stage was reached. That
+       keeps this function's stated law intact: read the evidence, never guess. */
+    var resumable = findControl({ label: /resume\s*recording/i, within: '#visitView' });
+    if (resumable) return 1;
     var signable = findControl({ label: /^(sign|save to athena|send to athena)/i, within: '#visitView' });
     var noteText = '';
     var ta = qsa('textarea,[contenteditable="true"]', visit).filter(visible)[0];
@@ -2460,13 +2493,28 @@
         /* Not a control name -> hand the question to Copilot instead of
            dead-ending. The row is a REAL result: Enter, arrows and click all
            run through the same choose() path as every other row, so a typed
-           question is never swallowed (the owner's report, 2026-07-26). */
+           question is never swallowed (the owner's report, 2026-07-26).
+           2026-07-30, MEASURED: this field is now the ONLY visible find/search
+           control in the whole document - a live sweep found exactly one, this
+           one - because the 2026-07-28 sweep hides the top bar's
+           #mlsPqsInput ("Find patients and screens…") as a duplicate of this
+           bar. It is not a duplicate: indexControls() knows CONTROL names and
+           has never known patients, so a doctor typing a patient's name into a
+           field labelled "Ask or find anything" was handed to Copilot as a
+           question and the app had no way left to find a patient by name.
+           So the first row hands the words to the patient finder the app
+           already owns. Offered only when that finder exists, and it is an
+           OFFER - it claims no match it has not made. */
         var qRaw = input.value.trim();
-        results = [{ copilot: true, q: qRaw }];
+        var canFind = typeof W.mlsQuickFind === 'function';
+        var safeQ = qRaw.replace(/[<>&]/g, '');
+        results = canFind ? [{ finder: true, q: qRaw }, { copilot: true, q: qRaw }] : [{ copilot: true, q: qRaw }];
         sel = 0;
         panel.innerHTML = '<div class="none">Nothing here is called that.</div>' +
-          '<div class="r sel" role="option" data-i="0">🤖 Ask MLS Copilot: "' +
-          qRaw.replace(/[<>&]/g, '') + '"<small>Enter</small></div>';
+          (canFind ? '<div class="r sel" role="option" data-i="0">&#128269; Find a patient or screen: "' +
+            safeQ + '"<small>Enter</small></div>' : '') +
+          '<div class="r' + (canFind ? '' : ' sel') + '" role="option" data-i="' + (canFind ? 1 : 0) + '">' +
+          '&#129302; Ask MLS Copilot: "' + safeQ + '"' + (canFind ? '' : '<small>Enter</small>') + '</div>';
         panel.style.display = 'block';
         qsa('.r', panel).forEach(function (row) {
           row.addEventListener('click', function () { choose(parseInt(row.getAttribute('data-i'), 10)); });
@@ -2485,9 +2533,28 @@
       });
     }
 
+    /* Hand the typed words to the finder the app owns, through the app's own
+       opener and nothing else. mlsQuickFind takes an OPTIONAL prefill (see
+       feat_mls_fixpack_0701 qfOpen), so the doctor is never asked to type the
+       same name twice; an older opener that ignores the argument simply opens
+       empty. This shell must not reach into that overlay's field, and must not
+       synthesize an input event to make it notice - trust is the browser's to
+       set, and the coverage guard on this file is right to forbid it. */
+    function handToFinder(q) {
+      safe(function () { W.mlsQuickFind(q); });
+    }
+
     function choose(i) {
       var r = results[i];
       if (!r) return;
+      if (r.finder) {
+        var wanted = r.q;
+        close();
+        input.value = '';
+        input.blur();
+        handToFinder(wanted);
+        return;
+      }
       if (r.copilot) {
         var question = r.q;
         close();

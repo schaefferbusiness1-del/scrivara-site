@@ -412,7 +412,52 @@ async function keyboardAthenaReview(cdp, noteId) {
   return { trigger, semantics };
 }
 
+/* What a phone user actually needs at this width is PRIMARY NAVIGATION that is
+   present, visible and keyboard-operable. Which control provides it is a shell
+   decision, and it changed under this assertion:
+   feat_mls_calm_shell.js:206 ships `html body.mls-calm #mlsRdRailBtn{display:none
+   !important}` and hides #mlsRdNav with it — recorded at b730 (phone audit B4)
+   as "the mobile burger opened a grey scrim over NOTHING - a dead control
+   dressed as navigation. If the calm shell hides the rail, it hides the button
+   that opens it."
+   Measured 2026-07-29 at 360x800 in real Chrome on UNMODIFIED b799: #mlsRdRailBtn
+   is display:none, 0x0, and cannot take focus. So the drawer branch below can
+   never pass while the calm shell owns navigation, and it was only ever reached
+   after an earlier assertion in this file started failing.
+   Both branches assert real behaviour, so nothing is waved through:
+     - burger visible  -> the drawer must still open, trap focus, close on
+       Escape and restore focus. Unchanged from the original assertion, so a
+       shell that brings the drawer back is held to exactly the old contract,
+       and a burger that is visible but dead FAILS here.
+     - burger retired  -> the retirement must be deliberate (calm shell active
+       AND the rail it opens actually hidden), and the dock that replaced it
+       must be visible and keyboard-operable at this width with visible focus.
+   A burger that is missing for any OTHER reason satisfies neither branch. */
 async function drawerProof(cdp, width) {
+  const shell = await evalJs(cdp, `(() => {
+    const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+    const b=document.getElementById('mlsRdRailBtn'),nav=document.getElementById('mlsRdNav');
+    return{burger:!!b,burgerVisible:shown(b),railVisible:shown(nav),calm:!!(window.__mlsCalmShell&&window.__mlsCalmShell.active)&&document.body.classList.contains('mls-calm')};
+  })()`);
+  if (!shell.burgerVisible) {
+    assert(shell.calm, `${width}px: the primary-navigation burger is not visible and the calm shell is not the reason: ${JSON.stringify(shell)}`);
+    assert.strictEqual(shell.railVisible, false, `${width}px: the burger is hidden while the rail it opens is still on screen — navigation is unreachable: ${JSON.stringify(shell)}`);
+    const dock = await evalJs(cdp, `(() => {
+      const shown=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+      const rows=[...document.querySelectorAll('#mlsDock button[data-dest]')].filter(shown);
+      return{count:rows.length,dests:rows.map(x=>x.getAttribute('data-dest')),named:rows.every(x=>String(x.getAttribute('aria-label')||x.textContent||'').trim().length>0)};
+    })()`);
+    assert(dock.count >= 2, `${width}px: the calm dock replaced the drawer but offers fewer than two visible destinations: ${JSON.stringify(dock)}`);
+    assert(dock.named, `${width}px: a visible dock destination has no accessible name: ${JSON.stringify(dock)}`);
+    const target = `#mlsDock button[data-dest="${dock.dests.includes('patient') ? 'patient' : dock.dests[0]}"]`;
+    await focus(cdp, target);
+    const state = await focusState(cdp, target);
+    assert(state && state.active && state.focusVisible && (state.outline !== 'none' || state.shadow !== 'none'),
+      `${width}px: replacement primary navigation lacks visible keyboard focus: ${JSON.stringify(state)}`);
+    await key(cdp, 'Enter');
+    await wait(cdp, `${width}px dock navigation responds to Enter`, `!!window.__mlsCurrentView`);
+    return { mode: 'calm-dock-replaces-rail-drawer', width, shell, dock, focus: state };
+  }
   const initial = await evalJs(cdp, `(() => {const nav=document.getElementById('mlsRdNav'),b=document.getElementById('mlsRdRailBtn');return{hidden:nav.getAttribute('aria-hidden'),inert:nav.inert,expanded:b.getAttribute('aria-expanded'),label:b.getAttribute('aria-label')}})()`);
   assert.deepStrictEqual(initial, { hidden: 'true', inert: true, expanded: 'false', label: 'Open primary navigation' }, `${width}px drawer starts exposed to keyboard/accessibility tree`);
   await focus(cdp, '#mlsRdRailBtn'); await key(cdp, 'Enter');

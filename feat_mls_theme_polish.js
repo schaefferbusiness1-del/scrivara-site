@@ -184,11 +184,26 @@
     } catch (e) {}
   }
 
-  function onModalHidden() {
+  function onModalHidden(bg) {
     var back = returnTo; returnTo = null;
-    /* only if it still exists and is still focusable — a closed modal often
-       destroys the row that opened it */
+    /* Return the keyboard ONLY when closing actually LOST it.
+       Measured 2026-07-30 with a focus() call log on a running page: Setup's
+       "Show Staff Prep in Menu" closes Setup and then focuses the Staff prep row
+       it just guided the doctor to (t+0ms); this observer fired 15ms later and
+       dragged focus back to the control that had opened Setup, so the app said
+       "choose Staff prep" with the focus ring parked on an unrelated dock
+       button. A focus-return is a REPAIR for focus that fell to the body when
+       its holder was hidden - it must never overrule a deliberate move made by
+       the action that closed the modal.
+       The observer callback always runs after that action's task, so this reads
+       the settled activeElement, not a half-finished one. */
     try {
+      var a = document.activeElement;
+      var lost = !a || a === document.body || a === document.documentElement ||
+        !!(bg && bg.contains && bg.contains(a));
+      if (!lost) return;
+      /* only if it still exists and is still focusable — a closed modal often
+         destroys the row that opened it */
       if (back && document.contains(back) && back.getBoundingClientRect().width > 0) back.focus();
     } catch (e) {}
   }
@@ -219,7 +234,7 @@
         try { open = getComputedStyle(bg).display !== 'none'; } catch (e) {}
         if (open === seen.get(bg)) return;      /* no change — never re-focus */
         seen.set(bg, open);
-        if (open) onModalShown(bg); else onModalHidden();
+        if (open) onModalShown(bg); else onModalHidden(bg);
       }).observe(bg, { attributes: true, attributeFilter: ['class', 'style'] });
     } catch (e) {}
   }

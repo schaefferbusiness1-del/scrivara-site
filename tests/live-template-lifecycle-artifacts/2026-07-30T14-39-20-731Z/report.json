@@ -1,0 +1,60 @@
+{
+  "results": [
+    {
+      "step": "1. synthetic signup + login on an isolated origin",
+      "verdict": "PASS",
+      "evidence": "demo=1, backendMode=false, model stub installed (7 non-AI fetches passed through)"
+    },
+    {
+      "step": "2. upload a template through the real Templates UI",
+      "verdict": "PASS",
+      "evidence": "opened via #mlsDock [data-dest=\"tools\"] > Tools > \"Prep op notes\" -> #oprTabTpls; saved id=tpl1785422365598me1; text round-tripped byte-for-byte (763 chars); keywords=[\"trigger point\",\"paraspinal\",\"synthetic fixture\"]; visible library row present; library now holds 4 templates"
+    },
+    {
+      "step": "3. synthetic patient + a procedure the template can match",
+      "verdict": "PASS",
+      "evidence": "patient id=p1785422366305tpy (synthetic, dob=1979-03-04); one op-note row; procedure typed into the real #opPrepProc_0 field: \"Bilateral lumbar paraspinal trigger point injections\"; row template before typing was {\"tplId\":\"\",\"tplManual\":false,\"proc\":\"\",\"source\":\"unmatched\"}"
+    },
+    {
+      "step": "4a. AUTO-PICKER: no manual pick, row resolves to the uploaded template",
+      "verdict": "PASS",
+      "evidence": "procedure classified as \"trigger_point\"; row.tplId=tpl1785422365598me1 (=uploaded), tplManual=false, source=\"reason\" (procedure class); visible picker shows it; badge reads \"(matched from procedure)\""
+    },
+    {
+      "step": "4b. MANUAL PICK beats the auto-match and survives a re-render",
+      "verdict": "PASS",
+      "evidence": "clicked \"Caudal Epidural Steroid Injection\" in the left rail -> tplManual=true, tplId=pkg_caudal_epidural_steroid_injection; after window.opPrepRender() it is still pkg_caudal_epidural_steroid_injection with aria-pressed on that rail item and badge \"(your selection)\""
+    },
+    {
+      "step": "5.strict DRAFT in \"Follow it closely\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1855 chars, editor matches row); system prompt clause check ok (strict=true, guide=false); row.tplModeUsed=\"strict\"; receipt reads \"Follow it closely\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5.adapt DRAFT in \"Adapt to the case\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1855 chars, editor matches row); system prompt clause check ok (strict=false, guide=false); row.tplModeUsed=\"adapt\"; receipt reads \"Adapt to the case\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5.guide DRAFT in \"Use it as a guide\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1855 chars, editor matches row); system prompt clause check ok (strict=false, guide=true); row.tplModeUsed=\"guide\"; receipt reads \"Use it as a guide\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5. all three \"How drafts follow your template\" modes drafted a note",
+      "verdict": "PASS",
+      "evidence": "{\"strict\":{\"noteChars\":1855,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7},\"adapt\":{\"noteChars\":1855,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7},\"guide\":{\"noteChars\":1855,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7}}"
+    },
+    {
+      "step": "6. FOLLOWS THE TEMPLATE in every mode",
+      "verdict": "PASS",
+      "evidence": "for each of \"Follow it closely\", \"Adapt to the case\", \"Use it as a guide\": all 11 uploaded headings appear in the drafted note in the uploaded order, the fixed ANESTHESIA wording survives verbatim, and none of [\"clinical_indication\",\"needle_gauge\",\"injectate_volume\",\"imaging_modality\"] came through as literal [[slot]] syntax"
+    },
+    {
+      "step": "7. isolation",
+      "verdict": "PASS",
+      "evidence": "0 external network requests; 0 page exception(s); 0 console error(s)"
+    }
+  ],
+  "defects": []
+}

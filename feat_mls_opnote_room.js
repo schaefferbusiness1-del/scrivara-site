@@ -636,10 +636,80 @@
       }, 0);
     }
     var first = S(row.appt.name).split(' ')[0];
-    el.textContent = p
+    var ctx = p
       ? ('Context for ' + first + ': ' + (n ? (n + ' verified visit' + (n === 1 ? '' : 's') + ' + chart profile') : 'chart profile (no verified visits pulled yet)'))
       : ('Context for ' + first + ': identity not verified yet — the draft will name exactly what is missing');
+
+    /* -----------------------------------------------------------------------
+       2026-07-30, OWNER: "have a little widget right above the note that tells u
+       the stye u used and let me re go and maybe regentate with a use as aguide
+       style for examppl;e".
+
+       It closes the loop. Until now the style lived in a control in the rail and
+       the note gave no clue which style produced it - so after the fact he could
+       not tell, and changing his mind meant hunting for the setting and finding
+       the re-draft separately.
+
+       WHY IT LIVES IN THE RECEIPT and not directly above the textarea: the slot
+       immediately before textarea#opPrepNote_<i> is RESERVED - feat_mls_opnote_
+       fill.js finds the Fields box as that textarea's previousElementSibling, so
+       inserting anything there would duplicate or kill every "fields need you"
+       box in the app. The receipt is room-owned, sits directly above the editor,
+       and is the honest home for "what produced this".
+
+       IT NAMES WHAT WAS ACTUALLY USED, not the current setting. row.tplModeUsed
+       is stamped from the generator's own result at draft time, so if he changes
+       the setting afterwards this still reports what the note in front of him
+       really followed - and it says nothing at all until a draft exists. */
+    var styleHtml = '';
+    if (row.gen) {
+      var used = S(row.tplModeUsed);
+      var lbl = {}, k;
+      for (k = 0; k < TPL_MODES.length; k++) lbl[TPL_MODES[k][0]] = TPL_MODES[k][1];
+      styleHtml = '<div class="opr-usedstyle">'
+        + '<span class="opr-us-lbl">Style used</span>'
+        + '<b>' + esc(used && lbl[used] ? lbl[used] : (used ? used : 'Adapt to the case')) + '</b>';
+      /* offer the OTHER two, each as a one-press re-draft in that style */
+      for (k = 0; k < TPL_MODES.length; k++) {
+        if (TPL_MODES[k][0] === (used || 'adapt')) continue;
+        styleHtml += '<button type="button" class="opr-us-redo" data-oprredo="' + esc(TPL_MODES[k][0]) + '"'
+          + ' title="' + esc(TPL_MODES[k][2]) + '">Re-draft: ' + esc(TPL_MODES[k][1]) + '</button>';
+      }
+      styleHtml += '</div>';
+    }
+
+    el.innerHTML = '<div class="opr-ctxline">' + esc(ctx) + '</div>' + styleHtml;
     el.style.display = '';
+
+    /* one delegated handler, re-attached with the innerHTML rebuild */
+    el.onclick = function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-oprredo]') : null;
+      if (b) redraftInStyle(b.getAttribute('data-oprredo'));
+    };
+  }
+
+  /* Set the style and re-draft THIS procedure in it. Deliberately routed through
+     the same two things a human press would use - the stored mode and the app's
+     own opPrepGenerateOne - so there is no second drafting path to keep in step.
+     A draft he has EDITED is never overwritten without asking; the confirmation is
+     a two-step arm on the button, never a blocking dialog. */
+  var ARMED_REDO = '';
+  function redraftInStyle(mode) {
+    mode = S(mode);
+    var cur = curRow();
+    if (!cur || !cur.row || !cur.row.gen) return;
+    if (cur.row.edited && ARMED_REDO !== mode) {
+      ARMED_REDO = mode;
+      safe(function () {
+        if (isFn(window.toast)) window.toast('You have edited this draft. Press that button again to replace it with a fresh one in that style.', '');
+      });
+      return;
+    }
+    ARMED_REDO = '';
+    tplModeSet(mode);                     /* persists + re-renders the rail control */
+    safe(function () {
+      if (isFn(window.opPrepGenerateOne)) window.opPrepGenerateOne(cur.i);
+    });
   }
 
   /* 2026-07-28: in all-day mode, ONE patient card shows at a time. The other

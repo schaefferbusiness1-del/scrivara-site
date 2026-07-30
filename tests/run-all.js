@@ -60,6 +60,23 @@ const tests = [
      template-follow mode; the second is the general law that caught why the
      magic layer animated nothing: it styled five classes and set none. */
   'fill-in-the-blank-survives.test.js',
+  /* 2026-07-30 — the owner: "the fill in the balnks should still show up even in
+     the all scchaefualed patients view". The sibling above pins the CONTRACT by
+     reading source; this one EXECUTES both modes. The defect was an id-keyed
+     signature cache surviving the node it described: opPrepRender rebuilds the
+     whole list, and drafting a day calls it once per row, so every previous
+     row's Fields box was destroyed and never rebuilt. Only the LAST patient kept
+     one — and the room opens on the FIRST. */
+  'fields-box-shows-in-all-day-view.test.js',
+  /* 2026-07-30 — a DEAD GUARD found beside the one above. fillProcInputs mapped
+     an op-prep card's Procedure input back to its row by reading the inline
+     handler out of `onchange`; the shipped renderer emits it as `oninput`
+     (ScribeFlow.html:15858), so the regex never matched and the function had
+     never filled a visible Procedure input since onf-1.6.0 — on a 1s tick.
+     Assign-a-template-in-bulk then leaves the readiness checklist saying
+     "Procedure ✓" over a visibly empty box. Executes the fill, and pins that a
+     procedure the doctor typed is never overwritten. */
+  'opnote-proc-input-prefill.test.js',
   'styled-trigger-classes-have-writers.test.js',
   /* The DYNAMIC counterpart: dispatch the real event, assert the class lands on
      the real node. A writer that exists but is unreachable passes the static
@@ -69,6 +86,14 @@ const tests = [
      animations emitted, off-switched, and their wrappers actually run. */
   'templates-ui-proved-working.test.js',
   'opnote-room-walkthrough-runtime.test.js',
+  /* 2026-07-30 — the owner: the op-note room "is this full thing screen thats
+     hard to get out of ... the bottom menu button should still be there". The
+     dock was never hidden; the room's own opaque full-viewport card outranked
+     it 9400 to 920 and every dock button hit-tested false. This is the only
+     suite in the registry that launches a real browser: elementFromPoint is the
+     assertion, and no source read can stand in for it. It says so in its final
+     line if no Chrome binary is present. */
+  'opnote-room-does-not-trap.test.js',
   'opnote-follow-modes-differ.test.js',
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',
@@ -462,7 +487,8 @@ const tests = [
   'chart-noise-never-renders-as-medication.test.js',
   'triage-clinical-rows-never-vanish.test.js',
   'voice-reaches-one-copilot-brain.test.js',
-  'capture-and-turns-are-honest.test.js'
+  'capture-and-turns-are-honest.test.js',
+  'use-every-time-round-trip.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

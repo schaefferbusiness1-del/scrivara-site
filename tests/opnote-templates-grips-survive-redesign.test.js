@@ -193,10 +193,17 @@ if (!fs.existsSync(uiPath)) {
      classes; it may not build or move nodes in these zones. */
   const GRIP_ZONES = ['opPrepList', 'opPrepNote_', 'opPrepTpl_', 'opPrepPrev_',
                       'tplList', 'tplDetail', 'tplWorkspace'];
-  const lines = UI.split(/\r?\n/);
+  /* Comments are stripped by PARSING, not by guessing at line prefixes. The
+     prefix test missed continuation lines inside a block comment, so a comment
+     that DESCRIBED the grip contract - naming insertBefore and #tplList in the
+     same sentence - was reported as a violation of it. That is the third checker
+     of mine today fooled by its own documentation; blank the comments out (keeping
+     line numbers intact) and scan only real code. */
+  const CODE = UI.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+                 .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(Math.max(0, m.length - p.length)));
+  const lines = CODE.split(/\r?\n/);
   const offenders = [];
   lines.forEach(function (line, i) {
-    if (/^\s*(\/\*|\*|\/\/)/.test(line)) return;           /* commentary may name them */
     const mutates = /(innerHTML|outerHTML|insertBefore|appendChild|insertAdjacentHTML|replaceChild|removeChild|\.remove\(\))/.test(line);
     if (!mutates) return;
     GRIP_ZONES.forEach(function (z) {

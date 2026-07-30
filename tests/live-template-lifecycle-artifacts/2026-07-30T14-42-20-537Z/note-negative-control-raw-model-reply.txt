@@ -1,0 +1,12 @@
+SYNTHETIC OP-NOTE FIXTURE TEMPLATE - TRIGGER POINT INJECTIONS
+PATIENT: Synthetic Template Fixture Patient
+DATE OF PROCEDURE: Thursday, July 30, 2026
+PROCEDURE: Bilateral lumbar paraspinal trigger point injections
+INDICATION: SYNTHETIC-CLINICAL-INDICATION-VALUE
+TECHNIQUE: Each documented synthetic trigger point was marked and entered with a SYNTHETIC-NEEDLE-GAUGE-VALUE needle, and a total of SYNTHETIC-INJECTATE-VOLUME-VALUE was deposited across the marked points using the standard fixture technique.
+RADIOLOGY NOTES: [[imaging_modality]]
+COMPLICATIONS: None.
+DISPOSITION: The synthetic fixture patient tolerated the procedure well and was discharged in stable condition.
+FOLLOW-UP: Synthetic fixture reassessment in four weeks with the documented pain score.
+
+[MLS QUALITY DIRECTIVE] Produce a complete, sign-ready operative/procedure note that follows the selected template's structure and headings EXACTLY. Auto-detect the procedure from the visit/schedule context — do not ask the user to type the procedure. State the specific medication/solution names, concentrations, and volumes used (e.g., "80 mg triamcinolone", "4 mL of 0.25% bupivacaine", "1 mL Omnipaque contrast", needle gauge, fluoroscopy/US guidance, laterality and spinal level). Where a required specific value is genuinely absent from the provided context, insert a clearly bracketed fill-in-the-blank such as [VOLUME], [CONCENTRATION], [MEDICATION], [LEVEL], or [LATERALITY] so the physician can complete it — never omit it and never invent a value.

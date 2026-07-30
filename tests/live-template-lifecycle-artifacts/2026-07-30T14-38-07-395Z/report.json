@@ -1,0 +1,10 @@
+{
+  "results": [
+    {
+      "step": "1. synthetic signup + login on an isolated origin",
+      "verdict": "PASS",
+      "evidence": "demo=1, backendMode=false, model stub installed (7 non-AI fetches passed through)"
+    }
+  ],
+  "defects": []
+}
