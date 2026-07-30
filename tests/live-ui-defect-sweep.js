@@ -75,6 +75,16 @@ const ROUTES = [
   { route: 'calendar', entry: '#mlsDock button[data-dest="day"]', label: 'Calendar' },
   { route: 'studio', entry: '#mlsDock button[data-dest="studio"]', label: 'AI Studio' }
 ];
+/* The nav tab each dock destination is a doorway to - the same mapping
+   feat_mls_calm_shell.js:851 DEST_TABS holds. A dock item hides itself when its
+   tab is not offered, so knowing the tab's state is what turns "not visible"
+   from a shrug into either "correctly gated" or "a doorway went missing". */
+const ROUTE_TABS = {
+  visit: ['nav_visit'],
+  patients: ['nav_patients', 'nav_history'],
+  calendar: ['nav_calendar'],
+  studio: ['nav_studio', 'nav_analysis']
+};
 
 /* -------------------------------------------------------------- plumbing */
 function parseArgs(argv) {
@@ -182,6 +192,26 @@ async function wait(cdp, name, expression, timeout) {
     await sleep(120);
   }
 }
+/* WAIT WITH THE WIRE QUIET.
+   A 120ms Runtime.evaluate poll STARVES the page's timer queue. Measured in
+   tests/live-loading-gate-lifetime.js: while Node polled every 150ms, the
+   page's own 100ms interval advanced ZERO times in 45 seconds, and ticked four
+   times in the first 600ms after the polling stopped. The loading gate's whole
+   recovery vocabulary is setTimeout - a 300ms anti-flash floor, a 32s force
+   release, a 40s watchdog - so wait() cannot be used to wait for anything the
+   gate does. It reported this app's perfectly healthy 2.7s reveal as a gate
+   that never came down, and that fiction reached this sweep as phantom
+   "dock item hidden" defects at the first viewport.
+   Poll a second apart so the page gets whole seconds of uninterrupted thread. */
+async function waitQuietly(cdp, name, expression, timeout) {
+  const deadline = Date.now() + (timeout || 30000);
+  for (;;) {
+    let v = null; try { v = await evalJs(cdp, `(() => { try { return (${expression}); } catch (e) { return false; } })()`); } catch (_) {}
+    if (v) return v;
+    if (Date.now() > deadline) throw new Error('Timed out waiting for ' + name);
+    await sleep(1000);
+  }
+}
 async function click(cdp, selector) {
   const r = await evalJs(cdp, `(() => { const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return { ok:false, why:'absent' };
@@ -227,9 +257,16 @@ const GEOMETRY_PROBE = `(() => {
   out.smallTargets = !out.tapFloorApplies ? [] : [...document.querySelectorAll('button,[role=button],a[href]')]
     .filter(el => { const s = getComputedStyle(el); if (s.display==='none'||s.visibility==='hidden'||Number(s.opacity)===0) return false;
       const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (r.height < 44 || r.width < 24); })
-    .map(el => { const r = el.getBoundingClientRect();
+    .map(el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      /* minHeight is the fix instruction. A target under the floor because its
+         own rule LOWERED min-height (40px) needs that rule raised; one under the
+         floor with min-height 44px already set is being squeezed by something
+         else and needs a different fix entirely. Reporting only the measured
+         height cannot tell a maintainer which of the two they are looking at. */
       return { id: el.id || '', text: String(el.innerText||el.textContent||el.getAttribute('aria-label')||'').replace(/\\s+/g,' ').trim().slice(0,40),
-               w: +r.width.toFixed(1), h: +r.height.toFixed(1) }; })
+               w: +r.width.toFixed(1), h: +r.height.toFixed(1),
+               minHeight: s.minHeight, paddingY: s.paddingTop + '/' + s.paddingBottom,
+               display: s.display, boxSizing: s.boxSizing }; })
     .slice(0, 25);
   out.longTasks = (window.__uiSweepLongTasks || []).slice(-30);
   out.pageErrors = (window.__uiSweepErrors || []).slice(-20);
@@ -316,11 +353,33 @@ async function main() {
     await wait(cdp, 'signup enabled', `!document.getElementById('authBtn').disabled`, 8000);
     await click(cdp, '#authBtn');
     await wait(cdp, 'app screen', `document.getElementById('appScreen')&&getComputedStyle(document.getElementById('appScreen')).display!=='none'`);
+    /* #appScreen going display:block is NOT the app becoming visible. While the
+       secure loading gate holds `mls-secure-loading` on <html>, every body child
+       except the loading card is visibility:hidden!important - so the app screen
+       is "shown" and blank, and el.click() still works straight through it. That
+       is why an earlier version of this sweep audited a dozen surfaces with the
+       whole app invisible and reported the bottom dock as a defect. Wait for the
+       gate itself, quietly, so what follows is measured on a painted app. */
+    await waitQuietly(cdp, 'the loading gate to come down',
+      `!document.documentElement.classList.contains('mls-secure-loading')
+       && !document.documentElement.classList.contains('mls-app-revealing')`, 45000);
     await settle(cdp);
     assert.strictEqual(await evalJs(cdp, `typeof backendMode==='function'&&backendMode()===false`), true,
       'the sweep escaped local demo/no-backend mode');
 
     /* ---------------- a patient and a note, so screens have content ------ */
+    /* The dock is built by feat_mls_calm_shell.js AFTER the app screen shows,
+       and settle() waits on quiet frames, not on that build. Clicking straight
+       through raced it: two runs in a row died on `absent` where an earlier run
+       on identical code sailed past. Wait for the thing, and RECORD how long it
+       took - if the dock ever stops arriving, that is an app defect and this
+       number is the evidence, not a silent retry. */
+    const dockMs = await (async () => {
+      const t0 = Date.now();
+      await wait(cdp, 'dock built', `!!document.querySelector('#mlsDock button[data-dest="patient"]')`, 20000);
+      return Date.now() - t0;
+    })();
+    if (dockMs > 4000) defects.push({ kind: 'dock-slow-to-build', where: 'boot', detail: dockMs + 'ms after the app screen showed' });
     await click(cdp, '#mlsDock button[data-dest="patient"]');
     await wait(cdp, 'patients route', `window.__mlsCurrentView==='patients'`);
     await click(cdp, '#ptNewBtn');
@@ -345,12 +404,68 @@ async function main() {
         { width: vp.w, height: vp.h, deviceScaleFactor: 1, mobile: false, screenWidth: vp.w, screenHeight: vp.h });
       await settle(cdp);
 
+      /* PROVE THE VIEWPORT BEFORE TRUSTING ANY MEASUREMENT TAKEN IN IT.
+         The tap-target floor this sweep audits lives in @media(max-width:760px)
+         (ScribeFlow.html:1692). If setDeviceMetricsOverride resized the layout
+         box but the media query never flipped, the 390x844 column would be
+         desktop CSS wearing a phone label, and every target it reported would
+         be a fiction. That is the exact failure that produced 13 phantom
+         duplicate controls earlier in this sweep's life, so it is measured
+         here rather than assumed. */
+      const vpFact = await evalJs(cdp, `(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        innerWidth: window.innerWidth,
+        phoneQuery: window.matchMedia('(max-width:760px)').matches
+      }))()`);
+      const wantPhone = vp.w <= 760;
+      if (vpFact.clientWidth !== vp.w || vpFact.phoneQuery !== wantPhone) {
+        defects.push({ kind: 'viewport-not-really-applied', where: vp.n,
+          detail: JSON.stringify(Object.assign({ wantWidth: vp.w, wantPhoneQuery: wantPhone }, vpFact)) });
+      }
+
       for (const route of ROUTES) {
         const where = vp.n + ' / ' + route.label;
-        const reachable = await evalJs(cdp, `(() => { const el=document.querySelector(${JSON.stringify(route.entry)});
-          if(!el) return false; const s=getComputedStyle(el), r=el.getBoundingClientRect();
-          return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0; })()`);
-        if (!reachable) { visited.push({ where, opened: false, why: 'route entry not visible at this viewport' }); continue; }
+        /* SAY WHY, NOT JUST "not visible". A dock destination hides itself when
+           the app has gated its view off (feat_mls_calm_shell.js syncDock), and
+           that is correct behaviour - the Day item is backend-only, so it is
+           legitimately absent in this local no-backend account. A dock item
+           that vanishes while its nav tab IS offered is a different animal
+           entirely, and the old one-line "not visible" could not tell them
+           apart. Report the facts that separate them.
+
+           htmlClass/gateUp are in the payload because visibility:hidden on a
+           dock item is almost never the dock's doing: the secure loading gate
+           blanks every body child except itself (ScribeFlow.html:26237), so a
+           dock item can wear a consequence it did not cause. Name the gate. */
+        const entryFact = await evalJs(cdp, `(() => { const el=document.querySelector(${JSON.stringify(route.entry)});
+          const dock=document.getElementById('mlsDock');
+          const ds=dock?getComputedStyle(dock):null, dr=dock?dock.getBoundingClientRect():null;
+          if(!el) return { ok:false, why:'entry element absent', dockPresent:!!dock };
+          const s=getComputedStyle(el), r=el.getBoundingClientRect();
+          const ok = s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;
+          const tabs=(${JSON.stringify(ROUTE_TABS)})[${JSON.stringify(route.route)}]||[];
+          const tabOffered = tabs.some(function(id){ const t=document.getElementById(id);
+            return !!t && getComputedStyle(t).display!=='none'; });
+          return { ok, why: s.display==='none' ? 'dock item display:none'
+              : s.visibility==='hidden' ? 'dock item visibility:hidden'
+              : r.height<=0 ? 'dock item zero height'
+              : r.width<=0 ? 'dock item zero width' : 'hidden',
+            tabOffered: tabOffered, dockDisplay: ds?ds.display:null,
+            entryRect: [Math.round(r.width*10)/10, Math.round(r.height*10)/10],
+            entryStyle: { display:s.display, visibility:s.visibility, opacity:s.opacity, transform:s.transform },
+            htmlClass: document.documentElement.className,
+            gateUp: document.documentElement.classList.contains('mls-secure-loading')
+                 || document.documentElement.classList.contains('mls-app-revealing'),
+            dockRect: dr?[Math.round(dr.width),Math.round(dr.height)]:null }; })()`);
+        if (!entryFact.ok) {
+          /* An entry hidden while its own nav tab is still offered means the
+             doctor lost a way in that the app still believes it is giving him. */
+          if (entryFact.tabOffered) {
+            defects.push({ kind: 'dock-entry-hidden-while-tab-offered', where, detail: JSON.stringify(entryFact) });
+          }
+          visited.push({ where, opened: false, why: entryFact.why + (entryFact.tabOffered ? ' (but its nav tab IS offered)' : ' (its view is gated off - expected)') });
+          continue;
+        }
         try {
           await click(cdp, route.entry);
           await wait(cdp, route.label + ' route', `window.__mlsCurrentView===${JSON.stringify(route.route)}`, 15000);

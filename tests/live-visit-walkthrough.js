@@ -203,6 +203,26 @@ async function main() {
     await wait(cdp, 'enabled', `!document.getElementById('authBtn').disabled`, 8000);
     await evalJs(cdp, `document.getElementById('authBtn').click();1`);
     await wait(cdp, 'app', `document.getElementById('appScreen')&&getComputedStyle(document.getElementById('appScreen')).display!=='none'`);
+    /* #appScreen showing is NOT the app being visible. While the secure loading
+       gate holds `mls-secure-loading` on <html>, every body child except the
+       loading card is visibility:hidden!important - and el.click() works
+       straight through that, so a walkthrough can complete an entire visit on a
+       blank screen and call it a pass. Wait for the gate, and wait for it with
+       the CDP wire QUIET: measured in tests/live-loading-gate-lifetime.js, a
+       150ms Runtime.evaluate poll starved the page's timer queue so completely
+       that a 100ms interval ticked ZERO times in 45 seconds. The gate's whole
+       recovery vocabulary is setTimeout, so polling it is polling it to death.
+       A one-second cadence leaves the page whole seconds of uninterrupted
+       thread, and the healthy reveal measures ~2.7s. */
+    for (let i = 0; i < 45; i++) {
+      const gate = await evalJs(cdp, `(()=>{var h=document.documentElement;
+        return h.classList.contains('mls-secure-loading')||h.classList.contains('mls-app-revealing');})()`);
+      if (!gate) break;
+      await sleep(1000);
+    }
+    ok(await evalJs(cdp, `!document.documentElement.classList.contains('mls-secure-loading')`),
+      '0. the app is actually painted before the walkthrough starts',
+      'the secure loading gate was still up, so everything below would have been measured on an invisible app');
     await sleep(2500);
 
     /* In ?demo=1 the app generates with a per-device key and refuses without one

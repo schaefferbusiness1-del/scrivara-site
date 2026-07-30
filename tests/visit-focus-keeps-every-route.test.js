@@ -92,6 +92,36 @@ function targets(selectorText) {
     .filter(Boolean);
 }
 
+/* AN AT-RULE IS A WRAPPER, NOT A SELECTOR.
+ * `split('}')` hands back a chunk whose text before the first '{' is the at-rule
+ * PRELUDE - "@media (max-width:760px)" - and the real selector then sits inside
+ * the body, unexamined. Both checks below would therefore have read a media
+ * block as one unscoped rule with no selectors at all: a false failure on the
+ * wrapper and, far worse, a silent free pass for everything inside it. Peel the
+ * preludes off and return the selector that actually matches elements, so a
+ * rule cannot escape either gate by wearing a media query.
+ * The wrapper is still not allowed to be anything but an at-rule: if the text
+ * before '{' does not start with '@', it IS the selector and is returned as-is. */
+function selectorOf(chunk) {
+  let s = String(chunk);
+  for (;;) {
+    const open = s.indexOf('{');
+    if (open < 0) return '';
+    const head = s.slice(0, open).trim();
+    if (head.charAt(0) !== '@') return head;
+    s = s.slice(open + 1);
+  }
+}
+function bodyOf(chunk) {
+  let s = String(chunk);
+  for (;;) {
+    const open = s.indexOf('{');
+    if (open < 0) return '';
+    if (s.slice(0, open).trim().charAt(0) !== '@') return s.slice(open + 1);
+    s = s.slice(open + 1);
+  }
+}
+
 const undeclared = [];
 /* each CSS entry is a quoted JS string fragment; rebuild logical rules by
  * joining and then splitting on '}' */
@@ -107,11 +137,9 @@ const cssText = cssBlock[1]
   .join('');
 
 cssText.split('}').forEach((chunk) => {
-  const open = chunk.indexOf('{');
-  if (open < 0) return;
-  const selector = chunk.slice(0, open);
-  const body = chunk.slice(open + 1);
-  if (!/display\s*:\s*none/.test(body)) return;
+  const selector = selectorOf(chunk);
+  if (!selector) return;
+  if (!/display\s*:\s*none/.test(bodyOf(chunk))) return;
   targets(selector).forEach((t) => { if (!declared.has(t)) undeclared.push(t); });
 });
 
@@ -247,9 +275,7 @@ assert(/#visitView #ez3Prep,[\s\S]{0,120}#visitView #ez3Prep2\{display:inline-fl
 
 const strayScope = [];
 cssText.split('}').forEach((chunk) => {
-  const open = chunk.indexOf('{');
-  if (open < 0) return;
-  chunk.slice(0, open).split(',').forEach((s) => {
+  selectorOf(chunk).split(',').forEach((s) => {
     const sel = s.trim();
     if (!sel) return;
     if (/#(visitView|patientsView)\b/.test(sel)) return;

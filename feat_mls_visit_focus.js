@@ -472,7 +472,30 @@
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-opaddword,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-nm-meter{display:none!important}',
     'body.' + BODY + ' #visitView #emrCard,' +
-    'body.' + BODY + ' #visitView #outcomesCard{display:none!important}'
+    'body.' + BODY + ' #visitView #outcomesCard{display:none!important}',
+
+    /* DEMOTED IS NOT THE SAME AS UNTAPPABLE.
+       Rule 1 above says one primary per state, and the demotions that enforce
+       it shrink #ez3Rec and #ez3flGen into inline chips with min-height:0
+       !important - the right shape on a desktop pointer, where "demoted" means
+       visually quieter and the target is still a mouse click.
+       On a phone that same !important drops them under the touch floor the app
+       declares for itself at ScribeFlow.html:1694
+           @media (max-width:760px){ ... html body button{ min-height:44px; } }
+       and it wins, because a rule carrying two ids plus !important cannot be
+       beaten by a three-type selector.
+       MEASURED by tests/live-ui-defect-sweep.js at 390x844, a note on screen:
+       #ez3flGen "Generate one note" at 172.5x40, computed min-height 0px. Four
+       pixels under the floor, on the input where those pixels are a thumb.
+       Demotion is preserved exactly - same padding, same font, same shape, the
+       primary is still unmistakably bigger. Only the floor comes back, and only
+       under 760px. Desktop is byte-for-byte unchanged. */
+    '@media (max-width:760px){' +
+      'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flGen:not([hidden])) #ez3Rec,' +
+      'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3Rec,' +
+      'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3flGen{' +
+        'min-height:44px!important}' +
+    '}'
   ].join('\n');
 
   function installCss() {

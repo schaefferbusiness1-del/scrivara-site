@@ -246,6 +246,33 @@
       'button{min-height:44px}',
       '<button class="btn-primary" onclick="savePatient()"']],
 
+    /* 4b. ON A PHONE THE APP'S OWN FLOOR WINS BACK.
+       Rule 4 raised Settings' 31px inline-styled buttons to 40px, which is the
+       right number on a desktop pointer. It also, unintentionally, LOWERED them
+       on a phone. ScribeFlow.html:1694 declares
+           html body summary, html body button{ min-height:44px; }
+       inside @media (max-width:760px) — the app's touch floor, and the very
+       precedent rule 4's comment cites. But that selector scores (0,0,3) and
+       rule 4 scores (0,5,2), so on a 390px screen rule 4 beat the floor and
+       every dialog action came out at 40px.
+
+       Not theory. tests/live-ui-defect-sweep.js at 390x844 measured exactly
+       three: "Clear saved data" 143.1x40, "Save changes" 231x40, "Cancel"
+       82x40 — the Settings action row, four pixels under the floor the app
+       already promised, on the one input where the four pixels are a thumb.
+
+       This restores the app's own number rather than inventing one. Same
+       selector as rule 4 so it inherits its reach exactly, wrapped in the same
+       breakpoint the floor uses, and later in the sheet so it wins on order
+       without an !important or a specificity escalation. Desktop is untouched:
+       above 760px rule 4 still resolves to 40px, unchanged. */
+    [CARD + ACTIONS,
+     'min-height:44px',
+     ['html body summary, html body button{ min-height:44px; }',
+      '@media (max-width:760px){',
+      '<button class="btn-red" style="font-size:14px;padding:9px 15px" onclick="clearDeviceData()"'],
+     '@media (max-width:760px)'],
+
     /* 5. THE DESTRUCTIVE ONE CANNOT BE MISTAKEN FOR THE PRIMARY. Settings
        carries "Clear saved data" ("This cannot be undone"), and on a keyboard
        it would otherwise wear the same green ring as Save. Its ring is red.

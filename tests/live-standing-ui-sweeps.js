@@ -123,6 +123,17 @@ ${CHECK_VIEWPORT}
     return String(el.textContent || el.value || el.getAttribute('aria-label') || '')
       .replace(/\\s+/g, ' ').trim().toLowerCase();
   }
+  /* A TOAST IS NOT A SECOND COPY OF THE SCREEN'S CONTROLS.
+     Transient notice cards carry their own dismiss "×", and while one is on
+     screen every dialog in the app appears to have two close buttons. Measured:
+     the op-note Templates tab and Settings were each reported as having a
+     duplicate "×" because a .mls-sv-card save-verify toast happened to be up -
+     a toast that retires itself seconds later, in a different corner, dismissing
+     a different thing. The duplicate-control check is about two controls that
+     both belong to the surface and compete for the same intent; a notice belongs
+     to no surface. Excluded by container, not by label, so a real duplicate that
+     merely happens to say "×" is still caught. */
+  var TRANSIENT = '.mls-sv-card, #mlsMobileNoticeShelf, #toast, .toast, [role=alert], [role=status], .mls-toast, #mlsBusyPill';
   var seen = {};
   var els = [].slice.call(document.querySelectorAll('button,a[href],[role=button],summary'));
   els.forEach(function (el) {
@@ -130,6 +141,7 @@ ${CHECK_VIEWPORT}
     if (r.width <= 0 || r.height <= 0) return;
     var cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) return;
+    try { if (el.closest(TRANSIENT)) return; } catch (e) {}
     var k = norm(el);
     if (!k) return;
     (seen[k] = seen[k] || []).push({
