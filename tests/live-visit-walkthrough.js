@@ -364,6 +364,31 @@ async function main() {
     ok(opened.length === 0, '6b. no press threw open an advanced-tools surface',
       opened.map((j) => j.id + ' opened ' + JSON.stringify(j.after.advancedOpen)).join('; '));
 
+    /* ---- 6c. THE VISIT-SHORTCUT CHIPS MUST NOT THROW HIM INTO ADVANCED TOOLS.
+       Every chip calls openWorkspace(false) - "open, but do not take me
+       anywhere". That argument was unread until b807, so pressing a shortcut
+       opened the advanced workspace AND smooth-scrolled the page. ---- */
+    const chipProbe = await evalJs(cdp, `(()=>{
+      const t=document.getElementById('ez3flToolsToggle'); if(!t) return {skip:'no shortcuts toggle'};
+      t.click(); return {opened:true};})()`);
+    await sleep(700);
+    if (!chipProbe.skip) {
+      const beforeChip = await evalJs(cdp, `({ y: Math.round(window.scrollY||0), adv: document.body.classList.contains('ez3adv') })`);
+      const chip = await evalJs(cdp, `(()=>{ const b=[...document.querySelectorAll('.ez3fl-qchip')]
+        .find(x=>/orders/i.test(x.textContent||'') && x.getBoundingClientRect().height>0);
+        if(!b) return null; if(!b.id) b.id='mlsWalkChip'; b.click(); return b.id;})()`);
+      if (chip) {
+        await sleep(1800);
+        const afterChip = await evalJs(cdp, `({ y: Math.round(window.scrollY||0), adv: document.body.classList.contains('ez3adv'),
+          ordersInView: (()=>{const o=document.getElementById('visitOrdersCard'); if(!o) return null;
+            const r=o.getBoundingClientRect(); return r.top>-50 && r.top<innerHeight;})() })`);
+        note('shortcut chip: before=' + JSON.stringify(beforeChip) + ' after=' + JSON.stringify(afterChip));
+        ok(afterChip.ordersInView !== false,
+          '6c. a Visit-shortcut chip lands on what it names, not on the note card',
+          'Orders card in view after pressing the Orders chip: ' + afterChip.ordersInView);
+      } else { note('no Orders shortcut chip on this build'); }
+    }
+
     /* ---- 7. the note reached History ---- */
     const inHistory = await evalJs(cdp, `(()=>{ try{ const p=window.activePatient(); const ns=(window.getNotes&&window.getNotes())||[];
       const mine=ns.filter(n=>n&&n.patientId===p.id); return { count:mine.length, signed: mine.filter(n=>n.signed).length }; }catch(e){ return {count:-1,signed:-1}; } })()`);

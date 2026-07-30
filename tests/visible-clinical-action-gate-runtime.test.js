@@ -33,7 +33,14 @@ assert(owner.includes('body.ez3adv #noteCard button[onclick*="generateNote"]'), 
 assert(owner.includes('body.ez3adv #noteCard button[onclick*="regenerateNote"]'), 'Advanced does not hide raw full-note regeneration controls');
 assert(owner.includes('body.ez3adv #noteCard .ne-regen{display:none!important;}'), 'Advanced does not hide direct section-AI regeneration controls');
 assert(!between(connect, 'function wireAdv()', '\n  function homeStatus()', 'Advanced toggle').includes("$('captureCard')"), 'Advanced toggle still scrolls users to the hidden raw capture card');
-assert(!between(connect, 'function openWorkspace()', '\n  function recordingNow()', 'top-lane workspace opener').includes("$('captureCard')"), 'top-lane workspace opener still targets the hidden raw capture card');
+/* 2026-07-30: the marker drops the empty argument list. openWorkspace gained a
+   scrollToNoteCard parameter so the Visit-shortcut chips, which have always
+   called openWorkspace(false), can finally be honoured instead of being thrown
+   into the advanced workspace and scrolled to #noteCard. This pin is about WHAT
+   the opener targets, not its arity, and matching on 'function openWorkspace('
+   keeps it true across any future signature change rather than failing for a
+   reason it does not care about. The assertion itself is unchanged. */
+assert(!between(connect, 'function openWorkspace(', '\n  function recordingNow()', 'top-lane workspace opener').includes("$('captureCard')"), 'top-lane workspace opener still targets the hidden raw capture card');
 assert(!owner.includes('#pushAllEmrBtn{display:none'), 'Advanced hides the supervised Athena review control');
 
 // Staging deliberately does not load the canonical Easy owner. Its Visit
