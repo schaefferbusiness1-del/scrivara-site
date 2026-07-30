@@ -376,6 +376,12 @@ const tests = [
   'copilot-panel-calm-contract.test.js',
   'opnote-graded-against-what-model-saw.test.js',
   'home-hero-follows-the-banner-patient.test.js',
+  /* b803 — the same law as the line above, on the day shape that law never
+     covered. home-hero-follows-the-banner-patient pins the EMPTY day; the owner
+     found the working day, where the hero followed the schedule and the banner
+     patient had no record offer at all. This one executes renderHome over
+     twelve day-shape/selection combinations. */
+  'visit-home-always-offers-the-banner-patient.test.js',
   'sweep-fixes-b711-contract.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',

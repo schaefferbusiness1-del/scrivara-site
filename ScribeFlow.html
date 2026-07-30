@@ -9637,11 +9637,25 @@ try{
   window.addEventListener('pagehide',function(){try{window.__mlsPatientStoreBatch._flushAll('pagehide');}catch(e){}});
 }catch(e){}
 function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
+/* Was this patient CHOSEN, or merely restored? uns('activePt') lives in
+   localStorage, so it survives the night and the doctor opens tomorrow with
+   yesterday's last patient still on the banner. A surface that has to decide
+   whether the banner patient out-ranks today's schedule cannot tell those two
+   states apart from the id alone, and guessing wrong in the promoting
+   direction means offering to RECORD yesterday's patient. So the deliberate
+   act is recorded where it happens, in sessionStorage - exactly the lifetime
+   of "this tab, since it was opened" - and namespaced through uns() so it can
+   never leak across signed-in accounts. */
+function activePtChosenThisSession(){
+  try{ var id=getActivePtId(); return !!id && sessionStorage.getItem(uns('activePtChosen'))===String(id); }
+  catch(e){ return false; }
+}
 function setActivePtId(id){
   var previous=''; try{previous=getActivePtId();}catch(e){}
   var changed=String(previous)!==String(id||'');
   if(changed){ try{if(typeof _athenaHandleActivePatientChange==='function')_athenaHandleActivePatientChange(previous,id||'');}catch(e2){} }
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
+  try{ if(id) sessionStorage.setItem(uns('activePtChosen'),String(id)); else sessionStorage.removeItem(uns('activePtChosen')); }catch(e5){}
   if(changed){
     try{ window.dispatchEvent(new CustomEvent('mls:active-patient-changed',{detail:{previousId:String(previous||''),patientId:String(id||'')}})); }
     catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }

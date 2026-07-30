@@ -17967,6 +17967,59 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return (upcoming[0] || rows[0]);
   }
 
+  /* ---- the banner patient is the through-line ------------------------------
+     Owner law (b693, restated 2026-07-26): "PATIENT TO CALENDAR TO VISIT
+     should all be on top banner patient." Every surface that offers to act on
+     "the patient" has to mean the SAME person the banner names. These three
+     helpers exist so that is checkable instead of assumed. */
+  function bannerPatient() {
+    var p = null;
+    try { p = (isFn(window.verifiedActivePatient) && window.verifiedActivePatient()) || null; } catch (e) {}
+    if (!p) { try { p = (isFn(window.activePatient) && window.activePatient()) || null; } catch (e1) {} }
+    return (p && p.name && p.id != null) ? p : null;
+  }
+  /* Their row on the selected day, decided by the app's OWN equality rule -
+     the exact one installScheduledVisitBinding and exactScheduledBindingMatches
+     already use (exact name, non-conflicting DOB). Finding the row is what
+     PRESERVES the appointment binding: sending a scheduled patient down the
+     ad-hoc lockAndStartPatient path hands the note an appointment id of null,
+     which is precisely the "missing appointment ID" report. */
+  function dayRowForPatient(rows, p) {
+    if (!p || !p.name || !rows || !rows.length) return null;
+    var pd = String(p.dob || '').replace(/\D/g, '');
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      if (!a || !a.name || !nameMatch(a.name, p.name)) continue;
+      var ad = String(a.dob || '').replace(/\D/g, '');
+      if (ad && pd && ad !== pd) continue; /* same name, provably a different person */
+      return a;
+    }
+    return null;
+  }
+  /* Does the banner patient out-rank the day's schedule for the PRIMARY record
+     offer? Only when they are part of this day (they have a row) or the doctor
+     chose them in this tab session. uns('activePt') lives in localStorage and
+     survives the night, so a doctor opening tomorrow still has yesterday's last
+     patient on the banner; promoting that to the primary record button would
+     offer to RECORD yesterday's patient, which is a wrong-patient regression
+     strictly worse than the bug this ranking fixes. Not leading never means
+     unreachable - renderHome still renders an explicit offer below the day. */
+  function bannerLeads(rows) {
+    var bp = bannerPatient();
+    if (!bp) return false;
+    if (dayRowForPatient(rows || dayRows(visitDay()), bp)) return true;
+    try { return isFn(window.activePtChosenThisSession) && window.activePtChosenThisSession() === true; } catch (e) { return false; }
+  }
+  /* The banner patient's row RIGHT NOW - resolved on click, never captured at
+     render, because the day can be re-pulled between the two. It lives out here
+     rather than inline in the handler so that renderHome's body still contains
+     exactly one dayRows(visitDay()) call: this scan is a click cost, and
+     tests/visit-day-ownership-contract counts render costs. */
+  function bannerRowToday() {
+    var bp = bannerPatient();
+    return bp ? dayRowForPatient(dayRows(visitDay()), bp) : null;
+  }
+
   /* ---- time-aware helpers (v3.2) ------------------------------------------ */
   function apptStartMs(a) {
     try { var d = new Date(a.start_at); if (!isNaN(d.getTime())) return d.getTime(); } catch (e) {}
@@ -19321,25 +19374,74 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* the 1-2 imminent patients, BIG and obvious */
       /* v3.3: no "Next" indirection — the primary IS Start Recording (activate
          + identity check + record, one tap). */
-      if (tc.cur) {
+      /* Owner 2026-07-30, with a screenshot: the banner read "Adam · 1y · DOB
+         05/20/2025" and the only record CTA on the same screen read "🎙 Start
+         Recording — John F Dulin · 7:30 AM · DOB 05/06/1945". His words:
+         "Adam is selected but there is no way to start recording him, and he is
+         not connected to the visit screen below."
+
+         TWO things had to be true at once to produce that, which is why it
+         survived b710. (1) The through-line law above was enforced only in the
+         !rows.length branch, so the banner patient was dropped entirely on
+         every day that actually had appointments — the working case. (2) b802
+         hid the ez3fl lane pill while idle (setLaneHidden at :6864) because it
+         duplicated the hero, and that pill was the ONE control on the screen
+         whose label came from the banner (.mlsctx-name, :6862). Removing the
+         duplicate was right; what it left standing was an offer for the wrong
+         person, and with it gone a day with rows had ZERO record entry points
+         for the selected patient.
+
+         The banner patient now always has exactly one offer here, and when they
+         have an appointment it binds through the ROW so the scheduled Athena
+         binding still installs. */
+      var bp = bannerPatient();
+      var bpRow = bp ? dayRowForPatient(rows, bp) : null;
+      var bpLeads = !!bp && bannerLeads(rows);
+      var bpKey = bpRow ? rowKey(bpRow) : '';
+      var bpIsNow = !!(bpRow && tc.cur && rowKey(tc.cur) === bpKey);
+      if (bpLeads) {
+        h += '<div style="text-align:center"><span class="ez3-nowtag' + (bpIsNow ? '' : ' next') + '">' +
+             (bpIsNow ? 'HAPPENING NOW · ' + esc(t12(bpRow)) : (bpRow ? 'SELECTED PATIENT · ' + esc(t12(bpRow)) : 'SELECTED PATIENT')) +
+             '</span></div>' +
+             '<button type="button" class="ez3-big" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
+             '<small>' + (bpRow ? dobLabelPlain(bpRow) + ' · ' + esc(visitType(bpRow))
+                                : dobLabelPlain(bp) + ' · ' + (function () { var dl = visitDayShort(); return dl === 'today' ? 'no appointment today' : 'no appointment on ' + esc(dl); })() + ' — records as an ad-hoc visit') +
+             '</small></button>';
+      }
+      /* The day is never dropped. When the banner patient leads, NOW/NEXT
+         demote to the existing "➡ <name>" switch form — the same visual
+         language ez3Nxt already uses when tc.cur exists — and their handlers
+         pass record:false, so one tap switches the banner to that patient and
+         the hero above becomes theirs. Exactly one record offer on screen, and
+         whichever row IS the banner patient's row is skipped rather than
+         rendered a second time under a different heading. */
+      if (tc.cur && !(bpLeads && bpKey && rowKey(tc.cur) === bpKey)) {
         h += '<div style="text-align:center"><span class="ez3-nowtag">HAPPENING NOW · ' + esc(t12(tc.cur)) + '</span></div>' +
-             '<button type="button" class="ez3-big" id="ez3Now">🎙 Start Recording — ' + esc(tc.cur.name || 'patient') +
+             '<button type="button" class="ez3-big' + (bpLeads ? ' ok' : '') + '" id="ez3Now">' + (bpLeads ? '➡ ' : '🎙 Start Recording — ') + esc(tc.cur.name || 'patient') +
              '<small>' + dobLabelPlain(tc.cur) + ' · ' + esc(visitType(tc.cur)) + '</small></button>';
       }
-      if (tc.nxt) {
+      if (tc.nxt && !(bpLeads && bpKey && rowKey(tc.nxt) === bpKey)) {
         h += '<div style="text-align:center"><span class="ez3-nowtag next">UP NEXT · ' + esc(t12(tc.nxt)) + '</span></div>' +
-             '<button type="button" class="ez3-big' + (tc.cur ? ' ok' : '') + '" id="ez3Nxt">' +
-             (tc.cur ? '➡ ' + esc(tc.nxt.name || 'patient') : '🎙 Start Recording — ' + esc(tc.nxt.name || 'patient')) +
+             '<button type="button" class="ez3-big' + ((tc.cur || bpLeads) ? ' ok' : '') + '" id="ez3Nxt">' +
+             ((tc.cur || bpLeads) ? '➡ ' + esc(tc.nxt.name || 'patient') : '🎙 Start Recording — ' + esc(tc.nxt.name || 'patient')) +
              '<small>' + dobLabelPlain(tc.nxt) + ' · ' + esc(visitType(tc.nxt)) + '</small></button>';
       }
       if (!tc.cur && !tc.nxt) {
         var nx = nextPatient();
-        if (nx) {
-          h += '<button type="button" class="ez3-big" id="ez3Next">🎙 Start Recording — ' + esc(nx.name) +
+        if (nx && !(bpLeads && bpKey && rowKey(nx) === bpKey)) {
+          h += '<button type="button" class="ez3-big' + (bpLeads ? ' ok' : '') + '" id="ez3Next">' + (bpLeads ? '➡ ' : '🎙 Start Recording — ') + esc(nx.name) +
                '<small>' + esc(t12(nx)) + ' · ' + dobLabelPlain(nx) + '</small></button>';
-        } else {
+        } else if (!nx && !bpLeads) {
           h += '<button type="button" class="ez3-big dim" disabled>🎉 All ' + rows.length + ' patients seen on ' + esc(visitDayName()) + '</button>';
         }
+      }
+      /* Not leading is not the same as unreachable. The defect the owner
+         reported was the ABSENCE of any way to record the patient on his
+         banner, so a selection restored from a previous day still gets an
+         explicit offer — below the day, and labelled with why it is below. */
+      if (bp && !bpLeads) {
+        h += '<button type="button" class="ez3-big ok" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
+             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit</small></button>';
       }
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */
@@ -19356,14 +19458,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += advRowHtml();
     setWrapHtml(h, true);
     wireProvSelect(); wireAdv(); wireEmptyToday(); wireRecBanner();
-    on('ez3Now', function () { var t2 = timeContext(); if (t2.cur) lockAndStart(t2.cur, { record: true }); });
-    on('ez3Nxt', function () { var t2 = timeContext(); if (t2.nxt) lockAndStart(t2.nxt, { record: !t2.cur }); });
-    on('ez3Next', function () { var nx2 = nextPatient(); if (nx2) lockAndStart(nx2, { record: true }); });
+    /* A DEMOTED row (the banner patient owns the primary) is a switch offer, not
+       a record offer — its label says "➡ <name>", so recording on tap would do
+       something the button does not say, to a patient the banner does not name.
+       One tap moves the banner; the hero above then reads for that patient and
+       records in the second tap. Re-resolved at click time because the day can
+       be re-pulled between render and tap. */
+    on('ez3Now', function () { var t2 = timeContext(); if (t2.cur) lockAndStart(t2.cur, { record: !bannerLeads() }); });
+    on('ez3Nxt', function () { var t2 = timeContext(); if (t2.nxt) lockAndStart(t2.nxt, { record: !t2.cur && !bannerLeads() }); });
+    on('ez3Next', function () { var nx2 = nextPatient(); if (nx2) lockAndStart(nx2, { record: !bannerLeads() }); });
     on('ez3ActiveGo', function () {
-      var p = null;
-      try { p = (isFn(window.verifiedActivePatient) && window.verifiedActivePatient()) || null; } catch (e) {}
-      if (!p) { try { p = (isFn(window.activePatient) && window.activePatient()) || null; } catch (e) {} }
-      if (p && p.id != null) lockAndStartPatient(p);
+      var p = bannerPatient();
+      if (!p) return;
+      /* Prefer the appointment row: lockAndStartPatient builds an _pt row with
+         id:null, which throws the Athena appointment id away. That is correct
+         only when the patient genuinely has no appointment on this day. */
+      var row = bannerRowToday();
+      if (row) { lockAndStart(row, { record: true }); return; }
+      lockAndStartPatient(p);
     });
     on('ez3Choose', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
     on('ez3Prep', openPrep);
