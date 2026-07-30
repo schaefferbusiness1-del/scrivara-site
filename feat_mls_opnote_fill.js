@@ -1298,6 +1298,32 @@
     var rendered = applyVals(raw, vals);
     writeRendered(ta, row, rendered);
     if (prep) safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = rendered; });
+    /* 2026-07-30 — KEEP THE HISTORY DRAFT EQUAL TO THE NOTE ON SCREEN.
+       opPrepAutosaveDraft mirrors row.note into History at GENERATION time, when
+       row.note is still the raw model output. This layer then resolves the
+       template's [[slots]] from the chart, the schedule and saved defaults and
+       overwrites row.note with the rendered text - but nothing re-saved, so the
+       stored draft kept the placeholders.
+       MEASURED (tests/live-draft-a-day.js 5c): 13 of 13 rows showed
+       "FLUOROSCOPY TIME: < 1 minute" on screen while History held
+       "FLUOROSCOPY TIME: [[fluoroscopy_time]]". A saved note carrying raw
+       placeholder syntax is a broken clinical document if it is ever printed,
+       exported or read back.
+       TWO GUARDS make this safe to do from a render path:
+       - only when row._noteId already exists, so a render can never CREATE a
+         History entry that generation did not decide to create;
+       - only when the text actually differs, so typing in a field does not
+         rewrite the whole note store on every keystroke.
+       This does not weaken the confirm-before-save gate: _onfSuggestedPending
+       still lists every unreviewed machine value and the explicit Save still
+       refuses over them (proved by live-template-lifecycle 6e). */
+    if (prep) safe(function () {
+      var r = window._opPrep && window._opPrep[+idx];
+      if (!r || !r._noteId || !isFn(window.getNotes) || !isFn(window.opPrepAutosaveDraft)) return;
+      var stored = (window.getNotes() || []).find(function (x) { return x && x.id === r._noteId; });
+      if (!stored || S(stored.text) === S(r.note)) return;
+      window.opPrepAutosaveDraft(+idx);
+    });
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
     box.className = 'onf-fillbox';

@@ -1,0 +1,85 @@
+{
+  "results": [
+    {
+      "step": "1. synthetic signup + login on an isolated origin",
+      "verdict": "PASS",
+      "evidence": "demo=1, backendMode=false, model stub installed (7 non-AI fetches passed through)"
+    },
+    {
+      "step": "2. upload a template through the real Templates UI",
+      "verdict": "PASS",
+      "evidence": "opened via #mlsDock [data-dest=\"tools\"] > Tools > \"Prep op notes\" -> #oprTabTpls; saved id=tpl17854422663899my; text round-tripped byte-for-byte (763 chars); keywords=[\"trigger point\",\"paraspinal\",\"synthetic fixture\"]; visible library row present; library now holds 4 templates"
+    },
+    {
+      "step": "3. synthetic patient + a procedure the template can match",
+      "verdict": "PASS",
+      "evidence": "patient id=p17854422675557jx (synthetic, dob=1979-03-04); one op-note row; procedure typed into the real #opPrepProc_0 field: \"Bilateral lumbar paraspinal trigger point injections\"; row template before typing was {\"tplId\":\"\",\"tplManual\":false,\"proc\":\"\",\"source\":\"unmatched\"}"
+    },
+    {
+      "step": "4a. AUTO-PICKER: no manual pick, row resolves to the uploaded template",
+      "verdict": "PASS",
+      "evidence": "procedure classified as \"trigger_point\"; row.tplId=tpl17854422663899my (=uploaded), tplManual=false, source=\"reason\" (procedure class); visible picker shows it; badge reads \"(matched from procedure)\""
+    },
+    {
+      "step": "4b. MANUAL PICK beats the auto-match and survives a re-render",
+      "verdict": "PASS",
+      "evidence": "clicked \"Caudal Epidural Steroid Injection\" in the left rail -> tplManual=true, tplId=pkg_caudal_epidural_steroid_injection; after window.opPrepRender() it is still pkg_caudal_epidural_steroid_injection with aria-pressed on that rail item and badge \"(your selection)\""
+    },
+    {
+      "step": "5.strict DRAFT in \"Follow it closely\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1098 chars, editor matches row); system prompt clause check ok (strict=true, guide=false); row.tplModeUsed=\"strict\"; receipt reads \"Follow it closely\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5.adapt DRAFT in \"Adapt to the case\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1098 chars, editor matches row); system prompt clause check ok (strict=false, guide=false); row.tplModeUsed=\"adapt\"; receipt reads \"Adapt to the case\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5.guide DRAFT in \"Use it as a guide\"",
+      "verdict": "PASS",
+      "evidence": "note landed (1098 chars, editor matches row); system prompt clause check ok (strict=false, guide=true); row.tplModeUsed=\"guide\"; receipt reads \"Use it as a guide\"; 1 model call(s), 0 repair; all 11 template headings present and in order; 0 unfilled slots"
+    },
+    {
+      "step": "5. all three \"How drafts follow your template\" modes drafted a note",
+      "verdict": "PASS",
+      "evidence": "{\"strict\":{\"noteChars\":1098,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7},\"adapt\":{\"noteChars\":1098,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7},\"guide\":{\"noteChars\":1098,\"opNoteCalls\":1,\"repairCalls\":0,\"headings\":11,\"filled\":7}}"
+    },
+    {
+      "step": "5d. PROMPT HYGIENE: the SELECTED TEMPLATE block carries only the template",
+      "verdict": "PASS",
+      "evidence": "the user prompt's SELECTED TEMPLATE region contained the template and nothing else in all three modes"
+    },
+    {
+      "step": "6. FOLLOWS THE TEMPLATE in every mode",
+      "verdict": "PASS",
+      "evidence": "for each of \"Follow it closely\", \"Adapt to the case\", \"Use it as a guide\": all 11 uploaded headings appear in the drafted note in the uploaded order, the fixed ANESTHESIA wording survives verbatim, and none of [\"clinical_indication\",\"needle_gauge\",\"injectate_volume\",\"imaging_modality\"] came through as literal [[slot]] syntax"
+    },
+    {
+      "step": "6d. an undictated standard clinical value is visibly marked \"suggested\"",
+      "verdict": "PASS",
+      "evidence": "every auto-filled standard value is amber-tagged: [{\"value\":\"25-gauge\",\"field\":\"Needle gauge\",\"tag\":\"onf-sug:suggested\"},{\"value\":\"bupivacaine\",\"field\":\"Injectate volume\",\"tag\":\"onf-sug:suggested\"},{\"value\":\"Fluoroscopy\",\"field\":\"Imaging modality\",\"tag\":\"onf-sug:suggested\"}]"
+    },
+    {
+      "step": "6e. saving a note that carries undictated standard values needs a confirming look",
+      "verdict": "PASS",
+      "evidence": "filled the honest blanks [\"provider name\",\"provider npi\",\"facility name\"] (unresolved now 0); the first Save was refused with: \"⚠ Check before saving: 3 auto-suggested standard values (needle gauge, injectate volume, imaging modality) will be saved as final — review the amber fields abov\""
+    },
+    {
+      "step": "6b. NEGATIVE CONTROL: the checks can fail, and a mangled reply never lands as-is",
+      "verdict": "PASS",
+      "evidence": "our own checks flagged the mangled reply (missing headings=[\"ANESTHESIA:\",\"IMAGING GUIDANCE:\"], out-of-order=[], literal slots=[\"[[imaging_modality]]\"], fixed wording deleted); the app REPAIRED the mangled reply back into template shape (1 repair round trip(s)); all 11 headings in order and the deleted fixed wording is back. It then auto-filled the restored slots with standard clinical values ([\"25-gauge\",\"bupivacaine\",\"Fluoroscopy\"])"
+    },
+    {
+      "step": "6c. recovery",
+      "verdict": "PASS",
+      "evidence": "after the negative control a normal draft landed again (1140 chars, all headings in order, 0 unfilled slots)"
+    },
+    {
+      "step": "7. isolation",
+      "verdict": "PASS",
+      "evidence": "0 external network requests; 0 page exception(s); 0 console error(s)"
+    }
+  ],
+  "defects": []
+}

@@ -1,0 +1,27 @@
+SYNTHETIC OP-NOTE FIXTURE TEMPLATE - TRIGGER POINT INJECTIONS
+
+PATIENT: Synthetic Template Fixture Patient
+
+DATE OF PROCEDURE: Thursday, July 30, 2026
+
+PROCEDURE: Bilateral lumbar paraspinal trigger point injections
+
+INDICATION: SYNTHETIC-CLINICAL-INDICATION-VALUE
+
+ANESTHESIA: Local synthetic anesthetic only and no sedation was administered for this fixture case.
+
+TECHNIQUE: Each documented synthetic trigger point was marked and entered with a 25-gauge, 1.5-inch needle, and a total of 0.25% bupivacaine + dexamethasone, 1 mL per point was deposited across the marked points using the standard fixture technique.
+
+IMAGING GUIDANCE: Fluoroscopy
+
+COMPLICATIONS: None.
+
+DISPOSITION: The synthetic fixture patient tolerated the procedure well and was discharged in stable condition.
+
+FOLLOW-UP: Synthetic fixture reassessment in four weeks with the documented pain score.
+
+---- PROVIDER & FACILITY (MLS op-note prep) ----
+Operating provider: [[provider_name]]
+NPI: [[provider_npi]]
+Facility: [[facility_name]]
+(DRAFT — not submitted to athenaOne. Review, edit, and sign in your EMR.)

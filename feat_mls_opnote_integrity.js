@@ -1152,7 +1152,19 @@
     if(crossAdapt){check2={pass:true,adapted:true};}
     else{
       check2=fidelity(repaired.note,tplForModel);
-      if(!check2.pass){repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplForModel);}
+      if(!check2.pass){
+        /* 2026-07-30 - RECONSTRUCTION MUST BE VISIBLE.
+           reanchor() rebuilds the note from the TEMPLATE plus known facts when
+           the model's reply cannot be repaired into template shape. The result
+           is a legitimate, template-following note - but it is not what the
+           model wrote, and the Draft-all ledger was reporting it in words
+           identical to a genuine AI draft (live-draft-a-day 6d). The doctor
+           deserves to know which notes are reconstructions so he can read those
+           first. Flagged on window the same way this module already reports
+           __mlsLastOpFidelityError / __mlsLastOpErrorCode, so the runner picks
+           it up per row without a new plumbing path. */
+        try{ window.__mlsLastOpReconstructed=true; }catch(eRc){}
+        repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplForModel);}
       if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+12000+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
