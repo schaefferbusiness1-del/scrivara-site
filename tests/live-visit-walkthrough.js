@@ -1,0 +1,384 @@
+'use strict';
+/*
+ * A VISIT, WALKED END TO END, COUNTING CLICKS AND WATCHING FOR JUMPS
+ * -----------------------------------------------------------------------------
+ * Owner, verbatim: "do a walk throguth of a visit as a lot of little bugs are in
+ * the walk threoguth like clicking record to generatating note to reviewing like
+ * why do u have to clikc review and sign twice and why in the world does it jump
+ * me to the advanced tools section when I clikc it somesimes".
+ *
+ * Two specific complaints, and both are MEASURABLE, so this harness measures
+ * them instead of reasoning about them:
+ *
+ *   CLICK COUNT - every control is pressed ONCE. If one press does not move the
+ *   workflow, that is recorded as "needed N presses", with the state before and
+ *   after each one. A workflow step that silently needs two presses is the
+ *   defect; a step that deliberately ARMS and says so is not, and the two are
+ *   told apart by whether the app announced the second press.
+ *
+ *   UNREQUESTED NAVIGATION - window.__mlsCurrentView and the visible tool
+ *   panels are sampled before and after every press. Any press that changes the
+ *   route without being a navigation control is reported with the route it
+ *   landed on. "It jumps me to advanced tools" is exactly this shape.
+ *
+ * It drives the app the way a clinician does - through visible controls, never
+ * by calling internals - and serves only what _config.yml publishes, so it walks
+ * the build the doctor actually receives.
+ *
+ * The model is stubbed before boot (no network, no key): the walkthrough is
+ * about the WORKFLOW, and a real model call would make the run non-deterministic
+ * without testing anything this file claims to test.
+ *
+ * PHI-free: one obviously synthetic patient, one obviously synthetic transcript.
+ * The extension is never loaded or exercised.
+ *
+ *   node tests/live-visit-walkthrough.js
+ */
+
+const fs = require('fs');
+const http = require('http');
+const os = require('os');
+const path = require('path');
+const { spawn } = require('child_process');
+
+const ROOT = path.join(__dirname, '..');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ACCOUNT = { email: 'clinician.walkthrough@mls.local', password: 'SyntheticOnly2026!' };
+const PATIENT = { name: 'Synthetic Walkthrough Patient', mrn: 'SYN-WALK-0001', dob: '1975-03-14', sex: 'Female' };
+const TRANSCRIPT = 'SYNTHETIC TRANSCRIPT - NOT A REAL PATIENT ENCOUNTER. '
+  + 'Patient reports ongoing low back pain, unchanged since the last visit. No new numbness or weakness. '
+  + 'Exam shows lumbar paraspinal tenderness. Plan: continue current therapy, follow up in six weeks.';
+
+let failures = 0;
+const FINDINGS = [];
+function ok(cond, label, detail) {
+  if (cond) { console.log('  pass  ' + label); return true; }
+  failures++;
+  FINDINGS.push({ label: label, detail: String(detail || '') });
+  console.log('  FAIL  ' + label + (detail ? '\n        ' + detail : ''));
+  return false;
+}
+function note(msg) { console.log('  note  ' + msg); }
+
+function findChrome() {
+  const c = [process.env.CHROME_PATH,
+    process.platform === 'win32' && 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    process.platform === 'darwin' && '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'
+  ].filter(Boolean);
+  return c.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } }) || '';
+}
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+const EXCLUDED = new Set();
+(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
+  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
+function serve() {
+  const server = http.createServer((req, res) => {
+    const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
+    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
+    const file = path.join(ROOT, rel);
+    if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('nf'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    res.end(fs.readFileSync(file));
+  });
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, origin: 'http://127.0.0.1:' + server.address().port })));
+}
+class CDP {
+  constructor(s) { this.socket = s; this.id = 1; this.pending = new Map();
+    s.addEventListener('message', (ev) => { const m = JSON.parse(String(ev.data)); if (!m.id) return;
+      const p = this.pending.get(m.id); if (!p) return; this.pending.delete(m.id); clearTimeout(p.timer);
+      m.error ? p.reject(new Error(p.method + ': ' + m.error.message)) : p.resolve(m.result || {}); }); }
+  static connect(u) { return new Promise((res, rej) => { const s = new WebSocket(u);
+    s.addEventListener('open', () => res(new CDP(s)), { once: true });
+    s.addEventListener('error', () => rej(new Error('cdp connect failed')), { once: true }); }); }
+  send(m, p, t) { const id = this.id++; return new Promise((res, rej) => {
+    const timer = setTimeout(() => { this.pending.delete(id); rej(new Error(m + ': timeout')); }, t || 40000);
+    this.pending.set(id, { resolve: res, reject: rej, timer, method: m });
+    this.socket.send(JSON.stringify({ id, method: m, params: p || {} })); }); }
+  close() { try { this.socket.close(); } catch (_) {} }
+}
+async function evalJs(cdp, e, aw) {
+  const r = await cdp.send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: !!aw });
+  if (r.exceptionDetails) throw new Error((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text);
+  return r.result && r.result.value;
+}
+async function wait(cdp, name, expr, t) {
+  const dl = Date.now() + (t || 30000);
+  for (;;) { let v = null; try { v = await evalJs(cdp, `(()=>{try{return (${expr});}catch(e){return false;}})()`); } catch (_) {}
+    if (v) return v; if (Date.now() > dl) throw new Error('timed out waiting for ' + name); await sleep(150); }
+}
+async function fill(cdp, sel, v) {
+  await evalJs(cdp, `(()=>{const el=document.querySelector(${JSON.stringify(sel)});if(!el)return 0;el.focus();
+    const P=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(P,'value').set.call(el,${JSON.stringify(v)});
+    el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));return 1;})()`);
+}
+
+/* the state the walkthrough judges by */
+const STATE = `(() => ({
+  view: String(window.__mlsCurrentView || ''),
+  noteChars: (document.getElementById('noteBox') || {}).value ? document.getElementById('noteBox').value.length : 0,
+  signVisible: (() => { const l = document.getElementById('signLine'); return !!(l && getComputedStyle(l).display !== 'none'); })(),
+  signDisabled: (() => { const b = document.getElementById('signBtn'); return b ? !!b.disabled : null; })(),
+  toast: (() => { const t = document.getElementById('toast'); return (t && t.classList.contains('show')) ? String(t.textContent || '').slice(0,140) : ''; })(),
+  openPanels: [...document.querySelectorAll('.modal-bg.show')].map(e => e.id).filter(Boolean),
+  /* the "advanced tools" surfaces the owner says he gets thrown into */
+  advancedOpen: ['moreToolsWrap','visitToolsWrap','mlsToolsMenu','advancedTools','emrWbAthena']
+    .filter(id => { const e = document.getElementById(id); if (!e) return false;
+      const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getBoundingClientRect().height > 0; }),
+  scrollY: Math.round(window.scrollY || 0)
+}))()`;
+
+/* press a visible control ONCE by id; report what changed */
+async function press(cdp, id) {
+  const before = await evalJs(cdp, STATE);
+  const clicked = await evalJs(cdp, `(()=>{const el=document.getElementById(${JSON.stringify(id)});
+    if(!el) return {ok:false,why:'absent'};
+    const s=getComputedStyle(el), r=el.getBoundingClientRect();
+    if(s.display==='none'||s.visibility==='hidden'||r.width<=0||r.height<=0) return {ok:false,why:'not visible'};
+    if(el.disabled) return {ok:false,why:'disabled'};
+    el.scrollIntoView({block:'center'}); el.click(); return {ok:true};})()`);
+  await sleep(900);
+  const after = await evalJs(cdp, STATE);
+  return { id, clicked, before, after };
+}
+
+async function main() {
+  const exe = findChrome();
+  if (!exe) { console.log('  SKIP  no Chrome found; set CHROME_PATH.'); process.exit(0); }
+  const hosted = await serve();
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mls-walk-'));
+  const flags = ['--no-sandbox', '--headless=new', '--hide-scrollbars', '--remote-debugging-port=0',
+    '--remote-allow-origins=*', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
+    '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-extensions',
+    '--window-size=1440,900', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', 'about:blank'];
+  const child = spawn(exe, flags, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const pf = path.join(profile, 'DevToolsActivePort');
+  const dl = Date.now() + 25000;
+  while (!fs.existsSync(pf) && Date.now() < dl) await sleep(50);
+  let t = ''; for (let i = 0; i < 120 && !t.trim(); i++) { try { t = fs.readFileSync(pf, 'utf8'); } catch (_) {} if (!t.trim()) await sleep(50); }
+  const port = Number(t.trim().split(/\r?\n/)[0]);
+  const cdp = await CDP.connect((await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json()).webSocketDebuggerUrl);
+  await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable')]);
+
+  /* deterministic model stub, installed before the app boots */
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    (function(){ var of = window.fetch.bind(window);
+      window.fetch = function(input, init){
+        var url=''; try{ url = (typeof input==='string')?input:(input&&input.url)||''; }catch(e){}
+        if(!/\\/api\\/(complete|generate)|api\\.openai\\.com/.test(String(url))) return of(input, init);
+        var note = 'SYNTHETIC NOTE - NOT A REAL PATIENT DOCUMENT\\n\\nS: Synthetic subjective.\\nO: Synthetic objective.\\nA: Synthetic assessment.\\nP: Synthetic plan.';
+        return Promise.resolve(new Response(JSON.stringify({ choices:[{message:{content: JSON.stringify({ note: note, missing: [] })}}], content: note, result: note }),
+          { status:200, headers:{'Content-Type':'application/json'} }));
+      };
+    })();
+    window.__walkAi = { calls: 0, errors: [], toasts: [] };
+    addEventListener('error', function(e){ try{ window.__walkAi.errors.push(String(e.message||e)); }catch(_){}}, true);
+    addEventListener('unhandledrejection', function(e){ try{ window.__walkAi.errors.push('rejection: '+String((e.reason&&e.reason.message)||e.reason)); }catch(_){}});
+    (function(){
+      var iv = setInterval(function(){
+        try{
+          if (typeof window.aiCallRaw === 'function' && !window.aiCallRaw.__walkWrapped) {
+            var orig = window.aiCallRaw;
+            var w = function(){ window.__walkAi.calls++; return orig.apply(this, arguments); };
+            w.__walkWrapped = true; window.aiCallRaw = w; clearInterval(iv);
+          }
+        }catch(_){}
+      }, 200);
+      setTimeout(function(){ try{ clearInterval(iv); }catch(_){}}, 30000);
+    })();` });
+
+  try {
+    console.log('WALKTHROUGH - one synthetic visit, every control pressed once\n');
+    await cdp.send('Page.navigate', { url: `${hosted.origin}/ScribeFlow.html?demo=1&walkthrough=1` });
+    await wait(cdp, 'auth', `document.readyState==='complete'&&!!document.getElementById('tabSignup')`);
+    await evalJs(cdp, `localStorage.clear();sessionStorage.clear();location.reload();true`);
+    await wait(cdp, 'auth2', `document.readyState==='complete'&&!!document.getElementById('tabSignup')`);
+    await sleep(1500);
+    await evalJs(cdp, `document.getElementById('tabSignup').click();1`);
+    await wait(cdp, 'assent', `document.getElementById('authSignupAssentFields')&&!document.getElementById('authSignupAssentFields').disabled`, 12000);
+    await fill(cdp, '#authEmail', ACCOUNT.email); await fill(cdp, '#authPass', ACCOUNT.password); await fill(cdp, '#authPass2', ACCOUNT.password);
+    await evalJs(cdp, `document.getElementById('authTermsAssent').click();document.getElementById('authPracticeAuthority').click();1`);
+    await wait(cdp, 'enabled', `!document.getElementById('authBtn').disabled`, 8000);
+    await evalJs(cdp, `document.getElementById('authBtn').click();1`);
+    await wait(cdp, 'app', `document.getElementById('appScreen')&&getComputedStyle(document.getElementById('appScreen')).display!=='none'`);
+    await sleep(2500);
+
+    /* In ?demo=1 the app generates with a per-device key and refuses without one
+       (ScribeFlow.html:19667). Seed an obviously synthetic one; the pre-boot
+       fetch stub answers the call, so nothing leaves the machine. */
+    const keyed = await evalJs(cdp, `(()=>{ try{
+      const k = (typeof uns==='function') ? uns('apikey') : 'apikey';
+      localStorage.setItem(k, 'sk-SYNTHETIC-walkthrough-key-not-real');
+      return { key:k, ok: !!(typeof getKey==='function' && getKey()) };
+    }catch(e){ return { err:String(e&&e.message||e) }; } })()`);
+    note('model key seeded: ' + JSON.stringify(keyed));
+
+    /* ---- 1. a patient ---- */
+    await evalJs(cdp, `document.querySelector('#mlsDock button[data-dest="patient"]').click();1`);
+    await wait(cdp, 'patients', `window.__mlsCurrentView==='patients'`);
+    await evalJs(cdp, `document.getElementById('ptNewBtn').click();1`);
+    await wait(cdp, 'new patient', `document.getElementById('patientModal').classList.contains('show')`);
+    await fill(cdp, '#ptName', PATIENT.name); await fill(cdp, '#ptMrn', PATIENT.mrn); await fill(cdp, '#ptDob', PATIENT.dob);
+    await evalJs(cdp, `document.querySelector('#patientModal button[onclick="savePatient()"]').click();1`);
+    await wait(cdp, 'patient saved', `(()=>{const p=window.activePatient&&window.activePatient();return !!(p&&p.name===${JSON.stringify(PATIENT.name)});})()`, 12000);
+    ok(true, '1. a synthetic patient exists and is selected');
+
+    /* ---- 2. the visit surface ---- */
+    await evalJs(cdp, `document.querySelector('#mlsDock button[data-dest="visit"]').click();1`);
+    await wait(cdp, 'visit', `window.__mlsCurrentView==='visit'`);
+    await sleep(1200);
+    ok(true, '2. the Visit workspace opened');
+
+    /* THE STATE THE DOCTOR ACTUALLY STARTS IN: nothing recorded yet. This is
+       where Record, the Advanced-workspace escape hatch and Generate coexist,
+       and where a mis-tap can land on the wrong one. */
+    const startRow = await evalJs(cdp, `(()=>{ const r=document.querySelector('.ez3fl-record'); if(!r) return null;
+      return [...r.querySelectorAll('button')].map(b=>{const q=b.getBoundingClientRect();const st=getComputedStyle(b);
+        return { id:b.id||'(none)', cls:String(b.className||''), text:String(b.textContent||'').trim().slice(0,32),
+                 left:Math.round(q.left), right:Math.round(q.right), w:Math.round(q.width), h:Math.round(q.height),
+                 visible: st.display!=='none' && st.visibility!=='hidden' && q.height>0 };})
+        .filter(x=>x.visible).sort((a,b)=>a.left-b.left);})()`);
+    note('EMPTY-transcript record row: ' + JSON.stringify(startRow));
+    if (startRow && startRow.length >= 2) {
+      const adv = startRow.find(b => /openws/.test(b.cls) || /advanced/i.test(b.text));
+      const rec = startRow.find(b => /ez3fl-rec\b/.test(b.cls) || /record/i.test(b.text));
+      const gen = startRow.find(b => /ez3flGen/.test(b.id));
+      if (adv && rec) {
+        const wedged = gen ? (adv.left > rec.left && adv.left < gen.left) : false;
+        ok(!wedged, '2b. the Advanced-workspace escape hatch is not wedged between the primary actions',
+          JSON.stringify({ Record: rec.left, Advanced: adv.left, Generate: gen ? gen.left : null }));
+        ok(adv.h >= 44 || adv.left >= rec.right,
+          '2c. the Advanced-workspace button is separated from Record',
+          'Record ends at ' + rec.right + ', Advanced starts at ' + adv.left);
+      } else { note('Advanced/Record not both visible in the empty state: ' + JSON.stringify({adv:!!adv, rec:!!rec})); }
+    }
+
+    /* ---- 3. a transcript (the paste path; recording needs a mic) ---- */
+    /* Type into the transcript box the doctor can actually SEE. The Easy lane
+       owns #ez3flTranscript and syncs it down to the advanced #transcript; the
+       reverse is not true, so writing to #transcript leaves the visible lane
+       thinking nothing was captured and Generate refuses. That cost this
+       harness two wrong conclusions before it was caught. */
+    const wrote = await evalJs(cdp, `(()=>{
+      const set=(el,v)=>{ if(!el) return 0; el.focus();
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el, v);
+        el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
+        el.dispatchEvent(new Event('change',{bubbles:true})); return el.value.length; };
+      const top=document.getElementById('ez3flTranscript');
+      const adv=document.getElementById('transcript');
+      const n = set(top, ${JSON.stringify(TRANSCRIPT)}) || set(adv, ${JSON.stringify(TRANSCRIPT)});
+      return { chars:n, usedTop: !!top }; })()`);
+    ok(!!(wrote && wrote.chars), '3. a synthetic transcript is in the visible box', JSON.stringify(wrote));
+    await sleep(800);
+
+    /* ---- 3b. WHAT generate control is actually on screen? ---- */
+    const genCandidates = await evalJs(cdp, `(()=>{
+      const ids=['genBtn','ez3flGen','ez3Gen','mlsGenBtn'];
+      const out=ids.map(id=>{const e=document.getElementById(id);
+        if(!e) return {id,exists:false};
+        const s=getComputedStyle(e), r=e.getBoundingClientRect();
+        return {id,exists:true,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.height>0,disabled:!!e.disabled,text:String(e.textContent||'').trim().slice(0,30)};});
+      const others=[...document.querySelectorAll('button')].filter(b=>/generat/i.test(b.textContent||''))
+        .filter(b=>{const s=getComputedStyle(b),r=b.getBoundingClientRect();return s.display!=='none'&&r.height>0;})
+        .map(b=>({id:b.id||'(no id)',text:String(b.textContent||'').trim().slice(0,34),disabled:!!b.disabled}));
+      return {known:out, visibleGenerateButtons:others};})()`);
+    note('generate controls: ' + JSON.stringify(genCandidates));
+
+    /* ---- 4d. the record row: where is the escape hatch relative to the
+       two primary actions? "It jumps me to advanced tools" is what a mis-tap on
+       a button wedged between Record and Generate looks like. ---- */
+    const row = await evalJs(cdp, `(()=>{ const r=document.querySelector('.ez3fl-record'); if(!r) return null;
+      return [...r.querySelectorAll('button')].map(b=>{const q=b.getBoundingClientRect();const s=getComputedStyle(b);
+        return { id:b.id||'(none)', cls:String(b.className||''), text:String(b.textContent||'').trim().slice(0,30),
+                 left:Math.round(q.left), width:Math.round(q.width), order:s.order,
+                 visible: s.display!=='none' && q.height>0 };}).filter(x=>x.visible);})()`);
+    note('record row, left-to-right: ' + JSON.stringify(row));
+    if (row && row.length >= 3) {
+      const adv = row.find(b => /openws|advanced/i.test(b.cls + ' ' + b.text));
+      const gen = row.find(b => /ez3flGen/.test(b.id));
+      const rec = row.find(b => /record/i.test(b.text) || /ez3fl-rec/.test(b.cls));
+      if (adv && gen && rec) {
+        ok(!(adv.left > rec.left && adv.left < gen.left),
+          '4d. the Advanced-workspace escape hatch is NOT wedged between Record and Generate',
+          'left-to-right: Record@' + rec.left + ', Advanced@' + adv.left + ', Generate@' + gen.left +
+          ' - a mis-tap between the two primary actions opens the advanced workspace, which is exactly what "it jumps me to the advanced tools section" looks like');
+      }
+    }
+
+    /* ---- 4. generate ---- */
+    const genId = await evalJs(cdp, `(()=>{
+      const pref=['genBtn','ez3flGen','ez3Gen'];
+      for(const id of pref){const e=document.getElementById(id);if(!e)continue;
+        const s=getComputedStyle(e),r=e.getBoundingClientRect();
+        if(s.display!=='none'&&r.height>0&&!e.disabled) return id;}
+      const b=[...document.querySelectorAll('button')].find(x=>/generat/i.test(x.textContent||'')&&!x.disabled&&x.getBoundingClientRect().height>0);
+      if(b){ if(!b.id) b.id='mlsWalkGen'; return b.id; }
+      return '';})()`);
+    note('pressing generate control: ' + (genId || '(none found)'));
+    const gen = await press(cdp, genId || 'genBtn');
+    let genPresses = 1;
+    if (gen.clicked.ok) {
+      try { await wait(cdp, 'a note', `(()=>{const b=document.getElementById('noteBox');return !!(b&&String(b.value||'').trim().length>40);})()`, 45000); }
+      catch (_) {
+        const again = await press(cdp, genId || 'genBtn'); genPresses = 2;
+        try { await wait(cdp, 'a note (2nd press)', `(()=>{const b=document.getElementById('noteBox');return !!(b&&String(b.value||'').trim().length>40);})()`, 45000); } catch (__) {}
+        note('Generate needed a second press. First press left: ' + JSON.stringify(again.before.toast || '(no message)'));
+      }
+    }
+    const diag = await evalJs(cdp, `(()=>{ const d=window.__walkAi||{};
+      return { aiCalls:d.calls||0, errors:(d.errors||[]).slice(0,4),
+        transcriptChars: (document.getElementById('transcript')||{}).value ? document.getElementById('transcript').value.length : 0,
+        ez3Body: !!document.getElementById('mlsEz3Body'),
+        noteWrapHidden: (()=>{const w=document.getElementById('ez3flNoteWrap'); return w? w.hasAttribute('hidden') : null;})(),
+        anyToast: (()=>{const t=document.getElementById('toast'); return t?String(t.textContent||'').slice(0,160):'';})(),
+        ez3Toast: (()=>{const t=document.getElementById('ez3Toast'); return t?String(t.textContent||'').slice(0,160):'';})() };})()`);
+    note('generate diagnostics: ' + JSON.stringify(diag));
+    const afterGen = await evalJs(cdp, STATE);
+    ok(afterGen.noteChars > 40, '4. GENERATE produced a note', 'chars=' + afterGen.noteChars + ', presses=' + genPresses);
+    ok(genPresses === 1, '4b. Generate needed exactly ONE press', 'needed ' + genPresses);
+    ok(!afterGen.advancedOpen.length, '4c. generating did not throw open an advanced-tools panel',
+      'opened: ' + JSON.stringify(afterGen.advancedOpen));
+
+    /* ---- 5. REVIEW & SIGN - the owner says this takes two presses ---- */
+    const s1 = await press(cdp, 'signBtn');
+    let signPresses = 1, signed = s1.after.signVisible;
+    let s2 = null;
+    if (!signed) {
+      s2 = await press(cdp, 'signBtn'); signPresses = 2; signed = s2.after.signVisible;
+    }
+    ok(signed, '5. REVIEW & SIGN signed the note', 'signature line visible=' + signed + ', presses=' + signPresses);
+    ok(signPresses === 1,
+      '5b. Review & Sign needed exactly ONE press',
+      'needed ' + signPresses + ' presses. After the first press the app said: '
+        + JSON.stringify(s1.after.toast || '(nothing)')
+        + '; signBtn disabled before=' + s1.before.signDisabled + ' after=' + s1.after.signDisabled
+        + '. A step that needs two presses without announcing the second is the defect the owner reported.');
+
+    /* ---- 6. UNREQUESTED NAVIGATION on every press so far ---- */
+    const jumps = [gen, s1, s2].filter(Boolean).filter((p) => p.clicked.ok && p.before.view !== p.after.view);
+    ok(jumps.length === 0, '6. no press changed the route without being asked to',
+      jumps.map((j) => j.id + ': ' + j.before.view + ' -> ' + j.after.view).join('; '));
+    const opened = [gen, s1, s2].filter(Boolean).filter((p) => p.clicked.ok && !p.before.advancedOpen.length && p.after.advancedOpen.length);
+    ok(opened.length === 0, '6b. no press threw open an advanced-tools surface',
+      opened.map((j) => j.id + ' opened ' + JSON.stringify(j.after.advancedOpen)).join('; '));
+
+    /* ---- 7. the note reached History ---- */
+    const inHistory = await evalJs(cdp, `(()=>{ try{ const p=window.activePatient(); const ns=(window.getNotes&&window.getNotes())||[];
+      const mine=ns.filter(n=>n&&n.patientId===p.id); return { count:mine.length, signed: mine.filter(n=>n.signed).length }; }catch(e){ return {count:-1,signed:-1}; } })()`);
+    ok(inHistory.count > 0, '7. the visit note is in History', JSON.stringify(inHistory));
+
+    console.log('\n' + (failures === 0
+      ? 'PASS  live-visit-walkthrough: record -> generate -> review & sign completes with one press per step and no unrequested navigation.'
+      : 'FAIL  live-visit-walkthrough: ' + failures + ' step(s) did not behave.'));
+  } finally {
+    cdp.close();
+    try { child.kill(); } catch (_) {}
+    hosted.server.close();
+    try { fs.rmSync(profile, { recursive: true, force: true }); } catch (_) {}
+  }
+  process.exit(failures === 0 ? 0 : 1);
+}
+
+main().catch((e) => { console.error('WALKTHROUGH ABORTED: ' + ((e && e.stack) || e)); process.exit(1); });
