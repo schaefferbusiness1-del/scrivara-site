@@ -1291,3 +1291,77 @@ embedding an image in six PDF builders is a materially larger change than anythi
 else in this batch and deserves its own build, not a tail-end one.
 
 — integration lane
+
+---
+
+## Update — b830. The audit backlog is now empty.
+
+### The white-label promise failed in the one artifact that leaves the practice
+
+The Settings logo field says, in its own hint:
+
+> "Your logo appears on the printed/PDF letterhead, and the 'Prepared with MLS'
+> line is removed for a clean, white-label note."
+
+Browser Print honoured both halves. **Not one jsPDF builder did** — none drew the
+logo, and every one printed "Generated with MLS" regardless of Premium. So a Premium
+doctor uploaded their mark, saw it on Print, and then handed a patient or a lawyer a
+PDF with no logo and a vendor footer. The promise failed in exactly the artifact that
+leaves the building.
+
+The logo now lives on the **shared** `MLS_OPNOTE_LETTERHEAD` beside `clinicName` and
+`addressLines`, so the remaining PDF builders can each draw it from one place rather
+than six reads of localStorage. Premium-gated the same way
+`feat_mls_dictate_letter.js` and `renderLogoSetting()` already gate it.
+
+### Two properties I cared about more than the happy path
+
+**An unreadable logo must not cost the doctor their operative note.** jsPDF's
+`addImage` throws on a malformed data URL, on an unsupported format, and on some
+truncated base64. Every failure ends "no logo, letterhead unchanged" — the y-cursor
+only advances after the draw has actually succeeded, so a throw cannot leave the
+letterhead printing into a gap. Asserted by making `addImage` throw and requiring the
+letterhead still render. `getImageProperties` throwing, or being absent from an older
+jsPDF, is handled too.
+
+**White-labelling must not delete a safety warning.** The old footer was one sentence
+doing two jobs: *"Generated with MLS"* is branding, and *"review and complete any
+[bracketed] items before signing"* warns about incomplete content on a clinical
+document. Dropping the whole line for white-label would have quietly removed the
+warning. The branding goes; the warning stays in **both** states, and a mutation that
+drops it is caught.
+
+Only a `data:image/png` or `data:image/jpeg` URL is drawable, so seven non-drawable
+shapes are refused before they reach `addImage` — including SVG (which `addImage`
+cannot render), a remote URL, and a bare base64 blob. The logo is fitted to a
+120×36pt band preserving aspect ratio rather than squashed. The logo is read ONCE per
+export, because the footer runs per page and must not disagree with the header it is
+footing.
+
+9 mutations, all caught. All 465 site suites pass.
+
+### One weak assertion of my own, found and replaced
+
+Section 2 of the new suite originally contained an `||` whose first operand was
+nonsense and whose second did all the work — a tautology dressed as an assertion. It
+would have passed against a footer that never branched. Replaced with what it meant
+to say, plus a second assertion that the logo is read once per export rather than per
+page.
+
+### Scope, stated honestly
+
+This wires the SHARED accessor and the op-note PDF, which is the primary export. The
+five other jsPDF builders (`feat_fullhistory_pdf.js`, `mls-procedure-report.js`,
+`feat_after_visit_summary.js`, `downloadStudyPdf`, `legalTextToPdf`) can now each draw
+`lh.logo` in two lines, but they are **not** done here — I am not going to claim six
+export paths when I have evidence for one. That is the next increment, and it is a
+small one now that the accessor and the failure semantics exist.
+
+### The backlog from the four audits is empty
+
+Eleven findings: nine shipped (b825, b827, b828, b829, b830, plus backend `a605330`),
+one **struck as wrong on verification** (`googleBusinessUrl` is read end-to-end), one
+narrowed to the five remaining PDF builders above. Eight blanks stand recorded as
+UNSAFE to auto-fill, and the three pull-surface defects stand handed off in `013`.
+
+— integration lane

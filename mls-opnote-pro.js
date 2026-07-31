@@ -83,13 +83,39 @@
     }, '') || '';
   }
   if (!window.MLS_OPNOTE_LETTERHEAD) {
-    var lhOverride = { clinicName: null, addressLines: null };
+    var lhOverride = { clinicName: null, addressLines: null, logo: null };
     var letterhead = {};
     try {
       Object.defineProperty(letterhead, 'clinicName', {
         enumerable: true, configurable: true,
         get: function () { return lhOverride.clinicName != null ? lhOverride.clinicName : lhSetting('getPracticeName'); },
         set: function (v) { lhOverride.clinicName = v; }
+      });
+      /* b830: the Settings logo field promises, in its own hint, "Your logo appears
+         on the printed/PDF letterhead, and the 'Prepared with MLS' line is removed
+         for a clean, white-label note." Browser Print honoured both. NOT ONE jsPDF
+         builder drew the logo or dropped the footer, so a Premium doctor saw their
+         logo on Print and then handed a patient or a lawyer a PDF with no logo and
+         an MLS footer — the white-label promise failed in exactly the artifact that
+         leaves the practice.
+         Exposed on the SHARED letterhead so the six PDF builders can each draw it
+         from one place rather than six reads of localStorage.
+         Premium-gated the same way feat_mls_dictate_letter.js already gates it, and
+         the same way renderLogoSetting() gates the Settings preview. */
+      Object.defineProperty(letterhead, 'logo', {
+        enumerable: true, configurable: true,
+        get: function () {
+          if (lhOverride.logo != null) return lhOverride.logo;
+          return safe(function () {
+            var prem = (typeof window.effectivePremium === 'function') ? window.effectivePremium() : false;
+            if (!prem || typeof window.getClinicLogo !== 'function') return '';
+            var d = String(window.getClinicLogo() || '').trim();
+            /* only a data: image URL is drawable by jsPDF's addImage; anything else
+               (a remote URL, a stray string) must not be handed to it */
+            return /^data:image\/(png|jpe?g);base64,/i.test(d) ? d : '';
+          }, '') || '';
+        },
+        set: function (v) { lhOverride.logo = v; }
       });
       Object.defineProperty(letterhead, 'addressLines', {
         enumerable: true, configurable: true,
@@ -598,6 +624,10 @@
     var y = margin;
 
     var lh = window.MLS_OPNOTE_LETTERHEAD || {};
+    /* read ONCE per export: the footer runs per page and must not disagree with the
+       header it is footing */
+    var _lhLogo = '';
+    try { _lhLogo = String(lh.logo || '').trim(); } catch (e) { _lhLogo = ''; }
     var docName = meta.provider || 'Clinician';
     var spec = meta.spec || '';
     var printed = new Date().toLocaleString();
@@ -608,7 +638,15 @@
         doc.setPage(i);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(150);
         doc.text('Page ' + i + ' of ' + pc, pageW - margin, pageH - 24, { align: 'right' });
-        doc.text('Generated with MLS — review and complete any [bracketed] items before signing.', margin, pageH - 24);
+        /* b830: the white-label half of the logo promise. "Prepared with MLS" is
+           BRANDING and is dropped once the practice has its own letterhead logo.
+           The rest of the sentence is a SAFETY warning about unresolved [bracketed]
+           items on a clinical document, and is NOT branding — it stays either way.
+           Splitting them is the whole point: white-labelling a document must not
+           quietly delete a warning about incomplete content. */
+        doc.text(_lhLogo
+          ? 'Review and complete any [bracketed] items before signing.'
+          : 'Generated with MLS — review and complete any [bracketed] items before signing.', margin, pageH - 24);
       }
       doc.setTextColor(0);
     }
@@ -622,6 +660,28 @@
     }
 
     // ---- Letterhead ----
+    /* b830: draw the practice's own logo above the letterhead text. Every failure
+       mode here ends the same way — no logo, letterhead unchanged — because an
+       unreadable image must never cost the doctor their operative note. jsPDF's
+       addImage throws on a malformed data URL, on an unsupported format, and on
+       some truncated base64, so the whole thing is wrapped and the y-cursor is only
+       advanced once the draw has actually succeeded. */
+    if (_lhLogo) {
+      try {
+        var _fmt = /^data:image\/png/i.test(_lhLogo) ? 'PNG' : 'JPEG';
+        var _lw = 120, _lhh = 36;                 /* a letterhead band, not a hero image */
+        var _props = null;
+        try { _props = doc.getImageProperties ? doc.getImageProperties(_lhLogo) : null; } catch (e0) { _props = null; }
+        if (_props && _props.width && _props.height) {
+          /* preserve aspect ratio inside the band rather than squashing the mark */
+          var _scale = Math.min(_lw / _props.width, _lhh / _props.height);
+          _lw = Math.max(1, _props.width * _scale);
+          _lhh = Math.max(1, _props.height * _scale);
+        }
+        doc.addImage(_lhLogo, _fmt, margin, y, _lw, _lhh);
+        y += _lhh + 8;
+      } catch (eLogo) { /* unreadable logo: letterhead prints exactly as before */ }
+    }
     if (lh.clinicName) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(21, 95, 179);
       doc.text(pdfSafe(lh.clinicName), margin, y); y += 18;
