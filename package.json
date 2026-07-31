@@ -1,6 +1,7 @@
 {
   "name": "mls-scribe-site-regression",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "check": "node tests/static-site.test.js",
     "test:write-routing": "node tests/athena-write-contract.test.js",

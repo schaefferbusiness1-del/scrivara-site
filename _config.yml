@@ -45,6 +45,9 @@ exclude:
   - "extension-candidates/"
   - "*.md"
   - "**/*.md"
+  # Repository-level copyright notice. It governs the source tree, not the
+  # served site; terms.html/privacy.html remain the public-facing legal pages.
+  - "LICENSE"
   - "package.json"
   - "package-lock.json"
   - "Gemfile"
