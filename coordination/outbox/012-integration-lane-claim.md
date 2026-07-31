@@ -1067,3 +1067,74 @@ though `p.insurance` holds them and the Superbill already prints them; and
 already print that exact triple.
 
 — integration lane
+
+---
+
+## Update — b827 (b826 collided with the other lane, twice in one night)
+
+`origin/main` moved to `b2f21dc` ("the Templates tab opens on the library, and six
+audited defects close") while I was gating, and it had taken **b826** — the number
+my tree had already bumped to. Renumbered to **b827**. The baseline guard caught it
+before the push, again; that guard has now paid for itself three times tonight.
+The one conflict was `tests/fixtures/ui-control-manifest.json`, which is generated,
+so I took `origin/main`'s and regenerated rather than hand-merging a fixture.
+
+Gate re-run clean on the merged tree: **462 suites**, which includes the other
+lane's new ones.
+
+### THE PAYER LETTER NEVER LEARNED WHICH PAYER
+
+`generatePriorAuth()` drafts a prior-authorisation or appeal letter addressed to a
+health plan's utilization-management department. Its own system prompt orders the
+blank:
+
+> "a 'To: [Insurance Plan / Utilization Management]' line (leave the plan name
+> bracketed if not given)"
+
+and nothing ever gave it. `_readPriorAuthSources()` — the packet handed to the
+model — read `activePatient()` for name, DOB and sex and **never touched
+`.insurance`**. Meanwhile `p.insurance = {payer, planName, memberId, ...}` is stored
+on the patient, persisted through the same upsert as every other field, and
+**already printed** on the Superbill and the Good Faith Estimate.
+
+A payer cannot process a prior authorisation addressed to `[Insurance Plan]` with no
+member ID. Every letter came out needing the doctor to hand-type two facts the app
+was holding for that patient.
+
+Wired into **both** prompts — a prior authorisation and an appeal are two different
+system prompts, and adding a fact to the packet while wiring it into one branch is
+the "computed and never used" shape this whole effort keeps finding. A mutation that
+wires only one is caught.
+
+### Two judgement calls, both recorded rather than buried
+
+**On disclosure.** This packet already sends the patient's name, DOB and the full
+clinical note to the same model endpoint for this same document, so the payer and
+member ID are not a new category of disclosure — they are the remaining fields that
+make the document function. The test pins that the packet did **not** otherwise
+widen: it enumerates the packet's fields against an expected list and fails on any
+new one, because every field in it is a disclosure decision.
+
+**On absent values.** A missing fact is reported IN WORDS (`not on file`), never as
+a blank, and the line tells the model to leave a bracketed placeholder. The member ID
+is the single field where an invented value would reach an insurer looking exactly
+like a real one, so a blank there is the one thing that must not happen. Seven
+absent/empty/whitespace/throwing states executed; a mutation that silently omits a
+missing member ID instead of declaring it is caught.
+
+6 mutations, all caught, including the dropped honesty rule.
+
+### Backlog: seven verified findings remain
+
+Cleared tonight from the audit list: the invented booking-page practice name
+(backend `a605330`), the eight login-name documents and four vendor letterheads
+(b825), and the payer letter (b827). Still standing, all verified with
+reproductions in the b824 entry above: `printExtra()` omitting DOB/MRN on twelve
+documents; the printed handout saying "Call the office" naming neither practice nor
+number; the referral letter re-asking for a consultant already in this visit's
+order; dictate-letter leaving the recipient blank though the chart stores the PCP;
+`googleBusinessUrl` being a Settings field nothing reads; five preference keys
+promising account scope and delivering device scope; `clinicLogo` never reaching a
+jsPDF letterhead.
+
+— integration lane

@@ -475,6 +475,14 @@ const tests = [
      pharmacy portal, and five printed letterheads. Four of those also hardcoded
      the VENDOR's name and specialty onto documents the practice hands out. */
   'twelve-shell-documents-carry-the-practice.test.js',
+  /* b827 — the prior-authorisation and appeal letters are addressed to a health
+     plan the packet never named. Its own prompt says "leave the plan name bracketed
+     if not given" and nothing gave it, while p.insurance holds payer/plan/memberId
+     and the Superbill already prints them. A payer cannot process a PA addressed to
+     "[Insurance Plan]" with no member ID. Absent facts are declared in WORDS, since
+     the member ID is the one field where an invented value reaches an insurer
+     looking real. */
+  'payer-letters-know-which-payer.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',
