@@ -54,8 +54,16 @@
   function activeP() { try { return isFn(window.activePatient) ? window.activePatient() : null; } catch (e) { return null; } }
   function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
 
+  /* b820: this read the login/account name and NOTHING else — the provider
+     identity the doctor configures in Settings never reached the full-history
+     PDF at all, so the export was headed by whoever was signed in. Route it
+     through the shared resolver (Settings provider name first; account name only
+     when no verified roster exists), falling back to the provider setting alone
+     where that resolver is absent rather than back to the account name. */
   function providerName() {
-    return safe(function () { return isFn(window.getName) ? (window.getName() || "") : ""; }) || "";
+    var n = safe(function () { return isFn(window.clinicalProviderName) ? (window.clinicalProviderName() || "") : ""; }) || "";
+    if (trim(n)) return trim(n);
+    return trim(safe(function () { return isFn(window.getProviderName) ? (window.getProviderName() || "") : ""; }) || "");
   }
   function providerSpec() {
     return safe(function () { return isFn(window.getSpec) ? (window.getSpec() || "") : ""; }) || "";

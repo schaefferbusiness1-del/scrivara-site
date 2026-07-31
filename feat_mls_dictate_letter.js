@@ -48,10 +48,24 @@
     return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  /* b820: the LOGIN/account name is not the clinical provider identity. This
+     read fed the letterhead, the signature block (which appends the practice's
+     credentials and NPI to whatever name it is given) and the fax cover sheet's
+     FROM line, so on a staff or shared login every letter went out signed with
+     one person's name over another's credentials.
+     clinicalProviderName() is the shared resolver: Settings provider name
+     first, account name only when no verified roster exists. Where that
+     resolver is absent (an older cached shell) this stops at the provider
+     setting rather than reaching for the account name — a missing name leaves a
+     blank the physician completes, which is the honest failure. */
+  function clinicalProvider() {
+    var n = S(g('clinicalProviderName')).trim();
+    return n || S(g('getProviderName')).trim();
+  }
   function readLetterhead() {
     return {
       practiceName: g('getPracticeName'),
-      providerName: g('getName'),
+      providerName: clinicalProvider(),
       providerCred: g('getProviderCred'),
       spec: g('getSpec'),
       npi: g('getNpi'),
@@ -142,7 +156,12 @@
     var re = reLine(state);
     return {
       to: S(state.recipientEmail).trim(),
-      subject: S(state.subject).trim() || (re ? ('Letter re: ' + re) : 'Letter from ' + (S(state.letterhead && state.letterhead.practiceName) || 'your provider')),
+      /* the letterhead now resolves from Settings, so name the sender when
+         either fact is configured instead of jumping straight to "your
+         provider" — the recipient's inbox should say who wrote to them */
+      subject: S(state.subject).trim() || (re ? ('Letter re: ' + re) : 'Letter from ' + (
+        S(state.letterhead && state.letterhead.practiceName).trim() ||
+        S(state.letterhead && state.letterhead.providerName).trim() || 'your provider')),
       body: buildLetterText(state)
     };
   }

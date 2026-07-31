@@ -175,7 +175,13 @@
        owner and could leak values between clinicians. Practice and facility are
        separate facts; a group name must never be silently used as an ASC/site. */
     var ctx = {
-      provider: pick('getProviderName', 'getName'),
+      /* b820: 'getName' is the LOGIN/account name and was the last rung here,
+         so an account with no providerName configured had its signup display
+         name filled into the op note's provider blank — and providerDisplay()
+         below then appends the practice credential to it. The shared resolver
+         owns the one legitimate account-name fallback (gated on there being no
+         verified roster); this ladder must not carry a second, ungated one. */
+      provider: pick('clinicalProviderName', 'getProviderName'),
       cred: pick('getProviderCred'),
       spec: pick('getSpec'),
       npi: pick('getNpi', 'getNPI'),

@@ -421,6 +421,22 @@ const tests = [
      doctor had already saved. Pins the two resolvers as behaviourally identical
      by executing both, so the fork cannot drift again. */
   'marketing-console-is-not-a-stale-fork.test.js',
+  /* b820 — the outcome study asked the doctor to retype names and dates of
+     service the app already holds (its own paste placeholder reads "Name, DOS /
+     Jane Doe, 03/04/2026"), while the same module already called getPatients()
+     to write results BACK. Executes the click handler rather than grepping it:
+     a grep for the omission counter cannot tell a live report from a disabled
+     one, because the counter also sits inside the branch it guards. */
+  'outcome-study-builds-from-the-charts.test.js',
+  /* b820 — five feature modules resolved the clinical provider themselves and
+     each ended at the LOGIN/account name, so on a staff or shared login a
+     letterhead, a fax FROM line, a medical-legal "Prepared by", a full-history
+     PDF, an op-note provider blank and an EHR write context all attributed one
+     person's work to another over the practice's real credentials. Executes the
+     ARTIFACT PRODUCERS (not the helpers feeding them — an earlier form ran the
+     helper and survived a revert of the field that calls it) across all four
+     identity states, composed with the real resolver lifted from the shell. */
+  'clinical-artifacts-never-sign-with-the-account-name.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

@@ -143,7 +143,7 @@ function testPrepIdentityAndAddressScope() {
 }
 
 async function main() {
-  const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260730opnp180');
+  const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260731opnp181');
   const integrityAt = connector.indexOf('feat_mls_opnote_integrity.js?v=20260729phlinear');
   const fillAt = connector.indexOf('feat_mls_opnote_fill.js?v=20260730onf2140');
   assert(prepAt >= 0 && prepAt < fillAt && fillAt < integrityAt, 'staging op-note assets are not loaded prep → canonical fill → final integrity owner');

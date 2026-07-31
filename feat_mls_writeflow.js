@@ -185,9 +185,17 @@
     if (!out && a && a.doctor_user_id) {
       try { if (typeof window._docName === 'function') out = S(window._docName(a.doctor_user_id)).trim(); } catch (e) {}
     }
+    /* When the calendar row does not name a provider, "assume it is me" is only
+       true for the clinician. b820: the final rung here was the LOGIN/account
+       name, and this provider becomes the rendering provider on an EHR write
+       context — the one place a wrong name does not just misprint but targets
+       another clinician's encounter. The shared resolver owns the single
+       account-name fallback, gated on there being no verified roster; where it
+       is absent this stops at the provider setting and returns '', which the
+       caller above already treats as "cannot resolve" and refuses. */
     if (!out) {
-      try { if (typeof window.getProviderName === 'function') out = S(window.getProviderName()).trim(); } catch (e2) {}
-      try { if (!out && typeof window.getName === 'function') out = S(window.getName()).trim(); } catch (e3) {}
+      try { if (typeof window.clinicalProviderName === 'function') out = S(window.clinicalProviderName()).trim(); } catch (e2) {}
+      try { if (!out && typeof window.getProviderName === 'function') out = S(window.getProviderName()).trim(); } catch (e3) {}
     }
     return out;
   }

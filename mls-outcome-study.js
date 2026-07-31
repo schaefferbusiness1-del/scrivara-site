@@ -1074,6 +1074,16 @@
         'Both <b>one row per patient</b> (columns like “VAS baseline”, “SF 10d”…) and ' +
         '<b>one row per visit</b> (patient, visit date, pain, function) are auto-detected; ' +
         'you can fine-tune the column mapping after upload.</div>' +
+      /* THE ZERO-TYPING PATH, FIRST. Every other option here asks the doctor to
+         supply patient names and dates of service that this app already holds:
+         the paste box's own placeholder is "Name, DOS / Jane Doe, 03/04/2026".
+         window.getPatients() has the names and every visit date. Feeds the exact
+         same ingestRows() pipeline the file and paste paths use, so nothing
+         downstream is re-implemented. */
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+        '<button id="ocFromCharts" style="' + btnCss('#2E6A4B') + '">📁 Use my charts</button>' +
+        '<span style="opacity:.7;font-size:11.5px">Builds the cohort from the patients already in MLS — no retyping.</span>' +
+      '</div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
         '<input type="file" id="ocFile" accept=".xlsx,.xls,.csv,text/csv" style="font-size:13px">' +
         '<span style="opacity:.6;font-size:12px">or</span>' +
@@ -1103,6 +1113,27 @@
       ingestRows(parsePastedRows(this.value), box, 'pasted rows');
     });
     body.querySelector('#ocDemo').addEventListener('click', function () { loadDemo(box); });
+    var fromCharts = body.querySelector('#ocFromCharts');
+    if (fromCharts) fromCharts.addEventListener('click', function () {
+      var built = rowsFromCharts();
+      var msg = box.querySelector('#ocParseMsg');
+      if (!built.used) {
+        /* Say WHICH of the two reasons it is. "Nothing found" over a full chart
+           list would send the doctor hunting in the wrong place. */
+        if (msg) msg.innerHTML = redMsg(built.total
+          ? ('Found ' + built.total + ' patient' + (built.total === 1 ? '' : 's') + ' in MLS but none has a visit date yet, ' +
+             'so there is no date of service to study. Pull or record a visit first, or use the paste box.')
+          : 'No patients in MLS yet — pull a day or add a patient first, or use the paste box.');
+        return;
+      }
+      ingestRows(built.rows, box, 'your charts');
+      /* NO SILENT CAPS: if some patients were left out, say so and say why,
+         rather than letting a smaller cohort read as the whole one. */
+      if (built.noDate && msg) {
+        msg.innerHTML += ' <span style="opacity:.75">' + built.noDate + ' of ' + built.total +
+          ' patient' + (built.total === 1 ? '' : 's') + ' had no visit date and were left out.</span>';
+      }
+    });
     var aibtn = body.querySelector('#ocAiBtn'), aifile = body.querySelector('#ocAiFile');
     if (aibtn && aifile) {
       aibtn.addEventListener('click', function () { aifile.click(); });
@@ -1113,6 +1144,44 @@
   function parsePastedRows(text) {
     return String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); })
       .map(function (l) { return l.split(/\t|,/).map(function (c) { return c.trim(); }); });
+  }
+
+  /* ---- the cohort the app already holds ----------------------------------
+     A visit's date, by the app's OWN field ladder: ScribeFlow.html reads
+     `n.date || n.note_date || n.created_at` wherever it needs a note date, so
+     that is the ladder used here rather than a new guess about which field wins.
+     Most RECENT visit per patient, because a study row is one date of service and
+     the latest is the one the doctor just worked on. */
+  function chartVisitDate(p) {
+    var best = '';
+    try {
+      var vs = (p && p.visits) || [];
+      if (!vs.length) return '';
+      for (var i = 0; i < vs.length; i++) {
+        var v = vs[i] || {};
+        var d = String(v.date || v.note_date || v.created_at || '').slice(0, 10);
+        if (d && d > best) best = d;
+      }
+    } catch (e) { best = ''; }
+    return best;
+  }
+  /* Rows in exactly the shape the paste box produces, so ingestRows() handles
+     them through the same path as a pasted or uploaded cohort. */
+  function rowsFromCharts() {
+    var out = { rows: [['Name', 'DOS']], used: 0, noDate: 0, total: 0 };
+    var pts = [];
+    try { pts = (typeof window.getPatients === 'function' ? window.getPatients() : []) || []; } catch (e) { pts = []; }
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i] || {};
+      var nm = String(p.name || '').trim();
+      if (!nm) continue;
+      out.total++;
+      var dos = chartVisitDate(p);
+      if (!dos) { out.noDate++; continue; }
+      out.rows.push([nm, dos]);
+      out.used++;
+    }
+    return out;
   }
 
   function readFile(f, box) {

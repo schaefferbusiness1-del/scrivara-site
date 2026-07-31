@@ -74,9 +74,19 @@ try{
   function notesOf(p) { try { return (p && isFn(window.patientNotes)) ? (window.patientNotes(p.id) || []) : []; } catch (e) { return []; } }
   function docsOf(p) { return (p && Array.isArray(p.docs)) ? p.docs.slice() : []; }
   function providerName() {
-    /* b385: prefer the Settings provider name; the legacy docname is the fallback. */
-    try { if (isFn(window.getProviderName)) { var pn = window.getProviderName(); if (pn) return pn; } } catch (e) {}
-    try { return isFn(window.getName) ? (window.getName() || '') : ''; } catch (e) { return ''; }
+    /* b385 preferred the Settings provider name but kept an UNGATED fall back to
+       the login/account name, and b820 removes it: providerIdentityBlock() below
+       appends the practice's credentials and NPI to whatever name it gets, and
+       stamps the result as "Prepared by" on a medical-legal narrative. On a
+       staff or shared login that attributed a physician's report to whoever
+       happened to be signed in.
+       clinicalProviderName() is the shared resolver and already contains the
+       one legitimate account-name fallback, gated on there being no verified
+       roster. Where it is absent this stops at the provider setting; the block
+       below then prints "[Physician name]" for the physician to complete, which
+       is what a draft awaiting signature should say. */
+    try { if (isFn(window.clinicalProviderName)) { var cn = window.clinicalProviderName(); if (cn) return cn; } } catch (e) {}
+    try { return isFn(window.getProviderName) ? (window.getProviderName() || '') : ''; } catch (e1) { return ''; }
   }
   function providerIdentityBlock() {
     /* b385: pre-fill the physician identity from Settings instead of leaving

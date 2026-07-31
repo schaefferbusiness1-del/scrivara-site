@@ -501,3 +501,101 @@ ships, which is the same mistake as trusting a source read: the code was right
 about what it says and wrong about whether it runs.
 
 — integration lane
+
+---
+
+## Update — b820 (integration lane)
+
+Rebased onto `origin/main` at `15d8a00` before doing anything. The
+`tree-contains-everything-published` guard caught that I was one commit behind
+and it was right to: the other lane had taken **b819**, so this work is **b820**.
+Conflict was a single line (the `feat_mls_dictate_letter.js` loader) and was
+resolved by keeping origin/main's line byte-for-byte and applying only my token
+change, asserted in the resolution script rather than eyeballed.
+
+### 1. The outcome study stops asking for patients it already has
+
+`mls-outcome-study.js` gained a `📁 Use my charts` button as the FIRST option in
+Step 1. Every path into the study asked the doctor to supply names and dates of
+service — its own paste placeholder reads `"Name, DOS / Jane Doe, 03/04/2026"` —
+while `window.getPatients()` holds both, and this same module already called
+`getPatients()` to write results BACK.
+
+- the visit date uses the app's own ladder, `date || note_date || created_at`,
+  most-recent-visit-wins, rather than a fresh guess
+- rows are produced in the exact shape the paste box emits and handed to the
+  SAME `ingestRows()`, so the study, mapper and aggregation are untouched
+- patients with no date of service are left out **and counted**, and the count
+  reaches the doctor. "No patients" and "patients but no dates" read differently.
+
+Loader token `20260730lib3` → `20260731lib4`.
+
+### 2. Five clinical artifacts stopped signing with the LOGIN name
+
+This is the same separation rule as b810 (`clinicalProviderName`), four surfaces
+further out. Each of these resolved provider identity itself and each ended at
+`getName()` — the account/login name:
+
+| module | what it stamped |
+| --- | --- |
+| `feat_mls_dictate_letter.js` | letterhead, signature block (which **appends the practice's credentials and NPI** to whatever name it is handed), fax cover sheet `FROM:` |
+| `feat_fullhistory_pdf.js` | the full-history PDF header — read `getName()` and **nothing else**, so the configured provider identity never reached this export at all |
+| `feat_mls_opnote_prep.js` | the op note's provider blank, credential appended |
+| `feat_mls_writeflow.js` | the **rendering provider on an EHR write context** — the one place a wrong name does not merely misprint |
+| `feat_mls_legalpack.js` | `"Prepared by:"` on a medical-legal narrative — **but see below** |
+
+On a solo login the account name and the clinician are the same person, so
+nothing looked wrong. On a staff or shared login they are different people and
+every one of these went out attributing one person's work to another, over the
+practice's real credentials.
+
+All five now defer to `clinicalProviderName`, and where that resolver is absent
+they stop at `getProviderName` rather than reaching for the account name — a
+blank the physician completes, never somebody else's name over these credentials.
+The wizard's own resting state (solo account, `docname` set, `providerName`
+unset) is preserved: that account still gets its name, because the shared
+resolver's account-name fallback is gated on there being no verified roster.
+
+**`feat_mls_legalpack.js` is dormant, and is pinned as dormant.** `sw.js`
+precaches it and nothing executes it — no script tag, no dynamic loader. The
+repo's reachability walker calls it reachable only because it counts the
+service-worker precache list. Its fix is therefore inert, and the test asserts
+that fact so that wiring it up later fails loudly and asks for a loader token.
+
+### Two instrument errors found by mutation, both recorded
+
+1. The omission-report assertion in the study test grepped for `built.noDate` —
+   which **also appears inside the branch it guards**, so `if (false) {...}`
+   matched just as well. It survived the mutation. Replaced by executing the
+   click handler and reading what lands in `#ocParseMsg`.
+2. The identity test first executed the new `clinicalProvider()` *helper*, and
+   **survived** a revert of `readLetterhead()`'s field to `g('getName')` — the
+   helper sat there correct and uncalled. Now every module entry executes the
+   ARTIFACT PRODUCER (`readLetterhead().providerName`,
+   `providerIdentityBlock()`, the file's own `pick(...)` argument list lifted
+   from source, `apptProvider({})`).
+
+A third: a `±400`-char window around `indexOf(filename)` claimed to prove the
+build-tied loaders bust their cache and survived stripping `__MLS_AV` off the
+real loader, because it measured a different occurrence. Now line-anchored.
+
+27 mutations applied across both suites; every one caught with the intended
+assertion, and the clean tree re-verified after each.
+
+### Notes for the other lane
+
+- `bump-build.js` rewrote **67 `b819` provenance comments** to `b820`, including
+  yours (`/* b819: deferred past first paint ... */` → `b820`). Mine got the same
+  treatment from your bump (`b818` → `b819`). This is the known boundary-anchored
+  global-replace behaviour, still an owner decision, still recorded rather than
+  worked around.
+- `send-portal-invite.html` is an **orphan page**: nothing in the app links to
+  it. Its chart picker already fills every field, so the friction I went looking
+  for is not there; the live invite path is `feat_mls_send_portal_invite.js`,
+  which already reads the active patient and their email on file. No change made.
+- The page also carries a dangling comment, `// deep link ?id=<chart id> → load
+  that chart automatically`, with **no implementation** — no `URLSearchParams`,
+  no `location.search` anywhere in the file. Left alone: the page is unreachable,
+  so implementing it would connect nothing.
+
+— integration lane
