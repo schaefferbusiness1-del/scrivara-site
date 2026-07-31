@@ -267,6 +267,16 @@
     'body.mls-headsdown[data-mls-dock="top"] #mlsDock{transform:translateX(-50%) translateY(-6px)}',
     'body.mls-headsdown[data-mls-dock="left"] #mlsDock{transform:translateY(-50%) translateX(-6px)}',
     'body.mls-headsdown[data-mls-dock="right"] #mlsDock{transform:translateY(-50%) translateX(6px)}',
+    /* CLEARANCE, because "it hovers" must not mean "it hides things".
+       Measured live with the rail on the left: exactly one control, the
+       previous-day arrow #mlsDsPrev, sat underneath it — visible to the eye as
+       a rail over a button, and elementFromPoint at the intersection returned
+       the dock, so the click was going to the dock and not to the arrow. The
+       bottom dock has carried clearance rules since it shipped; the three new
+       sides need their own. The page moves, the dock still floats. */
+    'body[data-mls-dock="left"] #appWrap{padding-left:128px}',
+    'body[data-mls-dock="right"] #appWrap{padding-right:128px}',
+    'body[data-mls-dock="top"] #appWrap{padding-top:100px}',
     /* a vertical rail on a phone would eat the whole screen edge; below the
        phone breakpoint every choice falls back to the proven bottom dock. */
     '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
@@ -274,7 +284,10 @@
     'body[data-mls-dock] #mlsDock .mls-dock-pill{height:calc(100% - 12px);width:auto}',
     'body[data-mls-dock] #mlsDock button{width:auto}',
     'body[data-mls-dock] #mlsDockAskWrap{margin-left:4px;padding-left:8px;border-top:0;border-left:1px solid rgba(0,0,0,.07)}',
-    'body[data-mls-dock] #mlsDockAsk{width:172px}}',
+    'body[data-mls-dock] #mlsDockAsk{width:172px}',
+    /* and the clearance goes with it — a phone gets the bottom rail, so an
+       inherited side padding would just narrow an already narrow screen. */
+    'body[data-mls-dock] #appWrap{padding-left:0;padding-right:0;padding-top:14px}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#D6E7DC;',
     'box-shadow:0 1px 2px rgba(20,35,28,.14),inset 0 0 0 1px rgba(32,64,52,.10);',
     /* The pill already glided rather than teleported — the brief's premise was
