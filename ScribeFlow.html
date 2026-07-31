@@ -15719,6 +15719,29 @@ function getTemplates(){
        lost its template ("Trigger point injections" shown for a TFESI). */
     let healed=false;
     a.forEach((t,i)=>{ if(t && (t.id==null || t.id==='' || t.id==='undefined')){ t.id='tplfix'+Date.now().toString(36)+'_'+i; healed=true; } });
+    /* b834: KEYWORDS MUST BE AN ARRAY, and ten call sites already assumed it.
+       `(t.keywords||[]).join(' ')` appears in feat_mls_opnote_integrity.js:392,
+       four places in mls-connect.js and both shells — and a STRING has no
+       .join, so one string-keyword template throws a TypeError that takes down
+       whatever called it. Measured: the sample-day demo seeds its three
+       templates with string keywords, so openOpPrep() threw and "Prep op notes"
+       would not open AT ALL in the demo a prospective customer is invited to
+       try. feat_mls_uxpack1.js's starter pack writes the same shape, so any
+       doctor who clicked "add starter templates" armed the same crash.
+       Normalising HERE fixes all ten consumers at once and heals the data that
+       is already stored, which a fix at the writers alone cannot do. */
+    a.forEach(t=>{
+      if(!t) return;
+      if(Array.isArray(t.keywords)){
+        const flat=t.keywords.map(k=>String(k==null?'':k).trim()).filter(Boolean);
+        if(flat.length!==t.keywords.length||flat.some((k,i)=>k!==t.keywords[i])){ t.keywords=flat; healed=true; }
+        return;
+      }
+      if(t.keywords==null||t.keywords===''){ if(t.keywords!==undefined&&!Array.isArray(t.keywords)){ t.keywords=[]; healed=true; } return; }
+      t.keywords=String(t.keywords).split(/[,;\n]+|\s{2,}/).map(s=>s.trim()).filter(Boolean);
+      if(t.keywords.length===1) t.keywords=t.keywords[0].split(/\s+/).filter(Boolean);
+      healed=true;
+    });
     if(healed){ try{ localStorage.setItem(uns('templates'),JSON.stringify(a)); }catch(e2){} }
     return a;
   }

@@ -28,8 +28,30 @@
   function cloneTemplates(list){try{return JSON.parse(JSON.stringify(Array.isArray(list)?list:[]));}catch(e){return [];}}
   function currentLocal(){try{return isFn(window.getTemplates)?(window.getTemplates()||[]):[];}catch(e){return [];}}
   function status(message,error){state.status=S(message);if(arguments.length>1)state.statusError=!!error;var el=byId('tlStatus');if(el){el.textContent=state.status;el.style.color=state.statusError?'#a12c2c':'#35536f';}}
-  function progressStart(opts){var api=window.__mlsLoadingCalm;try{return api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){return null;}}
-  function progressStage(handle,stage,current,total,operation){try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
+  /* b834 — A VISIBLE LOADING SIGN, BECAUSE THE PLUMBING HAD NONE.
+     __mlsLoadingCalm.start() returns a live handle and renders ZERO DOM on this
+     surface — measured directly: starting a handle and pushing a stage added 0
+     new nodes to the document. So a doctor importing 100 forms (1.2s for text,
+     minutes for scanned PDFs that go through OCR) watched a motionless screen
+     with no way to tell whether anything was happening. The stage events
+     already carry stage, current, total and a human operation line; nothing was
+     drawing them. They are now mirrored into #tplMultiStatus, which lives in
+     the upload card — and since b834 that card is the first thing on the tab,
+     so the progress appears where the doctor just clicked. */
+  function paintProgress(stage,current,total,operation){
+    try{
+      var box=byId('tplMultiStatus');if(!box)return;
+      var t=Number(total)||0,c=Math.max(0,Math.min(Number(current)||0,t)),pct=t?Math.round(c/t*100):0;
+      box.innerHTML='<div class="tl-prog"><span class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:100)+'%"></i></span>'+
+        '<span class="tl-prog-txt">'+esc(stage||'Working…')+(t?' — '+c+' of '+t:'')+'</span></div>'+
+        (operation&&operation!==stage?'<div class="tl-prog-op">'+esc(operation)+'</div>':'');
+      box.style.color='';
+    }catch(e){}
+  }
+  function progressStart(opts){
+    try{paintProgress((opts&&opts.label)||'Working…',0,(opts&&opts.total)||0,'');}catch(e){}
+    var api=window.__mlsLoadingCalm;try{return api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){return null;}}
+  function progressStage(handle,stage,current,total,operation){paintProgress(stage,current,total,operation);try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
   function progressLink(handle,response){try{var id=response&&response.headers&&response.headers.get('X-Job-ID'),api=window.__mlsLoadingCalm;if(handle&&id&&api&&isFn(api.linkServer))api.linkServer(handle.id,id);}catch(e){}}
 
   async function request(path,options){
@@ -53,7 +75,25 @@
       '#tlConflict{display:none;margin-top:8px;border:1px solid #e6bf68;background:#fff7e4;border-radius:9px;padding:8px 10px;font-size:11.5px;color:#684f17}#tlConflict button{margin:7px 5px 0 0}',
       '#tlVersions{margin-top:8px;max-height:150px;overflow:auto;font-size:11px}.tl-ver{display:flex;gap:8px;align-items:center;border-top:1px solid #dce8e1;padding:5px 0}.tl-ver span{flex:1}',
       '.tl-import-review{border:1px solid #c9dccf;background:#f7fbf8;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:12px;color:#29493d}.tl-counts{display:flex;gap:6px;flex-wrap:wrap;margin:7px 0}.tl-count{border-radius:999px;background:#e8f1ec;padding:3px 8px;font-weight:750}.tl-count.bad{background:#fdeaea;color:#982c2c}',
-      '@media(max-width:760px){#tlPanel .tl-grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){#tlPanel .tl-grid{grid-template-columns:1fr}#tlPanel .tl-actions button{flex:1 1 45%}}'
+      '@media(max-width:760px){#tlPanel .tl-grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){#tlPanel .tl-grid{grid-template-columns:1fr}#tlPanel .tl-actions button{flex:1 1 45%}}',
+      /* b834 — the progress strip paintProgress() draws. Unscoped on purpose:
+         it must read the same in the embedded Templates tab and in the classic
+         floating dialog, and neither surface owns #tplMultiStatus. */
+      '#tplMultiStatus .tl-prog{display:flex;align-items:center;gap:9px;margin-top:5px}',
+      '#tplMultiStatus .tl-prog-bar{flex:1;height:8px;border-radius:999px;background:#e4eee8;overflow:hidden;min-width:90px}',
+      '#tplMultiStatus .tl-prog-bar>i{display:block;height:100%;border-radius:999px;background:#2E6A4B;transition:width .18s ease}',
+      '#tplMultiStatus .tl-prog-bar[data-tl-indeterminate] > i{width:40%;animation:tlProgSlide 1.1s ease-in-out infinite}',
+      '#tplMultiStatus .tl-prog-txt{font-weight:700;white-space:nowrap}',
+      '#tplMultiStatus .tl-prog-op{margin-top:3px;color:#5b6d65}',
+      '@keyframes tlProgSlide{0%{margin-left:0}50%{margin-left:60%}100%{margin-left:0}}',
+      '@media(prefers-reduced-motion:reduce){#tplMultiStatus .tl-prog-bar>i{animation:none!important;transition:none!important}}',
+      /* b834 — 100 templates made the review list 6,463px tall and left
+         "Add selected to my templates" at y=7045 in a 720px viewport: the
+         doctor had to scroll seven screens to finish the import he started.
+         The list gets its own scroller and the commit control rides the
+         bottom of it, so the action is reachable at any batch size. */
+      '#tplMultiResult:not(:empty){max-height:min(52vh,440px);overflow-y:auto;overscroll-behavior:contain;position:relative;padding-right:4px}',
+      '#tplMultiResult>button{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}'
     ].join('\n');(document.head||document.documentElement).appendChild(st);
   }
 

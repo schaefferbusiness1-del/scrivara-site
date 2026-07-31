@@ -184,8 +184,16 @@ try{
   function tGet() { return safe(function () { return (isFn(window.getTemplates) ? window.getTemplates() : []) || []; }, []); }
   function tSet(list) { return safe(function () { if (isFn(window.setTemplates)) { window.setTemplates(list); return true; } return false; }, false); }
   function toast(m, k) { safe(function () { if (isFn(window.toast)) window.toast(m, k || ""); }); }
+  /* b834: keywords are an ARRAY everywhere they are read — ten call sites do
+     `(t.keywords||[]).join(' ')`, which throws on a string. The STARTERS table
+     below writes them as a space-separated string, so every starter pack armed
+     a TypeError in the op-note matcher. Normalised at the writer as well as in
+     getTemplates(), so newly written rows are right the first time. */
   function mkTemplate(name, keywords, text) {
-    return { id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, keywords: keywords, text: text, created: Date.now() };
+    var kw = Array.isArray(keywords)
+      ? keywords.map(function (k) { return String(k == null ? '' : k).trim(); }).filter(Boolean)
+      : String(keywords == null ? '' : keywords).split(/[,;\n]+/).join(' ').split(/\s+/).filter(Boolean);
+    return { id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, keywords: kw, text: text, created: Date.now() };
   }
   var STARTERS = [
     ["Starter — Injection op note (generic)", "injection joint intraarticular steroid",
