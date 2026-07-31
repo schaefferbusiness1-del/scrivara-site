@@ -6528,6 +6528,26 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
      featIME and noteModel above: a value the doctor typed once, that the app then
      forgot per device. */
   'docspec',
+  /* b829: four choices the doctor makes once and the app then forgot per device.
+     Same class as noteModel and opFieldDefaultsUserV1 above, which are already here.
+       opNoteTemplateMode is the strongest of the four: a deliberate three-way
+     statement ("Follow it closely / Adapt to the case / Use it as a guide") about
+     how their own validated templates must be honoured. Stored per device only, so
+     on a second machine drafts silently reverted to 'adapt' - reword freely - with
+     the rail showing "Adapt · Recommended" and no indication anything had changed.
+       ez3PortalAskOff, qolGroupProc and navfeat_orders are plain workflow
+     preferences with nothing device-specific about them: the doctor turns the
+     portal-invite prompt off because it interrupts them, enables the Orders tab, or
+     groups patients by procedure, and each reappears or vanishes on the next
+     machine. setNavLayout even prints "Saved ✓".
+     DELIBERATELY NOT ADDED: pullVisitBodies, whose own label promises "every pull
+     on this account, wherever you start it" and which therefore belongs here - it
+     is a schedule-PULL setting and the owner has fenced that path off. Recorded in
+     coordination/outbox/012 rather than taken.
+     ALSO NOT ADDED: navLayout and qolPtLayout. Left-rail vs top-bar and split vs
+     stacked are plausibly screen-size-appropriate per device, so syncing them could
+     make a laptop worse. That is a judgement call, not an oversight. */
+  'opNoteTemplateMode','ez3PortalAskOff','qolGroupProc','navfeat_orders',
   'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
   'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1'];
 function syncPrefsToServer(){
@@ -23786,6 +23806,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b828';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b829';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

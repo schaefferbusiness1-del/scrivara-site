@@ -1206,3 +1206,88 @@ being a Settings field nothing reads; five preference keys promising account sco
 and delivering device scope; `clinicLogo` never reaching a jsPDF letterhead.
 
 — integration lane
+
+---
+
+## Update — b829, and a CORRECTION to one of my own findings
+
+### CORRECTION: `googleBusinessUrl` is not dead plumbing
+
+I listed it in the b824 backlog as "a Settings field with no getter that nothing
+reads". **That was wrong end-to-end**, and I found it by verifying before fixing.
+There is no client-side getter, but the field is fully functional:
+`src/server.js:1799` reads `prefs.googleBusinessUrl` into
+`practiceProfile.google_business_url`, it is in `PREF_SYNC_KEYS` so it reaches the
+server, and `booking.html:186` renders it as the patient-facing "Find us on Google"
+button. Nothing to fix. Struck from the backlog.
+
+Worth naming the lesson: an audit that traces only one repo will call a working
+round-trip dead. Four of the five findings I acted on tonight held up; this one did
+not, and the cost of checking was two greps.
+
+### SHIPPED at b829
+
+**The referral letter made the doctor retype a consultant they had just entered.**
+`generateReferral()` defaulted to the literal word `'Specialist'`, while this visit's
+referral ORDER carries it — `ORDER_DEFS.referral`'s first field is
+`{key:'specialty', label:'Specialty / provider', req:1}`. The prior-auth panel in the
+same file already makes this exact move. Most recent referral order wins, chart PCP
+second, original literal last. `mlsPrompt`'s second argument is a prefilled EDITABLE
+value, so this is a suggestion and not a decision.
+
+**The dictated letter left the recipient blank** for "Primary care doctor" and
+"Referring doctor", so the salutation degraded to "Dear Colleague:" and the fax cover
+sheet printed `TO:    __________` — while `p.history.pcp`, the field literally
+labelled "PCP / referring provider", holds it.
+
+Prefilled **per recipient type**: an attorney is not the PCP, and prefilling a
+non-medical recipient's box with a doctor's name is a wrong-recipient hazard on a
+letter that gets faxed out of the practice. It never overwrites what the doctor
+typed, marks its own value so it can tell it apart later, and stops touching the box
+once the doctor edits it.
+
+**Four preferences now travel**: `opNoteTemplateMode` (the doctor's explicit
+three-way statement about how their validated templates must be honoured — it
+silently reverted to "adapt / reword freely" on a second machine),
+`ez3PortalAskOff`, `qolGroupProc`, `navfeat_orders`.
+
+Deliberately NOT added, both pinned so they read as decisions:
+- **`pullVisitBodies`** — its own label promises "every pull on this account,
+  wherever you start it", so it belongs there, but it is a schedule-PULL setting and
+  that path is fenced off. Recorded, not taken.
+- **`navLayout` / `qolPtLayout`** — left-rail vs top-bar and split vs stacked are
+  plausibly screen-size-appropriate per device; syncing them could make a laptop
+  worse.
+
+### A pre-existing drift, found and NAMED rather than papered over
+
+The two shells' `PREF_SYNC_KEYS` disagree, and have for a while. Six keys that
+production syncs do **not** sync on staging: `facilityAddress`, `facilityName`,
+`googleBusinessUrl`, `noteModel`, `opFieldDefaultsUserV1`, `studio_widgets` — and
+staging carries `legalEnabled`, which production does not. Not caused by this change.
+The new suite asserts the drift is **exactly those six**, so the day somebody widens
+it, a test says so.
+
+### Two instrument errors, both mine, both found by mutation
+
+1. The suite executed the extracted `_refDefault` resolver and **survived** a
+   mutation that reverted the `mlsPrompt` call to `'Specialist'` — the resolver sat
+   there correct and uncalled. Same shape that survived in the b820 identity suite.
+   Now the consumer is asserted, not just the helper.
+2. A mutation I wrote to reverse the referral loop **hit a different, identical loop
+   elsewhere in the file**, because `replace(..., 1)` takes the first match — so a
+   "SURVIVED" result was a harness artifact, not a coverage gap. I had added a
+   uniqueness guard for exactly this earlier tonight and did not here. Re-run scoped
+   to `_refDefault`; caught immediately.
+
+9 mutations, all caught after those two repairs. All 464 site suites pass.
+
+### Backlog: one finding left
+
+`clinicLogo` never reaches any jsPDF letterhead, though the field's own hint promises
+"printed/PDF letterhead" and the white-label half fails too
+(`mls-opnote-pro.js` prints "Generated with MLS" regardless of Premium). Left because
+embedding an image in six PDF builders is a materially larger change than anything
+else in this batch and deserves its own build, not a tail-end one.
+
+— integration lane
