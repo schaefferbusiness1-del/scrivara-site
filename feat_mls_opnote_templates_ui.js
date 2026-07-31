@@ -1219,14 +1219,20 @@
        panel injected later still auto-places safely. */
     R + '#tplWorkspace > #tpfPanel, ' + R + '#tplWorkspace > #tlPanel{ grid-column:1 / -1; }',
 
-    /* ...and maintenance still may not dominate. Both panels keep every control
-       and become internally scrollable instead of pushing the page: a control
-       inside a scrollable box is reachable by mouse, keyboard and screen
-       reader, which is the difference between capping a height and hiding a
-       feature. Generous caps - these only bite when the panel is genuinely
-       enormous. */
-    R + '#tplWorkspace > #tlPanel{ max-height:340px; overflow:auto; }',
-    R + '#mls-stdline-section{ max-height:360px; overflow:auto; }'
+    /* b841 — THE NESTED SCROLLERS ARE GONE, AND THAT IS THE FIX, NOT A REGRESSION.
+       These two caps existed to stop maintenance panels dominating the tab, and
+       the reasoning ("a control inside a scrollable box is still reachable") was
+       sound in the abstract and wrong in practice. Measured live on the owner's
+       screen: #mls-stdline-section clipped its own primary control - the
+       "💾 Save standard line" button rendered at y=244 while the section's box
+       ended at y=192, so the doctor saw a green button sliced in half and had to
+       discover a second, inner scrollbar to finish the action. A cap that hides
+       the button the panel exists for is not a cap, it is a trap.
+       Nothing is lost by removing them: the ordering above already puts every
+       maintenance surface BELOW the library and the intake (order 50 and 60), so
+       they cannot dominate anything, and #oprPanelTpls owns the one scroller
+       this screen needs. The #tlPanel cap is additionally dead now that the
+       panels are evicted out of #tplWorkspace. */
   ];
 
 
