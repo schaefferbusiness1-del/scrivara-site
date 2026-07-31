@@ -446,6 +446,15 @@ const tests = [
      the rungs in the test and survived a precedence reversal), and asserts the
      clinical Date of Procedure line in the note BODY is unmoved. */
   'op-note-pdf-is-filed-under-the-right-date.test.js',
+  /* b823 — the after-visit summary told the patient to "contact the clinic" while
+     its source packet carried NO practice name and NO phone, so the handout named
+     neither, though both sat in Settings and the shared PDF letterhead already read
+     them. Executes buildSource(): the two facts are labelled non-clinical and kept
+     OUTSIDE the verbatim clinical block, a missing one says NOT CONFIGURED in words
+     rather than leaving a blank a model would helpfully fill, and the prompt is
+     evaluated (not sliced) so an instruction spanning two array elements is read as
+     the model receives it. */
+  'after-visit-summary-names-the-practice-to-call.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

@@ -133,11 +133,32 @@
     lines.push('MEDICATIONS ON FILE: ' + listOrAbsent(pt && pt.meds));
     lines.push('ALLERGIES: ' + listOrAbsent(pt && pt.allergies));
     lines.push('');
+    /* b823: the closing instruction told the model to tell the patient to
+       "contact the clinic", and the packet carried NO practice name and NO phone
+       number — so a patient walked out with a handout telling them to ring an
+       office it could not name, while getPracticeName() and getClinicPhone() sat
+       in Settings and the shared letterhead already read both.
+       Labelled NON-CLINICAL and kept out of the clinical block below on purpose:
+       these two facts are for the closing courtesy line only, and the model must
+       never treat them as findings. When either is unset it says so in words, so
+       the model has nothing to pattern-match a plausible number out of. */
+    lines.push('PRACTICE NAME (non-clinical, for the closing line only): ' + (avsPracticeName() || 'NOT CONFIGURED'));
+    lines.push('PRACTICE PHONE (non-clinical, for the closing line only): ' + (avsClinicPhone() || 'NOT CONFIGURED'));
+    lines.push('');
     lines.push('FULL VISIT NOTE (verbatim, the ONLY clinical source for findings, plan and instructions):');
     lines.push('"""');
     lines.push(S(note && note.text).trim() || '(no visit note text available)');
     lines.push('"""');
     return lines.join('\n');
+  }
+
+  /* Settings is the one source for both. Read live on every call, so a doctor who
+     fills these in mid-session gets them in the next summary without a reload. */
+  function avsPracticeName() {
+    try { return (typeof window.getPracticeName === 'function') ? S(window.getPracticeName()).trim() : ''; } catch (e) { return ''; }
+  }
+  function avsClinicPhone() {
+    try { return (typeof window.getClinicPhone === 'function') ? S(window.getClinicPhone()).trim() : ''; } catch (e) { return ''; }
   }
 
   function firstName(name) {
@@ -166,7 +187,13 @@
     'Your instructions and next steps',
     'Follow-up',
     '',
-    'End with one short reassuring line telling the patient to contact the clinic with any questions.',
+    'End with one short reassuring line telling the patient to contact the practice with any questions.',
+    '- Use the PRACTICE NAME and PRACTICE PHONE from the fields above in that closing line when they',
+    '  are given, so the patient knows exactly who to call and on what number.',
+    '- If either says NOT CONFIGURED, simply refer to "the office" and give no number. NEVER invent,',
+    '  guess or reformat a phone number, and never name a practice that was not supplied.',
+    '- Those two fields are administrative. They are NOT clinical findings and must not appear anywhere',
+    '  else in the summary.',
     'Keep the whole summary concise (roughly 150-350 words).'
   ].join('\n');
 

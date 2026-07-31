@@ -789,3 +789,73 @@ it already returns `''`. The guard is defence-in-depth, not the deciding check, 
 no test can catch its removal. Stating that beats claiming a clean sweep.
 
 — integration lane
+
+---
+
+## Update — b823 (integration lane)
+
+### The patient was told to call an office the handout could not name
+
+`feat_after_visit_summary.js` ends every patient handout with, verbatim from its
+own system prompt:
+
+> "End with one short reassuring line telling the patient to contact the clinic
+> with any questions."
+
+And `buildSource()` — the file's own "EXACT, factual source packet handed to the
+model" — carried the patient's first name, visit date, chief complaint, problem
+list, medications, allergies and the full note. It carried **no practice name and
+no phone number**. The patient went home with a document telling them to ring an
+office it never named, on a number it never gave, while `getPracticeName()` and
+`getClinicPhone()` sat in Settings and this module's own PDF path already read the
+shared `MLS_OPNOTE_LETTERHEAD` built from both.
+
+### Two precautions, because this is an LLM prompt and not a template
+
+1. **Labelled NON-CLINICAL and placed OUTSIDE the verbatim clinical block.** This
+   module's whole premise is that the note is the only source of findings. An
+   administrative fact drifting into "What we found" is exactly the fabrication it
+   exists to prevent. The test asserts both facts appear before the
+   `FULL VISIT NOTE` marker and carry the non-clinical label.
+2. **A missing fact says `NOT CONFIGURED` in words.** A blank field is something a
+   model will helpfully fill in; a stated absence is not. The prompt additionally
+   forbids inventing, guessing **or reformatting** a number — reformatting matters
+   as much as inventing, because a model that "tidies" a number can change a digit.
+
+Seven states executed (absent getters, empty strings, whitespace, one-of-two set,
+throwing getters); none leaks `undefined` into the prompt and none throws, because
+this runs on a click and an exception is a dead Patient-summary button.
+
+### Instrument findings
+
+- The prompt assertion **read SYS_PROMPT's SOURCE** and reported "the prompt does
+  not forbid reformatting" about a prompt that forbids exactly that — one array
+  element later. `SYS_PROMPT` is an array `.join('\n')`-ed at runtime, so a single
+  instruction can span two elements. Now the array is EVALUATED and the assertions
+  run against the joined string the model actually receives, with a control on its
+  type and length.
+- An unguarded-getter mutation crashed the suite with a bare `TypeError` instead of
+  asserting. The loop now names it: "building the source packet THREW … a dead
+  Patient-summary button."
+
+9 mutations, all caught, including moving the two facts inside the clinical block
+and replacing `NOT CONFIGURED` with a blank.
+
+### Sweep result, for the record
+
+The generic-fallback class is now **exhausted in production**. Remaining hits are
+all legitimate last resorts or out of scope: `appointment.html`'s
+`|| 'your care team'` (the backend supplies `practice` via `practiceDisplayName`;
+this fires only when the server sends nothing), `mls-opnote-pro.js`'s
+`|| 'Clinician'` (fires only when no identity exists at all),
+`feat_mls_calendar_polish.js`'s `|| 'this provider'` (names nobody rather than the
+wrong person, and is pull-adjacent), and `patient-review.html`'s `|| 'this office'`
+(same reasoning). Every `||'Clinician'` hit in `ScribeFlow-staging.html` /
+`ScribeFlow_test.html` is on the **not-published** list in
+`tests/public-publication-boundary.test.js`.
+
+Every `mlsPrompt` / `window.prompt` call site outside the pull path was also
+checked: they ask for note CONTENT (assessment text, plan text, find/replace), not
+for facts the app already holds.
+
+— integration lane

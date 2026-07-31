@@ -8499,7 +8499,7 @@
    "domId": "mlsavsClose",
    "view": "dynamic",
    "file": "feat_after_visit_summary.js",
-   "line": 277,
+   "line": 304,
    "gated": false,
    "handler": null
   },
@@ -8513,7 +8513,7 @@
    "domId": "mlsavsGen",
    "view": "dynamic",
    "file": "feat_after_visit_summary.js",
-   "line": 284,
+   "line": 311,
    "gated": false,
    "handler": null
   },
@@ -8527,7 +8527,7 @@
    "domId": "mlsavsCopy",
    "view": "dynamic",
    "file": "feat_after_visit_summary.js",
-   "line": 285,
+   "line": 312,
    "gated": false,
    "handler": null
   },
@@ -8541,7 +8541,7 @@
    "domId": "mlsavsPdf",
    "view": "dynamic",
    "file": "feat_after_visit_summary.js",
-   "line": 286,
+   "line": 313,
    "gated": false,
    "handler": null
   },
@@ -8555,7 +8555,7 @@
    "domId": "mlsavsCopyEmail",
    "view": "dynamic",
    "file": "feat_after_visit_summary.js",
-   "line": 290,
+   "line": 317,
    "gated": true,
    "handler": null
   },
