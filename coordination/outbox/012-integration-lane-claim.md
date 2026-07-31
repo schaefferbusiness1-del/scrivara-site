@@ -726,3 +726,66 @@ four pull modules, and shipping an unused formatter is just confusion.
   crashes proves nothing. Re-run self-contained.
 
 — integration lane
+
+---
+
+## Update — b822 (integration lane)
+
+### Every op-note PDF was filed under today
+
+`mls-opnote-pro.js` named its file:
+
+```js
+'OpNote_' + slug(meta.patient) + '_' + dateForFile(meta.dop) + '.pdf'
+```
+
+`appMeta()` returns `{ patient, dob, mrn, provider, spec }` — **it never sets
+`dop`**. The only source of a procedure date in that file is the dictated header
+(`H.dop`), which `normalize()` reads and `appMeta()` does not. So `meta.dop` was
+permanently `undefined`, `dateForFile` fell through to `new Date()`, and a note
+written up two days after the case was filed as though the case happened today.
+
+And the answer was already being handed in and discarded — the same shape as the
+marketing listing audit's unused `ownerId`:
+
+```js
+feat_opnote_history_pdf.js:57   if (n && n.created) opts.date = new Date(n.created);
+mls-opnote-pro.js exportPdf     if (opts.patient) meta.patient = opts.patient;
+                                /* opts.date read nowhere */
+```
+
+The ladder, most authoritative first: the **dictated** Date of Procedure (the
+doctor's own statement of when the case happened) → the note record's date, which
+the caller already supplies → today, unchanged, when there is genuinely nothing.
+
+### The half that was deliberately NOT changed
+
+The note **body** is untouched. `Date of Procedure: [not dictated]` stays
+`[not dictated]`.
+
+A note's creation date is not a procedure date, and printing one as the other on a
+signed operative note is a fabrication — the same class as appending one
+clinician's credentials to another's name. A filename is a filing aid and may
+carry the best available date; a clinical attestation may not. The test asserts
+the body did **not** move, and asserts `appMeta()` still supplies no `dop`, because
+that is the part that would be harmful if it changed.
+
+Shared library loader token `20260731lib4` → `20260731lib5` (3 assets).
+
+### Two instrument findings
+
+1. The test's `filename()` helper **re-composed the three rungs itself**, and
+   survived a mutation that reversed the product's precedence — while the comment
+   above it claimed it could not. Now the date expression is LIFTED from source and
+   evaluated, with a control asserting the lifted text mentions all three rungs.
+2. A second precedence mutation (`meta.dop` promoted above the dictated date) also
+   survived, because no case set both at once. Added one that does.
+
+### One mutation is uncatchable, and that is recorded rather than hidden
+
+Removing the explicit `v === NOT_DICTATED` guard from `dictatedDop()` changes no
+behaviour: `new Date('[not dictated]')` is Invalid Date and the `isNaN` check below
+it already returns `''`. The guard is defence-in-depth, not the deciding check, so
+no test can catch its removal. Stating that beats claiming a clean sweep.
+
+— integration lane

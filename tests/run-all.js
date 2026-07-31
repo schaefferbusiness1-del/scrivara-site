@@ -437,6 +437,15 @@ const tests = [
      helper and survived a revert of the field that calls it) across all four
      identity states, composed with the real resolver lifted from the shell. */
   'clinical-artifacts-never-sign-with-the-account-name.test.js',
+  /* b822 — every op-note PDF was named with TODAY's date. dateForFile read
+     meta.dop, appMeta() never sets a dop, so it always fell through to new Date()
+     and a note written up days after the case was filed as if the case happened
+     today — while feat_opnote_history_pdf.js was already computing the note's own
+     date and handing it to an exportPdf that read only opts.patient. Evaluates the
+     shipped filename EXPRESSION lifted from source (an earlier form re-composed
+     the rungs in the test and survived a precedence reversal), and asserts the
+     clinical Date of Procedure line in the note BODY is unmoved. */
+  'op-note-pdf-is-filed-under-the-right-date.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

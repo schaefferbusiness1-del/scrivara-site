@@ -540,6 +540,19 @@
   function slug(s) {
     return String(s || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) || 'patient';
   }
+  /* Read the procedure date the DOCTOR dictated back out of the normalized note.
+     normalize() emits exactly one 'Date of Procedure: <x>' line, and NOT_DICTATED
+     when there was none - which must not be parsed as a date. */
+  function dictatedDop(pro) {
+    try {
+      var m = /^Date of Procedure:[ \t]*(.+)$/m.exec(String(pro || ''));
+      if (!m) return '';
+      var v = String(m[1]).trim();
+      if (!v || v === NOT_DICTATED) return '';
+      var d = new Date(v);
+      return isNaN(d.getTime()) ? '' : v;
+    } catch (e) { return ''; }
+  }
   function dateForFile(dop) {
     var d = dop ? new Date(dop) : new Date();
     if (isNaN(d.getTime())) d = new Date();
@@ -658,7 +671,25 @@
     }
 
     footer();
-    var fname = 'OpNote_' + slug(meta.patient) + '_' + dateForFile(meta.dop) + '.pdf';
+    /* b822: this read meta.dop, which appMeta() NEVER SETS - the only source of a
+       procedure date is the dictated header - so dateForFile() always fell through
+       to `new Date()` and every op-note PDF was filed under TODAY. A note written
+       up two days after the case was named as if the case happened today, which is
+       exactly wrong for the one job a filename has.
+       Worse, the caller already had the answer and was throwing it away:
+       feat_opnote_history_pdf.js builds `opts.date = new Date(n.created)` from the
+       note record and passes it in, and exportPdf read only opts.patient.
+       The ladder, most authoritative first:
+         1. the DICTATED "Date of Procedure" out of the normalized note - the
+            doctor's own statement of when the case happened;
+         2. the note record's own date, supplied by the caller;
+         3. today, unchanged, when there is nothing else.
+       The note BODY is deliberately untouched. "Date of Procedure: [not dictated]"
+       stays [not dictated]: a note's creation date is not a procedure date, and
+       printing one as the other on a signed operative note is a fabrication. A
+       filename is a filing aid and may carry the best available date; a clinical
+       attestation may not. */
+    var fname = 'OpNote_' + slug(meta.patient) + '_' + dateForFile(dictatedDop(pro) || meta.dop || (opts && opts.date)) + '.pdf';
     try { doc.save(fname); } catch (e) { safe(function () { toast('Could not save the PDF.', 'err'); }); return false; }
     safe(function () { toast('Saved ' + fname, 'ok'); });
     return true;

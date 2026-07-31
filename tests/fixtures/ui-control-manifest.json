@@ -12517,7 +12517,7 @@
    "domId": "mlsAthenaActionCancel",
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 576,
+   "line": 584,
    "gated": false,
    "handler": null
   },
@@ -12531,12 +12531,12 @@
    "domId": "mlsAthenaActionGo",
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 576,
+   "line": 584,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1104-cancel-watcher",
+   "id": "feat-mls-writeflow-js-1112-cancel-watcher",
    "label": "Cancel watcher",
    "accessibleName": "Cancel watcher",
    "title": "",
@@ -12545,12 +12545,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1104,
+   "line": 1112,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1105-clear",
+   "id": "feat-mls-writeflow-js-1113-clear",
    "label": "Clear",
    "accessibleName": "Clear",
    "title": "",
@@ -12559,12 +12559,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1105,
+   "line": 1113,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1488-accept-this-proposed-order",
+   "id": "feat-mls-writeflow-js-1496-accept-this-proposed-order",
    "label": "Accept this proposed order",
    "accessibleName": "Accept this proposed order",
    "title": "",
@@ -12573,12 +12573,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1488,
+   "line": 1496,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1577-copy-payload",
+   "id": "feat-mls-writeflow-js-1585-copy-payload",
    "label": "Copy payload",
    "accessibleName": "Copy payload",
    "title": "",
@@ -12587,12 +12587,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1577,
+   "line": 1585,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1628-copy-note",
+   "id": "feat-mls-writeflow-js-1636-copy-note",
    "label": "Copy note",
    "accessibleName": "Copy note",
    "title": "",
@@ -12601,7 +12601,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1628,
+   "line": 1636,
    "gated": false,
    "handler": null
   },
@@ -12615,7 +12615,7 @@
    "domId": "mlsAthenaUnifiedClose",
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1662,
+   "line": 1670,
    "gated": false,
    "handler": null
   },
@@ -12629,7 +12629,7 @@
    "domId": "mlsAthenaUnifiedCancel",
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1669,
+   "line": 1677,
    "gated": false,
    "handler": null
   },
@@ -12643,7 +12643,7 @@
    "domId": "mlsAthenaUnifiedGo",
    "view": "dynamic",
    "file": "feat_mls_writeflow.js",
-   "line": 1669,
+   "line": 1677,
    "gated": true,
    "handler": null
   },
