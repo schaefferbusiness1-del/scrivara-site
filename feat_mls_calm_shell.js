@@ -240,7 +240,12 @@
        Each position re-states its own resting transform, because the entrance
        @keyframes above bakes translateX(-50%) into its end state and a left/right
        dock must not inherit it. */
-    'body[data-mls-dock="top"] #mlsDock{top:18px;bottom:auto;animation-name:mlsDockInT}',
+    /* BELOW THE HEADER, not under it. #appHeader is position:sticky, 74px tall
+       and z-index:6000; a dock resting at top:18px with z-index:920 had 56 of
+       its 85 pixels hidden behind it — measured, and visible as a row of half
+       destination labels. The dock clears the header instead of fighting it for
+       a stacking order the header should win. */
+    'body[data-mls-dock="top"] #mlsDock{top:88px;bottom:auto;animation-name:mlsDockInT}',
     '@keyframes mlsDockInT{from{opacity:0;transform:translateX(-50%) translateY(-18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
 
     'body[data-mls-dock="left"] #mlsDock,body[data-mls-dock="right"] #mlsDock{',
@@ -285,7 +290,7 @@
        zero, not an absence. */
     'body[data-mls-dock="left"] #appWrap{padding-left:128px !important}',
     'body[data-mls-dock="right"] #appWrap{padding-right:128px !important}',
-    'body[data-mls-dock="top"] #appWrap{padding-top:100px !important}',
+    'body[data-mls-dock="top"] #appWrap{padding-top:124px !important}',
     /* a vertical rail on a phone would eat the whole screen edge; below the
        phone breakpoint every choice falls back to the proven bottom dock. */
     '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
