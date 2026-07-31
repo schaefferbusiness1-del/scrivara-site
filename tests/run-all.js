@@ -610,7 +610,19 @@ const tests = [
   'triage-clinical-rows-never-vanish.test.js',
   'voice-reaches-one-copilot-brain.test.js',
   'capture-and-turns-are-honest.test.js',
-  'use-every-time-round-trip.test.js'
+  'use-every-time-round-trip.test.js',
+  /* 2026-07-31 — the phone app (app.html) and its two store binaries. These
+     three carry more weight than a normal suite because a regression here is a
+     store release, not a git push: Apple and Google review the bytes, and a
+     doctor cannot roll back an app the way they can reload a page.
+       boundaries        — CSP, no PHI at rest, text-only DOM, relay-only pulls
+       control-budget    — the owner asked for "very little buttons"; this is
+                           the number, so growing it is a deliberate edit
+       www-build         — the reviewed page and the shipped bundle are one
+                           file, proved by running the build and diffing it */
+  'phone-app-boundaries.test.js',
+  'phone-app-control-budget.test.js',
+  'phone-app-www-build-is-faithful.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

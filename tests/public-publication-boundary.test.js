@@ -12,6 +12,9 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
 const PUBLIC_HTML = [
   '404.html',
+  /* The phone app (2026-07-31). The same file is bundled into the iOS and
+     Android binaries by mobile/ — see mobile/store/RUNBOOK.md. */
+  'app.html',
   'appointment.html',
   'assist.html',
   'assist-privacy.html',
@@ -32,6 +35,12 @@ const PUBLIC_HTML = [
 ];
 
 const PUBLIC_ASSETS = [
+  /* app.html's complete published surface. It loads no script, no stylesheet
+     and no font, so this is its install manifest and the two store-size icons
+     that manifest names — nothing else. */
+  'app-icon-1024.png',
+  'app-icon-maskable-1024.png',
+  'app-manifest.json',
   'feat_mls_force_full_phone.js',
   'phone-manifest.json',
   'public-preview-policy.js',

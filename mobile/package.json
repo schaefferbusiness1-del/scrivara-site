@@ -1,0 +1,28 @@
+{
+  "name": "scrivara-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor wrapper that ships ../app.html as a native iOS and Android app.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-www.mjs",
+    "icons": "node ../mobile/scripts/make-icons.mjs",
+    "add:android": "npm run build && npx cap add android && npm run sync",
+    "add:ios": "npm run build && npx cap add ios && npm run sync",
+    "sync": "npm run build && npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "assets": "npx @capacitor/assets generate --iconBackgroundColor '#2E6A4B' --iconBackgroundColorDark '#2E6A4B' --splashBackgroundColor '#F7F5EF' --splashBackgroundColorDark '#141A16'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.0.0"
+  }
+}

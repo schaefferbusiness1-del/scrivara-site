@@ -121,6 +121,15 @@ include:
   - "phone-manifest.json"
   - "feat_mls_force_full_phone.js"
 
+  # The phone app (2026-07-31). app.html is self-contained — no external script,
+  # no stylesheet, no font — so this is its COMPLETE published surface: the page,
+  # its install manifest, and the two store-size icons that manifest names. The
+  # same app.html is what mobile/ bundles into the iOS and Android binaries.
+  - "app.html"
+  - "app-manifest.json"
+  - "app-icon-1024.png"
+  - "app-icon-maskable-1024.png"
+
   # Fail-closed, memory-only public synthetic preview boundary and its
   # canonical-workspace fixture runtime. Both are inert outside ?preview=1.
   - "public-preview-policy.js"
