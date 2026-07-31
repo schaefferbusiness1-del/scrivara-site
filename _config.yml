@@ -43,6 +43,14 @@ exclude:
   # working tree. It only stops GitHub Pages serving them to the public.
   - "coordination/"
   - "extension-candidates/"
+  # 2026-07-31 — the native app projects. mobile/ holds the Capacitor wrapper,
+  # the generated Android and Xcode projects, the icon/splash sources and the
+  # store paperwork. NONE of it is a website asset: the shipped app is
+  # app.html, which is on the include allowlist below and is what mobile/
+  # bundles. Without this line Jekyll copies ~130 files of Gradle config, Java,
+  # Swift, a gradle-wrapper.jar and every generated launcher icon onto
+  # mlsscribe.com, and the generated-tree audit flags all of it as unreviewed.
+  - "mobile/"
   - "*.md"
   - "**/*.md"
   - "package.json"
