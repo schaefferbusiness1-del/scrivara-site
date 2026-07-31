@@ -1588,6 +1588,21 @@
 
   function syncDock() {
     if (!dockEl) return;
+    /* b849: KEEP THE TOP DOCK CLEAR, EVENT-DRIVEN RATHER THAN TIMED. Two
+       deferred re-measures (500ms, 1600ms) were not enough - the patient banner
+       settles later than both, and the dock stayed parked behind it. syncDock
+       already runs on every external DOM change, which is exactly when the
+       surfaces above the dock can move, so the offset is recomputed here and
+       WRITTEN ONLY ON CHANGE, matching the no-op-write discipline the rest of
+       this function was built around. Runs only when the doctor has chosen the
+       top dock, so the default path pays nothing. */
+    if (dockSide() === 'top') {
+      var wantTop = topDockOffset();
+      if (wantTop > 18) {
+        var px = wantTop + 'px';
+        if (dockEl.style.top !== px) dockEl.style.top = px;
+      }
+    }
     var active = currentDest();
     var pill = qs('.mls-dock-pill', dockEl);
     var activeBtn = null;
