@@ -286,41 +286,99 @@ function ladder(opts) {
   }
 }
 
-/* ---- 7. THE FALLBACK CHAIN IS HONEST --------------------------------- */
-/* A practice that operates where it sees patients should not have to say so
- * twice, so facility falls back to the practice. But a NAMED separate site must
- * never inherit the clinic's ADDRESS — that would attach a real address to the
- * wrong building. */
+/* ---- 7. THE FACILITY GETTERS NEVER GUESS ----------------------------- */
+/* These shipped once WITH a fallback to the practice name and clinic address, on
+ * the reasoning that a practice operating where it sees patients should not have
+ * to say so twice. That was a regression, and a measured one — it is the same
+ * fabrication class §1 and the assistant guard exist to remove:
+ *
+ *   feat_mls_opnote_prep.js's attestBlock prints
+ *     'Facility: ' + (pf.facility || '[[facility_name]]')
+ *   so a surgeon who operates at a hospital and had not yet filled the new field
+ *   got their CLINIC asserted as the site of service on a signed operative note.
+ *
+ *   Worse, the readiness strip's facility check —
+ *     add('facility', 'Facility', !!(apptFac || pf.facility), 'warn')
+ *   — stopped firing, removing the one thing that would have told them.
+ *
+ * An honest blank the doctor fills beats a plausible guess they cannot see, so
+ * these return ONLY what was stored. Asserted by execution in all four states. */
 {
-  const getters = APP.slice(APP.indexOf('function getFacilityName('), APP.indexOf('function getFacilityName(') + 600);
-  assert(/function getFacilityName\(\)\{ return localStorage\.getItem\(uns\('facilityName'\)\)\|\|getPracticeName\(\); \}/.test(getters),
-    'getFacilityName must fall back to the practice name when no separate site is configured');
-  assert(/uns\('facilityName'\)\)\?''\:getClinicAddress\(\)/.test(getters),
-    'getFacilityAddress must return empty when a SEPARATE facility is named — inheriting the ' +
-    'clinic address there would print a real address for the wrong building');
-
-  /* and prove that second half by execution rather than by reading it */
-  const g = { localStorage: new Map(), uns: s => s };
-  const store = g.localStorage;
+  const shimStore = new Map();
   const shim = {
-    getItem: k => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v))
+    getItem: k => (shimStore.has(k) ? shimStore.get(k) : null),
+    setItem: (k, v) => shimStore.set(k, String(v))
   };
+  /* The practice getters are present in the context on purpose: if either facility
+     getter ever reaches for them again, these fixtures make it visible rather than
+     throwing an unrelated ReferenceError. */
   const gctx = { localStorage: shim, uns: s => s,
     getPracticeName: () => 'Chester County Spine Care', getClinicAddress: () => '1 Clinic Way, Malvern PA' };
   vm.createContext(gctx);
   vm.runInContext(functionBlock(APP, 'getFacilityName') + '\n' + functionBlock(APP, 'getFacilityAddress') +
     '\nthis.n = getFacilityName; this.a = getFacilityAddress;', gctx);
 
-  assert.strictEqual(gctx.n(), 'Chester County Spine Care', 'unset facility must resolve to the practice');
-  assert.strictEqual(gctx.a(), '1 Clinic Way, Malvern PA', 'unset facility must resolve to the clinic address');
-  shim.setItem('facilityName', 'Brandywine Surgery Center');
-  assert.strictEqual(gctx.n(), 'Brandywine Surgery Center', 'a configured facility must win');
+  assert.strictEqual(gctx.n(), '',
+    'getFacilityName invented a facility from the practice name. The op note then ASSERTS a site of ' +
+    'service the doctor never stated, and the readiness warning that would have caught it stops firing.');
   assert.strictEqual(gctx.a(), '',
-    'a NAMED separate facility inherited the clinic address — that prints a real address for the ' +
-    'wrong building');
+    'getFacilityAddress invented a facility address from the clinic address');
+  shim.setItem('facilityName', 'Brandywine Surgery Center');
+  assert.strictEqual(gctx.n(), 'Brandywine Surgery Center', 'a configured facility must be returned');
+  assert.strictEqual(gctx.a(), '', 'a named facility with no address configured must stay empty');
   shim.setItem('facilityAddress', '2 Surgery Dr, West Chester PA');
-  assert.strictEqual(gctx.a(), '2 Surgery Dr, West Chester PA', 'a configured facility address must win');
+  assert.strictEqual(gctx.a(), '2 Surgery Dr, West Chester PA', 'a configured facility address must be returned');
+
+  /* And the consequence that made this a regression, pinned where it lives: the
+     readiness strip must still be ABLE to warn when nothing is configured. */
+  const prep = fs.readFileSync(path.join(root, 'feat_mls_opnote_prep.js'), 'utf8');
+  assert(/add\('facility', 'Facility', !!\(apptFac \|\| pf\.facility\), 'warn'\)/.test(prep),
+    'the readiness strip no longer warns on a missing facility');
+  assert(/'Facility: ' \+ \(pf\.facility \|\| '\[\[facility_name\]\]'\)/.test(prep),
+    'the attest block no longer emits an honest blank when the facility is unknown');
+}
+
+/* ---- 7b. THE PROVIDER FALLBACK IS THE WIZARD'S RULE, NOT A STRICTER ONE */
+/* clinicalProviderName also shipped once too strict — refusing the account name
+ * outright. suPersistIdentity writes uns('docname') UNCONDITIONALLY and writes
+ * uns('providerName') only when the typed name does not contradict a verified
+ * roster, so "docname set, providerName empty" is a state the app deliberately
+ * produces. For those accounts the prior-auth letter went from printing the
+ * doctor's name to printing "[Provider name]", while the field's own label
+ * promises it "appears on signed notes".
+ *
+ * The rule is now the wizard's own: explicit setting first, then the account name
+ * unless a verified roster names other people and not this one. */
+{
+  function resolver(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    const ctx = { String, JSON, Object, console,
+      localStorage: { getItem: k => (store.has(k) ? store.get(k) : null) },
+      uns: s => s };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(
+      functionBlock(APP, 'suProviderIdentityKey') + '\n' +
+      functionBlock(APP, 'suRosterEntries') + '\n' +
+      functionBlock(APP, 'getProviderName') + '\n' +
+      functionBlock(APP, 'getName') + '\n' +
+      functionBlock(APP, 'clinicalProviderName') +
+      '\nthis.r = clinicalProviderName;', ctx);
+    return ctx.r();
+  }
+
+  assert.strictEqual(resolver({ providerName: 'Jane A. Smith, MD', docname: 'Front Desk' }), 'Jane A. Smith, MD',
+    'the explicit Practice & provider setting must always win');
+  assert.strictEqual(resolver({ docname: 'Jane A. Smith' }), 'Jane A. Smith',
+    'with NO roster to contradict it, the account name is not a substitution — refusing it here is ' +
+    'what regressed the prior-auth letter to "[Provider name]" for accounts the wizard left in ' +
+    'exactly this state');
+  assert.strictEqual(resolver({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Smith_Jane_A_MD']) }), 'Jane A. Smith',
+    'a roster that NAMES this person agrees with the account name and must not block it');
+  assert.strictEqual(resolver({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Carter_Kelly_PA-C', 'Doe_John_MD']) }), '',
+    'a verified roster naming only OTHER people is the case the separation rule exists for — the ' +
+    'answer must be empty so the UI asks, never the login name');
+  assert.strictEqual(resolver({}), '', 'nothing configured must resolve empty, not to a guess');
 }
 
 /* ---- 8. THE PIN KEY MISMATCH ----------------------------------------- */
@@ -347,5 +405,7 @@ console.log('PASS Settings identity reaches the op note: provider name + credent
   "was unreachable behind a hardcoded '' and had no getter or field behind it at all); the " +
   "appointment's own provider and department outrank the account defaults, including the " +
   'providerName shape the op-note room itself writes; the MRN resolves from the identity-proved ' +
-  'chart patient and refuses on a name mismatch; a login/account name can no longer become the ' +
-  'operating provider; and a named separate facility never inherits the clinic address');
+  'chart patient and refuses on a name mismatch; the facility getters never invent a site of ' +
+  'service from the practice, so the attest block keeps its honest blank and the readiness strip ' +
+  'keeps its warning; and the account name may stand in as the provider ONLY when no verified ' +
+  'roster contradicts it — the wizard\'s own rule, not a stricter one');

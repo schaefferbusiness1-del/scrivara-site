@@ -304,4 +304,102 @@ shared test helper rather than five independent rediscoveries.
   `HONEST_STATE_2026-07-28`, but it is now corrupting newly written citations, and
   the fix is small: skip `/* */` and `//` spans.
 
+---
+
+## SELF-AUDIT AFTER SHIPPING — six regressions in my own work, five fixed
+
+The owner asked, plainly: *"don't leave anything worse than what it was
+originally, it should all still work."* So I audited this lane against its own
+baseline (`0939b4b` here, `7c2ac58` in the backend) asking only one question —
+*is any behaviour now worse, for any account state?* Six answers were yes. Every
+one is now pinned by an assertion that fails if it returns.
+
+**1. The facility getters were fabricating a site of service. (the worst of them)**
+`getFacilityName()` shipped falling back to the practice name. Measured
+consequence: `feat_mls_opnote_prep.js`'s attest block prints
+`'Facility: ' + (pf.facility || '[[facility_name]]')`, so a surgeon who operates
+at a hospital and had not yet filled the new field got their **clinic asserted as
+the site of service on a signed operative note** — and the readiness strip's
+`add('facility','Facility', !!(apptFac || pf.facility),'warn')` **stopped
+firing**, removing the one thing that would have told them. Both attest lines
+then read the same string, since it prints `Practice:` too.
+This is the same fabrication class the lane exists to remove, introduced by the
+lane. The getters now return only what was stored. The appointment's own
+department still wins.
+
+**2. `clinicalProviderName` was too strict, and regressed real accounts.**
+Refusing `docname` outright looked like the safe reading of the
+identity-separation rule. It is not: `suPersistIdentity` writes `uns('docname')`
+**unconditionally** and writes `uns('providerName')` only when the typed name does
+not contradict a verified roster — so "docname set, providerName empty" is a state
+the app *deliberately produces*. For those accounts the prior-auth letter went
+from the doctor's name to `[Provider name]`, the procedure note to `[Provider]`,
+and the op-note PDF letterhead to the literal `Clinician`, while the field's own
+label promises it "appears on signed notes".
+The rule is now **the wizard's own rule**: explicit setting first, then the
+account name unless a verified roster names other people and not this one. Four
+states executed in `settings-identity-reaches-the-op-note` §7b.
+
+**3. Portal sign-in became gated on the practice lookup.**
+`checkSession` awaited `r.json()` before `enterApp()` so office() was populated
+for the first paint. `api()` resolves to a real fetch Response, so a reply whose
+headers arrive but whose **body never finishes streaming** left that promise
+unsettled and the patient stranded on the login screen. Cold starts on this host
+make that not hypothetical. Entry is back to synchronous on `r.ok`; the body is
+read alongside it. Nothing is lost — `loadRecords()` reads the same practice
+object and records it before `renderPatient`, which is the paint that uses it.
+
+**4. A button's label could disagree with what it did.**
+The demoted NOW/NEXT handlers recomputed `bannerLeads()` at click time while the
+label was chosen at render. The poll re-renders only on a signature change, so for
+up to one 700ms tick after the active patient changed elsewhere, a button still
+reading the record verb would have decided `record:false` and silently opened the
+visit without recording. `data-rec` is now emitted by the same ternary that picks
+the label, and `recWanted` defaults to recording when the attribute is absent so
+no other render path loses its one-tap behaviour.
+
+**5. The reminder cron gained a decrypt per message.**
+`practiceLabel` was a plain property read on a row already in hand; routing it
+through `practiceProfile` made it a prefs-blob decrypt plus an availability read,
+**twice per reminder**, inside a loop. Hoisted to once per practice. The
+appointment page's two profile reads are now one. Pinned, including that
+`practiceLabel` may not appear inside the per-appointment loop again.
+
+**6. The phone line read a personal name as an office.**
+Collapsing `officeName` onto the resolved name meant an unconfigured account
+greeted callers with the account holder's own name where it used to say
+"Dr. \<surname\>'s office". The old string was invented; a bare personal name reads
+as a person answering. `officeName` is now the configured practice name when there
+is one, else the generic — no invention either way.
+
+### One trade-off accepted, not fixed
+
+The assistant guard blocks a **combined** label like `"Surgeon/Assistant"`, which
+previously filled with the primary surgeon. No shipped template uses such a label
+(I enumerated every `[FILL:]` in the repo), it can only appear in a doctor's own
+uploaded template, and the failure mode is a blank the Fields box asks for rather
+than a wrong name in a signed note. Left as-is deliberately.
+
+### How this was checked, since "tests pass" was not the question
+
+A differential harness runs the **old and new `knownValue` side by side** — both
+extracted from their real files, `git show 0939b4b:` for the baseline — over every
+`[FILL:]` label shipped anywhere in the repo plus the full identity/role
+vocabulary, across three appointment shapes. 44 outputs changed: 12 gained a value
+(the facility family, and `dictated by`), 32 dropped either the borrowed
+credential or an assistant fabrication. **Zero** changed on the Settings-only
+path, which is the assertion that matters most — the account's own name and
+credential still resolve exactly as they did.
+
+Also confirmed clean rather than assumed: `getNoteModel()` validates on read and
+the backend keeps its own allowlist, so a synced `noteModel` cannot smuggle in a
+model; and `syncPrefsToServer`'s budget arithmetic sizes `studio_widgets` against
+what is left, so new keys shrink that share rather than 413-ing the blob.
+
+One finding was **refuted** and is worth recording so nobody re-files it: the
+letterhead bridge does *not* cost the after-visit summary its title.
+`feat_after_visit_summary.js` draws `lh.clinicName || 'After-Visit Summary'` as
+the letterhead at 15pt and then its own `'After-Visit Summary'` heading at 13pt on
+the next line — the PDF previously said it twice.
+
 — integration lane

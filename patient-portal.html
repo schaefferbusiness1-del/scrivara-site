@@ -437,21 +437,23 @@
   }
 
   function checkSession(){
-    /* api() resolves to a raw Response, so the body has to be read before the
-       practice is known. Resolve it FIRST, then enter the app, so office() is
-       already populated for the strings enterApp and renderPatient draw. A
-       missing or unparseable body must not block sign-in: it only means the
-       wording stays what it was. */
+    /* SIGN-IN IS NEVER GATED ON THE PRACTICE LOOKUP.
+       This briefly awaited r.json() before calling enterApp(), so that office()
+       was populated for the first paint. That introduced a failure mode the old
+       code did not have: a response whose headers arrive but whose BODY never
+       finishes streaming leaves r.json() unsettled forever, and the patient sits
+       on the login screen. The backend cold-starts on a host where that is not
+       hypothetical. Entry is restored to exactly its previous shape - synchronous
+       on r.ok - and the practice is read opportunistically alongside it.
+       Nothing is lost by that: loadRecords() reads the same practice object out
+       of /api/patient/history and records it BEFORE renderPatient, which is the
+       paint that actually uses it. This read is belt-and-braces. */
     api("/api/patient/me").then(function(r){
-      if(!r.ok){
-        if(r.status===401 && PSESS){ setSess(null); }
-        return null;
-      }
-      return r.json().catch(function(){ return null; }).then(function(j){
-        noteServerOffice(j && j.practice);
+      if(r.ok){
         enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below.");
-        return null;
-      });
+        r.json().then(function(j){ noteServerOffice(j && j.practice); }, function(){});
+      }
+      else if(r.status===401 && PSESS){ setSess(null); } // stale bearer token — clear so a fresh sign-in starts clean
     }).catch(function(){});
   }
 

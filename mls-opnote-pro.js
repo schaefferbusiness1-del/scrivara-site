@@ -318,13 +318,22 @@
       var ap = (typeof activePatient === 'function') ? activePatient() : null;
       if (ap) { meta.patient = ap.name || ''; meta.dob = ap.dob || ''; meta.mrn = ap.mrn || ''; }
     });
-    /* getProviderName, not getName. getName() is uns('docname') - the
-       login/account display name - and this value is printed on an operative
-       note as who performed the work (owner goal 2026-07-21, pinned by
-       tests/provider-identity-separation-contract). The letterhead renderer
-       already degrades to 'Clinician' when this is empty, which is honest;
-       naming the account holder is not. */
-    safe(function () { if (typeof getProviderName === 'function') meta.provider = getProviderName() || ''; });
+    /* clinicalProviderName, not getName. getName() is uns('docname') - the
+       login/account display name - and this value is printed on an operative note
+       as who performed the work (owner goal 2026-07-21, pinned by
+       tests/provider-identity-separation-contract).
+       Via the shared resolver rather than getProviderName alone, because bare
+       getProviderName made this WORSE for a real population: the setup wizard
+       writes docname unconditionally and providerName only when a verified roster
+       does not contradict it, so accounts with docname and no providerName exist
+       by design - and for them the PDF letterhead degraded from the doctor's name
+       to the literal 'Clinician'. clinicalProviderName accepts the account name
+       unless a roster names other people and not this one, which is the same
+       decision the wizard already made. */
+    safe(function () {
+      if (typeof clinicalProviderName === 'function') { meta.provider = clinicalProviderName() || ''; return; }
+      if (typeof getProviderName === 'function') meta.provider = getProviderName() || '';
+    });
     safe(function () { if (typeof getSpec === 'function') meta.spec = getSpec() || ''; });
     return meta;
   }

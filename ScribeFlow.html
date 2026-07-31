@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b814) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b815) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -888,7 +888,7 @@
      carry a 0px fallback, so nothing moves on a device with neither. */
   #opPrepModal.opr-room{ padding:0;
     --opr-dock-clear:calc(104px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)); }
-  /* b814 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b815 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show > .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -907,7 +907,7 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b814 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b815 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -1490,7 +1490,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b814) ----
+  /* ---- Copilot calm polish (b815) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1704,7 +1704,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b814 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b815 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -4831,7 +4831,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b814: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b815: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4949,7 +4949,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b814: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b815: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -5846,7 +5846,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b814): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b815): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6463,7 +6463,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b814: METHOD-AWARE. The login response now reports every second factor the
+/* b815: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6596,7 +6596,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b814: a texted code completes at its own sibling route; the TOTP and
+    /* b815: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6804,7 +6804,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b814: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b815: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -7889,23 +7889,64 @@ function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; 
    every operative note's Facility line resolved empty, the readiness strip
    warned about it forever, and the doctor retyped it per note. A `typeof
    ... === 'function'` guard at each call site is what kept it silent.
-   Falls back to the clinic when no separate site is configured, because a
-   practice that operates where it sees patients should not have to say so
-   twice. */
-/* THE clinical provider identity, and only that.
-   getName() is uns('docname') - the login/account display name - and it is
-   never an acceptable answer to "who performed this work". Owner goal
-   2026-07-21, pinned by tests/provider-identity-separation-contract: the
-   account holder who filled in the signup form is not necessarily the
-   clinician. Three surfaces were each making that substitution independently
-   (the prior-auth letter, the procedure-note builder, and the patient home-care
-   handout), so the decision now lives in one function instead of three.
+
+   NO FALLBACK, deliberately, and this was corrected after first shipping with
+   one. These briefly fell back to the practice name and clinic address, on the
+   reasoning that a practice operating where it sees patients should not have to
+   say so twice. That was the same fabrication class this whole effort exists to
+   remove, and it was measurably worse than the blank it replaced:
+   feat_mls_opnote_prep.js's attestBlock prints
+   `'Facility: ' + (pf.facility || '[[facility_name]]')`, so a surgeon who
+   operates at a hospital and had not yet filled this field got their CLINIC
+   asserted as the site of service on a signed operative note — while the
+   readiness strip's facility check,
+   `add('facility','Facility', !!(apptFac || pf.facility),'warn')`, stopped
+   firing, removing the one thing that would have told them. The attest block
+   prints `Practice:` too, so both lines then read the same string.
+   An honest blank the doctor fills beats a plausible guess they cannot see. The
+   appointment's own department still outranks this, in knownValue. */
+/* THE clinical provider identity, in one place.
+   Three surfaces were each deciding this independently - the prior-auth letter,
+   the procedure-note builder and the patient home-care handout - and all three
+   read getName(), i.e. uns('docname'), the login/account display name. Owner goal
+   2026-07-21, pinned by tests/provider-identity-separation-contract: the account
+   holder who filled in the signup form is not necessarily the clinician.
+
+   THE RULE IS THE WIZARD'S OWN RULE, not a stricter new one. This first shipped
+   refusing docname outright, which was too strict and regressed real accounts:
+   suPersistIdentity writes uns('docname') UNCONDITIONALLY but writes
+   uns('providerName') only when the typed name does NOT contradict a verified
+   Athena roster. So "docname set, providerName empty" is a state the app
+   deliberately produces - and for those accounts the prior-auth letter went from
+   printing the doctor's name to printing "[Provider name]", while the field's own
+   label promises it "appears on signed notes".
+
+   So: the explicit Practice & provider setting first. Then the account name, but
+   ONLY when no verified roster contradicts it - reusing suProviderIdentityKey and
+   suRosterEntries, the same comparison the wizard used to make this exact
+   decision. An empty roster contradicts nothing. A roster that names this person
+   agrees. A roster that names only other people is the case the separation rule
+   exists for, and there the answer stays empty so the UI asks.
+
    Callers supply their own fallback, because the right fallback differs: a
-   bracketed blank the doctor completes on a clinical document, a practice name
-   on something a patient reads. */
-function clinicalProviderName(){ try{ return String((typeof getProviderName==='function'?getProviderName():'')||'').trim(); }catch(e){ return ''; } }
-function getFacilityName(){ return localStorage.getItem(uns('facilityName'))||getPracticeName(); }
-function getFacilityAddress(){ return localStorage.getItem(uns('facilityAddress'))||(localStorage.getItem(uns('facilityName'))?'':getClinicAddress()); }
+   bracketed blank the doctor completes on a clinical document, a practice name on
+   something a patient reads. */
+function clinicalProviderName(){
+  try{
+    var explicit=String((typeof getProviderName==='function'?getProviderName():'')||'').trim();
+    if(explicit) return explicit;
+    var acct=String((typeof getName==='function'?getName():'')||'').trim();
+    if(!acct) return '';
+    /* no roster, or a roster that agrees -> the account name is not a substitution */
+    if(typeof suRosterEntries!=='function'||typeof suProviderIdentityKey!=='function') return acct;
+    var roster=[]; try{ roster=suRosterEntries()||[]; }catch(e){ roster=[]; }
+    if(!roster.length) return acct;
+    var key=suProviderIdentityKey(acct);
+    return roster.some(function(p){ return suProviderIdentityKey(p)===key; }) ? acct : '';
+  }catch(e){ return ''; }
+}
+function getFacilityName(){ return localStorage.getItem(uns('facilityName'))||''; }
+function getFacilityAddress(){ return localStorage.getItem(uns('facilityAddress'))||''; }
 /* Branded exports (Premium): upload + downscale a practice logo to a small
    data URL, kept device-local (NOT in PREF_SYNC_KEYS, so it can never bloat or
    break the prefs/widget sync). Rendered on the printed/PDF letterhead. */
@@ -8551,7 +8592,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b814: the restored "Pull full visit notes" Settings option. One stored
+/* b815: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change.
@@ -8559,7 +8600,7 @@ async function loadPrefsFromServer(opts){
    Every visit on 47 of 51 snapshot patients in the live store was an
    index-only stub — the encounter bodies were never read — because this
    preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b814 finding). A pull without encounter bodies is
+   it never rendered (the b815 finding). A pull without encounter bodies is
    not "complete available history" (owner bar 2026-07-28: first-pull
    completeness, no silent omissions), so absence of a recorded HUMAN choice
    now means ON. The uns('pullVisitBodiesSet') marker records that a human
@@ -8608,7 +8649,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b814: texted-codes card, from the same server truth (/api/me projection). */
+  /* b815: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -13525,7 +13566,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b814: the auto-save commits HERE - the one door that knows the tool
+        /* b815: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13776,7 +13817,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b814: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b815: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14234,7 +14275,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b814 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b815 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -15133,7 +15174,7 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
-  /* b814 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+  /* b815 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
      15 of 19 scheduled patients had no landed Athena chart, yet every
      clinical card still rendered a generic "No ... recorded." line. That is
      the same sentence a REVIEWED-and-clear chart shows, so the panel was
@@ -15182,7 +15223,7 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
-/* b814: one honest, actionable line above the clinical grid when NOTHING has
+/* b815: one honest, actionable line above the clinical grid when NOTHING has
    been read for this patient and the clinician has typed nothing either. It
    reuses the exact Pull-chart verb the History view owns
    (pullPatientChartViaAssist), so there is no second pull path to keep in
@@ -15746,7 +15787,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b814 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b815 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -15941,7 +15982,7 @@ function opPrepRender(){
        and NOTHING else - no class, no aria - so (a) a screen reader was told
        nothing about which mode was in effect, and (b) any stylesheet that
        overrode the background left white text on a near-white button, which is
-       exactly what shipped in b814 (measured ~1.03:1: the selected mode read as
+       exactly what shipped in b815 (measured ~1.03:1: the selected mode read as
        an empty box). aria-pressed is now the machine-readable truth, so
        presentation can key off state instead of guessing, and the state survives
        a background override. */
@@ -16050,7 +16091,7 @@ async function opPrepGenerateOne(i){
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
-    /* b814: an unambiguous "the generator ran and produced this" stamp. Draft-all
+    /* b815: an unambiguous "the generator ran and produced this" stamp. Draft-all
        counts successes by watching it change. Comparing the note TEXT instead was
        almost right, but a re-draft that produced identical text would have been
        counted as a failure - a false negative in the honest direction, which is
@@ -17319,7 +17360,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b814 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b815 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -17610,7 +17651,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b814 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b815 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -17941,7 +17982,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b814 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b815 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -20412,7 +20453,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b814 (diarization, option A): turn labels ride the USER payload — the one
+  /* b815 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -21132,7 +21173,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b814 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b815 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -21490,7 +21531,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b814 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b815 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -21759,7 +21800,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b814 (audit): op notes save their body to .text, not .soap — every prior
+    /* b815 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -26195,7 +26236,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b814: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b815: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -26330,7 +26371,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b814 — THE LOADING SCREEN MUST ALWAYS END.
+/* b815 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -31142,7 +31183,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b814';
+  window.__MLS_AV='b815';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

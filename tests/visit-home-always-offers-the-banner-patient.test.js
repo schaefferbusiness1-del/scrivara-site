@@ -373,17 +373,52 @@ function buttonIds(html) {
     'number and it is asserted here too so the click-time resolver cannot drift back inline');
 }
 
-/* ---- 7. A DEMOTED ROW SWITCHES, IT DOES NOT RECORD --------------------- */
-/* Its label reads "➡ <name>". Recording on tap would do something the button
- * does not say, to a patient the banner does not name. */
+/* ---- 7. A DEMOTED ROW SWITCHES, AND THE LABEL CANNOT LIE -------------- */
+/* Its label reads with an arrow, not the record verb. Recording on tap would do
+ * something the button does not say, to a patient the banner does not name.
+ *
+ * The decision is READ OFF THE ELEMENT, not recomputed at click time. The first
+ * version called bannerLeads() again inside each handler, which let the LABEL and
+ * the BEHAVIOUR disagree: the poll re-renders only on a signature change, so for
+ * up to one 700ms tick after the active patient changed elsewhere, a button still
+ * reading the record verb would have decided record:false and silently opened the
+ * visit without recording. data-rec is emitted by the SAME ternary that picks the
+ * label, so the two cannot drift apart. */
 {
   for (const id of ['ez3Now', 'ez3Nxt', 'ez3Next']) {
     const at = canonical.indexOf(`on('${id}'`);
     assert(at > 0, `the ${id} handler must exist`);
     const handler = callBlock(canonical, at);
-    assert(/record:\s*![^)]*bannerLeads\(\)/.test(handler),
-      `${id} still records unconditionally — when the banner patient owns the primary this ` +
-      `button reads "➡ <name>" and must switch, not record. Handler: ${handler.trim()}`);
+    assert(new RegExp(`record:\\s*recWanted\\(\\$\\('${id}'\\)\\)`).test(handler),
+      `${id} decides whether to record without consulting what it RENDERED. Read the decision off ` +
+      `data-rec so the label and the behaviour cannot disagree. Handler: ${handler.trim()}`);
+    assert(!/bannerLeads\(\)/.test(handler),
+      `${id} recomputes bannerLeads() at click time — that is the render/click race this replaced`);
+  }
+
+  /* recWanted must default to RECORDING when the attribute is absent, so a button
+     rendered by any other path keeps its previous one-tap behaviour. */
+  const rw = functionBlock(canonical, 'recWanted');
+  const rwCtx = {};
+  vm.createContext(rwCtx);
+  vm.runInContext(rw + '\nthis.recWanted = recWanted;', rwCtx);
+  assert.strictEqual(rwCtx.recWanted(null), true, 'a missing element must default to recording');
+  assert.strictEqual(rwCtx.recWanted({ getAttribute: () => null }), true,
+    'an element with no data-rec must default to recording — anything else silently disables a record ' +
+    'button rendered by another path');
+  assert.strictEqual(rwCtx.recWanted({ getAttribute: () => '1' }), true, 'data-rec="1" must record');
+  assert.strictEqual(rwCtx.recWanted({ getAttribute: () => '0' }), false, 'data-rec="0" must not record');
+  assert.strictEqual(rwCtx.recWanted({ getAttribute: () => { throw new Error('detached'); } }), true,
+    'a throwing element must default to recording, not swallow the tap');
+
+  /* and every one of the three is actually stamped, or its handler is blind */
+  for (const id of ['ez3Now', 'ez3Nxt', 'ez3Next']) {
+    const at = canonical.indexOf(`id="${id}"`);
+    assert(at > 0, `${id} must be rendered`);
+    const lineStart = canonical.lastIndexOf('\n', at) + 1;
+    const line = canonical.slice(lineStart, canonical.indexOf('\n', at));
+    assert(/data-rec="/.test(line),
+      `${id} is rendered without a data-rec stamp, so its handler cannot know what it said. Line: ${line.trim()}`);
   }
 }
 

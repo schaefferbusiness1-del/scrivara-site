@@ -149,9 +149,18 @@ function stripComments(src) {
     'substitution independently, which is how they drifted apart');
   const resolver = APP.slice(APP.indexOf('function clinicalProviderName()'), APP.indexOf('function getFacilityName()'));
   const resolverCode = stripComments(resolver);
-  assert(/getProviderName/.test(resolverCode), 'the resolver must read the provider setting');
-  assert(!/\bgetName\s*\(\s*\)/.test(resolverCode),
-    'the shared resolver itself falls back to the account display name, which defeats its purpose');
+  assert(/getProviderName/.test(resolverCode), 'the resolver must read the provider setting first');
+  /* It DOES fall back to the account name, and must — but only under the wizard's
+     own roster test. An unconditional refusal was the first shipped version and it
+     regressed every account the wizard deliberately leaves with docname and no
+     providerName (see tests/settings-identity-reaches-the-op-note §7b, which
+     executes all four states). What must never happen is an UNGUARDED fallback. */
+  assert(/\bgetName\s*\(\s*\)/.test(resolverCode),
+    'the resolver refuses the account name outright again — that regresses the prior-auth letter to ' +
+    '"[Provider name]" for accounts the setup wizard leaves in exactly that state');
+  assert(/suRosterEntries/.test(resolverCode) && /suProviderIdentityKey/.test(resolverCode),
+    'the account-name fallback must be gated on the verified roster, using the same comparison the ' +
+    'setup wizard uses — an ungated fallback is the substitution the separation rule forbids');
 
   /* and the three surfaces use it */
   const code = stripComments(APP);
@@ -170,9 +179,15 @@ function stripComments(src) {
     'who rendered the service; a bracketed blank the doctor fills is the honest fallback.');
 
   /* mls-opnote-pro's own meta */
-  const meta = stripComments(PRO.slice(PRO.indexOf('function appMeta()'), PRO.indexOf('function appMeta()') + 900));
-  assert(/getProviderName/.test(meta) && !/\bgetName\s*\(\s*\)/.test(meta),
-    'appMeta still prints the account display name as the operating provider on an operative note');
+  const meta = stripComments(PRO.slice(PRO.indexOf('function appMeta()'), PRO.indexOf('function appMeta()') + 1400));
+  assert(/clinicalProviderName/.test(meta),
+    'appMeta must resolve the provider through the shared resolver. Reading getProviderName alone was ' +
+    'the first shipped version and it degraded the op-note PDF letterhead to the literal "Clinician" ' +
+    'for every account the setup wizard leaves with docname and no providerName.');
+  assert(/getProviderName/.test(meta),
+    'appMeta must keep a getProviderName path for a page where the shared resolver is absent');
+  assert(!/\bmeta\.provider = getName\(\)/.test(meta),
+    'appMeta prints the raw account display name as the operating provider again');
 }
 
 /* ---- 4. providerName BEFORE docname, IN BOTH REPORT MODULES ----------- */

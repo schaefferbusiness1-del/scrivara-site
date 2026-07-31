@@ -143,6 +143,40 @@ function fnBlock(src, name) {
   assert.strictEqual((portal.match(/function checkSession\(\)/g) || []).length, 1,
     'more than one checkSession — a dead duplicate is exactly the defect class this repo tracks');
   assert(!/_checkSessionLegacy/.test(portal), 'a dead legacy copy of checkSession survived');
+
+  /* ---- SIGN-IN IS NEVER GATED ON THE PRACTICE LOOKUP ------------------
+     This is the assertion the first version of this suite was missing, and its
+     absence let a real regression through: checkSession briefly awaited
+     r.json() before calling enterApp(), so that office() was populated for the
+     first paint. api() resolves to a real fetch Response, so a reply whose
+     HEADERS arrive but whose BODY never finishes streaming leaves that promise
+     unsettled forever — and the patient sits on the login screen, where before
+     they got straight in. The backend cold-starts on a host where a stalled body
+     is not hypothetical.
+     enterApp must therefore be reached SYNCHRONOUSLY inside the r.ok branch,
+     with the body read alongside it and its result merely recorded. */
+  /* Comments stripped FIRST. The comment explaining why enterApp is reached
+     synchronously names enterApp() and r.json() to do so, so raw index maths on
+     the commented source compares prose positions and fails on correct code —
+     which is exactly what it did on the first run of this assertion. */
+  const session = stripComments(fnBlock(portal, 'checkSession'));
+  assert(/enterApp\(\)/.test(session) && /if\(r\.ok\)\{/.test(session),
+    'comment stripping removed the code it was meant to expose');
+  const okAt = session.indexOf('if(r.ok){');
+  assert(okAt > 0, 'checkSession must still branch on r.ok');
+  const jsonAt = session.indexOf('r.json()');
+  const enterAt = session.indexOf('enterApp()');
+  assert(enterAt > okAt, 'enterApp must be inside the r.ok branch');
+  assert(jsonAt < 0 || enterAt < jsonAt,
+    'checkSession reaches enterApp only AFTER reading the response body. A reply whose body never ' +
+    'finishes streaming then strands the patient on the login screen — sign-in must never depend on ' +
+    'the practice lookup. Read the body alongside entry, not before it.');
+  /* and the body read must not be able to reject unhandled */
+  assert(jsonAt < 0 || /r\.json\(\)\.then\([^)]*,\s*function\s*\(\)\s*\{\s*\}\)/.test(session) || /\.catch\(/.test(session.slice(jsonAt)),
+    'the opportunistic body read has no rejection handler, so a non-JSON body raises an unhandled rejection');
+  /* the 401 clean-up survived the restructure */
+  assert(/r\.status===401 && PSESS/.test(session),
+    'the stale-bearer-token clean-up was lost — a dead session would never clear itself');
 }
 
 /* ---- 2. INTAKE ------------------------------------------------------- */
