@@ -6519,6 +6519,15 @@ function saveSettings(){
 const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
+  /* b821: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
+     into the letterhead, the full-history PDF header and the op-note prep context,
+     and it rode nowhere - a doctor who set it on the desktop had a blank specialty
+     on the laptop, and the server never learned it at all. The marketing listing
+     audit needed exactly this fact and was taking it from the client request body
+     instead, which is what surfaced the gap. Same reasoning as facilityName,
+     featIME and noteModel above: a value the doctor typed once, that the app then
+     forgot per device. */
+  'docspec',
   'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
   'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1'];
 function syncPrefsToServer(){
@@ -23777,6 +23786,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b820';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b821';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

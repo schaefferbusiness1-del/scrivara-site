@@ -599,3 +599,130 @@ assertion, and the clean tree re-verified after each.
   so implementing it would connect nothing.
 
 — integration lane
+
+---
+
+## Update — b821 (integration lane), and a deliberate REVERT
+
+### The owner drew two boundaries mid-flight
+
+> "Don't touch any of the pull stuff or extension stuff"
+
+Everything below either respects that or was **backed out before it ever reached
+`main`**. Recording the backed-out work here in full, because the next lane needs
+to know these defects are still live and were not missed.
+
+### BACKED OUT, never pushed — the provider-label unification
+
+Four modules each guessed a family name out of a provider string, with three
+different algorithms. Proved by executing all three:
+
+| provider name | picker (longest token) | scope (last token) | narration (comma-strip) |
+| --- | --- | --- | --- |
+| `Schaeffer, Michael` | Dr. Schaeffer | **Dr. Michael** | **Dr. Michael** |
+| `Christopher Ng` | **Dr. Christopher** | Dr. Ng | Dr. Ng |
+| `SMITH, JOHN A` | Dr. Smith | **Dr. John** | **Dr. A** |
+| `Jane Doe, PA-C` | **Dr. Jane** | Dr. Doe | **Dr. PA-C** |
+| `O'Brien, Katherine` | **Dr. Katherine** | **Dr. Katherine** | **Dr. Katherine** |
+
+`Dr. A` is a middle initial. `Dr. PA-C` is a credential. Addressing a physician
+assistant as "Dr." asserts a licence they do not hold. athenaOne returns names in
+`LAST, FIRST`, so the two last-token modules were wrong on their most common real
+input, not on an edge case. `feat_athena_narration.js:220` carried a comment
+claiming the comma form was "handled by comma-strip above" — stripping a comma
+does not reorder a name, so it never was.
+
+**Still live. Not fixed.** The fix (one owner in the shell, all four deferring to
+it, 10 mutations verified) was reverted because all four consumers are pull
+surfaces.
+
+### BACKED OUT, never pushed — the pull note that said the opposite of the truth
+
+`feat_mls_centerpiece.js` printed, in THREE places (under "Pull today's patients",
+under "Pull this week's patients", and in the live progress line during the pull):
+
+> "Pulls all providers for now (the per-doctor filter needs the next MLS Assist
+> update)."
+
+**In production that is false.** `feat_mls_schedpull_fix.js` ships; its
+`chooseTarget()` resolves the doctor through `__mlsAthenaProviderScope` and
+`scopeRows()` then keeps only that doctor's rows. A doctor who set their provider
+name in Settings is told they are getting the whole schedule while the pull is
+filtering to them alone — in the direction where a short day reads as the real day.
+
+Root cause of the stale note: the only code that ever corrected it lives in
+`feat_athena_provider_picker.js` ("gently update the centerpiece's hardcoded
+note"), and that module is loaded by **`mls-connect.staging.js` and not by
+production**. Same root cause disables `feat_mls_protocol.js`'s entire block headed
+"PROVIDER-NAME-EVERYWHERE (one source of truth, live-updated)" — it opens with
+`if (!window.__mlsProviderPicker) return;`, and that global is defined only by the
+staging-only picker. So the caption that tells a doctor to "Set your provider name
+in Settings" is never synchronised on the live site, even for a doctor who has.
+
+**All still live. Not fixed.**
+
+Also found and NOT fixed: `feat_athena_provider_scope.js detectProvider()` reads
+`unsGet('docname')` — the raw login name, ungated — as its second rung, and that
+value decides **which rows a schedule pull keeps**. On a staff or shared login it
+scopes a clinician's day by the front-desk person's name.
+
+### REVERTED after publication — the b820 write-context change
+
+`feat_mls_writeflow.js` was returned to its exact pre-b820 ladder
+(`getProviderName()` then `getName()`). It builds the Athena write context the MLS
+Assist extension consumes, which puts it inside the extension boundary the owner
+drew.
+
+**What that leaves standing, as a decision and not an oversight:** on an account
+with a verified roster and no `providerName` configured, `apptProvider()` falls
+back to the LOGIN/account name and that becomes the **rendering provider on an EHR
+write context**. `tests/clinical-artifacts-never-sign-with-the-account-name.test.js`
+documents the exclusion in place of the coverage rather than quietly dropping it.
+
+The shell's `providerDisplayLabel` was removed too: its only consumers were the
+four pull modules, and shipping an unused formatter is just confusion.
+
+### SHIPPED at b821 — neither pull nor extension
+
+1. **`docspec` joins `PREF_SYNC_KEYS`** (both `ScribeFlow.html` and
+   `ScribeFlow-staging.html`, for the staging parity contract). The SPECIALTY the
+   doctor sets in Settings feeds the letterhead, the full-history PDF header and
+   the op-note prep context, and it rode nowhere — set on the desktop, blank on the
+   laptop, and never known to the server at all. Same class as `facilityName`,
+   `featIME` and `noteModel`.
+
+2. **The marketing listing audit stops trusting the request body** (backend). The
+   tell was one line: `const ownerId = owner(req);` computed and never used. All
+   three identity facts that reach the model — practice name, city, specialty — came
+   from the client, and that model writes the description **published on the
+   practice's Google listing**.
+   - name: the server's, but only when `name_source === 'preference'` (a name the
+     doctor CHOSE). A derived `"<provider> Practice"` is refused — publishing an
+     invented practice name as fact is worse than using what the client read off
+     the live listing.
+   - specialty: new `practiceSpecialty(pid)` — Settings `docspec` first, then the
+     `users.specialty` signup column. This is what surfaced gap 1.
+   - city: **deliberately still the client's.** It is read off the live listing;
+     the server stores a street address and no city field, and parsing one out is
+     a guess this endpoint has no business making. Pinned, so nobody "finishes the
+     job" later by guessing.
+
+   Proved against a real running server with a real encrypted prefs blob across
+   three identity states plus a positive control. 7 mutations, all caught.
+
+### Instrument errors found by mutation this round
+
+- A grep for `built.noDate` could not tell a live omission report from a disabled
+  one, because the counter also sits INSIDE the branch it guards. Survived.
+- The identity test executed the new `clinicalProvider()` HELPER and survived a
+  revert of the field that CALLS it. Now every entry runs the artifact producer.
+- A ±400-char window around `indexOf(filename)` claimed to prove two loaders bust
+  their cache and survived stripping `__MLS_AV` off the real loader — it measured a
+  different occurrence. Now line-anchored.
+- An assertion that the stale pull note was gone matched my own comment quoting it.
+  Fixed by asserting on comment-stripped source WITH a control proving the strip
+  removed prose and not code.
+- One "caught" mutation was a `ReferenceError`, not an assertion — a bypass that
+  crashes proves nothing. Re-run self-contained.
+
+— integration lane
