@@ -1,0 +1,5209 @@
+{
+  "status": "PASS",
+  "generatedAt": "2026-07-31T03:09:01.229Z",
+  "syntheticOnly": true,
+  "appUrl": "http://127.0.0.1:36339/ScribeFlow.html?demo=1&draftADay=2026-07-31T03-09-01-219Z&classic=1&mlseasy=classic&easyone=0",
+  "phases": {
+    "happyPath": {
+      "summary": "✅ Done: 13 drafted · 0 failed · 0 skipped of 13. Drafts are in History — nothing was sent to Athena.",
+      "ledgerHead": "✅ Done: 13 drafted · 0 failed · 0 skipped of 13.",
+      "ledger": [
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Alphaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Bravoone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Charlieone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Deltaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Echoone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Foxtrotone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Golfone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Hotelone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Indiaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Juliettone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Kiloone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Limaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Mikeone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        }
+      ],
+      "nav": [
+        {
+          "name": "Synthetic Alphaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Bravoone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Charlieone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Deltaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Echoone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Foxtrotone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Golfone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Hotelone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Indiaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Juliettone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Kiloone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Limaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Mikeone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        }
+      ],
+      "rows": [
+        {
+          "i": 0,
+          "name": "Synthetic Alphaone Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5rr3ecev",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5rr3ecev",
+            "patientId": "syn-a-01",
+            "cc": "Synthetic Alphaone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 1,
+          "name": "Synthetic Bravoone Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5sg02gol",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5sg02gol",
+            "patientId": "syn-a-02",
+            "cc": "Synthetic Bravoone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 2,
+          "name": "Synthetic Charlieone Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5swsx9e1",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5swsx9e1",
+            "patientId": "syn-a-03",
+            "cc": "Synthetic Charlieone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 3,
+          "name": "Synthetic Deltaone Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5tcd8v1h",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5tcd8v1h",
+            "patientId": "syn-a-04",
+            "cc": "Synthetic Deltaone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 4,
+          "name": "Synthetic Echoone Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5trrlvz9",
+          "noteChars": 2212,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5trrlvz9",
+            "patientId": "syn-a-05",
+            "cc": "Synthetic Echoone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2212,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 5,
+          "name": "Synthetic Foxtrotone Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5u981vic",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5u981vic",
+            "patientId": "syn-a-06",
+            "cc": "Synthetic Foxtrotone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 6,
+          "name": "Synthetic Golfone Testpatient",
+          "proc": "Bilateral L2-L3 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5upxbhwe",
+          "noteChars": 2217,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L2-L3 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5upxbhwe",
+            "patientId": "syn-a-07",
+            "cc": "Synthetic Golfone Testpatient — Aug 1, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+            "chars": 2217,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 7,
+          "name": "Synthetic Hotelone Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5v8bs3oa",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5v8bs3oa",
+            "patientId": "syn-a-08",
+            "cc": "Synthetic Hotelone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 8,
+          "name": "Synthetic Indiaone Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5vsd9vk4",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5vsd9vk4",
+            "patientId": "syn-a-09",
+            "cc": "Synthetic Indiaone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 9,
+          "name": "Synthetic Juliettone Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5w9ohinj",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5w9ohinj",
+            "patientId": "syn-a-10",
+            "cc": "Synthetic Juliettone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 10,
+          "name": "Synthetic Kiloone Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5wpphfla",
+          "noteChars": 2217,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5wpphfla",
+            "patientId": "syn-a-11",
+            "cc": "Synthetic Kiloone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2217,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 11,
+          "name": "Synthetic Limaone Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5x6naq7i",
+          "noteChars": 2212,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5x6naq7i",
+            "patientId": "syn-a-12",
+            "cc": "Synthetic Limaone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2212,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 12,
+          "name": "Synthetic Mikeone Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d5xmtf0ly",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5xmtf0ly",
+            "patientId": "syn-a-13",
+            "cc": "Synthetic Mikeone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        }
+      ],
+      "templateHeadings": [
+        "operative",
+        "procedure note",
+        "synthetic test template not a real patient document",
+        "patient",
+        "date of procedure",
+        "provider",
+        "facility",
+        "pre operative diagnosis",
+        "post operative diagnosis",
+        "procedure",
+        "anesthesia",
+        "indications",
+        "history",
+        "consent",
+        "time out",
+        "technique",
+        "fluoroscopy time",
+        "estimated blood loss",
+        "complications",
+        "disposition",
+        "post procedure",
+        "plan"
+      ],
+      "notes": [
+        {
+          "id": "nms8d5xmtf0ly",
+          "patientId": "syn-a-13",
+          "cc": "Synthetic Mikeone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5x6naq7i",
+          "patientId": "syn-a-12",
+          "cc": "Synthetic Limaone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5wpphfla",
+          "patientId": "syn-a-11",
+          "cc": "Synthetic Kiloone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5w9ohinj",
+          "patientId": "syn-a-10",
+          "cc": "Synthetic Juliettone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5vsd9vk4",
+          "patientId": "syn-a-09",
+          "cc": "Synthetic Indiaone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5v8bs3oa",
+          "patientId": "syn-a-08",
+          "cc": "Synthetic Hotelone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5upxbhwe",
+          "patientId": "syn-a-07",
+          "cc": "Synthetic Golfone Testpatient — Aug 1, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5u981vic",
+          "patientId": "syn-a-06",
+          "cc": "Synthetic Foxtrotone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5trrlvz9",
+          "patientId": "syn-a-05",
+          "cc": "Synthetic Echoone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5tcd8v1h",
+          "patientId": "syn-a-04",
+          "cc": "Synthetic Deltaone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5swsx9e1",
+          "patientId": "syn-a-03",
+          "cc": "Synthetic Charlieone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5sg02gol",
+          "patientId": "syn-a-02",
+          "cc": "Synthetic Bravoone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5rr3ecev",
+          "patientId": "syn-a-01",
+          "cc": "Synthetic Alphaone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        }
+      ],
+      "aiRequests": [
+        {
+          "n": 1,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Alphaone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 2,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Bravoone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 3,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Charlieone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 4,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Deltaone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 5,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Echoone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 6,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Foxtrotone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 7,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Golfone Testpatient",
+          "procedure": "Bilateral L2-L3 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 8,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Hotelone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 9,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Indiaone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3117,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 10,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Juliettone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 11,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Kiloone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 12,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Limaone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3113,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 13,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Mikeone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3116,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        }
+      ],
+      "externalHits": []
+    },
+    "idempotentRerun": {
+      "summary": "✅ Done: 13 drafted · 0 failed · 0 skipped of 13. Drafts are in History — nothing was sent to Athena.",
+      "ledgerHead": "✅ Done: 13 drafted · 0 failed · 0 skipped of 13.",
+      "ledger": [
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Alphaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Bravoone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Charlieone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Deltaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Echoone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Foxtrotone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Golfone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Hotelone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Indiaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Juliettone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Kiloone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Limaone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Mikeone Testpatient (August 1) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        }
+      ],
+      "nav": [
+        {
+          "name": "Synthetic Alphaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Bravoone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Charlieone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Deltaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Echoone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Foxtrotone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Golfone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Hotelone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Indiaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Juliettone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Kiloone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Limaone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Mikeone Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        }
+      ],
+      "rows": [
+        {
+          "i": 0,
+          "name": "Synthetic Alphaone Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5rr3ecev",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5rr3ecev",
+            "patientId": "syn-a-01",
+            "cc": "Synthetic Alphaone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 1,
+          "name": "Synthetic Bravoone Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5sg02gol",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5sg02gol",
+            "patientId": "syn-a-02",
+            "cc": "Synthetic Bravoone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 2,
+          "name": "Synthetic Charlieone Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5swsx9e1",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5swsx9e1",
+            "patientId": "syn-a-03",
+            "cc": "Synthetic Charlieone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 3,
+          "name": "Synthetic Deltaone Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5tcd8v1h",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5tcd8v1h",
+            "patientId": "syn-a-04",
+            "cc": "Synthetic Deltaone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 4,
+          "name": "Synthetic Echoone Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5trrlvz9",
+          "noteChars": 2212,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5trrlvz9",
+            "patientId": "syn-a-05",
+            "cc": "Synthetic Echoone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2212,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 5,
+          "name": "Synthetic Foxtrotone Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5u981vic",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5u981vic",
+            "patientId": "syn-a-06",
+            "cc": "Synthetic Foxtrotone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 6,
+          "name": "Synthetic Golfone Testpatient",
+          "proc": "Bilateral L2-L3 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5upxbhwe",
+          "noteChars": 2217,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L2-L3 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5upxbhwe",
+            "patientId": "syn-a-07",
+            "cc": "Synthetic Golfone Testpatient — Aug 1, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+            "chars": 2217,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 7,
+          "name": "Synthetic Hotelone Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5v8bs3oa",
+          "noteChars": 2218,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5v8bs3oa",
+            "patientId": "syn-a-08",
+            "cc": "Synthetic Hotelone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2218,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 8,
+          "name": "Synthetic Indiaone Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5vsd9vk4",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5vsd9vk4",
+            "patientId": "syn-a-09",
+            "cc": "Synthetic Indiaone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 9,
+          "name": "Synthetic Juliettone Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5w9ohinj",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5w9ohinj",
+            "patientId": "syn-a-10",
+            "cc": "Synthetic Juliettone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 10,
+          "name": "Synthetic Kiloone Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5wpphfla",
+          "noteChars": 2217,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5wpphfla",
+            "patientId": "syn-a-11",
+            "cc": "Synthetic Kiloone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2217,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 11,
+          "name": "Synthetic Limaone Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5x6naq7i",
+          "noteChars": 2212,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5x6naq7i",
+            "patientId": "syn-a-12",
+            "cc": "Synthetic Limaone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2212,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 12,
+          "name": "Synthetic Mikeone Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 2,
+          "noteId": "nms8d5xmtf0ly",
+          "noteChars": 2213,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d5xmtf0ly",
+            "patientId": "syn-a-13",
+            "cc": "Synthetic Mikeone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2213,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        }
+      ],
+      "templateHeadings": [
+        "operative",
+        "procedure note",
+        "synthetic test template not a real patient document",
+        "patient",
+        "date of procedure",
+        "provider",
+        "facility",
+        "pre operative diagnosis",
+        "post operative diagnosis",
+        "procedure",
+        "anesthesia",
+        "indications",
+        "history",
+        "consent",
+        "time out",
+        "technique",
+        "fluoroscopy time",
+        "estimated blood loss",
+        "complications",
+        "disposition",
+        "post procedure",
+        "plan"
+      ],
+      "notes": [
+        {
+          "id": "nms8d5xmtf0ly",
+          "patientId": "syn-a-13",
+          "cc": "Synthetic Mikeone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5x6naq7i",
+          "patientId": "syn-a-12",
+          "cc": "Synthetic Limaone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5wpphfla",
+          "patientId": "syn-a-11",
+          "cc": "Synthetic Kiloone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5w9ohinj",
+          "patientId": "syn-a-10",
+          "cc": "Synthetic Juliettone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5vsd9vk4",
+          "patientId": "syn-a-09",
+          "cc": "Synthetic Indiaone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5v8bs3oa",
+          "patientId": "syn-a-08",
+          "cc": "Synthetic Hotelone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5upxbhwe",
+          "patientId": "syn-a-07",
+          "cc": "Synthetic Golfone Testpatient — Aug 1, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5u981vic",
+          "patientId": "syn-a-06",
+          "cc": "Synthetic Foxtrotone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5trrlvz9",
+          "patientId": "syn-a-05",
+          "cc": "Synthetic Echoone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5tcd8v1h",
+          "patientId": "syn-a-04",
+          "cc": "Synthetic Deltaone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5swsx9e1",
+          "patientId": "syn-a-03",
+          "cc": "Synthetic Charlieone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5sg02gol",
+          "patientId": "syn-a-02",
+          "cc": "Synthetic Bravoone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5rr3ecev",
+          "patientId": "syn-a-01",
+          "cc": "Synthetic Alphaone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        }
+      ],
+      "aiRequests": [
+        {
+          "n": 1,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Alphaone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 2,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Bravoone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 3,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Charlieone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 4,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Deltaone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 5,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Echoone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 6,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Foxtrotone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 7,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Golfone Testpatient",
+          "procedure": "Bilateral L2-L3 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 8,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Hotelone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 9,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Indiaone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3117,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 10,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Juliettone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 11,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Kiloone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 12,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Limaone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3113,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 13,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Mikeone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3116,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 14,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Alphaone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 15,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Bravoone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 16,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Charlieone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3122,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 17,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Deltaone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 18,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Echoone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 19,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Foxtrotone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 20,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Golfone Testpatient",
+          "procedure": "Bilateral L2-L3 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 21,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Hotelone Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 22,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Indiaone Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3117,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 23,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Juliettone Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 24,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Kiloone Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 25,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Limaone Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3113,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 26,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Mikeone Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3116,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        }
+      ],
+      "externalHits": []
+    },
+    "failurePath": {
+      "summary": "✅ Done: 11 drafted · 2 failed · 0 skipped of 13. Drafts are in History — nothing was sent to Athena.↻ Retry failed (2)",
+      "ledgerHead": "✅ Done: 11 drafted · 2 failed · 0 skipped of 13.",
+      "ledger": [
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Alphatwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Bravotwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Charlietwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "bad",
+          "text": "✗ Synthetic Deltatwo Testpatient (August 2) — the note service had a server error (500) — usually temporary — re-try this one from its card"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Echotwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Foxtrottwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Golftwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Hoteltwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "bad",
+          "text": "✗ Synthetic Indiatwo Testpatient (August 2) — Draft stopped because the generated note changed or omitted requested clinical facts (procedureType, region, levels). Requested procedure type conflicts with th — re-try this one from its card"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Julietttwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Kilotwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Limatwo Testpatient (August 2) — ⚠ reconstructed from the template — review this one: SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 3 blanks to fill · saved as draft · the model's reply could not be used, so MLS rebuilt it from your template and the known facts"
+        },
+        {
+          "cls": "ok",
+          "text": "✓ Synthetic Miketwo Testpatient (August 2) — drafted with SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 2 blanks to fill · saved as draft"
+        }
+      ],
+      "nav": [
+        {
+          "name": "Synthetic Alphatwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Bravotwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Charlietwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Deltatwo Testpatient",
+          "state": "not drafted yet",
+          "dot": "opr-dot "
+        },
+        {
+          "name": "Synthetic Echotwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Foxtrottwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Golftwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Hoteltwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Indiatwo Testpatient",
+          "state": "not drafted yet",
+          "dot": "opr-dot "
+        },
+        {
+          "name": "Synthetic Julietttwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Kilotwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Limatwo Testpatient",
+          "state": "3 blanks to fill",
+          "dot": "opr-dot blanks"
+        },
+        {
+          "name": "Synthetic Miketwo Testpatient",
+          "state": "2 blanks to fill",
+          "dot": "opr-dot blanks"
+        }
+      ],
+      "rows": [
+        {
+          "i": 0,
+          "name": "Synthetic Alphatwo Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6bhpmdn4",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6bhpmdn4",
+            "patientId": "syn-b-01",
+            "cc": "Synthetic Alphatwo Testpatient — Aug 2, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 1,
+          "name": "Synthetic Bravotwo Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6by75da4",
+          "noteChars": 2211,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6by75da4",
+            "patientId": "syn-b-02",
+            "cc": "Synthetic Bravotwo Testpatient — Aug 2, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2211,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 2,
+          "name": "Synthetic Charlietwo Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6cdpu2ib",
+          "noteChars": 2214,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6cdpu2ib",
+            "patientId": "syn-b-03",
+            "cc": "Synthetic Charlietwo Testpatient — Aug 2, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2214,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 3,
+          "name": "Synthetic Deltatwo Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": false,
+          "edited": false,
+          "genSeq": 0,
+          "noteId": "",
+          "noteChars": 0,
+          "missing": [],
+          "lastErr": "500",
+          "hasFills": {
+            "needle": false,
+            "injectate": false,
+            "openSlot": false
+          },
+          "headings": [],
+          "procLine": "",
+          "noteFacts": {
+            "procedureType": "",
+            "region": "",
+            "side": "",
+            "levels": [],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 0,
+          "blankKeysInNote": [],
+          "savedNote": null
+        },
+        {
+          "i": 4,
+          "name": "Synthetic Echotwo Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6g9ksaor",
+          "noteChars": 2210,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6g9ksaor",
+            "patientId": "syn-b-05",
+            "cc": "Synthetic Echotwo Testpatient — Aug 2, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2210,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 5,
+          "name": "Synthetic Foxtrottwo Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6gp8tsg2",
+          "noteChars": 2214,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6gp8tsg2",
+            "patientId": "syn-b-06",
+            "cc": "Synthetic Foxtrottwo Testpatient — Aug 2, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2214,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 6,
+          "name": "Synthetic Golftwo Testpatient",
+          "proc": "Bilateral L2-L3 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6h5rc4iz",
+          "noteChars": 2215,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L2-L3 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L2",
+              "L3"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6h5rc4iz",
+            "patientId": "syn-b-07",
+            "cc": "Synthetic Golftwo Testpatient — Aug 2, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+            "chars": 2215,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 7,
+          "name": "Synthetic Hoteltwo Testpatient",
+          "proc": "Bilateral L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6hlpvuz9",
+          "noteChars": 2216,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6hlpvuz9",
+            "patientId": "syn-b-08",
+            "cc": "Synthetic Hoteltwo Testpatient — Aug 2, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2216,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 8,
+          "name": "Synthetic Indiatwo Testpatient",
+          "proc": "Left L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": false,
+          "edited": false,
+          "genSeq": 0,
+          "noteId": "",
+          "noteChars": 0,
+          "missing": [],
+          "lastErr": "Draft stopped because the generated note changed or omitted requested clinical facts (procedureType, region, levels). Requested procedure type conflicts with th",
+          "hasFills": {
+            "needle": false,
+            "injectate": false,
+            "openSlot": false
+          },
+          "headings": [],
+          "procLine": "",
+          "noteFacts": {
+            "procedureType": "",
+            "region": "",
+            "side": "",
+            "levels": [],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 0,
+          "blankKeysInNote": [],
+          "savedNote": null
+        },
+        {
+          "i": 9,
+          "name": "Synthetic Julietttwo Testpatient",
+          "proc": "Right L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6ig0tlu7",
+          "noteChars": 2214,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6ig0tlu7",
+            "patientId": "syn-b-10",
+            "cc": "Synthetic Julietttwo Testpatient — Aug 2, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2214,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 10,
+          "name": "Synthetic Kilotwo Testpatient",
+          "proc": "Bilateral L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6iyfcxi8",
+          "noteChars": 2215,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Bilateral L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "bilateral",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6iyfcxi8",
+            "patientId": "syn-b-11",
+            "cc": "Synthetic Kilotwo Testpatient — Aug 2, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2215,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        },
+        {
+          "i": 11,
+          "name": "Synthetic Limatwo Testpatient",
+          "proc": "Left L4-L5 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6jgh6y6j",
+          "noteChars": 2254,
+          "missing": [
+            "pre_operative_diagnosis",
+            "indications",
+            "needle_size",
+            "injectate_per_level",
+            "fluoroscopy_time",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": false,
+            "injectate": false,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Left L4-L5 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "left",
+            "levels": [
+              "L4",
+              "L5"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 3,
+          "blankKeysInNote": [
+            "pre_operative_diagnosis",
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6jgh6y6j",
+            "patientId": "syn-b-12",
+            "cc": "Synthetic Limatwo Testpatient — Aug 2, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+            "chars": 2254,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 3
+          }
+        },
+        {
+          "i": 12,
+          "name": "Synthetic Miketwo Testpatient",
+          "proc": "Right L3-L4 lumbar medial branch block",
+          "tplId": "syn-tpl-mbb-0001",
+          "gen": true,
+          "edited": false,
+          "genSeq": 1,
+          "noteId": "nms8d6jx4weos",
+          "noteChars": 2211,
+          "missing": [
+            "fluoroscopy_time",
+            "indications",
+            "provider_npi"
+          ],
+          "lastErr": "",
+          "hasFills": {
+            "needle": true,
+            "injectate": true,
+            "openSlot": false
+          },
+          "headings": [
+            "operative",
+            "procedure note",
+            "synthetic test template not a real patient document",
+            "patient",
+            "date of procedure",
+            "provider",
+            "facility",
+            "pre operative diagnosis",
+            "post operative diagnosis",
+            "procedure",
+            "anesthesia",
+            "indications",
+            "history",
+            "consent",
+            "time out",
+            "technique",
+            "fluoroscopy time",
+            "estimated blood loss",
+            "complications",
+            "disposition",
+            "post procedure",
+            "plan",
+            "npi",
+            "facility"
+          ],
+          "procLine": "PROCEDURE: Right L3-L4 lumbar medial branch block",
+          "noteFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "requestedFacts": {
+            "procedureType": "facet_mbb",
+            "region": "lumbar",
+            "side": "right",
+            "levels": [
+              "L3",
+              "L4"
+            ],
+            "approach": ""
+          },
+          "blanksInNote": 2,
+          "blankKeysInNote": [
+            "indications",
+            "provider_npi"
+          ],
+          "savedNote": {
+            "id": "nms8d6jx4weos",
+            "patientId": "syn-b-13",
+            "cc": "Synthetic Miketwo Testpatient — Aug 2, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+            "chars": 2211,
+            "matchesRow": true,
+            "isDraft": true,
+            "firstDiffAt": -1,
+            "rowAtDiff": "",
+            "savedAtDiff": "",
+            "blanksInSaved": 2
+          }
+        }
+      ],
+      "templateHeadings": [
+        "operative",
+        "procedure note",
+        "synthetic test template not a real patient document",
+        "patient",
+        "date of procedure",
+        "provider",
+        "facility",
+        "pre operative diagnosis",
+        "post operative diagnosis",
+        "procedure",
+        "anesthesia",
+        "indications",
+        "history",
+        "consent",
+        "time out",
+        "technique",
+        "fluoroscopy time",
+        "estimated blood loss",
+        "complications",
+        "disposition",
+        "post procedure",
+        "plan"
+      ],
+      "notes": [
+        {
+          "id": "nms8d6jx4weos",
+          "patientId": "syn-b-13",
+          "cc": "Synthetic Miketwo Testpatient — Aug 2, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2211,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6jgh6y6j",
+          "patientId": "syn-b-12",
+          "cc": "Synthetic Limatwo Testpatient — Aug 2, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2254,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6iyfcxi8",
+          "patientId": "syn-b-11",
+          "cc": "Synthetic Kilotwo Testpatient — Aug 2, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2215,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6ig0tlu7",
+          "patientId": "syn-b-10",
+          "cc": "Synthetic Julietttwo Testpatient — Aug 2, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2214,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6hlpvuz9",
+          "patientId": "syn-b-08",
+          "cc": "Synthetic Hoteltwo Testpatient — Aug 2, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6h5rc4iz",
+          "patientId": "syn-b-07",
+          "cc": "Synthetic Golftwo Testpatient — Aug 2, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+          "chars": 2215,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6gp8tsg2",
+          "patientId": "syn-b-06",
+          "cc": "Synthetic Foxtrottwo Testpatient — Aug 2, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2214,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6g9ksaor",
+          "patientId": "syn-b-05",
+          "cc": "Synthetic Echotwo Testpatient — Aug 2, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2210,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6cdpu2ib",
+          "patientId": "syn-b-03",
+          "cc": "Synthetic Charlietwo Testpatient — Aug 2, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2214,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6by75da4",
+          "patientId": "syn-b-02",
+          "cc": "Synthetic Bravotwo Testpatient — Aug 2, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2211,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d6bhpmdn4",
+          "patientId": "syn-b-01",
+          "cc": "Synthetic Alphatwo Testpatient — Aug 2, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5xmtf0ly",
+          "patientId": "syn-a-13",
+          "cc": "Synthetic Mikeone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5x6naq7i",
+          "patientId": "syn-a-12",
+          "cc": "Synthetic Limaone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5wpphfla",
+          "patientId": "syn-a-11",
+          "cc": "Synthetic Kiloone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5w9ohinj",
+          "patientId": "syn-a-10",
+          "cc": "Synthetic Juliettone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5vsd9vk4",
+          "patientId": "syn-a-09",
+          "cc": "Synthetic Indiaone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5v8bs3oa",
+          "patientId": "syn-a-08",
+          "cc": "Synthetic Hotelone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5upxbhwe",
+          "patientId": "syn-a-07",
+          "cc": "Synthetic Golfone Testpatient — Aug 1, 2026 — Bilateral L2-L3 lumbar medial branch block (op-note draft)",
+          "chars": 2217,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5u981vic",
+          "patientId": "syn-a-06",
+          "cc": "Synthetic Foxtrotone Testpatient — Aug 1, 2026 — Right L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5trrlvz9",
+          "patientId": "syn-a-05",
+          "cc": "Synthetic Echoone Testpatient — Aug 1, 2026 — Left L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2212,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5tcd8v1h",
+          "patientId": "syn-a-04",
+          "cc": "Synthetic Deltaone Testpatient — Aug 1, 2026 — Bilateral L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5swsx9e1",
+          "patientId": "syn-a-03",
+          "cc": "Synthetic Charlieone Testpatient — Aug 1, 2026 — Right L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2216,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5sg02gol",
+          "patientId": "syn-a-02",
+          "cc": "Synthetic Bravoone Testpatient — Aug 1, 2026 — Left L3-L4 lumbar medial branch block (op-note draft)",
+          "chars": 2213,
+          "isDraft": true,
+          "kind": "opnote"
+        },
+        {
+          "id": "nms8d5rr3ecev",
+          "patientId": "syn-a-01",
+          "cc": "Synthetic Alphaone Testpatient — Aug 1, 2026 — Bilateral L4-L5 lumbar medial branch block (op-note draft)",
+          "chars": 2218,
+          "isDraft": true,
+          "kind": "opnote"
+        }
+      ],
+      "aiRequests": [
+        {
+          "n": 1,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Alphatwo Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 2,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Bravotwo Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3113,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 3,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Charlietwo Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3120,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 4,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Deltatwo Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "http500",
+          "answered": "http500",
+          "missingKeys": [],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 5,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Deltatwo Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "http500",
+          "answered": "http500",
+          "missingKeys": [],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 6,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Echotwo Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3113,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 7,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Foxtrottwo Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 8,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Golftwo Testpatient",
+          "procedure": "Bilateral L2-L3 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 9,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Hoteltwo Testpatient",
+          "procedure": "Bilateral L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 10,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Indiatwo Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3115,
+          "templateChars": 1848,
+          "mode": "wrongprocedure",
+          "answered": "wrongprocedure",
+          "missingKeys": [],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 11,
+          "transport": "openai-chat",
+          "phase": "repair",
+          "patient": "Synthetic Indiatwo Testpatient",
+          "procedure": "Left L3-L4 lumbar medial branch block",
+          "sysChars": 1693,
+          "userChars": 7065,
+          "templateChars": 1848,
+          "mode": "wrongprocedure",
+          "answered": "wrongprocedure",
+          "missingKeys": [],
+          "sysHasTemplateLaw": false,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": false
+        },
+        {
+          "n": 12,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Julietttwo Testpatient",
+          "procedure": "Right L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 13,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Kilotwo Testpatient",
+          "procedure": "Bilateral L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3118,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 14,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Limatwo Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3111,
+          "templateChars": 1848,
+          "mode": "malformed",
+          "answered": "malformed",
+          "missingKeys": [],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        },
+        {
+          "n": 15,
+          "transport": "openai-chat",
+          "phase": "repair",
+          "patient": "Synthetic Limatwo Testpatient",
+          "procedure": "Left L4-L5 lumbar medial branch block",
+          "sysChars": 1693,
+          "userChars": 5083,
+          "templateChars": 1848,
+          "mode": "malformed",
+          "answered": "malformed",
+          "missingKeys": [],
+          "sysHasTemplateLaw": false,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": false
+        },
+        {
+          "n": 16,
+          "transport": "openai-chat",
+          "phase": "initial",
+          "patient": "Synthetic Miketwo Testpatient",
+          "procedure": "Right L3-L4 lumbar medial branch block",
+          "sysChars": 2030,
+          "userChars": 3114,
+          "templateChars": 1848,
+          "mode": "ok",
+          "answered": "echo",
+          "missingKeys": [
+            "fluoroscopy_time"
+          ],
+          "sysHasTemplateLaw": true,
+          "sysHasNoFabrication": true,
+          "sysHasJsonContract": true
+        }
+      ],
+      "externalHits": []
+    }
+  },
+  "results": [
+    {
+      "step": "1. synthetic login + 13-row synthetic procedure day seeded",
+      "verdict": "PASS",
+      "evidence": "backendMode=false, stub installed pre-boot; 13 appointments on 2026-08-01; all 13 resolve to an exact synthetic patient"
+    },
+    {
+      "step": "2. one uploaded synthetic template auto-matches every row",
+      "verdict": "PASS",
+      "evidence": "template \"SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block\" (1993 chars); _opRankTemplates top score per row = [143,143,143,143,143,143,143,143,143,143,143,143,143] (min 143 > 0)"
+    },
+    {
+      "step": "3. the real \"Draft all op notes\" button was pressed (trusted CDP click)",
+      "verdict": "PASS",
+      "evidence": "live owner = mls-connect.js __mlsTplPrepFix.draftAll (tpf-1.0.0); button rect [325,100,180,40], hit-tested reachable; run finished in 8.6s"
+    },
+    {
+      "step": "4. every row ends in a definite state (no row left pending)",
+      "verdict": "PASS",
+      "evidence": "ledger states: drafted=13 failed=0 skipped=0 pending=0; drafted+failed+skipped=13=13; run took 8.6s"
+    },
+    {
+      "step": "5. the completion line agrees with the rows AND with History",
+      "verdict": "PASS",
+      "evidence": "summary=\"✅ Done: 13 drafted · 0 failed · 0 skipped of 13. Drafts are in History — nothing was sent to Athena.\" -> {\"kind\":\"Done\",\"drafted\":13,\"failed\":0,\"skipped\":0,\"total\":13}; 13 rows have a note in History and every one equals the note on screen"
+    },
+    {
+      "step": "5b. template-following held (headings, fixed wording, filled slots)",
+      "verdict": "PASS",
+      "evidence": "all 13 notes preserved the 22 template headings in order, carried both synthetic slot fills, and kept the deliberately-open slot as a blank"
+    },
+    {
+      "step": "5c. the note in History is the note on the screen",
+      "verdict": "PASS",
+      "evidence": "all 13 rows: the autosaved History draft is byte-identical to the note the row shows"
+    },
+    {
+      "step": "5f. every saved note documents the procedure that patient is scheduled for",
+      "verdict": "PASS",
+      "evidence": "13/13 notes: procedure type, region, side and levels parsed out of the saved note equal the scheduled procedure (e.g. {\"procedureType\":\"facet_mbb\",\"region\":\"lumbar\",\"side\":\"left\",\"levels\":[\"L3\",\"L4\"],\"approach\":\"\"})"
+    },
+    {
+      "step": "5e. the two on-screen blank counts agree with the note itself",
+      "verdict": "PASS",
+      "evidence": "the Draft-all ledger, the room patient rail, and opNoteBlankCount(note) all report the same number of blanks per row"
+    },
+    {
+      "step": "5d. the SYSTEM PROMPT actually sent carries the template law",
+      "verdict": "PASS",
+      "evidence": "13 recorded requests; every initial call carried the selected template (1848 chars) plus the heading-preservation, anti-fabrication and JSON-contract clauses"
+    },
+    {
+      "step": "7. a second Draft-all is idempotent (no duplicated notes)",
+      "verdict": "PASS",
+      "evidence": "re-ran all 13 rows in 8.7s: History op-note drafts stayed at 13, every row reused its original note id, no duplicate patient+cc pair; second summary \"✅ Done: 13 drafted · 0 failed · 0 skipped of 13. Drafts are in History\""
+    },
+    {
+      "step": "6a. one bad row does not poison the run",
+      "verdict": "PASS",
+      "evidence": "injected HTTP 500 at row 4, a clinically wrong draft at row 9 and a malformed reply at row 12; the 10 healthy rows all drafted and each preserved the template (ledger drafted=11 failed=2 skipped=0 pending=0)"
+    },
+    {
+      "step": "6e. a draft documenting the WRONG procedure never reaches History",
+      "verdict": "PASS",
+      "evidence": "the model answered with a cervical interlaminar ESI for a patient scheduled for \"Left L3-L4 lumbar medial branch block\"; the clinical-consistency gate refused the draft and stored nothing (ledger: \"✗ Synthetic Indiatwo Testpatient (August 2) — Draft stopped because the generated note changed or omitted requested clinical facts (procedureType, region, levels). Requested procedure type conflicts with th — re-try this one from its card\")"
+    },
+    {
+      "step": "6b. each failed row names a reason a doctor could act on",
+      "verdict": "PASS",
+      "evidence": "reasons shown: [{\"row\":\"✗ Synthetic Deltatwo Testpatient (\",\"reason\":\"the note service had a server error (500) — usually temporary — re-try this one from its card\"},{\"row\":\"✗ Synthetic Indiatwo Testpatient (\",\"reason\":\"Draft stopped because the generated note changed or omitted requested clinical facts (procedureType, region, levels). Requested procedure type conflicts with th — re-try this one from its card\"}]; no failed row left a note in History; AI attempts spent: 500-row=2, wrong-procedure-row=2"
+    },
+    {
+      "step": "6c. the summary counts the failures as failures",
+      "verdict": "PASS",
+      "evidence": "completion line \"✅ Done: 11 drafted · 2 failed · 0 skipped of 13. Drafts are in History — nothing was sent \" -> {\"kind\":\"Done\",\"drafted\":11,\"failed\":2,\"skipped\":0,\"total\":13}, matching the ledger row for row"
+    },
+    {
+      "step": "6d. a malformed model reply is never presented as a normal draft",
+      "verdict": "PASS",
+      "evidence": "malformed reply outcome: {\"outcome\":\"recovered\",\"ledger\":\"✓ Synthetic Limatwo Testpatient (August 2) — ⚠ reconstructed from the template — review this one: SYNTHETIC TEST TEMPLATE - Lumbar Medial Branch Block · 3 blanks to fill · saved as draft · the model's reply could not be used, so MLS rebuilt it from your template and the known facts\"}; 2 AI attempts spent"
+    },
+    {
+      "step": "8. no external network and no uncaught page errors",
+      "verdict": "PASS",
+      "evidence": "zero non-loopback requests (Chrome also runs with MAP * ~NOTFOUND) and zero uncaught page exceptions across all three runs"
+    }
+  ],
+  "defects": [],
+  "browserErrors": []
+}
