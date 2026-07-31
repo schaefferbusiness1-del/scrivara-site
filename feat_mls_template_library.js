@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.3.2', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var VERSION='tl-1.4.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
@@ -57,21 +57,51 @@
     anchor.parentNode.insertBefore(box,anchor);
     return box;
   }
+  /* THE SHAPE OF THE WAIT, NOT JUST A BAR. Owner: the loading has to be
+     "pretty and easy to understand and intuitive". A lone bar answers "how
+     far" and nothing else; importing 100 forms runs a five-stage pipeline the
+     module already declares in IMPORT_STAGES/PREVIEW_STAGES/COMMIT_STAGES, so
+     the steps are drawn and the doctor can see WHICH part is slow and what is
+     still to come. Done steps get a tick, the running one a pulsing dot, the
+     rest stay quiet. */
   function paintProgress(stage,current,total,operation){
     try{
       var box=progressBox();if(!box)return;
       var t=Number(total)||0,c=Math.max(0,Math.min(Number(current)||0,t)),pct=t?Math.round(c/t*100):0;
+      var steps=state.progStages||[],at=-1,i;
+      for(i=0;i<steps.length;i++){ if(steps[i]===stage){at=i;break;} }
+      var stepsHtml='';
+      if(steps.length>1){
+        stepsHtml='<ol class="tl-prog-steps">';
+        for(i=0;i<steps.length;i++){
+          var cls=at<0?'':(i<at?'done':(i===at?'now':''));
+          stepsHtml+='<li class="'+cls+'"><span class="tl-prog-dot"></span>'+esc(steps[i])+'</li>';
+        }
+        stepsHtml+='</ol>';
+      }
       box.hidden=false;
-      box.innerHTML='<div class="tl-prog"><span class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:100)+'%"></i></span>'+
-        '<span class="tl-prog-txt">'+esc(stage||'Working…')+(t?' — '+c+' of '+t:'')+'</span></div>'+
-        (operation&&operation!==stage?'<div class="tl-prog-op">'+esc(operation)+'</div>':'');
+      box.innerHTML=
+        '<div class="tl-prog">'+
+          '<div class="tl-prog-head">'+
+            '<span class="tl-prog-title">'+esc(state.progLabel||stage||'Working…')+'</span>'+
+            (t?'<span class="tl-prog-count">'+c+' / '+t+'</span>':'<span class="tl-prog-count">working…</span>')+
+          '</div>'+
+          '<div class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:40)+'%"></i></div>'+
+          '<div class="tl-prog-txt">'+esc(stage||'')+'</div>'+
+          stepsHtml+
+          (operation&&operation!==stage?'<div class="tl-prog-op">'+esc(operation)+'</div>':'')+
+        '</div>';
     }catch(e){}
   }
   /* the strip is a PROGRESS indicator, so it leaves when the work does —
      otherwise a finished import reads as one still running. */
   function clearProgress(){ try{ var box=byId('tlUploadProgress'); if(box){ box.innerHTML=''; box.hidden=true; } }catch(e){} }
   function progressStart(opts){
-    try{paintProgress((opts&&opts.label)||'Working…',0,(opts&&opts.total)||0,'');}catch(e){}
+    try{
+      state.progStages=(opts&&Array.isArray(opts.stages))?opts.stages.slice():[];
+      state.progLabel=(opts&&opts.label)||'Working…';
+      paintProgress(state.progStages[0]||state.progLabel,0,(opts&&opts.total)||0,'');
+    }catch(e){}
     var api=window.__mlsLoadingCalm,h=null;
     try{h=api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){h=null;}
     /* the strip must retire on EVERY exit, including the ones that throw, so
@@ -113,14 +143,27 @@
       /* b834 — the progress strip paintProgress() draws. Unscoped on purpose:
          it must read the same in the embedded Templates tab and in the classic
          floating dialog, and neither surface owns #tplMultiStatus. */
-      '#tlUploadProgress .tl-prog{display:flex;align-items:center;gap:9px;margin-top:5px}',
-      '#tlUploadProgress .tl-prog-bar{flex:1;height:8px;border-radius:999px;background:#e4eee8;overflow:hidden;min-width:90px}',
-      '#tlUploadProgress .tl-prog-bar>i{display:block;height:100%;border-radius:999px;background:#2E6A4B;transition:width .18s ease}',
-      '#tlUploadProgress .tl-prog-bar[data-tl-indeterminate] > i{width:40%;animation:tlProgSlide 1.1s ease-in-out infinite}',
-      '#tlUploadProgress .tl-prog-txt{font-weight:700;white-space:nowrap}',
-      '#tlUploadProgress .tl-prog-op{margin-top:3px;color:#5b6d65}',
-      '@keyframes tlProgSlide{0%{margin-left:0}50%{margin-left:60%}100%{margin-left:0}}',
-      '@media(prefers-reduced-motion:reduce){#tlUploadProgress .tl-prog-bar>i{animation:none!important;transition:none!important}}',
+      /* the wait, drawn so it explains itself */
+      '#tlUploadProgress .tl-prog{margin:8px 0 2px;padding:13px 15px;border:1px solid #cfe0d7;border-radius:13px;background:linear-gradient(135deg,#f6fbf8,#f4f8ff);box-shadow:0 4px 16px rgba(32,64,52,.07)}',
+      '#tlUploadProgress .tl-prog-head{display:flex;align-items:baseline;gap:10px;justify-content:space-between}',
+      '#tlUploadProgress .tl-prog-title{font-weight:800;font-size:13.5px;color:#19352a}',
+      '#tlUploadProgress .tl-prog-count{font-weight:750;font-size:12.5px;color:#2E6A4B;font-variant-numeric:tabular-nums;white-space:nowrap}',
+      '#tlUploadProgress .tl-prog-bar{height:9px;border-radius:999px;background:#e4eee8;overflow:hidden;margin:9px 0 7px}',
+      '#tlUploadProgress .tl-prog-bar>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#2E6A4B,#4f9a72);transition:width .28s cubic-bezier(.4,0,.2,1)}',
+      '#tlUploadProgress .tl-prog-bar[data-tl-indeterminate]>i{animation:tlProgSlide 1.25s ease-in-out infinite}',
+      '#tlUploadProgress .tl-prog-txt{font-size:12.5px;color:#35536f;font-weight:700}',
+      '#tlUploadProgress .tl-prog-steps{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:5px 14px}',
+      '#tlUploadProgress .tl-prog-steps li{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8a9a92;transition:color .2s ease}',
+      '#tlUploadProgress .tl-prog-dot{width:9px;height:9px;border-radius:50%;background:#dbe7e1;flex:none;transition:background .2s ease,box-shadow .2s ease}',
+      '#tlUploadProgress .tl-prog-steps li.done{color:#2E6A4B;font-weight:700}',
+      '#tlUploadProgress .tl-prog-steps li.done .tl-prog-dot{background:#2E6A4B;box-shadow:inset 0 0 0 2px #f6fbf8}',
+      '#tlUploadProgress .tl-prog-steps li.now{color:#19352a;font-weight:800}',
+      '#tlUploadProgress .tl-prog-steps li.now .tl-prog-dot{background:#4f9a72;animation:tlProgPulse 1.15s ease-in-out infinite}',
+      '#tlUploadProgress .tl-prog-op{margin-top:7px;font-size:11.5px;color:#5b6d65;line-height:1.5}',
+      '@keyframes tlProgSlide{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}',
+      '@keyframes tlProgPulse{0%,100%{box-shadow:0 0 0 0 rgba(79,154,114,.55)}50%{box-shadow:0 0 0 5px rgba(79,154,114,0)}}',
+      /* a clinical surface never animates at someone who asked it not to */
+      '@media(prefers-reduced-motion:reduce){#tlUploadProgress .tl-prog-bar>i,#tlUploadProgress .tl-prog-dot{animation:none!important;transition:none!important}}',
       /* b834 — 100 templates made the review list 6,463px tall and left
          "Add selected to my templates" at y=7045 in a 720px viewport: the
          doctor had to scroll seven screens to finish the import he started.

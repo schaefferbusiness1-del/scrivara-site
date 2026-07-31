@@ -229,6 +229,52 @@
        if the animation never runs at all. */
     'opacity:0;animation:mlsDockInD var(--mls-slow) var(--mls-spring) forwards}',
     '@keyframes mlsDockInD{from{opacity:0;transform:translateX(-50%) translateY(18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
+
+    /* ---- b841: THE DOCK GOES WHERE THE DOCTOR WANTS IT --------------------
+       Owner: "make it possible to move the bottom menu select to the top in
+       settings or to either side ... but I love how it hovers so dont change
+       that." So every position is still `position:fixed` glass that floats over
+       the page — only the anchor and the axis change. The default is untouched:
+       with no attribute set, the rules above apply exactly as before, so a
+       doctor who never opens the setting sees no difference at all.
+       Each position re-states its own resting transform, because the entrance
+       @keyframes above bakes translateX(-50%) into its end state and a left/right
+       dock must not inherit it. */
+    'body[data-mls-dock="top"] #mlsDock{top:18px;bottom:auto;animation-name:mlsDockInT}',
+    '@keyframes mlsDockInT{from{opacity:0;transform:translateX(-50%) translateY(-18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
+
+    'body[data-mls-dock="left"] #mlsDock,body[data-mls-dock="right"] #mlsDock{',
+    'top:50%;bottom:auto;left:auto;right:auto;flex-direction:column;align-items:stretch;',
+    'transform:translateY(-50%);border-radius:22px}',
+    'body[data-mls-dock="left"] #mlsDock{left:18px;animation-name:mlsDockInL}',
+    'body[data-mls-dock="right"] #mlsDock{right:18px;animation-name:mlsDockInR}',
+    '@keyframes mlsDockInL{from{opacity:0;transform:translateY(-50%) translateX(-18px) scale(.96)}to{opacity:1;transform:translateY(-50%) translateX(0) scale(1)}}',
+    '@keyframes mlsDockInR{from{opacity:0;transform:translateY(-50%) translateX(18px) scale(.96)}to{opacity:1;transform:translateY(-50%) translateX(0) scale(1)}}',
+    /* the sliding indicator turns with the dock: JS drives height+translateY on
+       this axis, so the CSS must stop pinning the height. */
+    'body[data-mls-dock="left"] #mlsDock .mls-dock-pill,body[data-mls-dock="right"] #mlsDock .mls-dock-pill{',
+    'height:auto;width:calc(100% - 12px)}',
+    'body[data-mls-dock="left"] #mlsDock button,body[data-mls-dock="right"] #mlsDock button{width:100%}',
+    /* the Ask field cannot be 172px wide inside a vertical rail; it rests as a
+       compact square and opens to full width on focus, over the page, which is
+       the same trick the horizontal dock already uses. */
+    'body[data-mls-dock="left"] #mlsDockAskWrap,body[data-mls-dock="right"] #mlsDockAskWrap{',
+    'margin:4px 0 0;padding:8px 0 0;border-left:0;border-top:1px solid rgba(0,0,0,.07);justify-content:center}',
+    'body[data-mls-dock="left"] #mlsDockAsk,body[data-mls-dock="right"] #mlsDockAsk{width:46px}',
+    'body[data-mls-dock="left"] #mlsDockAsk:focus{width:230px}',
+    'body[data-mls-dock="right"] #mlsDockAsk:focus{width:230px;margin-left:-184px}',
+    /* heads-down dimming re-stated per axis for the same reason as the entrance */
+    'body.mls-headsdown[data-mls-dock="top"] #mlsDock{transform:translateX(-50%) translateY(-6px)}',
+    'body.mls-headsdown[data-mls-dock="left"] #mlsDock{transform:translateY(-50%) translateX(-6px)}',
+    'body.mls-headsdown[data-mls-dock="right"] #mlsDock{transform:translateY(-50%) translateX(6px)}',
+    /* a vertical rail on a phone would eat the whole screen edge; below the
+       phone breakpoint every choice falls back to the proven bottom dock. */
+    '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
+    'flex-direction:row;align-items:center;transform:translateX(-50%);animation-name:mlsDockInD}',
+    'body[data-mls-dock] #mlsDock .mls-dock-pill{height:calc(100% - 12px);width:auto}',
+    'body[data-mls-dock] #mlsDock button{width:auto}',
+    'body[data-mls-dock] #mlsDockAskWrap{margin-left:4px;padding-left:8px;border-top:0;border-left:1px solid rgba(0,0,0,.07)}',
+    'body[data-mls-dock] #mlsDockAsk{width:172px}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#D6E7DC;',
     'box-shadow:0 1px 2px rgba(20,35,28,.14),inset 0 0 0 1px rgba(32,64,52,.10);',
     /* The pill already glided rather than teleported — the brief's premise was
@@ -1426,6 +1472,48 @@
     return d.label || '';
   }
 
+  /* -------------------------------------------------- b841: dock placement
+     Persisted per user through the app's own uns() namespace when it is
+     available, so the choice follows the account the way every other
+     Appearance setting does, and falls back to a device-local key on the
+     public/preview shells where uns() is not defined. Any value that is not
+     one of the four known sides is treated as the default rather than written
+     to the body, because an unknown attribute would match no rule and strand
+     the dock with `top:auto;bottom:auto`. */
+  var DOCK_SIDES = { bottom: 1, top: 1, left: 1, right: 1 };
+  function dockKey() {
+    try { if (typeof W.uns === 'function') return W.uns('qolDockSide'); } catch (e) {}
+    return 'mls::qolDockSide';
+  }
+  function dockSide() {
+    var v;
+    try { v = W.localStorage.getItem(dockKey()) || ''; } catch (e) { v = ''; }
+    return DOCK_SIDES[v] ? v : 'bottom';
+  }
+  function dockVertical() {
+    var s = dockSide();
+    /* the phone breakpoint forces the bottom rail back, so the pill must be
+       measured on the horizontal axis there no matter what is stored. */
+    var narrow = false;
+    try { narrow = !!(W.matchMedia && W.matchMedia('(max-width:640px)').matches); } catch (e) {}
+    return !narrow && (s === 'left' || s === 'right');
+  }
+  function applyDockSide(side) {
+    var v = DOCK_SIDES[side] ? side : dockSide();
+    try {
+      if (v === 'bottom') D.body.removeAttribute('data-mls-dock');
+      else D.body.setAttribute('data-mls-dock', v);
+    } catch (e) {}
+    try { syncDock(); } catch (e) {}
+  }
+  W.applyDockSidePreview = function (side) {
+    if (!DOCK_SIDES[side]) side = 'bottom';
+    try { W.localStorage.setItem(dockKey(), side); } catch (e) {}
+    applyDockSide(side);
+    return side;
+  };
+  W.mlsDockSide = dockSide;
+
   function syncDock() {
     if (!dockEl) return;
     var active = currentDest();
@@ -1454,10 +1542,23 @@
     if (pill && activeBtn) {
       /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, in the
          file the boot lane measured at 29% of boot's 5,576 forced layouts. */
-      var w = activeBtn.offsetWidth + 'px';
-      var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
-      if (pill.style.width !== w) pill.style.width = w;
-      if (pill.style.transform !== tx) pill.style.transform = tx;
+      /* b841: the indicator follows whichever axis the dock is laid out on. The
+         write-only-on-change discipline above is kept on BOTH axes, and the
+         unused axis is cleared once rather than every pass, so switching sides
+         cannot leave a stale width pinning the pill to the old orientation. */
+      if (dockVertical()) {
+        var h = activeBtn.offsetHeight + 'px';
+        var ty = 'translateY(' + (activeBtn.offsetTop - 6) + 'px)';
+        if (pill.style.width !== '') pill.style.width = '';
+        if (pill.style.height !== h) pill.style.height = h;
+        if (pill.style.transform !== ty) pill.style.transform = ty;
+      } else {
+        var w = activeBtn.offsetWidth + 'px';
+        var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
+        if (pill.style.height !== '') pill.style.height = '';
+        if (pill.style.width !== w) pill.style.width = w;
+        if (pill.style.transform !== tx) pill.style.transform = tx;
+      }
       if (pill.style.opacity !== '1') pill.style.opacity = '1';
     } else if (pill && pill.style.opacity !== '0') {
       pill.style.opacity = '0';
@@ -2796,6 +2897,10 @@
     try {
       injectCss();
       buildDock();
+      /* b841: restore the doctor's chosen side BEFORE the first syncDock, so
+         the sliding indicator is measured on the axis it will actually live on
+         instead of flipping once on the next pass. */
+      safe(function () { applyDockSide(dockSide()); });
       classicSwitch();
       /* Set BEFORE the first render, not after: every deferred path below
          (the two boot timers, the queued rAF, Ask's 300ms follow-up) checks

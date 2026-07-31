@@ -740,6 +740,22 @@
     B + '#templatesModal button:focus-visible{ outline:2px solid var(--green-dk);' +
       ' outline-offset:2px; }',
 
+    /* b839 — A CLOSED <details> MUST NOT LEAVE LIVE BOXES BEHIND.
+       The controls inside #tpfFold ("Template health") kept `display:flex`,
+       `visibility:visible` and FULL-SIZE rects while the disclosure was shut:
+       #tpfReupload, #tpfReAll, #tpfMatchBtn and the Re-process / AI-keywords /
+       Delete row all reported real geometry sitting on top of the versioned
+       library beneath them. They did not paint — elementFromPoint returned the
+       element underneath — so this was invisible to the eye and to clicks, but
+       it is a live hazard: any later z-index or stacking change turns seven
+       phantom boxes into seven real ones over the doctor's controls, and until
+       then every overlap audit of this screen reports them as defects and
+       wastes the next reader's time (it wasted mine).
+       Restoring the UA behaviour explicitly costs nothing and makes the audit
+       mean what it says. */
+    B + '#templatesModal details:not([open]) > *:not(summary),' +
+    B + '#opPrepModal details:not([open]) > *:not(summary){ display:none !important; }',
+
     /* THE CLOSE ROW. The Close button measured 1380x42 = 57,960px2, the biggest
        control on the screen, purely because it carries an INLINE `flex:1` in a
        full-width row. flex needs !important; the row's `margin-top:14px` is
@@ -1313,6 +1329,62 @@
   }
   api.css = build;
 
+  /* ---- b838: THE WORKSPACE HOLDS THE TWO PANES AND NOTHING ELSE ----------
+     This module's charter said it creates, moves and removes no nodes, and that
+     rule earned its place — 102 structural grips live in this subtree. It is
+     amended here deliberately, for one node class, because the defect cannot be
+     reached from CSS.
+
+     #tplDetail carries an INLINE `position:sticky;top:0`. Chrome constrains that
+     sticky by the SCROLL container, not by the item's grid area — pinning the
+     pane to `grid-row:1` was tried first and measured NO improvement (9 real
+     occlusions before, 10 after). So while any full-width panel shares the
+     workspace, the travelling pane will paint over it. Measured on the owner's
+     screen: up to 694x329px of the versioned-library panel covered, with
+     elementFromPoint returning #tplDetText at the intersection — it was taking
+     the clicks, not just the pixels. That is the screenshot he sent.
+
+     Two modules inject panels INTO the workspace rather than beside it:
+     #tpfPanel (template health, mls-connect) and #tlPanel (versioned library,
+     feat_mls_template_library) both do
+     `anchor.parentElement.insertBefore(panel, #tplList)`. They are moved to sit
+     directly AFTER #tplWorkspace, where the flex composition above sorts them
+     into the maintenance band by the catch-all order.
+
+     WHY THIS IS SAFE FOR THE GRIPS: nothing is created, renamed or removed, and
+     no id changes. Both owning modules re-find their panel by id
+     (`if (byId('tlPanel')) return;`) so neither rebuilds it, and neither reads
+     its parentNode after creation. The observer re-evicts late arrivals so a
+     panel injected after the first render cannot reintroduce the overlap. */
+  var _wsObs = null, _evictPend = 0;
+  function evictStrays() {
+    return safe(function () {
+      var ws = document.getElementById('tplWorkspace');
+      if (!ws || !ws.parentNode) return 0;
+      var kids = Array.prototype.slice.call(ws.children), moved = 0, anchor = ws;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k.id === 'tplList' || k.id === 'tplDetail') continue;
+        k.setAttribute('data-ot-evicted', '1');
+        ws.parentNode.insertBefore(k, anchor.nextSibling);
+        anchor = k;
+        moved++;
+      }
+      return moved;
+    }, 0);
+  }
+  function watchWorkspace() {
+    safe(function () {
+      var ws = document.getElementById('tplWorkspace');
+      if (!ws || _wsObs) return;
+      _wsObs = new MutationObserver(function () {
+        if (_evictPend) return;
+        _evictPend = setTimeout(function () { _evictPend = 0; evictStrays(); }, 60);
+      });
+      _wsObs.observe(ws, { childList: true });
+    });
+  }
+
   /* ---- install: remove the old opinion, then own the surface ------------- */
   api.install = function () {
     safe(function () {
@@ -1331,9 +1403,17 @@
     /* the scope class is what makes this win on specificity regardless of the
        async load order of the two modules */
     safe(function () { document.body.classList.add(BODY_CLASS); });
+    evictStrays();
+    watchWorkspace();
   };
+  api.evictStrays = evictStrays;
 
   api.revert = function () {
+    safe(function () { if (_wsObs) { _wsObs.disconnect(); _wsObs = null; } });
+    safe(function () { if (_evictPend) { clearTimeout(_evictPend); _evictPend = 0; } });
+    /* the evicted panels are left where they are: both owning modules find them
+       by id and neither reads their parent, so putting them back would churn the
+       DOM for no observable gain. The marker records what moved. */
     safe(function () {
       var st = document.getElementById(STYLE_ID);
       if (st && st.parentNode) st.parentNode.removeChild(st);
