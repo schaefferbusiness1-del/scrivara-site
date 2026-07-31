@@ -636,13 +636,42 @@ function proofExpression() {
   })()`;
 }
 
+/* CLEANUP MUST NOT BE ABLE TO FAIL A RUN THAT PASSED.
+   Chrome keeps writing into its profile directory for a short while AFTER the
+   process is told to exit - leveldb compaction, cache flushes - so rmSync can
+   race it and throw ENOTEMPTY on .../Default. MEASURED here: the suite printed
+     PASS: 3/3 isolated cycles, 21 real PDFs parsed, 9 workbooks verified,
+           69 local GETs, 0 external requests
+   and then exited NON-ZERO on this line, so a completely successful run reads
+   as a failing suite. That is the same shape as the two harnesses fixed in
+   b812: an instrument that cannot report its own success is not reporting.
+
+   `force: true` does not help - it suppresses "missing", not "not empty". So
+   the removal retries briefly to let Chrome finish, and if the directory still
+   will not go it says so and CARRIES ON. A leftover directory in the OS temp
+   folder is not a test result; the assertions above it are.
+
+   The path guard is unchanged and still throws: refusing to delete an
+   unexpected path is a real safety rule, not a cleanup convenience. */
 function safeRemoveProfile(profileDir) {
   const tempRoot = path.resolve(os.tmpdir());
   const resolved = path.resolve(profileDir);
   if (!resolved.startsWith(tempRoot + path.sep) || !path.basename(resolved).startsWith('mls-live-adjunct-profile-')) {
     throw new Error(`Refusing to remove unexpected Chrome profile path: ${resolved}`);
   }
-  fs.rmSync(resolved, { recursive: true, force: true });
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 }); return; }
+    catch (error) {
+      if (Date.now() >= deadline) {
+        process.stdout.write(`[live-local-libraries] note: could not remove the Chrome profile at ${resolved} `
+          + `(${error && error.code || error}). Chrome was still writing to it. The run's assertions are unaffected.\n`);
+        return;
+      }
+      const wait = Date.now() + 250;
+      while (Date.now() < wait) { /* deliberately synchronous: this runs in teardown, off the event loop */ }
+    }
+  }
 }
 
 async function main() {
