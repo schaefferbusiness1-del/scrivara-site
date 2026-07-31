@@ -861,12 +861,31 @@
       safe(function () {
         var p = $('oprPanelTpls');
         if (!p) return;
+        /* AND IT YIELDS THE INSTANT HE TOUCHES IT.
+           The 140ms pass is there for mls-template-stdline.js, which re-mounts
+           its section on exactly that delay and would otherwise scroll the panel
+           straight back down. But a timer that reasserts a scroll position is
+           also a timer that can take one away, and being yanked to the top
+           mid-scroll is a worse bug than the one this fixes.
+           So a real input gesture ends it. Only wheel/touch/keydown count -
+           NOT the scroll event itself, which is what the focus-driven jump this
+           whole block exists to undo would fire. Passive listeners, removed as
+           soon as the last pass has run, so nothing outlives the open. */
+        var owned = true;
+        var release = function () { owned = false; };
+        var events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+        events.forEach(function (n) {
+          try { p.addEventListener(n, release, { passive: true }); } catch (e) { }
+        });
+        var stop = function () {
+          events.forEach(function (n) { try { p.removeEventListener(n, release); } catch (e) { } });
+        };
         var toTop = function () {
-          safe(function () { if (p.scrollTop > 0) p.scrollTop = 0; });
+          safe(function () { if (owned && p.scrollTop > 0) p.scrollTop = 0; });
         };
         toTop();
         setTimeout(toTop, 0);
-        setTimeout(toTop, 140);
+        setTimeout(function () { toTop(); stop(); }, 140);
       });
     }
   }

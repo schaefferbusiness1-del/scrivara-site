@@ -1,0 +1,10 @@
+SYNTHETIC OP-NOTE FIXTURE TEMPLATE - TRIGGER POINT INJECTIONS
+PATIENT: Synthetic Template Fixture Patient
+DATE OF PROCEDURE: Friday, July 31, 2026
+PROCEDURE: Bilateral lumbar paraspinal trigger point injections
+INDICATION: SYNTHETIC-CLINICAL-INDICATION-VALUE
+TECHNIQUE: Each documented synthetic trigger point was marked and entered with a SYNTHETIC-NEEDLE-GAUGE-VALUE needle, and a total of SYNTHETIC-INJECTATE-VOLUME-VALUE was deposited across the marked points using the standard fixture technique.
+RADIOLOGY NOTES: [[imaging_modality]]
+COMPLICATIONS: None.
+DISPOSITION: The synthetic fixture patient tolerated the procedure well and was discharged in stable condition.
+FOLLOW-UP: Synthetic fixture reassessment in four weeks with the documented pain score.
