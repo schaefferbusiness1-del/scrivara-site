@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.3.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var VERSION='tl-1.3.2', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
@@ -35,22 +35,56 @@
      minutes for scanned PDFs that go through OCR) watched a motionless screen
      with no way to tell whether anything was happening. The stage events
      already carry stage, current, total and a human operation line; nothing was
-     drawing them. They are now mirrored into #tplMultiStatus, which lives in
-     the upload card — and since b834 that card is the first thing on the tab,
+     drawing them. They are now drawn into a strip beside #tplMultiStatus inside
+     the upload card — and since b835 that card is the first thing on the tab,
      so the progress appears where the doctor just clicked. */
+  /* THE STRIP OWNS ITS OWN NODE, and that is not tidiness — it is the fix.
+     Painting into #tplMultiStatus looked right and rendered NOTHING: the app's
+     own _tplMultiStatus() (ScribeFlow.html) writes `s.textContent = msg` several
+     times while the import runs, so every frame this drew was wiped before the
+     next one. Measured: 0 progress frames across a 2.2s / 100-file import with
+     36 samples taken. A separate sibling cannot be clobbered by a writer that
+     does not know it exists. */
+  function progressBox(){
+    var box=byId('tlUploadProgress');
+    if(box)return box;
+    var anchor=byId('tplMultiStatus');
+    if(!anchor||!anchor.parentNode)return null;
+    box=document.createElement('div');
+    box.id='tlUploadProgress';
+    box.setAttribute('role','status');
+    box.setAttribute('aria-live','polite');
+    anchor.parentNode.insertBefore(box,anchor);
+    return box;
+  }
   function paintProgress(stage,current,total,operation){
     try{
-      var box=byId('tplMultiStatus');if(!box)return;
+      var box=progressBox();if(!box)return;
       var t=Number(total)||0,c=Math.max(0,Math.min(Number(current)||0,t)),pct=t?Math.round(c/t*100):0;
+      box.hidden=false;
       box.innerHTML='<div class="tl-prog"><span class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:100)+'%"></i></span>'+
         '<span class="tl-prog-txt">'+esc(stage||'Working…')+(t?' — '+c+' of '+t:'')+'</span></div>'+
         (operation&&operation!==stage?'<div class="tl-prog-op">'+esc(operation)+'</div>':'');
-      box.style.color='';
     }catch(e){}
   }
+  /* the strip is a PROGRESS indicator, so it leaves when the work does —
+     otherwise a finished import reads as one still running. */
+  function clearProgress(){ try{ var box=byId('tlUploadProgress'); if(box){ box.innerHTML=''; box.hidden=true; } }catch(e){} }
   function progressStart(opts){
     try{paintProgress((opts&&opts.label)||'Working…',0,(opts&&opts.total)||0,'');}catch(e){}
-    var api=window.__mlsLoadingCalm;try{return api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){return null;}}
+    var api=window.__mlsLoadingCalm,h=null;
+    try{h=api&&api.installed&&isFn(api.start)?api.start(opts):null;}catch(e){h=null;}
+    /* the strip must retire on EVERY exit, including the ones that throw, so
+       complete() and fail() are decorated rather than trusted to be called from
+       one place. A progress bar left at 100% is a lie about work still running. */
+    try{
+      if(h){
+        var oc=h.complete,of=h.fail;
+        if(isFn(oc))h.complete=function(){clearProgress();return oc.apply(h,arguments);};
+        if(isFn(of))h.fail=function(){clearProgress();return of.apply(h,arguments);};
+      }
+    }catch(e){}
+    return h;}
   function progressStage(handle,stage,current,total,operation){paintProgress(stage,current,total,operation);try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
   function progressLink(handle,response){try{var id=response&&response.headers&&response.headers.get('X-Job-ID'),api=window.__mlsLoadingCalm;if(handle&&id&&api&&isFn(api.linkServer))api.linkServer(handle.id,id);}catch(e){}}
 
@@ -79,14 +113,14 @@
       /* b834 — the progress strip paintProgress() draws. Unscoped on purpose:
          it must read the same in the embedded Templates tab and in the classic
          floating dialog, and neither surface owns #tplMultiStatus. */
-      '#tplMultiStatus .tl-prog{display:flex;align-items:center;gap:9px;margin-top:5px}',
-      '#tplMultiStatus .tl-prog-bar{flex:1;height:8px;border-radius:999px;background:#e4eee8;overflow:hidden;min-width:90px}',
-      '#tplMultiStatus .tl-prog-bar>i{display:block;height:100%;border-radius:999px;background:#2E6A4B;transition:width .18s ease}',
-      '#tplMultiStatus .tl-prog-bar[data-tl-indeterminate] > i{width:40%;animation:tlProgSlide 1.1s ease-in-out infinite}',
-      '#tplMultiStatus .tl-prog-txt{font-weight:700;white-space:nowrap}',
-      '#tplMultiStatus .tl-prog-op{margin-top:3px;color:#5b6d65}',
+      '#tlUploadProgress .tl-prog{display:flex;align-items:center;gap:9px;margin-top:5px}',
+      '#tlUploadProgress .tl-prog-bar{flex:1;height:8px;border-radius:999px;background:#e4eee8;overflow:hidden;min-width:90px}',
+      '#tlUploadProgress .tl-prog-bar>i{display:block;height:100%;border-radius:999px;background:#2E6A4B;transition:width .18s ease}',
+      '#tlUploadProgress .tl-prog-bar[data-tl-indeterminate] > i{width:40%;animation:tlProgSlide 1.1s ease-in-out infinite}',
+      '#tlUploadProgress .tl-prog-txt{font-weight:700;white-space:nowrap}',
+      '#tlUploadProgress .tl-prog-op{margin-top:3px;color:#5b6d65}',
       '@keyframes tlProgSlide{0%{margin-left:0}50%{margin-left:60%}100%{margin-left:0}}',
-      '@media(prefers-reduced-motion:reduce){#tplMultiStatus .tl-prog-bar>i{animation:none!important;transition:none!important}}',
+      '@media(prefers-reduced-motion:reduce){#tlUploadProgress .tl-prog-bar>i{animation:none!important;transition:none!important}}',
       /* b834 — 100 templates made the review list 6,463px tall and left
          "Add selected to my templates" at y=7045 in a 720px viewport: the
          doctor had to scroll seven screens to finish the import he started.
