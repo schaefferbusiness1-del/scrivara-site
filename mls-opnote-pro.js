@@ -695,7 +695,15 @@
     return true;
   }
   // expose for buttons (avoids inline-handler scope issues)
-  window.__mlsOpNotePdf = function (getText, patient) {
+  /* b824: the third parameter did not exist, and that made b822's second rung
+     unreachable. feat_opnote_history_pdf.js computes the note record's own date
+     (`opts.date = new Date(n.created)`) and then calls THIS function, which
+     rebuilt `{ patient: patient }` from scratch - so the date only ever reached
+     exportPdf through the fallback branch that fires when this very function is
+     absent, i.e. never. Rung 1 (the dictated Date of Procedure) worked, so the
+     b822 fix was incomplete rather than inert; this closes the plumbing.
+     Third parameter, so the four existing two-argument callers are unaffected. */
+  window.__mlsOpNotePdf = function (getText, patient, opts) {
     var t = (typeof getText === 'function') ? getText() : getText;
     if (!t || !String(t).trim()) { safe(function () { toast('Generate the op note first.', 'err'); }); return; }
     /* Fail-closed export gate: a note with ANY unresolved placeholder is a
@@ -712,7 +720,7 @@
         }
       }
     } catch (eGuard) {}
-    exportPdf(String(t), { patient: patient });
+    exportPdf(String(t), { patient: patient, date: (opts && opts.date) || undefined });
   };
 
   /* =============================================================

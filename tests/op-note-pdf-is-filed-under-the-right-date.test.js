@@ -204,6 +204,35 @@ const CREATED = new Date('2026-07-24T14:00:00Z');
     'the caller\'s date is a note-creation timestamp, not a procedure date. Line: ' + dopLine.trim());
 }
 
+/* ---- 4b. THE CALLER'S DATE ACTUALLY REACHES exportPdf (b824) -----------
+   b822 added the rung and this was still not true. feat_opnote_history_pdf.js
+   builds opts.date and calls window.__mlsOpNotePdf, which REBUILT its own opts
+   object as `{ patient: patient }` — so the date reached exportPdf only through
+   the fallback branch that fires when __mlsOpNotePdf is absent, i.e. never.
+   Rung 1 (the dictated date) worked, so b822 was incomplete rather than inert.
+   Asserted on the wiring, because the two hops are what was broken. */
+{
+  const code = stripComments(PRO);
+  assert(/window\.__mlsOpNotePdf = function \(getText, patient, opts\)/.test(code),
+    '__mlsOpNotePdf still takes only (getText, patient), so no caller can hand it a date. It is the ' +
+    'PRIMARY route out of the op-note history list — the fallback that accepted opts never runs while ' +
+    'this function exists.');
+  assert(/exportPdf\(String\(t\), \{ patient: patient, date: \(opts && opts\.date\) \|\| undefined \}\)/.test(code),
+    '__mlsOpNotePdf still rebuilds its opts as { patient } only, dropping any date it was given');
+
+  const hist = stripComments(HIST);
+  assert(/__mlsOpNotePdf\(function \(\) \{ return txt; \}, opts\.patient, opts\)/.test(hist),
+    'feat_opnote_history_pdf.js computes opts.date from the note record and still does not pass opts ' +
+    'to __mlsOpNotePdf, so the note-record rung stays unreachable and every historical export falls ' +
+    'back to today');
+
+  /* the four existing two-argument callers must keep working — a third parameter
+     is additive, but assert it rather than assume it */
+  const twoArg = (code.match(/__mlsOpNotePdf\(function \(\) \{ return [^;]*; \}(, [^)]*)?\)/g) || []);
+  assert(twoArg.length >= 3,
+    'the in-module __mlsOpNotePdf call sites disappeared; a signature change must not have rewritten them');
+}
+
 /* ---- 5. THE LOADER TOKEN MOVED ---------------------------------------- */
 {
   const connect = read('mls-connect.js');

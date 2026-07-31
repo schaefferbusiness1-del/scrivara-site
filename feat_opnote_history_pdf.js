@@ -58,7 +58,9 @@
     try {
       // Primary: same engine entry the in-app "Save as PDF" button uses.
       if (typeof window.__mlsOpNotePdf === 'function') {
-        window.__mlsOpNotePdf(function () { return txt; }, opts.patient);
+        /* b824: opts was built two lines up with the note record's own date and
+           then dropped here, so the PDF fell back to today. Pass it. */
+        window.__mlsOpNotePdf(function () { return txt; }, opts.patient, opts);
         return;
       }
       // Fallback: direct engine export (normalizes raw text internally).

@@ -455,6 +455,14 @@ const tests = [
      evaluated (not sliced) so an instruction spanning two array elements is read as
      the model receives it. */
   'after-visit-summary-names-the-practice-to-call.test.js',
+  /* b824 — a patient's AGE was computed two ways. Seven surfaces adjust for the
+     birthday; the Study Groups builder and its satellite subtracted birth year
+     from the current year, so everyone born later in the year read ONE YEAR
+     OLDER. That resolver also gates cohort INCLUSION, so a 17-year-old reported
+     as 18 was enrolled into an "18 and over" cohort and exported. Executed
+     against a FIXED clock, with the year-only de-identified fallback pinned
+     intact. */
+  'one-age-for-one-patient.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',

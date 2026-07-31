@@ -859,3 +859,145 @@ checked: they ask for note CONTENT (assessment text, plan text, find/replace), n
 for facts the app already holds.
 
 — integration lane
+
+---
+
+## Update — b824, and the audit backlog
+
+Four parallel audits with distinct lenses (Settings dead-ends, chart facts left
+blank, server-vs-client duplicated asks, one fact computed two ways). Everything
+below I re-verified myself by reading the code before acting or recording it.
+
+### SHIPPED at b824
+
+**1. A patient's AGE was computed two ways, and the wrong one gated cohort
+inclusion.**
+
+Seven surfaces adjust for the birthday (context bar, the op note's
+"N-year-old", the FHIR R4 export, snapshot, Simple view, the age chip,
+op-note fill). The Study Groups builder and its cohort-union satellite did
+`new Date().getFullYear() - birthYear` — no birthday adjustment — so every
+patient born later in the calendar year read **one year older**. On 31 July that
+is roughly everyone born August–December.
+
+It was not only a display error. That same `ageOf()` gates the **cohort inclusion
+filter**, so a **17-year-old** whose birthday falls later in the year reported 18,
+was silently enrolled into an "18 and over" cohort, and was written into the
+de-identified CSV. The mirror error drops eligible patients from an upper bound.
+
+Both now defer to `window.ageFromDob` — birthday-adjusted and already hardened by
+`__mlsAgeDobFix` for the DOB shapes this store holds. **The year-only fallback is
+kept deliberately**: a de-identified record may carry a birth year and no birthday,
+and year subtraction is then the only age obtainable. It now fires only when the
+canonical resolver cannot answer. Tested against a FIXED clock so the suite cannot
+pass or fail because of the day it runs on; 4 mutations caught, including
+"year path first".
+
+**2. A correction to my own b822.** The op-note date fix was **incomplete**, and I
+said more than was true in that commit. `feat_opnote_history_pdf.js` computes
+`opts.date` from the note record and calls `window.__mlsOpNotePdf`, which rebuilt
+`{ patient: patient }` from scratch — so the date reached `exportPdf` only via the
+fallback branch that fires when `__mlsOpNotePdf` is *absent*, i.e. never. Rung 1
+(the dictated Date of Procedure) did work, so the fix was incomplete rather than
+inert. `__mlsOpNotePdf` now takes a third `opts` parameter and forwards the date;
+the four existing two-argument callers are unaffected and that is asserted. 3
+mutations caught.
+
+### VERIFIED AND RECORDED, not yet fixed — ranked for whoever takes them next
+
+I read each of these myself. They are real; I ran out of build cycles, not
+certainty.
+
+1. **`booking.html:184` publishes an INVENTED practice name to patients.**
+   `GET /api/schedule/public/:token` returns `practiceProfile()` raw, and `name`
+   is `"<login name> Practice"` when nothing is configured (`name_source: 'none'`).
+   No published page checks `name_source` — zero occurrences outside `tests/`.
+   Two sibling surfaces already guard it correctly and are the model:
+   `server.js:2226` (appointment feed) and `_vPractice` (`server.js:4220`).
+   Same root synthesizes `google_business_url` from that invented name, so the
+   "Find us on Google" button always renders and searches for a practice that does
+   not exist.
+
+2. **Eight clinical/outbound documents still sign with the device-local login
+   name.** `getName()` is `uns('docname')`, which is NOT in `PREF_SYNC_KEYS` — a
+   per-device signup value. Sites: `signNote()` (`:21214`, the electronic-signature
+   attestation saved into the chart), `buildPrintHTML` (`:21990`), `ordersAsText`
+   (`:22767`), `buildOrdersPrintHTML` (`:22865`), **`buildPriorAuthPrintHTML`
+   (`:23188`, goes to the payer)**, `printProcNote` (`:24601`), `printExtra`
+   (`:25521`), `printCustomWidget` (`:30479`). The sharpest pair: the prior-auth
+   letter BODY resolves correctly via `clinicalProviderName()` (`:23086`) while the
+   LETTERHEAD of that same letter uses `getName()`. Four builders also hardcode
+   `MLS / Physical Medicine & Rehabilitation` where `getPracticeName()` is in
+   scope (`:22908`, `:23209`, `:24621`, `:25265`).
+
+3. **The prior-auth letter never learns the payer or member ID**, though
+   `p.insurance = {payer, planName, memberId}` is stored (`:15373-15377`) and the
+   Superbill and Good Faith Estimate already print it (`:25388`, `:25470`). A payer
+   cannot process a PA addressed to `[Insurance Plan]` with no member ID.
+
+4. **`printExtra()` omits DOB and MRN on 12+ printed documents** (`:25518-25532`),
+   while sibling builders `buildOrdersPrintHTML` (`:22864`) and
+   `buildPriorAuthPrintHTML` (`:23187`) already print exactly that triple from
+   `activePatient()`. Same asymmetry between `ordersAsText()` (name only) and the
+   printed orders sheet.
+
+5. **The printed handout says "Call the office"** and names neither practice nor
+   number (`:25269`) — the same defect b823 fixed in the after-visit summary, on a
+   different surface. My b823 test reads only `feat_after_visit_summary.js`, so it
+   does not cover this one.
+
+6. **`googleBusinessUrl` is a Settings field with no getter that nothing reads.**
+   Its one consumer (`mls-connect.js:35352`) sits below a `return;` in a retired
+   IIFE. The doctor pastes their Google link, sees "Settings saved", and it appears
+   nowhere. `tests/portal-staff-booking-contract.test.js:22` asserts only that the
+   string appears in `PREF_SYNC_KEYS`, which gives false comfort.
+
+7. **Three preference keys promise account scope and deliver device scope**:
+   `pullVisitBodies` (its own label says "every pull on this account, wherever you
+   start it"), `opNoteTemplateMode` (the doctor's explicit instruction about how
+   their validated templates must be honoured), `ez3PortalAskOff`, `qolGroupProc`,
+   `navfeat_orders`. `navLayout`/`qolPtLayout` are a judgement call — plausibly
+   per-device.
+
+8. **`clinicLogo`**: the field's own hint promises "printed/PDF letterhead", and no
+   jsPDF path draws it — only browser print does. The white-label half fails too
+   (`mls-opnote-pro.js:611` prints "Generated with MLS" regardless of Premium).
+
+9. **`getFacilityPhone` is called and does not exist** (`feat_mls_opnote_prep.js:200`)
+   — no getter, no field, so `ctx.facilityPhone` is permanently `''`. And
+   `uns('ez3AutoGenerate')` is read as an opt-out (`mls-connect.js:19875`) that
+   nothing ever writes and no control can reach.
+
+10. **`POST /api/reviews/request` takes review destinations from the request body**
+    (`reviewRequests.js:242`) while the engine 50 lines below reads them from the
+    server (`:293`). `marketing` is already in scope. Caveat: no published caller
+    reaches this route today.
+
+11. **`POST /api/frontdesk/:token`** tells patients the specialty from
+    `users.specialty` rather than `practiceSpecialty(pid)`, which prefers the
+    `docspec` correction the doctor made in Settings. `server.js` defines
+    `practiceSpecialty` and never calls it.
+
+### PROVEN UNSAFE TO AUTO-FILL — do not "finish" these
+
+From the deterministic procedure-note builder (`ScribeFlow.html:24540-24577`):
+pre-procedure pain level (last month's score is not today's), "allergies and
+anticoagulation reviewed" (auto-asserting *reviewed* fabricates a clinical act —
+though PRINTING `Allergies on file: <p.allergies>` beside it is safe), laterality,
+indication from the problem list (the op-note room already classifies that as
+*suggested*, not *known*), steroid dose, follow-up interval, and signature date.
+
+Also **UNSAFE as currently structured**: the op-note PDF's `DOB: [not dictated]` /
+`MRN: [not dictated]`. `appMeta()` reads `activePatient()`, and
+`renderHistory()` lists every patient's notes when no chart is active — so
+exporting a historical op note from the all-patients list would put whatever chart
+happens to be open over another patient's note. Filling those is only safe if
+resolved from the note's own `patientId`. Do not shortcut it.
+
+### One latent, not a current defect
+`dobConflict()` (`feat_mls_writeback_safety.js:89`) disagrees with `dobsMatch()`
+(`feat_athena_autopull.js:88`) on unpadded DOBs — `"6-17-1965"` vs `"06/17/1965"`
+gives a false `DOB_MISMATCH` hard block — but the only live caller passes
+`chartDob: null`, so the branch is unreachable today.
+
+— integration lane
