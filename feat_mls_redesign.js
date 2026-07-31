@@ -106,6 +106,40 @@
 
 "/* ---- top bar ---- */",
 "#appHeader.mlsRdHdr{ background:var(--header) !important; border-bottom:1px solid var(--line) !important; box-shadow:none !important; }",
+
+/* LIQUID GLASS ON THE ONE SURFACE THAT EARNS IT.
+   Owner: "maybe add liquid glass designs some places your call."
+
+   MEASURED before choosing this one. #appHeader is position:sticky, top:0,
+   74px tall, z-index 6000, over a page that scrolls to 2700px - content passes
+   underneath it on every visit. The dock at the other end of the screen has
+   been glass since the calm shell shipped (rgba(255,255,255,.72) with
+   saturate(180%) blur(20px)), so the app had exactly one glass surface and its
+   opposite number was flat. Same recipe, both ends, one vocabulary.
+
+   The surfaces deliberately NOT given glass, having looked at each:
+     toasts - .toast.err/.ok/.warn are solid severity fills, and the whole job
+       of --red and --gold is to read instantly. Translucency dilutes a clinical
+       warning colour, which is a bad trade for prettiness.
+     modal cards - opaque cards over a scrim, carrying clinical text to be read
+       and edited. They already animate in (mlsMoModalLift). Glass behind a note
+       body would cost legibility for nothing.
+     ordinary .card - not sticky, nothing passes under them. Glass over a solid
+       background is just a lighter background with a GPU cost.
+
+   IT FOLLOWS THE THEME rather than freezing a light-mode colour: the tint is
+   mixed FROM var(--header), which is #FCFBF8 in light and #181E19 in dark, so
+   the dark theme gets a dark glass instead of a white bar. That is why this is
+   a color-mix and not the dock's literal rgba.
+
+   AND IT FAILS SAFE, TWICE. The @supports demands backdrop-filter AND
+   color-mix; without either, this whole block never applies and the opaque
+   header above stands unchanged. That ordering matters - a translucent header
+   with no blur behind it is not a softer header, it is an unreadable one. */
+"@supports (backdrop-filter: blur(1px)) and (background: color-mix(in srgb, red 50%, transparent)) {",
+"  #appHeader.mlsRdHdr{ background:color-mix(in srgb, var(--header) 72%, transparent) !important;",
+"    -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px); }",
+"}",
 "#mlsRdTop{ height:60px; width:100%; min-width:0; flex:1 1 100%; box-sizing:border-box; display:flex; align-items:center; gap:14px; padding:0 22px; }",
 "#mlsRdTitle{ flex:0 0 auto; font-family:'Newsreader',Georgia,serif; font-weight:600; font-size:19px; letter-spacing:-.01em; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }",
 "#appHeader.mlsRdHdr > [data-mlsrd-hid]{ display:none !important; }",

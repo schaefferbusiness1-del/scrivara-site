@@ -59,6 +59,11 @@ const tests = [
      refuse when unsure, so this is its fence: four refusals that must survive
      it, each written because the first version of the fallback broke it. */
   'closest-guess-never-invents-a-procedure.test.js',
+  /* b814 — "maybe add liquid glass designs some places your call". The call was
+     the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
+     the theme derivation, the @supports fallback, and the surfaces that must
+     stay solid because they carry clinical severity colour. */
+  'glass-is-one-vocabulary.test.js',
   'opnote-template-rail-is-clickable.test.js',
   /* b798 — the owner named the fill-in-the-blank path and the missing animations
      explicitly. The first pins the placeholder mechanism across every new

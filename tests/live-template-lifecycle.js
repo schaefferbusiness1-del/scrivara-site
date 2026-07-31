@@ -1281,6 +1281,79 @@ async function main() {
     record('5. all three "How drafts follow your template" modes drafted a note', 'PASS',
       JSON.stringify(MODE_ORDER.reduce((acc, m) => { const r = modeResults[m]; acc[m] = { noteChars: r.noteChars, opNoteCalls: r.opNoteCalls, repairCalls: r.repairCalls, headings: r.headings, filled: r.filled }; return acc; }, {})));
 
+    /* ---- STEP 5e: THE RE-DRAFT BUTTONS CONNECT TO THE RAIL ----
+       OWNER, verbatim: "mane these buttons are so ugly pretty them up and amke
+       srue they copnnect correclty to the buttons in the bottom left of this
+       page". The buttons are the "Re-draft: <style>" chips that appear above the
+       editor once a draft exists; the buttons in the bottom left are the three
+       "How drafts follow your template" controls in the rail. He asked for two
+       things and only one of them - the styling - can be seen in a screenshot.
+
+       CONNECTED means three specific things, and all three are asserted here
+       rather than inferred from the fact that redraftInStyle() calls
+       tplModeSet(): the rail must move to the style the chip names, the STORED
+       preference must move with it, and the note that comes back must actually
+       have been drafted in that style (row.tplModeUsed is stamped by the
+       generator itself, not by the button).
+
+       The loop above left the row drafted in the last mode of MODE_ORDER, so the
+       chips on screen offer the other two - which is exactly what this presses. */
+    const redoOffered = await evaluate(cdp, `(() => {
+      const wrap = document.querySelector('.opr-usedstyle');
+      if (!wrap) return { ok:false, why:'no "Style used" receipt is on screen, so no re-draft chips exist' };
+      const chips = [...wrap.querySelectorAll('[data-oprredo]')].map(b => {
+        const s = getComputedStyle(b), r = b.getBoundingClientRect();
+        return { mode: b.getAttribute('data-oprredo'), label: String(b.innerText||'').trim(),
+                 visible: s.display!=='none' && s.visibility!=='hidden' && r.width>0 && r.height>0,
+                 size: [Math.round(r.width), Math.round(r.height)] };
+      });
+      return { ok:true, usedNow: String(((window._opPrep||[])[0]||{}).tplModeUsed||''), chips };
+    })()`, { userGesture: false });
+    assert(redoOffered.ok, `the re-draft chips are not reachable: ${JSON.stringify(redoOffered)}`);
+    const liveChips = (redoOffered.chips || []).filter((c) => c.visible);
+    assert.strictEqual(liveChips.length, 2,
+      `a drafted note must offer the OTHER two styles as one-press re-drafts; found ${liveChips.length}: ${JSON.stringify(redoOffered)}`);
+    assert(!liveChips.some((c) => c.mode === redoOffered.usedNow),
+      `a re-draft chip offers the style the note is already in: ${JSON.stringify(redoOffered)}`);
+
+    const target = liveChips[0];
+    await evaluate(cdp, `(() => { const r=(window._opPrep||[])[0]; if(r) r.edited=false; return true; })()`, { userGesture: false });
+    await click(cdp, `.opr-usedstyle [data-oprredo="${target.mode}"]`);
+    await sleep(400);
+    const afterRedo = await waitFor(cdp, `re-draft in "${MODE_LABEL[target.mode]}"`, `(() => {
+      const r=(window._opPrep||[])[0];
+      return !!(r && r.gen && String(r.tplModeUsed||'') === ${JSON.stringify(target.mode)});
+    })()`, 60000).then(() => evaluate(cdp, `(() => {
+      const r=(window._opPrep||[])[0];
+      const btn=document.querySelector('#oprTplMode [data-tplmode=' + JSON.stringify(${JSON.stringify(target.mode)}) + ']');
+      const receipt=document.querySelector('.opr-usedstyle b');
+      return {
+        modeUsed: String(r.tplModeUsed||''),
+        stored: (typeof uns==='function') ? String(localStorage.getItem(uns('opNoteTemplateMode'))||'') : null,
+        railPressed: btn ? btn.getAttribute('aria-pressed') : null,
+        railOnCount: document.querySelectorAll('#oprTplMode .opr-tplmode.on').length,
+        receipt: receipt ? String(receipt.textContent||'').trim() : '',
+        noteChars: String(r.note||'').length
+      };
+    })()`, { userGesture: false }));
+
+    assert.strictEqual(afterRedo.modeUsed, target.mode,
+      `"${target.label}" did not produce a draft in that style: ${JSON.stringify(afterRedo)}`);
+    assert.strictEqual(afterRedo.stored, target.mode,
+      `"${target.label}" did not move the STORED preference, so the rail and the chip disagree: ${JSON.stringify(afterRedo)}`);
+    assert.strictEqual(afterRedo.railPressed, 'true',
+      `"${target.label}" did not move the bottom-left rail control to that style: ${JSON.stringify(afterRedo)}`);
+    assert.strictEqual(afterRedo.railOnCount, 1,
+      `the rail shows ${afterRedo.railOnCount} styles selected after a re-draft: ${JSON.stringify(afterRedo)}`);
+    assert.strictEqual(afterRedo.receipt, MODE_LABEL[target.mode],
+      `the "Style used" receipt reads "${afterRedo.receipt}" after re-drafting into "${MODE_LABEL[target.mode]}"`);
+    assert(afterRedo.noteChars > 0, `the re-draft produced an empty note: ${JSON.stringify(afterRedo)}`);
+    record('5e. RE-DRAFT chips connect to the bottom-left rail', 'PASS',
+      `a drafted note offered exactly the other two styles (${liveChips.map((c) => `"${c.label}" ${c.size[0]}x${c.size[1]}`).join(', ')}); ` +
+      `pressing "${target.label}" moved the stored preference to "${afterRedo.stored}", moved the rail control to aria-pressed=true ` +
+      `with exactly one style lit, re-drafted the note (${afterRedo.noteChars} chars) with row.tplModeUsed="${afterRedo.modeUsed}" ` +
+      `stamped by the generator, and the receipt now reads "${afterRedo.receipt}".`);
+
     /* ---- STEP 5d: PROMPT HYGIENE ----
        What the app labels "SELECTED TEMPLATE - COPY ITS STRUCTURE AND FIXED
        WORDING" must be the doctor's template and nothing else. This asserts on
