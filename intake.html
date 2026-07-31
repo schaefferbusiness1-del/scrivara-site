@@ -165,6 +165,16 @@
         </div>
       </div>
 
+      <!-- The doctor's OWN custom questions, from Settings. Hidden until the
+           token endpoint says there are any — an empty section header on a
+           patient's form is worse than no section. Mirrors the in-app kiosk's
+           #ikCustomSection / #ikCustomWrap pair so both surfaces ask the same
+           questions in the same order. -->
+      <div class="card sec" id="ikCustomSection" style="display:none">
+        <h2 id="ikCustomHead">A few questions from your care team</h2>
+        <div id="ikCustomWrap"></div>
+      </div>
+
       <div class="card sec">
         <button type="submit" class="btn" id="submitBtn">Submit to my care team</button>
         <div class="err" id="formErr" role="alert" aria-live="assertive"></div>
@@ -207,7 +217,7 @@
       .then(function(d){
         if(d===null) return;
         if(d && d.__unreadable){ show('offline'); return; }
-        if(d && d.ok){ applyPracticeIdentity(d.practice); show('formWrap'); } else { show('invalid'); }
+        if(d && d.ok){ applyPracticeIdentity(d.practice); applyCustomQuestions(d.questions); show('formWrap'); } else { show('invalid'); }
       })
       .catch(function(){ show('offline'); });                            /* timeout / abort / offline */
   }
@@ -250,6 +260,43 @@
   /* "or contact the clinic" with a number, when we have one. */
   function contactLine(){ return OFFICE_PHONE ? ('or call the office at '+OFFICE_PHONE+'.') : 'or contact the clinic.'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  /* THE DOCTOR'S OWN CUSTOM QUESTIONS.
+     Settings has "Patient intake — your custom questions" and the in-app kiosk
+     has rendered them since it shipped. This page — the link the doctor actually
+     SENDS — never received them, so questions written specifically for this
+     surface silently vanished on it: typed, stored, synced to the account, and
+     then never asked.
+     Practice-authored free text landing on a page a patient loads, so every
+     question goes through esc() on the way into the label and into the
+     data-q attribute that carries it back. Absent or empty leaves the section
+     hidden and the form exactly as it was. */
+  function applyCustomQuestions(qs){
+    var sec=$('ikCustomSection'), wrap=$('ikCustomWrap');
+    if(!sec||!wrap) return;
+    var list=(Object.prototype.toString.call(qs)==='[object Array]'?qs:[])
+      .map(function(q){ return String(q==null?'':q).trim(); })
+      .filter(Boolean).slice(0,20);
+    if(!list.length){ sec.style.display='none'; wrap.innerHTML=''; return; }
+    wrap.innerHTML=list.map(function(q,i){
+      return '<div class="field"><label for="ikCustom'+i+'">'+esc(q)+'</label>'+
+             '<input type="text" id="ikCustom'+i+'" class="ik-custom" data-q="'+esc(q)+'"></div>';
+    }).join('');
+    sec.style.display='block';
+  }
+  /* Answered questions travel as {q,a} pairs so the doctor's app can show the
+     question beside the answer instead of an orphaned string. Unanswered ones are
+     omitted entirely — an empty answer is not an answer. */
+  function customAnswers(){
+    var out=[];
+    try{
+      var els=document.querySelectorAll('#ikCustomWrap input.ik-custom');
+      for(var i=0;i<els.length;i++){
+        var a=String(els[i].value||'').trim();
+        if(a) out.push({ q:String(els[i].getAttribute('data-q')||'Question'), a:a });
+      }
+    }catch(e){}
+    return out;
+  }
   window.retryIntakeLink=checkIntakeLink;
   checkIntakeLink();
 
@@ -306,7 +353,8 @@
       chief:chief, pain:painNum, painLoc:val('painLoc'), onset:val('onset'), odi:odiNum,
       better:val('better'), worse:val('worse'), priorTx:val('priorTx'),
       conditions:val('conditions'), surgeries:val('surgeries'),
-      meds:val('meds'), allergies:val('allergies'), photo:facePhoto
+      meds:val('meds'), allergies:val('allergies'), photo:facePhoto,
+      custom:customAnswers()
     };
     var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{

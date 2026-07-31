@@ -453,7 +453,19 @@
     var pt = els.pt || {};
     var subject = 'Your visit summary' + (S((window.MLS_OPNOTE_LETTERHEAD || {}).clinicName) ? ' from ' + S(window.MLS_OPNOTE_LETTERHEAD.clinicName) : '');
     var greeting = 'Hi ' + (firstName(pt.name) || 'there') + ',\n\nHere is a summary of your recent visit:\n\n';
-    var footer = '\n\nIf you have any questions, please contact the clinic. This message may contain personal health information intended only for you.';
+    /* "contact the clinic" with no number, in an email to a patient, while
+       Settings has held clinicPhone all along — the same gap already closed on
+       intake.html, appointment.html and the patient portal. Name the practice and
+       give the number when they are known; degrade to exactly the previous
+       sentence when they are not. */
+    var _lh = window.MLS_OPNOTE_LETTERHEAD || {};
+    var _clinic = S(_lh.clinicName).trim();
+    var _phone = '';
+    try { if (typeof window.getClinicPhone === 'function') _phone = S(window.getClinicPhone()).trim(); } catch (e) { _phone = ''; }
+    var _who = _clinic || 'the clinic';
+    var footer = '\n\nIf you have any questions, please contact ' + _who +
+      (_phone ? ' at ' + _phone : '') +
+      '. This message may contain personal health information intended only for you.';
     var body = greeting + txt + footer;
     var draft = (to ? 'To: ' + to + '\n' : '') + 'Subject: ' + subject + '\n\n' + body;
     var done = function () { setStatus('Email draft copied. Review it in your approved email system before sending.', 'ok'); };

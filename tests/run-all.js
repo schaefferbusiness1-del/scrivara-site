@@ -410,6 +410,12 @@ const tests = [
      the practice from a localStorage key written only on the doctor's device and
      a global assigned nowhere, so every real patient saw "your care team". */
   'patient-pages-name-their-practice.test.js',
+  /* The doctor's own custom intake questions existed on every layer except the
+     one facing the patient: Settings stored them, PREF_SYNC_KEYS synced them, the
+     in-app kiosk rendered them, and the link the doctor SENDS asked nothing.
+     Executes all four hops, including the last one - the answers reaching the
+     chart - because without it the patient answers into a void. */
+  'custom-intake-questions-round-trip.test.js',
   /* b810 — the marketing console is a FORK of mls-marketing.html whose who()
      kept the pre-b385 one-liner, so it could not read the practice identity the
      doctor had already saved. Pins the two resolvers as behaviourally identical

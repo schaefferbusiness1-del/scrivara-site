@@ -158,9 +158,17 @@ function stripComments(src) {
   assert(/\bgetName\s*\(\s*\)/.test(resolverCode),
     'the resolver refuses the account name outright again — that regresses the prior-auth letter to ' +
     '"[Provider name]" for accounts the setup wizard leaves in exactly that state');
-  assert(/suRosterEntries/.test(resolverCode) && /suProviderIdentityKey/.test(resolverCode),
-    'the account-name fallback must be gated on the verified roster, using the same comparison the ' +
-    'setup wizard uses — an ungated fallback is the substitution the separation rule forbids');
+  /* Gated on whether a verified roster EXISTS. It deliberately does NOT carry its
+     own identity comparison: getProviderName is replaced at runtime by the
+     roster-aware resolver, which already answers that, and a second normalizer
+     here is how the app ends up disagreeing with itself about who the provider is.
+     tests/settings-identity-reaches-the-op-note §7b executes both generations. */
+  assert(/suRosterEntries/.test(resolverCode),
+    'the account-name fallback must be gated on whether a verified roster exists — an ungated ' +
+    'fallback is the substitution the separation rule forbids');
+  assert(!/suProviderIdentityKey/.test(resolverCode),
+    'the resolver re-implements the roster identity comparison with a SECOND normalizer instead of ' +
+    'delegating to getProviderName, which is the roster-aware resolver at runtime');
 
   /* and the three surfaces use it */
   const code = stripComments(APP);

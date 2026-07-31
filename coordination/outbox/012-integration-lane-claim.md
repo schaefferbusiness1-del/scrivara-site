@@ -402,4 +402,102 @@ letterhead bridge does *not* cost the after-visit summary its title.
 the letterhead at 15pt and then its own `'After-Visit Summary'` heading at 13pt on
 the next line — the PDF previously said it twice.
 
+---
+
+## CONTINUED — the connections still on the list
+
+The audit was not the finish line. Four items from "still open" above, resolved.
+
+### The doctor's own intake questions never reached a patient
+
+The clearest instance of the whole lane's theme. Settings has *"📋 Patient intake —
+your custom questions"*, `PREF_SYNC_KEYS` carries it, and the **in-app kiosk** has
+rendered it since it shipped. `intake.html` — the link the doctor actually
+**sends** — never received it. `GET /api/intake/public/:token` returned
+`{ok:true}` and the page had no section for it.
+
+So a doctor could type questions written specifically for that surface, watch them
+save and sync to the account, and the patient would be asked nothing. **The
+feature existed on every layer except the one facing the patient.**
+
+Four hops now, and a break in any one of them looks identical to the doctor
+(nothing happens), so all four are executed by
+`tests/custom-intake-questions-round-trip.test.js`:
+
+| hop | where | state before |
+|---|---|---|
+| Settings → encrypted prefs blob | — | already worked |
+| blob → `GET /api/intake/public/:token` | backend | **missing** |
+| response → rendered form | `intake.html` | **missing** |
+| answers → the doctor's chart summary | `ScribeFlow.html` `_intakeSummary` | **missing** |
+
+That last hop is the one worth naming: without it the answers arrive, get stored,
+and never appear in the chart — the same defect one layer along, where the doctor
+asks, the patient answers, and nobody reads it. Answers travel as `{q,a}` pairs so
+they are labelled rather than orphaned; unanswered and question-less pairs are
+dropped, because an empty answer is not an answer.
+
+Clamped on both sides (20 questions, 300 chars, newlines stripped) because the
+token endpoint is unauthenticated, and escaped in both the label and the `data-q`
+attribute it rides back on, because a question is practice-authored free text
+landing on a page a patient loads. Seven mutations verified, including one that
+rendered the label unescaped and one that dropped the chart hop.
+
+### The app had two normalizers for "is this the same clinician"
+
+`clinicalProviderName` was answering the roster question itself with
+`suProviderIdentityKey`, while `mls-connect.js`'s runtime resolver answers it with
+`providerIdentityKey`. Two lists, two comparisons, two possible answers — the
+literal shape of the app disagreeing with itself, introduced by the fix for the
+app disagreeing with itself.
+
+It now **delegates**: `getProviderName()` is replaced at runtime by the
+roster-aware resolver, which already does stored → unique-roster-match → empty.
+All that is left here is the one case that resolver declines to decide — *no
+roster at all* — which is a list-length test, not an identity comparison, so no
+normalizer can disagree with it. One comparison in the app, not two.
+
+`§7b` now executes **both resolver generations**: the plain stored reader that
+exists before the bundle loads (which fails safe — empty, so the UI asks) and the
+real roster-aware resolver extracted from `mls-connect.js`, with a control proving
+the extracted resolver is genuinely roster-aware in the harness.
+
+### Two patient-facing fallbacks closed, two deliberately left
+
+- **The after-visit summary email** said *"please contact the clinic"* with no
+  number, in an email to a patient, while `getClinicPhone()` has always existed.
+  It now names the practice and gives the number, and degrades to exactly the
+  previous sentence when neither is known.
+- **legal-connect** resolves the inviting physician through `practiceDisplayName`,
+  so an account with a practice name but no user name stops rendering
+  *"Connect to your physician's legal portal"*.
+
+Left alone, with reasons, because changing them would be motion rather than
+improvement:
+
+- `patient-review.html`'s `'my doctor'` / `'this office'` are grammatical and
+  **non-fabricating** — they name nobody rather than the wrong person — and the
+  backend now defaults that identity at send time, so the fallback rarely fires.
+  Editing text that lands in a review a patient posts publicly, for no correctness
+  gain, is risk without benefit.
+- `mls-rvu.js`'s `'This provider'` fires only when the provider is genuinely
+  unknown on every source. Honest.
+- `getFacilityPhone` stays undefined: it is collected into the prep context at
+  `feat_mls_opnote_prep.js:194` and **rendered nowhere** (contrast
+  `facilityAddress`, printed at `:298`). A Settings field feeding a value nothing
+  displays is dead plumbing on an already-long section.
+
+### AuthPilot: an incomplete finding of my own, corrected
+
+I listed `AuthPilot.html:623` as a gap — it instructs the model to emit
+`[Practice Name]` / `[Provider Name, Credentials]` / `[NPI]` blanks while all of
+them sit in Settings. **The page is retired.** It is in `RETIRED_HTML`
+(`tests/public-publication-boundary.test.js:110`), excluded from the published
+site, purged from the service-worker cache on install, and refused on navigation.
+
+Wiring it would connect a surface no user can reach, and would risk the
+retirement boundary. I flagged it originally without checking whether the page
+ships, which is the same mistake as trusting a source read: the code was right
+about what it says and wrong about whether it runs.
+
 — integration lane

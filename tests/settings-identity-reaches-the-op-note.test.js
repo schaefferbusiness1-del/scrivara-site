@@ -338,21 +338,35 @@ function ladder(opts) {
     'the attest block no longer emits an honest blank when the facility is unknown');
 }
 
-/* ---- 7b. THE PROVIDER FALLBACK IS THE WIZARD'S RULE, NOT A STRICTER ONE */
-/* clinicalProviderName also shipped once too strict — refusing the account name
- * outright. suPersistIdentity writes uns('docname') UNCONDITIONALLY and writes
+/* ---- 7b. THE PROVIDER FALLBACK DELEGATES, AND FAILS SAFE EITHER WAY ---- */
+/* Two revisions were needed here and both are worth recording.
+ *
+ * The first shipped refusing the account name OUTRIGHT. Too strict:
+ * suPersistIdentity writes uns('docname') UNCONDITIONALLY and writes
  * uns('providerName') only when the typed name does not contradict a verified
  * roster, so "docname set, providerName empty" is a state the app deliberately
- * produces. For those accounts the prior-auth letter went from printing the
- * doctor's name to printing "[Provider name]", while the field's own label
- * promises it "appears on signed notes".
+ * produces — and for those accounts the prior-auth letter went from the doctor's
+ * name to "[Provider name]" while the field's own label promises it "appears on
+ * signed notes".
  *
- * The rule is now the wizard's own: explicit setting first, then the account name
- * unless a verified roster names other people and not this one. */
+ * The second re-implemented the roster comparison HERE, with a different
+ * normalizer (suProviderIdentityKey) from the one the runtime resolver uses
+ * (providerIdentityKey). Two lists, two comparisons, two possible answers to
+ * "who is the provider" — the exact shape of an app disagreeing with itself.
+ *
+ * So it now DELEGATES: getProviderName() is replaced at runtime by
+ * mls-connect.js's roster-aware resolver, which already does stored-then-unique-
+ * roster-match-then-empty. All that is left here is the one case that resolver
+ * declines to decide — no roster at all — which is a list-length test, not an
+ * identity comparison.
+ *
+ * That means the answer depends on WHICH getProviderName is installed, so both
+ * generations are exercised: the plain stored reader that exists before the
+ * bundle loads, and the real roster-aware resolver that replaces it. */
 {
-  function resolver(seed) {
+  function ctxFor(seed, providerNameSrc) {
     const store = new Map(Object.entries(seed || {}));
-    const ctx = { String, JSON, Object, console,
+    const ctx = { String, JSON, Object, Array, console,
       localStorage: { getItem: k => (store.has(k) ? store.get(k) : null) },
       uns: s => s };
     ctx.window = ctx;
@@ -360,25 +374,69 @@ function ladder(opts) {
     vm.runInContext(
       functionBlock(APP, 'suProviderIdentityKey') + '\n' +
       functionBlock(APP, 'suRosterEntries') + '\n' +
-      functionBlock(APP, 'getProviderName') + '\n' +
+      providerNameSrc + '\n' +
       functionBlock(APP, 'getName') + '\n' +
       functionBlock(APP, 'clinicalProviderName') +
-      '\nthis.r = clinicalProviderName;', ctx);
-    return ctx.r();
+      '\nthis.r = clinicalProviderName; this.g = getProviderName;', ctx);
+    return ctx;
   }
 
-  assert.strictEqual(resolver({ providerName: 'Jane A. Smith, MD', docname: 'Front Desk' }), 'Jane A. Smith, MD',
+  /* --- generation 1: the plain stored reader (pre-bundle) --- */
+  const PLAIN = functionBlock(APP, 'getProviderName');
+  const plain = seed => ctxFor(seed, PLAIN).r();
+
+  assert.strictEqual(plain({ providerName: 'Jane A. Smith, MD', docname: 'Front Desk' }), 'Jane A. Smith, MD',
     'the explicit Practice & provider setting must always win');
-  assert.strictEqual(resolver({ docname: 'Jane A. Smith' }), 'Jane A. Smith',
-    'with NO roster to contradict it, the account name is not a substitution — refusing it here is ' +
-    'what regressed the prior-auth letter to "[Provider name]" for accounts the wizard left in ' +
-    'exactly this state');
-  assert.strictEqual(resolver({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Smith_Jane_A_MD']) }), 'Jane A. Smith',
-    'a roster that NAMES this person agrees with the account name and must not block it');
-  assert.strictEqual(resolver({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Carter_Kelly_PA-C', 'Doe_John_MD']) }), '',
-    'a verified roster naming only OTHER people is the case the separation rule exists for — the ' +
-    'answer must be empty so the UI asks, never the login name');
-  assert.strictEqual(resolver({}), '', 'nothing configured must resolve empty, not to a guess');
+  assert.strictEqual(plain({ docname: 'Jane A. Smith' }), 'Jane A. Smith',
+    'with NO roster to contradict it the account name stands in — refusing it here is what regressed ' +
+    'the prior-auth letter to "[Provider name]" for accounts the wizard leaves in exactly this state');
+  assert.strictEqual(plain({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Carter_Kelly_PA-C']) }), '',
+    'a verified roster naming only OTHER people is the case the separation rule exists for');
+  assert.strictEqual(plain({}), '', 'nothing configured must resolve empty, not to a guess');
+  /* FAILS SAFE: before the bundle loads, a roster that DOES name this person
+     still resolves empty, because the plain reader cannot match a roster and this
+     function no longer guesses on its behalf. Empty means the UI asks. That is
+     conservative, not wrong — and it is the direction a boot-order difference
+     must fail in. */
+  assert.strictEqual(plain({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Smith_Jane_A_MD']) }), '',
+    'pre-bundle, an unmatchable roster must fail SAFE (empty, so the UI asks) rather than assume');
+
+  /* --- generation 2: the real roster-aware resolver that ships --- */
+  const CONNECT = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+  const RUNTIME = ['S', 'unsGet', 'prettyProv', 'roster', 'accountName', 'providerIdentityKey', 'resolveProviderName']
+    .map(n => functionBlock(CONNECT, n)).join('\n') +
+    '\nfunction getProviderName(){ return resolveProviderName(); }';
+  const live = seed => {
+    const c = ctxFor(seed, RUNTIME);
+    /* control: the extracted resolver really is roster-aware in this harness,
+       or "it resolved" below would prove nothing about the shipped code */
+    return { got: c.r(), direct: c.g() };
+  };
+
+  assert.strictEqual(live({ providerName: 'Jane A. Smith, MD' }).got, 'Jane A. Smith, MD',
+    'the runtime resolver must still prefer the explicit setting');
+  const matched = live({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Smith_Jane_A_MD']) });
+  assert.ok(matched.direct, 'harness control: the extracted runtime resolver did not match its own roster, ' +
+    'so the assertion below would not be testing roster awareness');
+  assert.strictEqual(matched.got, matched.direct,
+    'once the roster-aware resolver is installed, clinicalProviderName must return exactly what IT ' +
+    'resolved — delegating, not re-deciding');
+  assert.ok(/smith/i.test(matched.got) && /jane/i.test(matched.got),
+    'the resolved identity must be this clinician: ' + JSON.stringify(matched.got));
+  assert.strictEqual(live({ docname: 'Jane A. Smith', mlsSchedProviders: JSON.stringify(['Carter_Kelly_PA-C']) }).got, '',
+    'a roster naming only other people must resolve empty under the runtime resolver too');
+  assert.strictEqual(live({ docname: 'Jane A. Smith' }).got, 'Jane A. Smith',
+    'no roster, under either generation, means the account name is not a substitution');
+
+  /* ONE comparison in the app, not two: this function must not carry its own
+     roster identity matching any more. */
+  const fn = functionBlock(APP, 'clinicalProviderName');
+  assert.ok(!/suProviderIdentityKey/.test(fn),
+    'clinicalProviderName re-implements the roster identity comparison with a SECOND normalizer. ' +
+    'Two comparisons is how the app ends up disagreeing with itself about who the provider is — ' +
+    'delegate to getProviderName, which is the roster-aware resolver at runtime.');
+  assert.ok(/suRosterEntries/.test(fn),
+    'it must still test whether a roster EXISTS — that is the one case the resolver declines to decide');
 }
 
 /* ---- 8. THE PIN KEY MISMATCH ----------------------------------------- */
