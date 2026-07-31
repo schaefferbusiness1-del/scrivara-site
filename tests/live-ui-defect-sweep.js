@@ -73,7 +73,37 @@ const ROUTES = [
   { route: 'visit', entry: '#mlsDock button[data-dest="visit"]', label: 'Today' },
   { route: 'patients', entry: '#mlsDock button[data-dest="patient"]', label: 'Patients' },
   { route: 'calendar', entry: '#mlsDock button[data-dest="day"]', label: 'Calendar' },
-  { route: 'studio', entry: '#mlsDock button[data-dest="studio"]', label: 'AI Studio' }
+  { route: 'studio', entry: '#mlsDock button[data-dest="studio"]', label: 'AI Studio' },
+  /* "throguth out the whole app test verything" - the dock offers five
+     destinations and this swept four. Review (orders/recommendations) and
+     History are where a doctor lands after every single visit, and neither had
+     ever been measured for overflow, tap targets, unreachable controls or
+     duplicate labels at any viewport. Reached through their own dock entries,
+     so a broken doorway is itself the finding. */
+  { route: 'orders', entry: '#mlsDock button[data-dest="review"]', label: 'Review' },
+  /* History has no dock button of its own. feat_mls_calm_shell.js carries it as
+     an `extra` segment of the Review destination (DEST.review.extra includes
+     nav_history, aliased to "History"), which renders as a .segbtn inside
+     #mlsRightNow once Review is open - and the real #nav_history navtab is
+     display:none, because the 2026-07-28 sweep hid the whole navtab row when
+     the dock became the navigation. Pointing this route at #nav_history
+     therefore reported "its view is gated off - expected" at every viewport and
+     swept nothing at all. Reached the way the doctor reaches it: open Review,
+     then press the History segment. */
+  { route: 'history', label: 'History',
+    openJs: `(() => {
+      var dockBtn = document.querySelector('#mlsDock button[data-dest="review"]');
+      if (!dockBtn) return false;
+      dockBtn.click();
+      return true;
+    })()`,
+    thenJs: `(() => {
+      var seg = [...document.querySelectorAll('#mlsRightNow .segbtn')]
+        .find(b => /^history$/i.test(String(b.textContent || '').trim()));
+      if (!seg) return false;
+      seg.click();
+      return true;
+    })()` }
 ];
 /* The nav tab each dock destination is a doorway to - the same mapping
    feat_mls_calm_shell.js:851 DEST_TABS holds. A dock item hides itself when its
@@ -83,7 +113,9 @@ const ROUTE_TABS = {
   visit: ['nav_visit'],
   patients: ['nav_patients', 'nav_history'],
   calendar: ['nav_calendar'],
-  studio: ['nav_studio', 'nav_analysis']
+  studio: ['nav_studio', 'nav_analysis'],
+  orders: ['nav_orders', 'nav_recs'],
+  history: ['nav_history']
 };
 
 /* -------------------------------------------------------------- plumbing */
@@ -446,7 +478,9 @@ async function main() {
            dock item is almost never the dock's doing: the secure loading gate
            blanks every body child except itself (ScribeFlow.html:26237), so a
            dock item can wear a consequence it did not cause. Name the gate. */
-        const entryFact = await evalJs(cdp, `(() => { const el=document.querySelector(${JSON.stringify(route.entry)});
+        /* A multi-step route has no single entry element to inspect; its own
+           steps report whether each doorway was there. */
+        const entryFact = route.openJs ? { ok: true } : await evalJs(cdp, `(() => { const el=document.querySelector(${JSON.stringify(route.entry)});
           const dock=document.getElementById('mlsDock');
           const ds=dock?getComputedStyle(dock):null, dr=dock?dock.getBoundingClientRect():null;
           if(!el) return { ok:false, why:'entry element absent', dockPresent:!!dock };
@@ -476,7 +510,22 @@ async function main() {
           continue;
         }
         try {
-          await click(cdp, route.entry);
+          /* A route reached through more than one control (History rides a
+             segment of the Review destination) declares the presses instead of
+             a single entry selector. Each step must report that it found its
+             control, so a missing doorway fails rather than silently sweeping
+             whatever screen happened to be up. */
+          if (route.openJs) {
+            const stepA = await evalJs(cdp, route.openJs);
+            if (!stepA) throw new Error('the first control on the way to ' + route.label + ' is not there');
+            await sleep(600);
+            if (route.thenJs) {
+              const stepB = await evalJs(cdp, route.thenJs);
+              if (!stepB) throw new Error('the ' + route.label + ' control is not offered after opening its parent destination');
+            }
+          } else {
+            await click(cdp, route.entry);
+          }
           await wait(cdp, route.label + ' route', `window.__mlsCurrentView===${JSON.stringify(route.route)}`, 15000);
         } catch (e) {
           defects.push({ kind: 'route-would-not-open', where, detail: String(e.message || e).slice(0, 200) });

@@ -12186,9 +12186,9 @@
    "handler": null
   },
   {
-   "id": "feat-mls-template-library-js-66-history",
-   "label": "History",
-   "accessibleName": "History",
+   "id": "feat-mls-template-library-js-66-version-history",
+   "label": "Version history",
+   "accessibleName": "Version history",
    "title": "",
    "kind": "button",
    "tag": "button",

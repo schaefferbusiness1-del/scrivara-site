@@ -134,8 +134,32 @@ ${CHECK_VIEWPORT}
      to no surface. Excluded by container, not by label, so a real duplicate that
      merely happens to say "×" is still caught. */
   var TRANSIENT = '.mls-sv-card, #mlsMobileNoticeShelf, #toast, .toast, [role=alert], [role=status], .mls-toast, #mlsBusyPill';
+  /* A MODAL AND THE PAGE BEHIND IT ARE NOT ONE SCREEN.
+     While a dialog is open the page behind it is covered by the scrim and
+     cannot be clicked, so a label appearing once in the dialog and once behind
+     it is not a doctor's choice between two controls - it is one control and a
+     backdrop. Measured: with the op-note Templates tab open, "history" was
+     reported as a duplicate at all four viewports, pairing the template
+     library's own button with the #mlsRightNow patient-History segment on the
+     page underneath - at 1440x900 that second control sat at y=-1032, a
+     thousand pixels above the top of the window.
+     When a dialog is open, only what is INSIDE an open dialog is a candidate.
+     With no dialog open the whole page is, exactly as before.
+
+     The scope list can NEST - the op-note room reparents #templatesModal inside
+     itself, so two .modal-bg.show ancestors contain the very same buttons - and
+     collecting per root without de-duplicating reported every control on the
+     tab as its own twin, at identical coordinates. Identity, not markup, is
+     what makes two controls two. */
+  var openModals = [].slice.call(document.querySelectorAll('.modal-bg.show'));
+  var scope = openModals.length ? openModals : [document];
   var seen = {};
-  var els = [].slice.call(document.querySelectorAll('button,a[href],[role=button],summary'));
+  var els = [];
+  scope.forEach(function (rootEl) {
+    [].slice.call(rootEl.querySelectorAll('button,a[href],[role=button],summary')).forEach(function (el) {
+      if (els.indexOf(el) < 0) els.push(el);
+    });
+  });
   els.forEach(function (el) {
     var r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return;
