@@ -273,10 +273,19 @@
        a rail over a button, and elementFromPoint at the intersection returned
        the dock, so the click was going to the dock and not to the arrow. The
        bottom dock has carried clearance rules since it shipped; the three new
-       sides need their own. The page moves, the dock still floats. */
-    'body[data-mls-dock="left"] #appWrap{padding-left:128px}',
-    'body[data-mls-dock="right"] #appWrap{padding-right:128px}',
-    'body[data-mls-dock="top"] #appWrap{padding-top:100px}',
+       sides need their own. The page moves, the dock still floats.
+
+       !important is NOT decoration here, it was measured. Without it the rule
+       parsed, sat in the CSSOM, matched #appWrap (verified with .matches), had
+       no competing rule in any readable sheet — and still computed to 0px. The
+       proof it was being outranked rather than ignored: an INLINE
+       padding-left:128px on #appWrap also computed to 0px, which only an
+       !important declaration can do. It lives in a stylesheet whose cssRules
+       throws on read, so the audit that "found nothing" was the known silent
+       zero, not an absence. */
+    'body[data-mls-dock="left"] #appWrap{padding-left:128px !important}',
+    'body[data-mls-dock="right"] #appWrap{padding-right:128px !important}',
+    'body[data-mls-dock="top"] #appWrap{padding-top:100px !important}',
     /* a vertical rail on a phone would eat the whole screen edge; below the
        phone breakpoint every choice falls back to the proven bottom dock. */
     '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
@@ -287,7 +296,7 @@
     'body[data-mls-dock] #mlsDockAsk{width:172px}',
     /* and the clearance goes with it — a phone gets the bottom rail, so an
        inherited side padding would just narrow an already narrow screen. */
-    'body[data-mls-dock] #appWrap{padding-left:0;padding-right:0;padding-top:14px}}',
+    'body[data-mls-dock] #appWrap{padding-left:0 !important;padding-right:0 !important;padding-top:14px !important}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#D6E7DC;',
     'box-shadow:0 1px 2px rgba(20,35,28,.14),inset 0 0 0 1px rgba(32,64,52,.10);',
     /* The pill already glided rather than teleported — the brief's premise was
