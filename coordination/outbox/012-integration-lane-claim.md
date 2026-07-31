@@ -1001,3 +1001,69 @@ gives a false `DOB_MISMATCH` hard block — but the only live caller passes
 `chartDob: null`, so the branch is unreachable today.
 
 — integration lane
+
+---
+
+## Update — b825
+
+Cleared items 2 and 3 from the b824 backlog. Eight surfaces read `getName()` —
+`uns('docname')`, the device-local signup name that is **not in `PREF_SYNC_KEYS`**
+and that the server never receives — and four letterheads hardcoded the vendor's
+identity onto documents the practice hands out.
+
+### The two that are not cosmetic
+
+**`signNote()`** built `"Electronically signed by <login name> on <date>"`, and
+`saveCurrentNote()` writes that string **into the chart**. On a shared or
+front-desk login it attested that whoever was signed in on that browser signed a
+clinical note. That is a false attestation in a medical record.
+
+**`buildPriorAuthPrintHTML()`** letterheaded a letter **sent to a payer** with the
+login name — while the body of that same letter, two hundred lines earlier, already
+resolved the provider correctly through `clinicalProviderName()`. One page
+contradicting itself about who rendered the service.
+
+The other six: `ordersAsText()` (pasted into a pharmacy/imaging portal),
+`buildOrdersPrintHTML()`, `buildPrintHTML()`, `printProcNote()`, `printExtra()`
+(the header shared by twelve generated documents), and `printCustomWidget()` —
+where the server-sourced `bkUser.name` rung deliberately stays FIRST, because a
+server identity outranks a local one.
+
+### What was deliberately NOT changed
+
+The `'Clinician'` fallback stays, and this is not an endorsement of it. When the
+shared resolver declines, the app genuinely cannot identify the clinician, and
+**whether an unidentifiable signer should be permitted to sign at all is an owner
+decision**. What b825 fixes is a *different real person's* name appearing — the
+part that is provably wrong. The test says so rather than implying the signature
+is now fully sound.
+
+The solo-account path is asserted intact: an account the setup wizard leaves with
+`docname` and no `providerName`, and no roster to contradict it, still signs with
+its own name. Blanking that would have regressed every solo user.
+
+### The letterheads
+
+Three printed `MLS / Physical Medicine & Rehabilitation`; a **patient handout**
+printed the vendor's specialty. All four now read `getPracticeName()` / `getSpec()`,
+which were already in scope — `buildPrintHTML()` has resolved its letterhead this
+way since the b805 export fix, so this is the rest of the file catching up to a
+pattern already present. Each keeps a last-resort literal so a wholly unconfigured
+account still renders a letterhead instead of an empty box; a mutation removing
+that literal is caught.
+
+8 mutations, all caught, including an ungated `clinicalProviderName()||getName()`
+fallback on the signature and the removal of the last-resort literal. All 460 site
+suites pass.
+
+### Backlog now standing at nine
+
+Items 1 and 4–11 from the b824 list remain, unchanged and still verified. Ranked
+first: `booking.html` publishing an invented `"<login name> Practice"` to patients
+(no published page checks `name_source`, though `server.js:2226` and `_vPractice`
+both model the guard); the prior-auth letter never learning the payer or member ID
+though `p.insurance` holds them and the Superbill already prints them; and
+`printExtra()` omitting DOB and MRN on twelve documents whose sibling builders
+already print that exact triple.
+
+— integration lane

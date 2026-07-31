@@ -386,7 +386,7 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b824) — one way to look busy =====
+  /* ===== LOADING VOCABULARY (b825) — one way to look busy =====
      Composable, theme-var driven, motion-token timed, reduced-motion safe.
      Surfaces adopt these instead of inventing another spinner. */
   .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
@@ -888,7 +888,7 @@
      carry a 0px fallback, so nothing moves on a device with neither. */
   #opPrepModal.opr-room{ padding:0;
     --opr-dock-clear:calc(104px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)); }
-  /* b824 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b825 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show > .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -907,7 +907,7 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b824 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b825 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -1490,7 +1490,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b824) ----
+  /* ---- Copilot calm polish (b825) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1704,7 +1704,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b824 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b825 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -4831,7 +4831,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b824: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b825: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4949,7 +4949,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b824: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b825: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -5846,7 +5846,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b824): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b825): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6463,7 +6463,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b824: METHOD-AWARE. The login response now reports every second factor the
+/* b825: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6596,7 +6596,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b824: a texted code completes at its own sibling route; the TOTP and
+    /* b825: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6804,7 +6804,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b824: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b825: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8499,7 +8499,7 @@ function saveSettings(){
 const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','facilityName','facilityAddress','googleBusinessUrl','defaultFormat','noteStyle',
-  /* b824: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
+  /* b825: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
      into the letterhead, the full-history PDF header and the op-note prep context,
      and it rode nowhere - a doctor who set it on the desktop had a blank specialty
      on the laptop, and the server never learned it at all. The marketing listing
@@ -8613,7 +8613,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b824: the restored "Pull full visit notes" Settings option. One stored
+/* b825: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change.
@@ -8621,7 +8621,7 @@ async function loadPrefsFromServer(opts){
    Every visit on 47 of 51 snapshot patients in the live store was an
    index-only stub — the encounter bodies were never read — because this
    preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b824 finding). A pull without encounter bodies is
+   it never rendered (the b825 finding). A pull without encounter bodies is
    not "complete available history" (owner bar 2026-07-28: first-pull
    completeness, no silent omissions), so absence of a recorded HUMAN choice
    now means ON. The uns('pullVisitBodiesSet') marker records that a human
@@ -8670,7 +8670,7 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b824: texted-codes card, from the same server truth (/api/me projection). */
+  /* b825: texted-codes card, from the same server truth (/api/me projection). */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
@@ -13587,7 +13587,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b824: the auto-save commits HERE - the one door that knows the tool
+        /* b825: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13838,7 +13838,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b824: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b825: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14296,7 +14296,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b824 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b825 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -15213,7 +15213,7 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
-  /* b824 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+  /* b825 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
      15 of 19 scheduled patients had no landed Athena chart, yet every
      clinical card still rendered a generic "No ... recorded." line. That is
      the same sentence a REVIEWED-and-clear chart shows, so the panel was
@@ -15262,7 +15262,7 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
-/* b824: one honest, actionable line above the clinical grid when NOTHING has
+/* b825: one honest, actionable line above the clinical grid when NOTHING has
    been read for this patient and the clinician has typed nothing either. It
    reuses the exact Pull-chart verb the History view owns
    (pullPatientChartViaAssist), so there is no second pull path to keep in
@@ -15826,7 +15826,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b824 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b825 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16021,7 +16021,7 @@ function opPrepRender(){
        and NOTHING else - no class, no aria - so (a) a screen reader was told
        nothing about which mode was in effect, and (b) any stylesheet that
        overrode the background left white text on a near-white button, which is
-       exactly what shipped in b824 (measured ~1.03:1: the selected mode read as
+       exactly what shipped in b825 (measured ~1.03:1: the selected mode read as
        an empty box). aria-pressed is now the machine-readable truth, so
        presentation can key off state instead of guessing, and the state survives
        a background override. */
@@ -16130,7 +16130,7 @@ async function opPrepGenerateOne(i){
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
-    /* b824: an unambiguous "the generator ran and produced this" stamp. Draft-all
+    /* b825: an unambiguous "the generator ran and produced this" stamp. Draft-all
        counts successes by watching it change. Comparing the note TEXT instead was
        almost right, but a re-draft that produced identical text would have been
        counted as a failure - a false negative in the honest direction, which is
@@ -17399,7 +17399,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b824 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b825 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -17690,7 +17690,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b824 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b825 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -18021,7 +18021,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b824 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b825 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -20492,7 +20492,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b824 (diarization, option A): turn labels ride the USER payload — the one
+  /* b825 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -21211,7 +21211,18 @@ function signNote(){
     }
   }catch(eSignPh){}
   setBadge(true);
-  const name=getName()||'Clinician';
+  /* b825: this was getName() - uns('docname'), the device-local LOGIN name - and
+     the string it builds is an ELECTRONIC SIGNATURE that saveCurrentNote() writes
+     into the chart. On a shared or front-desk login it attested that whoever was
+     signed in on that browser had signed a clinical note. clinicalProviderName()
+     is the shared resolver and owns the one account-name fallback, gated on there
+     being no verified roster.
+     The 'Clinician' fallback is left as it was and is NOT an endorsement: if the
+     resolver declines, the app genuinely cannot identify the signer, and whether
+     an unidentifiable signer should be allowed to sign at all is an owner
+     decision. What this change fixes is signing with a DIFFERENT REAL PERSON's
+     name, which is worse than signing generically. */
+  const name=clinicalProviderName()||'Clinician';
   const ts=new Date().toLocaleString();
   const line=document.getElementById('signLine');
   line.style.display='block';
@@ -21247,7 +21258,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b824 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b825 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -21605,7 +21616,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b824 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b825 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -21874,7 +21885,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b824 (audit): op notes save their body to .text, not .soap — every prior
+    /* b825 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -21987,7 +21998,8 @@ function buildPrintHTML(){
   }
   const noteText=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
-  const docName=getName()||'Clinician';
+  /* b825: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   // MLS additive — optional practice/provider header details (render only if set)
   const practiceName=(typeof getPracticeName==='function')?getPracticeName():'';
@@ -22764,7 +22776,9 @@ function ordersAsText(){
   const ap=activePatient();
   const out=[];
   out.push('ORDERS — '+(ap?ap.name:'Unassigned patient'));
-  out.push('Provider: '+(getName()||'Clinician')+(getSpec()?(' · '+getSpec()):''));
+  /* b825: the LOGIN name on an orders sheet that gets pasted into a pharmacy or
+     imaging portal. The shared resolver decides who the clinician is. */
+  out.push('Provider: '+(clinicalProviderName()||'Clinician')+(getSpec()?(' · '+getSpec()):''));
   out.push('Date: '+new Date().toLocaleString());
   if(ordersDx.text||ordersDx.icd.length) out.push('Diagnosis: '+[ordersDx.text,ordersDx.icd.join('; ')].filter(Boolean).join(' · '));
   out.push('');
@@ -22862,7 +22876,8 @@ function buildOrdersPrintHTML(){
   const ap=activePatient();
   const patient=ap?ap.name:'Unassigned patient';
   const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
-  const docName=getName()||'Clinician';
+  /* b825: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
   const dxLine=[ordersDx.text,ordersDx.icd.join('; ')].filter(Boolean).join(' · ');
@@ -22905,7 +22920,13 @@ function buildOrdersPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <!-- b825: this hardcoded the VENDOR's name and a single specialty onto a
+         document the practice hands out. getPracticeName()/getSpec() were already
+         in scope; buildPrintHTML() has resolved its letterhead this way since the
+         b805 export fix, so this is the pattern catching up, not a new one. The
+         vendor strings remain only as the last resort for a wholly unconfigured
+         account, which is what renders today. -->
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -23185,7 +23206,8 @@ function buildPriorAuthPrintHTML(){
   const ap=activePatient();
   const patient=ap?ap.name:'[Patient — provider to complete]';
   const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
-  const docName=getName()||'Clinician';
+  /* b825: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
   const letter=document.getElementById('paLetter').value||currentPriorAuth||'';
@@ -23206,7 +23228,13 @@ function buildPriorAuthPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <!-- b825: this hardcoded the VENDOR's name and a single specialty onto a
+         document the practice hands out. getPracticeName()/getSpec() were already
+         in scope; buildPrintHTML() has resolved its letterhead this way since the
+         b805 export fix, so this is the pattern catching up, not a new one. The
+         vendor strings remain only as the last resort for a wholly unconfigured
+         account, which is what renders today. -->
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -24598,7 +24626,8 @@ function printProcNote(){
   if(!txt){ toast('Generate the procedure note first.','err'); return; }
   const ap=activePatient();
   const patient=ap?ap.name:'[Patient — provider to complete]';
-  const docName=getName()||'Clinician';
+  /* b825: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -24618,7 +24647,13 @@ function printProcNote(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <!-- b825: this hardcoded the VENDOR's name and a single specialty onto a
+         document the practice hands out. getPracticeName()/getSpec() were already
+         in scope; buildPrintHTML() has resolved its letterhead this way since the
+         b805 export fix, so this is the pattern catching up, not a new one. The
+         vendor strings remain only as the last resort for a wholly unconfigured
+         account, which is what renders today. -->
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
@@ -25262,7 +25297,11 @@ function printHandout(){
   @media print{body{padding:0 14px}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">Your Home Care Plan<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <!-- b825: a PATIENT handout headed with a generic title and the vendor's
+         specialty. The heading stays (it names the document, which is right for a
+         patient) and the sub-line becomes the practice the patient is dealing
+         with. -->
+    <div class="brand">Your Home Care Plan<small>${esc(getPracticeName()||getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
     <div class="meta">Patient: ${esc(patient)} · Provider: ${esc(docName)} · ${esc(now)}</div>
   </div>
   <pre>${esc(text)}</pre>
@@ -25518,7 +25557,8 @@ function copySection(letter){
 function printExtra(title,bodyId){
   const body=document.getElementById(bodyId);
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
-  const docName=getName()||'Clinician';
+  /* b825: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  const docName=clinicalProviderName()||'Clinician';
   const now=new Date().toLocaleString();
   const bodyText=(body.tagName==='TEXTAREA'||body.tagName==='INPUT')?body.value:body.textContent;
   const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(bodyText)+'</pre>');
@@ -26310,7 +26350,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b824: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b825: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -26445,7 +26485,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b824 — THE LOADING SCREEN MUST ALWAYS END.
+/* b825 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -30476,7 +30516,9 @@ async function printCustomWidget(id){
 
   const pt=activePatient();
   const ptName=(pt && (pt.name||pt.label))?String(pt.name||pt.label):'(no patient selected)';
-  const docName=(bkUser&&bkUser.name)||getName()||'Clinician';
+  /* b825: bkUser.name is server-sourced and stays first; the local rung was the
+     LOGIN name and is now the shared resolver. */
+  const docName=(bkUser&&bkUser.name)||clinicalProviderName()||'Clinician';
   const today=agTodayStr();
   const stamp=new Date().toLocaleString();
   const titleStr=(w.emoji?w.emoji+' ':'')+w.title;
@@ -31257,7 +31299,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b824';
+  window.__MLS_AV='b825';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

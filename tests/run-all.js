@@ -463,6 +463,13 @@ const tests = [
      against a FIXED clock, with the year-only de-identified fallback pinned
      intact. */
   'one-age-for-one-patient.test.js',
+  /* b825 — eight more shell surfaces read getName(), the device-local login name
+     that is not even in PREF_SYNC_KEYS: the ELECTRONIC SIGNATURE written into the
+     chart, the letterhead of a prior-auth letter sent to a payer (whose own body
+     already resolved the provider correctly), the orders sheet pasted into a
+     pharmacy portal, and five printed letterheads. Four of those also hardcoded
+     the VENDOR's name and specialty onto documents the practice hands out. */
+  'twelve-shell-documents-carry-the-practice.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',
