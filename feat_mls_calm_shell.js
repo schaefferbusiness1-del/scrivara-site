@@ -290,7 +290,7 @@
        zero, not an absence. */
     'body[data-mls-dock="left"] #appWrap{padding-left:128px !important}',
     'body[data-mls-dock="right"] #appWrap{padding-right:128px !important}',
-    'body[data-mls-dock="top"] #appWrap{padding-top:124px !important}',
+    'body[data-mls-dock="top"] #appWrap{padding-top:112px !important}',
     /* a vertical rail on a phone would eat the whole screen edge; below the
        phone breakpoint every choice falls back to the proven bottom dock. */
     '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
@@ -1525,14 +1525,49 @@
     try { narrow = !!(W.matchMedia && W.matchMedia('(max-width:640px)').matches); } catch (e) {}
     return !narrow && (s === 'left' || s === 'right');
   }
+  /* A TOP DOCK HAS TO CLEAR WHATEVER IS ALREADY STUCK TO THE TOP, and that is
+     not a constant. Two sticky surfaces live up there and both outrank the dock:
+     #appHeader (74px, z-index 6000) and #mlsCtxBar, the patient banner
+     (z-index 5900). At a fixed top:18px the dock lost 56 of its 85 pixels behind
+     the header; moved to 88px it then disappeared behind the patient banner -
+     both measured, both plainly visible as a row of half-cut labels. Raising the
+     dock's z-index above them was the wrong fix: it would float the navigation
+     over the patient's name and DOB, and the banner is the one thing on this
+     screen that must never be covered.
+     So the offset is measured from whatever is actually stuck up there. Sticky
+     elements hold their position once stuck, so this stays correct while
+     scrolling; it is recomputed on resize, where the header can reflow. */
+  function topDockOffset() {
+    var top = 18;
+    ['appHeader', 'mlsCtxBar'].forEach(function (id) {
+      var el = D.getElementById(id);
+      if (!el) return;
+      var cs = W.getComputedStyle(el), r = el.getBoundingClientRect();
+      if (!/sticky|fixed/.test(cs.position)) return;
+      if (r.height < 2 || cs.display === 'none' || cs.visibility === 'hidden') return;
+      top = Math.max(top, Math.round(r.bottom) + 12);
+    });
+    return top;
+  }
   function applyDockSide(side) {
     var v = DOCK_SIDES[side] ? side : dockSide();
     try {
       if (v === 'bottom') D.body.removeAttribute('data-mls-dock');
       else D.body.setAttribute('data-mls-dock', v);
     } catch (e) {}
+    try {
+      if (dockEl) {
+        if (v === 'top') dockEl.style.top = topDockOffset() + 'px';
+        else dockEl.style.removeProperty('top');
+      }
+    } catch (e) {}
     try { syncDock(); } catch (e) {}
   }
+  try {
+    W.addEventListener('resize', function () {
+      if (dockSide() === 'top') safe(function () { applyDockSide('top'); });
+    }, { passive: true });
+  } catch (e) {}
   W.applyDockSidePreview = function (side) {
     if (!DOCK_SIDES[side]) side = 'bottom';
     try { W.localStorage.setItem(dockKey(), side); } catch (e) {}
