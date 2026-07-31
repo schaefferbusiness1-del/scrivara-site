@@ -1138,3 +1138,71 @@ promising account scope and delivering device scope; `clinicLogo` never reaching
 jsPDF letterhead.
 
 — integration lane
+
+---
+
+## Update — b828
+
+Two more from the backlog, and one of them is a lesson about my own b823 test.
+
+### printExtra() printed no DOB and no MRN, on twelve documents
+
+`printExtra(title, bodyId)` is the print path for the after-visit summary, the
+referral letter, the IME report, the medical-legal report, utilization review, the
+superbill, the good faith estimate, three analysis reports and the custom-widget
+printouts. Its header was:
+
+```
+Patient: <label> · Provider: <name> · <timestamp>
+```
+
+No date of birth, no MRN — so **none of the twelve could be filed against a chart**
+without somebody hand-annotating it. `activePatient()` holds both, and **two sibling
+builders in this same file already print exactly that triple**:
+`buildOrdersPrintHTML()` and `buildPriorAuthPrintHTML()`, both
+`[ap.sex, ap.dob, ap.mrn && 'MRN '+ap.mrn].filter(Boolean)`.
+
+Each part appears only when the chart holds it, and with no active patient the line
+is **byte-identical to its pre-change form** — asserted, because these documents are
+printed from views where no chart is open, and "no worse than before" is what makes a
+change to a printed clinical document safe.
+
+### The handout defect recurred ONE FILE from where b823 fixed it
+
+`printHandout()` ended a sheet the **patient takes home** with *"Call the office with
+any questions."* — naming neither the office nor a number, with `getPracticeName()`
+and `getClinicPhone()` in scope.
+
+This is the same defect b823 fixed in the after-visit summary. b823 touched only
+`feat_after_visit_summary.js`, and
+`tests/after-visit-summary-names-the-practice-to-call.test.js` reads only that file —
+so **a test scoped to one module could not protect the defect class**, and it
+survived one file away. Worth stating plainly: fixing an instance is not fixing a
+class, and my own test gave a false sense of coverage.
+
+### My own fix had a bug, and the suite caught it rather than my reading
+
+The first version did not trim, so a Settings field holding only spaces produced
+
+```
+Call    at    with any questions.
+```
+
+on a sheet handed to a patient. The whitespace case in the suite found it. I would
+not have found it by re-reading the code — that is the whole argument for executing
+these instead of grepping them.
+
+7 mutations, all caught, including losing the trim and losing the byte-identical
+degradation. All 463 site suites pass.
+
+### Backlog: five verified findings remain
+
+Cleared: booking-page invented name (backend), the eight login-name documents and
+four vendor letterheads (b825), the payer letter (b827), printExtra's DOB/MRN and the
+handout (b828). Still standing, with reproductions in the b824 entry: the referral
+letter re-asking for a consultant already in this visit's order; dictate-letter
+leaving the recipient blank though the chart stores the PCP; `googleBusinessUrl`
+being a Settings field nothing reads; five preference keys promising account scope
+and delivering device scope; `clinicLogo` never reaching a jsPDF letterhead.
+
+— integration lane
