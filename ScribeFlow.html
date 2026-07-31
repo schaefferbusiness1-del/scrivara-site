@@ -21176,7 +21176,15 @@ function signNote(){
              when the lane is not the surface in use. The index is computed
              against the chosen editor's OWN text, never assumed to carry over
              from the other one. */
-          var _eds=[document.getElementById('ez3flNote'),document.getElementById('noteBox')];
+          /* #ez3Note is the engine's own note editor and it is the ONLY visible
+             one on a phone: body.mls-phone hides .ez3fl-record (so #ez3flNote
+             has a 0x0 rect) and #noteCard stays display:none because the
+             advanced toggle #ez3Adv is hidden there too. Without it in this
+             list both candidates fail the visibility test, _nb falls back to a
+             display:none #noteBox, and focus()/setSelectionRange() are silent
+             no-ops - the exact failure this block was written to end, surviving
+             on the one device where the doctor has the least screen to spare. */
+          var _eds=[document.getElementById('ez3flNote'),document.getElementById('ez3Note'),document.getElementById('noteBox')];
           var _nb=null,_ei;
           for(_ei=0;_ei<_eds.length;_ei++){
             var _e=_eds[_ei]; if(!_e) continue;

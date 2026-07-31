@@ -622,7 +622,30 @@
       return { tplId:guess.id, source:'closest', guess:true, score:direct.score || 0,
         reason:'closest match only (' + S(direct.reason || 'ambiguous') + ') — check it, or add a keyword to that template' };
     }
-    return { tplId:'', source:'unmatched', score:0, reason:'No unambiguous procedure signal' };
+    /* KEEP THE REFUSAL'S REASON INSTEAD OF FLATTENING IT.
+       Four quite different refusals used to collapse into one 'unmatched'
+       source, and autoTpl's last else then assumed that source could only mean
+       the two-procedure case. Measured by running the real module: BOTH
+       "Routine follow-up" AND "Lumbar ESI" produced the identical error toast
+       "This row names more than one procedure" - which is simply false for a
+       follow-up with no procedure in it at all, and useless advice for a
+       generic ESI whose actual problem is that it does not say which approach.
+       Being told the wrong reason is worse than being told nothing: it sends
+       the doctor looking for a second procedure that was never there. */
+    if (direct.multi) {
+      return { tplId:'', source:'multi-procedure', score:0,
+        reason:S(direct.reason) || 'names more than one procedure' };
+    }
+    if (direct.conflicts) {
+      return { tplId:'', source:'conflicting-template', score:direct.score || 0,
+        reason:S(direct.reason) || 'the closest template conflicts with the requested procedure' };
+    }
+    if (narrowsWithinFamily(reason, direct.candidate)) {
+      return { tplId:'', source:'needs-approach', score:direct.score || 0,
+        reason:S(direct.reason) || 'the approach is not stated' };
+    }
+    return { tplId:'', source:'unmatched', score:0,
+      reason:S(direct.reason) || 'No unambiguous procedure signal' };
   }
   /* ONE matcher for every surface: preview, prep, note formatting, and safety
      checks all resolve through this canonical entry (negation-aware,
@@ -689,8 +712,14 @@
       toast('No exact match — used the closest: '+nm+'. Check it, or add a keyword to that template.','warn');
     }
     else if(m.tplId) toast('Matched '+(m.source==='history'?'from this patient’s history: ':'')+nm,'ok');
+    /* One message per refusal, each naming the thing the doctor can DO about
+       it. These used to be one sentence about two procedures, printed whatever
+       the real reason was. */
     else if(m.source==='no-procedure') toast('This visit states no procedure was performed, so no procedure template was applied.','err');
-    else toast('This row names more than one procedure — choose the template once so the note cannot be for the wrong operation.','err');
+    else if(m.source==='multi-procedure') toast('This row names more than one procedure — choose the template once so the note cannot be for the wrong operation.','err');
+    else if(m.source==='needs-approach') toast('This says which region but not which approach (transforaminal, interlaminar, caudal). Add the approach, or choose the template once.','err');
+    else if(m.source==='conflicting-template') toast('The closest template disagrees with this procedure ('+S(m.reason)+'), so it was not applied. Choose one, or correct the procedure text.','err');
+    else toast('No procedure to match on yet — type the procedure, or choose the template once.','err');
   }
 
   function statusText(row) {
@@ -1406,7 +1435,7 @@
     document.addEventListener('change',function(ev){
       var el=ev&&ev.target, m=el&&S(el.id).match(/^opPrepTpl_(\d+)$/);if(!m)return;
       var row=(window._opPrep||[])[+m[1]];if(!row)return;
-      row.tplId=S(el.value);row.tplManual=true;row.tplMatchSource='manual';row.tplMatchReason='Clinician selected';
+      row.tplId=S(el.value);row.tplManual=true;row.tplMatchSource='manual';row.tplMatchReason='Clinician selected';markGuess(row,{source:'manual'});
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
@@ -1422,7 +1451,7 @@
           if(altId&&altId!==S(row.tplId)){
             var altCompat=templateCompatibility(row.proc||row.appt.reason,altBest.tpl,rowGenerationCtx(row));
             if(altCompat.pass||closeCallAdaptation(altCompat,altBest.tpl,rowGenerationCtx(row)).adapt){
-              row.tplId=altId;row.tplMatchSource='auto-reroute';row.tplMatchReason='Rerouted: previous match was for a different procedure';syncTplStatus(i);switched=true;
+              row.tplId=altId;row.tplMatchSource='auto-reroute';row.tplMatchReason='Rerouted: previous match was for a different procedure';markGuess(row,{source:'auto-reroute'});syncTplStatus(i);switched=true;
               toast('Switched to compatible template "'+S(altBest.tpl.name).slice(0,60)+'" — '+warnWhat+'.','');
             }
           }

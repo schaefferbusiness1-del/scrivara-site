@@ -40,11 +40,26 @@ assert.strictEqual(unconditional, 0,
   'a Sign proxy sets S.signedAt straight after sb.click(), so it claims "signed & saved" ' +
   'on all four of signNote()\'s refusal paths');
 
-/* 2. every copy reads a receipt before claiming, and there are still four */
-const gated = (connect.match(/if \(!lineSigned && !flagSigned\) \{ render\(\); return; \}/g) || []).length;
+/* 2. every copy reads a receipt before claiming, and there are still four.
+      b824 widened the body of this gate - a placeholder refusal must no longer
+      repaint, because the repaint destroyed the editor the refusal had just
+      selected a blank in (see sign-refusal-survives-the-repaint.test.js). The
+      GATE ITSELF is untouched and is what this suite is about: the early return
+      on "no signature line and no signed flag" still guards every claim below.
+      So the pin moves from the whole one-line statement to the condition, and a
+      companion assertion keeps the early return honest. */
+const gated = (connect.match(/if \(!lineSigned && !flagSigned\) \{/g) || []).length;
 assert.strictEqual(gated, 4,
   'expected all 4 generational copies of the ez3Sign handler to be receipt-gated, found ' + gated +
   ' — a new copy without the gate reintroduces the defect');
+
+const gateBodies = connect.match(/if \(!lineSigned && !flagSigned\) \{[\s\S]{0,900}?\n      \}/g) || [];
+assert.strictEqual(gateBodies.length, 4, 'a receipt gate lost its block form');
+gateBodies.forEach((body, i) => {
+  assert.match(body, /\breturn;/,
+    `receipt gate ${i + 1} no longer returns, so execution falls through to the ` +
+    '"Note signed & saved in MLS." claim on a refusal — the exact defect this suite exists for.');
+});
 
 const claims = (connect.match(/toast\('Note signed & saved in MLS\.'\); render\(\);/g) || []).length;
 assert.strictEqual(claims, gated,

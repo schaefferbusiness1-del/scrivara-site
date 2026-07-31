@@ -120,8 +120,46 @@
        list ships motion a doctor cannot turn off. */
     [B + '.opr-us-redo',
      'transition:border-color ' + D1 + ' ' + EO + ', background ' + D1 + ' ' + EO],
-    [B + '.opr-us-redo:active', 'transform:scale(.97)']
+    [B + '.opr-us-redo:active', 'transform:scale(.97)'],
+
+    /* THE LIBRARY ARRIVES, ROW BY ROW.
+       ot-2.2.0. The tab now opens ON the library instead of 2,139px below it,
+       and this is what makes that landing read as a place rather than a jump:
+       the saved templates settle in with a short lift, each one a beat after
+       the one above.
+
+       Keyed off `#oprPanelTpls.on`, which is not a class invented for this -
+       feat_mls_opnote_room.js showTab() already toggles it as the tab's own
+       shown/hidden state, so the entrance fires exactly when the doctor enters
+       the tab and never on a re-render while he is sitting in it.
+
+       transform+opacity only, so it composites and cannot reflow a list the
+       renderer is rewriting. The stagger is six nth-child steps and then flat:
+       a library of forty templates must not spend two seconds arriving, and
+       rows past the sixth are below the fold at every size this tab uses.
+       `both` fill so a row cannot be caught pre-paint at opacity 0 if the
+       animation is interrupted. */
+    [B + '#oprPanelTpls.on #tplList > div',
+     'animation:mlsOtRowIn ' + D3 + ' ' + EO + ' both'],
+    [B + '#oprPanelTpls.on #tplList > div:nth-child(2)', 'animation-delay:40ms'],
+    [B + '#oprPanelTpls.on #tplList > div:nth-child(3)', 'animation-delay:80ms'],
+    [B + '#oprPanelTpls.on #tplList > div:nth-child(4)', 'animation-delay:120ms'],
+    [B + '#oprPanelTpls.on #tplList > div:nth-child(5)', 'animation-delay:160ms'],
+    [B + '#oprPanelTpls.on #tplList > div:nth-child(n+6)', 'animation-delay:200ms'],
+    /* the preview beside it comes in without moving - it is a reading surface,
+       and sliding text is the one thing the motion charter forbids outright */
+    [B + '#oprPanelTpls.on #tplDetail',
+     'animation:mlsOtFadeIn ' + D3 + ' ' + EO + ' both']
   ];
+
+  /* The two keyframes the rules above name. Declared as a pair with them so a
+     rule can never reference a keyframe that does not exist - the failure mode
+     is silent, and an animation that resolves to nothing looks exactly like an
+     animation nobody wrote. Distances are small on purpose: 6px is a settle,
+     not a slide. */
+  var KEYFRAMES =
+    '@keyframes mlsOtRowIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
+    '@keyframes mlsOtFadeIn{from{opacity:0}to{opacity:1}}';
 
   /* ======================= OP NOTES ======================================= */
   var OPNOTE = [
@@ -1114,7 +1152,37 @@
        future panel lands under the library instead of over it. */
     R + '#tplWorkspace > *{ order:5; }',
     R + '#tplWorkspace > #tplList{ order:1; }',
-    R + '#tplWorkspace > #tplDetail{ order:1; }'
+    R + '#tplWorkspace > #tplDetail{ order:1; }',
+
+    /* THE DEAD COLUMN, MEASURED INSIDE THE WORKSPACE THIS TIME.
+       ot-2.1.0 got the ORDER right - list and preview first, the two
+       maintenance panels after - and then left those panels in the narrow
+       left-hand track, because grid auto-placement puts them wherever the
+       first free cell is. Measured live at 1440x900 with a real library:
+
+         row 1   #tplList     517px wide, 333px tall  |  #tplDetail 822px wide, 260px
+         row 2   #tpfPanel    517px wide,  59px tall  |  (nothing) 822px of air
+         row 3   #tlPanel     517px wide, 370px tall  |  (nothing) 822px of air
+
+       Two panels squeezed into 38% of the width while 62% of the same rows sat
+       empty - the exact waste the one-column rewrite was meant to end, one
+       level further in. #tlPanel is a versioned-library admin table; in a
+       517px column it wraps to 370px, and it is the single tallest thing
+       between the doctor and the bottom of the tab.
+
+       Spanning both tracks is the whole fix, and it needs no row math: this
+       says which COLUMNS an item covers, never which row it lives in, so a
+       panel injected later still auto-places safely. */
+    R + '#tplWorkspace > #tpfPanel, ' + R + '#tplWorkspace > #tlPanel{ grid-column:1 / -1; }',
+
+    /* ...and maintenance still may not dominate. Both panels keep every control
+       and become internally scrollable instead of pushing the page: a control
+       inside a scrollable box is reachable by mouse, keyboard and screen
+       reader, which is the difference between capping a height and hiding a
+       feature. Generous caps - these only bite when the panel is genuinely
+       enormous. */
+    R + '#tplWorkspace > #tlPanel{ max-height:340px; overflow:auto; }',
+    R + '#mls-stdline-section{ max-height:360px; overflow:auto; }'
   ];
 
 
@@ -1193,6 +1261,7 @@
 
   function build() {
     var out = [];
+    out.push(KEYFRAMES);
     MOVING.forEach(function (r) { out.push(r[0] + '{' + r[1] + '}'); });
     out = out.concat(OPNOTE, TEMPLATES);
     out.push('@media (min-width:901px){' + WIDE.join('') + '}');

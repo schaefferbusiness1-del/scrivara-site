@@ -506,7 +506,22 @@ async function main() {
       ok(mirrored, '5blank-a. what the doctor types in the lane reaches the real note',
         'typing into #' + blankProbe.editedVia + ' did not mirror into #noteBox, so the sign gate reads a different note than the one on screen');
 
-      const sBlank = await press(cdp, 'signBtn');
+      /* PRESS THE BUTTON HE ACTUALLY USES.
+         This pressed #signBtn and passed, while the fix it was proving was dead
+         on #ez3Sign - the "✔ Review & Sign" on the visit card, which is the
+         control in front of the doctor in the lane. That driver called render()
+         on a refusal, tearing #ez3flNote out of the DOM in the same click and
+         taking the selection with it. Testing the reachable button instead of
+         the used one is how a fix ships and changes nothing.
+         Prefer the visit-card button; fall back to #signBtn only if the lane is
+         not the surface in use, so this still means something in either shape. */
+      const signId = await evalJs(cdp, `(()=>{
+        const vis=id=>{const e=document.getElementById(id); if(!e) return false;
+          const s=getComputedStyle(e), r=e.getBoundingClientRect();
+          return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;};
+        return vis('ez3Sign') ? 'ez3Sign' : 'signBtn';})()`);
+      note('pressing the sign control the doctor sees: #' + signId);
+      const sBlank = await press(cdp, signId);
       const refusal = await evalJs(cdp, `(()=>{
         const real=document.getElementById('noteBox'), lane=document.getElementById('ez3flNote');
         const vis=el=>{ if(!el) return false; const s=getComputedStyle(el), r=el.getBoundingClientRect();

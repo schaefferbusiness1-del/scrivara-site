@@ -59,6 +59,11 @@ const tests = [
      refuse when unsure, so this is its fence: four refusals that must survive
      it, each written because the first version of the fallback broke it. */
   'closest-guess-never-invents-a-procedure.test.js',
+  /* b824 — the second half of "why do u have to clikc review and sign twice".
+     b819 made the refusal point at the blank; this pins that the visit-card
+     driver does not then repaint the pointed-at editor out of existence, in
+     all four byte-identical copies of it. */
+  'sign-refusal-survives-the-repaint.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must

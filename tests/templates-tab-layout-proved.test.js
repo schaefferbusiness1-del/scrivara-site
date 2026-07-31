@@ -101,14 +101,17 @@ function findChrome() {
   return c.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } }) || '';
 }
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
-/* serve exactly what Pages publishes */
-const EXCLUDED = new Set();
-(fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8').match(/^\s*-\s*"([^"]+\.js)"/gm) || [])
-  .forEach((l) => EXCLUDED.add(l.replace(/^\s*-\s*"/, '').replace(/"\s*$/, '')));
+/* Serve exactly what Pages publishes, read from the inventory CI verifies
+   against a real Jekyll build. This file used to match `- "x.js"` across the
+   whole of _config.yml, which sweeps up its `include:` allowlist as well as its
+   `exclude:` list and so 404s published files - among them the two
+   public-preview scripts ScribeFlow.html loads in <head>. See
+   tests/published-tree.js for the two ways deriving this went wrong. */
+const isPublished = require('./published-tree.js').makeIsPublished();
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url || '/').split('?')[0]).replace(/^\/+/, '') || 'ScribeFlow.html';
-    if (EXCLUDED.has(rel)) { res.writeHead(404); return res.end('excluded from publication'); }
+    if (!isPublished(rel)) { res.writeHead(404); return res.end('not published by GitHub Pages'); }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end('nf'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
@@ -185,7 +188,34 @@ const PROBE = `(() => {
       stdline: !!document.getElementById('mls-stdline-section')
     },
     controls: [...card.querySelectorAll('button,input:not([type=file]),select,textarea')]
-      .filter(el => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && el.getBoundingClientRect().width > 0; }).length
+      .filter(el => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && el.getBoundingClientRect().width > 0; }).length,
+    /* WHERE THE TAB ACTUALLY OPENS. Every y above is measured in CARD space
+       (rect.top + panel.scrollTop), so the whole ordering can be perfect while
+       the doctor is looking at something 2,000px down - which is exactly what
+       shipped. These are viewport-relative and unforgiving. */
+    landing: (() => {
+      const pr = panel.getBoundingClientRect();
+      const list = document.getElementById('tplList');
+      const lr = list ? list.getBoundingClientRect() : null;
+      return {
+        scrollTop: Math.round(panel.scrollTop),
+        panelHeight: Math.round(pr.height),
+        libraryTop: lr ? Math.round(lr.top - pr.top) : null,
+        libraryVisible: !!(lr && lr.bottom > pr.top && lr.top < pr.bottom)
+      };
+    })(),
+    /* the entrance the library gets on arrival, resolved not just declared */
+    motion: (() => {
+      const rows = [...document.querySelectorAll('#oprPanelTpls.on #tplList > div')];
+      const names = [...document.styleSheets]
+        .flatMap((s) => { try { return [...s.cssRules]; } catch (e) { return []; } })
+        .filter((r) => r.type === 7).map((r) => r.name).filter((n) => /^mlsOt/.test(n));
+      return {
+        keyframes: names.sort(),
+        rowAnimation: rows.length ? getComputedStyle(rows[0]).animationName : '(no rows)',
+        secondRowDelay: rows.length > 1 ? getComputedStyle(rows[1]).animationDelay : null
+      };
+    })()
   };
   return out;
 })()`;
@@ -272,6 +302,36 @@ async function runBrowser(exe) {
       'top-to-bottom order inside #tplWorkspace was: ' + JSON.stringify(m.wsOrder));
 
     ok(m.controls >= 12, 'the tab still presents its full control set (' + m.controls + ')');
+
+    /* THE LANDING. Everything above measures ORDER; this measures what the
+       doctor is actually looking at when the tab opens, and the two came apart
+       badly. As shipped, with the order above already correct:
+         scrollTop 2139, #tplList 1825px ABOVE the viewport, first visible block
+         the "Have several forms to import?" advert.
+       Something inside the panel takes focus as it mounts and the browser
+       scrolls it into view; because this tab's reading order is composed with
+       CSS `order`, DOM-early is screen-late and the panel gets dragged down.
+       feat_mls_opnote_room.js showTab() now states the scroll position on
+       entering the tab. These assertions are why it cannot drift back. */
+    const L = m.landing;
+    ok(L.scrollTop === 0,
+      'the Templates tab opens at the top of the panel',
+      'panel opened at scrollTop ' + L.scrollTop + 'px - the doctor lands below the library he came for');
+    ok(L.libraryVisible,
+      'the saved-template library is on screen the moment the tab opens',
+      'library top was ' + L.libraryTop + 'px inside a ' + L.panelHeight + 'px viewport: ' + JSON.stringify(L));
+
+    /* the entrance, resolved rather than declared: a rule naming a keyframe
+       that does not exist animates nothing and looks exactly like no rule */
+    ok(m.motion.keyframes.join(',') === 'mlsOtFadeIn,mlsOtRowIn',
+      'both library keyframes are defined in the live stylesheet',
+      'found: ' + JSON.stringify(m.motion.keyframes));
+    ok(m.motion.rowAnimation === 'mlsOtRowIn',
+      'the library rows resolve to their entrance animation',
+      'first row animation-name was "' + m.motion.rowAnimation + '"');
+    ok(m.motion.secondRowDelay === null || m.motion.secondRowDelay === '0.04s',
+      'the entrance is staggered, so the library settles in rather than snapping',
+      'second row animation-delay was ' + m.motion.secondRowDelay);
   } finally {
     cdp.close();
     try { child.kill(); } catch (_) {}

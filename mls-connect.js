@@ -15880,7 +15880,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the row when the draft comes back not-ok - the wrapper returns false
          instead of rejecting, so the catch below almost never fires. */
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
-      return Promise.resolve().then(function () { return window.opPrepGenerateOne(idx); }).then(function () {
+      /* CAPTURE WHAT THE ROW ALREADY HAD, BEFORE SPENDING AN ATTEMPT ON IT.
+         `row.gen` and `row.note` are STICKY: nothing clears them when a re-draft
+         fails, and feat_mls_opnote_prep.js's adoptExistingDraft sets both from a
+         previously autosaved History draft with no AI call at all. So "the row
+         has a note" has never meant "this run produced one". */
+      var hadNote = false, hadGen = false;
+      try { var r0 = (window._opPrep || [])[idx]; hadGen = !!(r0 && r0.gen); hadNote = S(r0 && r0.note).trim(); } catch (ePre) {}
+      return Promise.resolve().then(function () { return window.opPrepGenerateOne(idx); }).then(function (drafted) {
         var r = (window._opPrep || [])[idx];
         if (r && r._confirmRedraft) {
           /* the base drafter refused mid-run because this row was hand-edited
@@ -15888,7 +15895,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           try { r._confirmRedraft = false; } catch (eCr) {}
           return "edited";
         }
-        var ok = !!(r && r.gen && S(r.note).trim() && !S(window.__mlsLastOpFidelityError) && !S(window.__mlsLastOpErrorCode));
+        /* THE LEDGER MUST NOT SCORE A ROW FROM A NOTE IT DID NOT WRITE.
+           This used to derive success purely from row state, and discarded the
+           value opPrepGenerateOne returns. The integrity wrapper computes the
+           honest answer (`ok = row.gen && row.note && __mlsLastOpFidelityPass`)
+           and returns it; throwing that away made a whole class of silent
+           failure read as success.
+
+           The failure, reproduced by the audit against the real modules: the
+           doctor drafts a row, then corrects the procedure text to something the
+           matcher will not resolve - "Lumbar ESI" is the documented example,
+           because naming a region without an approach is refused ON PURPOSE.
+           row.tplId becomes '' while row.gen/row.note keep the OLD draft. On
+           Draft-all the base drafter bails at `if(!tpl){...return;}` WITHOUT
+           setting an error flag - no AI call, no new note - and the old
+           `ok` came back TRUE off the stale note. The ledger, the one surface a
+           doctor reads for a nineteen-patient day, printed "drafted with Lumbar
+           Transforaminal ESI - saved as draft" for a row where nothing ran, the
+           stored note was still the note for the OLD procedure text, and the
+           named template had never been applied. He could sign it believing it
+           had been regenerated.
+
+           Three sources of truth now have to agree, and each covers a hole the
+           others do not: the wrapper's own verdict, the fidelity pass flag, and
+           the row genuinely holding a note. `drafted === false` is decisive on
+           its own; `undefined` means an older wrapper that returns nothing, and
+           there the note has to have CHANGED (or be new) for this run to claim
+           it - which is what catches the stale-note case above. */
+        var noteNow = S(r && r.note).trim();
+        var producedSomething = !!noteNow && (!hadGen || noteNow !== hadNote);
+        var wrapperSaid = (drafted === true) ? true : (drafted === false ? false : null);
+        var fidelity = true;
+        try { if (typeof window.__mlsLastOpFidelityPass !== 'undefined') fidelity = !!window.__mlsLastOpFidelityPass; } catch (eFp) {}
+        var ok = !!(r && r.gen && noteNow && !S(window.__mlsLastOpFidelityError) && !S(window.__mlsLastOpErrorCode));
+        if (wrapperSaid === false) ok = false;
+        else if (wrapperSaid === true) ok = ok && fidelity;
+        else ok = ok && producedSomething;
         /* stamp reconstruction on the row while the marker is still this row's */
         try { if (r && window.__mlsLastOpReconstructed) r._reconstructed = true; } catch (eRr) {}
         if (!ok && r) { try { var w = S(window.__mlsLastOpFidelityError).replace(/^Error:\s*/, "").slice(0, 160); if (w) r._lastDraftErr = w; } catch (e1) {} }
@@ -16009,8 +16051,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              that belongs in the message, not in the outcome. */
           states[idx].st = "ok";
           var reconstructed = !!(r && r._reconstructed);
+          /* NAME THE TEMPLATE THAT ACTUALLY RAN, AND THE GUESS STATE IT ENDED
+             IN. `tpl` and `lowConfidence` were both computed BEFORE the draft -
+             before the integrity wrapper re-runs bestFor for a non-manual row
+             and can change row.tplId, and before markGuess settles
+             _tplClosestGuess. So the ledger could name the template this file
+             injected as rank[0] rather than the one the note was built from,
+             and could report the guess state from before the re-match. Re-read
+             both now; fall back to the pre-draft values only if the row has
+             since lost its template. */
+          var tplFinal = tpl;
+          try { var tAfter = r ? tplById(r.tplId) : null; if (tAfter) tplFinal = tAfter; } catch (eTa) {}
+          try { lowConfidence = !!(r && r._tplClosestGuess); } catch (eLc2) {}
           states[idx].msg = (lowConfidence ? "\u26A0 no keyword match \u2014 used the CLOSEST template, check it: " : (reconstructed ? "\u26A0 reconstructed from the template \u2014 review this one: " : "drafted with "))
-            + tpl.name
+            + tplFinal.name
             + (nb ? " \u00B7 " + nb + " blank" + (nb === 1 ? "" : "s") + " to fill" : "")
             + " \u00B7 saved as draft"
             + (lowConfidence ? " \u00B7 add a keyword to this template so it matches next time" : "")
@@ -20244,7 +20298,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
       var flagSigned = false;
       try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
-      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      /* DO NOT REPAINT A REFUSAL THAT JUST POINTED AT SOMETHING.
+         b819 made the unresolved-placeholder refusal helpful: signNote() focuses
+         the editor the doctor is looking at and SELECTS the first blank, so his
+         second press is a deliberate act rather than a retry of a press that
+         appeared to do nothing. On THIS button that fix was dead. render()
+         rebuilds the lane synchronously inside the same click, #ez3flNote is
+         torn out of the DOM, focus falls to <body>, and the selection goes with
+         it - so the doctor saw exactly what he saw before b819: a toast, and
+         nothing moving. Verbatim: "why do u have to clikc review and sign
+         twice". The walkthrough missed it because it presses #signBtn; the
+         button on the visit card is #ez3Sign, and that is the one he uses.
+
+         A placeholder refusal changes NOTHING about this card - no phase, no
+         receipt, no signature - so a repaint has nothing to show and costs the
+         only guidance the refusal gave. Every OTHER refusal (already signed, a
+         patient-binding refusal, a save that un-signed itself) can leave stale
+         signed affordances on screen, so those repaint exactly as before.
+
+         Applied to all four copies of this driver in this file. They are
+         byte-identical and so is the bug; fixing one and leaving three is how a
+         fix ends up live on a screen nobody uses. */
+      if (!lineSigned && !flagSigned) {
+        var heldABlank = false;
+        try {
+          if (typeof window.opNoteBlankTokens === 'function') {
+            var nbSg = $('noteBox');
+            heldABlank = !!(nbSg && window.opNoteBlankTokens(String(nbSg.value || '')).length);
+          }
+        } catch (eBlank) {}
+        if (!heldABlank) render();                            /* the engine already said why */
+        return;
+      }
       S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     });
@@ -25106,7 +25191,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
       var flagSigned = false;
       try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
-      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      /* DO NOT REPAINT A REFUSAL THAT JUST POINTED AT SOMETHING.
+         b819 made the unresolved-placeholder refusal helpful: signNote() focuses
+         the editor the doctor is looking at and SELECTS the first blank, so his
+         second press is a deliberate act rather than a retry of a press that
+         appeared to do nothing. On THIS button that fix was dead. render()
+         rebuilds the lane synchronously inside the same click, #ez3flNote is
+         torn out of the DOM, focus falls to <body>, and the selection goes with
+         it - so the doctor saw exactly what he saw before b819: a toast, and
+         nothing moving. Verbatim: "why do u have to clikc review and sign
+         twice". The walkthrough missed it because it presses #signBtn; the
+         button on the visit card is #ez3Sign, and that is the one he uses.
+
+         A placeholder refusal changes NOTHING about this card - no phase, no
+         receipt, no signature - so a repaint has nothing to show and costs the
+         only guidance the refusal gave. Every OTHER refusal (already signed, a
+         patient-binding refusal, a save that un-signed itself) can leave stale
+         signed affordances on screen, so those repaint exactly as before.
+
+         Applied to all four copies of this driver in this file. They are
+         byte-identical and so is the bug; fixing one and leaving three is how a
+         fix ends up live on a screen nobody uses. */
+      if (!lineSigned && !flagSigned) {
+        var heldABlank = false;
+        try {
+          if (typeof window.opNoteBlankTokens === 'function') {
+            var nbSg = $('noteBox');
+            heldABlank = !!(nbSg && window.opNoteBlankTokens(String(nbSg.value || '')).length);
+          }
+        } catch (eBlank) {}
+        if (!heldABlank) render();                            /* the engine already said why */
+        return;
+      }
       S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     });
@@ -27107,7 +27223,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
       var flagSigned = false;
       try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
-      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      /* DO NOT REPAINT A REFUSAL THAT JUST POINTED AT SOMETHING.
+         b819 made the unresolved-placeholder refusal helpful: signNote() focuses
+         the editor the doctor is looking at and SELECTS the first blank, so his
+         second press is a deliberate act rather than a retry of a press that
+         appeared to do nothing. On THIS button that fix was dead. render()
+         rebuilds the lane synchronously inside the same click, #ez3flNote is
+         torn out of the DOM, focus falls to <body>, and the selection goes with
+         it - so the doctor saw exactly what he saw before b819: a toast, and
+         nothing moving. Verbatim: "why do u have to clikc review and sign
+         twice". The walkthrough missed it because it presses #signBtn; the
+         button on the visit card is #ez3Sign, and that is the one he uses.
+
+         A placeholder refusal changes NOTHING about this card - no phase, no
+         receipt, no signature - so a repaint has nothing to show and costs the
+         only guidance the refusal gave. Every OTHER refusal (already signed, a
+         patient-binding refusal, a save that un-signed itself) can leave stale
+         signed affordances on screen, so those repaint exactly as before.
+
+         Applied to all four copies of this driver in this file. They are
+         byte-identical and so is the bug; fixing one and leaving three is how a
+         fix ends up live on a screen nobody uses. */
+      if (!lineSigned && !flagSigned) {
+        var heldABlank = false;
+        try {
+          if (typeof window.opNoteBlankTokens === 'function') {
+            var nbSg = $('noteBox');
+            heldABlank = !!(nbSg && window.opNoteBlankTokens(String(nbSg.value || '')).length);
+          }
+        } catch (eBlank) {}
+        if (!heldABlank) render();                            /* the engine already said why */
+        return;
+      }
       S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     };
@@ -28638,7 +28785,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var lineSigned = !!(line && line.style.display !== 'none' && (line.textContent || '').trim());
       var flagSigned = false;
       try { flagSigned = (typeof signed !== 'undefined' && signed === true); } catch (eSg) {}
-      if (!lineSigned && !flagSigned) { render(); return; }   /* the engine already said why */
+      /* DO NOT REPAINT A REFUSAL THAT JUST POINTED AT SOMETHING.
+         b819 made the unresolved-placeholder refusal helpful: signNote() focuses
+         the editor the doctor is looking at and SELECTS the first blank, so his
+         second press is a deliberate act rather than a retry of a press that
+         appeared to do nothing. On THIS button that fix was dead. render()
+         rebuilds the lane synchronously inside the same click, #ez3flNote is
+         torn out of the DOM, focus falls to <body>, and the selection goes with
+         it - so the doctor saw exactly what he saw before b819: a toast, and
+         nothing moving. Verbatim: "why do u have to clikc review and sign
+         twice". The walkthrough missed it because it presses #signBtn; the
+         button on the visit card is #ez3Sign, and that is the one he uses.
+
+         A placeholder refusal changes NOTHING about this card - no phase, no
+         receipt, no signature - so a repaint has nothing to show and costs the
+         only guidance the refusal gave. Every OTHER refusal (already signed, a
+         patient-binding refusal, a save that un-signed itself) can leave stale
+         signed affordances on screen, so those repaint exactly as before.
+
+         Applied to all four copies of this driver in this file. They are
+         byte-identical and so is the bug; fixing one and leaving three is how a
+         fix ends up live on a screen nobody uses. */
+      if (!lineSigned && !flagSigned) {
+        var heldABlank = false;
+        try {
+          if (typeof window.opNoteBlankTokens === 'function') {
+            var nbSg = $('noteBox');
+            heldABlank = !!(nbSg && window.opNoteBlankTokens(String(nbSg.value || '')).length);
+          }
+        } catch (eBlank) {}
+        if (!heldABlank) render();                            /* the engine already said why */
+        return;
+      }
       S.signedAt = Date.now();
       toast('Note signed & saved in MLS.'); render();
     };
@@ -32272,6 +32450,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sec.querySelector('#r44cVoiceSA').onchange = function () { setCtl('voiceStandalone', this.checked); };
     sec.querySelector('#r44cVoice').onchange = function () { setCtl('showVoice', this.checked); };
     sec.querySelector('#r44cTunnel').onchange = function () { setCtl('showTunnel', this.checked); };
+    /* A CONTROL FOR SOMETHING THAT IS NOT HERE IS NOT A CONTROL.
+       This row shows and opens the "Simple mode (tunnel)" guided view, which is
+       #mlsP1TunnelLaunch - a node created by feat_mls_staging_pack1.js. That
+       module has never been published (it is absent from all 331 paths of
+       pages-publication-inventory.json), so on the live site the launcher does
+       not exist: the toggle persists a preference that governs nothing and
+       "🎯 Open" answers "Tunnel launcher not found on this screen." every time,
+       with no state of the app in which it can succeed.
+
+       HIDDEN, NOT DELETED, and that distinction is the whole point. Deleting
+       the row would spend the feature: pack1 is still in the tree and staging
+       still loads it, so if it is ever published this row must come back
+       working. Hiding it while its target is absent removes the broken promise
+       and keeps the capability - the same reasoning that made the pack1 loader
+       a documented removal rather than an inventory addition. */
+    try {
+      var tunnelRow = sec.querySelector('#r44cTunnel');
+      tunnelRow = tunnelRow && tunnelRow.closest ? tunnelRow.closest('.mls-r44-row') : null;
+      if (tunnelRow && !$('mlsP1TunnelLaunch')) tunnelRow.style.display = 'none';
+    } catch (eTun) {}
     sec.querySelector('#r44cTunnelGo').onclick = function () {
       var tl = $('mlsP1TunnelLaunch');
       if (tl) {

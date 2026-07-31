@@ -369,6 +369,16 @@
       row.tplId = S(rec.tplId);
       row.tplManual = true;                            /* it WAS his choice */
       row.tplMatchSource = 'remembered';
+      /* ...so it is NOT a guess, and the row must stop saying it is. b813 added
+         row._tplClosestGuess for the closest-match fallback, and the draft
+         ledger reads it (mls-connect.js: `else if (row && row._tplClosestGuess)
+         { lowConfidence = true; }`). Nothing here cleared it, so a row that was
+         auto-matched as a guess and then restored to the doctor's own
+         remembered pick kept warning "low confidence" about a template he chose
+         himself - on every subsequent day, because the pick is persistent.
+         Deleted rather than set false: the flag's only writer treats presence
+         as truth, and two spellings of absent is how they drift apart. */
+      try { delete row._tplClosestGuess; } catch (eGuess) {}
       n++;
     }
     return n;
@@ -812,6 +822,53 @@
       if (a) { a.classList.toggle('on', !onTpl); a.setAttribute('aria-selected', onTpl ? 'false' : 'true'); }
       if (b) { b.classList.toggle('on', onTpl); b.setAttribute('aria-selected', onTpl ? 'true' : 'false'); }
     });
+
+    /* THE TEMPLATES TAB OPENS ON THE LIBRARY, NOT 2,139 PIXELS BELOW IT.
+       MEASURED live at 1440x900 on a freshly created account with one saved
+       template, sampling #oprPanelTpls.scrollTop the moment the tab is shown:
+
+         as shipped                 scrollTop 2139, first visible block the
+                                    "Have several forms to import?" advert,
+                                    #tplList 1825px ABOVE the viewport
+         with the standard-line
+         section suppressed         scrollTop  796, still past the library
+
+       Nothing scrolls the panel on purpose. Something inside it takes FOCUS as
+       it mounts - mls-sl-text in the first case, tplUseToggle in the second -
+       and the browser scrolls a newly focused control into view. Both targets
+       are early in the DOM and late on the SCREEN, because this tab's reading
+       order is composed with CSS `order` in feat_mls_opnote_templates_ui.js.
+       That is a legitimate technique and it is what keeps the library first,
+       but it means DOM order and visual order deliberately disagree - so any
+       "focus what comes first" behaviour lands somewhere the doctor is not
+       looking, and drags the whole panel with it. He opened his template
+       library and got an advert for bulk import.
+
+       Fixing the focusers one at a time cannot hold: they are in three
+       different modules that mount on their own schedules, and the next one
+       added would reintroduce this. The panel states its own scroll position
+       instead, which is true no matter who focuses what.
+
+       Two frames, deliberately. The first covers the synchronous mount; the
+       120ms one covers mls-template-stdline.js, which re-mounts its section on
+       exactly that delay (mls-template-stdline.js:431) and would otherwise
+       scroll the panel again immediately after this ran.
+
+       Only ever on ENTERING the tab, and only when the panel is really
+       scrolled - so this cannot fight a doctor who has scrolled down himself
+       and then had some unrelated re-render fire. */
+    if (onTpl) {
+      safe(function () {
+        var p = $('oprPanelTpls');
+        if (!p) return;
+        var toTop = function () {
+          safe(function () { if (p.scrollTop > 0) p.scrollTop = 0; });
+        };
+        toTop();
+        setTimeout(toTop, 0);
+        setTimeout(toTop, 140);
+      });
+    }
   }
 
   /* openTemplates/closeTemplates wrapped OUTERMOST (this module loads
