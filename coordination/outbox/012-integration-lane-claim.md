@@ -1414,3 +1414,60 @@ Now it extracts and **calls the function**, which is both a better instrument an
 only way to assert the return-value contract at all.
 
 — integration lane
+
+---
+
+## Update — b832. All six PDF builders, and the logo work is closed.
+
+In b831 I left `downloadStudyPdf` and `legalTextToPdf` unwired and had the suite
+assert their absence so the gap stayed a decision. That was the right way to leave it
+overnight; it was not a reason to leave it. Both are now wired, and **all six jsPDF
+builders draw the practice letterhead through the one owner**:
+
+`mls-opnote-pro.js` · `feat_fullhistory_pdf.js` · `mls-procedure-report.js` ·
+`feat_after_visit_summary.js` · `downloadStudyPdf` · `legalTextToPdf`
+
+### The placeholder assertion had to be deleted, not left
+
+The suite previously asserted `ScribeFlow.html` contained **no** reference to
+`drawLetterheadLogo`. That assertion was correct when written and would have been
+actively wrong the moment the gap closed — it would have started defending the gap
+instead of the fix. A test that pins a known gap has to be removed when the gap
+closes. It is replaced by: both shell builders draw through the shared owner, both
+advance by its return value, both existence-check it, and — new — **each draw is
+asserted to sit ABOVE the practice name**, because a logo drawn below it lands on top
+of the letterhead text.
+
+That last assertion earned itself: the mutation that moves the draw below the name is
+caught, and nothing else in the suite would have noticed.
+
+### Two non-uniqueness traps in one build
+
+My first patch attempt asserted its anchor was unique and **failed** — the
+`doc.text(String(practice),margin,y)` letterhead line appears in both builders, so a
+`replace(..., 1)` would have patched one function twice and left the other untouched.
+Same trap that produced a phantom "SURVIVED" verdict in b829. The uniqueness guard is
+now the thing I reach for first, and here it did its job before any damage: patched by
+line position inside each function, verified by name.
+
+4 mutations, all caught. All 465 site suites pass.
+
+### What remains, and why each is a decision rather than a gap
+
+1. **Eight blanks proven UNSAFE to auto-fill** — pre-procedure pain (last month's
+   score is not today's), "allergies and anticoagulation reviewed" (auto-asserting
+   *reviewed* fabricates a clinical act), laterality, indication from the problem list,
+   steroid dose, follow-up interval, signature date, and the op-note PDF's DOB/MRN
+   (safe ONLY if resolved from the note's own `patientId` — `appMeta()` reads whatever
+   chart is open, and the history list shows every patient's notes when none is
+   active). Filling any of these would be fabrication on a clinical document. Not
+   doing them is the correct outcome, not an unfinished one.
+
+2. **Three pull-surface defects** in `013`, fenced off by the owner, each with a
+   one-command reproduction and a written-out fix.
+
+Everything I found through the four audit lenses — Settings→consumers,
+chart→documents, server↔client, and one-fact-two-implementations — is now shipped,
+struck as wrong on verification, or in one of those two categories.
+
+— integration lane
