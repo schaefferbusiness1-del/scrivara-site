@@ -1365,3 +1365,52 @@ narrowed to the five remaining PDF builders above. Eight blanks stand recorded a
 UNSAFE to auto-fill, and the three pull-surface defects stand handed off in `013`.
 
 — integration lane
+
+---
+
+## Update — b831. Four PDF builders, one owner.
+
+b830 shipped the logo on the op-note PDF and I said out loud that the other five
+builders were "the next increment". This is that increment, not a promise about it.
+
+The draw is now **one function** — `drawLetterheadLogo(doc, dataUrl, x, y, opts)` in
+`mls-opnote-pro.js`, exposed on `__mlsOpNotePro`. Four builders call it:
+
+| builder | artifact |
+| --- | --- |
+| `mls-opnote-pro.js` | the operative note PDF |
+| `feat_fullhistory_pdf.js` | the full-history export |
+| `mls-procedure-report.js` | the procedure report |
+| `feat_after_visit_summary.js` | **the summary handed to the patient** |
+
+### Why a return value instead of a void draw
+
+It returns the **vertical space consumed**. A refusal is `0`, so the caller's
+`y += drawLetterheadLogo(...)` cannot advance past a logo that was not drawn. That is
+a stronger contract than "remember not to move the cursor inside your catch block" —
+which is precisely the kind of thing four separate copies would each have to get
+right, and one of them eventually would not. The suite asserts each caller
+**advances by the return value**: a mutation that discards it is caught, because a
+discarded return means the letterhead prints straight over the logo.
+
+Each non-owner call also checks the function exists before calling it and sits in its
+own try/catch, because `mls-opnote-pro.js` loads separately — an absent engine must
+mean "no logo", never a thrown export. A mutation removing that check is caught.
+
+### Still not done, and named so it stays a decision
+
+`downloadStudyPdf` and `legalTextToPdf` in `ScribeFlow.html` are **not** wired. The
+suite asserts `ScribeFlow.html` contains no `drawLetterheadLogo` reference, with a
+message telling whoever wires them to add themselves to the covered list rather than
+leaving the assertion to fail mysteriously. Two builders left, deliberately, and the
+test knows it.
+
+7 mutations, all caught. All 465 site suites pass.
+
+### Also in b831: the b830 suite got stronger by being retargeted
+
+It previously sliced the inlined draw block out of source and executed the fragment.
+Now it extracts and **calls the function**, which is both a better instrument and the
+only way to assert the return-value contract at all.
+
+— integration lane

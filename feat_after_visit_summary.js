@@ -442,6 +442,14 @@
       var lh = (window.MLS_OPNOTE_LETTERHEAD) || {};
       var marginX = 54, y = 60, width = 612 - marginX * 2;
       // letterhead
+      /* b831: the practice's own logo, drawn by the one owner
+         (__mlsOpNotePro.drawLetterheadLogo) which returns the space consumed, so a
+         refusal is 0 and this cursor cannot advance past a logo that was not drawn.
+         This one matters: the after-visit summary is handed to the PATIENT. */
+      try {
+        var _pro = window.__mlsOpNotePro;
+        if (_pro && typeof _pro.drawLetterheadLogo === 'function') y += _pro.drawLetterheadLogo(doc, lh.logo, marginX, y);
+      } catch (eLogo) {}
       doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
       doc.text(clean(lh.clinicName || 'After-Visit Summary'), marginX, y); y += 18;
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);

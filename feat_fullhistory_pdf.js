@@ -215,6 +215,14 @@
           doc.line(margin, y, pageW - margin, y); y += col ? 16 : 8;
         }
         function letterhead() {
+          /* b831: the practice's own logo on this letterhead too. One owner draws it
+             (__mlsOpNotePro.drawLetterheadLogo) and returns the space consumed, so a
+             refusal is 0 and this cursor cannot advance past a logo that was not drawn.
+             Absent engine -> 0 -> letterhead exactly as before. */
+          try {
+            var _pro = window.__mlsOpNotePro;
+            if (_pro && typeof _pro.drawLetterheadLogo === 'function') y += _pro.drawLetterheadLogo(doc, lh.logo, margin, y);
+          } catch (eLogo) {}
           if (lh.clinicName) {
             doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(21, 95, 179);
             doc.text(pdfSafe(lh.clinicName), margin, y); y += 18;

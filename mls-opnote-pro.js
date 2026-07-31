@@ -77,6 +77,35 @@
      works: an explicit assignment (a white-label host, a test fixture)
      overrides the Settings value for that field only.
      --------------------------------------------------------------- */
+  /* ONE owner for drawing a practice logo onto a jsPDF letterhead. (b831)
+     Returns the VERTICAL SPACE CONSUMED, so a caller advances its cursor by the
+     return value and a refusal is simply 0 - there is no way for a caller to
+     advance past a logo that was not drawn.
+     Every failure mode ends the same way: nothing drawn, 0 returned, letterhead
+     unchanged. An unreadable logo must never cost the doctor their export.
+     jsPDF's addImage throws on a malformed data URL, on an unsupported format and
+     on some truncated base64; getImageProperties is absent from older builds and
+     can itself throw. */
+  function drawLetterheadLogo(doc, dataUrl, x, y, opts) {
+    var src = '';
+    try { src = String(dataUrl || '').trim(); } catch (e0) { return 0; }
+    if (!src) return 0;
+    try {
+      var maxW = (opts && opts.maxW) || 120, maxH = (opts && opts.maxH) || 36;
+      var gap = (opts && opts.gap != null) ? opts.gap : 8;
+      var fmt = /^data:image\/png/i.test(src) ? 'PNG' : 'JPEG';
+      var w = maxW, h = maxH, props = null;
+      try { props = doc.getImageProperties ? doc.getImageProperties(src) : null; } catch (e1) { props = null; }
+      if (props && props.width && props.height) {
+        /* fit inside the band, preserving aspect ratio rather than squashing the mark */
+        var scale = Math.min(maxW / props.width, maxH / props.height);
+        w = Math.max(1, props.width * scale);
+        h = Math.max(1, props.height * scale);
+      }
+      doc.addImage(src, fmt, x, y, w, h);
+      return h + gap;
+    } catch (e) { return 0; }
+  }
   function lhSetting(fn) {
     return safe(function () {
       return typeof window[fn] === 'function' ? String(window[fn]() || '').trim() : '';
@@ -660,28 +689,10 @@
     }
 
     // ---- Letterhead ----
-    /* b830: draw the practice's own logo above the letterhead text. Every failure
-       mode here ends the same way — no logo, letterhead unchanged — because an
-       unreadable image must never cost the doctor their operative note. jsPDF's
-       addImage throws on a malformed data URL, on an unsupported format, and on
-       some truncated base64, so the whole thing is wrapped and the y-cursor is only
-       advanced once the draw has actually succeeded. */
-    if (_lhLogo) {
-      try {
-        var _fmt = /^data:image\/png/i.test(_lhLogo) ? 'PNG' : 'JPEG';
-        var _lw = 120, _lhh = 36;                 /* a letterhead band, not a hero image */
-        var _props = null;
-        try { _props = doc.getImageProperties ? doc.getImageProperties(_lhLogo) : null; } catch (e0) { _props = null; }
-        if (_props && _props.width && _props.height) {
-          /* preserve aspect ratio inside the band rather than squashing the mark */
-          var _scale = Math.min(_lw / _props.width, _lhh / _props.height);
-          _lw = Math.max(1, _props.width * _scale);
-          _lhh = Math.max(1, _props.height * _scale);
-        }
-        doc.addImage(_lhLogo, _fmt, margin, y, _lw, _lhh);
-        y += _lhh + 8;
-      } catch (eLogo) { /* unreadable logo: letterhead prints exactly as before */ }
-    }
+    /* b831: the draw moved into drawLetterheadLogo() below and is exposed on
+       __mlsOpNotePro, because five other jsPDF builders need exactly this and four
+       more copies of it is the defect this whole effort keeps closing. */
+    y += drawLetterheadLogo(doc, _lhLogo, margin, y);
     if (lh.clinicName) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(21, 95, 179);
       doc.text(pdfSafe(lh.clinicName), margin, y); y += 18;
@@ -968,6 +979,10 @@
     parseNote: parseNote,
     isNormalized: isNormalized,
     exportPdf: exportPdf,
+    /* b831: exposed so the other jsPDF builders draw the practice logo through the
+       SAME function with the SAME failure semantics, instead of five copies of an
+       addImage call that each have to remember not to advance the cursor on a throw. */
+    drawLetterheadLogo: drawLetterheadLogo,
     rewire: function () { safe(wire); }
   };
 

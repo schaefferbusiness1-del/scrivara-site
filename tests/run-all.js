@@ -475,7 +475,7 @@ const tests = [
      pharmacy portal, and five printed letterheads. Four of those also hardcoded
      the VENDOR's name and specialty onto documents the practice hands out. */
   'twelve-shell-documents-carry-the-practice.test.js',
-  /* b830 — the prior-authorisation and appeal letters are addressed to a health
+  /* b831 — the prior-authorisation and appeal letters are addressed to a health
      plan the packet never named. Its own prompt says "leave the plan name bracketed
      if not given" and nothing gave it, while p.insurance holds payer/plan/memberId
      and the Superbill already prints them. A payer cannot process a PA addressed to
@@ -483,7 +483,7 @@ const tests = [
      the member ID is the one field where an invented value reaches an insurer
      looking real. */
   'payer-letters-know-which-payer.test.js',
-  /* b830 — printExtra() is the print path for TWELVE generated documents (superbill,
+  /* b831 — printExtra() is the print path for TWELVE generated documents (superbill,
      IME, medical-legal, good faith estimate, referral, AVS, UR, three analyses, the
      widget printouts) and its header carried no DOB and no MRN, so none of them
      could be filed against a chart — while two sibling builders in the same file
@@ -492,7 +492,7 @@ const tests = [
      surface b823 fixed, which a module-scoped test could not protect. Both degrade
      byte-identically when nothing is configured. */
   'printed-documents-can-be-filed-and-answered.test.js',
-  /* b830 — three more places the app asked for what it held: the referral letter
+  /* b831 — three more places the app asked for what it held: the referral letter
      defaulted to the literal word "Specialist" while THIS VISIT's referral order
      carried the consultant; the dictated letter left the recipient blank for the two
      medical types though p.history.pcp holds it (prefilled per type, so an ATTORNEY
@@ -500,7 +500,7 @@ const tests = [
      doctor across devices. Also pins the pre-existing production/staging
      PREF_SYNC_KEYS drift so widening it has to be deliberate. */
   'the-app-offers-what-the-visit-already-decided.test.js',
-  /* b830 — the Settings logo field promised "your logo appears on the printed/PDF
+  /* b831 — the Settings logo field promised "your logo appears on the printed/PDF
      letterhead, and the 'Prepared with MLS' line is removed". Browser Print honoured
      both; NOT ONE jsPDF builder did, so a Premium doctor handed out PDFs with no logo
      and a vendor footer. Two properties matter more than the happy path and are

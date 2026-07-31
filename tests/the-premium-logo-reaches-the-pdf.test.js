@@ -1,6 +1,6 @@
 'use strict';
 
-/* THE WHITE-LABEL PROMISE FAILED IN THE ONE ARTIFACT THAT LEAVES THE PRACTICE (b830)
+/* THE WHITE-LABEL PROMISE FAILED IN THE ONE ARTIFACT THAT LEAVES THE PRACTICE (b831)
  *
  * The Settings logo field says, in its own hint (ScribeFlow.html):
  *
@@ -145,18 +145,32 @@ function logoAccessor(state) {
 /* The draw block is executed with an addImage that THROWS, which is what jsPDF does
    on a malformed or truncated image. The letterhead must still render. */
 {
-  const at = PRO.indexOf("if (_lhLogo) {");
-  assert(at > 0, 'the logo draw block was not found');
-  const end = PRO.indexOf('if (lh.clinicName) {', at);
-  assert(end > at, 'the draw block no longer sits above the clinic-name letterhead');
-  const drawSrc = PRO.slice(at, end);
+  /* b831: the draw is now ONE function, drawLetterheadLogo(), shared by four jsPDF
+     builders and exposed on __mlsOpNotePro. It returns the VERTICAL SPACE CONSUMED,
+     so a refusal is 0 and no caller can advance past a logo that was not drawn -
+     which is a stronger contract than "remember not to move the cursor in a catch",
+     and it is callable directly here instead of slicing an inlined block. */
+  const fnSrc = (() => {
+    const at = PRO.indexOf('function drawLetterheadLogo(doc, dataUrl, x, y, opts) {');
+    assert(at > 0, 'drawLetterheadLogo is gone - the shared logo draw has been re-inlined');
+    let depth = 0, quote = '', esc = false, line = false, comment = false;
+    for (let i = PRO.indexOf('{', at); i < PRO.length; i++) {
+      const ch = PRO[i], next = PRO[i + 1];
+      if (line) { if (ch === '\n') line = false; continue; }
+      if (comment) { if (ch === '*' && next === '/') { comment = false; i++; } continue; }
+      if (quote) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === quote) quote = ''; continue; }
+      if (ch === '/' && next === '/') { line = true; i++; continue; }
+      if (ch === '/' && next === '*') { comment = true; i++; continue; }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) return PRO.slice(at, i + 1);
+    }
+    throw new Error('unterminated drawLetterheadLogo');
+  })();
 
   function draw(logo, addImageBehaviour, props) {
     const calls = [];
-    const ctx = { String, Math, console };
-    ctx._lhLogo = logo;
-    ctx.margin = 56;
-    ctx.y = 56;
+    const ctx = { String, Math, RegExp, console };
     ctx.doc = {
       getImageProperties: props === 'throw' ? () => { throw new Error('bad image'); } : () => props,
       addImage: (...a) => {
@@ -165,8 +179,9 @@ function logoAccessor(state) {
       }
     };
     vm.createContext(ctx);
-    vm.runInContext(drawSrc + '\nthis.y = y;', ctx);
-    return { y: ctx.y, calls };
+    vm.runInContext(fnSrc + '\nthis.consumed = drawLetterheadLogo(doc, ' + JSON.stringify(logo) + ', 56, 56);', ctx);
+    /* the caller's cursor is `y += consumed`, so model it exactly that way */
+    return { y: 56 + ctx.consumed, calls, consumed: ctx.consumed };
   }
 
   /* happy path: it draws and advances the cursor */
@@ -201,10 +216,53 @@ function logoAccessor(state) {
   assert.strictEqual(none.y, 56, 'the cursor moved for an absent logo');
 }
 
+/* ---- 4. FOUR BUILDERS, ONE OWNER (b831) -------------------------------
+   The whole point of extracting the draw was that five builders needed it and five
+   copies of an addImage call is the defect this effort keeps closing. Assert each
+   one actually calls the shared function AND advances its cursor by the return
+   value — a call whose result is discarded draws the logo and then prints the
+   letterhead straight over it. */
+{
+  assert(/drawLetterheadLogo: drawLetterheadLogo,/.test(PRO),
+    'drawLetterheadLogo is not exposed on __mlsOpNotePro, so no other builder can reach it');
+
+  const CALLERS = [
+    ['mls-opnote-pro.js', PRO, /y \+= drawLetterheadLogo\(doc, _lhLogo, margin, y\);/, 'the op-note PDF'],
+    ['feat_fullhistory_pdf.js', null, /y \+= _pro\.drawLetterheadLogo\(doc, lh\.logo, margin, y\);/, 'the full-history PDF'],
+    ['mls-procedure-report.js', null, /y \+= _pro\.drawLetterheadLogo\(doc, lh\.logo, margin, y\);/, 'the procedure report'],
+    ['feat_after_visit_summary.js', null, /y \+= _pro\.drawLetterheadLogo\(doc, lh\.logo, marginX, y\);/, 'the after-visit summary handed to the PATIENT']
+  ];
+  for (const [file, pre, re, what] of CALLERS) {
+    const src = pre || fs.readFileSync(path.join(root, file), 'utf8');
+    assert(re.test(src),
+      what + ' (' + file + ') does not draw the practice logo through the shared owner, or discards its ' +
+      'return value — a discarded return means the letterhead prints straight over the logo');
+    if (file !== 'mls-opnote-pro.js') {
+      assert(/typeof _pro\.drawLetterheadLogo === 'function'/.test(src),
+        file + ' calls the shared owner without checking it exists. mls-opnote-pro.js loads separately, so ' +
+        'an absent engine must mean "no logo", not a thrown export.');
+      assert(/catch \(eLogo\) \{\}/.test(src), file + ' does not contain the draw in a try/catch');
+    }
+  }
+
+  /* the two builders NOT yet wired are named, so the gap is a decision */
+  for (const f of ['ScribeFlow.html']) {
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    const wired = /drawLetterheadLogo/.test(src);
+    assert(!wired,
+      f + ' now draws the logo too. Good — but add it to the CALLERS list above so it is covered, rather ' +
+      'than leaving it asserted-absent here. The two shell builders (downloadStudyPdf, legalTextToPdf) were ' +
+      'deliberately left for a later increment.');
+  }
+}
+
 console.log('PASS the premium logo reaches the PDF: the Settings field promised "your logo appears on the ' +
   'printed/PDF letterhead, and the Prepared with MLS line is removed" — browser Print honoured both and NOT ' +
   'ONE jsPDF builder did, so a Premium doctor handed out PDFs with no logo and a vendor footer. The logo is ' +
   'now on the shared letterhead, Premium-gated, accepting ONLY a drawable data: image URL (seven non-drawable ' +
   'shapes refused, including SVG and a remote URL), fitted to the band without squashing; a throwing addImage ' +
   'or getImageProperties leaves the letterhead exactly as it was rather than costing the doctor the export; ' +
-  'and the footer drops the BRANDING while keeping the [bracketed]-items safety warning in both states');
+  'and the footer drops the BRANDING while keeping the [bracketed]-items safety warning in both states. ' +
+  'FOUR builders now draw it through ONE owner that returns the space consumed, so a refusal is 0 and no ' +
+  'caller can advance past a logo that was not drawn; the two shell builders are asserted absent so that ' +
+  'gap stays a decision');
