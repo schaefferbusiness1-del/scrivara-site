@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.2.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var VERSION='tl-1.3.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
@@ -88,6 +88,52 @@
     var box=byId('tlConflict');if(!box)return;if(!state.conflict){box.style.display='none';box.innerHTML='';return;}
     box.style.display='block';box.innerHTML='<b>A newer cloud version exists.</b> Your device changes were kept here and were not silently uploaded. Review the newest version or retry your changes on top of it.<br><button data-tl-conflict="retry">Retry my device changes</button><button data-tl-conflict="server">Discard device changes</button>';
     box.onclick=function(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-conflict]'):null;if(!b)return;var conflict=state.conflict,action=b.getAttribute('data-tl-conflict');if(action==='server'){state.conflict=null;if(conflict.serverSet&&conflict.serverSet.active)applySet(conflict.serverSet);if(conflict.kind==='import')state.pending=null;status('Device changes discarded; the newest cloud version remains authoritative.',false);renderPanel();}else if(action==='retry'){state.conflict=null;if(conflict.kind==='import'&&state.pending){state.pending.body.expectedVersion=Number(conflict.serverSet&&conflict.serverSet.version)||state.pending.body.expectedVersion;commitPending();}else persistSnapshot(cloneTemplates(conflict.localTemplates||(conflict.body&&conflict.body.templates)||currentLocal()));}};
+  }
+
+  /* tl-1.1.0 — WHAT ACTIVATING A SET WOULD DESTROY, BY NAME.
+     applySet REPLACES the device library with the set's contents. That is
+     correct for "restore version 3", and catastrophic for "I saved one
+     template and the resulting one-template set became active" — which is
+     exactly how the owner's library went 8 -> 1 on b833. Returns the device
+     templates that the incoming set does not carry, matched on id first and
+     name second (a set round-tripped through the server re-issues ids). */
+  function wouldRemove(set){
+    try{
+      if(!set||!Array.isArray(set.templates))return [];
+      var cur=(isFn(window.getTemplates)?window.getTemplates():[])||[];
+      if(!cur.length)return [];
+      var ids={},names={};
+      set.templates.forEach(function(t){ if(!t)return; if(t.id)ids[S(t.id)]=1; if(t.name)names[S(t.name).trim().toLowerCase()]=1; });
+      return cur.filter(function(t){
+        if(!t)return false;
+        if(t.id&&ids[S(t.id)])return false;
+        if(t.name&&names[S(t.name).trim().toLowerCase()])return false;
+        return true;
+      }).map(function(t){ return S(t.name)||'(unnamed)'; });
+    }catch(e){ return []; }
+  }
+  /* The doctor is told the COUNT and the first names, because "activate" does
+     not read as "delete" and the loss is silent and unrecoverable once the
+     device write fires syncPrefsToServer(). */
+  async function confirmReplace(set){
+    var lost=wouldRemove(set);
+    if(!lost.length)return true;
+    var shown=lost.slice(0,6).join(', ')+(lost.length>6?', and '+(lost.length-6)+' more':'');
+    var msg='This set does not contain '+lost.length+' template'+(lost.length===1?'':'s')+
+      ' you have on this device:\n\n'+shown+'\n\nActivating it will REMOVE them from your library on this device and from your account. Continue?';
+    /* mlsConfirm is the app's non-blocking dialog (native confirm freezes the
+       thread and is silently suppressed in automation, leaving a dead button —
+       tests/no-native-dialogs-contract.test.js). If it is somehow absent this
+       FAILS CLOSED: a destructive replace we cannot ask about is a replace we
+       do not perform. Losing an activation is recoverable; losing the library
+       is what this guard exists to prevent. */
+    try{
+      if(typeof window.mlsConfirm!=='function'){
+        status('Could not confirm a change that would remove '+lost.length+' of your templates, so nothing was changed.',true);
+        return false;
+      }
+      return !!(await window.mlsConfirm(msg));
+    }catch(e){ return false; }
   }
 
   function applySet(set){
@@ -173,7 +219,7 @@
     return (async function(){try{
       progressStage(handle,'Validating import',0,body.templates.length,'Rechecking preview ownership and version.');var data=await request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:pending.idempotencyKey,requestId:handle&&handle.requestId,progress:handle});var result=data.result;
       progressStage(handle,'Verifying committed version',body.templates.length,body.templates.length,'Applying the committed active version when selected.');
-      if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate))applySet(result.set);
+      if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate)){if(await confirmReplace(result.set))applySet(result.set);else status('Imported. Your device templates were left alone.',false);}
       state.pending=null;window._tplPendingSplit=[];if(pending.fromForm&&isFn(window.clearTplForm))window.clearTplForm();state.editingId='';
       var box=byId(resultBoxId)||byId('tplMultiResult');if(box)box.innerHTML='<div class="tl-import-review"><b>Import '+esc(result.status)+'.</b>'+countsHtml(result.counts)+(result.set&&!result.set.active?'<button data-tl-activate="'+esc(result.set.id)+'">Activate imported set</button>':'')+'</div>';
       if(box)box.onclick=function(ev){var a=ev.target&&ev.target.closest?ev.target.closest('[data-tl-activate]'):null;if(a)activateSet(a.getAttribute('data-tl-activate'));};
@@ -181,7 +227,7 @@
     }catch(error){status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}})();
   }
 
-  function activateSet(id){var handle=progressStart({key:'template-set:activate',kind:'template_library',label:'Activating template set',stages:['Validating selection','Loading version','Applying templates'],total:3,timeoutMs:60000,replace:true,cancelable:false});return (async function(){try{progressStage(handle,'Validating selection',1,3);var data=await request('/api/template-sets/'+encodeURIComponent(id)+'/activate',{method:'POST',body:{},requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying templates',3,3);applySet(data.set);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Template set activated.');return true;}catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);return false;}})();}
+  function activateSet(id){var handle=progressStart({key:'template-set:activate',kind:'template_library',label:'Activating template set',stages:['Validating selection','Loading version','Applying templates'],total:3,timeoutMs:60000,replace:true,cancelable:false});return (async function(){try{progressStage(handle,'Validating selection',1,3);var data=await request('/api/template-sets/'+encodeURIComponent(id)+'/activate',{method:'POST',body:{},requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying templates',3,3);if(!(await confirmReplace(data.set))){status('Set activated in the cloud. Your device templates were left alone.',false);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Device templates unchanged.');return false;}applySet(data.set);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Template set activated.');return true;}catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);return false;}})();}
   async function archiveSelected(){var set=setFor(state.selectedSetId);if(!set)return;var verb=set.status==='archived'?'unarchive':'archive';if(verb==='archive'){var yes=true;try{yes=await ((typeof window.mlsConfirm==='function')?window.mlsConfirm('Archive "'+set.name+'"? Its versions remain recoverable.'):Promise.resolve(window.confirm('Archive "'+set.name+'"? Its versions remain recoverable.')));}catch(e){}if(!yes)return;}request('/api/template-sets/'+encodeURIComponent(set.id)+'/'+verb,{method:'POST',body:{}}).then(function(){status(verb==='archive'?'Template set archived.':'Template set restored.',false);return refresh({silent:true});}).catch(function(error){status(error.message,true);renderPanel();});}
   function showHistory(){var set=setFor(state.selectedSetId),box=byId('tlVersions');if(!set||!box)return;request('/api/template-sets/'+encodeURIComponent(set.id)+'/versions').then(function(data){box.innerHTML=(data.versions||[]).map(function(v){return '<div class="tl-ver"><span>Version '+v.version+(v.current?' · current':'')+' · '+esc(v.createdAt||'')+'</span>'+(v.current?'':'<button data-tl-restore="'+v.version+'">Restore as new version</button>')+'</div>';}).join('')||'No versions.';box.onclick=function(ev){var b=ev.target&&ev.target.closest?ev.target.closest('[data-tl-restore]'):null;if(b)restoreVersion(set.id,b.getAttribute('data-tl-restore'));};}).catch(function(error){status(error.message,true);renderPanel();});}
   async function restoreVersion(id,version){var yes=true;try{yes=await ((typeof window.mlsConfirm==='function')?window.mlsConfirm('Restore version '+version+' as a new recoverable version?'):Promise.resolve(window.confirm('Restore version '+version+' as a new recoverable version?')));}catch(e){}if(!yes)return;request('/api/template-sets/'+encodeURIComponent(id)+'/versions/'+encodeURIComponent(version)+'/restore',{method:'POST',body:{}}).then(function(data){if(data.set.active)applySet(data.set);status('Version '+version+' restored as version '+data.set.version+'.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
@@ -218,12 +264,35 @@
         return originals.tplAddSplit.apply(self,args);
       }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
     };addWrap.__tl=true;window.tplAddSplit=addWrap;}
-    if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){if(!hosted())return originals.saveTemplateFromForm.apply(this,arguments);var name=S((byId('tplName')||{}).value).trim(),text=S((byId('tplText')||{}).value).trim();if(!name){if(isFn(window.toast))window.toast('Name the template first.','err');return false;}if(!text){if(isFn(window.toast))window.toast('No template text — upload a file or paste text first.','err');return false;}var keywords=S((byId('tplKeywords')||{}).value).split(',').map(function(x){return x.trim().toLowerCase();}).filter(Boolean);state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[{id:state.editingId||'',name:name,text:text,keywords:keywords,keep:true}];var selfS=this,argsS=arguments;
-      /* Day-pull-standard feedback AT the control: the button goes busy while
-         the preview round-trips, and restores whatever happens. */
-      var saveBtn=null;try{saveBtn=document.querySelector('button[onclick*="saveTemplateFromForm"]');if(saveBtn){saveBtn.disabled=true;saveBtn.dataset.tlLabel=saveBtn.textContent;saveBtn.textContent='⏳ Preparing preview…';}}catch(e){}
-      var restoreBtn=function(){try{if(saveBtn&&saveBtn.isConnected){saveBtn.disabled=false;if(saveBtn.dataset.tlLabel)saveBtn.textContent=saveBtn.dataset.tlLabel;}}catch(e){}};
-      return previewImport({fromForm:true}).catch(function(){try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving the template on this device instead.','ok');}catch(e){}window._tplPendingSplit=[];return originals.saveTemplateFromForm.apply(selfS,argsS);}).finally(restoreBtn);};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
+    /* tl-1.1.0 — SAVE SAVES. THE PREVIEW ROUND-TRIP IS GONE FROM THIS PATH.
+       What shipped before: this wrapper refused the device save whenever
+       hosted() and ran the import-preview round-trip in form mode instead.
+       Measured live on b833 in the owner's Chrome, that produced three separate
+       failures on one button press:
+
+         1. The preview panel rendered into #tplFormResult at y=3004 in a 936px
+            viewport. scrollIntoView() is called on it and does not land. No
+            toast, form not cleared — the doctor sees NOTHING happen.
+         2. Committing reported "Import completed · added: 1" while the device
+            list stayed at 8 and the template never appeared in the library.
+         3. The only control that landed it, "Activate imported set", ran
+            applySet() — which REPLACES the device list with the set's contents.
+            The set held only the just-saved template, so the library went
+            8 -> 1, and setTemplates' syncPrefsToServer() overwrote the server
+            copy too. Both copies of seven templates, gone, from pressing Save.
+
+       A preview/commit round-trip is the right shape for a BULK import the
+       doctor is reviewing (tplMultiFile still uses it). It is the wrong shape
+       for "I typed one template and pressed Save", and it must never be the
+       only path to persistence. Save now calls the proven device save, and the
+       setTemplates wrapper above still schedules the cloud snapshot when a set
+       is genuinely active — so hosted users keep syncing without the round-trip
+       standing between the doctor and their own template. */
+    if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){
+      try{state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[];}catch(e){}
+      var out=originals.saveTemplateFromForm.apply(this,arguments);
+      try{state.editingId='';}catch(e){}
+      return out;};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
     if(isFn(window.editTemplate)&&!window.editTemplate.__tl){originals.editTemplate=window.editTemplate;var editWrap=function(id){state.editingId=id;return originals.editTemplate.apply(this,arguments);};editWrap.__tl=true;window.editTemplate=editWrap;}
     if(isFn(window._tplReadAnyFile)&&!window._tplReadAnyFile.__tl){originals.readFile=window._tplReadAnyFile;var readWrap=async function(file){var out=await originals.readFile.apply(this,arguments);if(activeUpload){activeUpload.done++;progressStage(activeUpload.handle,'Parsing template content',activeUpload.done,activeUpload.total,'Parsed '+S(file&&file.name||'file')+'.');}return out;};readWrap.__tl=true;window._tplReadAnyFile=readWrap;}
     if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:10*60*1000,replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}

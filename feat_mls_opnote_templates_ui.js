@@ -65,7 +65,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'ot-2.1.0';
+  var VERSION = 'ot-2.2.0';
   var STYLE_ID = 'mlsOpNoteTemplatesUiCss';
   var BODY_CLASS = 'mls-ot3';
   var OLD_SKIN_ID = 'oprSkin';
@@ -1088,12 +1088,30 @@
 
      THE ORDER IS THE WHOLE DESIGN, top to bottom:
        title + one lead line
+       UPLOAD              ot-2.2.0 - the one control that gets templates IN
        YOUR LIBRARY        search, list, preview - what he opened the tab for
        settings            use-templates, active template
-       add one / import    the intake he needs occasionally
+       add one by hand     the typed/pasted intake he needs occasionally
        standard lines      maintenance
        anything injected   catch-all, never above the library
-       Close */
+       Close
+
+     ot-2.2.0 - UPLOAD MOVES TO THE TOP. Owner, 2026-07-31: "uploading templates
+     needs to be at the top and simple to do."
+
+     He is describing a measurement, not a preference. On b833, in his 936px
+     viewport, the two upload controls sat at y=1906 and y=2446 and the first
+     screen of the tab carried no way to add a template at all. Ordering the
+     library first (ot-2.1.0) was right about what he READS most and wrong about
+     what he needs to DO first: a library he cannot add to is not a library.
+
+     The bulk card is the one promoted, because it is already the simple path -
+     its input is `multiple` and its copy is "one PDF or many files", so it
+     answers both "I have a template" and "I have fifty" with one click. The
+     name/keywords/paste intake stays where it is at 30-36: that is a DIFFERENT
+     job (compose one by hand), and hoisting it too would put four upload
+     affordances on the first screen, which is the confusion he is complaining
+     about. */
   var TAB_ONECOL = [
     R + '.modal{ display:flex; flex-direction:column; align-items:stretch; }',
     /* THE CATCH-ALL, and it sits BELOW the intake so an unnamed panel can never
@@ -1103,7 +1121,10 @@
     RM + 'h3{ order:1; }',
     RM + 'p.note{ order:2; }',
 
-    /* THE LIBRARY, first, because it is the reason the tab exists */
+    /* UPLOAD, above the library: the first screen must offer a way IN */
+    RM + 'div[style*="linear-gradient"]{ order:5; }',
+
+    /* THE LIBRARY, because it is the reason the tab exists */
     RM + 'div:has(> h4){ order:10; }',
     RM + '.field:has(#tplSearch){ order:11; }',
     R + '#tplWorkspace{ order:12; }',
@@ -1120,7 +1141,9 @@
     R + '#tplDropZone{ order:34; }',
     R + '#tplText{ order:35; }',
     RM + '.row:has(> button[onclick^="saveTemplateFromForm"]){ order:36; }',
-    RM + 'div[style*="linear-gradient"]{ order:37; }',
+    /* the bulk-import card that used to sit here at order:37 is now order:5,
+       above the library. One declaration only: an identical selector later in
+       this sheet would win on source order and silently undo the hoist. */
 
     /* maintenance: 451px of form belongs under the work, not over it */
     R + '#mls-stdline-section{ order:50; }',

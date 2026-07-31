@@ -445,8 +445,16 @@
   function slug(s) {
     return String(s || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) || 'patient';
   }
+  /* b834 — kept byte-parallel with mls-opnote-pro.js: a date-only string is a
+     calendar day, and routing it through Date() files it one day early west of
+     UTC. See the full note on the live shell's dateForFile. */
   function dateForFile(dop) {
-    var d = dop ? new Date(dop) : new Date();
+    var s = dop == null ? '' : String(dop).trim();
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    if (iso) return iso[1] + ('0' + iso[2]).slice(-2) + ('0' + iso[3]).slice(-2);
+    var us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (us) return us[3] + ('0' + us[1]).slice(-2) + ('0' + us[2]).slice(-2);
+    var d = s ? new Date(s) : new Date();
     if (isNaN(d.getTime())) d = new Date();
     return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
   }

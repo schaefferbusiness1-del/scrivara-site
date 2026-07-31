@@ -608,8 +608,22 @@
       return isNaN(d.getTime()) ? '' : v;
     } catch (e) { return ''; }
   }
+  /* b834 — A DICTATED DATE IS A CALENDAR DAY, NOT AN INSTANT.
+     `new Date('2026-07-22')` is specified to parse a date-only string as UTC
+     midnight, and getFullYear/getMonth/getDate then read LOCAL fields. Every
+     timezone west of UTC therefore filed the note one day EARLY: the b822 suite
+     asserts 2026-07-22 -> '20260722' and measured '20260721' on the owner's own
+     machine, which is how this was found. A note filed under the wrong date is
+     the whole point of the surface, so the calendar fields are now read off the
+     text when the text IS a calendar day; only a real timestamp (one carrying a
+     time) goes through Date, where local conversion is what you want. */
   function dateForFile(dop) {
-    var d = dop ? new Date(dop) : new Date();
+    var s = dop == null ? '' : String(dop).trim();
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    if (iso) return iso[1] + ('0' + iso[2]).slice(-2) + ('0' + iso[3]).slice(-2);
+    var us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (us) return us[3] + ('0' + us[1]).slice(-2) + ('0' + us[2]).slice(-2);
+    var d = s ? new Date(s) : new Date();
     if (isNaN(d.getTime())) d = new Date();
     return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
   }

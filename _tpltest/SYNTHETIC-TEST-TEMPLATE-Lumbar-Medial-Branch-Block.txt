@@ -1,0 +1,36 @@
+SYNTHETIC TEST TEMPLATE - LUMBAR MEDIAL BRANCH BLOCK
+(This is a synthetic fixture uploaded by an automated UI test. It contains no patient information. Safe to delete.)
+
+PATIENT: [[patient_name]]
+DATE OF PROCEDURE: [[procedure_date]]
+
+PREOPERATIVE DIAGNOSIS: Lumbar facet arthropathy with axial low back pain.
+POSTOPERATIVE DIAGNOSIS: Same.
+
+PROCEDURE PERFORMED: Diagnostic lumbar medial branch block, SYNTHETIC-LEVELS-VALUE, under fluoroscopic guidance.
+
+ANESTHESIA: Local anesthetic only. No sedation was administered.
+
+INDICATION: The patient has axial low back pain that is reproducible on facet loading and has failed SYNTHETIC-CONSERVATIVE-CARE-VALUE of conservative care.
+
+TECHNIQUE:
+Informed consent was obtained. The patient was positioned prone and the lumbar region
+was prepped and draped in the usual sterile fashion. Under fluoroscopic guidance the
+target medial branches were identified at SYNTHETIC-LEVELS-VALUE. A SYNTHETIC-NEEDLE-GAUGE-VALUE
+spinal needle was advanced to each target under intermittent fluoroscopy. After negative
+aspiration, SYNTHETIC-INJECTATE-VOLUME-VALUE of local anesthetic was deposited at each level.
+
+FLUOROSCOPY TIME: SYNTHETIC-FLUORO-TIME-VALUE
+
+ESTIMATED BLOOD LOSS: Minimal.
+
+COMPLICATIONS: None.
+
+DISPOSITION: The patient tolerated the procedure well and was observed and discharged in stable condition.
+
+FOLLOW-UP: Reassessment with a pain diary in two weeks to determine the diagnostic response.
+
+---- PROVIDER & FACILITY ----
+Operating provider: [[provider_name]]
+NPI: [[provider_npi]]
+Facility: [[facility_name]]
