@@ -260,8 +260,43 @@ async function runBrowser(exe) {
     await evalJs(cdp, `(()=>{ if(typeof openOpPrep==='function'){openOpPrep();return 1;} return 0; })()`);
     await wait(cdp, 'the op-note room', `document.getElementById('opPrepModal')&&document.getElementById('opPrepModal').classList.contains('show')`, 15000);
     await sleep(1200);
+    /* RECORD THE ENTRANCE AS IT HAPPENS.
+       Reading animation-name off a settled row cannot prove an entrance ran -
+       it proves a rule still matches, at whatever moment the probe looked. It
+       also made this suite fail the moment the animation was correctly scoped
+       to ARRIVING (a 900ms class) rather than to being in the tab, because by
+       then the class is gone and computed animation-name is legitimately
+       'none'. Listen for animationstart instead: it fires once per row, only
+       when the animation really begins, and it is what distinguishes an
+       entrance from a rule nobody triggers. */
+    await evalJs(cdp, `(()=>{ window.__otAnim=[];
+      document.addEventListener('animationstart', function(e){
+        if(!/^mlsOt/.test(e.animationName)) return;
+        var t=e.target, cs=null; try{ cs=getComputedStyle(t); }catch(_){}
+        window.__otAnim.push({ name:e.animationName,
+          where: t && t.parentElement ? (t.parentElement.id||t.parentElement.tagName) : '',
+          delay: cs ? cs.animationDelay : '' });
+      }, true); return 1; })()`);
     await evalJs(cdp, `(()=>{const t=document.getElementById('oprTabTpls');if(t){t.click();return 1;}return 0;})()`);
     await sleep(2500);
+    const entrance = await evalJs(cdp, `(window.__otAnim||[]).slice(0,40)`);
+
+    /* ...and then prove it does NOT replay on a re-render. renderTemplateList()
+       rebuilds every row through box.innerHTML and tplSearchChanged() calls it
+       on oninput, so an entrance scoped to the tab's shown state re-fired on
+       every keystroke: measured at 3 restarts per character on a 3-row library,
+       one per row. Typing a search made the list flicker. */
+    await evalJs(cdp, `(()=>{ window.__otAnim=[]; const q=document.getElementById('tplSearch');
+      if(!q) return 0; const P=HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(P,'value').set.call(q,'synthetic');
+      q.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'})); return 1; })()`);
+    await sleep(800);
+    const replays = await evalJs(cdp, `(window.__otAnim||[]).length`);
+    await evalJs(cdp, `(()=>{ const q=document.getElementById('tplSearch');
+      if(!q) return 0; const P=HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(P,'value').set.call(q,'');
+      q.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'})); return 1; })()`);
+    await sleep(500);
     await evalJs(cdp, `(()=>{const p=document.getElementById('oprPanelTpls');if(p)p.scrollTop=0;return 1;})()`);
     await evalJs(cdp, `document.getAnimations().forEach(a=>{try{a.finish()}catch(e){}});1`);
     await sleep(400);
@@ -326,12 +361,18 @@ async function runBrowser(exe) {
     ok(m.motion.keyframes.join(',') === 'mlsOtFadeIn,mlsOtRowIn',
       'both library keyframes are defined in the live stylesheet',
       'found: ' + JSON.stringify(m.motion.keyframes));
-    ok(m.motion.rowAnimation === 'mlsOtRowIn',
-      'the library rows resolve to their entrance animation',
-      'first row animation-name was "' + m.motion.rowAnimation + '"');
-    ok(m.motion.secondRowDelay === null || m.motion.secondRowDelay === '0.04s',
+    const rowStarts = (entrance || []).filter((e) => e.name === 'mlsOtRowIn');
+    ok(rowStarts.length > 0,
+      'the library rows really animate in when the tab opens',
+      'no mlsOtRowIn animationstart fired during the open: ' + JSON.stringify(entrance));
+    ok(new Set(rowStarts.map((e) => e.delay)).size > 1,
       'the entrance is staggered, so the library settles in rather than snapping',
-      'second row animation-delay was ' + m.motion.secondRowDelay);
+      'every row started with the same delay: ' + JSON.stringify(rowStarts.map((e) => e.delay)));
+    ok(replays === 0,
+      'typing in the search box does NOT replay the entrance',
+      replays + ' animation(s) restarted on one search keystroke. renderTemplateList() rebuilds '
+        + 'every row through innerHTML, so an entrance scoped to the tab being OPEN re-fires on '
+        + 'each character and the list flickers while the doctor types.');
   } finally {
     cdp.close();
     try { child.kill(); } catch (_) {}

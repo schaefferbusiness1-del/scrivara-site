@@ -128,10 +128,15 @@
        the saved templates settle in with a short lift, each one a beat after
        the one above.
 
-       Keyed off `#oprPanelTpls.on`, which is not a class invented for this -
-       feat_mls_opnote_room.js showTab() already toggles it as the tab's own
-       shown/hidden state, so the entrance fires exactly when the doctor enters
-       the tab and never on a re-render while he is sitting in it.
+       Keyed off `#oprPanelTpls.ot-entering`, a class showTab() holds for 900ms
+       on ENTERING the tab and then drops. The first draft used `.on` - the
+       tab's shown/hidden state - which sounded equivalent and was not: `.on` is
+       true the whole time he is in the tab, renderTemplateList() rebuilds the
+       rows through box.innerHTML, and tplSearchChanged() calls it on oninput.
+       MEASURED: one keystroke in the search box restarted 3 row animations on a
+       3-template library, one per row. Typing his own search made the list
+       flicker at him - the exact glitchiness this rebuild exists to end,
+       reintroduced by the polish. An entrance has to be scoped to arriving.
 
        transform+opacity only, so it composites and cannot reflow a list the
        renderer is rewriting. The stagger is six nth-child steps and then flat:
@@ -139,16 +144,16 @@
        rows past the sixth are below the fold at every size this tab uses.
        `both` fill so a row cannot be caught pre-paint at opacity 0 if the
        animation is interrupted. */
-    [B + '#oprPanelTpls.on #tplList > div',
+    [B + '#oprPanelTpls.ot-entering #tplList > div',
      'animation:mlsOtRowIn ' + D3 + ' ' + EO + ' both'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(2)', 'animation-delay:40ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(3)', 'animation-delay:80ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(4)', 'animation-delay:120ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(5)', 'animation-delay:160ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(n+6)', 'animation-delay:200ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(2)', 'animation-delay:40ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(3)', 'animation-delay:80ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(4)', 'animation-delay:120ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(5)', 'animation-delay:160ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(n+6)', 'animation-delay:200ms'],
     /* the preview beside it comes in without moving - it is a reading surface,
        and sliding text is the one thing the motion charter forbids outright */
-    [B + '#oprPanelTpls.on #tplDetail',
+    [B + '#oprPanelTpls.ot-entering #tplDetail',
      'animation:mlsOtFadeIn ' + D3 + ' ' + EO + ' both']
   ];
 

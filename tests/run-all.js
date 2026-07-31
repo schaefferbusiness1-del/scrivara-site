@@ -64,6 +64,11 @@ const tests = [
      driver does not then repaint the pointed-at editor out of existence, in
      all four byte-identical copies of it. */
   'sign-refusal-survives-the-repaint.test.js',
+  /* b834 — a fix on the origin that a returning browser never receives is not
+     shipped. feat_mls_opnote_integrity.js sat behind a hand-maintained cache
+     token dated two days before its own content changed. This compares every
+     hand-maintained token against its file's real history. */
+  'cache-token-cannot-go-stale.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must

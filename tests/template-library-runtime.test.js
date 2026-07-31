@@ -319,10 +319,10 @@ function staticContracts() {
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260723tl120'));
+    assert(loader.includes('feat_mls_template_library.js?v=20260731tl121'));
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260723tl120');
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260731tl121');
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');

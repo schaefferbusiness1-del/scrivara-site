@@ -871,6 +871,26 @@
            NOT the scroll event itself, which is what the focus-driven jump this
            whole block exists to undo would fire. Passive listeners, removed as
            soon as the last pass has run, so nothing outlives the open. */
+        /* THE ENTRANCE IS AN ENTRANCE, NOT A RE-RENDER EFFECT.
+           feat_mls_opnote_templates_ui.js animates the library rows in when the
+           doctor arrives. It keyed that off `.on`, which is this tab's
+           shown/hidden state and therefore true for as long as he is in the
+           tab - so every rebuild of the list replayed it. renderTemplateList()
+           rebuilds via box.innerHTML, and tplSearchChanged() calls it on
+           oninput, so MEASURED: one keystroke in the search box restarted 3
+           row animations on a 3-template library, and it would be one per row
+           on a real one. Typing his own search made the list flicker at him.
+           That is the "glitchy" this whole rebuild exists to end, reintroduced
+           by the polish.
+           So the animation gets a class that only exists while he is ARRIVING.
+           900ms: the list renders in the first frames of the open, and this is
+           comfortably past the 300ms animation plus its 200ms stagger tail,
+           while still being gone long before any human finishes a keystroke. */
+        try {
+          p.classList.add('ot-entering');
+          setTimeout(function () { try { p.classList.remove('ot-entering'); } catch (e) {} }, 900);
+        } catch (eEnter) {}
+
         var owned = true;
         var release = function () { owned = false; };
         var events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
