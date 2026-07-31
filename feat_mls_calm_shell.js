@@ -1557,8 +1557,18 @@
     } catch (e) {}
     try {
       if (dockEl) {
-        if (v === 'top') dockEl.style.top = topDockOffset() + 'px';
-        else dockEl.style.removeProperty('top');
+        /* A MEASUREMENT TAKEN TOO EARLY MUST NOT BE WRITTEN DOWN. boot() runs
+           this before the sticky header has laid out, so topDockOffset()
+           returned its 18px floor - and an inline 18px then BEAT the 88px CSS
+           fallback, parking the dock back under the header. Measured: inline
+           top 18px, dock top 2, covered by #mlsRdTop. So a floor result clears
+           the inline value and lets the stylesheet hold the line until a real
+           measurement exists. */
+        if (v === 'top') {
+          var t = topDockOffset();
+          if (t > 18) dockEl.style.top = t + 'px';
+          else dockEl.style.removeProperty('top');
+        } else dockEl.style.removeProperty('top');
       }
     } catch (e) {}
     try { syncDock(); } catch (e) {}
@@ -2984,6 +2994,10 @@
          schedule() coalesces to one rAF and the bar skips identical content. */
       setTimeout(schedule, 350);
       setTimeout(schedule, 1200);
+      /* and re-measure the top dock once the sticky surfaces above it have
+         actually laid out — the same two-beat cover the rest of boot uses. */
+      setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 500);
+      setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 1600);
       D.addEventListener('click', schedule, true);
       return true;
     } catch (e) {
