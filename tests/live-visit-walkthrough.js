@@ -473,6 +473,83 @@ async function main() {
       note('the lane Review control is not offered in this state: ' + JSON.stringify(reviewProbe));
     }
 
+    /* ---- 5blank. THE REFUSAL HAS TO BE VISIBLE TO THE DOCTOR ----
+       This is the strongest remaining candidate for "why do u have to clikc
+       review and sign twice", and the synthetic note above cannot produce it
+       because it has no placeholders. A REAL op note does.
+
+       signNote() refuses when opNoteBlankTokens() finds any unresolved field,
+       and b806 made that refusal helpful by selecting the first blank so the
+       doctor is taken to the problem. But it selects it in #noteBox - and in
+       the lane flow the doctor is looking at #ez3flNote, a different textarea
+       that mirrors into #noteBox, while #noteBox itself lives inside the
+       ADVANCED WORKSPACE, which is closed by default. focus() and
+       setSelectionRange() on an element inside a display:none subtree are
+       silent no-ops. If that is what happens, the doctor reads a toast, sees
+       nothing move, and presses again - which is exactly the report.
+
+       So: put a blank in the note through the visible editor, press Sign once,
+       and require that whatever the app selected is somewhere he can SEE. */
+    const blankProbe = await evalJs(cdp, `(()=>{
+      const lane=document.getElementById('ez3flNote'), real=document.getElementById('noteBox');
+      if(!real) return {skip:'no #noteBox'};
+      const target = (lane && getComputedStyle(lane).display!=='none') ? lane : real;
+      const withBlank = String(real.value||'') + '\\n\\nLATERALITY: [FILL: side]\\n';
+      const P = HTMLTextAreaElement.prototype;
+      Object.getOwnPropertyDescriptor(P,'value').set.call(target, withBlank);
+      target.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
+      return {ok:true, editedVia: target.id, mirrored: String(real.value||'').indexOf('[FILL: side]')>=0};
+    })()`);
+    if (blankProbe.ok) {
+      await sleep(500);
+      const mirrored = await evalJs(cdp, `String((document.getElementById('noteBox')||{}).value||'').indexOf('[FILL: side]')>=0`);
+      ok(mirrored, '5blank-a. what the doctor types in the lane reaches the real note',
+        'typing into #' + blankProbe.editedVia + ' did not mirror into #noteBox, so the sign gate reads a different note than the one on screen');
+
+      const sBlank = await press(cdp, 'signBtn');
+      const refusal = await evalJs(cdp, `(()=>{
+        const real=document.getElementById('noteBox'), lane=document.getElementById('ez3flNote');
+        const vis=el=>{ if(!el) return false; const s=getComputedStyle(el), r=el.getBoundingClientRect();
+          return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0; };
+        const inView=el=>{ if(!vis(el)) return false; const r=el.getBoundingClientRect();
+          return r.bottom>0 && r.top < (window.innerHeight||0); };
+        const selLen = el => el && typeof el.selectionStart==='number' ? (el.selectionEnd-el.selectionStart) : 0;
+        return {
+          signed: !!(document.getElementById('signLine') && getComputedStyle(document.getElementById('signLine')).display!=='none'),
+          realVisible: vis(real), realInView: inView(real), realSel: selLen(real),
+          laneVisible: vis(lane), laneInView: inView(lane), laneSel: selLen(lane),
+          active: document.activeElement ? (document.activeElement.id||document.activeElement.tagName) : '',
+          adv: document.body.classList.contains('ez3adv')
+        };
+      })()`);
+      note('sign refused with a blank present: ' + JSON.stringify(refusal));
+
+      ok(!refusal.signed, '5blank-b. a note with an unresolved field is not signed',
+        'the note signed with [FILL: side] still in it');
+      ok(sBlank.after.toast && /unresolved field/i.test(sBlank.after.toast),
+        '5blank-c. the refusal says why', 'toast was: ' + JSON.stringify(sBlank.after.toast));
+      /* The point of the whole step: the doctor must be able to SEE the thing
+         he is being asked to fix. Either editor counts - what must not happen
+         is the app selecting a blank inside a closed workspace and calling that
+         guidance. */
+      const showedHim = (refusal.realInView && refusal.realSel > 0) || (refusal.laneInView && refusal.laneSel > 0);
+      ok(showedHim, '5blank-d. the refusal takes him to a blank he can actually see',
+        'the app refused and selected nothing visible: ' + JSON.stringify(refusal)
+          + '. A refusal that moves nothing on screen is indistinguishable from a button that did not register, '
+          + 'which is the "press it twice" report.');
+
+      /* put the note back so step 5 below tests signing, not this */
+      await evalJs(cdp, `(()=>{
+        const real=document.getElementById('noteBox'), lane=document.getElementById('ez3flNote');
+        const clean=String(real.value||'').replace(/\\n\\nLATERALITY: \\[FILL: side\\]\\n/,'');
+        const P=HTMLTextAreaElement.prototype;
+        const t=(lane && getComputedStyle(lane).display!=='none')?lane:real;
+        Object.getOwnPropertyDescriptor(P,'value').set.call(t, clean);
+        t.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
+        return 1;})()`);
+      await sleep(400);
+    }
+
     /* ---- 5. REVIEW & SIGN - the owner says this takes two presses ---- */
     const s1 = await press(cdp, 'signBtn');
     let signPresses = 1, signed = s1.after.signVisible;
