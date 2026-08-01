@@ -1930,6 +1930,30 @@
     html body.mls-redesign #appWrap{
       padding-bottom:calc(110px + env(safe-area-inset-bottom,0px)) !important;
     }
+    /* ph-wrap-gutter-1.0.0 — under the calm shell that 110px reserves for an
+       element that is not on screen, and it lands in the wrong place.
+       #appWrap is NOT the last of the page: #appScreen's children are
+       [#appHeader, #appWrap, #appFooter], so the padding opens a blank band
+       BETWEEN the content and the footer rather than below the last painted
+       pixel. MEASURED at 402x874, demo boot, Visit view:
+           last painted content in #appWrap (#visitView)  doc y 1026.3
+           #appWrap bottom                                doc y 1136.3
+           blank band inside the wrap                     exactly 110.0px
+       The number is vestigial: it comes from feat_mls_redesign.js:1179, written
+       when #mlsRdNav (fixed, bottom:0) was the phone navigation, and the calm
+       shell sets #mlsRdNav display:none and mounts #mlsDock instead.
+       Clearing the dock is already handled BELOW the footer, where it belongs:
+       #mlsDock occupies 71px of the viewport bottom, against body.mls-calm's
+       96px padding-bottom (feat_mls_calm_shell.js:217) plus #appFooter's 40px
+       margin-bottom — 136px for a 71px obstruction, so nothing becomes
+       unreachable. Verified: at maximum scroll the footer still clears the dock.
+       Scoped to .mls-calm on purpose. In the classic shell (?ui=classic, which
+       removes mls-calm) #mlsRdNav IS the fixed bottom navigation and genuinely
+       needs the 110px, so that path keeps the rule above byte-for-byte.
+       Specificity (1,2,2) beats the (1,1,2) it must override; both !important. */
+    html body.mls-redesign.mls-calm #appWrap{
+      padding-bottom:calc(10px + env(safe-area-inset-bottom,0px)) !important;
+    }
   }
 }
 
