@@ -32417,7 +32417,7 @@ function _ptGroupSort(mode){
      snapshotted at boot, and doing so silently disabled the whole handler. */
   function VV() { try { return window.visualViewport || null; } catch (e) { return null; } }
   var applied = 0, bound = false;
-  var api = { installed: true, version: 'ph-kbd-1.0.1' };
+  var api = { installed: true, version: 'ph-kbd-1.0.2' };
   window.__mlsKbdInset = api;
   function overlap() {
     var vv = VV();
@@ -32431,26 +32431,37 @@ function _ptGroupSort(mode){
      focus. Browser chrome never can. That is the one reliable discriminator,
      and the reason this gate exists.
 
-     MEASURED on the owner's iPhone (402x874 CSS, b853) and reproduced headless:
-     with viewport-fit=cover in the head (ScribeFlow.html:30) `innerHeight` is the
+     With viewport-fit=cover in the head (ScribeFlow.html:30) `innerHeight` is the
      LAYOUT viewport — the FULL screen height — while `visualViewport.height`
      excludes Safari's top URL bar and bottom toolbar. So with the toolbars
-     merely EXPANDED and nothing focused, `overlap()` returned 220, sailed past
-     the old `> 80` threshold, and lifted the dock to bottom:228px — a nav pill
-     stranded in the middle of the screen, painting over #mlsEz3Body. Proof, from
-     a clean boot with document.activeElement === <body>:
-         overlap 0   -> dock bottomGap 8     (headless: no collapsible chrome)
-         overlap 220 -> dock bottomGap 228   (chrome delta spoofed, no keyboard)
+     merely EXPANDED and nothing focused, overlap() is large, it sailed past the
+     old `> 80` threshold, and it lifted the dock off the bottom — a nav pill
+     stranded mid-screen, painting over #mlsEz3Body.
+
+     Be precise about which numbers are measured and which are derived, because
+     no overlap() value was ever read on the owner's device:
+       OBSERVED  on his iPhone (402x874 CSS, b853): the pill floated ~220px above
+                 the viewport bottom with no keyboard anywhere.
+       DERIVED   through this rule's consumer at ScribeFlow.html:1868,
+                 bottom = 8px + env(safe-area-inset-bottom) + var(--mls-kbd):
+                 --mls-kbd was ~178px if that inset was 34px, up to ~212px if the
+                 expanded toolbars zeroed it. Call the chrome delta ~178-212.
+       MEASURED  headless, driving the real shipped module with visualViewport
+                 shadowed, document.activeElement === <body> throughout:
+                     overlap 0   -> dock bottomGap 8    (no collapsible chrome)
+                     overlap 220 -> dock bottomGap 228  (chrome only, no keyboard)
      The old comment assumed the chrome delta was "small". Under viewport-fit
      =cover it is the single largest delta the page ever sees.
 
-     Two independent guards, because one of them being wrong should not put the
-     navigation back in the middle of the screen:
-       1. an editable must be focused                (kills the observed bug)
-       2. the overlap must be keyboard-sized, > 140  (backstop)
-     140 separates the two populations cleanly: an iPhone portrait keyboard is
-     ~290px plus a ~45px accessory bar, while Safari's combined chrome tops out
-     near 150. The old 80 sat INSIDE the chrome range, which is the whole defect.
+     The FOCUS GATE is what fixes this, and it carries the whole load. The 140px
+     floor is NOT a second opinion about chrome vs keyboard and must not be read
+     as one: the chrome delta measures ~178-212 here, which is ABOVE 140, so the
+     floor would not catch it on its own. Its only job is to discard the small
+     deltas — a partially collapsed URL bar — that would otherwise jitter the
+     dock on a device whose chrome is thinner than this one's. Raising it until
+     it did separate the two populations is not available either: it would have
+     to clear ~212 while still admitting a landscape keyboard (~200), and those
+     ranges overlap. A pixel threshold cannot answer this question. Focus can.
 
      Still live for the case this module was written for: focus a textarea in the
      op-note room (#opPrepModal.opr-room, which drives --opr-dock-clear off this
@@ -32476,10 +32487,6 @@ function _ptGroupSort(mode){
       document.documentElement.style.setProperty('--mls-kbd', next ? (next + 'px') : '0px');
     } catch (e) {}
   }
-  /* On blur activeElement is transiently <body> before focus lands on the next
-     control, so re-read it a tick later: moving between two textareas must not
-     drop and re-raise the dock. */
-  function onFocusOut() { try { setTimeout(apply, 0); } catch (e) {} }
 
   function bind() {
     if (bound) return true;
@@ -32488,11 +32495,24 @@ function _ptGroupSort(mode){
     try {
       vv.addEventListener('resize', apply);
       vv.addEventListener('scroll', apply);
-      /* focusin/focusout are what actually gate the lift now, so they bind here
-         rather than being an optional extra. Capture phase, so a field that
-         stops propagation cannot strand the dock in the lifted state. */
-      document.addEventListener('focusin', apply, true);
-      document.addEventListener('focusout', onFocusOut, true);
+      /* ph-kbd-1.0.2: deliberately NO focusin/focusout listeners. Reacting to
+         focus was measured to be both unnecessary and harmful:
+           HARMFUL — focusin fires while the toolbars are still expanded and the
+             keyboard has not begun to appear, so apply() reads the CHROME-only
+             overlap and lifts by exactly that. Measured on this app at 402x874
+             with a 178-220px chrome delta shadowed in: focus a textarea and the
+             dock's bottom gap went 8 -> 228 immediately, then stayed there for
+             800ms because no visualViewport event ever followed. That is the
+             reported defect, re-created at focus time.
+           UNNECESSARY — on iOS the keyboard appearing IS the visualViewport
+             resize, and focus is always settled before it (focus must precede
+             the keyboard being summoned, blur precedes its dismissal). Measured
+             with the focus listeners removed: a keyboard-sized resize (overlap
+             510) with a textarea focused still took applied 0 -> 510 and moved
+             the dock 8 -> 518, and the drop on blur still fired, because the
+             keyboard's dismissal is itself a resize.
+         So the resize/scroll pair is the complete event surface, and the focus
+         state is read at that moment as a GATE rather than used as a trigger. */
       bound = true;
     } catch (e) { bound = false; }
     return bound;
@@ -32515,8 +32535,6 @@ function _ptGroupSort(mode){
     var vv = VV();
     try { if (vv) vv.removeEventListener('resize', apply); } catch (e) {}
     try { if (vv) vv.removeEventListener('scroll', apply); } catch (e) {}
-    try { document.removeEventListener('focusin', apply, true); } catch (e) {}
-    try { document.removeEventListener('focusout', onFocusOut, true); } catch (e) {}
     try { document.documentElement.style.removeProperty('--mls-kbd'); } catch (e) {}
     try { delete window.__mlsKbdInset; } catch (e) { window.__mlsKbdInset = null; }
   };
