@@ -758,7 +758,37 @@
        told about, and wrapping cannot clip whatever the labels turn out to be in
        another locale. The connectors are decoration — the dots already carry
        done/now — and a connector spanning a line break is worse than none. */
-    '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:12px}',
+    '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:8px}',
+    /* ph-stage-1.0.0 — the rail's own type is DEAD CSS, and that is why it wraps.
+       Line 617 declares `font:500 12.5px inherit`. `inherit` is a CSS-wide keyword
+       and cannot stand in for <family-name> inside the `font` SHORTHAND, so the
+       parser throws the WHOLE declaration away — not just the family. Measured on
+       the running app: #mlsStages .st computes font-size:16px / font-weight:400.
+       It has never once rendered at the 12.5/500 the rail was designed for.
+
+       At the inherited 16px the five stages need 378.7px inside a 361.9px rail at
+       402px wide, so the row wrapped and "Send" sat alone on the second line —
+       exactly the owner's screenshot. b853 responded by hiding the rail entirely
+       (mls-connect.js:46695, `body.mls-phone #mlsStages{display:none}`), but the
+       owner runs "Show the full app", which sets sessionStorage mls_phone_mode='0'
+       and makes wantPhone() false (mls-connect.js:46635) — so body.mls-phone never
+       lands on him and that hide never reached him. Width, not a body class, is
+       what a phone fix has to key on here.
+
+       LONGHANDS, deliberately: font-size/font-weight cannot be silently dropped
+       the way the shorthand was. (The same invalid `font:...inherit` pattern
+       appears 100 times across 37 files in this repo; only the one that produces
+       the owner's visible defect is touched here, because correcting the rest is
+       a desktop-visible type change that deserves its own before/after pass.)
+
+       MEASURED one-line fit with the values below (12.5px, 14px dot, 5px gap,
+       8px column-gap): 295.5px needed against 319.9px available at 360px wide, and
+       389.9px at 430px. Below ~347px it wraps again, which is the fallback the
+       comment above deliberately chose over a horizontal scroller.
+       Confined to this @media (max-width:760px) block, so the desktop rail keeps
+       its current type exactly. */
+    '#mlsStages .st{font-size:12.5px;font-weight:500;gap:5px}',
+    '#mlsStages .st .dot{width:14px;height:14px}',
     /* Connectors are decoration on a phone — the dots already carry done/now,
        and a connector spanning a line break is worse than none.
        THIS LINE CLOSES @media (max-width:760px). It used to sit at the very

@@ -1827,6 +1827,42 @@
   html body #mlsDock{ left:2px; right:2px; padding:6px 0; gap:0; }
 }
 
+/* ===== ph-dock-label-1.0.0 — "AI Studio" stops being the only two-line tab ===
+ * MEASURED, #mlsDock's buttons and the "AI Studio" span, one boot per width:
+ *     320  button 49.7x61  label 41.7x24 (two lines)   dock 75px tall
+ *     360  button 49x61    label 41x24   (two lines)   dock 75px
+ *     390                                              dock 75px
+ *     402  button 56x49    label 46.5x12 (one line)    dock 63px
+ *     430  button 60.7x49  label 46.5x12 (one line)    dock 63px
+ * Patient 36.2, Visit 23.4, Review 35.7, Tools 26.7 and Copilot 36.3 are all
+ * 12px tall at EVERY width — "AI Studio" is the only label that ever wraps.
+ * Below 402px the flex line squeezes the buttons past the point where 46.5px of
+ * label fits inside `padding:8px 12px 7px` (feat_mls_calm_shell.js:313-314), so
+ * exactly one tab wraps, that button grows to 61px, and the dock grows to 75px
+ * on the phones with the least screen to spare.
+ *
+ * It also quietly spent clearance budgeted elsewhere: ScribeFlow.html's ph-a2hs
+ * card comment reads "Clears the dock (bottom:8px, ~64px tall)" and anchors
+ * #mlsA2hsCard at bottom:84px. MEASURED gap from the card's bottom edge to the
+ * dock's top edge: 1px at 320/360/390, 13px at 402/430. The documented 64px is
+ * the 402px dock; the narrow phones ran 75px and cleared by a single pixel.
+ *
+ * The LABEL is what does not fit, so the label is what is corrected: 8px of
+ * horizontal padding buys 16px, comfortably more than the 4.8px "AI Studio" was
+ * short. MEASURED before -> after at 320: label 41.7x24 -> 46.5x12, button
+ * 49.7x61 -> 49.7x49, dock 75px -> 63px, card-to-dock gap 1px -> 13px, and
+ * #mlsDock scrollWidth 314 == clientWidth 314 — no new overflow, which is the
+ * exact failure ph-dock-fit-1.0.0 above exists to prevent. Tap targets are
+ * unchanged: the buttons are sized by the dock's flex line, not by their own
+ * padding (49.7px wide either way), and ph-tap-1.0.0's 44px floor still applies.
+ * 390px is the boundary because 390 MEASURED 75px and 402 MEASURED 63px.
+ * position / bottom / transform / z-index are untouched, so the fixed-position
+ * stacking context is byte-for-byte the one that shipped. */
+@media (max-width:390px){
+  html body #mlsDock button{ padding-left:4px; padding-right:4px; }
+  html body #mlsDock button span{ white-space:nowrap; }
+}
+
 /* ===== ph-safe-1.0.0 — notch and home-indicator insets (2026-07-25) =========
  * ScribeFlow.html declares apple-mobile-web-app-capable=yes, so once a
  * clinician adds MLS to the Home Screen it runs TRUE full screen with no
@@ -1846,10 +1882,30 @@
  * env(...) carries a 0px fallback everywhere, so nothing moves on a device
  * without insets, and no existing rule is edited. */
 @supports (padding: env(safe-area-inset-top)) {
-  /* Sticky top bar — the notch. */
+  /* Sticky top bar — the notch.
+     ph-safe-1.0.1: this used to read `padding-top:calc(env(safe-area-inset-top,0px))`,
+     which REPLACED the header's designed top padding instead of adding to it. env()
+     reports 0px in an ordinary Safari/Chrome tab — the browser chrome already absorbs
+     the notch, and the inset is only non-zero for an installed Home-Screen instance —
+     so on every tab session the declaration resolved to `padding-top:0` and, being
+     !important, outranked the base `header{padding:13px 26px}` (:637) and the phone
+     `header{padding:14px 16px}` (:1355). MEASURED at 402x874: #appHeader 67px tall
+     with padding-top 0 and padding-bottom 14 — visibly top-heavy and lopsided, with
+     the title jammed against the top edge; 81px once the base padding is restored.
+     The base values are mirrored here per breakpoint because a `calc()` cannot read
+     the padding it is overriding; if either base changes, these must change with it.
+     box-sizing:content-box was dropped: it was undocumented and MEASURED to be a
+     no-op in every state (67px both ways at env=0, 140px both ways with a 59px
+     inset), because box-sizing only reshapes a box that specifies a width or height
+     and this header specifies neither — while silently opting it out of the global
+     `*{box-sizing:border-box}` if one is ever added. */
   html body #appHeader{
-    padding-top:calc(env(safe-area-inset-top,0px)) !important;
-    box-sizing:content-box;
+    padding-top:calc(13px + env(safe-area-inset-top,0px)) !important;
+  }
+  @media (max-width:600px){
+    html body #appHeader{
+      padding-top:calc(14px + env(safe-area-inset-top,0px)) !important;
+    }
   }
   /* Landscape: the notch eats a side margin too. */
   html body #appWrap, html body #appScreen{
@@ -1875,6 +1931,61 @@
       padding-bottom:calc(110px + env(safe-area-inset-bottom,0px)) !important;
     }
   }
+}
+
+/* ===== ph-a2hs-clear-1.0.0 — the Home Screen card must not eat the footer ===
+ * See the measurement in ph-a2hs-1.0.1 (reserveClearance, bottom of this file):
+ * the card is position:fixed at bottom:84px, so it reserves no scroll space and
+ * covered the last 30.3px of #appFooter at MAXIMUM scroll — the "Always review
+ * AI notes before signing… Do not enter real patient information." line.
+ *
+ * The card's total reach above the viewport bottom is its own height plus the
+ * 84px anchor plus the home-indicator inset, and 12px of breathing room keeps
+ * the disclaimer from ending flush against the card's shadow. This REPLACES
+ * body.mls-calm's padding-bottom:96px rather than adding to it — it wins on
+ * specificity ((0,1,2) vs (0,1,1)), so there is no double reservation and no
+ * competing !important. It applies only while the card is actually on screen,
+ * so the steady state after "Not now" is byte-for-byte what shipped.
+ * Desktop never sees it: show() bails on !isHandheld(). */
+html.mls-a2hs-open body{
+  padding-bottom:calc(84px + 12px + env(safe-area-inset-bottom,0px) + var(--mls-a2hs-h,83px));
+}
+
+/* ===== ph-boot-top-1.0.0 — the readiness strip must not own the header ======
+ * #mlsBootReadiness (mls-connect.js:47417, br-1.1.0) is the honest "Getting MLS
+ * ready — N of 4 engines live" strip. It is appended straight to <body> with an
+ * inline cssText of `position:fixed;top:0;left:50%;transform:translateX(-50%);
+ * z-index:2147482800`, and it lives until the core engines report live OR 30s.
+ *
+ * MEASURED at 402x874 on a clean boot:
+ *     #appHeader        402x67 at y=0   (sticky, z-index 6000)
+ *     #mlsBootReadiness 201x38 at y=0   (fixed,  z-index 2147482800)
+ *     overlap 201 x 38 — the entire top-centre of the bar
+ *     elementFromPoint(201, 33.5) -> DIV#mlsBootReadiness, NOT the header
+ * So for up to half a minute after sign-in the strip both HIDES the screen title
+ * and EATS the taps aimed at it — the home link and "+ New" underneath it are
+ * dead. On a phone that is the whole width of the title area.
+ *
+ * Two independent corrections, because either alone leaves half the defect:
+ *   pointer-events:none — the strip is role="status" and has no click handler of
+ *     its own, so it should never have been a hit-test target at any width.
+ *   top:var(--mls-hdr-h,...) — drop it BELOW the header instead of over it.
+ *     --mls-hdr-h is the header's measured height, published on install and on
+ *     resize by feat_mls_redesign.js:925 and already consumed exactly this way at
+ *     ScribeFlow.html:31503 (`top:var(--mls-hdr-h,74px)`), so this follows an
+ *     established anchor rather than inventing a constant. It also tracks the
+ *     header's new height automatically now that ph-safe-1.0.1 restores its top
+ *     padding. Before the shell mounts the variable is unset and the fallback
+ *     applies; at that point there is no header on screen to cover anyway.
+ * `!important` is required and sufficient: an inline style outranks any normal
+ * declaration, and the strip's own cssText carries no !important to compete.
+ * Page-level, not phone-scoped: the strip is centred at top:0 on every width, so
+ * it covers header content on desktop too — the phone is only where it covers
+ * ALL of it. The border-radius:0 0 10px 10px reads the same hanging from the
+ * header's lower edge as it did from the window's. */
+html body #mlsBootReadiness{
+  top:var(--mls-hdr-h,74px) !important;
+  pointer-events:none !important;
 }
 
 /* ===== ph-deadend-1.0.0 — N5: remove the Pull button that cannot work =======
@@ -31600,7 +31711,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b853';
+  window.__MLS_AV='b854';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -31965,6 +32076,10 @@ function _ptGroupSort(mode){
   function close() {
     var c = document.getElementById(CARD_ID);
     if (c && c.parentNode) c.parentNode.removeChild(c);
+    try {
+      document.documentElement.classList.remove('mls-a2hs-open');
+      document.documentElement.style.removeProperty('--mls-a2hs-h');
+    } catch (e) {}
   }
 
   function show() {
@@ -32026,6 +32141,33 @@ function _ptGroupSort(mode){
     card.appendChild(no);
 
     document.body.appendChild(card);
+    reserveClearance(card);
+  }
+
+  /* ph-a2hs-1.0.1 — the card is position:fixed, so it reserved NO scroll space
+     and simply sat on whatever the page ended with. MEASURED at 402x874 at
+     MAXIMUM scroll (scrollHeight 1377, clientHeight 874, so scrollY was already
+     at its limit of 503):
+         #appFooter    651.3 .. 737.6
+         #mlsA2hsCard  707.3 .. 790.0  (fixed)
+         overlap       30.3 CSS px, with nowhere left to scroll
+     The 30.3px it covered is the medico-legal line — "Always review AI notes
+     before signing… Do not enter real patient information." — which is the one
+     piece of text on the page that must never be unreachable.
+     The card's own height is published rather than assumed, because the message
+     wraps to two or three lines depending on width and on whether the Android
+     "Add to Home Screen" button is present. The class lands on <html> so the
+     rule can out-specify body.mls-calm's padding-bottom:96px
+     (feat_mls_calm_shell.js:217) on specificity alone — (0,1,2) against (0,1,1)
+     — instead of stacking another !important, which is the failure mode this
+     file's comments repeatedly warn about. Reverted in close(), so a dismissed
+     card gives the space straight back. */
+  function reserveClearance(card) {
+    try {
+      var h = Math.round(card.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--mls-a2hs-h', h + 'px');
+      document.documentElement.classList.add('mls-a2hs-open');
+    } catch (e) {}
   }
 
   try {
@@ -32052,6 +32194,188 @@ function _ptGroupSort(mode){
   api.revert = function () {
     close();
     try { delete window.__mlsA2HS; } catch (e) { window.__mlsA2HS = null; }
+  };
+})();
+</script>
+<script>
+/* ===== dt-getphone-1.0.0 — tell the DESKTOP how to get MLS onto a phone =====
+ * ph-a2hs-1.0.0 (above) offers "Add to Home Screen" on the phone itself, which
+ * only helps a clinician who has ALREADY found the site on their phone. Nothing
+ * told the desktop user — the one actually sitting in front of MLS every day —
+ * that a phone install exists or how to reach it. This is that missing half, and
+ * it is deliberately the MIRROR of ph-a2hs: same eligibility helpers inverted,
+ * same visual language, same one-key dismissal contract.
+ *
+ * Shown only when ALL of these hold, so it can never double up with ph-a2hs:
+ *   !isHandheld()   — the phone already gets its own card
+ *   !isStandalone() — an installed instance is not a browser tab
+ *   signed in       — #appScreen visible; a logged-out visitor has no workspace
+ *                     to put on a phone, and the auth screen has no room for it
+ *   not dismissed   — localStorage, so "Got it" means forever, not per session
+ *
+ * Anchored bottom-RIGHT because feat_mls_redesign.js:1070-1074 pins #mlsAsstFab
+ * and #mlsCopVoiceBtn to the bottom-LEFT (left:calc(var(--rail-w) + 14px)), and
+ * the phone dock is phone-only — so the right corner is the one that is free on
+ * a desktop. z-index 99996 sits one BELOW ph-a2hs's 99997: the two are mutually
+ * exclusive by construction, and if that ever stops being true the phone's own
+ * card is the one that must win.
+ * The host is read from location.host rather than hard-coded, so the card names
+ * the domain the clinician is actually on instead of promising mlsscribe.com to
+ * someone on staging. */
+;(function () {
+  if (window.__mlsGetPhone) return;
+  var CARD_ID = 'mlsGetPhoneCard', SEEN = 'mls_getphone_dismissed';
+  var api = { installed: true, version: 'dt-getphone-1.0.0' };
+  window.__mlsGetPhone = api;
+
+  function isIOSLike() {
+    try {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+        (/Macintosh/.test(navigator.userAgent || '') && (navigator.maxTouchPoints || 0) > 1);
+    } catch (e) { return false; }
+  }
+  function isHandheld() {
+    try {
+      if (isIOSLike()) return true;
+      return /Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
+             ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+    } catch (e) { return false; }
+  }
+  function isStandalone() {
+    try {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             navigator.standalone === true;
+    } catch (e) { return false; }
+  }
+  function signedIn() {
+    try {
+      var s = document.getElementById('appScreen');
+      return !!s && getComputedStyle(s).display !== 'none';
+    } catch (e) { return false; }
+  }
+  function dismissed() { try { return localStorage.getItem(SEEN) === '1'; } catch (e) { return false; } }
+  function remember() { try { localStorage.setItem(SEEN, '1'); } catch (e) {} }
+
+  function close() {
+    var c = document.getElementById(CARD_ID);
+    if (c && c.parentNode) c.parentNode.removeChild(c);
+  }
+
+  /* ONE source of truth for "the phone card owns this screen". Re-deriving
+     handheld-ness here and hoping the two copies agree is exactly how two cards
+     end up stacked on each other; ask ph-a2hs directly instead, and treat its
+     card actually being in the DOM as final regardless of what any heuristic
+     says. Measured while building this: at 1440x900 with touch emulation left
+     on, ph-a2hs's card was on screen while its own eligible() read false — so
+     the DOM check is not belt-and-braces, it is the one that fires. */
+  function phoneCardOwnsScreen() {
+    try {
+      if (document.getElementById('mlsA2hsCard')) return true;
+      var a = window.__mlsA2HS;
+      return !!(a && typeof a.eligible === 'function' && a.eligible());
+    } catch (e) { return false; }
+  }
+
+  /* #mlsKbdHint ("Press ? for shortcuts", feat_mls_keyboard_layer.js:54) is
+     anchored right:14px/bottom:84px, which this card's 175px height would sit
+     straight through — MEASURED overlap 4570 px^2 at 1440x900. On a desktop that
+     hint is legitimate (there IS a ? key), so the card yields rather than
+     displacing it.
+     Checking only "is the hint in the DOM right now" LOSES THE RACE and was
+     measured doing so: the card mounted while the corner was still empty and the
+     hint appeared underneath it a second later, collision intact. So the gate is
+     a floor on elapsed time as well — the hint fades at 6.5s and is removed 0.5s
+     later, so nothing can still be arriving at 12s. The floor is what guarantees
+     the outcome; the DOM check only covers a hint that outstays its own timer.
+     Time-based rather than keyed on the hint's sessionStorage flag on purpose: if
+     feat_mls_keyboard_layer.js never loads, that flag is never written, and a
+     card that waits for it would never appear at all. */
+  var START = Date.now();
+  function hintOwnsCorner() {
+    try {
+      if (Date.now() - START < 12000) return true;
+      return !!document.getElementById('mlsKbdHint');
+    } catch (e) { return false; }
+  }
+
+  function eligible() {
+    return !isHandheld() && !isStandalone() && !dismissed() && signedIn() &&
+           !phoneCardOwnsScreen() && !hintOwnsCorner();
+  }
+
+  function show() {
+    if (!eligible()) return;
+    if (document.getElementById(CARD_ID)) return;
+    if (!document.body) return;
+
+    var host = '';
+    try { host = location.host || ''; } catch (e) {}
+
+    var card = document.createElement('div');
+    card.id = CARD_ID;
+    card.setAttribute('role', 'note');
+    card.setAttribute('aria-label', 'Use MLS on your phone');
+    card.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'max-width:330px',
+      'z-index:99996', 'box-sizing:border-box',
+      'background:#F6FBF8', 'border:1px solid #D8E5DE', 'border-radius:10px',
+      'padding:13px 14px', 'box-shadow:0 8px 24px rgba(20,33,28,.16)',
+      'font:500 13px/1.5 "Public Sans",system-ui,-apple-system,sans-serif', 'color:#1A211C'
+    ].join(';');
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:5px';
+    head.innerHTML = '<span aria-hidden="true">📱</span><span>Use MLS on your phone</span>';
+    card.appendChild(head);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'color:#3C4A43';
+    /* Named steps rather than a vague "install the app": MLS is a web app, so
+       there is no App Store listing to search for and saying "download the app"
+       would send a clinician somewhere that does not exist. */
+    body.appendChild(document.createTextNode('There is no app to download. On your phone, open '));
+    var b = document.createElement('b');
+    b.textContent = host || 'this site';
+    body.appendChild(b);
+    body.appendChild(document.createTextNode(' in Safari or Chrome, then tap Share and choose “Add to Home Screen”. It opens full screen, like an app.'));
+    card.appendChild(body);
+
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:11px';
+
+    var ok = document.createElement('button');
+    ok.type = 'button';
+    ok.textContent = 'Got it';
+    ok.setAttribute('aria-label', 'Got it — do not show this again');
+    ok.style.cssText = 'min-height:34px;border:0;border-radius:10px;background:#2E6A4B;color:#fff;' +
+      'font:700 12.5px "Public Sans",system-ui,sans-serif;padding:0 14px;cursor:pointer';
+    ok.addEventListener('click', function () { remember(); close(); });
+    row.appendChild(ok);
+
+    card.appendChild(row);
+    document.body.appendChild(card);
+  }
+
+  /* The card waits for a signed-in workspace. Poll rather than hook the login
+     path: sign-in happens in several places (fresh signup, restored session,
+     2FA) and a poller cannot miss one of them. It stops the moment it shows the
+     card or the card is permanently dismissed, so it never runs for long. */
+  var tries = 0;
+  var iv = setInterval(function () {
+    try {
+      if (dismissed() || document.getElementById(CARD_ID) || ++tries > 120) { clearInterval(iv); return; }
+      if (eligible()) { show(); clearInterval(iv); }
+    } catch (e) { clearInterval(iv); }
+  }, 1000);
+
+  api.cardId = CARD_ID;
+  api.show = show;
+  api.close = close;
+  api.eligible = eligible;
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    close();
+    try { delete window.__mlsGetPhone; } catch (e) { window.__mlsGetPhone = null; }
   };
 })();
 </script>
@@ -32093,7 +32417,7 @@ function _ptGroupSort(mode){
      snapshotted at boot, and doing so silently disabled the whole handler. */
   function VV() { try { return window.visualViewport || null; } catch (e) { return null; } }
   var applied = 0, bound = false;
-  var api = { installed: true, version: 'ph-kbd-1.0.0' };
+  var api = { installed: true, version: 'ph-kbd-1.0.1' };
   window.__mlsKbdInset = api;
   function overlap() {
     var vv = VV();
@@ -32103,18 +32427,59 @@ function _ptGroupSort(mode){
       return (isFinite(o) && o > 0) ? Math.round(o) : 0;
     } catch (e) { return 0; }
   }
+  /* ph-kbd-1.0.1 — a keyboard can ONLY be open while an editable element holds
+     focus. Browser chrome never can. That is the one reliable discriminator,
+     and the reason this gate exists.
+
+     MEASURED on the owner's iPhone (402x874 CSS, b853) and reproduced headless:
+     with viewport-fit=cover in the head (ScribeFlow.html:30) `innerHeight` is the
+     LAYOUT viewport — the FULL screen height — while `visualViewport.height`
+     excludes Safari's top URL bar and bottom toolbar. So with the toolbars
+     merely EXPANDED and nothing focused, `overlap()` returned 220, sailed past
+     the old `> 80` threshold, and lifted the dock to bottom:228px — a nav pill
+     stranded in the middle of the screen, painting over #mlsEz3Body. Proof, from
+     a clean boot with document.activeElement === <body>:
+         overlap 0   -> dock bottomGap 8     (headless: no collapsible chrome)
+         overlap 220 -> dock bottomGap 228   (chrome delta spoofed, no keyboard)
+     The old comment assumed the chrome delta was "small". Under viewport-fit
+     =cover it is the single largest delta the page ever sees.
+
+     Two independent guards, because one of them being wrong should not put the
+     navigation back in the middle of the screen:
+       1. an editable must be focused                (kills the observed bug)
+       2. the overlap must be keyboard-sized, > 140  (backstop)
+     140 separates the two populations cleanly: an iPhone portrait keyboard is
+     ~290px plus a ~45px accessory bar, while Safari's combined chrome tops out
+     near 150. The old 80 sat INSIDE the chrome range, which is the whole defect.
+
+     Still live for the case this module was written for: focus a textarea in the
+     op-note room (#opPrepModal.opr-room, which drives --opr-dock-clear off this
+     same variable) and the lift applies exactly as before. */
+  function editableFocused() {
+    try {
+      var a = document.activeElement;
+      if (!a || a === document.body) return false;
+      if (a.isContentEditable) return true;
+      if (a.tagName === 'TEXTAREA') return true;
+      if (a.tagName !== 'INPUT') return false;
+      /* Button-like and non-text inputs summon no keyboard. */
+      return !/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i
+        .test(a.type || 'text');
+    } catch (e) { return false; }
+  }
   function apply() {
     try {
       var o = overlap();
-      /* Small deltas are browser chrome (the collapsing URL bar), not a
-         keyboard. Lifting the dock for those would make it jitter while you
-         scroll, so only react to something keyboard-sized. */
-      var next = o > 80 ? o : 0;
+      var next = (editableFocused() && o > 140) ? o : 0;
       if (next === applied) return;
       applied = next;
       document.documentElement.style.setProperty('--mls-kbd', next ? (next + 'px') : '0px');
     } catch (e) {}
   }
+  /* On blur activeElement is transiently <body> before focus lands on the next
+     control, so re-read it a tick later: moving between two textareas must not
+     drop and re-raise the dock. */
+  function onFocusOut() { try { setTimeout(apply, 0); } catch (e) {} }
 
   function bind() {
     if (bound) return true;
@@ -32123,6 +32488,11 @@ function _ptGroupSort(mode){
     try {
       vv.addEventListener('resize', apply);
       vv.addEventListener('scroll', apply);
+      /* focusin/focusout are what actually gate the lift now, so they bind here
+         rather than being an optional extra. Capture phase, so a field that
+         stops propagation cannot strand the dock in the lifted state. */
+      document.addEventListener('focusin', apply, true);
+      document.addEventListener('focusout', onFocusOut, true);
       bound = true;
     } catch (e) { bound = false; }
     return bound;
@@ -32145,6 +32515,8 @@ function _ptGroupSort(mode){
     var vv = VV();
     try { if (vv) vv.removeEventListener('resize', apply); } catch (e) {}
     try { if (vv) vv.removeEventListener('scroll', apply); } catch (e) {}
+    try { document.removeEventListener('focusin', apply, true); } catch (e) {}
+    try { document.removeEventListener('focusout', onFocusOut, true); } catch (e) {}
     try { document.documentElement.style.removeProperty('--mls-kbd'); } catch (e) {}
     try { delete window.__mlsKbdInset; } catch (e) { window.__mlsKbdInset = null; }
   };

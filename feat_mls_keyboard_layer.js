@@ -113,7 +113,29 @@
     }
   }
 
+  /* ph-kbdhint-1.0.0 — a keyboard hint has nothing to say to a device with no
+     keyboard. Measured on a 402x874 iPhone repro: this pill renders at
+     bottom:84px (the CSS above), which is the BYTE-IDENTICAL anchor ph-safe-1.0.0
+     gives #mlsA2hsCard (ScribeFlow.html:1870), and it wins the stack at z-index
+     2147483500 against the card's 99997 — a 181.2 x 25.5 CSS px overlap sitting
+     on top of the Home Screen card's own action. On top of covering something
+     useful, it advertises a key ("?") that a touch device cannot type.
+
+     (hover:none) AND (pointer:coarse) together are what actually mean "finger":
+     a mouse reports hover/fine, and a touchscreen LAPTOP reports pointer:fine,
+     so every device that can really press ? keeps the hint byte-for-byte as
+     today. If matchMedia is missing or throws we fall through to SHOWING it, so
+     an old browser loses nothing. */
+  function touchOnlyDevice() {
+    try {
+      return !!(window.matchMedia &&
+        window.matchMedia('(hover:none)').matches &&
+        window.matchMedia('(pointer:coarse)').matches);
+    } catch (e) { return false; }
+  }
+
   function showHintOnce() {
+    if (touchOnlyDevice()) return;
     if (sessionStorageSafe('mlsKbdHintShown')) return;
     var h = document.createElement('div');
     h.id = HINT_ID;
