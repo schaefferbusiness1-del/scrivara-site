@@ -31,7 +31,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candDir = ['3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'content.js')));
+const candDir = ['3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'content.js')));
 const contentPath = candDir ? path.join(candDir, 'content.js') : path.join(root, 'content.js');
 const bgPath = candDir ? path.join(candDir, 'background.js') : path.join(root, 'background.js');
 const content = fs.readFileSync(contentPath, 'utf8');

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.41",
+  "version": "3.0.42",
   "minChrome": 116,
-  "notes": "v3.0.41 - The Retry failed histories button now finishes the job: athenaOne refuses to render chart panes in a background tab, so retried visit bodies used to fail the same way forever. Because you are present when you click retry, MLS Assist now brings the athenaOne tab forward just for that read and then puts you back exactly where you were - success or failure. Everything from v3.0.40 remains: schedule-keyword surnames import completely even welded into duration/age text, empty days must prove they settled, updated extensions self-heal open tabs, phantom rows can never stand in for dropped patients, note-write verification refuses unchanged/truncated/foreign landings with clean rollback, and charts up to 160k characters complete. Requires Chrome 116+."
+  "notes": "v3.0.42 - Retry polish, audited: the retry that brings athenaOne forward now refuses to act when you are working OUTSIDE Chrome (so it can never raise a window under your typing), and if you switch tabs while a retry is reading, your choice wins - MLS never yanks you back. A per-patient wait counter could previously leak between patients and shorten the next chart read; it is now bound to each request. Everything from v3.0.41 remains: the foreground-assisted retry that finally completes visit bodies, welded-name imports, settled-empty days, self-healing updated tabs, phantom-proof day completion, strict note-write verification with rollback, and 160k-character charts. Requires Chrome 116+."
 }
