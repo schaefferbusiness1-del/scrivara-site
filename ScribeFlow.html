@@ -98,23 +98,6 @@
 })();
 </script>
 <script>
-/* pvc-1.0.0: a preview link that arrives with EXTRA params (utm tags, share
-   trackers) must not dead-end on the login wall. The safety boundary above is
-   exact BY DESIGN — so canonicalize to the exact route instead of loosening
-   it: one location.replace, after which the exact match arms normally. */
-(function(){
-  try{
-    var u=new URL(location.href);
-    if(!/\/ScribeFlow\.html$/.test(u.pathname))return;
-    if(u.search==='?preview=1')return;
-    if(u.searchParams.get('preview')!=='1')return;
-    var p=window.__MLS_PUBLIC_PREVIEW;
-    if(p&&p.enabled===true)return;
-    location.replace(u.pathname+'?preview=1');
-  }catch(e){}
-})();
-</script>
-<script>
 /* __mlsOldBrowserCompat v1.0.0 (b406) — old-Chrome / old-Mac support layer.
  * Loads FIRST, pure ES5. Three jobs:
  *  1. Polyfills for runtime APIs the app (or a future feat) touches that old
@@ -272,6 +255,26 @@
   }
 })();
 /* end __mlsOldBrowserCompat */</script>
+<script>
+/* pvc-1.0.0: a preview link that arrives with EXTRA params (utm tags, share
+   trackers) must not dead-end on the login wall. The safety boundary above is
+   exact BY DESIGN — so canonicalize to the exact route instead of loosening
+   it: one location.replace, after which the exact match arms normally.
+   (Sits AFTER the compat layer: the oldbrowser gate pins exactly two inline
+   blocks before compat, and canonicalizing here is still long before the
+   login UI exists.) */
+(function(){
+  try{
+    var u=new URL(location.href);
+    if(!/\/ScribeFlow\.html$/.test(u.pathname))return;
+    if(u.search==='?preview=1')return;
+    if(u.searchParams.get('preview')!=='1')return;
+    var p=window.__MLS_PUBLIC_PREVIEW;
+    if(p&&p.enabled===true)return;
+    location.replace(u.pathname+'?preview=1');
+  }catch(e){}
+})();
+</script>
 <script src="clinical-state-purge.js?v=20260718csp1"></script>
 <!-- PWA: installable phone + desktop app -->
 <meta name="theme-color" content="#2E6A4B">
