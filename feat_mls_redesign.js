@@ -577,7 +577,13 @@
   function organizePrimaryNavigation(){
     try{
       var nav=document.querySelector('.mainnav'); if(!nav) return false;
-      nav.setAttribute('role','navigation'); nav.setAttribute('aria-label','Primary navigation');
+      /* write-only-on-change: this function runs on every applyAll pass, and
+         these two were unconditional — 34 no-op attribute writes each per 30
+         idle seconds, every one invalidating style for the nav. Same discipline
+         tests/body-class-writes-only-on-change.test.js already enforces on the
+         body class. */
+      if(nav.getAttribute('role')!=='navigation') nav.setAttribute('role','navigation');
+      if(nav.getAttribute('aria-label')!=='Primary navigation') nav.setAttribute('aria-label','Primary navigation');
       var tabs=[].slice.call(nav.querySelectorAll('.navtab'));
       for(var a=0;a<tabs.length;a++) wireNavAccessibility(tabs[a]);
 
@@ -611,13 +617,19 @@
         var secondary=$(SECONDARY_NAV[s]); if(!secondary||secondary.parentElement!==nav) continue;
         var hide=secondaryRouteAvailable(SECONDARY_NAV[s]);
         if(hide){
+          /* The transition check used to guard only the save-the-prior-value
+             block; the four state writes below it ran unconditionally on every
+             pass — 544 no-op attribute writes per 30 idle seconds across these
+             four tabs, each one a chance for a screen reader to re-announce a
+             hidden item. Applying the state inside the same block that detects
+             the transition matches how the sibling case is already written. */
           if(secondary.getAttribute('data-mlsrd-primary-hidden')!=='1'){
             secondary.setAttribute('data-mlsrd-prehide-tabindex',secondary.hasAttribute('tabindex')?secondary.getAttribute('tabindex'):'__none__');
             secondary.setAttribute('data-mlsrd-prehide-aria-hidden',secondary.hasAttribute('aria-hidden')?secondary.getAttribute('aria-hidden'):'__none__');
             if(!secondary.hidden) secondary.setAttribute('data-mlsrd-added-hidden','1');
+            secondary.setAttribute('data-mlsrd-primary-hidden','1');
+            secondary.setAttribute('aria-hidden','true'); secondary.setAttribute('tabindex','-1'); secondary.hidden=true;
           }
-          secondary.setAttribute('data-mlsrd-primary-hidden','1');
-          secondary.setAttribute('aria-hidden','true'); secondary.setAttribute('tabindex','-1'); secondary.hidden=true;
         }else if(secondary.getAttribute('data-mlsrd-primary-hidden')==='1'){
           restoreSecondaryRoute(secondary);
         }

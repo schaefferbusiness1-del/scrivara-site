@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Only pages that are actually indexable belong here. lawyers.html,
+     get-extension.html, review-finder.html and terms.html each carry
+     <meta name="robots" content="noindex,nofollow,noarchive">, and three of
+     those noindex tags are asserted by the test suite — so listing them told
+     Googlebot to fetch a page the site then refuses to let it index. That is
+     what fills Search Console with "Submitted URL marked noindex", and it
+     quietly advertised the held attorney directory and the reputation tool to
+     crawlers. assist-privacy.html is indexable (no robots meta) but was
+     missing: its only two inbound links come from noindex,NOFOLLOW pages, so
+     without an entry here no crawlable path reaches the extension's privacy
+     policy at all. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://mlsscribe.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://mlsscribe.com/lawyers.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://mlsscribe.com/get-extension.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://mlsscribe.com/review-finder.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://mlsscribe.com/privacy.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://mlsscribe.com/terms.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
+  <url><loc>https://mlsscribe.com/assist-privacy.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
 </urlset>

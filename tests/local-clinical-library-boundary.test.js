@@ -25,11 +25,11 @@ const productionAdjunctRequirements = new Map([
 ]);
 
 const freshHardcodedLoaderTags = new Map([
-  ['mls-outcome-study.js', '20260731lib5'],
-  ['mls-opnote-pro.js', '20260731lib5'],
-  ['mls-procedure-report.js', '20260731lib5'],
+  ['mls-outcome-study.js', '20260802lib6'],
+  ['mls-opnote-pro.js', '20260802lib6'],
+  ['mls-procedure-report.js', '20260802lib6'],
   ['feat_mls_assistant_exact.js', '20260725asst217'],
-  ['feat_mls_outcome_pdf.js', '20260731lib5'],
+  ['feat_mls_outcome_pdf.js', '20260802lib6'],
   ['feat_mls_studygroups.js', '20260722sg1c6'],
   ['feat_comp_report.js', '20260718pr5'],
   ['feat_mls_study_request.js', '20260723sr233']

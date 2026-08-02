@@ -233,19 +233,38 @@
      software he already had. A pong pins the row to ok. */
   var pongOk = false, pongAt = 0;
   function pongTruth() { return pongOk && (Date.now() - pongAt) < 120000; }
+  /* One probe at a time. kickPong() is called from refresh(), which runs on
+     every view change and every probe settle, and its only guard was
+     pongTruth() — which by definition stays false for the whole session on a
+     machine with no extension, i.e. exactly the population this card exists
+     for. Cleanup is a 6s timer, so every call inside that window left another
+     live listener behind. MEASURED: 26 concurrent window|message listeners
+     after 13 seconds of view switching, and mlsPing posted ~1.8x/second, each
+     ping waking all 26 plus the ~20 other bridge listeners.
+     Both siblings in this file already do exactly this — kickConnCheck has
+     lastConnCheck/CONN_CHECK_MS, kickAthProbe has athInFlight/ATH_CACHE_MS.
+     This one was simply missing it. */
+  var pongInFlight = false;
   function kickPong() {
     if (pongTruth()) return;
+    if (pongInFlight) return;
+    pongInFlight = true;
+    /* Released unconditionally, outside safe(): if the probe body below threw
+       before reaching its own cleanup, safe() would swallow it and this flag
+       would latch true for the session — turning a throttle into a permanent
+       mute on a card whose whole job is to notice the extension arriving. */
+    later(function () { pongInFlight = false; }, 6000);
     safe(function () {
       var onPong = function (e) {
         var d = e && e.data;
         if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return;
-        pongOk = true; pongAt = Date.now();
+        pongOk = true; pongAt = Date.now(); pongInFlight = false;
         window.removeEventListener('message', onPong);
         safe(function () { refresh(); });
       };
       window.addEventListener('message', onPong);
       window.postMessage({ source: 'mls-app', type: 'mlsPing', id: 'mlsFrPing' }, '*');
-      later(function () { safe(function () { window.removeEventListener('message', onPong); }); }, 6000);
+      later(function () { pongInFlight = false; safe(function () { window.removeEventListener('message', onPong); }); }, 6000);
     });
   }
   function connTruth() {

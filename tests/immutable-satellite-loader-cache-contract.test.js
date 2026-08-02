@@ -23,7 +23,7 @@ const assets = [
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
-  ['feat_mls_header_exact.js', '20260719hx302', '20260716hx301'],
+  ['feat_mls_header_exact.js', '20260802hx303', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260722pp1c5', '20260702pp1c1'],
   ['feat_mls_recentpts.js', '20260727rp210', '20260722rp3'],
@@ -32,7 +32,7 @@ const assets = [
      file changed three times after '20260728rd328' while the token stood still,
      so a returning browser kept the cached copy. Caught by
      tests/cache-token-cannot-go-stale.test.js. */
-  ['feat_mls_redesign.js', '20260731rd329', '20260728rd327'],
+  ['feat_mls_redesign.js', '20260802rd330', '20260728rd327'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260719sg2e', '20260713sg2d'],
   ['feat_mls_wb_console.js', '20260722wbc131', '20260630wbc1c1-B177'],

@@ -37,7 +37,31 @@
     return Math.max(MIN_PX, Math.round(vh * MAX_VH));
   }
 
+  /* MEASURED: this ran synchronously on every `input` event, and the
+     write-then-read pair below (height='auto', then .scrollHeight) forces a
+     full document layout each time. On this 8,200-node, 195-<style> document
+     that cost 7.1ms per character typed — 550ms per 80 characters, 95% of all
+     input-handler time in the app, and the reason the caret lagged the
+     keyboard while dictating a note. Reverting the module dropped it to
+     0.3ms/char, which is the budget this restores.
+
+     The fix is not to measure less, it is to measure ONCE PER FRAME instead of
+     once per keystroke. The layout still happens and the box still grows to
+     fit; it just no longer happens inside the input handler, and typing faster
+     than 60fps now coalesces into a single measurement. The idle value/cap
+     guard stays where it was — inside the measuring function — so an input
+     event that changed nothing still reads nothing. */
   function fit(ta) {
+    if (!ta) return;
+    var rec = boundMap.get(ta);
+    if (!rec) { fitNow(ta); return; }   // not wired yet (first sizing in wire())
+    if (rec.raf) return;                // a measurement is already queued for this frame
+    var raf = window.requestAnimationFrame;
+    if (typeof raf !== 'function') { fitNow(ta); return; }
+    rec.raf = raf(function () { rec.raf = 0; fitNow(ta); });
+  }
+
+  function fitNow(ta) {
     if (!ta) return;
     try {
       var cap = capPx();
@@ -68,9 +92,9 @@
     ta.style.maxHeight = capPx() + 'px';
     var handler = function () { fit(ta); };
     ta.addEventListener('input', handler);
-    boundMap.set(ta, { handler: handler, prev: prev, lastValue: null, lastCap: 0 });
+    boundMap.set(ta, { handler: handler, prev: prev, lastValue: null, lastCap: 0, raf: 0 });
     bound.push(ta);
-    fit(ta);
+    fitNow(ta);   // first sizing is immediate: the note must not flash unsized
   }
 
   function scan(root) {
@@ -133,6 +157,9 @@
         try {
           var rec = boundMap.get(ta);
           if (rec) {
+            // A queued measurement must not fire after revert has restored the
+            // original height — that would silently re-apply the module.
+            if (rec.raf && window.cancelAnimationFrame) { window.cancelAnimationFrame(rec.raf); rec.raf = 0; }
             ta.removeEventListener('input', rec.handler);
             ta.style.height = rec.prev.height;
             ta.style.minHeight = rec.prev.minHeight;
