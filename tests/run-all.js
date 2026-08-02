@@ -126,6 +126,12 @@ const tests = [
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',
   'schedule-mutating-row-reverify-contract.test.js',
+  /* 3.0.40 candidate contracts (sn-1.1 / er-1.2 / csr-1.1 / pp-1.x / wv-1.x) */
+  'schedule-chip-name-capture-contract.test.js',
+  'schedule-empty-day-settle-contract.test.js',
+  'schedule-pull-reconciliation-contract.test.js',
+  'extension-orphan-neutralization-contract.test.js',
+  'athena-write-verification-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',

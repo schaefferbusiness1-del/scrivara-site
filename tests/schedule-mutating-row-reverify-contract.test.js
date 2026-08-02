@@ -148,7 +148,7 @@ const root = path.join(__dirname, '..');
    in extension-candidates/ so the published repo bytes stay coherent with the
    live feed; on publish, background.js itself carries these changes and the
    candidate path naturally wins either way. Newest candidate wins. */
-const candidateChain = ['3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const candidateChain = ['3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
 const backgroundPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
 const background = fs.readFileSync(backgroundPath, 'utf8');
 
@@ -420,10 +420,36 @@ const DEBRIS_HTML_WITH_ID = DEBRIS_HTML_NO_ID.replace(
   assert.strictEqual(u9.ok, false, 'whole-text pair name verified without an appointment id');
   assert.strictEqual(u9.snapshotParse, 'no-id-on-row');
 
-  // u10: TWO distinct pair runs with an id stay refused as ambiguous - named.
+  // u10 (rev-9, 3.0.40): the OLD expectation here - two distinct pair runs
+  // with an id stay refused as ambiguous - was the live Friday bug itself: a
+  // hidden scheduled-by staff run vetoed the real patient and refused the day.
+  // sn-1.0/1.1's chip anchor exists precisely to break that tie: the run
+  // sitting against the patient's own age/sex chip is per-patient evidence the
+  // bare staff run does not have. With the weld-hardened capture the
+  // whole-text parse now resolves the CHIP-ADJACENT run confidently (id-gated
+  // by sn-1.1), so the row verifies to the patient and the bare second run no
+  // longer vetoes it.
   const u10 = snapKit._snapIdentity(LIVE_WELD.replace('</li>', '<span>Sally Jones</span></li>'), '9:40 AM', '45532929');
-  assert.strictEqual(u10.ok, false, 'a two-pair snapshot was guessed');
-  assert.strictEqual(u10.snapshotParse, 'ambiguous-candidates');
+  assert.strictEqual(u10.ok, true, 'the chip-adjacent run must outrank a bare staff run: ' + JSON.stringify(u10));
+  assert.strictEqual(u10.name, 'Roy Lee', 'the CHIP-ADJACENT run is the patient, never the bare run');
+  // u10b: TWO patient-bound REGIONS still refuse as ambiguous - the chip
+  // tie-break never overrides region-stage ambiguity, which runs first.
+  const u10b = snapKit._snapIdentity(
+    '<li class="filled-appointment-row" data-appointment-id="45532929">' +
+    '<span>9:40 AM</span><a class="encounter-link">Roy Lee</a>' +
+    '<a class="encounter-link">Sally Jones</a></li>',
+    '9:40 AM', '45532929');
+  assert.strictEqual(u10b.ok, false, 'two-region snapshot was guessed: ' + JSON.stringify(u10b));
+  assert.strictEqual(u10b.snapshotParse, 'ambiguous-candidates');
+  // u10c (sn-1.1): the SAME two-run snapshot without an appointment id anywhere
+  // is refused by the id gate even though the chip-adjacent parse is confident -
+  // the whole-text confident-parse lane carries the same id gate as every other
+  // acceptance lane.
+  const u10c = snapKit._snapIdentity(
+    LIVE_WELD.replace(' data-appointment-id="45532929"', '').replace('</li>', '<span>Sally Jones</span></li>'),
+    '9:40 AM', '');
+  assert.strictEqual(u10c.ok, false, 'id-less chip-adjacent snapshot must not verify: ' + JSON.stringify(u10c));
+  assert.strictEqual(u10c.snapshotParse, 'no-id-on-row');
 
   // u11: every verdict names its stage - accepted / foreign-time / id-conflict
   assert.strictEqual(snapKit._snapIdentity(CHURN_HTML, '9:40 AM', '45532929').snapshotParse, 'accepted');
@@ -747,6 +773,12 @@ const DEBRIS_HTML_WITH_ID = DEBRIS_HTML_NO_ID.replace(
       const strip = res => {
         const diag = Object.assign({}, res.providerDiag);
         delete diag.invalidRows;
+        /* pp-1.1 (3.0.40): textOnlyRowCount/textOnlyRows are additive
+           diagnostics of the same class as invalidRows - the merge's
+           accept/reject behaviour stays byte-identical (the completeness gate
+           consuming them lives handler-side and is pinned separately). */
+        delete diag.textOnlyRowCount;
+        delete diag.textOnlyRows;
         return JSON.parse(JSON.stringify({ appts: res.appts, providers: res.providers, providerDiag: diag }));
       };
       fixtures.forEach(([domRows, textRows], index) => {
@@ -792,7 +824,15 @@ const DEBRIS_HTML_WITH_ID = DEBRIS_HTML_NO_ID.replace(
 
   const before = provFrom(priorSrc, '3.0.36'), after = provFrom(background, 'the candidate under test');
   const source = rows => ({ appts: rows.map(r => Object.assign({}, r)), providers: ['Matthew Schaeffer, MD'], diag: {} });
-  const run = (p, domRows, textRows) => p.merge(source(domRows), source(textRows || []));
+  const run = (p, domRows, textRows) => {
+    const res = p.merge(source(domRows), source(textRows || []));
+    /* pp-1.1 (3.0.40): textOnlyRowCount/textOnlyRows are additive diagnostics
+       (same class as invalidRows in the rev-5 section) - the completeness gate
+       consuming them is handler-side and pinned separately; strip them so
+       every A/B in this block compares BEHAVIOUR, not diagnostic vocabulary. */
+    if (res && res.providerDiag) { delete res.providerDiag.textOnlyRowCount; delete res.providerDiag.textOnlyRows; }
+    return res;
+  };
   const flat = v => JSON.parse(JSON.stringify(v || []));
 
   /* --- 1. THE LIVE ROW. The measured shape: seven candidate rows, the 9:40
@@ -1806,6 +1846,14 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
         if (o.diag) delete o.diag.headerProvenance;
         if (o.diag && o.diag.providerRosterReceipt) delete o.diag.providerRosterReceipt.headerProvenance;
         if (o.providerRosterReceipt) delete o.providerRosterReceipt.headerProvenance;
+        /* 3.0.40 additive diagnostics (er-1.2 served-day provenance + pp-1.2
+           census reconciliation + settled-empty proof) - all pinned by their
+           own contracts (schedule-empty-day-settle, pull-reconciliation);
+           stripped here so this A/B keeps comparing 3.0.37-era behaviour. */
+        if (o.diag) {
+          delete o.diag.unwalkedRows; delete o.diag.schedDateScope;
+          delete o.diag.schedDateAmbiguous; delete o.diag.emptyProof; delete o.diag.emptyStable;
+        }
         return o;
       };
       const differed = [];

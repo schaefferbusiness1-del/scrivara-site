@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MLS recorder</title>
+</head>
+<body>
+  <!-- MV3 offscreen document. No UI. Hosts the §35 segmented recorder so
+       getUserMedia works while the doctor stays on athenaOne. The service
+       worker opens this with reason "USER_MEDIA". Audio is captured here and
+       complete segments are relayed to background.js for authenticated upload;
+       no transcript text is ever produced in this document. -->
+  <script src="offscreen.js"></script>
+</body>
+</html>

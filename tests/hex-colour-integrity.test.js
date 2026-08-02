@@ -49,9 +49,13 @@ const PREEXISTING = {
   '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"
   '#5b7186': 19,  // "b718"
-  '#6b7280': 5,   // "b728"
+  '#6b7280': 6,   // "b728" — +1 on 2026-08-02: extension-candidates/3.0.40 is
+                  //          the first candidate staged with ALL 20 files (the
+                  //          release-coherence copy), so review_screen.js's
+                  //          copy of this colour now counts twice repo-wide
   '#6B756E': 1,   // "b756"
-  '#B07636': 42,  // "b076"
+  '#B07636': 45,  // "b076" — +3 on 2026-08-02, same cause: the 3.0.40
+                  //          candidate's mls-popup.css copy (3 occurrences)
   '#6b7684': 1,   // "b768"
   '#b9770a': 6,   // "b977"
   '#b7791f': 1,   // "b779" — AuthPilot amber (--mod), byte-identical since the
