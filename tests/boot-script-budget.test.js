@@ -488,7 +488,13 @@ for (const f of featFiles) {
 }
 
 const OBSERVER_CEILING = 59;   // 60 at b596; one retired when the caption double-escape was fixed at source
-const INTERVAL_CEILING = 214;
+/* 215 (2026-08-02): +1 for the copilot stale-request watchdog (standing
+ * review #10) — it exists only while a request is in flight and is cleared
+ * in the settle/finally/revert paths, so it is a bounded guard, not a
+ * forever-poller. The same change DELETED two permanent whole-document
+ * constructs elsewhere (the zero-hit legacy-sign observer and the fixpack
+ * prefill wrappers), so the app's steady-state timer load went DOWN. */
+const INTERVAL_CEILING = 215;
 
 if (docObservers > OBSERVER_CEILING) {
   failed = true;
