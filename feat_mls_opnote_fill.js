@@ -1382,6 +1382,9 @@
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
     box.className = 'onf-fillbox';
+    /* mg-1.1.0 moment: the box is BORN once per draft — feat_mls_magic styles
+       .mgx2-born; re-renders reset className above so it can never replay. */
+    if (!existing) box.className = 'onf-fillbox mgx2-born';
     safe(function () { box.setAttribute('data-onf-for', ta.id); });
     /* onf-2.10.0 (owner: "way too many fields — it should know way more"):
        fields the app filled CONFIDENTLY (chart / schedule / settings /
@@ -1564,6 +1567,24 @@
       if (!val || val === OTHER) { toast('Choose or type the answer first.', 'err'); return; }
       if (!saveAnyFieldDefault(label, val)) { toast(!defaultOffered(label) ? 'This field is a fact about one patient or one encounter - it cannot be reused across charts.' : 'Sign in fully before saving an op-note default.', 'err'); return; }
       applyDefaultToOpen(label, val);
+      /* mg-1.1.0 moment: the FIELD acknowledges the pin at the click, not just
+         the toast rail — feat_mls_magic styles .onf-field.mgx2-pinned. Only on
+         this explicit success path. The box is REBUILT during this click (a
+         traced add landed on a node the rebuild then destroyed), so the class
+         goes on one MICROTASK later — after every synchronous rebuild in this
+         task, found live by the control id, and never on a ghost. A microtask
+         is not a timer: hidden-tab freezing does not apply to it. */
+      var pinnedFid = this.getAttribute && this.getAttribute('data-onf-default-control');
+      safe(function () {
+        Promise.resolve().then(function () {
+          safe(function () {
+            var liveCtrl = pinnedFid && document.getElementById(pinnedFid);
+            var f = liveCtrl && liveCtrl.closest && liveCtrl.closest('.onf-field');
+            if (!f) return;
+            f.classList.remove('mgx2-pinned'); void f.offsetWidth; f.classList.add('mgx2-pinned');
+          });
+        });
+      });
       toast('Saved — this answer will fill the same field in future op notes.', 'ok');
     });
     /* onf-2.9.0: per-field mics + the dictate-and-fill pad */

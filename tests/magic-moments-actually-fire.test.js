@@ -227,6 +227,45 @@ ok(uncovered.length === 0,
   'EVERY animating selector appears in the reduced-motion off-switch',
   uncovered.join('\n        '));
 
+/* ------- 5b. mg-1.1.0: the status moments fire on FACTS, not on calls ---- */
+/* The wraps must celebrate only when row state proves delivery: a bumped
+   _genSeq (a draft landed) or a present _noteId (a save landed). A call that
+   returns empty-handed must land NOTHING — the generation-complete lesson,
+   applied to the op-note session. */
+const e3 = makeEnv();
+const st3 = e3.doc.createElement('div');
+st3.id = 'opPrepStatus'; st3.offsetWidth = 120;
+e3.doc._nodes.set('opPrepStatus', st3);
+e3.win._opPrep = [{ _genSeq: 0 }];
+let draftDelivers = false;
+e3.win.opPrepGenerateOne = function (i) { if (draftDelivers) e3.win._opPrep[i]._genSeq++; };
+e3.win.opPrepSave = function (i) { if (draftDelivers) e3.win._opPrep[i]._noteId = 'n1'; };
+const api3 = loadMagic(e3);
+ok(e3.win.opPrepGenerateOne.__mgxWrap === true, 'opPrepGenerateOne is wrapped at load');
+ok(e3.win.opPrepSave.__mgxWrap === true, 'opPrepSave is wrapped at load');
+
+e3.win.opPrepGenerateOne(0);
+ok(!st3.classList.contains('mgx2-good'),
+  'A DRAFT THAT DID NOT LAND IS NOT CELEBRATED (_genSeq unmoved)',
+  'every failure path returns before _genSeq moves; the moment must ask the fact');
+e3.win.opPrepSave(0);
+ok(!st3.classList.contains('mgx2-good'),
+  'A SAVE THAT DID NOT LAND IS NOT CELEBRATED (_noteId absent)');
+
+draftDelivers = true;
+e3.win.opPrepGenerateOne(0);
+ok(st3.classList.contains('mgx2-good'),
+  'A DELIVERED DRAFT SETTLES THE STATUS LINE (fact: _genSeq moved)');
+st3.classList.remove('mgx2-good');
+e3.win.opPrepSave(0);
+ok(st3.classList.contains('mgx2-good'),
+  'A LANDED SAVE SETTLES THE STATUS LINE (fact: _noteId present)');
+
+api3.revert();
+ok(e3.win.opPrepGenerateOne.__mgxWrap === undefined && e3.win.opPrepSave.__mgxWrap === undefined,
+  'revert() unwraps both op-note wraps',
+  'a wrap that survives revert is a leak into another lane’s function');
+
 /* ---------------- 6. revert leaves nothing behind --------------------- */
 const e2 = makeEnv();
 const api2 = loadMagic(e2);
