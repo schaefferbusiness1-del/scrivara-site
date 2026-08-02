@@ -386,8 +386,9 @@ const FLOOR = 200;
  * is therefore enforced in late-surfaces-stay-deferred.test.js. Floor remains
  * 20 below the ceiling per the failure message's own instruction, so the
  * remaining win cannot erode back one feature at a time. */
-const EAGER_CEILING = 196;
-const EAGER_FLOOR = 176;
+/* 196 -> 168 on 2026-08-02: the 28-loader idle sweep — analyzed-safe satellite loaders moved in place to the requestIdleCallback pattern (168 eager / 84 deferred). Floor stays 20 below per the failure message's own instruction. */
+const EAGER_CEILING = 168;
+const EAGER_FLOOR = 148;
 
 /* A window of source before the reference is enough to tell how the insertion
  * is scheduled: these loader lines are single self-contained IIFEs. */

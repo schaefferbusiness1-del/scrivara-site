@@ -19,7 +19,13 @@ assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.
 // "Open full workspace" controls even after DaySwitch removes its list.
 {
   const loaderStart = connectSource.indexOf(";(function(){try{\n  var A='feat_mls_cross_day_context.js'");
-  const loaderEnd = connectSource.indexOf("\n;(function(){try{var A='feat_mls_portal_request_inbox.js'", loaderStart);
+  /* 2026-08-02: the end anchor is the NEXT loader's filename walked back to
+     its own line start — the portal-inbox loader moved to the deferred
+     (sched) form in the 28-loader idle sweep, so its old literal opening no
+     longer exists, and the region is EXECUTED below so it must end on a line
+     boundary, never mid-statement. Survives either loader spelling. */
+  const inboxAt = connectSource.indexOf("feat_mls_portal_request_inbox.js", loaderStart);
+  const loaderEnd = inboxAt > 0 ? connectSource.lastIndexOf("\n;(function(){", inboxAt) : -1;
   assert(loaderStart >= 0 && loaderEnd > loaderStart, 'could not isolate the xdc hot-refresh loader');
   const loader = connectSource.slice(loaderStart, loaderEnd);
   const removed = [];
