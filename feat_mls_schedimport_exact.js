@@ -3117,7 +3117,7 @@
                  burned ~40 min; only one sweep pass fit). */
               var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
-                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
               } catch (vDeadlineErr) {
                 var vdMsg = String(vDeadlineErr && vDeadlineErr.message || vDeadlineErr || "");
                 /* si-1.8.1: same transient-runner-death recovery as the chart
@@ -3566,6 +3566,10 @@
     return { rows: rows, unresolved: unresolved };
   }
 
+  /* fg-1.0 (3.0.41): true only while the USER-INITIATED retry batch runs -
+     batches are single-flight (withPatientBatch + the cross-tab shield), so a
+     module flag cannot leak into a quiet pull. */
+  var __historyRetryForeground = false;
   function retryFailedHistory(source, onStatus) {
     var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
     var retry = Array.isArray(history.retry) ? history.retry : [];
@@ -3592,7 +3596,10 @@
     }
     return runManagedAthenaOperation(function () {
       return withPatientBatch("history-retry", function () {
-        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {});
+        __historyRetryForeground = true;
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
+          function (v) { __historyRetryForeground = false; return v; },
+          function (e) { __historyRetryForeground = false; throw e; });
       });
     }, retryBusy).then(function (receipt) {
       receipt.retryOf = String(history.requestId || "");

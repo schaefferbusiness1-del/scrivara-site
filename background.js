@@ -10852,6 +10852,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   var activeAllVisitsPromise = null;
+  /* fg-1.0 (3.0.41): front the athena tab for a USER-INITIATED bodies retry
+     and always restore what the doctor had focused. Never called on quiet
+     pulls - the request must carry foregroundOk:true, which only the app's
+     Retry-failed-histories lane sets. */
+  async function __mlsFrontAthenaForRead() {
+    try {
+      var allT = await chrome.tabs.query({});
+      var athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
+      if (!athT || athT.id == null) return null;
+      var prevWin = null;
+      try { var w = await chrome.windows.getLastFocused(); prevWin = (w && w.focused) ? w.id : null; } catch (eW) {}
+      var prevActive = allT.find(function (t) { return t.active && t.windowId === athT.windowId; });
+      var state = {
+        prevTabId: (prevActive && prevActive.id !== athT.id) ? prevActive.id : null,
+        prevWinId: (prevWin != null && prevWin !== athT.windowId) ? prevWin : null
+      };
+      await chrome.tabs.update(athT.id, { active: true });
+      try { await chrome.windows.update(athT.windowId, { focused: true }); } catch (eF) {}
+      /* let the newly visible panes begin hydrating before the read walks them */
+      await new Promise(function (rs) { setTimeout(rs, 900); });
+      return state;
+    } catch (eFg) { return null; }
+  }
+  function __mlsRestoreFocusAfterRead(state) {
+    if (!state) return;
+    try { if (state.prevTabId != null) chrome.tabs.update(state.prevTabId, { active: true }); } catch (e1) {}
+    try { if (state.prevWinId != null) chrome.windows.update(state.prevWinId, { focused: true }); } catch (e2) {}
+  }
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
     var appTabId = sender && sender.tab && sender.tab.id;
@@ -10885,15 +10913,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             });
             return;
           }
-          var thisRead = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
+          /* fg-1.0: front-for-read is bounded to THIS read and always undone in finish(). */
+          var __fgState = null;
+          var thisRead;
+          if (msg.foregroundOk === true) {
+            thisRead = __mlsFrontAthenaForRead().then(function (fg) {
+              __fgState = fg;
+              var inner = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
+              thisRead.__mlsInner = inner;
+              return inner;
+            });
+          } else {
+            thisRead = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
+          }
           activeAllVisitsPromise = thisRead;
           function finish(value) {
             /* Clear single-flight ownership before responding. Cleanup is
                registered immediately after sendResponse returns and is never
                awaited by this completed read. */
             if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null;
+            try { __mlsRestoreFocusAfterRead(__fgState); __fgState = null; } catch (eRf) {}
             sendResponse(value);
-            try { if (thisRead.__mlsAfterResponseCleanup) thisRead.__mlsAfterResponseCleanup(); } catch (eCleanup) {}
+            try { var __clNow = thisRead.__mlsAfterResponseCleanup || (thisRead.__mlsInner && thisRead.__mlsInner.__mlsAfterResponseCleanup); if (__clNow) __clNow(); } catch (eCleanup) {}
           }
           thisRead.then(finish, function (e) { finish({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); });
         });

@@ -29,7 +29,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candidateChain = ['3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const candidateChain = ['3.0.41', '3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
 const bgPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
 const background = fs.readFileSync(bgPath, 'utf8');
 

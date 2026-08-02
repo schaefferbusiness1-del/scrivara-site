@@ -132,6 +132,9 @@ const tests = [
   'schedule-pull-reconciliation-contract.test.js',
   'extension-orphan-neutralization-contract.test.js',
   'athena-write-verification-contract.test.js',
+  /* fg-1.0 (3.0.41): the user-initiated retry may front the athena tab (panes
+     never hydrate occluded) and must always restore focus */
+  'history-retry-foreground-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',

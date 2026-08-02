@@ -17,7 +17,7 @@ const root = path.resolve(__dirname, '..');
 /* er-1.2 (3.0.40): pin the STAGED candidate reader when one exists, exactly
    like the other schedule contracts - on publish the root carries the same
    bytes and the candidate path naturally wins either way. */
-const candidateChain = ['3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
+const candidateChain = ['3.0.41', '3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
 const bgPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
 const bg = fs.readFileSync(bgPath, 'latin1');
 

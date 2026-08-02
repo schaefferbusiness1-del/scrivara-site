@@ -1730,7 +1730,7 @@
        background echoes this exact id. */
     post(origin, 'mlsAppVisitsProgress', pendingMeta(pending, { id: requestId, requestId: requestId, message: 'MLS Assist accepted the history request...' }));
     try {
-      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId, deadlineAt: deadlineAt }), function (res) {
+      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', foregroundOk: d.foregroundOk === true, hint: d.hint || {}, requestId: requestId, deadlineAt: deadlineAt }), function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         var target = finishPending(requestId);
         if (!target) return;

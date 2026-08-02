@@ -38,7 +38,12 @@ const handler = visitIife.slice(handlerStart, handlerEnd);
 assert(visitIife.includes('var visitCleanupTail = Promise.resolve();'), 'AllVisits lacks a serialized cleanup queue');
 assert(visitIife.includes('function waitForVisitCleanup(callerDeadlineAt)'), 'AllVisits lacks a bounded cleanup barrier');
 assert(handler.indexOf('waitForVisitCleanup(msg.deadlineAt)') < handler.indexOf('runAllVisits(appTabId'), 'next AllVisits read starts before the prior cleanup barrier');
-assert(handler.indexOf('sendResponse(value);') < handler.indexOf('thisRead.__mlsAfterResponseCleanup()'), 'the completed read waits for cleanup before responding');
+/* fg-1.0 (3.0.41): the cleanup call gained a fallback lookup (the foreground
+   wrapper promise carries the reader's cleanup on __mlsInner), so the pin
+   tracks the new invocation while asserting the SAME order: respond first,
+   clean up after. */
+assert(handler.indexOf('sendResponse(value);') < handler.indexOf('if (__clNow) __clNow();'), 'the completed read waits for cleanup before responding');
+assert(handler.includes('thisRead.__mlsAfterResponseCleanup || (thisRead.__mlsInner && thisRead.__mlsInner.__mlsAfterResponseCleanup)'), 'the cleanup lookup must cover the foreground wrapper promise');
 
 function createRuntime() {
   const listeners = [];
