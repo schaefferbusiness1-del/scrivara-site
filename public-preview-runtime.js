@@ -434,7 +434,15 @@
       field.setAttribute('title', 'Sample workspace: editing is disabled.');
     } else if (/^(?:checkbox|radio|file|submit|reset)$/.test(type)) {
       markBlocked(field, 'Sample workspace: this control is disabled.');
-    } else if (field.tagName === 'SELECT' && !(field.closest && field.closest('#mlsEz3'))) {
+    } else if (field.tagName === 'SELECT' && !(field.closest && (field.closest('#mlsEz3') || field.closest('#opPrepModal')))) {
+      /* pv-7.1.2: op-prep room selects (template picker, Fields-box dropdowns,
+         bulk apply) stay LIVE — the sample day's whole promise is "MLS drafts
+         each procedure from your templates", and template-fill is local string
+         work against memory storage. Blocking them made the advertised flow
+         structurally impossible: the dropdown showed the choice, the state
+         never recorded it, and drafting told the prospect to do the thing
+         they had just done. Save/send/record inside the room stay blocked by
+         the dangerous-words click gate exactly as before. */
       markBlocked(field, 'Sample workspace: settings cannot be changed.');
     }
   }

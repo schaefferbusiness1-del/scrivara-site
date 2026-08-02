@@ -16401,7 +16401,22 @@ async function opPrepGenerateOne(i){
     if(appt.facilityName){ctx.facility=String(appt.facilityName);ctx.facilityName=String(appt.facilityName);}
     row._ctx=ctx;
     if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
-    var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
+    var out;
+    if(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled===true){
+      /* pv-7.1.2: the sample workspace drafts LOCALLY — the template verbatim,
+         its placeholders handed to the canonical parser below so the Fields
+         box works exactly like the real thing. No AI call, no network:
+         the preview boundary blocks fetch, and before this branch the demo's
+         own "✨ Draft op note" always died on that wall. Starter templates
+         still carry legacy [GAUGE]-style tokens the canonical parser cannot
+         see (the signed-in AI path converts them server-side), so they are
+         rewritten to [FILL: gauge] form here — same field labels, same
+         Fields-box machinery as the real product. */
+      var pvNote=String(tpl.text||'').replace(/\[(?!\[)([A-Z][A-Z /+&-]{2,30})\](?!\])/g, function(_m,p){ return '[FILL: '+p.toLowerCase()+']'; });
+      out={ note: pvNote, missing: [], templateMode: 'verbatim-sample' };
+    } else {
+      out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
+    }
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
     /* b858: an unambiguous "the generator ran and produced this" stamp. Draft-all
@@ -31504,7 +31519,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=20260726pv711"></script>
+<script src="public-preview-runtime.js?v=20260802pv712"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the

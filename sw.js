@@ -12,7 +12,7 @@ const SHELL = [
   '/ScribeFlow.html',
   '/clinical-state-purge.js?v=20260718csp1',
   '/public-preview-policy.js?v=b497',
-  '/public-preview-runtime.js?v=20260726pv711',
+  '/public-preview-runtime.js?v=20260802pv712',
   '/index.html',
   '/manifest.webmanifest',
   '/icon-192.png',
