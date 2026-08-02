@@ -12,6 +12,7 @@ const tests = [
   'boot-script-budget.test.js',
   'public-preview-policy.test.js',
   'public-preview-runtime.test.js',
+  'preview-route-canonicalize-runtime.test.js',
   'public-preview-integration-contract.test.js',
   'homepage-self-guided-preview.test.js',
   'public-release-truth-boundary.test.js',
