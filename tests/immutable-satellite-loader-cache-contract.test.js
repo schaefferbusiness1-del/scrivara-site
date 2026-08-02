@@ -16,10 +16,10 @@ const assets = [
   ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
   ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
-  ['feat_mls_asst_fix.js', '20260723asst144', '20260719asst143'],
+  ['feat_mls_asst_fix.js', '20260802asst145', '20260719asst143'],
   ['feat_mls_b121_pack.js', '20260728p2c6', '20260728p2c5'],
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260729chk3038', '20260728chk3031'],
+  ['feat_mls_checker.js', '20260802chk3038', '20260728chk3031'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -34,13 +34,13 @@ const assets = [
      tests/cache-token-cannot-go-stale.test.js. */
   ['feat_mls_redesign.js', '20260802rd330', '20260728rd327'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
-  ['feat_mls_study_calm.js', '20260719sg2e', '20260713sg2d'],
+  ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_wb_console.js', '20260722wbc131', '20260630wbc1c1-B177'],
-  ['feat_mls_widget_deck.js', '20260719wd110', '20260713wd2'],
-  ['feat_mls_widgetinsert.js', '20260719wi3', '20260624wi2c1'],
+  ['feat_mls_widget_deck.js', '20260802wd111', '20260713wd2'],
+  ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260724cmd104', '20260719cmd103'],
-  ['feat_mls_copilot_request_safety.js', '20260726crs120', '20260718crs111'],
+  ['feat_mls_copilot_request_safety.js', '20260802crs121', '20260718crs111'],
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
@@ -60,7 +60,7 @@ for (const [asset, token, retired] of assets) {
   assert(!connect.includes(retired), `${asset} still exposes retired cache token ${retired}`);
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260729chk3038'),
+assert(staging.includes('feat_mls_checker.js?v=20260802chk3038'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
