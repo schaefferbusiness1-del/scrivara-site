@@ -362,7 +362,6 @@
       '.mls-sg-btn{background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;font:inherit}' +
       '.mls-sg-btn.alt{background:#2E6A4B}.mls-sg-btn.gray{background:#64748b}.mls-sg-btn:disabled{opacity:.5;cursor:default}' +
       '.mls-sg-muted{color:#64748b;font-size:12px}.mls-sg-pill{background:#eff6ff;color:#2E6A4B;border-radius:999px;padding:2px 9px;font-size:12px}' +
-      '.mls-sg-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px 10px;font-size:12px}' +
       '.mls-sg-ptlist{max-height:200px;overflow:auto;border:1px solid #f1f5f9;border-radius:8px}' +
       '.mls-sg-ptlist div{padding:5px 9px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between}' +
       '.mls-sg-out svg{max-width:100%;height:auto;border:1px solid #eee;border-radius:8px}';

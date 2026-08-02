@@ -590,7 +590,7 @@
     if (node.nodeType !== 1) { node = node.parentElement; }
     if (!node) { return false; }
     var sel = '#visitView, #visitHero, #' + PANEL_ID + ', #transcript, #noteBox, #heroPtName, #captureBtn';
-    try { return !!(node.matches(sel) || node.closest(sel) || node.querySelector(sel)); } catch (e) { return false; }
+    try { return !!(node.matches(sel) || node.closest(sel)); } catch (e) { return false; }
   }
 
   function relevantMutations(records) {
@@ -612,9 +612,8 @@
       _bootObs.observe(document.body, {
         childList: true,
         subtree: true,
-        characterData: true,
         attributes: true,
-        attributeFilter: ['class', 'style', 'aria-pressed']
+        attributeFilter: ['class', 'aria-pressed']
       });
     } catch (e) {}
   }

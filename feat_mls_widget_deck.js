@@ -192,7 +192,9 @@
       var dst = deck.querySelector('[data-body="' + list[i].id + '"]');
       if (!dst) continue;
       var html = src ? src.innerHTML : '';
-      if (dst.__mirror !== html) { dst.innerHTML = html; dst.__mirror = html; }
+      if (dst.__mirror === html) continue;
+      if (dst.innerHTML !== html) dst.innerHTML = html;
+      dst.__mirror = html;
     }
   }
   function sync() {
@@ -205,7 +207,8 @@
     /* Same-id edits must rebuild the card heading/description/actions. The old
        id-only key left stale doctor-visible content until a reload. */
     var review = reviewState();
-    var key = 'review:' + review.hiddenCount + ':' + review.titleConflictCount + '|' + list.map(function (w) {
+    var key = 'pt:' + (typeof window.getActivePtId === 'function' ? window.getActivePtId() : '') +
+      '|review:' + review.hiddenCount + ':' + review.titleConflictCount + '|' + list.map(function (w) {
       var semantic = safe(function () { return isFn(window.cwSemanticFingerprint) ? window.cwSemanticFingerprint(w) : ''; }, '');
       return JSON.stringify([w.id, semantic, w.emoji || '', w.description || '', w.auto !== false, w.originKey || '']);
     }).join('|');

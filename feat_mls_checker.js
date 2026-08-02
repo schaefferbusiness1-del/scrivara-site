@@ -241,7 +241,11 @@
             'Wait for the quota to reset or top up the OpenAI plan on the backend. MLS pulls/calendar still work; only AI drafting is paused.', 'HTTP 429');
           if (st >= 500) return R('fail', 'AI-007', 'The AI backend returned a server error (HTTP ' + st + ').',
             'The Render backend may be waking or erroring -- retry shortly; check the backend logs if it persists.', 'HTTP ' + st);
-          // 200/400/401/403/404 all prove the service is reachable and NOT quota-limited.
+          if (st === 401 || st === 403) return R('fail', 'AI-007', 'The AI backend answered HTTP ' + st + ' -- your session is not authorised, so AI drafting will fail.',
+            'Sign out and back in, then re-run the check.', 'HTTP ' + st);
+          if (st === 404) return R('unknown', 'AI-007', 'The AI backend answered HTTP 404 -- the copilot endpoint was not found, so this probe cannot prove AI drafting works.',
+            'The backend may have moved or renamed the endpoint -- check the deployed backend version.', 'HTTP 404');
+          // 200/400 prove the service is reachable, not quota-limited, and accepting our calls.
           return R('pass', 'AI-007', '', (res.ok ? '' : 'Reachable but returned HTTP ' + st + ' for the health probe (not a quota issue).'),
             'Backend reachable, HTTP ' + st + (st === 429 ? '' : ' (no 429 quota error).'));
         }).catch(function (e) {

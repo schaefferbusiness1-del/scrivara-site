@@ -215,7 +215,7 @@
       ' text-transform:uppercase; color:var(--muted); margin:18px 0 8px; }',
 
     /* mode + day pickers: full-width, left-aligned, one decision per row */
-    B + '#opPrepModeRow{ flex-direction:column; gap:6px !important; margin:2px 0 12px; }',
+    B + '#opPrepModeRow{ flex-direction:column; gap:6px !important; margin:2px 0 12px !important; }',
     /* 2026-07-29 REGRESSION FIX. b795 set `background:var(--bg) !important` here.
        opPrepRender rewrites style.cssText on these two buttons on EVERY render
        with `background:#204034;color:#fff` for the ACTIVE mode - so the
@@ -232,7 +232,7 @@
     B + '#opPrepModeRow button[aria-pressed="false"]:before{ content:"\\00a0\\00a0\\00a0"; }',
     B + '#opPrepDayRow{ flex-direction:column; align-items:stretch !important;' +
       ' gap:8px !important; background:var(--bg); border:1px solid var(--line);' +
-      ' border-radius:16px; padding:12px; margin:0 0 12px; }',
+      ' border-radius:16px; padding:12px; margin:0 0 12px !important; }',
     B + '#opPrepDayRow button{ border-radius:10px !important; text-align:left;' +
       ' background:var(--card); min-height:38px; }',
     B + '#opPrepDayRow input{ width:100%; box-sizing:border-box; min-height:38px;' +

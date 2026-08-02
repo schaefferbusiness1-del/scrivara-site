@@ -246,6 +246,12 @@
     safe(function () { window.__mlsWi.installed = false; });
   }
 
+  /* a patient switch invalidates every per-widget signature: the same widget
+     re-rendering identical-length content for the NEW patient must still surface. */
+  safe(function () {
+    window.addEventListener('mls:active-patient-changed', function () { _lastSig = {}; });
+  });
+
   window.__mlsWi = {
     installed: true,
     version: VERSION,

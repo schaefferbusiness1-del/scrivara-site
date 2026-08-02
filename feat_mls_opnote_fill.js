@@ -60,7 +60,6 @@
       '.onf-fillbox .onf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}',
       '.onf-fillbox label{display:flex;flex-direction:column;gap:3px;font:700 11px/1.3 system-ui;color:#5a4a24;}',
       '.onf-fillbox input,.onf-fillbox select{font:600 12.5px system-ui;padding:5px 8px;border:1px solid #d9c48f;border-radius:7px;background:#fff;color:#3a2f12;}',
-      '.onf-fillbox .onf-done{border-color:#8fce9e;background:#f2fbf4;}',
       '.onf-fillbox label.onf-has input,.onf-fillbox label.onf-has select{border-color:#8fce9e;background:#f6fdf8;}',
       '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',

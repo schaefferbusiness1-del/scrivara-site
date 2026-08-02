@@ -128,12 +128,15 @@ assert(!connect.includes('__mlsPatientStoreHasPending'), 'retired worker-journal
   assert.strictEqual(first.length, 2, 'wrapped getPatients wrong result');
   const callsAfterFirst = getItemCalls;
   win.getPatients(); win.getPatients(); win.getPatients();
-  assert.strictEqual(getItemCalls, callsAfterFirst, 'VER fast path must serve hits WITHOUT getItem');
-  /* a write through the (wrapped) prototype must invalidate */
+  /* standing review #2 (BLOCKER): a cached patients parse strips the rowguard
+     __mlsReadGen generation stamp and bypasses the open-batch branch in the
+     base getPatients — so the PATIENTS pair now DELEGATES to the original on
+     every read. The base app's own __mlsPtsMemo (b377) makes the cache
+     redundant for this key. Reads must consult storage every time. */
+  assert(getItemCalls > callsAfterFirst, 'patients reads must delegate to the original (rowguard stamp), never serve a cached parse');
   localStorage.setItem('u::patients', JSON.stringify([{ id: 'a' }]));
   const after = win.getPatients();
-  assert.strictEqual(after.length, 1, 'setItem did not invalidate the VER fast path');
-  assert(getItemCalls > callsAfterFirst, 'post-write read must consult storage again');
+  assert.strictEqual(after.length, 1, 'delegated read must see the new write');
 }
 
 /* ---------- 6. sanitize sweep batches + self-retires ---------- */

@@ -553,7 +553,6 @@
       "#" + BAR_ID + " button.ne-b[disabled]{opacity:.45;cursor:default}",
       "#" + BAR_ID + " .ne-sec{display:flex;align-items:center;gap:5px;border:1px solid rgba(120,150,220,.25);border-radius:8px;padding:3px 6px;background:#fff}",
       "#" + BAR_ID + " .ne-sec .ne-nm{font:700 11.5px system-ui;color:#1f2d40}",
-      "#" + BAR_ID + " .ne-lockicon{font-size:12px}",
       "#" + BAR_ID + " .ne-note{font:11px system-ui;color:#5b6b82}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(st);

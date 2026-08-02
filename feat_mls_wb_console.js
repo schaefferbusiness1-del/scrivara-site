@@ -98,9 +98,7 @@
       '#' + MODAL_ID + ' .wbc-mini{cursor:pointer;font-size:11px;font-weight:600;border:1px solid #D9D6CD;background:#fff;border-radius:7px;padding:4px 9px}' +
       '#' + MODAL_ID + ' .wbc-ft{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px 16px;position:sticky;bottom:0;background:#fff;border-top:1px solid #E7E5DD}' +
       '#' + MODAL_ID + ' .wbc-done{cursor:pointer;font-weight:700;border:1px solid #204034;background:#204034;color:#fff;border-radius:9px;padding:9px 16px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}' +
-      '.mlswbc-launch{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #2E6A4B;background:#EAF1EE;color:#204034;margin-top:8px}' +
-      '.mlswbc-sign{cursor:pointer;font-weight:700;font-size:12px;padding:8px 13px;border-radius:9px;border:1px solid #204034;background:#204034;color:#fff;margin-top:8px;margin-left:8px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}' +
-      '.mlswbc-signcap{display:block;font-size:11px;color:#55605A;margin-top:5px;max-width:340px;line-height:1.35}';
+      '.mlswbc-launch{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #2E6A4B;background:#EAF1EE;color:#204034;margin-top:8px}';
     (document.head || document.documentElement).appendChild(s);
   }
 

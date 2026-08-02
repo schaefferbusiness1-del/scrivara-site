@@ -448,11 +448,11 @@
        controls rather than a list of people. The row controls stay present and
        full-size - touch targets are untouched, nothing is hover-only - they are
        just quiet until the row is hovered, focused or active. Names lead. */
-    'body.mls-calm #ptList .pt-row button,body.mls-calm #ptList li button{opacity:.42;',
+    'body.mls-calm #ptList li button{opacity:.42;',
     'transition:opacity var(--mls-fast) linear}',
-    'body.mls-calm #ptList .pt-row:hover button,body.mls-calm #ptList li:hover button,',
-    'body.mls-calm #ptList .pt-row:focus-within button,body.mls-calm #ptList li:focus-within button,',
-    'body.mls-calm #ptList .pt-row.on button,body.mls-calm #ptList li.on button{opacity:1}',
+    'body.mls-calm #ptList li:hover button,',
+    'body.mls-calm #ptList li:focus-within button,',
+    'body.mls-calm #ptList li.on button{opacity:1}',
     'body.mls-calm #ptList button:focus-visible{opacity:1;outline:2px solid #2E6A4B;outline-offset:2px}',
 
     /* patient screen: reference blocks fold to one line */
@@ -509,7 +509,6 @@
     '#mlsToolsMenu .r .rn{overflow-wrap:anywhere}',
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
     '#mlsToolsMenu .sep{height:1px;margin:5px 8px;background:rgba(0,0,0,.07)}',
-    '#mlsToolsMenu .r.classic{color:#68736B}',
     /* Section captions. Quiet by construction - a caption that competes with
        the rows under it turns four labels into four more things to read. The
        rule above each section after the first is what makes the grouping
@@ -743,7 +742,6 @@
     /* Scoped by the dock id so it cannot lose a specificity tie to the base rule. */
     '#mlsDock #mlsDockAsk,#mlsDock #mlsDockAsk:focus{width:96px;flex:1 1 auto}',
     '#mlsDock #mlsDockAskWrap{flex:1 1 auto;min-width:0}',
-    '#mlsDock #mlsDockClassic{padding:7px 8px;font-size:10.5px}',
     '#mlsAskResults{width:min(340px,86vw)}',
 
     /* The stage rail could not show its last stage on a phone. Measured at 375px

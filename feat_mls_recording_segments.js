@@ -319,7 +319,6 @@
       "#" + HOST_ID + " .rs-imp{cursor:pointer;border:1px solid #cfd9ea;background:#fff;color:#204034;border-radius:9px;padding:8px 11px;font:600 12px system-ui}",
       "#" + HOST_ID + " .rs-list{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}",
       "#" + HOST_ID + " .rs-row{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid rgba(120,150,220,.2);border-radius:10px;padding:7px 9px}",
-      "#" + HOST_ID + " .rs-row .rs-lbl{font:700 12px system-ui;color:#1f2d40;flex:0 0 auto}",
       "#" + HOST_ID + " .rs-row select{font:12px system-ui;border:1px solid #cfd9ea;border-radius:7px;padding:3px 5px}",
       "#" + HOST_ID + " .rs-row .rs-wc{font:11px system-ui;color:#5b6b82;margin-left:auto}",
       "#" + HOST_ID + " .rs-row .rs-del{cursor:pointer;border:0;background:transparent;color:#a12626;font:700 13px system-ui}",

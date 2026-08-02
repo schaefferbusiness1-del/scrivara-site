@@ -586,11 +586,12 @@
     var active = pullActive();
 
     /* HIGHEST PRIORITY: if today's patients are loaded and no pull is in
-       flight, we are DONE — never leave a spinner or an error card sitting on
-       top of a schedule that actually arrived (covers a recovery that lands
-       patients while a terminal card is showing). */
+       flight, we are DONE — never leave a spinner sitting on top of a schedule
+       that actually arrived. A TERMINAL failure card is exempt: it carries the
+       diagnosis + Retry and must survive until the user acts (a partial day can
+       load patients while the failure still matters). */
     var tc = todayCount();
-    if (tc != null && tc > 0 && !active) {
+    if (tc != null && tc > 0 && !active && ST.phase !== 'terminal') {
       if (ST.phase !== 'done') { ST.phase = 'done'; ST.stepKey = 'ready'; ST.lastGoodKey = 'prepare'; removeSpinnerHide(); persist(); }
       render(); return;
     }
