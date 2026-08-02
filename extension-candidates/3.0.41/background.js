@@ -3434,7 +3434,13 @@ function mlsEnsureClinicalChartFn(requestGuard) {
        guard reports chart-deadline-exceeded with zero DOM actions, exactly as
        it did before the gate existed (pinned by chart-request-deadline). */
     if (!actionAllowed()) { out.reason = 'chart-deadline-exceeded'; return out; }
-    var _bfWaits = 0; try { _bfWaits = Number(document.documentElement.getAttribute('data-mls-briefing-waits') || 0); } catch (eBw0) {}
+    var _bfWaits = 0, _bfTok = '';
+    try { _bfTok = (requestGuard && requestGuard.token) ? String(requestGuard.token) : ''; } catch (eBwT) {}
+    /* hc-1.0.3: the counter is keyed to THIS request's token - the hc-1.0.1
+       deadline return used to leak a stale count onto the persistent SPA
+       document, burning the NEXT patient's settle budget to as little as
+       zero. A token mismatch reads as zero. */
+    try { var _bfPrev = String(document.documentElement.getAttribute('data-mls-briefing-waits') || '').split(':'); _bfWaits = (_bfPrev.length === 2 && _bfPrev[0] === _bfTok) ? Number(_bfPrev[1] || 0) : 0; } catch (eBw0) {}
     var _bfBusy = false; try { _bfBusy = (!!document.readyState && document.readyState !== 'complete') || !!(document.querySelector && document.querySelector('[aria-busy="true"],.loading,.spinner')); } catch (eBw1) {}
     var _bfCapture = function () {
       try {
@@ -3449,7 +3455,7 @@ function mlsEnsureClinicalChartFn(requestGuard) {
     var _bfText = _bfCapture();
     var _bfSettled = /active problems|problem list/i.test(_bfText) || (!_bfBusy && _bfText.length >= 1500); /* hc-1.0.2: the heading is the goal - once painted, capture regardless of a busy spinner elsewhere on the surface. */
     if (!_bfSettled && _bfWaits < 3) {
-      try { document.documentElement.setAttribute('data-mls-briefing-waits', String(_bfWaits + 1)); } catch (eBw2) {}
+      try { document.documentElement.setAttribute('data-mls-briefing-waits', _bfTok + ':' + (_bfWaits + 1)); } catch (eBw2) {}
       out.briefingText = '';
       out.briefingUnsettled = true;
       out.briefingWaits = _bfWaits + 1;
@@ -10856,17 +10862,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      and always restore what the doctor had focused. Never called on quiet
      pulls - the request must carry foregroundOk:true, which only the app's
      Retry-failed-histories lane sets. */
+  var __mlsFgRestorePending = null;
   async function __mlsFrontAthenaForRead() {
     try {
+      /* fg-1.1: a restore may still be in flight from the previous row -
+         let it land first so this front captures the true previous state. */
+      try { if (__mlsFgRestorePending) await __mlsFgRestorePending; } catch (eRp) {}
+      /* fg-1.1: only steal focus Chrome already owns. If the doctor is
+         outside Chrome entirely (focused:false), fronting would raise a
+         window under their typing and retry keystrokes could land in the
+         signed-in athenaOne - skip, and the row fails honestly occluded. */
+      var lastW = null;
+      try { lastW = await chrome.windows.getLastFocused(); } catch (eLw) {}
+      if (!lastW || lastW.focused !== true) return null;
       var allT = await chrome.tabs.query({});
       var athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
       if (!athT || athT.id == null) return null;
-      var prevWin = null;
-      try { var w = await chrome.windows.getLastFocused(); prevWin = (w && w.focused) ? w.id : null; } catch (eW) {}
       var prevActive = allT.find(function (t) { return t.active && t.windowId === athT.windowId; });
       var state = {
+        athTabId: athT.id,
+        athWinId: athT.windowId,
         prevTabId: (prevActive && prevActive.id !== athT.id) ? prevActive.id : null,
-        prevWinId: (prevWin != null && prevWin !== athT.windowId) ? prevWin : null
+        prevWinId: (lastW.id != null && lastW.id !== athT.windowId) ? lastW.id : null
       };
       await chrome.tabs.update(athT.id, { active: true });
       try { await chrome.windows.update(athT.windowId, { focused: true }); } catch (eF) {}
@@ -10877,8 +10894,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   function __mlsRestoreFocusAfterRead(state) {
     if (!state) return;
-    try { if (state.prevTabId != null) chrome.tabs.update(state.prevTabId, { active: true }); } catch (e1) {}
-    try { if (state.prevWinId != null) chrome.windows.update(state.prevWinId, { focused: true }); } catch (e2) {}
+    /* fg-1.1: the doctor's NEWER CHOICE WINS (the focusStillOwned rule the
+       guardian and quiet-pull release already follow): undo OUR front only
+       if the fronted athena tab is still the active tab of the focused
+       window. Callback form + lastError reads keep a closed tab/window from
+       becoming an unhandled rejection. */
+    var done = null;
+    __mlsFgRestorePending = new Promise(function (rs) { done = rs; });
+    var settle = function () { try { if (done) done(); } catch (eD) {} done = null; __mlsFgRestorePending = null; };
+    try {
+      chrome.windows.getLastFocused({ populate: true }, function (w) {
+        void chrome.runtime.lastError;
+        try {
+          var stillOurs = !!(w && w.focused === true && w.id === state.athWinId && (w.tabs || []).some(function (t) { return t.active && t.id === state.athTabId; }));
+          if (stillOurs) {
+            if (state.prevTabId != null) chrome.tabs.update(state.prevTabId, { active: true }, function () { void chrome.runtime.lastError; });
+            if (state.prevWinId != null) chrome.windows.update(state.prevWinId, { focused: true }, function () { void chrome.runtime.lastError; });
+          }
+        } catch (eR) {}
+        settle();
+      });
+    } catch (eGl) { settle(); }
   }
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
