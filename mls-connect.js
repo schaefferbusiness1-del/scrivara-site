@@ -34976,7 +34976,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b853';
+  window.__MLS_AV = window.__MLS_AV || 'b854';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35306,7 +35306,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b853';
+  var MLS_APP_BUILD='2026-07-25-b854';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42614,7 +42614,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_mls_hero_search.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hs1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero search (window.__mlsHeroSearch) */
 ;(function(){try{var A="feat_mls_hero_glance.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero glance (window.__mlsHeroGlance) */
 ;(function(){try{var A="feat_mls_pick_smartscope.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716pss1c2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: picker smart scope (window.__mlsPickSmartScope) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630kl1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260801kl1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dk1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727hcep2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
 /* Stripe/legal payout onboarding is intentionally held. */
@@ -46275,6 +46275,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              offline, extension-crashed, Athena-signed-out, and truly ready. */
           if (p.online && p.ext && p.officeAth === 'no-tab') { el.textContent = '— ' + who + ' is on, but athenaOne is SIGNED OUT there. Sign in to athenaOne on that computer, then pull from here.'; el.style.color = '#8A5A00'; }
           else if (p.online && p.ext) { el.textContent = '— ' + who + ' connected ✓' + (p.officeAth === 'connected' ? ' · athenaOne signed in ✓' : '') + ' (last heartbeat ' + (p.ageSec != null ? p.ageSec + 's ago' : 'just now') + '). Pulls you start here run there.'; el.style.color = '#2E6A4B'; }
+          /* dr-1.2.0: an office device that is ITSELF a phone or tablet cannot
+             install a Chrome extension, so "reload MLS Assist there" names a
+             route that does not exist on the device it just named. OBSERVED at
+             b853 on the owner's phone: officeName "iOS · Safari", officeOs
+             "iOS". Say what is actually wrong and what actually fixes it. */
+          else if (p.online && !p.ext && p.officeName && /^(iOS|iPadOS|Android)$/.test(p.officeOs || '')) { el.textContent = '— ' + who + ' is set as your office computer, but MLS Assist is a Chrome extension and ' + p.officeOs + ' cannot install one, so pulls can never run there. On the Windows or Mac computer that has MLS Assist, open Settings → Integrations and set its role to "Office computer".'; el.style.color = '#8A5A00'; }
           else if (p.online && !p.ext && p.officeName) { el.textContent = '— ' + who + ' is on, but MLS Assist is not responding there. On that computer: chrome://extensions → MLS Assist → ↻ Reload (do not restart Chrome).'; el.style.color = '#8A5A00'; }
           else if (p.officeName) { el.textContent = '— ' + who + ' NOT reachable ✗ (last heartbeat ' + (p.ageSec != null ? Math.round(p.ageSec / 60) + 'm ago' : 'unknown') + '). Open MLS there with the extension.'; el.style.color = '#8A5A00'; }
           else { el.textContent = '— no office computer set up yet ✗. On the machine with the MLS Assist extension, open Settings → Integrations and set its role to "Office computer".'; el.style.color = '#8A5A00'; }
@@ -46881,6 +46887,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
     return 'Unknown OS';
   }
+  /* dr-1.2.0 — MLS Assist is a Chrome DESKTOP extension. iOS, iPadOS and Android
+     cannot install Chrome extensions at all, so such a device can NEVER run an
+     Athena pull — not for itself and not on behalf of a phone that relays to it.
+     Registering one as the "Office computer" therefore produces a relay target
+     that is permanently dead, and the presence line then tells the owner to open
+     chrome://extensions on a phone — a route that does not exist on the device it
+     names. (Same defect class as ph-deadend-1.0.0 in ScribeFlow.html.)
+     OBSERVED on the owner's phone at b853: officeName "iOS · Safari", officeOs
+     "iOS", status "is on, but MLS Assist is not responding there". The office
+     computer WAS his iPhone, so the day pull could never complete. */
+  function canHostExtension() {
+    return !/^(iOS|iPadOS|Android)$/.test(detectOS());
+  }
+  api.canHostExtension = canHostExtension;
+
   function detectBrowser() {
     try {
       var ua = navigator.userAgent || '';
@@ -47093,6 +47114,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       for (var b = 0; b < segBtns.length; b++) {
         segBtns[b].addEventListener('click', async function () {
           var r = this.getAttribute('data-role');
+          /* dr-1.2.0: "not yet" and "never" are different answers. A desktop
+             without the extension can install it, so that one stays a
+             confirmable warning. A phone or tablet cannot install a Chrome
+             extension at all, so offering "anyway?" there only manufactures a
+             dead relay target — refuse it and name the device that should hold
+             the role instead. */
+          if (r === 'office' && !canHostExtension()) {
+            toast('MLS Assist is a Chrome extension, and ' + detectOS() + ' cannot install one — this device can never run Athena pulls. Set “Office computer” on the Windows or Mac machine that has MLS Assist.', 'err');
+            return;
+          }
           if (r === 'office' && !extPresent()) {
             if (!await window.mlsConfirm('This device does not report the MLS Assist extension, so it cannot run Athena pulls yet. Set it as the Office computer anyway?')) return;
           }
