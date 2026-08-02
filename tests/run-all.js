@@ -631,7 +631,13 @@ const tests = [
   'triage-clinical-rows-never-vanish.test.js',
   'voice-reaches-one-copilot-brain.test.js',
   'capture-and-turns-are-honest.test.js',
-  'use-every-time-round-trip.test.js'
+  'use-every-time-round-trip.test.js',
+  /* Two glitches the owner could see and the gate could not. Both were found by
+     measuring the running app rather than by reading it, and both are fenced by
+     the PROPERTY that makes the fix a fix — a fixpoint, and one measurement per
+     frame — because a "did it change?" guard cannot detect either class. */
+  'nav-labels-and-order-hold-still.test.js',
+  'typing-does-not-force-layout.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

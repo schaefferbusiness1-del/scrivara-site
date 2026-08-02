@@ -513,8 +513,15 @@
     if (!p) return;
 
     if (ST.phase === 'idle' || ST.phase === 'cancelled' || ST.phase === 'done') {
-      p.style.display = 'none';
-      p.innerHTML = '';
+      /* No-op-write discipline. This branch runs twice a second for the whole
+         life of the page — scheduleTick() installs setInterval(step, 500) and
+         never clears it — and both writes were unconditional. MEASURED: 80
+         byte-identical innerHTML writes per 40 idle seconds on a panel that is
+         display:none throughout. Same class as the b849 pull-progress card fix
+         ("the old render() rebuilt the WHOLE card via innerHTML every 900ms
+         tick"), one file over. */
+      if (p.style.display !== 'none') p.style.display = 'none';
+      if (p.innerHTML !== '') p.innerHTML = '';
       removeSpinnerHide();
       return;
     }

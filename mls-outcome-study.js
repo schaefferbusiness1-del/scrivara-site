@@ -846,7 +846,34 @@
       // run the de-dupe SYNCHRONOUSLY on every mutation (MutationObserver callbacks
       // fire before the browser paints), so the static duplicate is removed the instant
       // the __mlsGrab button is injected — no visible flash of two Search buttons.
-      var mo = new MutationObserver(function () { try { dedupeSearchButton(); } catch (e) {} schedule(); });
+      //
+      // MEASURED: unfiltered, this was the 3rd-most-expensive observer in the
+      // app (17.2ms per 80 keystrokes, 106 invocations; 8.7ms per 5 idle
+      // seconds) and matched zero rows in every sample, because the Study/Import
+      // modal it serves is almost never open. Both dedupeSearchButton() and
+      // injectTab() act only on .mls-study-actions / .mls-study-tabs, and neither
+      // can appear without an element insertion — so ask the records whether one
+      // of those arrived before scanning. The dedupe still runs synchronously,
+      // before paint, on the mutation that actually injects the button, which is
+      // the only mutation the no-flash guarantee depends on.
+      function touchesStudySurface(records) {
+        var SEL = '.mls-study-actions,.mls-study-tabs,#mlsGrabAthenaBtn,#mlsStudyBAuto';
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) {
+            var n = added[j];
+            if (!n || n.nodeType !== 1) continue;
+            if (n.matches && n.matches(SEL)) return true;
+            if (n.querySelector && n.querySelector(SEL)) return true;
+          }
+        }
+        return false;
+      }
+      var mo = new MutationObserver(function (records) {
+        if (!touchesStudySurface(records)) return;
+        try { dedupeSearchButton(); } catch (e) {}
+        schedule();
+      });
       mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
       window.__mlsOutcome.__mo = mo;
     } catch (e) {}

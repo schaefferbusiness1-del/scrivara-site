@@ -1810,7 +1810,16 @@
     var sig = dest + '|' +
       sibs.map(function (t) { return t.id + (t.classList.contains('on') ? '*' : ''); }).join(',') + '|' +
       picked.map(function (p) { return (p.as || controlLabel(p.el)) + (p.primary ? '!' : ''); }).join(',');
-    if (sig === lastRnSig && bar.childNodes.length) return;
+    /* The `bar.childNodes.length` half of this guard was written before b582
+       let the bar render EMPTY. In that state childNodes.length is 0, so the
+       guard was always falsy and the function fell through to the empty branch
+       on every single tick — the one case the guard above most needed to catch.
+       MEASURED: #mlsRightNow.innerHTML written 60 times per 40 idle seconds and
+       289 times in 5 seconds under transcript-like mutation, every write
+       byte-identical, dragging syncDock/renderStages/prepRows/contextBar along
+       with it at frame rate. Treat "legitimately empty" as a rendered state
+       rather than as evidence the render never happened. */
+    if (sig === lastRnSig && (bar.childNodes.length || bar.classList.contains('empty'))) return;
     lastRnSig = sig;
 
     /* Rebuilding the bar destroys whatever the keyboard was on and drops focus
