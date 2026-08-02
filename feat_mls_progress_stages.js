@@ -682,7 +682,13 @@
         }
         if (fresh) pullWatch.lastNote = '';
       } else if (cur) {
-        finish('pull', 'complete', 'Pull finished.');
+        /* the stamp's disappearance alone cannot distinguish success from a
+           rejection — consult the engine's recorded outcome (finding #5) */
+        var outcome = safe(function () { return window.__mlsPullLastOutcome; }, null);
+        var recent = outcome && outcome.at && (now() - outcome.at) < 600000;
+        if (recent && outcome.ok) finish('pull', 'complete', 'Pull finished.');
+        else if (recent && !outcome.ok) finish('pull', 'fail', 'The pull stopped: ' + (outcome.error || 'it did not finish') + ' — check the pull receipt before relying on today’s schedule.');
+        else finish('pull', 'complete', 'The pull stopped — MLS could not confirm it finished; check the pull receipt before relying on today’s schedule.');
         pullWatch.lastStamp = 0; pullWatch.lastNote = '';
       }
     });

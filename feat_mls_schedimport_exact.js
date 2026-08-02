@@ -3500,6 +3500,10 @@
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      /* the busy stamp is cleared identically on success and rejection, so the
+         progress chip cannot tell them apart from its disappearance alone —
+         record the real outcome BEFORE zeroing the stamp (finding #5) */
+      safe(function () { window.__mlsPullLastOutcome = { ok: true, at: Date.now() }; });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
@@ -3508,6 +3512,7 @@
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: String(error && error.message || error || 'pull failed').slice(0, 200) }; });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
