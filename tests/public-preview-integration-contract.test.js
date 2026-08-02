@@ -86,7 +86,7 @@ assert(runtime.includes("['ez3Chart2', 'ez3Prep2', 'ez3Portal', 'mlsPortalInvite
 assert((bundle.match(/skipped: 'public-synthetic-preview'/g) || []).length >= 2,
   'legacy import-chain copies do not skip their primitive patching in preview');
 assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'") &&
-  bundle.includes('feat_mls_studygroups.js') && bundle.includes('20260722sg1c6'),
+  bundle.includes('feat_mls_studygroups.js') && bundle.includes('20260802sg1c7'),
   'preview still boots the hidden Study Groups/AI Studio module');
 assert(bundle.includes("try { if (!oFetch.__r44) window.fetch = wrappedFetch; } catch (e) {}") &&
   bundle.includes("try { if (window.fetch === wrappedFetch) window.fetch = oFetch; } catch (e) {}"),

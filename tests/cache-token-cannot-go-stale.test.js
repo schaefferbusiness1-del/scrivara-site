@@ -69,6 +69,24 @@ const RE = /['"]([A-Za-z0-9_.-]+\.js)\?v=([A-Za-z0-9._-]+)['"]/g;
 let m;
 while ((m = RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
 
+/* 2026-08-02: the SPLIT loader form was INVISIBLE to the pattern above —
+ *   var A="feat_x.js"; ... s.src=A+"?v=20260727fp115";
+ * put the filename and the token in different string literals, so 47 of the
+ * repo's pins were outside this guard. Five of them were stale, and one
+ * (feat_mls_fixpack_0701.js) left every RETURNING browser running a retired
+ * wrapper that killed the op-prep "This patient" mode button while the fresh
+ * bytes sat green on the origin. Same disease as concatenated CSS: a literal
+ * pattern cannot see a value assembled at runtime. Both spellings are now
+ * captured; if a third loader spelling ever appears, extend this — the
+ * assertion below counts BOTH forms so a silent regression in either shrinks
+ * the checked set and fails the floor. */
+const SPLIT_RE = /var A="([A-Za-z0-9_.-]+\.js)";[^\n]*?s\.src=A\+"\?v=([A-Za-z0-9._-]+)"/g;
+while ((m = SPLIT_RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
+
+assert.ok(pins.size >= 120,
+  'the pin scanner found only ' + pins.size + ' tokens — it used to find 130 (83 quoted + 47 split). ' +
+  'A loader spelling probably changed and part of the fleet just left this guard.');
+
 assert.ok(pins.size > 0, 'no hand-maintained cache tokens were found at all — the pattern has drifted');
 
 const stale = [];

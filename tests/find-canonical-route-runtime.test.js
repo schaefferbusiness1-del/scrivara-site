@@ -8,7 +8,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_fixpack_0701.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260727fp115'),
+assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260802fp116'),
   'canonical Find fix is not loaded through a fresh immutable asset URL');
 assert(!connect.includes('?v=20260716fp110'), 'retired unsafe Find asset URL is still loadable');
 new Function(source);

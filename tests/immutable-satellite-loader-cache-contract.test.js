@@ -35,7 +35,7 @@ const assets = [
   ['feat_mls_redesign.js', '20260802rd330', '20260728rd327'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
-  ['feat_mls_wb_console.js', '20260722wbc131', '20260630wbc1c1-B177'],
+  ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
   ['feat_mls_widget_deck.js', '20260802wd111', '20260713wd2'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
