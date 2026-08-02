@@ -113,7 +113,7 @@ function makeHandlerRuntime(handlerSource, options) {
     mlsPickAthenaTab: options.pickNever ? () => never : async tabs => tabs[0] || null,
     fetch: () => never,
     chrome: {
-      runtime: { onMessage: { addListener(fn) { listeners.push(fn); } } },
+      runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener(fn) { listeners.push(fn); } } },
       tabs: { query: async () => [{ id: 71, url: 'https://athenanet.athenahealth.com/1/1/globalframeset.esp' }] },
       storage: { local: { get() {}, set() {} } }
     }

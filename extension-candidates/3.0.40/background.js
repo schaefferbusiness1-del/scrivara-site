@@ -3430,8 +3430,12 @@ function mlsEnsureClinicalChartFn(requestGuard) {
        rendering rules; on an occluded tab innerText degrades to textContent
        and leaked <script> bodies (live 2026-07-16 sketchpad class), so there
        we clone-and-strip first, accepting textContent's welding. */
+    /* hc-1.0.1: the absolute deadline outranks the settle gate - an expired
+       guard reports chart-deadline-exceeded with zero DOM actions, exactly as
+       it did before the gate existed (pinned by chart-request-deadline). */
+    if (!actionAllowed()) { out.reason = 'chart-deadline-exceeded'; return out; }
     var _bfWaits = 0; try { _bfWaits = Number(document.documentElement.getAttribute('data-mls-briefing-waits') || 0); } catch (eBw0) {}
-    var _bfBusy = false; try { _bfBusy = (document.readyState !== 'complete') || !!document.querySelector('[aria-busy="true"],.loading,.spinner'); } catch (eBw1) {}
+    var _bfBusy = false; try { _bfBusy = (!!document.readyState && document.readyState !== 'complete') || !!(document.querySelector && document.querySelector('[aria-busy="true"],.loading,.spinner')); } catch (eBw1) {}
     var _bfCapture = function () {
       try {
         if (document.visibilityState === 'visible') return String((document.body && document.body.innerText) || '').slice(0, 90000);
@@ -3443,7 +3447,7 @@ function mlsEnsureClinicalChartFn(requestGuard) {
       } catch (eCap) { try { return String((document.body && document.body.innerText) || '').slice(0, 90000); } catch (eCap2) { return ''; } }
     };
     var _bfText = _bfCapture();
-    var _bfSettled = !_bfBusy && (/active problems|problem list/i.test(_bfText) || _bfText.length >= 1500);
+    var _bfSettled = /active problems|problem list/i.test(_bfText) || (!_bfBusy && _bfText.length >= 1500); /* hc-1.0.2: the heading is the goal - once painted, capture regardless of a busy spinner elsewhere on the surface. */
     if (!_bfSettled && _bfWaits < 3) {
       try { document.documentElement.setAttribute('data-mls-briefing-waits', String(_bfWaits + 1)); } catch (eBw2) {}
       out.briefingText = '';

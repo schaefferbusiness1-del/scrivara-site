@@ -21,7 +21,8 @@ const lines = source.split('\n');
 const startIdx = lines.findIndex(l => l.startsWith('function mlsParseName('));
 assert(startIdx >= 0, 'missing mlsParseName');
 let endIdx = -1;
-for (let i = startIdx + 2; i < startIdx + 140; i++) {
+/* sn-1.1 (3.0.40) grew the parser past the old 140-line window */
+for (let i = startIdx + 2; i < startIdx + 400; i++) {
   if (lines[i].replace(/\r$/, '') === '}') { endIdx = i + 1; break; }
 }
 assert(endIdx > startIdx, 'unterminated mlsParseName');

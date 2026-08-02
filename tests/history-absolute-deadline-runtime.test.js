@@ -49,6 +49,7 @@ function testContentDeadlineAndLateReply() {
     },
     chrome: {
       runtime: {
+        id: 'mls-test-extension', /* csr-1.x orphan guards treat a runtime without an id as a dead context and go silent */
         lastError: null,
         sendMessage(message, callback) { sent.push(message); callbacks[message.requestId] = callback; },
         onMessage: { addListener(fn) { runtimeListeners.push(fn); } }
@@ -105,6 +106,7 @@ function testContentWorkerPostFailurePreservesAbsoluteDeadlines() {
     },
     chrome: {
       runtime: {
+        id: 'mls-test-extension', /* csr-1.x orphan guards treat a runtime without an id as a dead context and go silent */
         lastError: null,
         sendMessage(message) { sent.push(message); },
         onMessage: { addListener() {} }
@@ -144,6 +146,7 @@ function testContentAsyncWorkerFailurePreservesDeadline() {
     },
     chrome: {
       runtime: {
+        id: 'mls-test-extension', /* csr-1.x orphan guards treat a runtime without an id as a dead context and go silent */
         lastError: null,
         sendMessage(message) { sent.push(message); },
         onMessage: { addListener() {} }
@@ -181,6 +184,7 @@ function testContentTerminalArmDoesNotDispatch() {
     },
     chrome: {
       runtime: {
+        id: 'mls-test-extension', /* csr-1.x orphan guards treat a runtime without an id as a dead context and go silent */
         lastError: null,
         sendMessage(message) { sent.push(message); },
         onMessage: { addListener() {} }

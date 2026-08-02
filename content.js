@@ -129,7 +129,16 @@
 
   // Bridge: the MLS web app (mlsscribe.com) can ping us (to show "Assist installed")
   // and ask us to capture the patient currently open in the doctor's EMR tab.
-  window.addEventListener('message', function (e) {
+  /* csr-1.0 (3.0.39): orphan self-neutralization. After an extension reload or
+     update this script keeps running with a DEAD chrome.runtime; it used to
+     keep answering bridge pings with an empty version, racing (and sometimes
+     beating) the freshly injected script's honest reply. An invalidated
+     context now unhooks itself and goes silent instead. */
+  var mlsBridgeHandler = function (e) {
+    if (!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
+      try { window.removeEventListener('message', mlsBridgeHandler); } catch (eDead) {}
+      return;
+    }
     var d = e.data;
     if (!d || typeof d !== 'object' || d.source !== 'mls-app') return;
     if (typeof d.type !== 'string' || !MLS_BRIDGE_TYPES[d.type]) return;
@@ -741,7 +750,8 @@
       return;
     }
     /* ATHENA_ACTION_V2_BRIDGE_END */
-  });
+  };
+  window.addEventListener('message', mlsBridgeHandler);
   /* Background progress is delivered only to the originating trusted MLS app
      tab, then forwarded to that same origin. */
   try {
@@ -1284,10 +1294,12 @@
    next action -> we execute it on the page -> repeat. Hard safety rail: it never
    commits to the chart; on a Save/Sign it PAUSES and asks the doctor to do it. */
 (function () {
+  /* csr-1.1: a same-world re-injection must not start a second eternal 600ms ready() poll. */
+  try { if (window.__mlsAutopilotInit) return; window.__mlsAutopilotInit = 1; } catch (eFlagAp) { return; }
   function ready() { const p = document.getElementById('mls-assist-panel'); if (!p) return setTimeout(ready, 600); init(p); }
   ready();
   function init(panel) {
-    const body = panel.querySelector('.body'); if (!body || panel.__apInit) return; panel.__apInit = true;
+    const body = panel.querySelector('.body'); if (!body || panel.__apInit || panel.getAttribute('data-mls-ap-init') === '1') return; panel.__apInit = true; try { panel.setAttribute('data-mls-ap-init', '1'); } catch (eApMark) {} /* csr-1.1: the expando is world-scoped, so a fresh world re-initing a surviving orphan-era panel appended a SECOND Autopilot section; the DOM attribute is world-neutral. */
     const log = panel.querySelector('#mls-log'); const L = m => { const d = document.createElement('div'); d.textContent = '⤷ ' + m; log.prepend(d); };
     const wrap = document.createElement('div');
     wrap.style.cssText = 'border-top:1px solid #e8eef6;margin-top:14px;padding-top:4px';
@@ -1672,7 +1684,12 @@
     if (pending.deadlineAt) out.deadlineAt = pending.deadlineAt;
     return out;
   }
-  window.addEventListener('message', function (ev) {
+  var mlsAllVisitsBridgeHandler = function (ev) {
+    /* csr-1.0 (3.0.39): orphaned-context self-neutralization (see main bridge). */
+    if (!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
+      try { window.removeEventListener('message', mlsAllVisitsBridgeHandler); } catch (eDead) {}
+      return;
+    }
     var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits' || d.source !== 'mls-app' || !trusted(ev.origin)) return;
     var origin = ev.origin;
     var requestId = String(d.id || d.requestId || '').slice(0, 100);
@@ -1725,7 +1742,8 @@
       var target = finishPending(requestId);
       if (target) post(target.origin, 'mlsAppAllVisitsResult', pendingMeta(target, { id: requestId, requestId: requestId, ok: false, error: String((e && e.message) || e) }));
     }
-  }, false);
+  };
+  window.addEventListener('message', mlsAllVisitsBridgeHandler, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
       if (msg && msg.type === 'mlsAppVisitsProgress') {
@@ -1792,7 +1810,17 @@
   function status(btn, msg) { try { var s = btn.parentNode && btn.parentNode.querySelector('.mls-pullfix-intent'); if (s) s.innerHTML = msg; } catch (e) {} }
 
   // capture-phase interceptor: suppress the OLD #mls-cap handler and run the new one
-  document.addEventListener('click', function (ev) {
+  var mlsCapClickHandler = function (ev) {
+    /* csr-1.1 (3.0.40): the liveness check MUST run before stopImmediatePropagation.
+       Event propagation state is engine-global across isolated worlds and capture
+       listeners fire in registration order, so after an extension update the DEAD
+       world's copy of this handler ran FIRST, consumed the click, and painted
+       'reload the extension' advice that cannot fix an orphan - the pull button
+       stayed dead until a full page refresh. A dead context hands the click to
+       the fresh world's handler untouched and detaches itself. */
+    var __capDead = true;
+    try { __capDead = !(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id); } catch (eDeadCap) { __capDead = true; }
+    if (__capDead) { try { document.removeEventListener('click', mlsCapClickHandler, true); } catch (eOffCap) {} return; }
     var t = ev.target;
     var btn = t && t.closest ? t.closest('#mls-cap') : null;
     if (!btn) return;
@@ -1815,7 +1843,8 @@
       btn.disabled = false;
       status(btn, '<b style="color:#a01818;">Couldn’t start the pull.</b> ' + String((e && e.message) || e));
     }
-  }, true);
+  };
+  document.addEventListener('click', mlsCapClickHandler, true);
 })();
 
 /* (2) Search-and-navigate relay (mirrors the v1.34 copy-every-visit bridge) ----*/
@@ -1836,7 +1865,11 @@
     if (!origin || typeof origin !== 'string' || !trusted(origin)) return;
     try { var o = {}; for (var k in payload) o[k] = payload[k]; o.source = 'mls-ext'; o.type = type; window.postMessage(o, origin); } catch (e) {}
   }
-  window.addEventListener('message', function (ev) {
+  var mlsSearchOpenHandler = function (ev) {
+    /* csr-1.1 (3.0.40): orphan self-neutralization. The un-guarded orphan answered every chart-open request with an instant ok:false carrying the MATCHING requestId, synchronously beating the fresh script's genuine async reply - post-update chart-open and day-pull orchestration failed until the page was refreshed (the exact class csr-1.0 was shipped to kill). */
+    var __soDead = true;
+    try { __soDead = !(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id); } catch (eDeadso) { __soDead = true; }
+    if (__soDead) { try { window.removeEventListener('message', mlsSearchOpenHandler); } catch (eOffso) {} return; }
     var d = ev && ev.data;
     if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppSearchOpenPatient') return;
     if (!trusted(ev.origin)) return;
@@ -1883,7 +1916,8 @@
         post(requestOrigin, 'mlsAppSearchOpenResult', out);
       });
     } catch (e) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: String((e && e.message) || e), requestId: requestId, deadlineAt: deadlineAt }); }
-  }, false);
+  };
+  window.addEventListener('message', mlsSearchOpenHandler, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
       if (msg && msg.type === 'mlsAppSearchOpenProgress') {
@@ -1904,16 +1938,23 @@
 (function () {
   'use strict';
   try {
+    /* csr-1.1: re-run flag - a same-world double injection must not register a duplicate listener. */
+    if (window.__mlsVersionAnnounce) return; window.__mlsVersionAnnounce = 1;
     if (!/(^|\.)mlsscribe\.com$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)) return;
     var VER = '', BUILD = ''; try { var MANIFEST = chrome.runtime.getManifest(); VER = MANIFEST.version || ''; BUILD = MANIFEST.version_name || VER; } catch (e) {}
     if (!VER) return;
     var say = function () { try { window.postMessage({ source: 'mls-ext', type: 'mlsExtVersion', version: VER, buildId: BUILD }, location.origin); } catch (e) {} };
-    window.addEventListener('message', function (ev) {
+    var mlsVersionMsgHandler = function (ev) {
+      /* csr-1.1: VER/BUILD are captured at load, so an orphan kept broadcasting the STALE pre-update version forever, racing the fresh script's honest reply and letting the Settings row show contradictory versions. */
+      var __vaDead = true;
+      try { __vaDead = !(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id); } catch (eDeadVa) { __vaDead = true; }
+      if (__vaDead) { try { window.removeEventListener('message', mlsVersionMsgHandler); } catch (eOffVa) {} return; }
       var d = ev && ev.data;
       if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppGetVersion') return;
       if (ev.origin !== location.origin) return;
       say();
-    });
+    };
+    window.addEventListener('message', mlsVersionMsgHandler);
     say(); setTimeout(say, 2500); setTimeout(say, 8000);
   } catch (e) {}
 })();
@@ -1991,7 +2032,18 @@
     }
     function chip() {
       try {
-        if (document.getElementById('mlsTabPickerChip') || !document.body) return;
+        if (!document.body) return;
+        var prevChip = document.getElementById('mlsTabPickerChip');
+        if (prevChip) {
+          /* csr-1.1: a chip built by an ORPHANED world holds a dead onclick and,
+             via the shared DOM id, used to block this world from ever building a
+             working one - the picker then claimed 'No athenaOne tabs found'
+             until a page refresh. The world-scoped expando below makes same-world
+             re-runs no-op exactly as before; a foreign chip is replaced so the
+             click path lands in a live context. */
+          if (prevChip.__mlsChipWorld === 1) return;
+          try { prevChip.remove(); } catch (ePrevChip) {}
+        }
         /* 3.0.5 (owner one-pill corner): when the app's Copilot Voice pill is
            mounted, the always-on chip folds away - the picker panel remains
            fully reachable via the mlsShowTabPicker message (command palette
@@ -2000,6 +2052,7 @@
         if (document.getElementById('mlsCopVoiceBtn')) return;
         var c = el('button', 'position:fixed;right:184px;bottom:14px;z-index:2147482999;border:1px solid rgba(120,140,220,.4);background:#0b1020;color:#cfd9ff;border-radius:999px;padding:7px 12px;font:600 12px system-ui;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)', '🔗 Athena tab');
         c.id = 'mlsTabPickerChip';
+        try { c.__mlsChipWorld = 1; } catch (eChipMark) {}
         c.title = 'Pick which open athenaOne tab MLS Assist should use (and keep signed in)';
         c.onclick = function () { if (document.getElementById(PANEL_ID)) closePanel(); else render(); };
         document.body.appendChild(c);
@@ -2007,10 +2060,15 @@
         setTimeout(function () { try { if (document.getElementById('mlsCopVoiceBtn')) { var cLate = document.getElementById('mlsTabPickerChip'); if (cLate && cLate.remove) cLate.remove(); } } catch (eLate) {} }, 8000);
       } catch (e) {}
     }
-    window.addEventListener('message', function (ev) {
+    var mlsTabPickerMsgHandler = function (ev) {
+      /* csr-1.1: orphan self-neutralization (see the main bridge). */
+      var __tpDead = true;
+      try { __tpDead = !(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id); } catch (eDeadTp) { __tpDead = true; }
+      if (__tpDead) { try { window.removeEventListener('message', mlsTabPickerMsgHandler); } catch (eOffTp) {} return; }
       var d = ev && ev.data;
       if (d && d.source === 'mls-app' && d.type === 'mlsShowTabPicker' && ev.origin === location.origin) render();
-    }, false);
+    };
+    window.addEventListener('message', mlsTabPickerMsgHandler, false);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', chip); else chip();
     setTimeout(chip, 2500);
   } catch (e) {}
@@ -2024,13 +2082,19 @@
  * ========================================================================= */
 (function () {
   'use strict';
+  /* csr-1.1: re-run flag. */
+  try { if (window.__mlsWriteV2Receipt) return; window.__mlsWriteV2Receipt = 1; } catch (eFlagWv) { return; }
   function trusted(origin) {
     try {
       var u = new URL(origin);
       return u.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(u.hostname);
     } catch (e) { return false; }
   }
-  window.addEventListener('message', function (ev) {
+  var mlsWriteV2ReceiptHandler = function (ev) {
+    /* csr-1.1 (3.0.40): orphan self-neutralization. even a fail-closed receipt must not race the fresh world's copy. */
+    var __wvDead = true;
+    try { __wvDead = !(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id); } catch (eDeadwv) { __wvDead = true; }
+    if (__wvDead) { try { window.removeEventListener('message', mlsWriteV2ReceiptHandler); } catch (eOffwv) {} return; }
     var d = ev && ev.data;
     if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppWriteV2') return;
     if (!trusted(ev.origin)) return;
@@ -2042,5 +2106,6 @@
       ok: false, blocked: true, reason: 'unified-confirmation-required',
       error: 'This older direct writer is disabled. Refresh MLS and use Review selected Athena routes so the exact immutable manifest and read-only encounter check are shown first.'
     } });
-  }, false);
+  };
+  window.addEventListener('message', mlsWriteV2ReceiptHandler, false);
 })();

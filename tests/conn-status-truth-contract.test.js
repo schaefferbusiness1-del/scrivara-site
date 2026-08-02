@@ -80,6 +80,7 @@ function exerciseTrustedScheduleBridge(content) {
       onChanged: { addListener() {} }
     },
     runtime: {
+      id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */
       lastError: null,
       getManifest() { return { version: '2.9.synthetic', version_name: 'synthetic' }; },
       sendMessage(message, cb) {

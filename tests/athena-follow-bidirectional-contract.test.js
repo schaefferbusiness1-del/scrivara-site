@@ -42,9 +42,9 @@ assert(/MLS_BRIDGE_TYPES = \{[^}]*mlsAppChartIdentity: 1/.test(content),
 assert(content.includes("if (d.type === 'mlsAppChartIdentity') {") &&
   content.includes("chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }"),
   'the chart-identity verb must forward to the proven write-safety identity handler');
-assert.strictEqual(manifest.version, '3.0.38', 'extension manifest must be 3.0.38');
-assert(/^3\.0\.38\+core-sha256:[0-9a-f]{64}$/.test(manifest.version_name), 'manifest must carry the stamped core digest');
-assert.strictEqual(feed.version, '3.0.38', 'release feed must announce 3.0.38');
+assert.strictEqual(manifest.version, '3.0.40', 'extension manifest must be 3.0.40');
+assert(/^3\.0\.40\+core-sha256:[0-9a-f]{64}$/.test(manifest.version_name), 'manifest must carry the stamped core digest');
+assert.strictEqual(feed.version, '3.0.40', 'release feed must announce 3.0.40');
 assert(connect.includes('data-mls-asset="feat_mls_athena_follow.js"'), 'the follow module has no loader');
 assert(app.includes('id="athenaFollowToggle"'), 'the off-switch is missing from Settings -> Integrations');
 assert(mod.includes("var MIN_EXT = '3.0.23';"), 'the module must gate on the verb-carrying extension version');

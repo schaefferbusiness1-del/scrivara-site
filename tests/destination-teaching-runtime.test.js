@@ -127,7 +127,7 @@ fakeWindow.top = fakeWindow;
 const watcherTimers = [];
 const watcherCtx = {
   window: fakeWindow, document: fakeDoc, console,
-  chrome: { runtime: { lastError: null, sendMessage(message, cb) { sentCaptures.push(message); if (cb) cb({ ok: true }); } } },
+  chrome: { runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ lastError: null, sendMessage(message, cb) { sentCaptures.push(message); if (cb) cb({ ok: true }); } } },
   setTimeout(fn, ms) { watcherTimers.push({ fn, ms }); return watcherTimers.length; }, clearTimeout() {},
   String, Number, Array, Math, Object, globalThis: null
 };
@@ -221,7 +221,7 @@ let driverResultPromise = null;
 let frameSnapshot = [{ frameId: 0, parentFrameId: -1, documentId: 'doc-1', url: signedInTabs[0].url }];
 let watcherStartResults = null;
 const chrome = {
-  runtime: { lastError: null, onMessage: { addListener(fn) { runtimeListeners.push(fn); } } },
+  runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ lastError: null, onMessage: { addListener(fn) { runtimeListeners.push(fn); } } },
   tabs: {
     async query() { if (pendingTabQuery) return pendingTabQuery.promise; return signedInTabs.slice(); },
     sendMessage(tabId, message, cb) { progress.push({ tabId, message }); if (cb) cb({ ok: true }); },

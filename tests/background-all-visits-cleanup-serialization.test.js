@@ -61,7 +61,7 @@ function createRuntime() {
     mlsReadChartIdentity: function () {}, mlsReadChartIdentityShadow: function () {},
     self: null,
     chrome: {
-      runtime: { onMessage: { addListener: fn => listeners.push(fn) } },
+      runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener: fn => listeners.push(fn) } },
       tabs: {
         query: (_query, callback) => {
           pickCalls++;

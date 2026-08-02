@@ -165,6 +165,7 @@ function makeContentRuntime() {
     },
     chrome: {
       runtime: {
+        id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */
         lastError: null,
         sendMessage(message, callback) { sent.push(message); callbacks[message.requestId] = callback; },
         onMessage: { addListener(fn) { runtimeListeners.push(fn); } }
