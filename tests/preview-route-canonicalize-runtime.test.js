@@ -1,6 +1,6 @@
 'use strict';
 
-/* PREVIEW ROUTE CANONICALIZER (pvc-1.0.0, b856) — proven by execution.
+/* PREVIEW ROUTE CANONICALIZER (pvc-1.0.0, b857) — proven by execution.
  *
  * The public-preview safety boundary matches location.search === '?preview=1'
  * EXACTLY, by design (fail-closed clinical isolation). Before this fix, a
