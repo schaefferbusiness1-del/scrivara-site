@@ -70,7 +70,21 @@ const root = path.resolve(__dirname, '..');
  * rebase across it). The durable rule, now mechanical for this lane: the
  * subject line of a bump commit is bump-build.js's stdout, pasted verbatim,
  * never retyped. */
-const CUTOFF = 'e951a54';
+/* THIRD ADVANCE, 2026-08-02, e3f37111: a NEW shape of the same disease. Two
+ * cloud-dispatched sessions (claude/phone-version-styling-r6gj7a and
+ * claude/site-ui-glitches-performance-ogr8rz) each ran the bump path
+ * independently from the same live base (b853), blind to each other, and BOTH
+ * pushed commits claiming b854 with byte-identical stamps. Neither history can
+ * be rewritten (pushed remote branches; date-coded cache tokens make rebasing
+ * destructive), so the integration merge necessarily carries two b854
+ * claimers. Per this gate's own doctrine the NUMBER was abandoned — b854 was
+ * never served — and the integrated train shipped as b855 via
+ * scripts/bump-build.js. The durable upstream fix: parallel cloud branches
+ * must never be deployed separately under their own claimed number; the
+ * integrator always lands them as ONE train and re-runs bump-build.js, which
+ * makes the claim unique again (see memory: cloud-branches-collide-on-build-
+ * stamps). */
+const CUTOFF = 'e3f37111';
 
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
