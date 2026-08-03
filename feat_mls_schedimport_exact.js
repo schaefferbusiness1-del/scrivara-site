@@ -3115,7 +3115,7 @@
                  full 195s window applies). Grinding 195s per failure in the
                  MAIN pass starved the sweep of budget (live 15:11: 10 failures
                  burned ~40 min; only one sweep pass fit). */
-              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
+              var __fgFullWindow = __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true); /* pace-1.0 */ var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth && __fgFullWindow !== true ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
                 vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true), foregroundBatchStart: (__historyRetryForeground === true && __presenceBatchAnnounced !== true) ? (__presenceBatchAnnounced = true) : false, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
                 if (vr && vr.fronted === true) { receipt.presenceAssisted = true; receipt.presenceFrontedReads = (receipt.presenceFrontedReads | 0) + 1; } else if (__historyRetryForeground === true) { receipt.presenceQuietReads = (receipt.presenceQuietReads | 0) + 1; } /* fg-1.3: per-read truth (was fg-1.2 batch-global) */
@@ -4601,6 +4601,15 @@
     /* No date is not this lane to judge: hand it straight to the engine so its
         own refusal is the one the clinician reads. */
     if (!day) return Promise.resolve(pull(opts));
+    /* pace-1.0 (live 2026-08-03 17:11Z): a REFUSED pull must not navigate.
+       The Monday click printed "Opening 2026-07-27..." and THEN hit the
+       engine mutex, leaving a resumed Tuesday pass driving the wrong day
+       grid (25 honest failures, ~15 min lost). Advisory check only - the
+       engine's own single-flight stays the authoritative gate. */
+    if (pullRunning || foreignPullLease()) {
+      return Promise.resolve({ ok: false, complete: false, reason: "pull-in-flight",
+        error: "Another explicit pull is already running. No Athena navigation was started." });
+    }
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
     var scope0 = explicit ? opts.provider : accountProviderRequest();
     var gate0 = _resolveDayScope(scope0);

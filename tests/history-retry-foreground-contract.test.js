@@ -215,6 +215,28 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   })().catch(e => { console.error(e); process.exit(1); });
 }
 
+/* ---- 4f. pace-1.0: refused pulls never navigate; fronted first attempts
+ * get the full read window (live 2026-08-03: a refused Monday click navigated
+ * the shared tab mid-Tuesday-pass; fronted virgin charts died on the
+ * fail-fast ceiling that was tuned for occluded reads) ---- */
+{
+  const dpStart = feat.indexOf('function __dayPullInner(');
+  const dpEnd = feat.indexOf('window.__mlsSI = {', dpStart);
+  assert.ok(dpStart > 0 && dpEnd > dpStart, 'day lane present');
+  const dp = feat.slice(dpStart, dpEnd);
+  const busyIdx = dp.indexOf("reason: \"pull-in-flight\"");
+  const warmIdx = dp.indexOf('warmUpDay(day, say)');
+  assert.ok(busyIdx > 0 && warmIdx > busyIdx,
+    'the busy refusal precedes any navigation in the day lane');
+  assert.ok(dp.includes('No Athena navigation was started.'),
+    'the refusal tells the truth that nothing moved');
+  assert.ok(feat.includes('visitsAttempt === 1 && !sweepDepth && __fgFullWindow !== true'),
+    'fronted first attempts skip the occluded-tuned fail-fast ceiling');
+  assert.ok(feat.includes('var __fgFullWindow = __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true);'),
+    'the full-window grant uses exactly the fronting predicate (flag + not recording)');
+  ok('pace-1.0: busy check before nav; fronted first attempts get the full window');
+}
+
 /* ---- 5. hc-1.0.3: the briefing waits counter is request-token keyed ---- */
 {
   assert.ok(bg.includes("_bfTok = (requestGuard && requestGuard.token) ? String(requestGuard.token) : ''"),
