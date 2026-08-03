@@ -56,6 +56,31 @@ conservatively as 9/10 target rows converged across the two passes).
 - history-retry-foreground-contract grows to 11 checks incl. two executed
   fake-chrome scenarios: app-tab move keeps the assist, any other move quiets.
 
+## Run 3 — Monday Jul 27 on the fg-1.3 stack (b864 + 3.0.44, 17:11:50Z)
+
+The week-boundary goto shape worked (schedule 18/18). **athenaOne stayed
+FRONTED for the entire batch** — the app tab was hidden at every sample over
+~20 minutes while I polled it repeatedly: the latch fix held. The day
+converged to **18/18 patients with chart snapshots and full visit histories
+with zero human retry clicks** (main pass 6 ok → sweep healed 3 → second
+sweep → auto-converge retry healed the rest; one receipt-level straggler
+"(1)" left, data intact). The owner opened the freshly pulled charts minutes
+later.
+
+Honest pace verdict: first-pass failures on virgin charts were
+`visits-time-budget-exceeded` and `encounter-index-incomplete` WITH athena
+visible — the bottleneck is athena's own chart hydration vs the main-pass
+fast-fail ceilings, plus SERIAL sweep rounds. Full settle ≈ 21 min for 18
+virgin charts; the <10-min bar fails on this day shape. Presence is fixed;
+pace is a budget/pipelining train (fronted-first-attempt full budget,
+next-chart nav overlap, tighter sweep scheduling).
+
+Also live-discovered: a REFUSED pull (pull-in-flight) had already navigated
+the shared athena tab ("Opening 2026-07-27...") before the engine's busy
+check fired, sabotaging a resumed Tuesday pass mid-run (its rows failed
+honestly on the wrong grid; zero wrong data; ~15 min lost). Pre-flight nav
+must come after the single-flight check — spawned as its own task.
+
 ## Watch items for the next live proof
 
 - Timed no-retry bar: today's occluded run was ~14.9 min for 20 patients;
