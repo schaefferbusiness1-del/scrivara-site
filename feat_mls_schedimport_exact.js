@@ -2800,7 +2800,7 @@
     }
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
-    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
+    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
@@ -3117,7 +3117,8 @@
                  burned ~40 min; only one sweep pass fit). */
               var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
-                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true, foregroundBatchStart: (__historyRetryForeground === true && receipt.presenceBatchAnnounced !== true) ? (receipt.presenceBatchAnnounced = true) : false, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                if (vr && vr.fronted === true) receipt.presenceAssisted = true; /* fg-1.2 */
               } catch (vDeadlineErr) {
                 var vdMsg = String(vDeadlineErr && vDeadlineErr.message || vDeadlineErr || "");
                 /* si-1.8.1: same transient-runner-death recovery as the chart
@@ -3789,7 +3790,7 @@
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
           onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
-          return fail("nav-failed", { error: nav && nav.error || "" });
+          return fail("nav-failed", { error: nav && nav.error || "", navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired) });
         }
         if (navDay && navDay !== date) {
           onStatus("Athena opened " + navDay + " instead of " + date + ". Nothing was imported.", "err");
@@ -4563,6 +4564,19 @@
     }, null);
   }
   function dayPull(opts) {
+    /* fg-1.2 (3.0.43): a dayPull is BY DEFINITION user-initiated ("the ONE
+       guarded day lane every visible pull owner calls"), so the doctor is
+       present: its history reads get the same presence assist as the manual
+       retry, behind the same gates (only when Chrome owns OS focus; the
+       doctor's first move away quiets the rest of the batch). Auto/relay
+       pulls never pass through here and stay strictly quiet. The flag rides
+       the same single-flight protections as the retry lane. */
+    __historyRetryForeground = true;
+    return Promise.resolve().then(function () { return __dayPullInner(opts); }).then(
+      function (v) { __historyRetryForeground = false; return v; },
+      function (e) { __historyRetryForeground = false; throw e; });
+  }
+  function __dayPullInner(opts) {
     opts = opts || {};
     var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var day = normDate(opts.date) || "";

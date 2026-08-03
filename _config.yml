@@ -35,7 +35,7 @@ exclude:
   # The shipped app references them ZERO times (grep of ScribeFlow.html and
   # mls-connect.js), yet Jekyll was copying both into the public site: 51
   # coordination/inbox/*.js working notes, and extension candidate SOURCE for
-  # 3.0.32-3.0.42 including MLS_Assist_v3.0.42.zip. The Pages audit was flagging
+  # 3.0.32-3.0.43 including MLS_Assist_v3.0.43.zip. The Pages audit was flagging
   # all of it as "unexpected/unreviewed", and that audit has not run since
   # 2026-07-19, so nobody saw the flag.
   # This changes no extension byte and no extension behaviour - the files stay
@@ -143,7 +143,7 @@ include:
   # SHA-256 dedfeacdfda3962b0ae00eb28abca07485ea09a3ce9eedf65e299c03ee9c68e8 —
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.42.zip"
+  - "MLS_Assist_v3.0.43.zip"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

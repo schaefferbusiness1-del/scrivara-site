@@ -24,7 +24,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candDir = ['3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
+const candDir = ['3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
 const bg = fs.readFileSync(candDir ? path.join(candDir, 'background.js') : path.join(root, 'background.js'), 'utf8');
 const content = fs.readFileSync(candDir ? path.join(candDir, 'content.js') : path.join(root, 'content.js'), 'utf8');
 const feat = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
@@ -53,24 +53,63 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   ok('background: front only under foregroundOk, quiet path focus-free, restore at the terminal');
 }
 
-/* ---- 2. app: the flag exists only for the user-initiated retry ---- */
+/* ---- 2. app: the flag exists only for USER-INITIATED lanes ----
+ * fg-1.2 (3.0.43): dayPull joined retryFailedHistory - "the ONE guarded day
+ * lane every visible pull owner calls" is user-initiated by definition, so the
+ * FIRST pull gets the presence assist and the retry becomes vestigial. Auto/
+ * relay pulls never pass through either setter. */
 {
-  assert.strictEqual((feat.match(/__historyRetryForeground = true;/g) || []).length, 1, 'flag set exactly once');
-  const setIdx = feat.indexOf('__historyRetryForeground = true;');
+  const sets = [...feat.matchAll(/__historyRetryForeground = true;/g)].map(m => m.index);
+  assert.strictEqual(sets.length, 2, 'flag set in exactly the two user-initiated lanes');
   const retryIdx = feat.indexOf('function retryFailedHistory(');
-  const nextFnIdx = feat.indexOf('function phiFreeReasonCounts(');
-  assert.ok(setIdx > retryIdx && setIdx < nextFnIdx, 'the flag is set inside retryFailedHistory only');
-  assert.strictEqual((feat.match(/__historyRetryForeground = false;/g) || []).length, 3,
-    'cleared at init + both settle paths');
+  const retryEnd = feat.indexOf('function phiFreeReasonCounts(');
+  const dayIdx = feat.indexOf('function dayPull(');
+  const dayEnd = feat.indexOf('function __dayPullInner(');
+  assert.ok(sets.some(i => i > retryIdx && i < retryEnd), 'one setter inside retryFailedHistory');
+  assert.ok(sets.some(i => i > dayIdx && i < dayEnd), 'one setter inside the dayPull wrapper');
+  assert.strictEqual((feat.match(/__historyRetryForeground = false;/g) || []).length, 5,
+    'cleared at init + both settle paths of BOTH lanes');
   assert.strictEqual((feat.match(/foregroundOk: __historyRetryForeground === true/g) || []).length, 1,
     'the one allvisits post carries the strict flag');
-  ok('app: flag set only in retryFailedHistory, cleared on both settle paths, one strict post');
+  /* fg-1.2 disclosure plumbing */
+  assert.ok(feat.includes('presenceRequested: __historyRetryForeground === true, presenceAssisted: false,'),
+    'batch receipt declares the presence request and starts unassisted');
+  assert.ok(feat.includes("if (vr && vr.fronted === true) receipt.presenceAssisted = true;"),
+    'a fronted reply marks the batch assisted');
+  assert.ok(feat.includes('foregroundBatchStart: (__historyRetryForeground === true && receipt.presenceBatchAnnounced !== true) ? (receipt.presenceBatchAnnounced = true) : false'),
+    'exactly the first row of a user-initiated batch announces the batch start');
+  ok('app: two user-initiated setters (retry + dayPull), 5 clears, strict post, disclosure plumbing');
+}
+
+/* ---- 2b. banner honesty (mls-connect) + doctor-moved machinery (bg) ---- */
+{
+  const mc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+  assert.ok(mc.includes("(r && r.navSessionLikelyExpired === true)"),
+    'nav-failed distinguishes a dead athena session');
+  assert.ok(mc.includes('Athena signed you out (its idle timeout). Sign in again on the Athena tab'),
+    'the sign-in message names the real fix');
+  assert.ok(mc.includes("hr2.presenceRequested === true && hr2.presenceAssisted !== true"),
+    'the history-partial banner tells the doctor when presence would have helped');
+  assert.ok(bg.includes('var __mlsFgDoctorMoved = false;'), 'doctor-moved memory exists');
+  assert.ok(bg.includes('if (__mlsFgDoctorMoved) return null;'), 'front refuses after the doctor moved');
+  assert.ok(bg.includes('if (!stillOurs) { __mlsFgDoctorMoved = true; }'), 'restore records the move');
+  assert.ok(bg.includes("if (msg.foregroundBatchStart === true) __mlsFgDoctorMoved = false;"),
+    'a new user-initiated batch re-earns the assist');
+  assert.ok(bg.includes("value.fronted = __fgDidFront === true;"), 'the reply discloses fronting');
+  assert.ok(content.includes('foregroundBatchStart: d.foregroundBatchStart === true'),
+    'the bridge forwards the batch announcement strictly');
+  /* sx-1.0 */
+  assert.ok(bg.includes('async function __mlsProbeSessionExpired()'), 'session probe helper exists');
+  assert.ok(bg.includes('sessionLikelyExpired: exp === true,'), 'goto failures carry the session verdict');
+  assert.ok(feat.includes('navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired)'),
+    'the importer threads the verdict onto the nav-failed result');
+  ok('fg-1.2 doctor-moved machinery + sx-1.0 session honesty pinned end to end');
 }
 
 /* ---- 3. content bridge forwards strictly ---- */
 {
-  assert.ok(content.includes("foregroundOk: d.foregroundOk === true, hint: d.hint || {}"),
-    'the bridge forwards foregroundOk strictly (=== true)');
+  assert.ok(content.includes("foregroundOk: d.foregroundOk === true, foregroundBatchStart: d.foregroundBatchStart === true, hint: d.hint || {}"),
+    'the bridge forwards foregroundOk and the batch announcement strictly (=== true)');
   ok('content bridge forwards the flag strictly');
 }
 

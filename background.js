@@ -5530,6 +5530,26 @@ var mlsProv = (function () {
     }catch(e){ return {clicked:false,err:String(e&&e.message||e).slice(0,60)}; }
   }
 
+  /* sx-1.0 (3.0.43): a goto failure probes whether the athena SESSION died -
+     live 2026-08-02/03, the ~78-minute idle timeout surfaced twice as
+     'could not be opened to the requested day' (a blank unbootable frameset)
+     and the doctor was told to retry something only a sign-in could fix. */
+  async function __mlsProbeSessionExpired() {
+    try {
+      var allT = await chrome.tabs.query({});
+      var athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
+      if (!athT || athT.id == null) return null;
+      var [r] = await chrome.scripting.executeScript({ target: { tabId: athT.id }, func: async function () {
+        try {
+          var parts = location.pathname.split('/').filter(Boolean);
+          var base = '/' + parts.slice(0, 2).join('/');
+          var t = await fetch(base + '/ax/dashboard', { credentials: 'same-origin' }).then(function (x) { return x.text(); });
+          return /Re-Login|Please enter your password/i.test(t);
+        } catch (e) { return null; }
+      } });
+      return r && r.result === true;
+    } catch (e) { return null; }
+  }
   /* ---- v1.51: hands-free schedule DATE navigation (read-only nav) ---- */
   if (msg.type === 'mlsAppGotoDateRequest') {
     const __gotoStartedAt = Date.now();
@@ -5565,6 +5585,13 @@ var mlsProv = (function () {
          detach cleanup; they never hold this response open. */
       if (payload && payload.ok === true) { if (self.__mlsDayScheduleQpOwner === __gotoGuard.token) self.__mlsDayScheduleQpOwner = ''; }
       else __gotoCleanup('goto-date-terminal', false);
+      if (payload && payload.ok !== true) {
+        /* sx-1.0: bounded (2.5s) session probe rides the failure response. */
+        Promise.race([__mlsProbeSessionExpired(), new Promise(function (rs) { setTimeout(function () { rs(null); }, 2500); })])
+          .then(function (exp) { __gotoRawRespond(Object.assign({}, payload || {}, { sessionLikelyExpired: exp === true, id: __gotoRequestId, requestId: __gotoRequestId, deadlineAt: __gotoGuard.deadline })); },
+                function () { __gotoRawRespond(Object.assign({}, payload || {}, { id: __gotoRequestId, requestId: __gotoRequestId, deadlineAt: __gotoGuard.deadline })); });
+        return true;
+      }
       __gotoRawRespond(Object.assign({}, payload || {}, { id: __gotoRequestId, requestId: __gotoRequestId, deadlineAt: __gotoGuard.deadline }));
       return true;
     }
@@ -10863,6 +10890,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      pulls - the request must carry foregroundOk:true, which only the app's
      Retry-failed-histories lane sets. */
   var __mlsFgRestorePending = null;
+  /* fg-1.2: once the doctor takes focus mid-batch, the REST of the batch
+     stays quiet (their choice governs more than one restore). Reset only
+     when a new user-initiated batch announces itself. */
+  var __mlsFgDoctorMoved = false;
   async function __mlsFrontAthenaForRead() {
     try {
       /* fg-1.1: a restore may still be in flight from the previous row -
@@ -10875,6 +10906,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var lastW = null;
       try { lastW = await chrome.windows.getLastFocused(); } catch (eLw) {}
       if (!lastW || lastW.focused !== true) return null;
+      if (__mlsFgDoctorMoved) return null; /* fg-1.2: they moved away this batch */
       var allT = await chrome.tabs.query({});
       var athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
       if (!athT || athT.id == null) return null;
@@ -10907,6 +10939,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         void chrome.runtime.lastError;
         try {
           var stillOurs = !!(w && w.focused === true && w.id === state.athWinId && (w.tabs || []).some(function (t) { return t.active && t.id === state.athTabId; }));
+          if (!stillOurs) { __mlsFgDoctorMoved = true; }
           if (stillOurs) {
             if (state.prevTabId != null) chrome.tabs.update(state.prevTabId, { active: true }, function () { void chrome.runtime.lastError; });
             if (state.prevWinId != null) chrome.windows.update(state.prevWinId, { focused: true }, function () { void chrome.runtime.lastError; });
@@ -10920,6 +10953,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
     var appTabId = sender && sender.tab && sender.tab.id;
     var transportRequestId = String(msg.requestId || '').slice(0, 100);
+    if (msg.foregroundBatchStart === true) __mlsFgDoctorMoved = false; /* fg-1.2: a new user-initiated batch re-earns the assist */
     if (activeAllVisitsPromise) {
       sendResponse({
         ok: false, reason: 'busy', requestId: transportRequestId, readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
@@ -10950,11 +10984,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
           /* fg-1.0: front-for-read is bounded to THIS read and always undone in finish(). */
-          var __fgState = null;
+          var __fgState = null, __fgDidFront = false;
           var thisRead;
           if (msg.foregroundOk === true) {
             thisRead = __mlsFrontAthenaForRead().then(function (fg) {
-              __fgState = fg;
+              __fgState = fg; __fgDidFront = !!fg;
               var inner = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
               thisRead.__mlsInner = inner;
               return inner;
@@ -10968,6 +11002,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                registered immediately after sendResponse returns and is never
                awaited by this completed read. */
             if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null;
+            if (msg.foregroundOk === true && value && typeof value === 'object') { try { value.fronted = __fgDidFront === true; } catch (eFr) {} } /* fg-1.2: the reply discloses whether the assist actually ran, so the app can tell the doctor when presence would have helped */
             try { __mlsRestoreFocusAfterRead(__fgState); __fgState = null; } catch (eRf) {}
             sendResponse(value);
             try { var __clNow = thisRead.__mlsAfterResponseCleanup || (thisRead.__mlsInner && thisRead.__mlsInner.__mlsAfterResponseCleanup); if (__clNow) __clNow(); } catch (eCleanup) {}
