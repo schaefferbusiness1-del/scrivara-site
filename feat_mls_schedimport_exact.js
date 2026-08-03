@@ -2800,7 +2800,7 @@
     }
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
-    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
+    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, presenceFrontedReads: 0, presenceQuietReads: 0, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
@@ -3117,8 +3117,8 @@
                  burned ~40 min; only one sweep pass fit). */
               var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
-                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true, foregroundBatchStart: (__historyRetryForeground === true && receipt.presenceBatchAnnounced !== true) ? (receipt.presenceBatchAnnounced = true) : false, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
-                if (vr && vr.fronted === true) receipt.presenceAssisted = true; /* fg-1.2 */
+                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true), foregroundBatchStart: (__historyRetryForeground === true && __presenceBatchAnnounced !== true) ? (__presenceBatchAnnounced = true) : false, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                if (vr && vr.fronted === true) { receipt.presenceAssisted = true; receipt.presenceFrontedReads = (receipt.presenceFrontedReads | 0) + 1; } else if (__historyRetryForeground === true) { receipt.presenceQuietReads = (receipt.presenceQuietReads | 0) + 1; } /* fg-1.3: per-read truth (was fg-1.2 batch-global) */
               } catch (vDeadlineErr) {
                 var vdMsg = String(vDeadlineErr && vDeadlineErr.message || vDeadlineErr || "");
                 /* si-1.8.1: same transient-runner-death recovery as the chart
@@ -3571,6 +3571,22 @@
      batches are single-flight (withPatientBatch + the cross-tab shield), so a
      module flag cannot leak into a quiet pull. */
   var __historyRetryForeground = false;
+  /* fg-1.3: ONE presence announce per user-initiated pull. The old latch lived
+     on the batch receipt, so every automatic re-check sweep re-announced and
+     re-armed an assist the doctor had already quieted. */
+  var __presenceBatchAnnounced = false;
+  /* fg-1.3: never yank athenaOne in front of a doctor who is mid-recording.
+     Class-first truth copied from the visit lane (captureBtn .recording);
+     the ez3 Go button text is the second lane's honest stop-state. */
+  function __mlsDoctorMidVisit() {
+    return safe(function () {
+      var b = document.getElementById("captureBtn");
+      if (b && (b.classList.contains("recording") || /stop/i.test(b.textContent || ""))) return true;
+      var g = document.getElementById("ez3ActiveGo");
+      if (g && /\bstop\b/i.test(g.textContent || "")) return true;
+      return false;
+    }, false);
+  }
   function retryFailedHistory(source, onStatus) {
     var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
     var retry = Array.isArray(history.retry) ? history.retry : [];
@@ -3598,6 +3614,7 @@
     return runManagedAthenaOperation(function () {
       return withPatientBatch("history-retry", function () {
         __historyRetryForeground = true;
+        __presenceBatchAnnounced = false;
         return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
           function (v) { __historyRetryForeground = false; return v; },
           function (e) { __historyRetryForeground = false; throw e; });
@@ -4572,6 +4589,7 @@
        pulls never pass through here and stay strictly quiet. The flag rides
        the same single-flight protections as the retry lane. */
     __historyRetryForeground = true;
+    __presenceBatchAnnounced = false;
     return Promise.resolve().then(function () { return __dayPullInner(opts); }).then(
       function (v) { __historyRetryForeground = false; return v; },
       function (e) { __historyRetryForeground = false; throw e; });

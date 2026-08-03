@@ -1,5 +1,5 @@
 {
-  "version": "3.0.43",
+  "version": "3.0.44",
   "minChrome": 116,
-  "notes": "v3.0.43 - The pull itself now finishes the job: clicking Pull means you are there, so chart reads get the same bring-Athena-forward assist that made the retry heal every stuck history in live testing - the first pass captures everything and the retry button becomes a formality. The assist stays polite: it never acts when you are outside Chrome, and the moment you switch tabs it goes quiet for the rest of that pull. When something still cannot finish, the banner now tells the truth about why: if Athena signed you out (its idle timeout), it says sign in again instead of try again; if the reads only needed your presence, it says exactly that. Everything from v3.0.42 remains. Requires Chrome 116+."
+  "notes": "v3.0.44 - The pull now keeps working while you watch it. Before this, glancing at the MLS tab during a pull quietly switched the reads back to hidden mode for the rest of the day - exactly the mode that fails on charts Athena has not painted yet. Now watching the MLS tab counts as being present: the reads keep bringing Athena forward and finish on the first pass. Clicking away to anything else still pauses the assist (your choice always wins), it never runs while you are recording a visit, and it never acts when you are outside Chrome. The completion banner also tells the truth per read now: if some reads ran hidden and could not finish, it says so instead of staying quiet. Everything from v3.0.43 remains. Requires Chrome 116+."
 }

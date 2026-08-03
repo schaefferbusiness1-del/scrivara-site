@@ -24,7 +24,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candDir = ['3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
+const candDir = ['3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
 const bg = fs.readFileSync(candDir ? path.join(candDir, 'background.js') : path.join(root, 'background.js'), 'utf8');
 const content = fs.readFileSync(candDir ? path.join(candDir, 'content.js') : path.join(root, 'content.js'), 'utf8');
 const feat = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
@@ -34,10 +34,10 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
 
 /* ---- 1. background: gate + placement ---- */
 {
-  assert.strictEqual((bg.match(/async function __mlsFrontAthenaForRead\(\)/g) || []).length, 1, 'front helper defined once');
-  assert.strictEqual((bg.match(/__mlsFrontAthenaForRead\(\)\.then/g) || []).length, 1, 'front helper invoked exactly once');
+  assert.strictEqual((bg.match(/async function __mlsFrontAthenaForRead\(appTabId\)/g) || []).length, 1, 'front helper defined once (fg-1.3: knows the batch-owning app tab)');
+  assert.strictEqual((bg.match(/__mlsFrontAthenaForRead\(appTabId\)\.then/g) || []).length, 1, 'front helper invoked exactly once, with the sender app tab');
   const gateIdx = bg.indexOf('if (msg.foregroundOk === true) {');
-  const frontIdx = bg.indexOf('__mlsFrontAthenaForRead().then');
+  const frontIdx = bg.indexOf('__mlsFrontAthenaForRead(appTabId).then');
   const elseRun = bg.indexOf('} else {', gateIdx);
   assert.ok(gateIdx > 0 && frontIdx > gateIdx && frontIdx < elseRun,
     'the front call lives INSIDE the foregroundOk===true branch');
@@ -74,11 +74,19 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   /* fg-1.2 disclosure plumbing */
   assert.ok(feat.includes('presenceRequested: __historyRetryForeground === true, presenceAssisted: false,'),
     'batch receipt declares the presence request and starts unassisted');
-  assert.ok(feat.includes("if (vr && vr.fronted === true) receipt.presenceAssisted = true;"),
-    'a fronted reply marks the batch assisted');
-  assert.ok(feat.includes('foregroundBatchStart: (__historyRetryForeground === true && receipt.presenceBatchAnnounced !== true) ? (receipt.presenceBatchAnnounced = true) : false'),
-    'exactly the first row of a user-initiated batch announces the batch start');
-  ok('app: two user-initiated setters (retry + dayPull), 5 clears, strict post, disclosure plumbing');
+  assert.ok(feat.includes("if (vr && vr.fronted === true) { receipt.presenceAssisted = true; receipt.presenceFrontedReads = (receipt.presenceFrontedReads | 0) + 1; } else if (__historyRetryForeground === true) { receipt.presenceQuietReads = (receipt.presenceQuietReads | 0) + 1; }"),
+    'fg-1.3: per-read truth - fronted and quiet reads counted separately');
+  assert.ok(feat.includes('presenceFrontedReads: 0, presenceQuietReads: 0,'),
+    'fg-1.3: the receipt starts both per-read counters at zero');
+  assert.ok(feat.includes('foregroundBatchStart: (__historyRetryForeground === true && __presenceBatchAnnounced !== true) ? (__presenceBatchAnnounced = true) : false'),
+    'fg-1.3: the batch announce latch is MODULE state (a re-check sweep must not re-arm a quieted assist)');
+  assert.strictEqual((feat.match(/__presenceBatchAnnounced = false;/g) || []).length, 3,
+    'announce latch: one declaration + a reset in each user-initiated wrapper');
+  assert.ok(feat.includes('function __mlsDoctorMidVisit()'),
+    'fg-1.3: the mid-visit sniff exists');
+  assert.ok(feat.includes('__mlsDoctorMidVisit() !== true'),
+    'fg-1.3: the post pauses fronting while the doctor is recording');
+  ok('app: two user-initiated setters (retry + dayPull), 5 clears, strict post, fg-1.3 per-read disclosure');
 }
 
 /* ---- 2b. banner honesty (mls-connect) + doctor-moved machinery (bg) ---- */
@@ -88,11 +96,14 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
     'nav-failed distinguishes a dead athena session');
   assert.ok(mc.includes('Athena signed you out (its idle timeout). Sign in again on the Athena tab'),
     'the sign-in message names the real fix');
-  assert.ok(mc.includes("hr2.presenceRequested === true && hr2.presenceAssisted !== true"),
-    'the history-partial banner tells the doctor when presence would have helped');
+  assert.ok(mc.includes("hr2.presenceRequested === true && ((hr2.presenceQuietReads | 0) > 0 || hr2.presenceAssisted !== true)"),
+    'fg-1.3: the banner hints whenever ANY read ran quiet - one fronted read no longer hides nineteen quiet ones');
   assert.ok(bg.includes('var __mlsFgDoctorMoved = false;'), 'doctor-moved memory exists');
   assert.ok(bg.includes('if (__mlsFgDoctorMoved) return null;'), 'front refuses after the doctor moved');
-  assert.ok(bg.includes('if (!stillOurs) { __mlsFgDoctorMoved = true; }'), 'restore records the move');
+  assert.ok(bg.includes('if (!(__activeT && state.appTabId != null && __activeT.id === state.appTabId)) { __mlsFgDoctorMoved = true; }'),
+    'fg-1.3: restore latches the move ONLY when the doctor went somewhere other than the pull-owning app tab');
+  assert.ok(bg.includes('appTabId: (appTabId != null ? appTabId : null)'),
+    'fg-1.3: the per-read state remembers the batch-owning app tab');
   assert.ok(bg.includes("if (msg.foregroundBatchStart === true) __mlsFgDoctorMoved = false;"),
     'a new user-initiated batch re-earns the assist');
   assert.ok(bg.includes("value.fronted = __fgDidFront === true;"), 'the reply discloses fronting');
@@ -145,7 +156,7 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
     mlsPickAthenaTab: async (tabs) => tabs.find(t => /athenanet/.test(t.url)),
     Promise, console,
   });
-  vm.runInContext(helpers + '\nthis.__front = __mlsFrontAthenaForRead; this.__restore = __mlsRestoreFocusAfterRead;', sandbox, { timeout: 5000 });
+  vm.runInContext(helpers + '\nthis.__front = __mlsFrontAthenaForRead; this.__restore = __mlsRestoreFocusAfterRead; this.__moved = function () { return __mlsFgDoctorMoved; }; this.__resetMoved = function () { __mlsFgDoctorMoved = false; };', sandbox, { timeout: 5000 });
   (async () => {
     /* 4a. doctor OUTSIDE Chrome: fronting must be refused outright */
     world.focused = false;
@@ -173,6 +184,30 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
     await new Promise(r => setImmediate(r));
     assert.strictEqual(calls.length, 0, 'restore must NOT stomp the doctor\'s newer choice: ' + JSON.stringify(calls));
     ok('newer human choice wins: restore skips when the doctor moved mid-read');
+
+    /* 4d. fg-1.3: the doctor on the pull-owning APP tab is WATCHING the
+       machine work - the latch must not fire and the next row still fronts */
+    sandbox.__resetMoved();
+    world.activeTabId = 22;
+    const stApp = await sandbox.__front(11);
+    assert.ok(stApp && stApp.appTabId === 11, 'front remembers the batch-owning app tab');
+    calls.length = 0;
+    world.activeTabId = 11; /* doctor clicked back to the MLS app mid-read */
+    sandbox.__restore(stApp);
+    await new Promise(r => setImmediate(r));
+    assert.strictEqual(calls.length, 0, 'their choice stands - no stomp');
+    assert.strictEqual(sandbox.__moved(), false, 'watching the app tab must NOT quiet the batch');
+    ok('fg-1.3: doctor watching the pull-owning app tab keeps the assist earned');
+
+    /* 4e. any OTHER destination still quiets the rest of the batch */
+    world.activeTabId = 22;
+    const stElse = await sandbox.__front(11);
+    assert.ok(stElse, 'front still runs after the app-tab visit');
+    world.activeTabId = 99; /* doctor went somewhere unrelated */
+    sandbox.__restore(stElse);
+    await new Promise(r => setImmediate(r));
+    assert.strictEqual(sandbox.__moved(), true, 'moving anywhere else still quiets the batch');
+    ok('fg-1.3: any other destination still quiets the rest of the batch');
 
     sandbox.__restore(null); /* must be a no-op, not a throw */
     ok('null state no-ops');

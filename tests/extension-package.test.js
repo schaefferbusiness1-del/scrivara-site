@@ -207,9 +207,9 @@ assert(!/\bJSZip\b|cdnjs\.cloudflare\.com\/ajax\/libs\/jszip/i.test(downloadPage
   'get-extension.html must not build a candidate from loose public source or a CDN ZIP library');
 assert(!/var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(downloadPage),
   'get-extension.html must not fetch candidate manifests or expose a loose-source package allowlist');
-assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.43\.zip["']/i.test(downloadPage) && !/candidate package withheld/i.test(downloadPage),
+assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.44\.zip["']/i.test(downloadPage) && !/candidate package withheld/i.test(downloadPage),
   'manual download must offer exactly the stamped released package (owner directive 2026-07-20)');
-assert(/19be046976522a86b2ecc9922da1ec4a37d140500c14e928c6a298ea37310e77/.test(downloadPage),
+assert(/54622758c4e1543c24560a9bba649ad446ebebaabf47052aab1174fcd6f4bb77/.test(downloadPage),
   'download page must display the released package digest for verification');
 assert(/extension-version\.json/.test(downloadPage), 'download page may display only the published-channel feed version');
 assert(/chromewebstore\.google\.com\/detail\/mls-assist\/mpeidpagiccfdehcgfanlkibpafhogfg/.test(downloadPage),
