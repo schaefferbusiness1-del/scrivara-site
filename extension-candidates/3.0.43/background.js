@@ -5587,7 +5587,7 @@ var mlsProv = (function () {
       else __gotoCleanup('goto-date-terminal', false);
       if (payload && payload.ok !== true) {
         /* sx-1.0: bounded (2.5s) session probe rides the failure response. */
-        Promise.race([__mlsProbeSessionExpired(), new Promise(function (rs) { setTimeout(function () { rs(null); }, 2500); })])
+        Promise.race([(typeof __mlsProbeSessionExpired === 'function') ? __mlsProbeSessionExpired() : Promise.resolve(null), new Promise(function (rs) { setTimeout(function () { rs(null); }, 2500); })])
           .then(function (exp) { __gotoRawRespond(Object.assign({}, payload || {}, { sessionLikelyExpired: exp === true, id: __gotoRequestId, requestId: __gotoRequestId, deadlineAt: __gotoGuard.deadline })); },
                 function () { __gotoRawRespond(Object.assign({}, payload || {}, { id: __gotoRequestId, requestId: __gotoRequestId, deadlineAt: __gotoGuard.deadline })); });
         return true;

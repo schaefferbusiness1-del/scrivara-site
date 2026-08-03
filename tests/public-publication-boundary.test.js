@@ -286,7 +286,7 @@ assert(zipFiles.length > 1, 'fixture must exercise historical archive exclusion'
 assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.43.zip'],
   'exactly the released 3.0.22 package may be published — nothing else, and never a candidate');
 const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.43.zip'))).digest('hex');
-assert.strictEqual(releasedZipSha, '92255d6e616b4021e123bb82d21abba3fe768ab45485a3ab75291ec2f2190188',
+assert.strictEqual(releasedZipSha, '19be046976522a86b2ecc9922da1ec4a37d140500c14e928c6a298ea37310e77',
   'published package bytes must be the exact stamped 3.0.22 release');
 
 const stagingJs = fs.readdirSync(root).filter((name) => /\.staging\.js$/i.test(name));
@@ -358,7 +358,7 @@ if (/\bMKT_URL\s*=\s*['"]mls-marketing\.html['"]/.test(read('mls_reviews_scrape_
 const extensionPage = read('get-extension.html');
 assert(!/\bJSZip\b|var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(extensionPage), 'download page must not assemble loose extension source');
 assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.43\.zip["']/i.test(extensionPage) &&
-  /92255d6e616b4021e123bb82d21abba3fe768ab45485a3ab75291ec2f2190188/.test(extensionPage) &&
+  /19be046976522a86b2ecc9922da1ec4a37d140500c14e928c6a298ea37310e77/.test(extensionPage) &&
   !/candidate package withheld/i.test(extensionPage),
   'manual download must offer exactly the released package with its displayed digest');
 
