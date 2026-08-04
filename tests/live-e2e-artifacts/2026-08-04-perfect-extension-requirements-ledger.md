@@ -221,3 +221,26 @@ trains that postdate their sources, verified against the shipped bytes:
   owner's eyes required; the extension must never override this gate.
 - Pace datapoints: warm 20-patient day ≈ 8m18s (IN-BAR); virgin 5-patient
   day 8m30s (IN-BAR); virgin 20-patient day still gated on athena weather.
+
+---
+
+## THE DEFINITION-OF-DONE RUN (2026-08-04 18:44:29Z, Wed Jul 22)
+
+**16 virgin patients · first click → day-complete in 8m45s (receipt-stamped:
+`__mlsPullLastOutcome.ok:true` at 18:53:14) · 16/16 ok · zero failures at any
+point in the batch · zero human retry clicks · zero receipt stragglers · 16/16
+chart snapshots · zero visit-less patients.**
+
+Stack: site b867 + extension 3.0.44, owner present in Chrome, athena healthy.
+Every lever shipped this cycle participated: fg-1.3 presence survived
+observation, pace-1.0 full windows kept fronted first attempts alive, and
+nothing needed cv-1.1/1.2's automatic rounds because nothing failed.
+
+Requirement 3.2 (timed sub-10 zero-click virgin day): **PROVEN.**
+Requirement 1.1 pace leg: **PROVEN** — with 1.2's own honesty rule standing:
+one clean run is a sample; the consecutive-clean count continues from here.
+
+Same-stack同-day corroboration: warm 20-patient re-pull 8m18s; virgin
+5-patient day 8m30s; empty day 19s. The one open per-patient item across all
+four days is Ed F Speer (Thu Jul 23) — a both-routes honest identity refusal
+that is athena-data-anomaly territory, explicitly the doctor's to inspect.
