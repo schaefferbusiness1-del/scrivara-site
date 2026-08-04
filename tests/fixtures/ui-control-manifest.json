@@ -12635,8 +12635,8 @@
   },
   {
    "id": "mlsAthenaUnifiedCancel",
-   "label": "Close review",
-   "accessibleName": "Close review",
+   "label": "Cancel",
+   "accessibleName": "Cancel",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -12649,8 +12649,8 @@
   },
   {
    "id": "mlsAthenaUnifiedGo",
-   "label": "Confirm & write",
-   "accessibleName": "Confirm & write",
+   "label": "Confirm & Send to Athena",
+   "accessibleName": "Confirm & Send to Athena",
    "title": "",
    "kind": "button",
    "tag": "button",

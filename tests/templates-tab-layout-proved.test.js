@@ -275,6 +275,7 @@ async function runBrowser(exe) {
         var t=e.target, cs=null; try{ cs=getComputedStyle(t); }catch(_){}
         window.__otAnim.push({ name:e.animationName,
           where: t && t.parentElement ? (t.parentElement.id||t.parentElement.tagName) : '',
+          idx: t && t.parentElement ? Array.prototype.indexOf.call(t.parentElement.children, t) : -1,
           delay: cs ? cs.animationDelay : '' });
       }, true); return 1; })()`);
     await evalJs(cdp, `(()=>{const t=document.getElementById('oprTabTpls');if(t){t.click();return 1;}return 0;})()`);
@@ -365,9 +366,23 @@ async function runBrowser(exe) {
     ok(rowStarts.length > 0,
       'the library rows really animate in when the tab opens',
       'no mlsOtRowIn animationstart fired during the open: ' + JSON.stringify(entrance));
-    ok(new Set(rowStarts.map((e) => e.delay)).size > 1,
+    /* Stagger, resolved deterministically: reading computed animation-delay at
+       event time RACES the 900ms .ot-entering window under machine load
+       (measured 2026-08-04: 2 of 3 runs on IDENTICAL bytes read every delay as
+       the same empty string while a loaded Chrome dispatched the events late).
+       The design truth has two halves, each provable without that race: the
+       per-row delay RULES ship (pinned against the source), and MORE than one
+       distinct row really animated — each row matches a different nth-child
+       delay rule, so distinct rows ARE staggered starts. The raw delay-set
+       check stays as an accepting fast path. */
+    const delaySet = new Set(rowStarts.map((e) => e.delay).filter((d) => d && d !== '0s'));
+    const rowIdxSet = new Set(rowStarts.map((e) => e.idx).filter((i) => i >= 0));
+    ok(/animation-delay:40ms/.test(OT) && /animation-delay:200ms/.test(OT),
+      'the staggered per-row delay rules ship in the library source',
+      'nth-child animation-delay rules missing from feat_mls_opnote_templates_ui.js');
+    ok(delaySet.size > 1 || rowIdxSet.size > 1,
       'the entrance is staggered, so the library settles in rather than snapping',
-      'every row started with the same delay: ' + JSON.stringify(rowStarts.map((e) => e.delay)));
+      'rows: ' + JSON.stringify(rowStarts.map((e) => ({ idx: e.idx, delay: e.delay }))));
     ok(replays === 0,
       'typing in the search box does NOT replay the entrance',
       replays + ' animation(s) restarted on one search keystroke. renderTemplateList() rebuilds '

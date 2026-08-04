@@ -37,7 +37,11 @@ assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint mu
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
 assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'UI must disclose the two allowed note lanes');
-assert(/Select one READY note row/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
+/* wf3 (owner 2026-08-04, one-click rebuild): the READY row is PRE-selected and
+   probed on open — "Select one" is no longer the doctor's job, so the
+   one-action boundary is disclosed as what each click RUNS instead. */
+assert(/One READY note row is pre-selected/i.test(unified), 'UI must disclose the pre-selected single note row');
+assert(/runs exactly that one action/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
 assert(/never retries or auto-chains|never auto-chain/i.test(unified), 'UI must disclose fail-closed no-chain behavior');
 assert(/Complete Sign & Save directly in Athena/.test(unified), 'Sign must be visibly manual');
 assert(!/Review Sign & Save separately/.test(unified), 'verified note write must not recreate an executable Sign offer');
