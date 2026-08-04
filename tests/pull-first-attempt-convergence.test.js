@@ -83,12 +83,22 @@ function part2() {
     scenario(['visits-time-budget-exceeded', 'encounter-index-incomplete[x]'], 1),
     scenario(['identity-target-unresolved'], 0),
     scenario(['visit-bodies-incomplete', 'identity-target-unresolved'], 0),
-    scenario([], 0)
-  ]).then(([a, b, c, d]) => {
+    scenario([], 0),
+    /* cv-1.1 (live 2026-08-04): a find-patient-open deadline is retryable -
+       it sat waiting for a human click while the proven heal was one
+       automatic round away. Only credential/identity/schedule classes stay
+       human-first. */
+    scenario(['The Athena patient open reached its one absolute deadline during find patient open. No retry or fallback was dispatched'], 1),
+    scenario(['athenaOne patient search found no matching patient.'], 1),
+    scenario(['Athena signed you out (session expired)'], 0)
+  ]).then(([a, b, c, d, e, f, g]) => {
     assert.strictEqual(a, 1, 'bodies-only failures must auto-retry (got ' + a + ')');
     assert.strictEqual(b, 0, 'identity refusals must NEVER be ground on automatically');
-    assert.strictEqual(c, 0, 'a single non-bodies reason vetoes the whole auto round');
+    assert.strictEqual(c, 0, 'an identity reason vetoes the whole auto round');
     assert.strictEqual(d, 0, 'no failures, no retry');
+    assert.strictEqual(e, 1, 'cv-1.1: a chart-open deadline earns the automatic rounds (got ' + e + ')');
+    assert.strictEqual(f, 1, 'cv-1.1: a transient search miss earns the automatic rounds (got ' + f + ')');
+    assert.strictEqual(g, 0, 'cv-1.1: a dead session is the doctor\'s to see, never ground on');
 
     /* ---- 4. the completion hook is wired ---- */
     assert(/done\(outcome\.ok[^;]*;\s*[\s\S]{0,220}?if \(retryCount > 0\) dsAutoConvergeBodies\(sessionSerial\);/.test(connect),
