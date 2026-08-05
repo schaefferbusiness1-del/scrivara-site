@@ -120,8 +120,15 @@ never probe, so zero happy-path pace cost):
 Focused suites green: per-read-session-liveness-contract, extension-read-path,
 history-retry-foreground-contract (12/12), schedule-history-pipeline,
 pull-first-attempt-convergence, staging-history-writeflow-parity, opnote-staging-parity-runtime.
-Full gate: running. **NOT SHIPPED — extension release trains are frozen until the site lane's
-b872/b873 transition completes; this stages for the next 3.0.45 train.**
+
+**Full gate: ALL 477 LOCAL SUITES PASS** — after two honest gate kills that were both fences
+working, not defects: (1) `tree-contains-everything-published` refused the run because the
+worktree sat 3 commits behind origin/main (b869/chore/b870) → merged, never rebased (commit
+`494b8dd7`); (2) `extension-package` refused because my splices drifted root background.js from
+the stamped 3.0.44 digest → splices parked as `extension-candidates/3.0.45/background.js`, root
+restored byte-identical to shipped, contract suite reads the candidate (commit `e46f1ec4`; the
+staged work itself is commit `4c27d3dc`). **NOT SHIPPED — extension release trains hold until the
+site lane's b872/b873 transition completes; this rides the next 3.0.45 train.** Nothing pushed.
 
 ## Remaining (unchanged from session 2)
 
