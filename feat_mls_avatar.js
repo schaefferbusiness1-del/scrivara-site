@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-1.2.0';
+  var VERSION = 'av-1.3.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -174,11 +174,13 @@
       if (r.ok && r.json && Array.isArray(r.json.checkins)) {
         setCount(r.json.checkins.length);
         cacheReady(r.json.checkins);
+        ensureVisitCard();
       }
     }, function () { refreshInFlight = false; });
   }
 
   function close() {
+    safe(function () { stopCamera(); }); /* never leave the camera running */
     var back = gid(BACK_ID);
     if (back && back.parentNode) back.parentNode.removeChild(back);
     document.removeEventListener('keydown', onKey, true);
@@ -310,6 +312,48 @@
     return card;
   }
 
+  /* ---- the avatar's face: camera capture -> stylized portrait ----
+     Local only: the camera runs in THIS panel on the doctor's click, the
+     snapshot is stylized on a canvas, and only the small final portrait is
+     saved (encrypted, in the avatar config). Tracks are stopped on every exit
+     path including panel close. */
+  var cameraStream = null;
+  function stopCamera() {
+    if (!cameraStream) return;
+    safe(function () { cameraStream.getTracks().forEach(function (t) { t.stop(); }); });
+    cameraStream = null;
+  }
+  function stylizePortrait(video) {
+    var size = 256;
+    var canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    var vw = video.videoWidth || size, vh = video.videoHeight || size;
+    var side = Math.min(vw, vh);
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, size, size);
+    /* gentle stylization: posterized tones + a touch of warmth — a friendly
+       illustrated rendition of the doctor's face, not a raw photo */
+    var img = ctx.getImageData(0, 0, size, size), d = img.data;
+    var levels = 6, step = 255 / (levels - 1);
+    for (var i = 0; i < d.length; i += 4) {
+      d[i] = Math.round(Math.min(255, d[i] * 1.06) / step) * step;
+      d[i + 1] = Math.round(d[i + 1] / step) * step;
+      d[i + 2] = Math.round((d[i + 2] * 0.97) / step) * step;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  }
+  function facePreviewNode(dataUrl) {
+    var wrap = make('div', '');
+    wrap.style.cssText = 'width:72px;height:72px;border-radius:999px;overflow:hidden;border:2px solid #E7E5DD;background:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:34px';
+    if (dataUrl && String(dataUrl).indexOf('data:image/') === 0) {
+      var img = document.createElement('img'); img.alt = ''; img.src = dataUrl;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      wrap.appendChild(img);
+    } else wrap.textContent = '🧑‍⚕️';
+    return wrap;
+  }
+
   /* ---- setup tab ---- */
   function setupForm(host) {
     host.innerHTML = '';
@@ -331,6 +375,58 @@
       var introLabel = make('label', '', 'Greeting line (optional)');
       var introInput = make('input'); introInput.value = cfg.intro || ''; introInput.maxLength = 400;
       introInput.placeholder = 'e.g. A few quick questions before your visit with Dr. Schaeffer.';
+      /* ---- face section ---- */
+      var pendingFace; /* undefined = keep current; '' = remove; data URL = new */
+      var faceLabel = make('label', '', 'Avatar face — patients see this portrait during the check-in');
+      var faceRow = make('div', '');
+      faceRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      var facePreview = facePreviewNode(cfg.faceImage);
+      var camBtn = make('button', 'mlsAvAction', '📷 Create from my camera');
+      camBtn.type = 'button';
+      var removeFaceBtn = make('button', 'mlsAvAction', 'Remove face');
+      removeFaceBtn.type = 'button';
+      var camHost = make('div', '');
+      removeFaceBtn.addEventListener('click', function () {
+        pendingFace = '';
+        var fresh = facePreviewNode(null);
+        faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+        status.textContent = 'Face removed — Save to make it permanent. Patients will see the standard assistant icon.';
+      });
+      camBtn.addEventListener('click', function () {
+        camHost.innerHTML = '';
+        stopCamera();
+        var media = safe(function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }); }, null);
+        if (!media) { camHost.appendChild(make('div', 'mlsAvNotice', 'This browser cannot open the camera here.')); return; }
+        media.then(function (stream) {
+          cameraStream = stream;
+          var video = document.createElement('video');
+          video.autoplay = true; video.playsInline = true; video.muted = true;
+          video.srcObject = stream;
+          video.style.cssText = 'width:200px;height:200px;object-fit:cover;border-radius:14px;border:1px solid #E7E5DD;transform:scaleX(-1)';
+          var snapBtn = make('button', 'mlsAvAction primary', 'Snap photo'); snapBtn.type = 'button';
+          var cancelBtn = make('button', 'mlsAvAction', 'Cancel'); cancelBtn.type = 'button';
+          var row = make('div', 'mlsAvActions');
+          row.appendChild(snapBtn); row.appendChild(cancelBtn);
+          camHost.appendChild(video); camHost.appendChild(row);
+          cancelBtn.addEventListener('click', function () { stopCamera(); camHost.innerHTML = ''; });
+          snapBtn.addEventListener('click', function () {
+            var dataUrl = safe(function () { return stylizePortrait(video); }, null);
+            stopCamera(); camHost.innerHTML = '';
+            if (!dataUrl || dataUrl.length > 150000) {
+              camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
+              return;
+            }
+            pendingFace = dataUrl;
+            var fresh = facePreviewNode(dataUrl);
+            faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+            status.textContent = 'Portrait captured (stylized from your photo, processed on this device). Save to publish it to your patients.';
+          });
+        }, function () {
+          camHost.appendChild(make('div', 'mlsAvNotice', 'Camera permission was declined — nothing was captured.'));
+        });
+      });
+      faceRow.appendChild(facePreview); faceRow.appendChild(camBtn); faceRow.appendChild(removeFaceBtn);
+
       var qLabel = make('label', '', 'Questions the avatar asks — ONE PER LINE, in order (up to 20)');
       var qArea = make('textarea'); qArea.rows = 9;
       qArea.value = Array.isArray(cfg.questions) ? cfg.questions.join('\n') : '';
@@ -341,7 +437,8 @@
       saveBtn.addEventListener('click', function () {
         var questions = qArea.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean).slice(0, 20);
         saveBtn.disabled = true; status.textContent = 'Saving…';
-        api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions }) })
+        api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
+          faceImage: pendingFace === undefined ? (cfg.faceImage || '') : pendingFace }) })
           .then(function (r2) {
             saveBtn.disabled = false;
             status.textContent = (r2.ok && r2.json && r2.json.ok)
@@ -388,6 +485,7 @@
 
       form.appendChild(nameLabel); form.appendChild(nameInput);
       form.appendChild(introLabel); form.appendChild(introInput);
+      form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
       form.appendChild(qLabel); form.appendChild(qArea);
       var btnRow = make('div', 'mlsAvActions');
       btnRow.appendChild(saveBtn); btnRow.appendChild(previewBtn);
@@ -459,6 +557,49 @@
     inboxList(body, 'ready');
   }
 
+  /* ---- the Visit-page presence: check-ins meet the doctor where he works.
+     A compact card at the BOTTOM of #visitView (never near the patient
+     banner — standing owner rule): ready count, a highlight line when the
+     ACTIVE patient completed their check-in, one Open button. Rebuilt on
+     view/patient events and after each badge refresh — no polling. ---- */
+  function activePtIdSafe() {
+    return safe(function () { return isFn(window.getActivePtId) ? clean(window.getActivePtId()) : ''; }, '');
+  }
+  function ensureVisitCard() {
+    var view = gid('visitView'); if (!view) return;
+    var card = gid('mlsAvVisitCard');
+    if (!card) {
+      style();
+      card = document.createElement('div');
+      card.id = 'mlsAvVisitCard';
+      card.style.cssText = 'margin:14px 2px 8px;padding:11px 13px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-family:\'Public Sans\',system-ui,sans-serif';
+      view.appendChild(card);
+    }
+    var cache = safe(function () { return window.__mlsAvatar.lastReady; }, null);
+    var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
+    var activeId = activePtIdSafe();
+    var activeHit = null;
+    if (cache && activeId) {
+      for (var i = 0; i < cache.checkins.length; i++) {
+        if (clean(cache.checkins[i].patient_external_id) === activeId) { activeHit = cache.checkins[i]; break; }
+      }
+    }
+    card.innerHTML = '';
+    var title = make('span', '', '🧑‍⚕️ Avatar check-ins');
+    title.style.cssText = 'font-weight:800;color:#204034;font-size:13px';
+    card.appendChild(title);
+    var line = make('span', '', activeHit
+      ? '✨ This patient completed their pre-visit check-in — the highlights are ready.'
+      : (total == null ? 'Program the interview and read completed check-ins.'
+        : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' ready.'))));
+    line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
+    card.appendChild(line);
+    var openBtn = make('button', 'mlsAvAction' + (activeHit ? ' primary' : ''), activeHit ? 'View highlights' : 'Open');
+    openBtn.type = 'button';
+    openBtn.addEventListener('click', function (event) { event.preventDefault(); open(); });
+    card.appendChild(openBtn);
+  }
+
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;
   function scheduleEnsure() {
@@ -466,12 +607,16 @@
       retryTimers.push(setTimeout(function () { ensureButton(); }, delay));
     });
   }
-  function onLifecycle() { scheduleEnsure(); refreshCount(false); }
+  function onLifecycle() { scheduleEnsure(); refreshCount(false); ensureVisitCard(); }
   function onVisibility() { if (!document.hidden) refreshCount(false); }
+  function onVisitContext() { ensureVisitCard(); }
   function boot() {
     scheduleEnsure();
     ['mls:ui-ready', 'mls:topbar-ready', 'mls:header-rendered'].forEach(function (name) {
       safe(function () { window.addEventListener(name, onLifecycle, false); lifecycleBound.push([name, onLifecycle]); });
+    });
+    ['mls:view-changed', 'mls:active-patient-changed', 'mls:patient-changed'].forEach(function (name) {
+      safe(function () { window.addEventListener(name, onVisitContext, false); lifecycleBound.push([name, onVisitContext]); });
     });
     if (!visBound) {
       safe(function () { document.addEventListener('visibilitychange', onVisibility, false); visBound = true; });
@@ -485,6 +630,7 @@
     if (visBound) { safe(function () { document.removeEventListener('visibilitychange', onVisibility, false); }); visBound = false; }
     close();
     var button = gid(BUTTON_ID); if (button && button.parentNode) button.parentNode.removeChild(button);
+    var visitCard = gid('mlsAvVisitCard'); if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
     var styleNode = gid(STYLE_ID); if (styleNode && styleNode.parentNode) styleNode.parentNode.removeChild(styleNode);
     try { window.__mlsAvatar.installed = false; } catch (e) {}
   }

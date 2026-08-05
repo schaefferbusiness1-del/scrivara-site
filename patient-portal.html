@@ -1164,6 +1164,47 @@
     return v;
   }
   var avBusy=false, avDone=false, avLastTry=null;
+  function avEnsureStyle(){
+    if($("mlsAvStyle")) return;
+    var st=document.createElement("style"); st.id="mlsAvStyle";
+    st.textContent=
+      "#mlsAvHead{display:flex;align-items:center;gap:10px;margin:0 0 8px}"+
+      "#mlsAvFace{width:46px;height:46px;border-radius:999px;background:var(--soft);display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden;border:2px solid var(--line);animation:mlsAvIdle 4.5s ease-in-out infinite}"+
+      "#mlsAvFace img{width:100%;height:100%;object-fit:cover;border-radius:999px}"+
+      "#mlsAvFace.speaking{animation:mlsAvSpeak .9s ease-in-out infinite}"+
+      "#mlsAvName{font-weight:800;color:var(--blue);font-size:14px}"+
+      "#mlsAvName small{display:block;font-weight:600;color:var(--muted);font-size:11.5px}"+
+      ".mls-av-in{animation:mlsAvIn .28s ease-out}"+
+      ".mls-av-typing{display:inline-flex;gap:4px;padding:11px 13px}"+
+      ".mls-av-typing span{width:6px;height:6px;border-radius:999px;background:var(--muted);animation:mlsAvDot 1.2s ease-in-out infinite}"+
+      ".mls-av-typing span:nth-child(2){animation-delay:.15s}.mls-av-typing span:nth-child(3){animation-delay:.3s}"+
+      "@keyframes mlsAvIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}"+
+      "@keyframes mlsAvSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}"+
+      "@keyframes mlsAvIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}"+
+      "@keyframes mlsAvDot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}"+
+      "@media (prefers-reduced-motion: reduce){#mlsAvFace,#mlsAvFace.speaking,.mls-av-in,.mls-av-typing span{animation:none!important}}";
+    (document.head||document.documentElement).appendChild(st);
+  }
+  function avSetIdentity(av){
+    avEnsureStyle();
+    var face=$("mlsAvFace"), nameEl=$("mlsAvName");
+    if(nameEl && av && av.name){ nameEl.innerHTML=""; nameEl.appendChild(document.createTextNode(av.name)); var s=document.createElement("small"); s.textContent="Pre-visit check-in assistant"; nameEl.appendChild(s); }
+    if(face && av && typeof av.faceImage==="string" && av.faceImage.indexOf("data:image/")===0){
+      face.textContent=""; var img=document.createElement("img"); img.alt=""; img.src=av.faceImage; face.appendChild(img);
+    }
+  }
+  function avTyping(on){
+    var face=$("mlsAvFace"); if(face) face.classList.toggle("speaking", !!on);
+    var log=$("mlsAvLog"); if(!log) return;
+    var t=$("mlsAvTyping");
+    if(on){
+      if(t) return;
+      t=document.createElement("div"); t.id="mlsAvTyping"; t.className="mls-av-typing";
+      t.style.cssText="max-width:86%;margin:6px auto 6px 0;background:var(--soft);border-radius:14px";
+      for(var i=0;i<3;i++) t.appendChild(document.createElement("span"));
+      log.appendChild(t); log.scrollTop=log.scrollHeight;
+    } else if(t && t.parentNode){ t.parentNode.removeChild(t); }
+  }
   function avNewNonce(){
     var v="an-", A="abcdefghjkmnpqrstuvwxyz23456789";
     try{ var buf=new Uint8Array(16); crypto.getRandomValues(buf); for(var i=0;i<buf.length;i++) v+=A[buf[i]%A.length]; }
@@ -1172,7 +1213,9 @@
   }
   function avMsg(text, who){
     var log=$("mlsAvLog"); if(!log) return;
+    avTyping(false);
     var d=document.createElement("div");
+    d.className="mls-av-in";
     d.style.cssText="max-width:86%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap;"+
       (who==="me"?"margin:6px 0 6px auto;background:var(--blue);color:#fff":"margin:6px auto 6px 0;background:var(--soft);color:var(--ink)");
     d.textContent=text;
@@ -1192,6 +1235,7 @@
     if(avBusy||avDone) return;
     if(answer) avMsg(answer,"me");
     avSetBusy(true);
+    avTyping(true);
     /* On ANY failure the answer is restored to the box. Whether the server
        recorded it is UNKNOWN from here (the write may have committed and only
        the response died), so the resend carries the SAME nonce and the server
@@ -1210,6 +1254,7 @@
         }
         if(!j || typeof j.say!=="string" || !j.say){ throw {}; }
         avLastTry=null;
+        if(j.avatar) avSetIdentity(j.avatar);
         avMsg(j.say,"ai");
         if(j.progress && j.progress.total>0 && !j.done){
           var pr=$("mlsAvProgress"); if(pr){ pr.textContent="Question "+Math.min(j.progress.covered||1,j.progress.total)+" of "+j.progress.total; pr.style.display="block"; }
@@ -1239,6 +1284,7 @@
         '<button type="button" class="btn" id="mlsAvStart">Start check-in</button>'+
       '</div>'+
       '<div id="mlsAvChat" style="display:none">'+
+        '<div id="mlsAvHead"><div id="mlsAvFace">🧑‍⚕️</div><div id="mlsAvName">Check-in assistant</div></div>'+
         '<div id="mlsAvProgress" style="display:none;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 4px"></div>'+
         '<div id="mlsAvLog" style="max-height:320px;overflow-y:auto;padding:4px 2px;display:flex;flex-direction:column"></div>'+
         '<div id="mlsAvInputRow" style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+

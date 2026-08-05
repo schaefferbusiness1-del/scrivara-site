@@ -112,7 +112,8 @@ const server = http.createServer((req, res) => {
         turnCount++;
         const body = JSON.parse(route.request().postData() || '{}');
         turnLog.push(body);
-        if (turnCount === 1) return respond({ ok: true, say: 'Hi! I\'m Ava. What brings you in today?', done: false, progress: { covered: 1, total: 2 } });
+        if (turnCount === 1) return respond({ ok: true, say: 'Hi! I\'m Ava. What brings you in today?', done: false, progress: { covered: 1, total: 2 },
+          avatar: { name: 'Ava', faceImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' } });
         return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 2, total: 2 } });
       }
       return respond({ ok: true });
@@ -141,6 +142,15 @@ const server = http.createServer((req, res) => {
       return !!el && el.style.display !== 'none' && /Question 1 of 2/.test(el.textContent || '');
     });
     scenario('A2b honest progress shows (Question 1 of 2)', progressShown);
+    const identityOk = await page.evaluate(() => {
+      const face = document.getElementById('mlsAvFace');
+      const name = document.getElementById('mlsAvName');
+      const styleNode = document.getElementById('mlsAvStyle');
+      return !!(face && face.querySelector('img') && name && /Ava/.test(name.textContent || '')
+        && styleNode && /prefers-reduced-motion/.test(styleNode.textContent || '')
+        && /mlsAvIdle/.test(styleNode.textContent || ''));
+    });
+    scenario('A2c the avatar face renders with animations + a reduced-motion kill', identityOk);
 
     await page.fill('#mlsAvInput', 'My lower back hurts.');
     await page.click('#mlsAvSend');
@@ -175,13 +185,14 @@ const server = http.createServer((req, res) => {
       return respond({ ok: true });
     });
     await page.goto(base + '/tests/fixtures/blank.html', { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page.setContent('<div id="mlsTbMenuPanel"><button>Something</button><button>Settings</button></div>');
+    await page.setContent('<div id="mlsTbMenuPanel"><button>Something</button><button>Settings</button></div><div id="visitView"></div>');
     await page.evaluate(() => {
       window.bkToken = () => 'tok';
       window.bkBase = () => 'https://scrivara-backend.onrender.com';
       window.__mlsImported = [];
       window.__mlsStore = [{ id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' }];
       window.getPatients = () => window.__mlsStore;
+      window.getActivePtId = () => 'ext-9';
       // realistic upsert: applies the row into the store (av-1.1.0 verifies by
       // re-reading the store before claiming success)
       window.upsertPatient = (p) => {
@@ -236,6 +247,17 @@ const server = http.createServer((req, res) => {
       if (clicked) { await page.waitForTimeout(400); seenOk = posts.some((u) => /\/5\/seen$/.test(u)); }
     }
     scenario('B5 Mark seen POSTs to the exact check-in', seenOk, seenOk ? null : posts.join(','));
+    // B6: the Visit-page card — after a badge refresh, #visitView carries the
+    // check-in card, and because the ACTIVE patient (ext-9) has a ready
+    // check-in, the highlight line + View highlights button show.
+    await page.evaluate(() => { document.querySelector('.mlsAvBack') && document.querySelector('.mlsAvClose').click(); });
+    await page.evaluate(() => window.__mlsAvatar.refreshCount(true));
+    await page.waitForFunction(() => {
+      const card = document.getElementById('mlsAvVisitCard');
+      return !!card && /completed their pre-visit check-in/.test(card.textContent || '')
+        && Array.from(card.querySelectorAll('button')).some((b) => /View highlights/.test(b.textContent || ''));
+    }, null, { timeout: 6000 });
+    scenario('B6 the Visit page carries the active-patient check-in highlight', true);
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }

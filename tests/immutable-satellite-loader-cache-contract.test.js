@@ -66,7 +66,9 @@ const assets = [
      av-1.2.0 ready-cache + interview preview + copy-summary): both files
      changed after their b873 URLs shipped. */
   ['feat_mls_copilot_power.js', '20260805cpw120', '20260805cpw110'],
-  ['feat_mls_avatar.js', '20260805av120', '20260805av110'],
+  /* 2026-08-05 round 3 (av-1.3.0): camera-captured stylized face, patient-side
+     animations identity, and the Visit-page check-in card. */
+  ['feat_mls_avatar.js', '20260805av130', '20260805av120'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
