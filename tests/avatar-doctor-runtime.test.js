@@ -25,7 +25,15 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-1.3.1'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-2.0.0'"), 'version token moved without updating this contract');
+/* av-2.0.0: the Visit card sits at the TOP of the visit view, shows the active
+   patient's bullets inline, and files the patient's words into the VISIT
+   TRANSCRIPT idempotently (stamped block + input event so the mirror merges). */
+assert(source.includes('view.insertBefore(card, view.firstChild)'), 'the Visit card must sit at the TOP of the visit view');
+assert(source.includes("gid('ez3flTranscript')"), 'the transcript insert lost its anchor');
+assert(source.includes('Pre-visit check-in #'), 'the transcript idempotency stamp was removed');
+assert(/function addToTranscript[\s\S]{0,1500}dispatchEvent\(new Event\('input'/.test(source), 'the transcript insert must fire an input event so the app mirror sees it');
+assert(source.includes('function qValues()'), 'the per-question editor was removed');
 /* av-1.3.1: this module is idle-deferred, so the app's ready events can fire
    before it loads — the mount ladder itself must place the Visit card and do
    one boot count-refresh, or a fresh login shows nothing until a view switch. */
@@ -38,7 +46,10 @@ assert(source.includes("'friendly', 'Warm & friendly (default)'"), 'the tone set
 assert(/function close\(\) \{[\s\S]{0,120}stopCamera/.test(source), 'panel close no longer stops the camera');
 assert(source.includes('dataUrl.length > 150000'), 'the client-side portrait size cap was removed');
 assert(source.includes("gid('visitView')"), 'the Visit-page card lost its anchor');
-assert(source.includes('view.appendChild(card)'), 'the Visit card must append at the BOTTOM of the visit view (patient banner stays minimal)');
+/* 2026-08-05 round 5, owner order: the bottom placement was invisible below
+   the fold — the card now leads the visit view. (The app's top patient banner
+   #mlsCtxBar is a different element and stays untouched.) */
+assert(!source.includes('view.appendChild(card)'), 'the Visit card regressed to the below-the-fold bottom placement');
 /* av-1.2.0: the preview walks the UNSAVED form values entirely locally. */
 assert(source.includes('Nothing was saved or sent'), 'the preview lost its nothing-saved honesty line');
 assert(source.includes('window.__mlsAvatar.lastReady'), 'the ready cache for the Copilot snapshot was removed');
@@ -54,8 +65,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260805av131";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av131 loader');
+const marker = "feat_mls_avatar.js?v=20260805av200";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av200 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -110,7 +121,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-1.3.1');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-2.0.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

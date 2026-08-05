@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-1.3.1';
+  var VERSION = 'av-2.0.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -157,6 +157,9 @@
             patient_external_id: clean(c.patient_external_id),
             ready_at: c.ready_at || null,
             bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
+            /* av-2.0.0: the Visit card files the summary into transcript/chart
+               without a second fetch — bounded to keep the cache small. */
+            summary: c.summary ? String(c.summary).slice(0, 4000) : null,
             flags: Array.isArray(c.flags) ? c.flags : []
           };
         })
@@ -370,6 +373,14 @@
       host.innerHTML = '';
       var cfg = r.json.config || {};
       var form = make('div', 'mlsAvForm');
+      function section(text, sub) {
+        var s = make('div', '');
+        s.style.cssText = 'margin-top:6px;padding-top:10px;border-top:1px solid #EFEDE6';
+        var h = make('div', '', text); h.style.cssText = 'font:800 13px \'Public Sans\',system-ui;color:#204034';
+        s.appendChild(h);
+        if (sub) { var p = make('div', '', sub); p.style.cssText = 'font-size:12px;color:#69736d;margin-top:2px'; s.appendChild(p); }
+        return s;
+      }
       var nameLabel = make('label', '', 'Avatar name (what patients see)');
       var nameInput = make('input'); nameInput.value = cfg.name || 'Ava'; nameInput.maxLength = 60;
       var introLabel = make('label', '', 'Greeting line (optional)');
@@ -436,15 +447,57 @@
         toneSelect.appendChild(o);
       });
 
-      var qLabel = make('label', '', 'Questions the avatar asks — ONE PER LINE, in order (up to 20)');
-      var qArea = make('textarea'); qArea.rows = 9;
-      qArea.value = Array.isArray(cfg.questions) ? cfg.questions.join('\n') : '';
-      qArea.placeholder = 'What brings you in today?\nHow bad is the pain on a 0-10 scale?\nAny new medications or allergies since your last visit?';
+      /* av-2.0.0: a REAL question editor — one row per question with remove
+         and reorder, plus one-tap starter questions. The avatar asks these in
+         order and adds its own smart follow-ups live. */
+      var qList = make('div', ''); qList.style.cssText = 'display:grid;gap:6px';
+      var qRows = [];
+      function qValues() {
+        return qRows.map(function (r) { return r.input.value.trim(); }).filter(Boolean).slice(0, 20);
+      }
+      function reflowQ() {
+        qList.innerHTML = '';
+        qRows.forEach(function (r, i) {
+          r.num.textContent = (i + 1) + '.';
+          r.up.disabled = i === 0; r.down.disabled = i === qRows.length - 1;
+          qList.appendChild(r.row);
+        });
+      }
+      function addQRow(text, focus) {
+        if (qRows.length >= 20) { safe(function () { window.toast('Up to 20 questions.', ''); }); return; }
+        var row = make('div', ''); row.style.cssText = 'display:flex;gap:6px;align-items:center';
+        var num = make('span', ''); num.style.cssText = 'font:700 12px system-ui;color:#69736d;min-width:20px;text-align:right';
+        var input = make('input'); input.value = text || ''; input.placeholder = 'Type a question…'; input.maxLength = 300; input.style.flex = '1';
+        var up = make('button', 'mlsAvAction', '↑'); up.type = 'button'; up.title = 'Move up';
+        var down = make('button', 'mlsAvAction', '↓'); down.type = 'button'; down.title = 'Move down';
+        var del = make('button', 'mlsAvAction', '✕'); del.type = 'button'; del.title = 'Remove this question';
+        [up, down, del].forEach(function (b) { b.style.padding = '6px 9px'; });
+        var entry = { row: row, input: input, num: num, up: up, down: down };
+        up.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i > 0) { qRows.splice(i, 1); qRows.splice(i - 1, 0, entry); reflowQ(); } });
+        down.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i >= 0 && i < qRows.length - 1) { qRows.splice(i, 1); qRows.splice(i + 1, 0, entry); reflowQ(); } });
+        del.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i >= 0) { qRows.splice(i, 1); reflowQ(); } });
+        row.appendChild(num); row.appendChild(input); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+        qRows.push(entry); reflowQ();
+        if (focus) safe(function () { input.focus(); });
+      }
+      (Array.isArray(cfg.questions) ? cfg.questions : []).forEach(function (q) { addQRow(q); });
+      var addQBtn = make('button', 'mlsAvAction', '+ Add question'); addQBtn.type = 'button';
+      addQBtn.addEventListener('click', function () { addQRow('', true); });
+      var starters = make('div', 'mlsAvActions');
+      var starterNote = make('div', 'mlsAvMeta', qRows.length ? 'Quick add:' : 'Start from the basics — tap to add:');
+      [['What brings you in today?'], ['How bad is the pain right now, 0-10?'], ['Where exactly is the pain, and does it travel anywhere?'], ['Any new medications, allergies, or health changes since your last visit?'], ['What makes it better or worse?']].forEach(function (s) {
+        var chip = make('button', 'mlsAvAction', '+ ' + s[0]); chip.type = 'button';
+        chip.addEventListener('click', function () {
+          if (qValues().indexOf(s[0]) >= 0) return;
+          addQRow(s[0]);
+        });
+        starters.appendChild(chip);
+      });
       var saveBtn = make('button', 'mlsAvAction primary', 'Save avatar');
       saveBtn.type = 'button';
       var status = make('div', 'mlsAvMeta', '');
       saveBtn.addEventListener('click', function () {
-        var questions = qArea.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean).slice(0, 20);
+        var questions = qValues();
         saveBtn.disabled = true; status.textContent = 'Saving…';
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
           tone: toneSelect.value,
@@ -464,7 +517,7 @@
       previewBtn.type = 'button';
       var previewHost = make('div', '');
       previewBtn.addEventListener('click', function () {
-        var questions = qArea.value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).slice(0, 20);
+        var questions = qValues();
         previewHost.innerHTML = '';
         if (!questions.length) { previewHost.appendChild(make('div', 'mlsAvNotice', 'Write at least one question above, then preview.')); return; }
         var log = make('div', 'mlsAvSummary'); log.style.maxHeight = '260px';
@@ -493,11 +546,15 @@
         inp.focus();
       });
 
+      form.appendChild(section('1 · Identity', 'Who greets your patients — the name, the tone, and your face.'));
       form.appendChild(nameLabel); form.appendChild(nameInput);
       form.appendChild(introLabel); form.appendChild(introInput);
       form.appendChild(toneLabel); form.appendChild(toneSelect);
       form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
-      form.appendChild(qLabel); form.appendChild(qArea);
+      form.appendChild(section('2 · Questions', 'Asked in order. The avatar adds its own smart follow-ups when an answer needs detail.'));
+      form.appendChild(qList); form.appendChild(addQBtn);
+      form.appendChild(starterNote); form.appendChild(starters);
+      form.appendChild(section('3 · Save & try it', 'Preview walks the interview exactly as a patient sees the script — nothing is saved or sent by the preview.'));
       var btnRow = make('div', 'mlsAvActions');
       btnRow.appendChild(saveBtn); btnRow.appendChild(previewBtn);
       form.appendChild(btnRow); form.appendChild(status);
@@ -565,7 +622,14 @@
     back.appendChild(panel);
     (document.body || document.documentElement).appendChild(back);
     document.addEventListener('keydown', onKey, true);
-    inboxList(body, 'ready');
+    if (pendingSetupTab) {
+      pendingSetupTab = false;
+      Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
+      tabs.children[2].classList.add('on');
+      setupForm(body);
+    } else {
+      inboxList(body, 'ready');
+    }
   }
 
   /* ---- the Visit-page presence: check-ins meet the doctor where he works.
@@ -576,6 +640,42 @@
   function activePtIdSafe() {
     return safe(function () { return isFn(window.getActivePtId) ? clean(window.getActivePtId()) : ''; }, '');
   }
+
+  /* av-2.0.0: the patient's own words flow into the VISIT — insert the
+     check-in summary into the visit transcript box as a clearly labelled
+     patient-reported block, so the drafted note incorporates it. Typing and
+     pasting into that box is a first-class supported path (the box invites
+     it), and the transcript mirror merges rather than overwrites. Idempotent
+     by stamp; honest toast when the box is not on screen. */
+  function transcriptStamp(checkin) {
+    return '[Pre-visit check-in #' + (checkin.id != null ? checkin.id : '?') + ' — patient-reported]';
+  }
+  function addToTranscript(checkin, button) {
+    var box = gid('ez3flTranscript') || gid('ez3Transcript');
+    if (!box || typeof box.value !== 'string') {
+      toast('The visit transcript box is not on this screen right now — open the Visit recorder first.');
+      return false;
+    }
+    var stamp = transcriptStamp(checkin);
+    if (box.value.indexOf(stamp) >= 0) {
+      if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
+      return true;
+    }
+    var block = stamp + '\n' + String(checkin.summary || '').trim() + '\n';
+    box.value = box.value.trim() ? (box.value.replace(/\s+$/, '') + '\n\n' + block) : block;
+    safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
+    if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
+    toast('Patient-reported check-in added to the visit transcript — the drafted note will include it.');
+    return true;
+  }
+
+  function visitButton(label, primary, onTap) {
+    var b = make('button', 'mlsAvAction' + (primary ? ' primary' : ''), label);
+    b.type = 'button';
+    b.addEventListener('click', function (event) { event.preventDefault(); onTap(b); });
+    return b;
+  }
+
   function ensureVisitCard() {
     var view = gid('visitView'); if (!view) return;
     var card = gid('mlsAvVisitCard');
@@ -583,8 +683,10 @@
       style();
       card = document.createElement('div');
       card.id = 'mlsAvVisitCard';
-      card.style.cssText = 'margin:14px 2px 8px;padding:11px 13px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-family:\'Public Sans\',system-ui,sans-serif';
-      view.appendChild(card);
+      card.style.cssText = 'margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+      /* TOP of the visit view — where the doctor's eye already is. (The app's
+         top patient banner is untouched; this lives inside the Visit content.) */
+      view.insertBefore(card, view.firstChild);
     }
     var cache = safe(function () { return window.__mlsAvatar.lastReady; }, null);
     var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
@@ -595,21 +697,70 @@
         if (clean(cache.checkins[i].patient_external_id) === activeId) { activeHit = cache.checkins[i]; break; }
       }
     }
+    /* Same content -> no rebuild (buttons keep their done/disabled states). */
+    var sig = (activeHit ? 'a' + activeHit.id : 'n') + '|' + total + '|' + activeId;
+    if (card.getAttribute('data-mls-av-sig') === sig) return;
+    card.setAttribute('data-mls-av-sig', sig);
     card.innerHTML = '';
-    var title = make('span', '', '🧑‍⚕️ Avatar check-ins');
-    title.style.cssText = 'font-weight:800;color:#204034;font-size:13px';
-    card.appendChild(title);
+    var head = make('div', '');
+    head.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    var title = make('span', '', '🧑‍⚕️ Avatar');
+    title.style.cssText = 'font-weight:800;color:#204034;font-size:13.5px';
+    head.appendChild(title);
     var line = make('span', '', activeHit
-      ? '✨ This patient completed their pre-visit check-in — the highlights are ready.'
-      : (total == null ? 'Program the interview and read completed check-ins.'
-        : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' ready.'))));
+      ? '✨ This patient completed their pre-visit check-in:'
+      : (total == null ? 'Your AI check-in assistant — patients answer your questions before the visit.'
+        : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' finished their check-in.'))));
     line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
-    card.appendChild(line);
-    var openBtn = make('button', 'mlsAvAction' + (activeHit ? ' primary' : ''), activeHit ? 'View highlights' : 'Open');
-    openBtn.type = 'button';
-    openBtn.addEventListener('click', function (event) { event.preventDefault(); open(); });
-    card.appendChild(openBtn);
+    head.appendChild(line);
+    head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
+    if (!activeHit) head.appendChild(visitButton('Set up', !total, function () { open(); openSetupTab(); }));
+    card.appendChild(head);
+
+    if (activeHit) {
+      /* THE REVIEW UI: the doctor sees the patient's key points right here,
+         no click required, and files them where they belong with one tap. */
+      var full = null; /* full summary text arrives via the panel cache rows */
+      if (Array.isArray(activeHit.bullets) && activeHit.bullets.length) {
+        var ul = make('ul', 'mlsAvBullets');
+        activeHit.bullets.forEach(function (bullet) {
+          ul.appendChild(make('li', /^⚠/.test(String(bullet)) ? 'flag' : '', String(bullet)));
+        });
+        card.appendChild(ul);
+      }
+      var actions = make('div', 'mlsAvActions');
+      actions.style.marginTop = '9px';
+      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null };
+      var needSummary = !detail.summary;
+      function withSummary(run, button) {
+        if (!needSummary) { run(); return; }
+        button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
+        api('/api/avatar/checkins?status=ready').then(function (r) {
+          button.disabled = false; button.textContent = was;
+          var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : [];
+          for (var j = 0; j < rows.length; j++) if (rows[j].id === detail.id) { detail.summary = rows[j].summary; detail.ready_at = rows[j].ready_at; break; }
+          if (detail.summary) { needSummary = false; run(); }
+          else toast('Could not load the full summary — open All check-ins and use it from there.');
+        }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
+      }
+      actions.appendChild(visitButton('Add to visit transcript', true, function (b) {
+        withSummary(function () { addToTranscript(detail, b); }, b);
+      }));
+      actions.appendChild(visitButton('Add to chart', false, function (b) {
+        withSummary(function () { importSummary(detail, b); }, b);
+      }));
+      actions.appendChild(visitButton('Full summary', false, function (b) {
+        withSummary(function () {
+          if (full && full.parentNode) { full.parentNode.removeChild(full); full = null; b.textContent = 'Full summary'; return; }
+          full = make('div', 'mlsAvSummary', String(detail.summary));
+          card.appendChild(full); b.textContent = 'Hide summary';
+        }, b);
+      }));
+      card.appendChild(actions);
+    }
   }
+  var pendingSetupTab = false;
+  function openSetupTab() { pendingSetupTab = true; }
 
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;

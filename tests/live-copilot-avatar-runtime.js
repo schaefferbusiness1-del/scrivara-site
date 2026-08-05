@@ -185,7 +185,7 @@ const server = http.createServer((req, res) => {
       return respond({ ok: true });
     });
     await page.goto(base + '/tests/fixtures/blank.html', { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page.setContent('<div id="mlsTbMenuPanel"><button>Something</button><button>Settings</button></div><div id="visitView"></div>');
+    await page.setContent('<div id="mlsTbMenuPanel"><button>Something</button><button>Settings</button></div><div id="visitView"><div id="vExisting">existing visit content</div><textarea id="ez3flTranscript"></textarea></div>');
     await page.evaluate(() => {
       window.bkToken = () => 'tok';
       window.bkBase = () => 'https://scrivara-backend.onrender.com';
@@ -223,15 +223,15 @@ const server = http.createServer((req, res) => {
     });
     scenario('B2 ready check-in renders with the flag bullet FIRST', flagFirst);
 
-    await page.click('.mlsAvAction.primary');
+    await page.click('.mlsAvPanel .mlsAvAction.primary');
     const imported = await page.evaluate(() => window.__mlsImported);
     const stampOk = imported.length === 1 && /\[Avatar check-in #5 — completed /.test(imported[0].summary) && imported[0].summary.startsWith('Existing history.');
     scenario('B3 import appends the stamped summary once, preserving history', stampOk, stampOk ? null : JSON.stringify(imported).slice(0, 200));
-    await page.click('.mlsAvAction.primary').catch(() => {});
+    await page.click('.mlsAvPanel .mlsAvAction.primary').catch(() => {});
     const stillOne = await page.evaluate(() => window.__mlsImported.length === 1);
     scenario('B4 a second import tap is refused by the stamp guard', stillOne);
 
-    const seenBtn = await page.$('button.mlsAvAction:not(.primary):not([disabled])');
+    const seenBtn = await page.$('.mlsAvPanel button.mlsAvAction:not(.primary):not([disabled])');
     let seenOk = false;
     if (seenBtn) {
       const label = await seenBtn.textContent();
@@ -255,9 +255,33 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => {
       const card = document.getElementById('mlsAvVisitCard');
       return !!card && /completed their pre-visit check-in/.test(card.textContent || '')
-        && Array.from(card.querySelectorAll('button')).some((b) => /View highlights/.test(b.textContent || ''));
+        && card.querySelectorAll('.mlsAvBullets li').length >= 1
+        && Array.from(card.querySelectorAll('button')).some((b) => /Add to visit transcript/.test(b.textContent || ''));
     }, null, { timeout: 6000 });
-    scenario('B6 the Visit page carries the active-patient check-in highlight', true);
+    const cardOnTop = await page.evaluate(() => {
+      const view = document.getElementById('visitView');
+      return view.firstElementChild && view.firstElementChild.id === 'mlsAvVisitCard'
+        && !!document.getElementById('vExisting');
+    });
+    scenario('B6 the Visit page shows the check-in bullets INLINE, card on TOP, existing content intact', cardOnTop);
+
+    // B7: one tap files the patient's words into the visit transcript,
+    // labelled and idempotent; the app's input mirror is notified.
+    await page.evaluate(() => {
+      window.__mlsTxEvents = 0;
+      document.getElementById('ez3flTranscript').addEventListener('input', () => window.__mlsTxEvents++);
+      const btn = Array.from(document.querySelectorAll('#mlsAvVisitCard button')).find((b) => /Add to visit transcript/.test(b.textContent));
+      btn.click();
+    });
+    await page.waitForTimeout(300);
+    const txFacts = await page.evaluate(() => {
+      const v = document.getElementById('ez3flTranscript').value;
+      const btn = Array.from(document.querySelectorAll('#mlsAvVisitCard button')).find((b) => /In transcript/.test(b.textContent));
+      return { v, events: window.__mlsTxEvents, done: !!btn && btn.disabled,
+        stamps: (v.match(/\[Pre-visit check-in #5 — patient-reported\]/g) || []).length };
+    });
+    const txOk = txFacts.stamps === 1 && /lower back pain/.test(txFacts.v) && txFacts.events === 1 && txFacts.done;
+    scenario('B7 the patient-reported summary lands in the visit transcript once, labelled, mirror notified', txOk, txOk ? null : JSON.stringify(txFacts).slice(0, 200));
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }
