@@ -31,12 +31,12 @@ assert(redesign.includes('#mlsRdKbd{ display:none !important; }'), 'mobile icon-
 assert(redesign.includes('#mlsFab, #mlsFabMenu{ display:none !important; }'), 'mobile quick actions must not float over working controls');
 assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38px;'), 'mobile quick actions need one compact top-bar owner');
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
-/* Bumped to 20260802rd330. The point of this line is that the repaired asset
+/* Bumped to 20260804rd331. The point of this line is that the repaired asset
    ships behind a MOVED url - and the token had stopped moving: the file changed
    three times after '20260728rd328' while the loader still asked for it, so the
    service worker (versioned assets, cache-first) kept serving the old copy.
    tests/cache-token-cannot-go-stale.test.js now catches that class on its own. */
-assert(siteBundle.includes("feat_mls_redesign.js?v=20260802rd330"), 'the repaired responsive/performance asset needs a fresh deployment URL');
+assert(siteBundle.includes("feat_mls_redesign.js?v=20260804rd331"), 'the repaired responsive/performance asset needs a fresh deployment URL');
 
 assert(loading.includes("visualOwner: 'mlsProgressStages'") && !loading.includes('window.fetch = wrapped'),
   'shared loading store must stay headless and must not turn background requests into UI');
@@ -49,7 +49,7 @@ const loadingLoader = siteBundle.split(/\r?\n/).find(line => line.includes("var 
 assert(loadingLoader.includes("s.src=A+'?v=20260719lb204'") && loadingLoader.includes("s.setAttribute('data-mls-version',V)"),
   'the shared progress asset needs its exact version-aware fresh deployment URL');
 
-assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260802sg1c7'), 'reconciled Study Groups mount needs a fresh deployment URL');
+assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260804sg1c8'), 'reconciled Study Groups mount needs a fresh deployment URL');
 assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'"), 'read-only public preview still boots the hidden Study Groups/AI Studio surface');
 assert(studyGroups.includes("document.querySelectorAll('[id=\"mls-sg-root\"]')") && studyGroups.includes("[0, 250, 1000, 3000, 8000]"), 'Study Groups no longer deduplicates and reconciles its late mount');
 assert(!studyGroups.includes('id="mls-sg-athena"') && !studyCalm.includes('pull visits from Athena'), 'unverified Study Groups Athena-visit control remains visible');

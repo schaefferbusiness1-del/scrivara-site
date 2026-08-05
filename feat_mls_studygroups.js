@@ -520,7 +520,7 @@
   /* ================= REVERT ================= */
   function revert(purgeData) {
     try { mountTimers.forEach(function (timer) { clearTimeout(timer); }); mountTimers = []; } catch (e) {}
-    try { window.removeEventListener('mls:ui-ready', boot); window.removeEventListener('mls:route-change', boot); } catch (e) {}
+    try { window.removeEventListener('mls:ui-ready', boot); } catch (e) {}
     try { document.querySelectorAll('[' + TAG + ']').forEach(function (n) { n.remove(); }); } catch (e) {}
     var st = document.getElementById(STYLE_ID); if (st) st.remove();
     var modal = document.getElementById('mls-sg-modal'); if (modal) modal.remove();
@@ -541,7 +541,12 @@
   var mountTimers = [];
   function startMountLifecycle() {
     [0, 250, 1000, 3000, 8000].forEach(function (delay) { mountTimers.push(setTimeout(boot, delay)); });
-    try { window.addEventListener('mls:ui-ready', boot); window.addEventListener('mls:route-change', boot); } catch (e) {}
+    /* 2026-08-04 (#24): 'mls:route-change' is dispatched by no production code.
+       It is NOT renamed to the live 'mls:view-changed' on purpose: mountUI()
+       re-renders whenever the Studio mount node exists, so riding every view
+       switch would churn the panel. The bounded timers + mls:ui-ready own
+       mounting. */
+    try { window.addEventListener('mls:ui-ready', boot); } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startMountLifecycle, { once: true });
   else startMountLifecycle();

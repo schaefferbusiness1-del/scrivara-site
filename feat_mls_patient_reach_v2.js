@@ -552,7 +552,10 @@
   D.addEventListener('click', onClick, true);
   D.addEventListener('keydown', onKeydown, true);
   W.addEventListener('mls:view-changed', onViewChanged, false);
-  ['mls:ui-ready', 'mls:nav-ready', 'sf:ready'].forEach(function (name) { W.addEventListener(name, init); });
+  /* 2026-08-04 (#24): mls:nav-ready and sf:ready are dispatched by no
+     production code — mls:ui-ready plus the bounded DOMContentLoaded observer
+     below are the real boot moments. */
+  W.addEventListener('mls:ui-ready', init);
   if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', startBoundedInit, { once: true }); else startBoundedInit();
 
   W.__mlsPatientReach = {

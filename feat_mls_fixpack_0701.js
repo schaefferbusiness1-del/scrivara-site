@@ -1062,8 +1062,15 @@
       }
     }, true);
 
-    ['mls:ui-ready', 'mls:view-changed', 'mls:patient-changed', 'mls:note-generated',
-      'mls:generation-complete', 'mls:schedule-updated', 'mls:calendar-updated'].forEach(function (name) {
+    /* 2026-08-04 (#24 dead listeners): this list carried four names NO
+       production code ever dispatches (mls:patient-changed, mls:note-generated,
+       mls:schedule-updated, mls:calendar-updated — checked against the live
+       dispatch inventory). The patient moment really fires as
+       mls:active-patient-changed; note generation already settles through
+       mls:generation-complete below; schedule/calendar repaints are caught by
+       this bus's own MutationObserver on #calendarView/#mlsAgendaChip. */
+    ['mls:ui-ready', 'mls:view-changed', 'mls:active-patient-changed',
+      'mls:generation-complete'].forEach(function (name) {
       listen(window, name, function () { queueRefresh(document, name, 40); }, false);
     });
     /* Generation settled (success OR failure): stop the generation burst —

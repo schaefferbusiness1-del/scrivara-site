@@ -32,7 +32,7 @@ const assets = [
      file changed three times after '20260728rd328' while the token stood still,
      so a returning browser kept the cached copy. Caught by
      tests/cache-token-cannot-go-stale.test.js. */
-  ['feat_mls_redesign.js', '20260802rd330', '20260728rd327'],
+  ['feat_mls_redesign.js', '20260804rd331', '20260802rd330'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],

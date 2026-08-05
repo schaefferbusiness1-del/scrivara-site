@@ -1300,7 +1300,13 @@
     };
     try{ document.addEventListener('input',_surfaceInputHandler,true); }catch(e){}
     try{ window.addEventListener('mls:active-patient-changed',_surfacePatientHandler); }catch(e2){}
-    try{ window.addEventListener('mls:note-updated',_surfacePatientHandler); }catch(e3){}
+    /* 2026-08-04 (#24): this used to listen for 'mls:note-updated', a name no
+       production code dispatches (only a test fixture emitted it — vacuous).
+       The genuine programmatic-note moment is generation settling: showNote()
+       writes #noteBox.value with NO input event, so the note-draft body state
+       lagged until the next keystroke. mls:generation-complete fires on every
+       generate exit lane; the handler is guarded and idempotent. */
+    try{ window.addEventListener('mls:generation-complete',_surfacePatientHandler); }catch(e3){}
     try{ window.addEventListener('storage',_surfaceStorageHandler); }catch(e4){}
   }
   function ensurePayReportMenuItem(){
@@ -1400,7 +1406,7 @@
   function revert(){ try{if(_obs)_obs.disconnect();if(_lifeObs)_lifeObs.disconnect();_observedRoot=null;_lifeRoot=null;}catch(e){} try{_t.forEach(function(timer){clearTimeout(timer);});_t=[];}catch(e){} try{if(_schedT)clearTimeout(_schedT);}catch(e){}
     try{window.removeEventListener('mls:ui-ready',schedule);window.removeEventListener('mls:view-mode-changed',schedule);}catch(e){}
     try{if(_surfaceInputHandler)document.removeEventListener('input',_surfaceInputHandler,true);}catch(e){}
-    try{if(_surfacePatientHandler){window.removeEventListener('mls:active-patient-changed',_surfacePatientHandler);window.removeEventListener('mls:note-updated',_surfacePatientHandler);}}catch(e){}
+    try{if(_surfacePatientHandler){window.removeEventListener('mls:active-patient-changed',_surfacePatientHandler);window.removeEventListener('mls:generation-complete',_surfacePatientHandler);}}catch(e){}
     try{if(_surfaceStorageHandler)window.removeEventListener('storage',_surfaceStorageHandler);}catch(e){}
     _surfaceInputHandler=null;_surfacePatientHandler=null;_surfaceStorageHandler=null;
     try{if(_railKeyHandler)document.removeEventListener('keydown',_railKeyHandler,true);}catch(e){} try{if(_railResizeHandler)window.removeEventListener('resize',_railResizeHandler);}catch(e){}
