@@ -320,7 +320,7 @@ async function formSaveVisibility() {
 
 function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
-  assert(source.includes("VERSION='tl-1.4.0'"), 'the save-saves + destructive-activate-guard lane must carry tl-1.3.0');
+  assert(source.includes("VERSION='tl-1.5.0'"), 'the import-progress + never-dead-end lane must carry tl-1.5.0 (pin moved deliberately with the b882 two-bar/timer/unreadable-rows work)');
 
   /* tl-1.3.0 — the two mechanisms that cost the owner his library on b833.
      Both are asserted on the SOURCE as well as at runtime, because both
@@ -344,10 +344,10 @@ function staticContracts() {
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260731tl140'));
+    assert(loader.includes('feat_mls_template_library.js?v=20260805tl150'));
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260731tl140');
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260805tl150');
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');
