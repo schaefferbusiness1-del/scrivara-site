@@ -36,6 +36,11 @@ const tests = [
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
   'deselect-releases-the-visit.test.js',
+  /* Owner 2026-08-05: clicking a name on the left did not open that patient on
+     the right. Four modules wrap renderProfile; two of them called each other
+     until the stack overflowed and the app's own render never ran. Executes
+     both real modules against a stub DOM with deterministic timers. */
+  'patient-select-renders-that-patient.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',
