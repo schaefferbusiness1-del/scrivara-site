@@ -399,6 +399,12 @@ const tests = [
   'assistant-request-ownership-runtime.test.js',
   'copilot-actions-once-contract.test.js',
   'copilot-context-pack-runtime.test.js',
+  /* 2026-08-05 Copilot Power (cpw-1.0.0): the snapshot gains providerCoverage +
+     capabilities, the /api/copilot body gains an ABSOLUTE wire cap through the
+     loaded wrapper, and the agentic kinds (pullProviders/draftNote) execute
+     fail-closed with honest receipts. */
+  'copilot-power-context-contract.test.js',
+  'copilot-power-actions-runtime.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',

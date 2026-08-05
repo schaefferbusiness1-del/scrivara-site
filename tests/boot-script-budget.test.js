@@ -369,7 +369,13 @@ const LOADER = 'mls-connect.js';
  *     requests, zero behaviour between them). That needs a build step this repo
  *     does not have, so it is recorded here as owed rather than pretended away.
  *     Do not raise this ceiling again for a stylesheet module; bundle instead. */
-const CEILING = 252;
+/* 2026-08-05 cpw-1.0.0 (owner-ordered Copilot Power): +1 loader,
+ *   feat_mls_copilot_power.js — the Copilot's app-wide senses and its
+ *   confirm-by-tap agentic executors (pullProviders/draftNote).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): the Copilot cannot be
+ *     asked anything before sign-in completes, so EAGER_CEILING does not move.
+ *     No timers, no observers; lifecycle events only. */
+const CEILING = 253;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

@@ -14919,6 +14919,11 @@ function _copilotNavigate(raw, label){
 function _copilotDoAction(kind, arg, btn){
   try{
     var done=function(){ if(btn){ btn.classList.add('cact-done'); } };
+    /* Agentic kinds (pullProviders, draftNote) are owned by the Copilot Power
+       module; the tap IS the confirmation and it posts honest receipts. */
+    if(window.__mlsCopilotPower && window.__mlsCopilotPower.installed && typeof window.__mlsCopilotPower.handles==='function' && window.__mlsCopilotPower.handles(kind)){
+      window.__mlsCopilotPower.run(kind, arg, btn); return;
+    }
     if(kind==='navigate'){
       if(_copilotNavigate(arg,btn&&btn.textContent)){ done(); return; }
       try{ toast('That suggestion isn’t wired to a screen yet — tell me what you want to see and I’ll take you there.',''); }catch(e){}

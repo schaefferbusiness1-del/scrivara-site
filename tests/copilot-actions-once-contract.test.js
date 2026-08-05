@@ -10,7 +10,11 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), '
 const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const afterVisitSource = fs.readFileSync(path.join(root, 'feat_after_visit_summary.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'ca-2.0.3'"));
+/* 2026-08-05: ca-2.1.0 — runAction delegates agentic kinds (pullProviders,
+   draftNote) to window.__mlsCopilotPower before the keyword fallback, so a
+   proposed pull can never degrade into a navigation guess. */
+assert(source.includes("var VERSION = 'ca-2.1.0'"));
+assert(source.includes("window.__mlsCopilotPower.handles(a.kind)"), 'agentic kinds no longer delegate to the Copilot Power executors');
 /* ca-2.0.3: unknown model-drift kinds resolve to a REAL view or say so —
    never a silent dead click, never navigation to a garbage view name. */
 assert(source.includes('function strictView(x)'), 'unknown-kind keyword resolver was removed');
