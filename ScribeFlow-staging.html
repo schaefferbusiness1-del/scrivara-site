@@ -662,7 +662,9 @@
     display:grid;place-items:center;font-size:25px}
   .auth-sub{color:var(--muted);font-size:13.5px;margin:0 0 24px;line-height:1.5}
   .auth-tabs{display:flex;gap:4px;margin-bottom:22px;background:var(--soft);padding:4px;border-radius:10px}
-  .auth-tab{flex:1;text-align:center;padding:9px;border-radius:10px;font-weight:600;font-size:14.5px;cursor:pointer;color:var(--muted);transition:.12s}
+  .auth-tab{flex:1;text-align:center;padding:9px;border-radius:10px;font-weight:600;font-size:14.5px;cursor:pointer;color:var(--muted);transition:.12s;
+    -webkit-appearance:none;appearance:none;background:transparent;border:0;margin:0;font-family:inherit;line-height:1.2}
+  .auth-tab:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .auth-tab.on{background:var(--card);color:var(--brand-dk);box-shadow:0 1px 3px rgba(20,40,70,.10)}
   .auth-err{display:none;font-size:13.5px;color:var(--red);background:#fdeced;border:1px solid #f6cccd;
     border-radius:10px;padding:9px 12px;margin-bottom:12px}
@@ -1606,9 +1608,9 @@
     <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
     <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
 
-    <div class="auth-tabs">
-      <div class="auth-tab on" id="tabLogin" onclick="switchAuth('login')">Log in</div>
-      <div class="auth-tab" id="tabSignup" onclick="switchAuth('signup')">Sign up</div>
+    <div class="auth-tabs" role="tablist" aria-label="Log in or create an account" onkeydown="_authTabsKeydown(event)">
+      <button type="button" class="auth-tab on" id="tabLogin" role="tab" aria-selected="true" onclick="switchAuth('login')">Log in</button>
+      <button type="button" class="auth-tab" id="tabSignup" role="tab" aria-selected="false" onclick="switchAuth('signup')">Sign up</button>
     </div>
 
     <div class="auth-err" id="authErr"></div>
@@ -1648,7 +1650,7 @@
 
     <!-- Forgot-password link + inline email-reset panel -->
     <div id="forgotLinkWrap" style="text-align:center;margin-top:12px">
-      <a href="#" id="forgotLink" style="font-size:13px;color:var(--brand);text-decoration:none" onclick="showForgot();return false;">Forgot password?</a>
+      <a href="#" id="forgotLink" style="font-size:13px;color:var(--brand);text-decoration:none;display:inline-block;padding:14px 10px;margin:-14px -10px" onclick="showForgot();return false;">Forgot password?</a>
     </div>
     <div id="forgotPanel" style="display:none;margin-top:12px">
       <div class="field">
@@ -4939,10 +4941,30 @@ function localEvaluationReceipt(m,email){
   };
 }
 
+/* Left/right arrows move between the two tabs, which is what a screen-reader
+   user is taught to press on a tablist. Enter and Space come free now that
+   these are real buttons. Registered once, on the tablist, so no per-node
+   listener can be orphaned by a re-render. */
+function _authTabsKeydown(e){
+  if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'&&e.key!=='Home'&&e.key!=='End') return;
+  var tabs=[document.getElementById('tabLogin'),document.getElementById('tabSignup')].filter(Boolean);
+  if(tabs.indexOf(e.target)<0) return;
+  e.preventDefault();
+  var next = (e.key==='Home') ? tabs[0]
+           : (e.key==='End') ? tabs[tabs.length-1]
+           : tabs[(tabs.indexOf(e.target) + (e.key==='ArrowRight'?1:tabs.length-1)) % tabs.length];
+  if(!next) return;
+  switchAuth(next.id==='tabSignup'?'signup':'login');
+  try{ next.focus(); }catch(_){}
+}
 function switchAuth(mode){
   authMode=mode;
   document.getElementById('tabLogin').classList.toggle('on',mode==='login');
   document.getElementById('tabSignup').classList.toggle('on',mode==='signup');
+  try{
+    document.getElementById('tabLogin').setAttribute('aria-selected',mode==='login'?'true':'false');
+    document.getElementById('tabSignup').setAttribute('aria-selected',mode==='signup'?'true':'false');
+  }catch(_){}
   document.getElementById('authConfirmField').style.display=mode==='signup'?'block':'none';
   const authBtn=document.getElementById('authBtn'); authBtn.textContent=mode==='signup'?'Create account':'Log in';
   document.getElementById('authPass').setAttribute('autocomplete',mode==='signup'?'new-password':'current-password');
@@ -23806,6 +23828,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b876';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b877';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

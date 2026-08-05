@@ -45,6 +45,10 @@ const tests = [
      b870 fixed one instance; this sweep found two more (the Up-Next hero and
      today's patient list), each broken in exactly one load order. */
   'wrapper-chains-reach-their-base.test.js',
+  /* Owner 2026-08-05 'fix sign in screen'. The tabs were divs: no keyboard path
+     to Sign up at all, and 3.31:1 contrast. Both already had fixes — in feat_*
+     modules the sign-in screen never loads. */
+  'sign-in-screen-is-reachable.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',

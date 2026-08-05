@@ -61,6 +61,12 @@ const PREEXISTING = {
                   //          (the 3.0.44 full-file candidate, same copy)
   '#6b7684': 1,   // "b768"
   '#b9770a': 6,   // "b977"
+  '#e0b877': 2,   // "b877" — the fill-box amber border and its dictation-
+                  //          correction twin in feat_mls_opnote_fill.js.
+                  //          Collided with the live build number on 2026-08-05
+                  //          at the b876 -> b877 bump. Git-verified untouched:
+                  //          both occurrences are byte-identical at HEAD b876,
+                  //          in a file the b877 change never opened.
   '#b7791f': 1,   // "b779" — AuthPilot amber (--mod), byte-identical since the
                   //          file's first upload; collided with the live build
                   //          number on 2026-07-28 (git-verified untouched by
