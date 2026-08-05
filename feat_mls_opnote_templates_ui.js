@@ -176,7 +176,14 @@
        is a defect the owner already hit once. */
     B + '.opr-top{ padding:14px 60px 14px 20px; gap:18px; background:var(--card);' +
       ' border-bottom:1px solid var(--line); }',
-    B + '.opr-top h3{ font-size:17px; letter-spacing:-.01em; white-space:nowrap; }',
+    /* nowrap is a WIDE-ONLY declaration (the module's own law, see the
+       #oprPanelProcs note above): unconditioned it ran the patient-mode title
+       ("Op note — <name>" + the History-ready chip) 95px past a 375px
+       viewport with no scroll parent — the chip was simply cut off on
+       phones. Narrow screens wrap instead. */
+    B + '.opr-top h3{ font-size:17px; letter-spacing:-.01em; }',
+    '@media (min-width:601px){ ' + B + '.opr-top h3{ white-space:nowrap; } }',
+    '@media (max-width:600px){ ' + B + '.opr-top h3{ white-space:normal; flex-wrap:wrap; row-gap:4px; } }',
     /* 44, NOT 40. `html body button{min-height:44px}` is the app-wide phone tap
        floor at (0,0,3); this selector out-specifies it, so declaring 40 here
        silently LOWERED the floor on the one control that gets you out of the

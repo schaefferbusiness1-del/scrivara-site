@@ -17,7 +17,7 @@ assert(source.includes("hardened.click();"), 'Patient Reach v2 must delegate thr
 assert(source.includes("open(kind, { mode: 'full'"), 'the left-navigation destination must always open the full workspace');
 assert(source.includes('openContext: function'), 'non-navigation actions need an explicit compact-dialog route');
 assert(!/setInterval\s*\(/.test(source), 'Patient Reach v2 must not install a perpetual polling loop');
-assert(connect.includes("feat_mls_patient_reach_v2.js?v=20260727pr205"), 'Patient Reach v2 loader is not cache-busted to its secure portal-only release');
+assert(connect.includes("feat_mls_patient_reach_v2.js?v=20260804pr206"), 'Patient Reach v2 loader is not cache-busted to its secure portal-only release');
 
 function makeHarness() {
   const byId = Object.create(null);

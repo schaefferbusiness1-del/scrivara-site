@@ -23,7 +23,7 @@
    *   revision check before ANY note parsing; chart capped to the most recent
    *   150 notes; regexes see at most the first 4 KB of a note. Bounded cost
    *   regardless of store pathology (huge visit counts, giant pasted notes). */
-  var VERSION = 'vtl-1.0.2';
+  var VERSION = 'vtl-1.0.3';
   var CARD_ID = 'mlsVtlCard', STYLE_ID = 'mlsVtlStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -185,17 +185,39 @@
     pending = true;
     setTimeout(function () { pending = false; safe(function () { render(false); }); }, 120);
   }
+  /* CARRY the other renderProfile wrappers' head markers forward. A module that
+     guards on "is MY marker on window.renderProfile" and re-arms on a timer
+     (feat_mls_visit_focus.js did, at 1.5s/4s/9s) sees an unmarked head the
+     moment we wrap over it, re-wraps, and re-points the module-level orig its
+     FIRST wrapper still reads -- the two then call each other until the stack
+     overflows. feat_mls_b121_pack.js carries exactly this list for exactly this
+     reason; not carrying it is what put the cycle back on b869. visit_focus now
+     also wraps at most once, so this is the belt, not the only defence. */
+  var CARRY = ['__vfWrapped', '__mlsUnsFoldWrap', '__mlsUnsFoldOrig'];
   function wrapRenderProfile() {
     if (wrapped) return;
     if (!isFn(window.renderProfile) || window.renderProfile.__vtlWrapped) { wrapped = !!(window.renderProfile && window.renderProfile.__vtlWrapped); return; }
     origRender = window.renderProfile;
     var w = function () {
       var r;
-      try { r = origRender.apply(this, arguments); } catch (e) {}
+      /* A throw from the chain below is NOT nothing. Swallowing it silently is
+         what made a completely dead profile pane invisible: the recursion above
+         overflowed the stack, this catch ate the RangeError, and the app's own
+         renderProfile body never ran while every surface reported success.
+         Record it and say so once — behaviour is otherwise unchanged. */
+      try { r = origRender.apply(this, arguments); }
+      catch (e) {
+        api.renderErrors++;
+        api.lastRenderError = String((e && e.name) || 'Error') + ': ' + String((e && e.message) || e);
+        if (api.renderErrors === 1) { try { console.warn('[MLS visit-timeline] renderProfile chain threw — the profile pane did NOT render: ' + api.lastRenderError); } catch (e2) {} }
+      }
       safe(schedule);
       return r;
     };
     w.__vtlWrapped = true; w.__vtlOrig = origRender;
+    for (var i = 0; i < CARRY.length; i++) {
+      try { if (origRender[CARRY[i]] !== undefined) w[CARRY[i]] = origRender[CARRY[i]]; } catch (e) {}
+    }
     window.renderProfile = w;
     wrapped = true;
   }
@@ -213,7 +235,12 @@
     return 'visit timeline reverted';
   }
 
-  window.__mlsVisitTimeline = { installed: true, version: VERSION, asset: 'feat_mls_visit_timeline.js', render: function () { lastKey = ''; render(false); }, _points: buildPoints, revert: revert };
+  /* renderErrors is the receipt for the swallowed-throw class above: a nonzero
+     count means the profile pane did NOT render, and it is readable from a live
+     tab and from the UI sweeps instead of only from a console nobody was
+     watching. */
+  var api = { installed: true, version: VERSION, asset: 'feat_mls_visit_timeline.js', renderErrors: 0, lastRenderError: '', render: function () { lastKey = ''; render(false); }, _points: buildPoints, revert: revert };
+  window.__mlsVisitTimeline = api;
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
