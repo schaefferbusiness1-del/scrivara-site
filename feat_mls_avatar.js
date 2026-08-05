@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-2.0.1';
+  var VERSION = 'av-2.0.2';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -148,18 +148,35 @@
   var lastRefreshAt = 0, refreshInFlight = false;
   function cacheReady(rows) {
     safe(function () {
+      /* av-2.0.2: the ACTIVE patient's row must survive the sampling — with
+         21+ ready, an older check-in for the open patient vanished from the
+         Visit card while the panel showed it. */
+      var sample = (rows || []).slice(0, 20);
+      var activeId = activePtIdSafe();
+      if (activeId && (rows || []).length > sample.length) {
+        var inSample = sample.some(function (c) { return clean(c.patient_external_id) === activeId; });
+        if (!inSample) {
+          for (var ri = 20; ri < rows.length; ri++) {
+            if (clean(rows[ri].patient_external_id) === activeId) { sample.push(rows[ri]); break; }
+          }
+        }
+      }
       window.__mlsAvatar.lastReady = {
         at: Date.now(),
         total: (rows || []).length, /* the TRUE count — the list below is a sample */
-        checkins: (rows || []).slice(0, 20).map(function (c) {
+        checkins: sample.map(function (c) {
           return {
             id: c.id,
             patient_external_id: clean(c.patient_external_id),
             ready_at: c.ready_at || null,
             bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
             /* av-2.0.0: the Visit card files the summary into transcript/chart
-               without a second fetch — bounded to keep the cache small. */
+               without a second fetch — bounded to keep the cache small.
+               av-2.0.2: a slice is a TRUNCATION and must say so — the card
+               refetches the full row before filing a truncated one, or a
+               mid-sentence cut would be stamped into the chart forever. */
             summary: c.summary ? String(c.summary).slice(0, 4000) : null,
+            truncated: !!(c.summary && String(c.summary).length > 4000),
             flags: Array.isArray(c.flags) ? c.flags : []
           };
         })
@@ -193,7 +210,7 @@
     /* Escape while TYPING in the panel (preview answers, the question list)
        must not destroy unsaved edits — blur the field instead of closing. */
     var target = event.target;
-    if (target && target.closest && target.closest('.mlsAvPanel') && /^(INPUT|TEXTAREA)$/.test(target.tagName || '')) {
+    if (target && target.closest && target.closest('.mlsAvPanel') && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || '')) {
       safe(function () { target.blur(); });
       return;
     }
@@ -225,7 +242,12 @@
   }
   function importSummary(checkin, button) {
     var patient = exactPatient(checkin.patient_external_id);
-    if (!patient) return;
+    if (!patient) {
+      /* av-2.0.2: never a silent dead click — the panel pre-disables this
+         case, but the Visit card reaches here on an ambiguous/unknown match. */
+      toast('No single exact chart matches this portal patient, so nothing was filed. Open Patients and add it there.');
+      return;
+    }
     var stamp = importStamp(checkin);
     if (String(patient.summary || '').indexOf(stamp) >= 0) {
       button.disabled = true; button.textContent = 'Already in chart';
@@ -724,7 +746,10 @@
     line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
     head.appendChild(line);
     head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
-    if (!activeHit) head.appendChild(visitButton('Set up', !total, function () { open(); openSetupTab(); }));
+    /* av-2.0.2: flag FIRST, then open — the old order consumed the flag
+       before it was set (Set up landed on the Ready tab) and left it armed
+       to hijack the doctor's NEXT open. */
+    if (!activeHit) head.appendChild(visitButton('Set up', !total, function () { openSetupTab(); open(); }));
     card.appendChild(head);
 
     if (activeHit) {
@@ -741,7 +766,7 @@
       var actions = make('div', 'mlsAvActions');
       actions.style.marginTop = '9px';
       var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null };
-      var needSummary = !detail.summary;
+      var needSummary = !detail.summary || activeHit.truncated === true;
       function withSummary(run, button) {
         if (!needSummary) { run(); return; }
         button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
@@ -796,7 +821,10 @@
     ['mls:ui-ready', 'mls:topbar-ready', 'mls:header-rendered'].forEach(function (name) {
       safe(function () { window.addEventListener(name, onLifecycle, false); lifecycleBound.push([name, onLifecycle]); });
     });
-    ['mls:view-changed', 'mls:active-patient-changed', 'mls:patient-changed'].forEach(function (name) {
+    /* mls:easy-mode-changed: a staff→doctor mode flip remounts the Easy host
+       WITHOUT a view change — without this event the card sinks below the
+       workspace until the next unrelated event. */
+    ['mls:view-changed', 'mls:active-patient-changed', 'mls:patient-changed', 'mls:easy-mode-changed'].forEach(function (name) {
       safe(function () { window.addEventListener(name, onVisitContext, false); lifecycleBound.push([name, onVisitContext]); });
     });
     if (!visBound) {

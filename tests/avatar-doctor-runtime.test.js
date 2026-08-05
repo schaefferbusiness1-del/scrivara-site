@@ -25,7 +25,17 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-2.0.1'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-2.0.2'"), 'version token moved without updating this contract');
+/* av-2.0.2 — the final-review fixes, each pinned:
+   Set up arms the flag BEFORE open; a truncated cache summary forces the
+   full-row refetch before filing; the easy-mode flip re-anchors the card;
+   the escape guard covers SELECT; ambiguous chart match refuses out loud. */
+assert(source.includes('openSetupTab(); open();'), 'Set up must arm the setup flag BEFORE opening the panel');
+assert(source.includes('truncated: !!(c.summary && String(c.summary).length > 4000)'), 'the cache must DECLARE truncation');
+assert(source.includes('activeHit.truncated === true'), 'a truncated summary must force the full-row refetch before filing');
+assert(source.includes("'mls:easy-mode-changed'"), 'the easy-mode flip event was dropped — a staff→doctor flip sinks the card');
+assert(source.includes('INPUT|TEXTAREA|SELECT'), 'the Escape guard must cover the tone SELECT');
+assert(source.includes('No single exact chart matches this portal patient'), 'the ambiguous-match refusal toast was removed');
 /* av-2.0.0: the Visit card sits at the TOP of the visit view, shows the active
    patient's bullets inline, and files the patient's words into the VISIT
    TRANSCRIPT idempotently (stamped block + input event so the mirror merges). */
@@ -127,7 +137,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-2.0.1');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-2.0.2');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;
