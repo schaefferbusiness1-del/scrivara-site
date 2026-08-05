@@ -25,11 +25,17 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-2.0.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-2.0.1'"), 'version token moved without updating this contract');
 /* av-2.0.0: the Visit card sits at the TOP of the visit view, shows the active
    patient's bullets inline, and files the patient's words into the VISIT
    TRANSCRIPT idempotently (stamped block + input event so the mirror merges). */
 assert(source.includes('view.insertBefore(card, view.firstChild)'), 'the Visit card must sit at the TOP of the visit view');
+/* av-2.0.1: the Easy-lane host reclaims first-child on remount — the card must
+   re-assert its place on OUR events (never an interval), skipping only when
+   focus is inside the card itself. */
+assert(/view\.firstElementChild !== card[\s\S]{0,400}insertBefore\(card, view\.firstElementChild\)/.test(source),
+  'the first-position re-assert was removed — a host remount sinks the card below the fold');
+assert(source.includes('card.contains(document.activeElement)'), 'the focus guard on the re-assert was removed');
 assert(source.includes("gid('ez3flTranscript')"), 'the transcript insert lost its anchor');
 assert(source.includes('Pre-visit check-in #'), 'the transcript idempotency stamp was removed');
 assert(/function addToTranscript[\s\S]{0,1500}dispatchEvent\(new Event\('input'/.test(source), 'the transcript insert must fire an input event so the app mirror sees it');
@@ -65,8 +71,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260805av200";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av200 loader');
+const marker = "feat_mls_avatar.js?v=20260805av201";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av201 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -121,7 +127,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-2.0.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-2.0.1');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

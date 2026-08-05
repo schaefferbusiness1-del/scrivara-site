@@ -73,7 +73,11 @@ const assets = [
   /* 2026-08-05 round 5 (av-2.0.0, owner UX order): the Visit card moves to the
      TOP of the visit view with inline bullets + Add-to-visit-transcript, and
      Setup gains a real per-question editor. */
-  ['feat_mls_avatar.js', '20260805av200', '20260805av131'],
+  /* 2026-08-05 final review pass (av-2.0.1): the Easy-lane host reclaims
+     first-child on remount and would sink the Visit card below the whole
+     workspace — the card re-asserts first position on its own events, with a
+     focus guard, never an interval. */
+  ['feat_mls_avatar.js', '20260805av201', '20260805av200'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 

@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-2.0.0';
+  var VERSION = 'av-2.0.1';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -687,6 +687,16 @@
       /* TOP of the visit view — where the doctor's eye already is. (The app's
          top patient banner is untouched; this lives inside the Visit content.) */
       view.insertBefore(card, view.firstChild);
+    }
+    /* av-2.0.1: the Easy-lane host also claims first-child when it remounts,
+       which would sink this card BELOW the entire workspace. Re-assert first
+       position on OUR events only (no interval): moving THIS card never
+       touches the host subtree, so the doctor's caret in the transcript is
+       untouched — the one thing we skip is moving the card out from under a
+       focused element of its own. */
+    if (view.firstElementChild !== card) {
+      var focusInCard = safe(function () { return card.contains(document.activeElement); }, false);
+      if (!focusInCard) safe(function () { view.insertBefore(card, view.firstElementChild); });
     }
     var cache = safe(function () { return window.__mlsAvatar.lastReady; }, null);
     var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
