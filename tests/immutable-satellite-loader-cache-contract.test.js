@@ -70,7 +70,10 @@ const assets = [
      (the Visit card now mounts at login, not only after a view switch) +
      the tone setting. */
   ['feat_mls_copilot_power.js', '20260805cpw130', '20260805cpw120'],
-  ['feat_mls_avatar.js', '20260805av131', '20260805av130'],
+  /* 2026-08-05 round 5 (av-2.0.0, owner UX order): the Visit card moves to the
+     TOP of the visit view with inline bullets + Add-to-visit-transcript, and
+     Setup gains a real per-question editor. */
+  ['feat_mls_avatar.js', '20260805av200', '20260805av131'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
