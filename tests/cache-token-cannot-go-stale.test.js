@@ -44,8 +44,17 @@ const { execFileSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 
 /* The seed commit. Everything at or before it is repository history, not an
-   edit anyone made to that file. */
-const SEED = '56e990a';
+   edit anyone made to that file.
+   2026-08-05: moved from 56e990a (b762) to ffca4c9f (b844). The b844 re-stamp
+   of 2026-07-31 restarted the published history: ffca4c9f is a PARENTLESS root
+   that re-adds every file, and 56e990a is no longer an ancestor of main. With
+   the old seed, `SEED..HEAD` counted the b844 squash itself as an edit to every
+   asset and flagged 8 tokens whose files nobody has touched since — the exact
+   noise the seed exists to exclude (see the header: a squash that touches
+   nearly every file is repository history, not an edit). b844 itself shipped
+   "no code change", so no real edit is amnestied by this move; every genuine
+   commit after b844 is still checked. */
+const SEED = 'ffca4c9f';
 
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -58,6 +67,18 @@ assert.ok(historyAvailable,
   'the seed commit ' + SEED + ' is not in this clone, so no token can be checked against its ' +
   "file's history. This suite refuses to pass on an empty set — a green tick that checked " +
   'nothing is worse than a red one. Fetch full history (fetch-depth: 0) and re-run.');
+
+/* 2026-08-05: existence is not enough — the old seed EXISTED in the clone (via
+   retired side branches) while being unreachable from HEAD, which silently
+   turned `SEED..HEAD` into "all of history" and flagged untouched files. A
+   seed that is not an ancestor of HEAD cannot bound anything; fail loudly. */
+let seedReachable = true;
+try { git(['merge-base', '--is-ancestor', SEED, 'HEAD']); } catch (e) { seedReachable = false; }
+assert.ok(seedReachable,
+  'the seed commit ' + SEED + ' exists in this clone but is NOT an ancestor of HEAD, so ' +
+  '`SEED..HEAD` would count all of history and flag files nobody edited. The published ' +
+  'history probably restarted again — move SEED to the new root squash commit, with a dated ' +
+  'rationale, as was done on 2026-08-05 for the b844 restart.');
 
 const sources = ['mls-connect.js', 'ScribeFlow.html']
   .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
