@@ -24,7 +24,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_power.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'cpw-1.1.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'cpw-1.2.0'"), 'version token moved without updating this contract');
 assert(!source.includes('setInterval('), 'no permanent polling in the Power module');
 assert(!source.includes('MutationObserver'), 'no document-wide observers in the Power module');
 
@@ -64,7 +64,7 @@ function freshContext() {
 /* ---- 1. snapshot senses ---- */
 {
   const { window } = freshContext();
-  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.1.0');
+  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.2.0');
   const snap = window.copilotSnapshot();
   assert(snap.providerCoverage, 'snapshot gained no providerCoverage');
   assert.strictEqual(snap.providerCoverage.rosterComplete, true);
@@ -80,6 +80,36 @@ function freshContext() {
     'the provider with no pulled charts must be named — that is the gap-offer trigger');
   assert(snap.capabilities && snap.capabilities.actions.includes('pullProviders') && snap.capabilities.actions.includes('draftNote'));
   assert(snap.patients && snap.patients.length === 1, 'the base snapshot must survive the wrapper');
+}
+
+/* ---- 1a2. avatarCheckins ride the snapshot from the avatar cache — fresh
+   cache included with resolved names; stale or absent cache OMITTED so the
+   model admits blindness instead of quoting old counts. ---- */
+{
+  const { window } = freshContext();
+  window.__mlsAvatar = {
+    /* the SAME fail-closed resolver the inbox uses */
+    exactPatient: (id) => (String(id) === 'ext-9' ? { id: 'ext-9', name: 'Exact Patient' } : null),
+    lastReady: { at: Date.now() - 60000, total: 35, checkins: [
+      { id: 5, patient_external_id: 'ext-9',
+        bullets: ['⚠ Patient used emergency-sounding language during check-in — read the transcript.', 'Pain 8/10 for two weeks'],
+        flags: ['emergency-language'] }
+    ] }
+  };
+  const snap = window.copilotSnapshot();
+  assert(snap.avatarCheckins, 'fresh avatar cache must reach the snapshot');
+  assert.strictEqual(snap.avatarCheckins.readyCount, 35, 'the TRUE total, never the sample length — an undisclosed cap is a lie');
+  assert.strictEqual(snap.avatarCheckins.ready[0].patient, 'Exact Patient', 'resolves through the inbox\'s fail-closed resolver');
+  assert.strictEqual(snap.avatarCheckins.ready[0].bullets[0], 'Pain 8/10 for two weeks', 'the ⚠ bullet duplicates flagged:true and is filtered');
+  assert.strictEqual(snap.avatarCheckins.ready[0].flagged, true);
+  assert(snap.avatarCheckins.asOfMinutesAgo <= 2, 'staleness is declared');
+
+  window.__mlsAvatar.lastReady.at = Date.now() - 3 * 60 * 60 * 1000; // 3h stale
+  const snap2 = window.copilotSnapshot();
+  assert.strictEqual(snap2.avatarCheckins, undefined, 'a stale cache is omitted, never presented as now');
+  delete window.__mlsAvatar;
+  const snap3 = window.copilotSnapshot();
+  assert.strictEqual(snap3.avatarCheckins, undefined, 'no avatar module, no field — the prompt tells the model to admit blindness');
 }
 
 /* ---- 1b. NO stats source -> coverage refuses to accuse anyone of missing

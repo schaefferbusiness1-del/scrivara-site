@@ -52,8 +52,11 @@ const assets = [
      changed after their b871/b872 immutable URLs shipped — the receipts-append
      signature, the coverage source, fail-open setup form, mutate-before-save
      import, and the still-loading guard. Retired tokens must be unreachable. */
-  ['feat_mls_copilot_power.js', '20260805cpw110', '20260805cpw100'],
-  ['feat_mls_avatar.js', '20260805av110', '20260805av100'],
+  /* 2026-08-05 round-2 enhancements (cpw-1.2.0 avatarCheckins in the snapshot;
+     av-1.2.0 ready-cache + interview preview + copy-summary): both files
+     changed after their b873 URLs shipped. */
+  ['feat_mls_copilot_power.js', '20260805cpw120', '20260805cpw110'],
+  ['feat_mls_avatar.js', '20260805av120', '20260805av110'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 

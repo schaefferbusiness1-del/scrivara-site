@@ -112,8 +112,8 @@ const server = http.createServer((req, res) => {
         turnCount++;
         const body = JSON.parse(route.request().postData() || '{}');
         turnLog.push(body);
-        if (turnCount === 1) return respond({ ok: true, say: 'Hi! I\'m Ava. What brings you in today?', done: false });
-        return respond({ ok: true, say: 'That covers everything — thank you!', done: true });
+        if (turnCount === 1) return respond({ ok: true, say: 'Hi! I\'m Ava. What brings you in today?', done: false, progress: { covered: 1, total: 2 } });
+        return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 2, total: 2 } });
       }
       return respond({ ok: true });
     });
@@ -136,6 +136,11 @@ const server = http.createServer((req, res) => {
       return log && /What brings you in today/.test(log.textContent || '');
     }, null, { timeout: 8000 });
     scenario('A2 Start begins the interview with the first question', true);
+    const progressShown = await page.evaluate(() => {
+      const el = document.getElementById('mlsAvProgress');
+      return !!el && el.style.display !== 'none' && /Question 1 of 2/.test(el.textContent || '');
+    });
+    scenario('A2b honest progress shows (Question 1 of 2)', progressShown);
 
     await page.fill('#mlsAvInput', 'My lower back hurts.');
     await page.click('#mlsAvSend');

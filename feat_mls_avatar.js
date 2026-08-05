@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-1.1.0';
+  var VERSION = 'av-1.2.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -141,8 +141,28 @@
     badge.classList.toggle('on', value > 0);
   }
 
-  /* ---- event-driven badge refresh (no polling) ---- */
+  /* ---- event-driven badge refresh (no polling) ----
+     av-1.2.0: the fetched ready list is CACHED on the public surface so the
+     Copilot's snapshot can answer "who's ready for me?" without a second
+     network path. The cache carries a timestamp; consumers judge freshness. */
   var lastRefreshAt = 0, refreshInFlight = false;
+  function cacheReady(rows) {
+    safe(function () {
+      window.__mlsAvatar.lastReady = {
+        at: Date.now(),
+        total: (rows || []).length, /* the TRUE count — the list below is a sample */
+        checkins: (rows || []).slice(0, 20).map(function (c) {
+          return {
+            id: c.id,
+            patient_external_id: clean(c.patient_external_id),
+            ready_at: c.ready_at || null,
+            bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
+            flags: Array.isArray(c.flags) ? c.flags : []
+          };
+        })
+      };
+    });
+  }
   function refreshCount(force) {
     if (refreshInFlight) return;
     var now = Date.now();
@@ -151,7 +171,10 @@
     refreshInFlight = true; lastRefreshAt = now;
     api('/api/avatar/checkins?status=ready').then(function (r) {
       refreshInFlight = false;
-      if (r.ok && r.json && Array.isArray(r.json.checkins)) setCount(r.json.checkins.length);
+      if (r.ok && r.json && Array.isArray(r.json.checkins)) {
+        setCount(r.json.checkins.length);
+        cacheReady(r.json.checkins);
+      }
     }, function () { refreshInFlight = false; });
   }
 
@@ -160,7 +183,17 @@
     if (back && back.parentNode) back.parentNode.removeChild(back);
     document.removeEventListener('keydown', onKey, true);
   }
-  function onKey(event) { if (event.key === 'Escape') close(); }
+  function onKey(event) {
+    if (event.key !== 'Escape') return;
+    /* Escape while TYPING in the panel (preview answers, the question list)
+       must not destroy unsaved edits — blur the field instead of closing. */
+    var target = event.target;
+    if (target && target.closest && target.closest('.mlsAvPanel') && /^(INPUT|TEXTAREA)$/.test(target.tagName || '')) {
+      safe(function () { target.blur(); });
+      return;
+    }
+    close();
+  }
   function make(tag, className, textValue) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -228,6 +261,20 @@
     }
     if (checkin.summary) card.appendChild(make('div', 'mlsAvSummary', String(checkin.summary)));
     var actions = make('div', 'mlsAvActions');
+    if (checkin.summary) {
+      var copyBtn = make('button', 'mlsAvAction', 'Copy summary');
+      copyBtn.type = 'button';
+      copyBtn.addEventListener('click', function () {
+        /* No eager Promise.reject fallback — that constructs an unhandled
+           rejection on every SUCCESSFUL copy. */
+        var p;
+        try { p = navigator.clipboard.writeText(String(checkin.summary)); }
+        catch (e) { p = Promise.reject(e); }
+        Promise.resolve(p).then(function () { copyBtn.textContent = 'Copied ✓'; },
+          function () { copyBtn.textContent = 'Could not copy'; });
+      });
+      actions.appendChild(copyBtn);
+    }
     var openBtn = make('button', 'mlsAvAction', patient ? 'Open chart' : 'No matching chart');
     openBtn.type = 'button';
     if (patient) {
@@ -302,10 +349,50 @@
               : 'Could not save — check your connection and try again.';
           }, function () { saveBtn.disabled = false; status.textContent = 'Could not save — check your connection and try again.'; });
       });
+      /* av-1.2.0: PREVIEW — walk the interview exactly as a patient would see
+         the scripted flow, from the UNSAVED form values, entirely local (no
+         network, no session, nothing stored). The live interview adds AI
+         follow-ups on top of this script. */
+      var previewBtn = make('button', 'mlsAvAction', 'Preview the interview');
+      previewBtn.type = 'button';
+      var previewHost = make('div', '');
+      previewBtn.addEventListener('click', function () {
+        var questions = qArea.value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).slice(0, 20);
+        previewHost.innerHTML = '';
+        if (!questions.length) { previewHost.appendChild(make('div', 'mlsAvNotice', 'Write at least one question above, then preview.')); return; }
+        var log = make('div', 'mlsAvSummary'); log.style.maxHeight = '260px';
+        var idx = 0;
+        function sayLine(who, text) { var d = make('div', '', who + ': ' + text); d.style.margin = '4px 0'; if (who !== 'You') d.style.fontWeight = '600'; log.appendChild(d); log.scrollTop = log.scrollHeight; }
+        var avName = nameInput.value.trim() || 'Ava';
+        sayLine(avName, 'Hi, I\'m ' + avName + '. ' + (introInput.value.trim() ? introInput.value.trim() + ' ' : '') + 'This takes just a few minutes. ' + questions[0]);
+        var row = make('div', ''); row.style.cssText = 'display:flex;gap:8px;margin-top:6px';
+        var inp = make('input'); inp.placeholder = 'Type a sample answer…'; inp.style.cssText = 'flex:1;border:1px solid #d7ded9;border-radius:10px;padding:8px 10px;font:13px system-ui';
+        var send = make('button', 'mlsAvAction', 'Send'); send.type = 'button';
+        function advance() {
+          var v = inp.value.trim(); if (!v) return;
+          sayLine('You', v); inp.value = '';
+          idx++;
+          if (idx < questions.length) { sayLine(avName, 'Thanks. ' + questions[idx]); }
+          else {
+            sayLine(avName, 'That covers everything — thank you! Your answers are on their way to your care team.');
+            inp.disabled = true; send.disabled = true;
+            previewHost.appendChild(make('div', 'mlsAvMeta', 'Preview complete (' + questions.length + ' questions). Nothing was saved or sent. The live interview also asks smart follow-ups when answers need detail.'));
+          }
+        }
+        send.addEventListener('click', advance);
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); advance(); } });
+        row.appendChild(inp); row.appendChild(send);
+        previewHost.appendChild(log); previewHost.appendChild(row);
+        inp.focus();
+      });
+
       form.appendChild(nameLabel); form.appendChild(nameInput);
       form.appendChild(introLabel); form.appendChild(introInput);
       form.appendChild(qLabel); form.appendChild(qArea);
-      form.appendChild(saveBtn); form.appendChild(status);
+      var btnRow = make('div', 'mlsAvActions');
+      btnRow.appendChild(saveBtn); btnRow.appendChild(previewBtn);
+      form.appendChild(btnRow); form.appendChild(status);
+      form.appendChild(previewHost);
       host.appendChild(form);
     }, function () {
       notice.textContent = 'Setup is temporarily unavailable — try again in a moment.';
@@ -321,7 +408,7 @@
       host.innerHTML = '';
       var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : null;
       if (!rows) { host.appendChild(make('div', 'mlsAvNotice', 'Could not load check-ins — try again in a moment.')); return; }
-      if (status === 'ready') setCount(rows.length);
+      if (status === 'ready') { setCount(rows.length); cacheReady(rows); }
       if (!rows.length) {
         host.appendChild(make('div', 'mlsAvNotice', status === 'ready'
           ? 'No completed check-ins waiting. When a patient finishes the avatar interview in their portal, it lands here with the highlights.'

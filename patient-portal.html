@@ -1163,7 +1163,13 @@
     }
     return v;
   }
-  var avBusy=false, avDone=false;
+  var avBusy=false, avDone=false, avLastTry=null;
+  function avNewNonce(){
+    var v="an-", A="abcdefghjkmnpqrstuvwxyz23456789";
+    try{ var buf=new Uint8Array(16); crypto.getRandomValues(buf); for(var i=0;i<buf.length;i++) v+=A[buf[i]%A.length]; }
+    catch(e){ for(var j=0;j<16;j++) v+=A[Math.floor(Math.random()*A.length)]; }
+    return v;
+  }
   function avMsg(text, who){
     var log=$("mlsAvLog"); if(!log) return;
     var d=document.createElement("div");
@@ -1182,14 +1188,16 @@
     var row=$("mlsAvInputRow"); if(row) row.style.display="none";
     var doneEl=$("mlsAvDone"); if(doneEl) doneEl.style.display="block";
   }
-  function avTurn(answer){
+  function avTurn(answer,nonce){
     if(avBusy||avDone) return;
     if(answer) avMsg(answer,"me");
     avSetBusy(true);
-    /* On ANY failure the answer is restored to the box — the server did not
-       record it, so the page must not eat it or claim otherwise. */
+    /* On ANY failure the answer is restored to the box. Whether the server
+       recorded it is UNKNOWN from here (the write may have committed and only
+       the response died), so the resend carries the SAME nonce and the server
+       records it exactly once. */
     function restore(){ if(answer){ var inp=$("mlsAvInput"); if(inp && !inp.value) inp.value=answer; } }
-    requestFetch("/api/patient/avatar/turn",{method:"POST",body:JSON.stringify(answer?{clientSessionId:avSid(),answer:answer}:{clientSessionId:avSid()})})
+    requestFetch("/api/patient/avatar/turn",{method:"POST",body:JSON.stringify(answer?{clientSessionId:avSid(),answer:answer,answerNonce:nonce||avNewNonce()}:{clientSessionId:avSid()})})
       .then(function(r){ if(r.status===401) throw {auth:true}; return r.json().catch(function(){return {};}); })
       .then(function(j){
         if(j && j.ok===false && j.error==="not_configured"){
@@ -1201,8 +1209,12 @@
           return;
         }
         if(!j || typeof j.say!=="string" || !j.say){ throw {}; }
+        avLastTry=null;
         avMsg(j.say,"ai");
-        if(j.done){ avFinish(); } else { avSetBusy(false); var inp=$("mlsAvInput"); if(inp) inp.focus(); }
+        if(j.progress && j.progress.total>0 && !j.done){
+          var pr=$("mlsAvProgress"); if(pr){ pr.textContent="Question "+Math.min(j.progress.covered||1,j.progress.total)+" of "+j.progress.total; pr.style.display="block"; }
+        }
+        if(j.done){ var pr2=$("mlsAvProgress"); if(pr2) pr2.style.display="none"; avFinish(); } else { avSetBusy(false); var inp=$("mlsAvInput"); if(inp) inp.focus(); }
       })
       .catch(function(err){
         avSetBusy(false); restore();
@@ -1227,6 +1239,7 @@
         '<button type="button" class="btn" id="mlsAvStart">Start check-in</button>'+
       '</div>'+
       '<div id="mlsAvChat" style="display:none">'+
+        '<div id="mlsAvProgress" style="display:none;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 4px"></div>'+
         '<div id="mlsAvLog" style="max-height:320px;overflow-y:auto;padding:4px 2px;display:flex;flex-direction:column"></div>'+
         '<div id="mlsAvInputRow" style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<textarea id="mlsAvInput" rows="2" placeholder="Type your answer…" style="flex:1;resize:none"></textarea>'+
@@ -1242,7 +1255,11 @@
       var inp=$("mlsAvInput"); var v=inp?inp.value.trim():"";
       if(!v||avBusy||avDone) return;
       if(inp) inp.value="";
-      avTurn(v);
+      /* Resending the SAME text after a failure reuses its nonce (recorded
+         exactly once); an edited answer is a new attempt with a new nonce. */
+      var nonce=(avLastTry&&avLastTry.answer===v)?avLastTry.nonce:avNewNonce();
+      avLastTry={answer:v,nonce:nonce};
+      avTurn(v,nonce);
     }
     if(sendBtn) sendBtn.addEventListener("click", submitAnswer);
     var inp=card.querySelector("#mlsAvInput");

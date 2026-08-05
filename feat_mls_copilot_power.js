@@ -44,7 +44,7 @@
     return;
   }
 
-  var VERSION = 'cpw-1.1.0';
+  var VERSION = 'cpw-1.2.0';
   var ASSET = 'feat_mls_copilot_power.js';
   var WIRE_CAP = 120000; /* absolute cap on the /api/copilot request body (chars).
                             The server bounds context to 100K; anything larger is
@@ -155,6 +155,36 @@
     };
   }
 
+  /* cpw-1.2.0: surface the Avatar's READY check-ins to the model, from the
+     avatar module's own event-driven cache — no new network path, and the
+     staleness is DECLARED so the model never presents old counts as now. */
+  function avatarCheckins() {
+    var cache = safe(function () { return window.__mlsAvatar && window.__mlsAvatar.lastReady; }, null);
+    if (!cache || !Array.isArray(cache.checkins)) return null;
+    var ageMin = Math.max(0, Math.round((Date.now() - (Number(cache.at) || 0)) / 60000));
+    if (ageMin > 120) return null; /* stale beyond usefulness — omit, prompt says to admit blindness */
+    return {
+      /* the TRUE count, not the sample length — an undisclosed cap presented
+         as a count is exactly the lie this module exists to end */
+      readyCount: Number(cache.total) || cache.checkins.length,
+      asOfMinutesAgo: ageMin,
+      ready: cache.checkins.slice(0, 10).map(function (c) {
+        /* the SAME fail-closed resolver the inbox uses (exactly-one match) */
+        var patient = safe(function () {
+          return isFn(window.__mlsAvatar.exactPatient) ? window.__mlsAvatar.exactPatient(c.patient_external_id) : null;
+        }, null);
+        var flagged = (c.flags || []).indexOf('emergency-language') >= 0;
+        return {
+          patient: (patient && patient.name) || ('portal patient ' + String(c.patient_external_id || '').slice(0, 24)),
+          /* the ⚠ bullet duplicates flagged:true — keep the substantive ones */
+          bullets: (c.bullets || []).filter(function (b) { return !/^⚠/.test(String(b)); }).slice(0, 2),
+          flagged: flagged || undefined
+        };
+      }),
+      note: 'Completed pre-visit Avatar interviews awaiting the doctor. Full summaries live in Menu → Avatar check-ins.'
+    };
+  }
+
   var snapWrapped = null, snapPrev = null;
   function wrapSnapshot() {
     var prev = window.copilotSnapshot;
@@ -166,6 +196,8 @@
         if (res && typeof res === 'object') {
           res.providerCoverage = providerCoverage();
           res.capabilities = capabilities();
+          var av = avatarCheckins();
+          if (av) res.avatarCheckins = av;
         }
       } catch (e) {}
       return res;
