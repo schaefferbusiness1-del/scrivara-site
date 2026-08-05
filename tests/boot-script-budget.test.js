@@ -381,8 +381,23 @@ const LOADER = 'mls-connect.js';
  *   - DEFERRED (requestIdleCallback, 2.5s timeout): check-ins are read
  *     minutes-to-hours after boot, so EAGER_CEILING does not move. Badge
  *     refresh is event-driven (app-ready + tab refocus, 2-min floor) — no
- *     permanent polling; the bounded mount ladder mirrors the request inbox. */
-const CEILING = 254;
+ *     permanent polling; the bounded mount ladder mirrors the request inbox.
+ *
+ * 2026-08-05 td-1.0.0 (owner-ordered POST-OP VIDEO VISIT): +1 loader,
+ *   feat_mls_tele_doctor.js — the doctor's accept-and-call surface for a
+ *   patient asking to talk after a procedure.
+ *   - DEFERRED (requestIdleCallback, 3s timeout): a request that arrives is
+ *     minutes old by definition, so EAGER_CEILING does not move.
+ *   - NO STANDING INTERVAL, which is why this is +1 script and +0 pollers.
+ *     It makes ONE request per session and then STANDS DOWN PERMANENTLY if the
+ *     route is absent (404/501/unreachable) — the telehealth backend is on a
+ *     branch, so on today's production this module costs exactly one fetch and
+ *     then nothing, forever. When the backend does deploy it re-arms on a
+ *     bounded setTimeout chain that never schedules while the tab is hidden and
+ *     resumes on visibilitychange.
+ *   - Renders nothing at all unless a real pending request comes back, so its
+ *     boot work over a 1,481-patient store is a single conditional. */
+const CEILING = 255;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

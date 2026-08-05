@@ -13,7 +13,10 @@ const pages = {
   'best-doctors-optout.html': { fetches: 2, required: ['query.t', 'query.token'], strictToken: true },
   'booking.html': { fetches: 3, required: ['query.token'] },
   'intake.html': { fetches: 2, required: ['query.token', 'query.intake'] },
-  'patient-portal.html': { fetches: 6, required: ['query.invite', 'fragment.session', 'fragment.claim', 'fragment.setup'] },
+  /* 7 at tv-1.0.0 (2026-08-05): the post-op video lane adds one wrapped call
+     site — its api() helper — which fans out to eligibility/request/status/
+     cancel/ice/signal. */
+  'patient-portal.html': { fetches: 7, required: ['query.invite', 'fragment.session', 'fragment.claim', 'fragment.setup'] },
   'send-portal-invite.html': { fetches: 3, required: [], scrubAll: true }
 };
 

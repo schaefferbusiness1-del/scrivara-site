@@ -49,6 +49,11 @@ const tests = [
      to Sign up at all, and 3.31:1 contrast. Both already had fixes — in feat_*
      modules the sign-in screen never loads. */
   'sign-in-screen-is-reachable.test.js',
+  /* The post-op video lane must be INVISIBLE until its backend deploys: a
+     'Talk to your doctor now' button that 404s to someone in pain after surgery
+     is worse than shipping nothing. Executes both halves against a stubbed
+     fetch. Also pins that neither half prescribes. */
+  'telehealth-ships-dark.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',
