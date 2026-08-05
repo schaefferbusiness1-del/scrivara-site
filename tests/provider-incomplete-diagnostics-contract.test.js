@@ -160,8 +160,17 @@ for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
     label + ': the baked download link must name the manifest version - bump them together');
   assert(html.includes('<b id="extDlVersion">' + version + '</b>'), label + ': the shown version must match the manifest');
   assert(fs.existsSync(path.join(root, href[1])), label + ': the linked zip must exist in the deployed tree: ' + href[1]);
+  /* owner order 2026-08-05 ("with new saying"): the card carries the release
+     notes, and the BAKED text must be exactly the manifest's notes so the two
+     can never tell different stories about the same version. */
+  const notesM = html.match(/id="extDlNotes"[^>]*>([^<]+)<\/p>/);
+  assert(notesM, label + ': the card must carry a What\'s-new notes block');
+  assert.strictEqual(notesM[1].trim(), String(extManifest.notes || '').trim(),
+    label + ': the baked What\'s-new text must equal extension-version.json notes - update them together');
+  assert(html.includes('id="extDlVersionNotes">' + version + '<'), label + ': the What\'s-new heading version must match the manifest');
 }
 assert(connectSource.includes('__mlsExtDlCardWired'), 'the drift refresher must be wired exactly once');
 assert(connectSource.includes("fetch('extension-version.json?nc="), 'the refresher must read the manifest, never invent a version');
+assert(connectSource.includes("getElementById('extDlNotes')"), 'the refresher must also refresh the What\'s-new text from the manifest');
 
 console.log('provider-incomplete-diagnostics-contract: PASS');

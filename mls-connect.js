@@ -47995,9 +47995,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var a = document.getElementById('extDlBtn');
           var t1 = document.getElementById('extDlVersion');
           var t2 = document.getElementById('extDlVersionBtn');
+          var t3 = document.getElementById('extDlVersionNotes');
+          var n1 = document.getElementById('extDlNotes');
           if (a) { var want = 'MLS_Assist_v' + v + '.zip'; if (a.getAttribute('href') !== want) a.setAttribute('href', want); }
           if (t1 && t1.textContent !== v) t1.textContent = v;
           if (t2 && t2.textContent !== v) t2.textContent = v;
+          if (t3 && t3.textContent !== v) t3.textContent = v;
+          var notes = m && m.notes ? String(m.notes) : '';
+          if (n1 && notes && n1.textContent !== notes) n1.textContent = notes;
         })
         .catch(function () {});
     } catch (e) {}
