@@ -46,7 +46,17 @@ const assets = [
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_task3_frontsync.js', '20260727t3110', '20260727t3109'],
-  ['feat_mls_upnow_realtime.js', '20260723unr110', '20260626unr1c1'],
+  /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
+     three installers 60 times while each guarded only on its own window marker,
+     so a co-wrapper that did not carry that marker forward made the poll
+     re-point a module-level orig the first wrapper still read at call time.
+     Measured with the real modules and the polls replayed: _calLoadNextUp and
+     _renderTodayPatients each reached their base 0 times (RangeError) in one
+     load order — the Up-Next hero and today's patient list froze silently.
+     Same class as b870's renderProfile cycle. The token MUST move or a
+     returning browser keeps the cycling copy cache-first. Pinned by
+     tests/wrapper-chains-reach-their-base.test.js. */
+  ['feat_mls_upnow_realtime.js', '20260805unr111', '20260723unr110'],
   ['feat_visits.js', '20260729vis11', '20260728vis10'],
   /* 2026-08-05 adversarial-review repairs: all three copilot/avatar satellites
      changed after their b871/b872 immutable URLs shipped — the receipts-append

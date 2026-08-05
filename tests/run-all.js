@@ -41,6 +41,10 @@ const tests = [
      until the stack overflowed and the app's own render never ran. Executes
      both real modules against a stub DOM with deterministic timers. */
   'patient-select-renders-that-patient.test.js',
+  /* ...and the same class swept across every SHIPPED module, both load orders.
+     b870 fixed one instance; this sweep found two more (the Up-Next hero and
+     today's patient list), each broken in exactly one load order. */
+  'wrapper-chains-reach-their-base.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',
