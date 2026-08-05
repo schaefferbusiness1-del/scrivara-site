@@ -121,6 +121,27 @@ const server = http.createServer((req, res) => {
     // block any other external origin outright
     await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost|scrivara-backend\.onrender\.com)/, (route) => route.abort());
 
+    // Stub the browser speech engines BEFORE page scripts: record what the
+    // avatar SPEAKS and feed it a spoken ANSWER — the no-typing loop, proven.
+    await page.addInitScript(() => {
+      window.__spoken = [];
+      window.__recs = [];
+      // speechSynthesis is an accessor in Chrome — plain assignment is
+      // silently ignored; defineProperty is required to stub it.
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+        speak: (u) => { window.__spoken.push(u.text); try { u.onstart && u.onstart(); } catch (e) {} setTimeout(() => { try { u.onend && u.onend(); } catch (e) {} }, 30); },
+        cancel: () => {}
+      } });
+      Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: function (t) { this.text = String(t); } });
+      const FakeRec = function () {
+        const rec = this;
+        rec.start = () => { window.__recs.push(rec); };
+        rec.stop = () => { try { rec.onend && rec.onend(); } catch (e) {} };
+        rec.abort = rec.stop;
+      };
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeRec });
+      Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: FakeRec });
+    });
     await page.goto(base + '/patient-portal.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => {
       sessionStorage.setItem('mls_patient_session', 'test-token.sig');
@@ -152,14 +173,26 @@ const server = http.createServer((req, res) => {
     });
     scenario('A2c the avatar face renders with animations + a reduced-motion kill', identityOk);
 
-    await page.fill('#mlsAvInput', 'My lower back hurts.');
-    await page.click('#mlsAvSend');
+    // A3-voice: the avatar SPOKE the question and started LISTENING; a spoken
+    // answer flows through the same nonce-safe turn path — zero typing.
+    await page.waitForFunction(() => window.__spoken.some((t) => /What brings you in today/.test(t)) && window.__recs.length >= 1, null, { timeout: 8000 });
+    scenario('A3a the avatar speaks its question aloud and starts listening', true);
+    await page.evaluate(() => {
+      const rec = window.__recs[window.__recs.length - 1];
+      const result = [{ transcript: 'My lower back hurts.' }]; result.isFinal = true;
+      rec.onresult({ resultIndex: 0, results: [result] });
+      rec.stop(); // patient taps Done / recognition ends -> submits
+    });
     await page.waitForFunction(() => {
       const done = document.getElementById('mlsAvDone');
       return done && done.style.display !== 'none';
     }, null, { timeout: 8000 });
-    const answerReached = turnLog.some((t) => t.answer === 'My lower back hurts.');
-    scenario('A3 the typed answer reaches the backend and completion shows', answerReached, answerReached ? null : JSON.stringify(turnLog));
+    const answerReached = turnLog.some((t) => t.answer === 'My lower back hurts.' && t.answerNonce);
+    scenario('A3 the SPOKEN answer reaches the backend (nonce-safe) and completion shows', answerReached, answerReached ? null : JSON.stringify(turnLog));
+    const closingSpoken = await page.evaluate(() => window.__spoken.some((t) => /covers everything/.test(t)));
+    scenario('A3b the closing message is spoken aloud too', closingSpoken);
+    const typingFallback = await page.evaluate(() => !!document.getElementById('mlsAvInput'));
+    scenario('A3c the typing fallback remains for accessibility', typingFallback);
     const inputHidden = await page.evaluate(() => document.getElementById('mlsAvInputRow').style.display === 'none');
     scenario('A4 a completed check-in retires its input row', inputHidden);
     await page.screenshot({ path: path.join(outDir, 'A-portal-checkin.png'), fullPage: true });
@@ -282,6 +315,29 @@ const server = http.createServer((req, res) => {
     });
     const txOk = txFacts.stamps === 1 && /lower back pain/.test(txFacts.v) && txFacts.events === 1 && txFacts.done;
     scenario('B7 the patient-reported summary lands in the visit transcript once, labelled, mirror notified', txOk, txOk ? null : JSON.stringify(txFacts).slice(0, 200));
+
+    // B8: the Visit card's "Set up" opens the panel ON the Setup tab (the
+    // round-3 review caught it landing on Ready and arming a stale flag).
+    await page.evaluate(() => {
+      // empty the ready cache so the card shows the Set up button
+      window.__mlsAvatar.lastReady = { at: Date.now(), total: 0, checkins: [] };
+      window.getActivePtId = () => '';
+      window.dispatchEvent(new Event('mls:view-changed'));
+    });
+    await page.waitForFunction(() => {
+      const card = document.getElementById('mlsAvVisitCard');
+      return !!card && Array.from(card.querySelectorAll('button')).some((b) => /Set up/.test(b.textContent || ''));
+    }, null, { timeout: 5000 });
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll('#mlsAvVisitCard button')).find((b) => /Set up/.test(b.textContent)).click();
+    });
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('.mlsAvPanel');
+      if (!panel) return false;
+      const onTab = panel.querySelector('.mlsAvTab.on');
+      return !!onTab && /Set up the avatar/.test(onTab.textContent || '') && !!panel.querySelector('.mlsAvForm');
+    }, null, { timeout: 6000 });
+    scenario('B8 the Visit card Set up lands directly on the Setup tab', true);
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }
