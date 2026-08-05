@@ -374,8 +374,15 @@ const LOADER = 'mls-connect.js';
  *   confirm-by-tap agentic executors (pullProviders/draftNote).
  *   - DEFERRED (requestIdleCallback, 2.5s timeout): the Copilot cannot be
  *     asked anything before sign-in completes, so EAGER_CEILING does not move.
- *     No timers, no observers; lifecycle events only. */
-const CEILING = 253;
+ *     No timers, no observers; lifecycle events only.
+ * 2026-08-05 av-1.0.0 (owner-ordered AVATAR): +1 loader, feat_mls_avatar.js —
+ *   the doctor side of the patient-facing check-in interviewer (program the
+ *   questions, ready badge, bullet inbox, one-tap chart import).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): check-ins are read
+ *     minutes-to-hours after boot, so EAGER_CEILING does not move. Badge
+ *     refresh is event-driven (app-ready + tab refocus, 2-min floor) — no
+ *     permanent polling; the bounded mount ladder mirrors the request inbox. */
+const CEILING = 254;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

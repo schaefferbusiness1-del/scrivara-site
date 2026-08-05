@@ -1144,6 +1144,109 @@
     var g=e.target.closest?e.target.closest("[data-guard]"):null; if(!g) return;
     openReq(g.getAttribute("data-guard"));
   });
+
+  /* ================= AVATAR pre-visit check-in =============================
+     The practice programs the questions; the avatar interviews the patient and
+     the answers reach the care team before the visit. This never gives medical
+     advice, never diagnoses, and nothing is approved here. Network goes through
+     requestFetch (the page's one authenticated sensitive-fetch path). */
+  function avSid(){
+    var k="mls_av_sid", v="";
+    try{ v=sessionStorage.getItem(k)||""; }catch(e){}
+    if(!v){
+      v="avchk-"; var A="abcdefghjkmnpqrstuvwxyz23456789";
+      try{
+        var buf=new Uint8Array(24); crypto.getRandomValues(buf);
+        for(var i=0;i<buf.length;i++) v+=A[buf[i]%A.length];
+      }catch(e){ for(var j=0;j<24;j++) v+=A[Math.floor(Math.random()*A.length)]; }
+      try{ sessionStorage.setItem(k,v); }catch(e){}
+    }
+    return v;
+  }
+  var avBusy=false, avDone=false;
+  function avMsg(text, who){
+    var log=$("mlsAvLog"); if(!log) return;
+    var d=document.createElement("div");
+    d.style.cssText="max-width:86%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap;"+
+      (who==="me"?"margin:6px 0 6px auto;background:var(--blue);color:#fff":"margin:6px auto 6px 0;background:var(--soft);color:var(--ink)");
+    d.textContent=text;
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+  function avSetBusy(b){
+    avBusy=b;
+    var send=$("mlsAvSend"); if(send) send.disabled=b||avDone;
+    var inp=$("mlsAvInput"); if(inp) inp.disabled=b||avDone;
+  }
+  function avFinish(){
+    avDone=true; avSetBusy(false);
+    var row=$("mlsAvInputRow"); if(row) row.style.display="none";
+    var doneEl=$("mlsAvDone"); if(doneEl) doneEl.style.display="block";
+  }
+  function avTurn(answer){
+    if(avBusy||avDone) return;
+    if(answer) avMsg(answer,"me");
+    avSetBusy(true);
+    requestFetch("/api/patient/avatar/turn",{method:"POST",body:JSON.stringify(answer?{clientSessionId:avSid(),answer:answer}:{clientSessionId:avSid()})})
+      .then(function(r){ if(r.status===401) throw {auth:true}; return r.json().catch(function(){return {};}); })
+      .then(function(j){
+        if(j && j.ok===false && j.error==="not_configured"){
+          avMsg(j.message||"Your care team has not set up the check-in yet.","ai"); avFinish(); return;
+        }
+        if(!j || typeof j.say!=="string" || !j.say){ throw {}; }
+        avMsg(j.say,"ai");
+        if(j.done){ avFinish(); } else { avSetBusy(false); var inp=$("mlsAvInput"); if(inp) inp.focus(); }
+      })
+      .catch(function(err){
+        avSetBusy(false);
+        avMsg(err&&err.auth?"Your session ended — sign in again to continue the check-in.":"The check-in is temporarily unavailable — nothing was lost. Try again in a moment, or just tell the office at your visit.","ai");
+      });
+  }
+  function avStart(){
+    if(isDemo()){ avMsg("Sample preview only — sign in to do your real pre-visit check-in.","ai"); return; }
+    var intro=$("mlsAvIntro"); if(intro) intro.style.display="none";
+    var chat=$("mlsAvChat"); if(chat) chat.style.display="block";
+    avTurn("");
+  }
+  function injectAvatarCard(){
+    if($("mlsAvCard")) return;
+    var grid=document.querySelector("#app .grid"); if(!grid) return;
+    var card=document.createElement("div");
+    card.className="card sec"; card.id="mlsAvCard"; card.style.marginBottom="16px";
+    card.innerHTML=
+      '<h2 style="font-size:14px;letter-spacing:.2px;color:var(--blue-d);margin:0 0 4px;display:flex;align-items:center;gap:8px">🧑‍⚕️ Pre-visit check-in</h2>'+
+      '<div id="mlsAvIntro">'+
+        '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Answer a few short questions from <b>'+esc(office().practice)+'</b> before your visit so your doctor is ready for you. Your answers go only to your care team. This assistant never gives medical advice — and if anything is urgent, call the office or 911 instead.</p>'+
+        '<button type="button" class="btn" id="mlsAvStart">Start check-in</button>'+
+      '</div>'+
+      '<div id="mlsAvChat" style="display:none">'+
+        '<div id="mlsAvLog" style="max-height:320px;overflow-y:auto;padding:4px 2px;display:flex;flex-direction:column"></div>'+
+        '<div id="mlsAvInputRow" style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
+          '<textarea id="mlsAvInput" rows="2" placeholder="Type your answer…" style="flex:1;resize:none"></textarea>'+
+          '<button type="button" class="btn" id="mlsAvSend">Send</button>'+
+        '</div>'+
+        '<div id="mlsAvDone" style="display:none;color:var(--good);font-size:13px;font-weight:700;margin-top:8px">✓ Check-in complete — your care team has your answers.</div>'+
+      '</div>';
+    grid.parentNode.insertBefore(card, grid);
+    var startBtn=card.querySelector("#mlsAvStart");
+    if(startBtn) startBtn.addEventListener("click", avStart);
+    var sendBtn=card.querySelector("#mlsAvSend");
+    function submitAnswer(){
+      var inp=$("mlsAvInput"); var v=inp?inp.value.trim():"";
+      if(!v||avBusy||avDone) return;
+      if(inp) inp.value="";
+      avTurn(v);
+    }
+    if(sendBtn) sendBtn.addEventListener("click", submitAnswer);
+    var inp=card.querySelector("#mlsAvInput");
+    if(inp) inp.addEventListener("keydown", function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); submitAnswer(); } });
+  }
+  window.__mlsPortalAvatar={ start:avStart, turn:avTurn };
+  injectAvatarCard();
+  try{
+    var avApp=$("app");
+    var avMo=new MutationObserver(function(){ if(avApp && !avApp.classList.contains("hide")) injectAvatarCard(); });
+    if(avApp) avMo.observe(avApp,{attributes:true,attributeFilter:["class"]});
+  }catch(e){}
 })();
 </script>
 
