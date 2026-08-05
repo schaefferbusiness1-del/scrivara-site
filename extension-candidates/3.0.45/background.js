@@ -5550,6 +5550,7 @@ var mlsProv = (function () {
       return r && r.result === true;
     } catch (e) { return null; }
   }
+  try { self.__mlsProbeSessionExpired = __mlsProbeSessionExpired; } catch (eSxExport) {} /* sx-1.1: the allvisits listener lives outside this function scope and reaches the probe via self */
   /* ---- v1.51: hands-free schedule DATE navigation (read-only nav) ---- */
   if (msg.type === 'mlsAppGotoDateRequest') {
     const __gotoStartedAt = Date.now();
@@ -6114,6 +6115,13 @@ var mlsProv = (function () {
          app-end owns the final release. Failed/expired reads clean up now. */
       if (payload && payload.ok === true) { if (self.__mlsDayScheduleQpOwner === __schedGuard.token) self.__mlsDayScheduleQpOwner = ''; }
       else __schedCleanup('schedule-terminal', false);
+      if (payload && payload.ok !== true) {
+        /* sx-1.1: bounded (2.5s) session probe rides schedule-read failures. */
+        Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise(function (rsSx) { setTimeout(function () { rsSx(null); }, 2500); })])
+          .then(function (expSx) { __schedRawRespond(Object.assign({}, payload || {}, { sessionLikelyExpired: expSx === true, id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline })); },
+                function () { __schedRawRespond(Object.assign({}, payload || {}, { id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline })); });
+        return true;
+      }
       __schedRawRespond(Object.assign({}, payload || {}, { id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline }));
       return true;
     }
@@ -7462,6 +7470,15 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       if (chartResponseSent) return false;
       chartResponseSent = true;
       if (chartDeadlineTimer != null) { try { clearTimeout(chartDeadlineTimer); } catch (eClearChartTimer) {} }
+      if (payload && payload.ok !== true) {
+        /* sx-1.1: the bounded (2.5s) session probe rides EVERY chart-read failure
+           response, so a dead athena session is named at the first failed read,
+           not after the batch grinds N failures. ok:true responses never probe. */
+        Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise((rsSx) => { setTimeout(() => { rsSx(null); }, 2500); })])
+          .then((expSx) => { sendResponse(Object.assign({}, payload || {}, { sessionLikelyExpired: expSx === true, requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline })); },
+                () => { sendResponse(Object.assign({}, payload || {}, { requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline })); });
+        return true;
+      }
       sendResponse(Object.assign({}, payload || {}, { requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline }));
       return true;
     };
@@ -11005,7 +11022,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null;
             if (msg.foregroundOk === true && value && typeof value === 'object') { try { value.fronted = __fgDidFront === true; } catch (eFr) {} } /* fg-1.2: the reply discloses whether the assist actually ran, so the app can tell the doctor when presence would have helped */
             try { __mlsRestoreFocusAfterRead(__fgState); __fgState = null; } catch (eRf) {}
-            sendResponse(value);
+            if (value && value.ok !== true) {
+              /* sx-1.1: bounded (2.5s) session probe rides history-read failures.
+                 Only the response is deferred; the cleanup below runs now. */
+              Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise(function (rsSx) { setTimeout(function () { rsSx(null); }, 2500); })])
+                .then(function (expSx) { try { if (expSx === true && value && typeof value === 'object') value.sessionLikelyExpired = true; } catch (eSxSet) {} sendResponse(value); },
+                      function () { sendResponse(value); });
+            } else { sendResponse(value); }
             try { var __clNow = thisRead.__mlsAfterResponseCleanup || (thisRead.__mlsInner && thisRead.__mlsInner.__mlsAfterResponseCleanup); if (__clNow) __clNow(); } catch (eCleanup) {}
           }
           thisRead.then(finish, function (e) { finish({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); });
