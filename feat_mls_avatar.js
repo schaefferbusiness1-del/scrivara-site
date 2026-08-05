@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-2.0.2';
+  var VERSION = 'av-3.0.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -342,6 +342,57 @@
      snapshot is stylized on a canvas, and only the small final portrait is
      saved (encrypted, in the avatar config). Tracks are stopped on every exit
      path including panel close. */
+  /* av-2.1.0: the PREVIEW speaks and listens exactly like the patient side —
+     the doctor's first meeting with the avatar must BE the product, not a
+     typed sketch of it. Recognition runs only while the preview is open and
+     stops on every exit (panel close included) so it can never collide with
+     the app's dictation. */
+  var pvRec = null;
+  function pvStopVoice() {
+    safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+    if (pvRec) { safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); }); pvRec = null; }
+  }
+  function pvSpeak(text, then) {
+    var synth = safe(function () { return window.speechSynthesis; }, null);
+    if (!synth || typeof window.SpeechSynthesisUtterance !== 'function') { if (then) then(); return; }
+    try {
+      synth.cancel();
+      var u = new window.SpeechSynthesisUtterance(String(text));
+      u.rate = 0.98; u.pitch = 1.02;
+      u.onend = function () { if (then) then(); };
+      u.onerror = function () { if (then) then(); };
+      synth.speak(u);
+    } catch (e) { if (then) then(); }
+  }
+  function pvListen(onFinal, onInterim) {
+    var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
+    if (!C) return false;
+    pvStopVoice();
+    var rec; try { rec = new C(); } catch (e) { return false; }
+    pvRec = rec;
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+    var finalText = '', quiet = null;
+    function submit() {
+      var v = finalText.trim();
+      if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }
+      if (v && onFinal) onFinal(v);
+    }
+    function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 2000); }
+    rec.onresult = function (ev) {
+      var interim = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var r = ev.results[i];
+        if (r.isFinal) finalText += (finalText ? ' ' : '') + String(r[0].transcript || '').trim();
+        else interim += String(r[0].transcript || '');
+      }
+      if (onInterim) onInterim((finalText + ' ' + interim).trim());
+      armQuiet();
+    };
+    rec.onerror = function () { if (pvRec === rec) pvRec = null; };
+    rec.onend = function () { if (pvRec === rec) { if (finalText.trim()) submit(); else pvRec = null; } };
+    try { rec.start(); return true; } catch (e) { pvRec = null; return false; }
+  }
+
   var cameraStream = null;
   function stopCamera() {
     if (!cameraStream) return;
@@ -546,17 +597,30 @@
         var idx = 0;
         function sayLine(who, text) { var d = make('div', '', who + ': ' + text); d.style.margin = '4px 0'; if (who !== 'You') d.style.fontWeight = '600'; log.appendChild(d); log.scrollTop = log.scrollHeight; }
         var avName = nameInput.value.trim() || 'Ava';
-        sayLine(avName, 'Hi, I\'m ' + avName + '. ' + (introInput.value.trim() ? introInput.value.trim() + ' ' : '') + 'This takes just a few minutes. ' + questions[0]);
+        /* av-2.1.0: the preview TALKS like the real thing — spoken question,
+           then listening; a spoken answer fills the box and advances. */
+        function speakAndListen(text) {
+          pvSpeak(text, function () {
+            pvListen(function (finalText) { inp.value = finalText; advance(); },
+              function (interim) { inp.value = interim; });
+          });
+        }
+        var greeting = 'Hi, I\'m ' + avName + '. ' + (introInput.value.trim() ? introInput.value.trim() + ' ' : '') + 'This takes just a few minutes. ' + questions[0];
+        sayLine(avName, greeting);
+        speakAndListen(greeting);
         var row = make('div', ''); row.style.cssText = 'display:flex;gap:8px;margin-top:6px';
         var inp = make('input'); inp.placeholder = 'Type a sample answer…'; inp.style.cssText = 'flex:1;border:1px solid #d7ded9;border-radius:10px;padding:8px 10px;font:13px system-ui';
         var send = make('button', 'mlsAvAction', 'Send'); send.type = 'button';
         function advance() {
           var v = inp.value.trim(); if (!v) return;
+          pvStopVoice();
           sayLine('You', v); inp.value = '';
           idx++;
-          if (idx < questions.length) { sayLine(avName, 'Thanks. ' + questions[idx]); }
+          if (idx < questions.length) { var nextQ = 'Thanks. ' + questions[idx]; sayLine(avName, nextQ); speakAndListen(nextQ); }
           else {
-            sayLine(avName, 'That covers everything — thank you! Your answers are on their way to your care team.');
+            var doneMsg = 'That covers everything — thank you! Your answers are on their way to your care team.';
+            sayLine(avName, doneMsg);
+            pvSpeak(doneMsg, null);
             inp.disabled = true; send.disabled = true;
             previewHost.appendChild(make('div', 'mlsAvMeta', 'Preview complete (' + questions.length + ' questions). Nothing was saved or sent. The live interview also asks smart follow-ups when answers need detail.'));
           }
@@ -654,6 +718,185 @@
     }
   }
 
+  /* =========================================================================
+     av-3.0.0 — THE OFFICE INTERVIEW (kiosk): the patient walks in, the doctor
+     taps Start, and the WHOLE SCREEN becomes the avatar — the doctor-faced
+     portrait with living emotion states, huge spoken questions, big-button
+     voice answering. Clinician-authenticated (/api/avatar/office/turn), filed
+     to the ACTIVE patient's chart, lands in the same inbox/Visit-card/import
+     pipeline. The app is fully hidden behind an opaque overlay while a
+     patient is looking at the screen.
+     Emotions: motion + color + a mood badge over the portrait — happy on
+     greeting/thanks, attentive while listening, thinking while the AI works,
+     caring when the patient's words sound like pain/distress. Reduced-motion
+     kills all of it. ========================================================= */
+  var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null };
+  function kioskNonce() {
+    var v = 'an-', A = 'abcdefghjkmnpqrstuvwxyz23456789';
+    for (var i = 0; i < 16; i++) v += A[Math.floor(Math.random() * A.length)];
+    return v;
+  }
+  function kioskStyle() {
+    if (gid('mlsAvKioskStyle')) return;
+    var st = document.createElement('style'); st.id = 'mlsAvKioskStyle';
+    st.textContent =
+      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center}' +
+      '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
+      '#mlsAvKioskFaceWrap{position:relative;width:min(34vh,340px);height:min(34vh,340px)}' +
+      '#mlsAvKioskFace{width:100%;height:100%;border-radius:999px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12vh;border:5px solid #fff;box-shadow:0 18px 60px rgba(32,64,52,.22);transition:box-shadow .5s ease}' +
+      '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
+      '#mlsAvKioskMood{position:absolute;right:2%;bottom:2%;width:5.4vh;height:5.4vh;min-width:38px;min-height:38px;border-radius:999px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:3.2vh;box-shadow:0 4px 14px rgba(32,64,52,.25);transition:transform .3s ease}' +
+      '#mlsAvKioskFaceWrap::after{content:"";position:absolute;inset:-14px;border-radius:999px;border:3px solid transparent;transition:border-color .4s ease}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskFace{animation:mlsAvKSpeak 1s ease-in-out infinite}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskFaceWrap::after{border-color:rgba(46,106,75,.55);animation:mlsAvKRing 1.6s ease-in-out infinite}' +
+      '#mlsAvKiosk.listening #mlsAvKioskFaceWrap::after{border-color:rgba(38,99,168,.55);animation:mlsAvKRing 2.2s ease-in-out infinite}' +
+      '#mlsAvKiosk.listening #mlsAvKioskFace{animation:mlsAvKLean 3.4s ease-in-out infinite}' +
+      '#mlsAvKiosk.thinking #mlsAvKioskFace{animation:mlsAvKThink 2.2s ease-in-out infinite}' +
+      '#mlsAvKiosk.caring #mlsAvKioskFace{box-shadow:0 18px 60px rgba(168,99,60,.3)}' +
+      '#mlsAvKiosk.happy #mlsAvKioskMood{transform:scale(1.18)}' +
+      '#mlsAvKioskName{font:800 3vh \'Newsreader\',Georgia,serif;color:#204034;margin-top:-.6vh}' +
+      '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
+      '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
+      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' +
+      '#mlsAvKioskActions{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}' +
+      '#mlsAvKioskActions button{border:0;border-radius:999px;padding:2.1vh 3.6vh;font:700 2.3vh system-ui;cursor:pointer;min-height:56px}' +
+      '#mlsAvKioskDone{background:#2E6A4B;color:#fff;box-shadow:0 8px 26px rgba(46,106,75,.35)}' +
+      '#mlsAvKioskRepeat{background:#fff;color:#204034;border:1px solid #cfd9d2!important}' +
+      '#mlsAvKioskType{background:transparent;color:#69736d;text-decoration:underline;font-weight:600!important}' +
+      '#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw)}' +
+      '#mlsAvKioskTypeRow textarea{flex:1;border:1px solid #cfd9d2;border-radius:16px;padding:14px;font:2.2vh system-ui;resize:none}' +
+      '#mlsAvKioskTypeRow button{border:0;border-radius:999px;padding:0 26px;background:#204034;color:#fff;font:700 2.1vh system-ui;cursor:pointer}' +
+      '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
+      '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
+      '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
+      '@keyframes mlsAvKRing{0%,100%{opacity:.45}50%{opacity:1}}' +
+      '@media (prefers-reduced-motion: reduce){#mlsAvKiosk *,#mlsAvKiosk.speaking #mlsAvKioskFace,#mlsAvKiosk.listening #mlsAvKioskFace,#mlsAvKiosk.thinking #mlsAvKioskFace{animation:none!important}}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function kioskMood(state, say, answer) {
+    var root = gid('mlsAvKiosk'); if (!root) return;
+    ['speaking', 'listening', 'thinking', 'caring', 'happy'].forEach(function (c) { root.classList.remove(c); });
+    var badge = gid('mlsAvKioskMood');
+    var caring = /pain|hurt|worse|can't|cannot|scared|worried|sad|tired|sick/i.test(String(answer || '') + ' ' + String(say || ''));
+    var happy = /thank|welcome|great|covers everything|hi[!,. ]|hello/i.test(String(say || ''));
+    if (state === 'speaking') { root.classList.add('speaking'); if (caring) root.classList.add('caring'); else if (happy) root.classList.add('happy'); }
+    else if (state === 'listening') { root.classList.add('listening'); if (caring) root.classList.add('caring'); }
+    else if (state === 'thinking') root.classList.add('thinking');
+    if (badge) badge.textContent = state === 'listening' ? '👂' : state === 'thinking' ? '🤔' : caring ? '😟' : happy ? '😊' : '🙂';
+  }
+  function kioskClose(reason) {
+    pvStopVoice();
+    kiosk.open = false; kiosk.busy = false;
+    var node = gid('mlsAvKiosk'); if (node && node.parentNode) node.parentNode.removeChild(node);
+    if (reason === 'done') {
+      refreshCount(true);
+      safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
+    }
+  }
+  function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
+  function kioskTurn(answer, nonce) {
+    if (!kiosk.open || kiosk.busy) return;
+    kiosk.busy = true;
+    pvStopVoice();
+    kioskMood('thinking', '', answer);
+    var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
+    var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
+    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); }
+    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      kiosk.busy = false;
+      if (!kiosk.open) return;
+      var j = r.json || {};
+      if (j.ok === false) {
+        kioskSetSay(j.message || 'Something went wrong — the doctor will be right with you.');
+        kioskMood('speaking', j.message || '');
+        pvSpeak(j.message || 'Something went wrong.', null);
+        return;
+      }
+      kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
+      if (j.avatar) kioskSetIdentity(j.avatar);
+      kioskSetSay(kiosk.lastSay);
+      var pg = gid('mlsAvKioskProgress');
+      if (pg && j.progress && j.progress.total) pg.textContent = j.done ? '' : ('Question ' + Math.min(j.progress.covered || 1, j.progress.total) + ' of ' + j.progress.total);
+      if (j.done) {
+        kioskMood('speaking', kiosk.lastSay);
+        pvSpeak(kiosk.lastSay, function () { kioskClose('done'); });
+        setTimeout(function () { if (kiosk.open) kioskClose('done'); }, 12000);
+      } else {
+        kioskMood('speaking', kiosk.lastSay, answer);
+        pvSpeak(kiosk.lastSay, function () { kioskListen(); });
+      }
+    }, function () {
+      kiosk.busy = false;
+      if (!kiosk.open) return;
+      kioskSetSay('The connection hiccuped — your last answer is safe to say again.');
+      if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
+      kioskListen();
+    });
+  }
+  function kioskListen() {
+    if (!kiosk.open || kiosk.busy) return;
+    kioskMood('listening', kiosk.lastSay);
+    var started = pvListen(function (finalText) {
+      if (!kiosk.open) return;
+      var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
+      kiosk.lastTry = { answer: finalText, nonce: reuse };
+      kioskTurn(finalText, reuse);
+    }, function (interim) {
+      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
+    });
+    if (!started) {
+      var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'The microphone is not available here — typing works below.';
+    }
+  }
+  function kioskSetIdentity(av) {
+    var face = gid('mlsAvKioskFace'), name = gid('mlsAvKioskName');
+    if (name && av && av.name) name.textContent = av.name;
+    if (face && av && typeof av.faceImage === 'string' && av.faceImage.indexOf('data:image/') === 0) {
+      face.textContent = ''; var img = document.createElement('img'); img.alt = ''; img.src = av.faceImage; face.appendChild(img);
+    }
+  }
+  function openKiosk() {
+    var activeId = activePtIdSafe();
+    if (!activeId) { toast('Open the patient first — the interview files to their chart.'); return; }
+    if (kiosk.open) return;
+    kioskStyle(); style();
+    kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null;
+    kiosk.ext = activeId;
+    kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
+    var root = document.createElement('div'); root.id = 'mlsAvKiosk';
+    root.innerHTML =
+      '<button type="button" id="mlsAvKioskEnd">End interview</button>' +
+      '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace">🧑‍⚕️</div><div id="mlsAvKioskMood">🙂</div></div>' +
+      '<div id="mlsAvKioskName">One moment…</div>' +
+      '<div id="mlsAvKioskSay">Getting ready…</div>' +
+      '<div id="mlsAvKioskInterim"></div>' +
+      '<div id="mlsAvKioskProgress"></div>' +
+      '<div id="mlsAvKioskActions">' +
+        '<button type="button" id="mlsAvKioskDone">🎤 I\'m done talking</button>' +
+        '<button type="button" id="mlsAvKioskRepeat">🔁 Hear that again</button>' +
+        '<button type="button" id="mlsAvKioskType">Type instead</button>' +
+      '</div>' +
+      '<div id="mlsAvKioskTypeRow"><textarea rows="2" id="mlsAvKioskInput" placeholder="Type your answer…"></textarea><button type="button" id="mlsAvKioskSend">Send</button></div>';
+    (document.body || document.documentElement).appendChild(root);
+    root.querySelector('#mlsAvKioskEnd').addEventListener('click', function () { kioskClose('ended'); });
+    root.querySelector('#mlsAvKioskDone').addEventListener('click', function () { if (pvRec) { safe(function () { pvRec.stop(); }); } else kioskListen(); });
+    root.querySelector('#mlsAvKioskRepeat').addEventListener('click', function () { if (kiosk.lastSay) { pvStopVoice(); kioskMood('speaking', kiosk.lastSay); pvSpeak(kiosk.lastSay, function () { kioskListen(); }); } });
+    root.querySelector('#mlsAvKioskType').addEventListener('click', function () { var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = row.style.display === 'flex' ? 'none' : 'flex'; });
+    function kioskTypedSubmit() {
+      var input = gid('mlsAvKioskInput'); var value = input ? input.value.trim() : '';
+      if (!value || kiosk.busy) return;
+      pvStopVoice();
+      if (input) input.value = '';
+      var reuse = kiosk.lastTry && kiosk.lastTry.answer === value ? kiosk.lastTry.nonce : kioskNonce();
+      kiosk.lastTry = { answer: value, nonce: reuse };
+      kioskTurn(value, reuse);
+    }
+    root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskTypedSubmit);
+    root.querySelector('#mlsAvKioskInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } });
+    kioskTurn(null, null);
+  }
+
   /* ---- the Visit-page presence: check-ins meet the doctor where he works.
      A compact card at the BOTTOM of #visitView (never near the patient
      banner — standing owner rule): ready count, a highlight line when the
@@ -745,11 +988,14 @@
         : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' finished their check-in.'))));
     line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
     head.appendChild(line);
+    /* av-3.0.0: the headline action — the patient is in the room, start the
+       interview on THIS screen for THIS patient. */
+    if (!activeHit && activeId) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
     head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
     /* av-2.0.2: flag FIRST, then open — the old order consumed the flag
        before it was set (Set up landed on the Ready tab) and left it armed
        to hijack the doctor's NEXT open. */
-    if (!activeHit) head.appendChild(visitButton('Set up', !total, function () { openSetupTab(); open(); }));
+    if (!activeHit) head.appendChild(visitButton('Set up', false, function () { openSetupTab(); open(); }));
     card.appendChild(head);
 
     if (activeHit) {
@@ -838,6 +1084,8 @@
     lifecycleBound = [];
     if (visBound) { safe(function () { document.removeEventListener('visibilitychange', onVisibility, false); }); visBound = false; }
     close();
+    kioskClose('ended');
+    var kioskStyleNode = gid('mlsAvKioskStyle'); if (kioskStyleNode && kioskStyleNode.parentNode) kioskStyleNode.parentNode.removeChild(kioskStyleNode);
     var button = gid(BUTTON_ID); if (button && button.parentNode) button.parentNode.removeChild(button);
     var visitCard = gid('mlsAvVisitCard'); if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
     var styleNode = gid(STYLE_ID); if (styleNode && styleNode.parentNode) styleNode.parentNode.removeChild(styleNode);
@@ -850,6 +1098,8 @@
     asset: ASSET,
     open: open,
     close: close,
+    openKiosk: openKiosk,
+    closeKiosk: function () { kioskClose('ended'); },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,
