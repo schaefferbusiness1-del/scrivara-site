@@ -168,6 +168,24 @@ function build(overrides) {
     assert(calls.said.some(t => /pull engine is not available/.test(t)));
   }
 
+  /* ---- appControl: whitelisted registry, honest refusals ---- */
+  {
+    const { window, calls } = build();
+    window.__mlsOpened = [];
+    window.openTemplates = () => window.__mlsOpened.push('templates');
+    window.pullScheduleViaAssist = () => window.__mlsOpened.push('pull');
+    assert(window.__mlsCopilotPower.handles('appControl'));
+    assert.strictEqual(window.__mlsCopilotPower.run('appControl', 'templates', null), true);
+    assert.strictEqual(window.__mlsCopilotPower.run('appControl', 'pull-today', null), true);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(window.__mlsOpened)), ['templates', 'pull']);
+    assert.strictEqual(window.__mlsCopilotPower.run('appControl', 'delete-everything', null), false,
+      'a name outside the registry must refuse — never a guessed click');
+    assert(calls.toasts.some(t => /not in the Copilot's registry/.test(t)));
+    assert.strictEqual(window.__mlsCopilotPower.run('appControl', 'portal-requests', null), false,
+      'a registered control whose owner module is absent refuses honestly');
+    assert(calls.toasts.some(t => /not available on this screen/.test(t)));
+  }
+
   /* ---- draftNote: exact patient -> select + open prep ---- */
   {
     const { window, calls } = build();

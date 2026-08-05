@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-1.3.0';
+  var VERSION = 'av-1.3.1';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -427,6 +427,15 @@
       });
       faceRow.appendChild(facePreview); faceRow.appendChild(camBtn); faceRow.appendChild(removeFaceBtn);
 
+      var toneLabel = make('label', '', 'Tone — how the avatar talks to your patients');
+      var toneSelect = document.createElement('select');
+      toneSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
+      [['friendly', 'Warm & friendly (default)'], ['professional', 'Professional & brief'], ['simple', 'Plain & simple language']].forEach(function (opt) {
+        var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+        if ((cfg.tone || 'friendly') === opt[0]) o.selected = true;
+        toneSelect.appendChild(o);
+      });
+
       var qLabel = make('label', '', 'Questions the avatar asks — ONE PER LINE, in order (up to 20)');
       var qArea = make('textarea'); qArea.rows = 9;
       qArea.value = Array.isArray(cfg.questions) ? cfg.questions.join('\n') : '';
@@ -438,6 +447,7 @@
         var questions = qArea.value.split('\n').map(function (line) { return line.trim(); }).filter(Boolean).slice(0, 20);
         saveBtn.disabled = true; status.textContent = 'Saving…';
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
+          tone: toneSelect.value,
           faceImage: pendingFace === undefined ? (cfg.faceImage || '') : pendingFace }) })
           .then(function (r2) {
             saveBtn.disabled = false;
@@ -485,6 +495,7 @@
 
       form.appendChild(nameLabel); form.appendChild(nameInput);
       form.appendChild(introLabel); form.appendChild(introInput);
+      form.appendChild(toneLabel); form.appendChild(toneSelect);
       form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
       form.appendChild(qLabel); form.appendChild(qArea);
       var btnRow = make('div', 'mlsAvActions');
@@ -603,8 +614,17 @@
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;
   function scheduleEnsure() {
-    [0, 160, 420, 900, 1800, 3200].forEach(function (delay) {
-      retryTimers.push(setTimeout(function () { ensureButton(); }, delay));
+    /* av-1.3.1: this module is idle-DEFERRED, so the app's ready events can
+       fire BEFORE it loads — a fresh login landing on Visit then showed no
+       card until the user switched views. The bounded ladder now mounts the
+       Visit card too, and its last rung does the one boot count-refresh the
+       missed events would have done. Still zero permanent polling. */
+    [0, 160, 420, 900, 1800, 3200].forEach(function (delay, index, all) {
+      retryTimers.push(setTimeout(function () {
+        ensureButton();
+        ensureVisitCard();
+        if (index === all.length - 1) refreshCount(false);
+      }, delay));
     });
   }
   function onLifecycle() { scheduleEnsure(); refreshCount(false); ensureVisitCard(); }

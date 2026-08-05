@@ -14927,7 +14927,7 @@ function _copilotDoAction(kind, arg, btn){
     /* Before that module's deferred loader lands, these kinds must NOT fall to
        the keyword guess below — 'draftNote' matches /note/ and would navigate
        to History while marking the button done. Honest wait instead. */
-    if(kind==='pullProviders'||kind==='draftNote'){
+    if(kind==='pullProviders'||kind==='draftNote'||kind==='appControl'){
       try{ toast('That control is still loading — give it a second and tap it again.',''); }catch(e){}
       return;
     }

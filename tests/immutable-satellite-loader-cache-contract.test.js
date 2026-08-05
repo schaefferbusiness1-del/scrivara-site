@@ -65,10 +65,12 @@ const assets = [
   /* 2026-08-05 round-2 enhancements (cpw-1.2.0 avatarCheckins in the snapshot;
      av-1.2.0 ready-cache + interview preview + copy-summary): both files
      changed after their b873 URLs shipped. */
-  ['feat_mls_copilot_power.js', '20260805cpw120', '20260805cpw110'],
-  /* 2026-08-05 round 3 (av-1.3.0): camera-captured stylized face, patient-side
-     animations identity, and the Visit-page check-in card. */
-  ['feat_mls_avatar.js', '20260805av130', '20260805av120'],
+  /* 2026-08-05 round 4: cpw-1.3.0 appControl registry (Copilot's whitelisted
+     hands on the app's own safe openers); av-1.3.1 deferred-load boot fix
+     (the Visit card now mounts at login, not only after a view switch) +
+     the tone setting. */
+  ['feat_mls_copilot_power.js', '20260805cpw130', '20260805cpw120'],
+  ['feat_mls_avatar.js', '20260805av131', '20260805av130'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 

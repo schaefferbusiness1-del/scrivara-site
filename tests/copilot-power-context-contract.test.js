@@ -24,7 +24,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_power.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'cpw-1.2.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'cpw-1.3.0'"), 'version token moved without updating this contract');
 assert(!source.includes('setInterval('), 'no permanent polling in the Power module');
 assert(!source.includes('MutationObserver'), 'no document-wide observers in the Power module');
 
@@ -64,7 +64,7 @@ function freshContext() {
 /* ---- 1. snapshot senses ---- */
 {
   const { window } = freshContext();
-  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.2.0');
+  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.3.0');
   const snap = window.copilotSnapshot();
   assert(snap.providerCoverage, 'snapshot gained no providerCoverage');
   assert.strictEqual(snap.providerCoverage.rosterComplete, true);
@@ -78,7 +78,9 @@ function freshContext() {
   assert.strictEqual(smith.hasLocalData, true);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.providerCoverage.providersWithNoLocalData)), ['Jones, Beth'],
     'the provider with no pulled charts must be named — that is the gap-offer trigger');
-  assert(snap.capabilities && snap.capabilities.actions.includes('pullProviders') && snap.capabilities.actions.includes('draftNote'));
+  assert(snap.capabilities && snap.capabilities.actions.includes('pullProviders') && snap.capabilities.actions.includes('draftNote') && snap.capabilities.actions.includes('appControl'));
+  assert(snap.capabilities.appControls && snap.capabilities.appControls['pull-today'] && snap.capabilities.appControls['avatar-checkins'],
+    'the model must be told exactly which app controls exist');
   assert(snap.patients && snap.patients.length === 1, 'the base snapshot must survive the wrapper');
 }
 

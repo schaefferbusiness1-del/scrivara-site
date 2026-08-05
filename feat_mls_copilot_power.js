@@ -44,7 +44,7 @@
     return;
   }
 
-  var VERSION = 'cpw-1.2.0';
+  var VERSION = 'cpw-1.3.0';
   var ASSET = 'feat_mls_copilot_power.js';
   var WIRE_CAP = 120000; /* absolute cap on the /api/copilot request body (chars).
                             The server bounds context to 100K; anything larger is
@@ -146,12 +146,40 @@
     };
   }
 
+  /* cpw-1.3.0: the WHITELISTED app-control registry — the Copilot's hands on
+     the app's own safe controls. Every entry calls the app's REAL opener;
+     there is no raw DOM clicking of arbitrary targets, and nothing here can
+     sign, save, or write to Athena. Unknown names refuse honestly. */
+  var APP_CONTROLS = {
+    'templates': { what: 'Open the note Templates library', run: function () { if (isFn(window.openTemplates)) { window.openTemplates(); return true; } return false; } },
+    'avatar-checkins': { what: 'Open Avatar check-ins (program the patient interviewer, read completed check-ins)', run: function () { var a = window.__mlsAvatar; if (a && a.installed && isFn(a.open)) { a.open(); return true; } return false; } },
+    'portal-requests': { what: 'Open the patient portal requests inbox', run: function () { var p = window.__mlsPortalRequestInbox; if (p && isFn(p.open)) { p.open(); return true; } return false; } },
+    'new-visit': { what: 'Open the Visit screen ready for a new visit (never starts recording)', run: function () { var any = false; if (isFn(window.showView)) { window.showView('visit'); any = true; } if (isFn(window.newVisit)) { window.newVisit(); any = true; } return any; } },
+    'pull-today': { what: "Start the standard pull of today's schedule from athenaOne (same as the Pull today button)", run: function () { if (isFn(window.pullScheduleViaAssist)) { window.pullScheduleViaAssist(); return true; } return false; } },
+    'after-visit-summary': { what: 'Open the after-visit summary tool for the active patient', run: function () { var b = safe(function () { return document.getElementById('mlsavsBtn'); }, null); if (b) { b.click(); return true; } return false; } }
+  };
+  function runAppControl(arg, btn) {
+    var name = String(arg || '').trim().toLowerCase();
+    var entry = APP_CONTROLS[name];
+    if (!entry) {
+      toast('That control ("' + name.slice(0, 40) + '") is not in the Copilot\'s registry — nothing was clicked.');
+      return false;
+    }
+    var ok = safe(entry.run, false);
+    if (ok) { if (btn && btn.classList) btn.classList.add('cact-done'); }
+    else toast('That tool is not available on this screen right now — nothing was clicked.');
+    return ok;
+  }
+
   function capabilities() {
+    var controls = {};
+    for (var k in APP_CONTROLS) if (Object.prototype.hasOwnProperty.call(APP_CONTROLS, k)) controls[k] = APP_CONTROLS[k].what;
     return {
-      actions: ['openPatient', 'startVisit', 'navigate', 'build', 'pullProviders', 'draftNote'],
+      actions: ['openPatient', 'startVisit', 'navigate', 'build', 'pullProviders', 'draftNote', 'appControl'],
+      appControls: controls,
       pullEngineReady: !!(window.__mlsSI && isFn(window.__mlsSI.dayPull)),
       views: ['patients', 'visit', 'calendar', 'orders', 'recs', 'history', 'analysis', 'studio'],
-      note: 'pullProviders arg must be strict JSON {"providers":["<exact roster spelling>"],"date":"YYYY-MM-DD"?}; the tap on your offer is the user’s confirmation.'
+      note: 'pullProviders arg must be strict JSON {"providers":["<exact roster spelling>"],"date":"YYYY-MM-DD"?}; appControl arg must be one appControls key exactly; the tap on your offer is the user’s confirmation.'
     };
   }
 
@@ -442,10 +470,11 @@
   }
 
   /* ---------------- public surface ---------------- */
-  function handles(kind) { return kind === 'pullProviders' || kind === 'draftNote'; }
+  function handles(kind) { return kind === 'pullProviders' || kind === 'draftNote' || kind === 'appControl'; }
   function run(kind, arg, btn) {
     if (kind === 'pullProviders') return runPullProviders(arg, btn);
     if (kind === 'draftNote') return runDraftNote(arg, btn);
+    if (kind === 'appControl') return runAppControl(arg, btn);
     return false;
   }
 

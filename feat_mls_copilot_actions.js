@@ -289,7 +289,7 @@
     /* ca-2.1.1: before the Power module's deferred loader lands, these kinds
        must not fall to the keyword guess — 'draftNote' matches /note/ and
        would navigate to History. Honest wait instead. */
-    if (a.kind === 'pullProviders' || a.kind === 'draftNote') {
+    if (a.kind === 'pullProviders' || a.kind === 'draftNote' || a.kind === 'appControl') {
       toast('That control is still loading — give it a second and tap it again.');
       return false;
     }
