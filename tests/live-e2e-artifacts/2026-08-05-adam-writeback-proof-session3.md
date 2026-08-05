@@ -130,6 +130,30 @@ restored byte-identical to shipped, contract suite reads the candidate (commit `
 staged work itself is commit `4c27d3dc`). **NOT SHIPPED — extension release trains hold until the
 site lane's b872/b873 transition completes; this rides the next 3.0.45 train.** Nothing pushed.
 
+## ~12:15 ET: the owner's 30-second click — and the finding that hardens the wf3 gap
+
+The owner fronted the athena tab for ~30 seconds (visibilityState flipped visible mid-poll).
+**The starved briefing frame did not advance one byte** (1,938 chars before, during-after
+identical). A probe starved for hours is a corpse — later visibility does not revive it; the
+read must START while the tab is visible. That sharpens the ledger item: the wf3 probe needs
+presence AT DISPATCH (or a bounded deadline + honest retry telling the doctor to stay), not
+merely eventual presence.
+
+Recovery executed immediately (all clean): sheet Cancel (closed; #pushAllEmrBtn intact; binding
+2026-08-05 and 1,548-char note both still live in the app tab), then a browser-level navigate of
+the athena tab to the dashboard frameset — which **boots BLANK hidden** (title '', 0 frames,
+25s+) while the session fetch stays live at 91,417 bytes: the frameset builder itself is
+visibility-starved, another instance of the same law, and it will paint the moment the tab
+fronts.
+
+**Parked resume state (one presence window finishes everything):** owner fronts the Claude-group
+athena tab and stays ~2-3 min → frameset paints → I click #pushAllEmrBtn → fresh probe starts
+VISIBLE → #mlsAthenaUnifiedGo enables → scrollIntoView(center) + one physical CDP click →
+step-4 verdict + __mlsWriteFlow.state.lastResp + chart read-back → delete BOTH throwaway
+appointments in the same window. If the athena session idles out first (last keepalive fetch
+~12:20), he signs in again first; the app-tab state (import, note, binding) survives as long as
+the tab lives.
+
 ## Remaining (unchanged from session 2)
 
 1. Probe verdict → `#mlsAthenaUnifiedGo` enables → ONE physical (CDP-trusted) click.
