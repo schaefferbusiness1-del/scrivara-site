@@ -18747,7 +18747,7 @@ function _assistReadChart(patientRef, onStatus){
       if(!e.data.requestId||String(e.data.requestId)!==requestId) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
-      if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
+      if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'))); return; }
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
       if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;

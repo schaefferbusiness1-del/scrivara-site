@@ -135,6 +135,9 @@ const tests = [
   /* fg-1.0 (3.0.41): the user-initiated retry may front the athena tab (panes
      never hydrate occluded) and must always restore focus */
   'history-retry-foreground-contract.test.js',
+  /* sx-1.1: the bounded session probe rides every read-verb failure response
+     (per-read session liveness, requirements ledger 6.2) */
+  'per-read-session-liveness-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',

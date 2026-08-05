@@ -44816,7 +44816,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var errText = String((r && (r.error || r.message)) || '');
     var signinRequired = reason === 'no-athena-tab' ||
       /sign-?in page|signed[- ]?out|sign in to athenaone|no signed-?in athenaone/i.test(errText) ||
-      (reason === 'no-read' && /sign-?in|login/i.test(errText));
+      (reason === 'no-read' && /sign-?in|login/i.test(errText)) ||
+      /* sx-1.1: any read failure whose bounded session probe proved the athena
+         session dead is a sign-out, and a sign-out must never read as a
+         generic failed pull. */
+      reason === 'athena-session-expired' ||
+      (r && r.schedSessionLikelyExpired === true) ||
+      (hr2 && hr2.sessionExpired === true);
     if (signinRequired) {
       return { ok: false, signinRequired: true, message: 'Athena sign-in required. Sign in to athenaOne, then select Retry.' };
     }
