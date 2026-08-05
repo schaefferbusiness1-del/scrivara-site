@@ -1186,19 +1186,27 @@
     if(avBusy||avDone) return;
     if(answer) avMsg(answer,"me");
     avSetBusy(true);
+    /* On ANY failure the answer is restored to the box — the server did not
+       record it, so the page must not eat it or claim otherwise. */
+    function restore(){ if(answer){ var inp=$("mlsAvInput"); if(inp && !inp.value) inp.value=answer; } }
     requestFetch("/api/patient/avatar/turn",{method:"POST",body:JSON.stringify(answer?{clientSessionId:avSid(),answer:answer}:{clientSessionId:avSid()})})
       .then(function(r){ if(r.status===401) throw {auth:true}; return r.json().catch(function(){return {};}); })
       .then(function(j){
         if(j && j.ok===false && j.error==="not_configured"){
           avMsg(j.message||"Your care team has not set up the check-in yet.","ai"); avFinish(); return;
         }
+        if(j && j.ok===false && j.message){
+          avSetBusy(false); restore();
+          avMsg(j.message,"ai");
+          return;
+        }
         if(!j || typeof j.say!=="string" || !j.say){ throw {}; }
         avMsg(j.say,"ai");
         if(j.done){ avFinish(); } else { avSetBusy(false); var inp=$("mlsAvInput"); if(inp) inp.focus(); }
       })
       .catch(function(err){
-        avSetBusy(false);
-        avMsg(err&&err.auth?"Your session ended — sign in again to continue the check-in.":"The check-in is temporarily unavailable — nothing was lost. Try again in a moment, or just tell the office at your visit.","ai");
+        avSetBusy(false); restore();
+        avMsg(err&&err.auth?"Your session ended — sign in again to continue the check-in. Your last answer is still in the box below.":"The check-in is temporarily unavailable and your last answer was NOT recorded — it's still in the box below, so tap Send again in a moment.","ai");
       });
   }
   function avStart(){

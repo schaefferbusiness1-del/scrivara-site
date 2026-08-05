@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.1.0)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.1.1)
  * ---------------------------------------------------------------------------
  * The base Studio Copilot canonically persists and renders reply metadata
  * (actions, followups, artifact). This companion never intercepts /api/copilot,
@@ -39,7 +39,7 @@
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-2.1.0';
+  var VERSION = 'ca-2.1.1';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -285,6 +285,13 @@
        keyword fallback so these never degrade into a navigation guess. */
     if (safe(function () { return window.__mlsCopilotPower && window.__mlsCopilotPower.installed && isFn(window.__mlsCopilotPower.handles) && window.__mlsCopilotPower.handles(a.kind); }, false)) {
       return safe(function () { return window.__mlsCopilotPower.run(a.kind, a.arg, btn || null); }, false);
+    }
+    /* ca-2.1.1: before the Power module's deferred loader lands, these kinds
+       must not fall to the keyword guess — 'draftNote' matches /note/ and
+       would navigate to History. Honest wait instead. */
+    if (a.kind === 'pullProviders' || a.kind === 'draftNote') {
+      toast('That control is still loading — give it a second and tap it again.');
+      return false;
     }
     /* ca-2.0.1: unknown kind (model drift) — land on the closest REAL view by
        keyword from kind/arg/label, else say so; never a silent dead click and

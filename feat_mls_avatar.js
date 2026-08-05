@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-1.0.0';
+  var VERSION = 'av-1.1.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -174,27 +174,39 @@
     }, '');
   }
 
-  /* ---- import into the exact chart, once ---- */
+  /* ---- import into the exact chart, once ----
+     av-1.1.0: NEVER mutate the store object before the save is confirmed —
+     getPatients() rows alias the app's memoized store, so a pre-save mutation
+     followed by a failed/absent upsert left a stamp on an object nothing
+     persisted: the button then lied "Already in chart" while the summary was
+     lost. The write goes through a COPY, and success is only claimed after
+     re-reading the store and finding the stamp (confirming must record). */
+  function importStamp(checkin) {
+    return '[Avatar check-in #' + (checkin.id != null ? checkin.id : '?') + ' — completed ' +
+      (formatDate(checkin.ready_at) || checkin.ready_at || '') + ']';
+  }
   function importSummary(checkin, button) {
     var patient = exactPatient(checkin.patient_external_id);
     if (!patient) return;
-    var stamp = '[Avatar check-in — completed ' + (formatDate(checkin.ready_at) || checkin.ready_at || '') + ']';
-    var existingSummary = String(patient.summary || '');
-    if (existingSummary.indexOf(stamp) >= 0) {
+    var stamp = importStamp(checkin);
+    if (String(patient.summary || '').indexOf(stamp) >= 0) {
       button.disabled = true; button.textContent = 'Already in chart';
       return;
     }
+    var existingSummary = String(patient.summary || '').trim();
     var block = stamp + '\n' + String(checkin.summary || '').trim();
-    patient.summary = existingSummary.trim() ? (existingSummary.trim() + '\n\n' + block) : block;
-    var saved = safe(function () {
-      if (isFn(window.upsertPatient)) { window.upsertPatient(patient); return true; }
-      return false;
-    }, false);
-    if (saved) {
+    var updated = {};
+    for (var k in patient) if (Object.prototype.hasOwnProperty.call(patient, k)) updated[k] = patient[k];
+    updated.summary = existingSummary ? (existingSummary + '\n\n' + block) : block;
+    safe(function () { if (isFn(window.upsertPatient)) window.upsertPatient(updated); });
+    /* Trust only what the store proves: re-read and require the stamp. */
+    var verify = exactPatient(checkin.patient_external_id);
+    if (verify && String(verify.summary || '').indexOf(stamp) >= 0) {
       button.disabled = true; button.textContent = 'Added to chart ✓';
-      safe(function () { if (isFn(window.toast)) window.toast('Check-in summary added to ' + (patient.name || 'the patient') + '\'s chart.', 'ok'); });
+      safe(function () { if (isFn(window.toast)) window.toast('Check-in summary added to ' + (verify.name || 'the patient') + '\'s chart.', 'ok'); });
     } else {
-      button.textContent = 'Could not save — try from Patients';
+      button.disabled = false; button.textContent = 'Could not save — try again or use Patients';
+      safe(function () { if (isFn(window.toast)) window.toast('The summary was NOT saved to the chart — nothing was recorded. Try again, or open the chart and paste it.', ''); });
     }
   }
 
@@ -257,8 +269,15 @@
     var notice = make('div', 'mlsAvNotice', 'Loading your avatar setup…');
     host.appendChild(notice);
     api('/api/avatar/config').then(function (r) {
+      /* av-1.1.0: a failed GET must NOT fail open to an editable EMPTY form —
+         one Save from that state would overwrite the real question list and
+         switch the patient-facing check-in off. */
+      if (!r.ok || !r.json || r.json.ok !== true) {
+        notice.textContent = 'Setup could not load your current avatar — nothing is shown so nothing can be overwritten. Try again in a moment.';
+        return;
+      }
       host.innerHTML = '';
-      var cfg = (r.ok && r.json && r.json.config) || {};
+      var cfg = r.json.config || {};
       var form = make('div', 'mlsAvForm');
       var nameLabel = make('label', '', 'Avatar name (what patients see)');
       var nameInput = make('input'); nameInput.value = cfg.name || 'Ava'; nameInput.maxLength = 60;

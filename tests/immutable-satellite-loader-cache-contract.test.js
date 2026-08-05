@@ -47,7 +47,14 @@ const assets = [
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_task3_frontsync.js', '20260727t3110', '20260727t3109'],
   ['feat_mls_upnow_realtime.js', '20260723unr110', '20260626unr1c1'],
-  ['feat_visits.js', '20260729vis11', '20260728vis10']
+  ['feat_visits.js', '20260729vis11', '20260728vis10'],
+  /* 2026-08-05 adversarial-review repairs: all three copilot/avatar satellites
+     changed after their b871/b872 immutable URLs shipped — the receipts-append
+     signature, the coverage source, fail-open setup form, mutate-before-save
+     import, and the still-loading guard. Retired tokens must be unreachable. */
+  ['feat_mls_copilot_power.js', '20260805cpw110', '20260805cpw100'],
+  ['feat_mls_avatar.js', '20260805av110', '20260805av100'],
+  ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
 assert.strictEqual(new Set(assets.map(entry => entry[1])).size, assets.length,

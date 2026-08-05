@@ -33,7 +33,16 @@ function build(overrides) {
     fetch: function () { return Promise.resolve({ ok: true }); },
     copilotSnapshot: function () { return {}; },
     toast: (m) => calls.toasts.push(String(m)),
-    __mlsCopilotConvo: { append: (m) => calls.said.push(String(m.text)) },
+    /* The REAL unify signature: append(role, text, extra) -> message. The
+       1.0.0 stub took an object — mirroring the module's wrong assumption —
+       so every receipt shipped as an EMPTY bubble and this suite stayed
+       green. A stub must mirror the dependency, not the caller. */
+    __mlsCopilotConvo: { append: (role, text, extra) => {
+      const m = { role: role === 'user' ? 'user' : 'ai', text: String(text == null ? '' : text) };
+      if (extra && typeof extra === 'object') for (const k in extra) { if (k !== 'role' && k !== 'text') m[k] = extra[k]; }
+      calls.said.push(m.text);
+      return m;
+    } },
     _acctTodayKey: () => '2026-08-05',
     __mlsDayHistoryPull: { state: { running: false } },
     __mlsPullBusyAt: 0,
@@ -110,6 +119,23 @@ function build(overrides) {
     const finalReport = calls.said[calls.said.length - 1];
     assert(/Smith, Adam.*3 added/.test(finalReport), 'the receipt must carry the real created count');
     assert(/Ghost, Doc/.test(finalReport) && /never guesses/.test(finalReport), 'the skipped provider is named with the reason');
+    assert(calls.said.every(t => String(t).trim().length > 0), 'every posted receipt must carry real text — an empty bubble is a dead receipts channel');
+  }
+
+  /* ---- early stop: providers never attempted are NAMED in the receipt ---- */
+  {
+    let first = true;
+    const { window, calls } = build({
+      __mlsSI: { dayPull: () => {
+        if (first) { first = false; return Promise.resolve({ ok: false, reason: 'pull-in-flight' }); }
+        return Promise.resolve({ ok: true, created: 1, repaired: 0, failed: 0 });
+      } }
+    });
+    window.__mlsCopilotPower.run('pullProviders', '{"providers":["Smith, Adam","Jones, Beth"]}', null);
+    await tick(10); await tick(10);
+    const finalReport = calls.said[calls.said.length - 1];
+    assert(/Not attempted/.test(finalReport) && /Jones, Beth/.test(finalReport),
+      'a queue stopped early must name the providers it never ran — "finished" alone is a lie');
   }
 
   /* ---- engine failure reported in the engine's words ---- */

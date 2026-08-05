@@ -24,7 +24,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_power.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'cpw-1.0.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'cpw-1.1.0'"), 'version token moved without updating this contract');
 assert(!source.includes('setInterval('), 'no permanent polling in the Power module');
 assert(!source.includes('MutationObserver'), 'no document-wide observers in the Power module');
 
@@ -42,7 +42,16 @@ function freshContext() {
       getReceipt: () => ({ complete: true })
     },
     _calAppts: [{ provider: 'Smith, Adam' }, { provider: 'Smith, Adam' }],
-    getPatients: () => [{ id: 'p1', provider: 'Smith, Adam', visits: [{}, {}] }],
+    /* cpw-1.1.0: coverage comes from the providerStats computer — the only
+       source with real pulled-chart attribution (patient.provider has NO
+       writer in the app and reported the whole roster as data-less). */
+    __mlsCopilotData: {
+      computeStats: () => ({ providers: [
+        { provider: 'Smith, Adam', totalAppointments: 34, patientsWithPulledCharts: 12 },
+        { provider: 'Jones, Beth', totalAppointments: 9, patientsWithPulledCharts: 0 }
+      ] })
+    },
+    getPatients: () => [{ id: 'p1', visits: [{}, {}] }],
     __mlsPullLastOutcome: { ok: true, at: 1754400000000 }
   };
   const context = { window, document: { readyState: 'complete', addEventListener() {} }, console };
@@ -55,21 +64,35 @@ function freshContext() {
 /* ---- 1. snapshot senses ---- */
 {
   const { window } = freshContext();
-  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.0.0');
+  assert.strictEqual(window.__mlsCopilotPower.version, 'cpw-1.1.0');
   const snap = window.copilotSnapshot();
   assert(snap.providerCoverage, 'snapshot gained no providerCoverage');
   assert.strictEqual(snap.providerCoverage.rosterComplete, true);
+  assert.strictEqual(snap.providerCoverage.countsKnown, true);
   /* JSON round-trip: VM-realm arrays fail deepStrictEqual prototype identity. */
   const names = JSON.parse(JSON.stringify(snap.providerCoverage.providers.map(p => p.name)));
   assert.deepStrictEqual(names, ['Smith, Adam', 'Jones, Beth'], 'roster spellings must pass through exactly');
   const smith = snap.providerCoverage.providers[0];
-  assert.strictEqual(smith.patientsLocal, 1);
-  assert.strictEqual(smith.visitsLocal, 2);
-  assert.strictEqual(smith.appointmentsKnown, 2);
+  assert.strictEqual(smith.pulledChartPatients, 12, 'pulled-chart counts come from the providerStats computer');
+  assert.strictEqual(smith.appointmentsKnown, 34);
+  assert.strictEqual(smith.hasLocalData, true);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.providerCoverage.providersWithNoLocalData)), ['Jones, Beth'],
-    'the provider with no pulled data must be named — that is the gap-offer trigger');
+    'the provider with no pulled charts must be named — that is the gap-offer trigger');
   assert(snap.capabilities && snap.capabilities.actions.includes('pullProviders') && snap.capabilities.actions.includes('draftNote'));
   assert(snap.patients && snap.patients.length === 1, 'the base snapshot must survive the wrapper');
+}
+
+/* ---- 1b. NO stats source -> coverage refuses to accuse anyone of missing
+   data. The 1.0.0 defect was exactly this lie: a count keyed off a field no
+   writer sets called the WHOLE roster data-less. ---- */
+{
+  const { window } = freshContext();
+  delete window.__mlsCopilotData;
+  const snap = window.copilotSnapshot();
+  assert.strictEqual(snap.providerCoverage.countsKnown, false);
+  assert.strictEqual(snap.providerCoverage.providersWithNoLocalData.length, 0,
+    'without real counts, NO provider may be reported as missing data');
+  assert.match(snap.providerCoverage.note, /do NOT claim/i, 'the note must tell the model counts are unavailable');
 }
 
 /* ---- 2. absolute wire cap through the loaded wrapper ---- */

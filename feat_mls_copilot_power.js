@@ -44,7 +44,7 @@
     return;
   }
 
-  var VERSION = 'cpw-1.0.0';
+  var VERSION = 'cpw-1.1.0';
   var ASSET = 'feat_mls_copilot_power.js';
   var WIRE_CAP = 120000; /* absolute cap on the /api/copilot request body (chars).
                             The server bounds context to 100K; anything larger is
@@ -61,7 +61,13 @@
     if (!t) return;
     var posted = safe(function () {
       var store = window.__mlsCopilotConvo;
-      if (store && isFn(store.append)) { store.append({ role: 'ai', text: t, requestId: 'cpw-' + Math.random().toString(36).slice(2) }); return true; }
+      // The canonical store's signature is append(role, text, extra) — an
+      // object-shaped call coerces to an EMPTY bubble (cpw-1.1.0 fix; the
+      // receipts channel IS this feature). Verify the text truly landed.
+      if (store && isFn(store.append)) {
+        var m = store.append('ai', t, { requestId: 'cpw-' + Math.random().toString(36).slice(2) });
+        return !!(m && m.text === t);
+      }
       return false;
     }, false);
     if (!posted) {
@@ -85,44 +91,55 @@
     var entries = safe(function () { return (roster && isFn(roster.list)) ? (roster.list() || []) : []; }, []) || [];
     var receipt = safe(function () { return (roster && isFn(roster.getReceipt)) ? roster.getReceipt() : null; }, null);
     var appts = safe(function () { return Array.isArray(window._calAppts) ? window._calAppts : []; }, []) || [];
-    var patients = safe(function () { return isFn(window.getPatients) ? (window.getPatients() || []) : []; }, []) || [];
 
-    var apptCounts = {}, i;
+    /* cpw-1.1.0: local-data counts come from the SAME per-provider stats the
+       Copilot's providerStats injection computes (appointment attribution +
+       charts actually pulled into MLS). The 1.0.0 source — a patient.provider
+       field — has NO writer anywhere in the app, so it reported the whole
+       roster as "no local data": a false coverage claim, the exact lie this
+       module exists to end. */
+    var statProviders = safe(function () {
+      var d = window.__mlsCopilotData;
+      if (!d) return null;
+      var stats = isFn(d.computeStats) ? d.computeStats() : d.lastStats;
+      return stats && Array.isArray(stats.providers) ? stats.providers : null;
+    }, null);
+    var byName = {}, i;
+    if (statProviders) {
+      for (i = 0; i < statProviders.length; i++) {
+        var s = statProviders[i]; if (!s || !s.provider) continue;
+        byName[normKey(s.provider)] = { appts: Number(s.totalAppointments) || 0, pulled: Number(s.patientsWithPulledCharts) || 0 };
+      }
+    }
+    var apptCounts = {};
     for (i = 0; i < appts.length && i < 6000; i++) {
       var ap = appts[i]; if (!ap) continue;
       var pk = normKey(ap.provider && ap.provider.name ? ap.provider.name : ap.provider);
       if (pk) apptCounts[pk] = (apptCounts[pk] || 0) + 1;
     }
-    var ptCounts = {}, visitCounts = {};
-    for (i = 0; i < patients.length && i < 4000; i++) {
-      var p = patients[i]; if (!p) continue;
-      var prk = normKey(p.provider);
-      if (prk) {
-        ptCounts[prk] = (ptCounts[prk] || 0) + 1;
-        var vc = Array.isArray(p.visits) ? p.visits.length : (Number(p.visitCount) || 0);
-        visitCounts[prk] = (visitCounts[prk] || 0) + vc;
-      }
-    }
 
-    var rows = [], missing = [];
+    var rows = [], missing = [], countsKnown = !!statProviders;
     for (i = 0; i < entries.length && i < 40; i++) {
       var e = entries[i]; if (!e || !e.name) continue;
       var key = normKey(e.name);
+      var st = byName[key];
       var row = {
         name: String(e.name).slice(0, 80),
         rosterVerified: e.rosterVerified !== false,
-        patientsLocal: ptCounts[key] || 0,
-        visitsLocal: visitCounts[key] || 0,
-        appointmentsKnown: apptCounts[key] || 0
+        pulledChartPatients: st ? st.pulled : 0,
+        appointmentsKnown: st ? st.appts : (apptCounts[key] || 0)
       };
-      row.hasLocalData = (row.patientsLocal + row.visitsLocal) > 0;
-      if (!row.hasLocalData) missing.push(row.name);
+      row.hasLocalData = row.pulledChartPatients > 0;
+      if (countsKnown && !row.hasLocalData) missing.push(row.name);
       rows.push(row);
     }
     var last = safe(function () { return window.__mlsPullLastOutcome || null; }, null);
     return {
       rosterComplete: !!(receipt && receipt.complete === true),
-      note: 'Names below are the VERIFIED athenaOne roster spellings. Use them exactly in a pullProviders arg. providersWithNoLocalData have no pulled charts/visits in MLS yet.',
+      countsKnown: countsKnown,
+      note: countsKnown
+        ? 'Names below are the VERIFIED athenaOne roster spellings — use them exactly in a pullProviders arg. hasLocalData means charts for that provider were actually pulled into MLS; providersWithNoLocalData have appointment volume at most.'
+        : 'Names below are the VERIFIED athenaOne roster spellings — use them exactly in a pullProviders arg. Per-provider local-data counts are unavailable right now, so do NOT claim any provider\'s data is missing or present.',
       providers: rows,
       providersWithNoLocalData: missing.slice(0, 40),
       lastPull: last ? { ok: last.ok === true, at: last.at || 0, error: last.error ? String(last.error).slice(0, 120) : undefined } : null
@@ -318,6 +335,10 @@
         } else {
           lines.push(row.name + ' (' + date + '): not pulled — ' + String(rec.reason || row.error || 'no receipt').slice(0, 140) + '.');
         }
+      }
+      if (results.length < resolved.length) {
+        lines.push('Not attempted (an earlier pull was refused, so the queue stopped): ' +
+          resolved.slice(results.length).map(function (e) { return e.name; }).join('; ') + ' — tap the offer again when the running pull finishes.');
       }
       if (unresolved.length) {
         lines.push('Skipped (not in the verified athenaOne roster, and MLS never guesses): ' + unresolved.join('; ') + '.');

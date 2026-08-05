@@ -175,8 +175,15 @@ const server = http.createServer((req, res) => {
       window.bkToken = () => 'tok';
       window.bkBase = () => 'https://scrivara-backend.onrender.com';
       window.__mlsImported = [];
-      window.getPatients = () => [{ id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' }];
-      window.upsertPatient = (p) => window.__mlsImported.push(JSON.parse(JSON.stringify(p)));
+      window.__mlsStore = [{ id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' }];
+      window.getPatients = () => window.__mlsStore;
+      // realistic upsert: applies the row into the store (av-1.1.0 verifies by
+      // re-reading the store before claiming success)
+      window.upsertPatient = (p) => {
+        window.__mlsImported.push(JSON.parse(JSON.stringify(p)));
+        const row = window.__mlsStore.find((x) => String(x.id) === String(p.id));
+        if (row) row.summary = p.summary;
+      };
       window.toast = () => {};
     });
     await page.addScriptTag({ url: base + '/feat_mls_avatar.js' });
@@ -202,13 +209,8 @@ const server = http.createServer((req, res) => {
 
     await page.click('.mlsAvAction.primary');
     const imported = await page.evaluate(() => window.__mlsImported);
-    const stampOk = imported.length === 1 && /\[Avatar check-in — completed /.test(imported[0].summary) && imported[0].summary.startsWith('Existing history.');
+    const stampOk = imported.length === 1 && /\[Avatar check-in #5 — completed /.test(imported[0].summary) && imported[0].summary.startsWith('Existing history.');
     scenario('B3 import appends the stamped summary once, preserving history', stampOk, stampOk ? null : JSON.stringify(imported).slice(0, 200));
-    await page.evaluate(() => {
-      // reflect the store update so the stamp guard sees it (upsert is stubbed)
-      const p = window.getPatients()[0];
-      p.summary = window.__mlsImported[0].summary;
-    });
     await page.click('.mlsAvAction.primary').catch(() => {});
     const stillOne = await page.evaluate(() => window.__mlsImported.length === 1);
     scenario('B4 a second import tap is refused by the stamp guard', stillOne);
@@ -245,7 +247,12 @@ const server = http.createServer((req, res) => {
       window.copilotSnapshot = () => ({ today: '2026-08-05', patients: [{ id: 'p1' }] });
       window._acctTodayKey = () => '2026-08-05';
       window.__mlsDayHistoryPull = { state: { running: false } };
-      window.__mlsCopilotConvo = { append: (m) => window.__mlsSaid.push(m.text) };
+      // the REAL unify signature: append(role, text, extra) -> message
+      window.__mlsCopilotConvo = { append: (role, text, extra) => {
+        const m = { role: role === 'user' ? 'user' : 'ai', text: String(text == null ? '' : text) };
+        window.__mlsSaid.push(m.text);
+        return m;
+      } };
       window.__mlsProviderRoster = {
         list: () => [{ name: 'Smith, Adam', stableKey: 'athena:smith, adam', rosterVerified: true }],
         getReceipt: () => ({ complete: true }),

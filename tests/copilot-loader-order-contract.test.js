@@ -11,12 +11,13 @@ const expected = [
   ['feat_mls_copilot_unify.js', '20260716unify110'],
   ['feat_copilot_slim.js', '20260719csp211'],
   ['feat_mls_asst_fix.js', '20260802asst145'],
-  /* 2026-08-05: ca-2.1.0 delegates agentic kinds (pullProviders/draftNote) to
-     the Copilot Power module — the file changed, so the immutable token moved. */
-  ['feat_mls_copilot_actions.js', '20260805ca210'],
-  /* 2026-08-05: cpw-1.0.0 is new — app-wide snapshot senses, the absolute
-     /api/copilot wire cap, and the confirm-by-tap agentic executors. */
-  ['feat_mls_copilot_power.js', '20260805cpw100'],
+  /* 2026-08-05: ca-2.1.1 — agentic-kind delegation plus the still-loading
+     guard (no keyword-guess navigation before the Power module lands). */
+  ['feat_mls_copilot_actions.js', '20260805ca211'],
+  /* 2026-08-05: cpw-1.1.0 — receipts append via the store's REAL signature,
+     coverage counts from __mlsCopilotData (the 1.0.0 source had no writer),
+     and unattempted providers named in the final receipt. */
+  ['feat_mls_copilot_power.js', '20260805cpw110'],
   ['feat_mls_copilot_request_safety.js', '20260802crs121'],
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210']
 ];
