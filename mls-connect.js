@@ -42598,7 +42598,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260727dl2';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260725asst217';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.16 - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.17 (mdx-1.0.0 provider-incomplete row diagnostics) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -44623,6 +44623,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         extUpdateHint: String(res.extUpdateHint || '').slice(0, 300),
         scheduleReceipt: dsPick(res.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason', 'schedDate']),
         providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'providerMode', 'targetDate']),
+        /* mdx-1.0.0: the report that reached us for a provider-incomplete
+           refusal (Mac, 2026-08-05) carried no provider receipt at all, so the
+           failing rows could not be named remotely. Clinician names and
+           PHI-free row shapes only - unattributedDetail is built capped and
+           without patient fields at the source. */
+        providerReceipt: dsPick(res.providerReceipt, ['mode', 'requested', 'rosterVerified', 'complete', 'reason', 'scheduleComplete', 'sourceRows', 'providerTaggedRows', 'matchingRows', 'mismatchedRows', 'unattributedRows', 'nameMatchedIdMissingRows', 'requireStableId', 'canonicalNameFallback', 'attribution', 'scopeFilledRows', 'discoveredProviders', 'unattributedDetail']),
         calendarReceipt: (function () {
           var cr = dsPick(res.calendarReceipt, [
             'complete', 'attempted', 'accounted', 'mapped', 'uniqueSources', 'uniqueBackend',
@@ -47968,4 +47974,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return crOrigFetch.apply(this, arguments);
   };
   api.revert = function () { try { window.fetch = crOrigFetch; window.__mlsCrFetchWrapped = false; api.installed = false; } catch (e) {} };
+} catch (e) {} })();
+
+/* ===== Settings: MLS Assist extension download card refresher (mdx-1.0.0) =====
+   The card in ScribeFlow.html ships with the current extension version BAKED
+   into the href and label, and the release gate pins those bytes to
+   extension-version.json + the served zip. This refresher exists only for the
+   drift window where a cached page meets a newer manifest: it re-points the
+   card at whatever extension-version.json actually names. It never invents a
+   version and it fails silently closed - the baked link keeps working. */
+(function () { try {
+  if (window.__mlsExtDlCardWired) return; window.__mlsExtDlCardWired = 1;
+  function refreshExtDlCard() {
+    try {
+      fetch('extension-version.json?nc=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (m) {
+          var v = m && m.version ? String(m.version).trim() : '';
+          if (!/^[0-9][0-9A-Za-z.\-]*$/.test(v)) return;
+          var a = document.getElementById('extDlBtn');
+          var t1 = document.getElementById('extDlVersion');
+          var t2 = document.getElementById('extDlVersionBtn');
+          if (a) { var want = 'MLS_Assist_v' + v + '.zip'; if (a.getAttribute('href') !== want) a.setAttribute('href', want); }
+          if (t1 && t1.textContent !== v) t1.textContent = v;
+          if (t2 && t2.textContent !== v) t2.textContent = v;
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refreshExtDlCard, { once: true });
+  else refreshExtDlCard();
 } catch (e) {} })();

@@ -338,6 +338,7 @@ const tests = [
   'schedule-calendar-partial-diagnostics-runtime.test.js',
   'schedule-import-scan-performance-contract.test.js',
   'provider-day-pull-contract.test.js',
+  'provider-incomplete-diagnostics-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
   'provider-roster-ingest-dedupe-runtime.test.js',

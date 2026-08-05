@@ -15,7 +15,10 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.16"'), 'si-1.7.16 release marker missing');
+/* pin moved si-1.7.16 -> si-1.7.17 deliberately: mdx-1.0.0 adds PHI-free
+   provider-incomplete row diagnostics (receipt detail + honest refusal text);
+   the update-hint behavior this suite pins is unchanged. */
+assert(si.includes('var VERSION = "si-1.7.17"'), 'si-1.7.17 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);

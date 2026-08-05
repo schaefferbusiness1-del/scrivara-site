@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.16";
+  var VERSION = "si-1.7.17";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -542,11 +542,35 @@
       matchingRows: 0,
       mismatchedRows: 0,
       unattributedRows: 0,
-      discoveredProviders: providerDiagLabels(resp, rows)
+      discoveredProviders: providerDiagLabels(resp, rows),
+      /* mdx-1.0.0 (field report, Mac, 2026-08-05): a provider-incomplete
+         refusal must NAME its rows or nobody can cure it remotely. PHI-free by
+         construction - appointment times and shape flags only, never patient
+         fields. nameMatchedIdMissingRows separates "athena exposed no provider
+         identity on the row at all" from "the row showed the selected name but
+         athena gave no structured id" - two different cures the emailed error
+         report previously could not tell apart. */
+      requireStableId: false,
+      canonicalNameFallback: false,
+      nameMatchedIdMissingRows: 0,
+      unattributedDetail: []
+    };
+    var noteUnattributed = function (r, shape, k, rowId) {
+      if (receipt.unattributedDetail.length >= 12) return;
+      receipt.unattributedDetail.push({
+        time: String(r && (r.time || r.start_local || "") || "").slice(0, 12),
+        shape: shape,
+        hasName: !!k,
+        nameMatchesSelected: !!(k && req.key && k === req.key),
+        hasId: !!rowId
+      });
     };
     if (req.mode === "all") {
-      receipt.providerTaggedRows = rows.filter(function (r) { return !!providerKey(r && r.provider); }).length;
-      receipt.unattributedRows = rows.length - receipt.providerTaggedRows;
+      rows.forEach(function (r) {
+        if (providerKey(r && r.provider)) { receipt.providerTaggedRows++; return; }
+        receipt.unattributedRows++;
+        noteUnattributed(r, "no-provider-identity", "", String(rowProviderId(r) || "").trim());
+      });
       var verifiedEmpty = !!(resp && resp.receipt && resp.receipt.complete === true && resp.receipt.authoritativeEmpty === true && rows.length === 0);
       receipt.complete = receipt.scheduleComplete && (verifiedEmpty || receipt.unattributedRows === 0);
       receipt.reason = receipt.complete ? "all-providers" : (receipt.scheduleComplete ? "provider-incomplete" : "provider-unverified");
@@ -594,11 +618,13 @@
         (req.stableKey && String(canonicalSameName[0].stableKey || canonicalSameName[0].stable_key || "") === req.stableKey)
       );
     }
+    receipt.requireStableId = requireStableId;
+    receipt.canonicalNameFallback = canonicalNameFallback;
     rows.forEach(function (r) {
       var k = providerKey(r && r.provider), rowId = String(rowProviderId(r) || "").trim().toLowerCase();
       var wantId = String(req.id || "").trim().toLowerCase();
       if (!k && !rowId) {
-        if (!scopeFill) { receipt.unattributedRows++; return; }
+        if (!scopeFill) { receipt.unattributedRows++; noteUnattributed(r, "no-provider-identity", k, rowId); return; }
         /* pa-1.0.0: the columnless scoped fill - a COPY, so the caller's raw
            rows never mutate; the filled copy carries into both the create
            body and the enrich path downstream. */
@@ -616,7 +642,7 @@
         if (rowId) {
           if (rowId === wantId) matching.push(r); else receipt.mismatchedRows++;
         } else if (k === req.key && canonicalNameFallback) matching.push(r);
-        else if (k === req.key) receipt.unattributedRows++;
+        else if (k === req.key) { receipt.unattributedRows++; receipt.nameMatchedIdMissingRows++; noteUnattributed(r, "selected-name-no-structured-id", k, rowId); }
         else receipt.mismatchedRows++;
       } else if (k === req.key) matching.push(r);
       else receipt.mismatchedRows++;
@@ -3975,8 +4001,21 @@
             var selectedProvider = providerRequest(providerTarget);
             if (!res.providerReceipt || res.providerReceipt.complete !== true) {
               var providerReason = res.reason || (res.providerReceipt && res.providerReceipt.reason) || "provider-unverified";
+              /* mdx-1.0.0: provider-incomplete only fires AFTER the schedule
+                 read proved complete (an unsettled grid reports
+                 provider-unverified instead), so the old advice - "retry after
+                 the full day grid finishes loading" - was wrong every time it
+                 was shown and sent one clinician chasing a grid that was
+                 already settled (field report, Mac, 2026-08-05). Name the
+                 counts and the actual shape; the copyable error report now
+                 carries the per-row detail. */
+              var pRec = res.providerReceipt || {};
+              var pUn = Number(pRec.unattributedRows || 0), pSrc = Number(pRec.sourceRows || 0), pNim = Number(pRec.nameMatchedIdMissingRows || 0);
+              var incompleteMsg = pNim > 0 && pNim === pUn
+                ? (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name, but athenaOne exposed no structured provider id on them, so another clinician with the same display name cannot be ruled out. Nothing was imported. Open the full Day view once so the rows carry ids, then pull again - and if this repeats, use the error-report button so the rows are named.")
+                : ((pUn || "Some") + " of " + (pSrc || "the") + " schedule rows carry no provider identity MLS can verify, even though the day grid finished loading. Nothing was imported - filing those rows would risk the wrong chart. Pull again with the provider column visible in the Day view; if this repeats, use the error-report button so the rows are named.");
               onStatus(providerReason === "provider-incomplete"
-                ? "Some Athena schedule rows did not identify their provider. Nothing was imported; retry after the full day grid finishes loading."
+                ? incompleteMsg
                 : (selectedProvider.mode === "selected" ? "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers." : "MLS could not prove complete provider coverage for this Athena day. Nothing was imported."), "err");
               return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.mode === "selected" ? selectedProvider.name : "all" } });
             }
