@@ -15425,6 +15425,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (len < 200) return { cls: "warn", label: "\u26A0 very short (" + len + " chars) \u2014 likely a bad extraction; re-upload or re-process" };
     if (len > 0 && letters / len < 0.45) return { cls: "warn", label: "\u26A0 text looks unreadable \u2014 re-upload the original file" };
     if (!(t.keywords && t.keywords.length)) return { cls: "warn", label: "\u26A0 no keywords \u2014 auto-matching is weak; run AI keywords or re-process" };
+    /* b899 \u2014 a template imported five minutes ago is CURRENT, not "an earlier
+       AI pass". Every creation path stamps `created`, so a missing stamp is
+       the only honest definition of legacy. The owner's dad imported his
+       whole library and every rail card told him to re-process work that had
+       just been processed. */
+    if (t.created) return { cls: "ok", label: "\u2713 imported " + new Date(t.created).toLocaleDateString() + " \u2014 current AI" };
     return { cls: "legacy", label: "\u25CB processed by an earlier AI pass \u2014 re-process to refresh" };
   }
 

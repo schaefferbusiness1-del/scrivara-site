@@ -113,7 +113,7 @@ const MODE_CLAUSE = {
 const MODE_LABEL = {
   strict: 'Follow it closely',
   adapt: 'Adapt to the case',
-  guide: 'Use it as a guide'
+  guide: 'Use it as a guide — concise'
 };
 const MODE_ORDER = ['strict', 'adapt', 'guide'];
 

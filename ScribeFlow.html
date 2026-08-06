@@ -953,6 +953,11 @@
   .opr-tpl-item{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink);
     padding:5px 9px; }
   .opr-tpl-empty{ font-size:11.5px; color:var(--muted); padding:2px 9px 6px; line-height:1.45; }
+  /* b899 — the rail's name filter */
+  .opr-tpl-search{ padding:0 9px 7px; }
+  .opr-tpl-search input{ width:100%; box-sizing:border-box; font:inherit; font-size:12px; padding:5px 9px;
+    border:1px solid var(--line); border-radius:10px; background:var(--card,#fff); color:var(--ink); }
+  .opr-tpl-search input:focus{ outline:2px solid #2E6A4B33; border-color:#2E6A4B; }
   #oprReceipt{ color:var(--muted); margin:0 0 10px; }
   #opPrepList .opr-cur{ box-shadow:0 0 0 1.5px var(--green-dk) inset; }
   /* Stage 3 — the Templates tab. The reparented #templatesModal keeps its own
