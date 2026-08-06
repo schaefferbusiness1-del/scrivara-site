@@ -376,8 +376,11 @@ const server = http.createServer((req, res) => {
       const body = JSON.parse(route.request().postData() || '{}');
       officeTurns.push(body);
       const respond = (json) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }, body: JSON.stringify(json) });
-      if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: { name: 'Ava', faceImage: null, faceMode: 'drawn', exitPinSet: true } });
-      return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 1, total: 1 } });
+      /* av-5.3.0: identity (incl. exitPinSet + the saved look) rides EVERY turn */
+      const identity = { name: 'Ava', faceMode: 'drawn', exitPinSet: true,
+        faceLook: { skin: '#e8b98a', hair: '#2b2118', shirt: '#2E6A4B', lip: '#a95f47', eyes: '#3b6ea5', hairStyle: 'long', glasses: true, beard: 'none' } };
+      if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: Object.assign({ faceImage: null }, identity) });
+      return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 1, total: 1 }, avatar: identity });
     });
     // av-5.1.0: the exit PIN is verified server-side — '4321' unlocks
     const unlockCalls = [];
@@ -407,6 +410,21 @@ const server = http.createServer((req, res) => {
     });
     scenario('B9a the kiosk is full-screen, opaque, speaks and listens', kioskShape.fixed && kioskShape.full && kioskShape.opaque && /What brings you in/.test(kioskShape.say), JSON.stringify(kioskShape).slice(0, 160));
     scenario('B9c the living face renders with expressions and true fullscreen was requested', kioskShape.face && !!kioskShape.mood && kioskShape.fs, JSON.stringify({ face: kioskShape.face, mood: kioskShape.mood, fs: kioskShape.fs }));
+
+    // B9e (av-5.3.0): the doctor's SAVED appearance drives the drawn face —
+    // colours, hair cut and glasses all arrive from the config, and the
+    // expression parts survive the restyle.
+    const lookShape = await page.evaluate(() => {
+      const svg = document.querySelector('#mlsAvKioskFace svg');
+      if (!svg) return { ok: false };
+      const face = svg.querySelector('.fFace'), hair = svg.querySelector('.fHair');
+      return { ok: true, skin: face && face.getAttribute('fill'), hair: hair && hair.getAttribute('fill'),
+        glasses: !!svg.querySelector('.fGlasses'), backHair: !!svg.querySelector('.fHairBack'),
+        lids: !!svg.querySelector('.fLidL'), mouth: !!svg.querySelector('.fMouth') };
+    });
+    scenario('B9e the saved appearance (colours, long hair, glasses) builds the face and expressions survive',
+      lookShape.ok && lookShape.skin === '#e8b98a' && lookShape.hair === '#2b2118' && lookShape.glasses && lookShape.backHair && lookShape.lids && lookShape.mouth,
+      JSON.stringify(lookShape));
     // B9d: END is a STAFF action — the PIN pad gates it, a wrong PIN keeps
     // the kiosk, Back resumes the interview.
     await page.evaluate(() => document.getElementById('mlsAvKioskEnd').click());
