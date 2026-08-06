@@ -343,11 +343,18 @@ function staticContracts() {
   assert(source.includes("TEMPLATE_VERSION_CONFLICT"));
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
+  /* 2026-08-06: the hand-maintained token went stale — b903/b904 changed this
+     module without bumping 20260805tl160, so cache-token-cannot-go-stale failed
+     on origin/main and a RETURNING browser would have kept running the cached
+     copy, meaning the owner's priority template fix never reached the doctor.
+     Pinned to the shared build-number cache-buster instead, which follows the
+     build and cannot go stale again (the cure that suite itself prescribes,
+     already used by feat_mls_opnote_integrity.js). */
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260805tl160'));
+    assert(loader.includes("feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now())"));
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260805tl160');
+  const templateAt = liveLoader.indexOf("feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now())");
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');
