@@ -88,6 +88,13 @@ const tests = [
      token dated two days before its own content changed. This compares every
      hand-maintained token against its file's real history. */
   'cache-token-cannot-go-stale.test.js',
+  /* 2026-08-06 — the same disease one layer out: a deploy that publishes an
+     OLDER tree than the one already live silently reverts whatever landed in
+     between, and reports success. Measured that day: 13 deploys, 3 inversions
+     (23%), app-version.json going BACKWARDS twice, one inversion reverting
+     another lane's shipped fix 51 seconds after it landed. This replays those
+     exact pairs against the guard. */
+  'forward-deploy-guard.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must

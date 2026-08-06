@@ -32,6 +32,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      # Read by the deploy job's forward-deploy guard. Carried as a job output
+      # rather than re-read from the artifact, because the deploy job has no
+      # _site to read and must not re-derive the number from anywhere else.
+      artifact_build: ${{ steps.stamp.outputs.build }}
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -53,6 +58,13 @@ jobs:
       - name: Audit exact generated publication tree
         run: node scripts/audit-pages-build.js --site-dir=_site
 
+      - name: Stamp the artifact build number
+        id: stamp
+        run: |
+          build=$(grep -o 'b[0-9]\+' _site/app-version.json | head -n1)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "artifact carries $build"
+
       - name: Upload publication artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
@@ -65,6 +77,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # A queued older run can reach THIS job after a newer one has already
+      # published. Measured 2026-08-06: 13 deploys, 3 inversions (23%), every run
+      # reporting success, app-version.json going backwards twice, one of them
+      # reverting another lane's shipped fix 51 seconds after it landed. The check
+      # must live here, in the deploy job, as late as possible — a build-time check
+      # passes and the inversion still happens afterwards. Only the inversion is
+      # blocked: bump-build.js guarantees a forward lane always carries a higher
+      # number, and an equal number (a legitimate re-deploy) passes.
+      - name: Refuse to publish an older tree than the one already live
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          sparse-checkout: scripts/assert-forward-deploy.js
+          sparse-checkout-cone-mode: false
+
+      - name: Forward-deploy guard
+        run: node scripts/assert-forward-deploy.js --artifact "${{ needs.build.outputs.artifact_build }}"
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
