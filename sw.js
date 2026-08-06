@@ -117,7 +117,7 @@ function isRetiredPath(urlLike) {
   /* Owner directive 2026-07-20: the EXACT released 3.0.22 package is public.
    * Network passthrough only — isSafeCacheUrl still refuses to cache any ZIP,
    * and every other (candidate/historical) ZIP stays fail-closed below. */
-  if (name === 'mls_assist_v3.0.44.zip') return false;
+  if (name === 'mls_assist_v3.0.45.zip') return false;
   if (/\.zip$/.test(name)) return true;
   if (/\.staging\.js$/.test(name) || /_append_[^/]*\.js$/.test(name)) return true;
   return name === 'bg_worker_block.js';

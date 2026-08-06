@@ -55,14 +55,20 @@ const PREEXISTING = {
   '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"
   '#5b7186': 19,  // "b718"
-  '#6b7280': 7,   // "b728" — +1 on 2026-08-03: the 3.0.44 full-file candidate
+  '#6b7280': 8,   // "b728" — +1 on 2026-08-06: the 3.0.45 full-file candidate
+                  //          (same review_screen.js copy; verified the delta is
+                  //          exactly 1 and lives only in extension-candidates/3.0.45)
+                  //          +1 on 2026-08-03: the 3.0.44 full-file candidate
                   //          adds another review_screen.js copy.
                   //          +1 on 2026-08-02: extension-candidates/3.0.40 is
                   //          the first candidate staged with ALL 20 files (the
                   //          release-coherence copy), so review_screen.js's
                   //          copy of this colour now counts twice repo-wide
   '#6B756E': 1,   // "b756"
-  '#B07636': 48,  // "b076" — +3 on 2026-08-02 (the 3.0.40 candidate's
+  '#B07636': 51,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
+                  //          mls-popup.css copy; delta verified to be exactly 3
+                  //          and confined to extension-candidates/3.0.45)
+                  //          +3 on 2026-08-02 (the 3.0.40 candidate's
                   //          mls-popup.css copy), +3 again on 2026-08-03
                   //          (the 3.0.44 full-file candidate, same copy)
   '#6b7684': 1,   // "b768"
