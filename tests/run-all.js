@@ -294,6 +294,7 @@ const tests = [
   'intake-attach-single-flight.test.js',
   'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
+  'athena-read-indicator.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
