@@ -42423,8 +42423,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* ---- loader: feat_save_verify.js (save-integrity verification) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
-/* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=20260719ad104';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+/* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success)
+   2026-08-06: this was a hand-maintained literal token last moved at b430 on
+   2026-07-19, while the module itself changed twice after that (b770, b803).
+   sw.js:272 serves ?v= assets CACHE-FIRST, so a browser holding the b430 URL kept
+   the b430 bytes: b803's rewrite of the Athena failure warning could not reach it,
+   and neither could this build's DELETION of that warning. Switched to the
+   __MLS_AV form (:35051) — the fix tests/cache-token-cannot-go-stale.test.js:136
+   prescribes — so it follows the build number and cannot go stale again. */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b899: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */

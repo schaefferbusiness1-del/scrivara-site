@@ -134,25 +134,32 @@ function dispatch(data) {
 
 function failures() { return document.querySelectorAll('[data-mls-athena-pull-failure="1"]'); }
 
+/* v1.0.4 (2026-08-06) — the owner deleted the orange failure bar. This suite
+   was the reason a previous round kept it: three modules can raise that bar,
+   and Athena Doctor suppressed the other two by CLAIMING the result. Deleting
+   Doctor's toast without its claim would not remove the bar, it would move it
+   to Clarity or Save Verify. So the count this file pins goes 1 -> 0, and the
+   claim is asserted directly. */
 pullButton.click();
 const manualFailure = { source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-pull-1', ok: false, reason: 'no-tab' };
 dispatch(manualFailure);
-assert.strictEqual(failures().length, 1, 'one manual failure produced overlapping Clarity/Doctor/Save Verify warnings');
-assert(document.getElementById('mlsAthenaDoctorToast'), 'the single warning must be Athena Doctor\'s actionable Troubleshoot warning');
+assert.strictEqual(failures().length, 0, 'a manual failure still raises an orange bar - from Doctor, Clarity or Save Verify');
+assert.strictEqual(document.getElementById('mlsAthenaDoctorToast'), null, 'Athena Doctor still raises its own deleted warning');
+assert.strictEqual(manualFailure.__mlsAthenaPullNoticeHandled, 'doctor',
+  'the notice was not claimed by Athena Doctor - whichever module claimed it instead will raise the bar the owner deleted');
 
 dispatch(Object.assign({}, manualFailure));
-assert.strictEqual(failures().length, 1, 'a repeated result duplicated the one manual warning');
+assert.strictEqual(failures().length, 0, 'a repeated failure raised a warning');
 
-// A background success is unrelated and must not erase the manual warning.
+// Success still speaks, and managed traffic still stays silent.
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-batch-success1', ok: true, visits: [{}] });
-assert.strictEqual(failures().length, 1, 'managed success erased an unrelated manual warning');
+assert.strictEqual(failures().length, 0, 'managed success created a failure surface');
 
-// The exact correlated manual success retires every stale failure surface.
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-pull-1', ok: true, visits: [{}] });
-assert.strictEqual(failures().length, 0, 'correlated manual success left a stale pull-failure surface');
+assert.strictEqual(failures().length, 0, 'a correlated manual success left a stale pull-failure surface');
 
 pullButton.click();
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'prefetch-2', initiator: 'prefetch', ok: false, reason: 'no-tab' });
 assert.strictEqual(failures().length, 0, 'managed/background failure created a standalone notification');
 
-console.log('PASS Athena pull notification ownership: one manual warning, zero managed noise, correlated-only stale cleanup');
+console.log('PASS Athena pull notification ownership: zero failure bars from all three modules, Doctor still claims the notice, zero managed noise');
