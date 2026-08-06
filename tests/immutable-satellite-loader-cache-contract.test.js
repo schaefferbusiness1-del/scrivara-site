@@ -86,8 +86,11 @@ const assets = [
      gaze, brows, mouth), portrait tinting, and true requestFullscreen. */
   /* 2026-08-06 av-5.1.0 (owner round 10): the patient buttons are GONE (the
      conversation is the interface), End interview gates behind a server-
-     verified exit PIN, and the face can be the doctor's stylized photo. */
-  ['feat_mls_avatar.js', '20260806av510', '20260805av500'],
+     verified exit PIN, and the face can be the doctor's stylized photo.
+     av-5.2.0 (round 11, same day): warmer smile, 1.3s quiet threshold,
+     silence auto-finish, summary-on-unlock. av510 rode main in b895/b896 and
+     may be briefly served when the Pages queue clears — it retires here. */
+  ['feat_mls_avatar.js', '20260806av520', '20260806av510'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
