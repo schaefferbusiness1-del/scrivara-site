@@ -386,7 +386,64 @@
     var stop = { the:1, and:1, for:1, with:1, under:1, using:1, procedure:1, note:1, operative:1, injection:1 };
     return normText(text).split(/\s+/).filter(function (w) { return w.length > 1 && !stop[w]; });
   }
+  /* b901 — THE SCHEDULE'S SHORTHAND, EXPANDED WHERE THE LIVE MATCHER CAN SEE IT.
+     A QA gate measured this on the owner's real 96-template library through the
+     SHIPPED decision path, and the receipts were unambiguous:
+
+       "Left L4-5 TFESI"  -> Left L3-L4 TFESI   (L3-L4 167, L4-L5 167, tie)
+       "R L5-S1 TFESI"    -> Left L5-S1         (Left 168, Right 168, Bilateral 168)
+
+     Both are zero-margin ties broken by LIBRARY ORDER, on the two axes that
+     must never be guessed: the level and the side.
+
+     Cause: this module REPLACES window._opRankTemplates with its own ranker, so
+     the abbreviation/laterality expansions added to ScribeFlow's base
+     _opRankTemplates (b893/b896/b900) never execute in production — verified at
+     runtime on the owner's tab (String(window._opRankTemplates) contains no EXP
+     table). Patching the shadowed implementation looked right and shipped
+     nothing. The expansion belongs HERE.
+
+       "L4-5" / "L4/5" -> "L4-L5"   (adjacent short form; "L5-1" -> "L5-S1")
+       leading "R" / "L" / "B/L" / "BL" -> right / left / bilateral
+
+     Laterality expansion is ANCHORED TO THE START of the reason, which is where
+     every real form puts it ("R SI joint injection", "L L5 TF ESI", "B/L L4 TF
+     ESI P"). A mid-string initial ("Smith, John R") therefore cannot manufacture
+     a side — the one error class worse than refusing. Idempotent: each clause
+     is skipped when the spelled-out word is already present. */
+  function expandShorthand(text) {
+    var s = S(text);
+    if (!s) return s;
+    /* adjacent-level short form: L4-5, L4/5, C5-6 -> L4-L5, C5-C6 */
+    s = s.replace(/\b([clts])\s*(\d{1,2})\s*[-–—\/]\s*(\d{1,2})\b/gi, function (m, ltr, a, b) {
+      var na = +a, nb = +b, low = ltr.toLowerCase();
+      if (low === 'l' && na === 5 && nb === 1) return ltr + a + '-' + (ltr === 'L' ? 'S' : 's') + b;
+      if (nb === na + 1) return ltr + a + '-' + ltr + b;
+      return m;
+    });
+    /* b901 — the ESI shorthand a pain schedule actually writes. LESI scored 0
+       against the whole library and returned no match at all (QA gate); it is
+       the commonest short form on a real list. Additive: the spelled-out words
+       are appended, nothing is removed, and each clause is skipped when the
+       long form is already present. */
+    var ABBR = [
+      [/\blesi\b/i, 'lumbar epidural steroid injection', /\blumbar epidural\b/i],
+      [/\bcesi\b/i, 'cervical epidural steroid injection', /\bcervical epidural\b/i],
+      [/\btesi\b/i, 'thoracic epidural steroid injection', /\bthoracic epidural\b/i],
+      [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i]
+    ];
+    for (var ai = 0; ai < ABBR.length; ai++) {
+      if (ABBR[ai][0].test(s) && !ABBR[ai][2].test(s)) s += ' ' + ABBR[ai][1];
+    }
+    var lead = /^[\s\(\[\*]*([a-z]\s*\/?\s*[a-z]|[a-z])\b/i.exec(s);
+    var tag = lead ? lead[1].replace(/[\s\/]/g, '').toLowerCase() : '';
+    if (tag === 'bl' && !/\bbilateral\b/i.test(s)) s += ' bilateral';
+    else if (tag === 'r' && !/\bright\b/i.test(s)) s += ' right';
+    else if (tag === 'l' && !/\bleft\b/i.test(s)) s += ' left';
+    return s;
+  }
   function rank(procedure) {
+    procedure = expandShorthand(procedure);
     var proc = normText(stripNegated(procedure)), pc = procClass(procedure), pf=procedureFacts(procedure), pt = tokens(stripNegated(procedure)), list = templates();
     return list.map(function (t, index) {
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
@@ -419,6 +476,7 @@
     }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
   function best(procedure) {
+    procedure = expandShorthand(procedure);
     /* An explicit "no procedure performed" statement is a REAL no-match — it
        must never resolve to a procedure template, not even on a tie. */
     if (statesNoProcedure(procedure)) return { tpl:null, confident:false, reason:'text states no procedure was performed', score:0, noProcedure:true };
@@ -446,8 +504,17 @@
        DIFFERENT-class templates (block vs RFA) is not clinical evidence —
        require a decisive margin before trusting it. */
     var siblingSafe = !second || !second.tpl || !top.tplClass || !second.tplClass || top.tplClass === second.tplClass || margin >= 12;
-    var confident = classExact || (top.score >= 10 && margin >= 4 && siblingSafe);
-    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:classExact?'procedure class':(confident?'keyword margin':'ambiguous'), score:top.score, margin:margin, ranked:r };
+    /* b901 — A DEAD HEAT IS NOT A DECISION. classExact conferred confidence
+       with NO margin test, so two same-class siblings scoring identically
+       resolved by array order and the doctor was told nothing. Measured on the
+       real library: L3-L4 167 vs L4-L5 167 for "Left L4-5 TFESI"; Left/Right/
+       Bilateral all 168 for "R L5-S1 TFESI". Class says these are the right
+       KIND of note; it cannot say which LEVEL or SIDE, which is exactly what
+       separates them. A tie now falls through to the closest-guess path, which
+       still offers the template but says out loud that it was not decided. */
+    var deadHeat = !!(second && second.tpl && margin === 0 && S(second.tplClass) === S(top.tplClass));
+    var confident = !deadHeat && (classExact || (top.score >= 10 && margin >= 4 && siblingSafe));
+    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score — the level or side is not decisive, so it was not auto-applied'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
   }
 
   function dobKey(v) {

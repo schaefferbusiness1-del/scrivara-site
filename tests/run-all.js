@@ -298,6 +298,7 @@ const tests = [
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
+  'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
   'template-recognition-bounded-concurrency.test.js',
   'staging-history-writeflow-parity.test.js',
