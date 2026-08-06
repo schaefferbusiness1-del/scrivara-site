@@ -42,6 +42,12 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
+  '#b8860b': 3,   // "b886" — darkgoldenrod, one copy each in ScribeFlow.html /
+                  //          -staging / _test since long before b886;
+                  //          git-verified identical on origin/main (b885) at
+                  //          the moment the build number caught up to it on
+                  //          2026-08-05. The boundary-anchored bumper cannot
+                  //          touch it ("b886" is followed by "0b").
   '#2bb673': 1,   // "b673" — calendar-polish green, present since before b600;
                   //          collided with the live build number on 2026-07-26
                   //          (git-verified untouched by the b673 bump)

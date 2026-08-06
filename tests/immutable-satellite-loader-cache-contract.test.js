@@ -73,11 +73,18 @@ const assets = [
   /* 2026-08-05 round 5 (av-2.0.0, owner UX order): the Visit card moves to the
      TOP of the visit view with inline bullets + Add-to-visit-transcript, and
      Setup gains a real per-question editor. */
-  /* 2026-08-05 final review pass (av-2.0.1): the Easy-lane host reclaims
-     first-child on remount and would sink the Visit card below the whole
-     workspace — the card re-asserts first position on its own events, with a
-     focus guard, never an interval. */
-  ['feat_mls_avatar.js', '20260805av201', '20260805av200'],
+  /* 2026-08-05 av-3.0.0 (owner rounds 6.5+7): the OFFICE kiosk — full-screen
+     patient-facing interview on the doctor's machine with emotion states —
+     plus the talking Setup preview. av201 (b882) retired. */
+  /* 2026-08-05 av-4.0.0 (owner: "awful, requires send — rethink"): the speak
+     engine defeats Chrome's utterance GC (held refs + duration watchdog), mic
+     preflight happens up front, and the kiosk becomes a hands-free loop with
+     a silence nudge and stall recovery — it can never dead-end into typing. */
+  /* 2026-08-05 av-5.0.0 (owner: "speech is aweful... the aveitor isnt made...
+     no facial expretions"): the natural backend voice (OpenAI TTS proxy) with
+     amplitude lip-sync, a drawn SVG character with real expressions (blink,
+     gaze, brows, mouth), portrait tinting, and true requestFullscreen. */
+  ['feat_mls_avatar.js', '20260805av500', '20260805av400'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 

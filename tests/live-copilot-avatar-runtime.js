@@ -338,6 +338,76 @@ const server = http.createServer((req, res) => {
       return !!onTab && /Set up the avatar/.test(onTab.textContent || '') && !!panel.querySelector('.mlsAvForm');
     }, null, { timeout: 6000 });
     scenario('B8 the Visit card Set up lands directly on the Setup tab', true);
+
+    // B9: THE OFFICE INTERVIEW — patient in the room, doctor taps Start:
+    // full-screen opaque kiosk, spoken question, spoken answer to the OFFICE
+    // endpoint for the ACTIVE patient, emotion states, and honest close.
+    await page.addInitScript(() => {}); // (stubs already installed for this context? no — install below)
+    await page.evaluate(() => {
+      window.__spoken = window.__spoken || []; window.__recs = window.__recs || [];
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+        speak: (u) => { window.__spoken.push(u.text); try { u.onstart && u.onstart(); } catch (e) {} setTimeout(() => { try { u.onend && u.onend(); } catch (e) {} }, 30); },
+        cancel: () => {} } });
+      Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: function (t) { this.text = String(t); } });
+      const FakeRec = function () { const rec = this;
+        rec.start = () => { window.__recs.push(rec); };
+        rec.stop = () => { try { rec.onend && rec.onend(); } catch (e) {} };
+        rec.abort = rec.stop; };
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeRec });
+      Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: FakeRec });
+      window.getActivePtId = () => 'ext-9'; // the patient in the room
+      // mic preflight granted instantly (no permission UI in the harness)
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+        getUserMedia: () => Promise.resolve({ getTracks: () => [] }) } });
+      // av-5.0.0: record the true-fullscreen request (no gesture in a harness)
+      window.__fsReqs = 0;
+      document.documentElement.requestFullscreen = () => { window.__fsReqs++; return Promise.resolve(); };
+    });
+    // av-5.0.0: natural-voice endpoint answers 503 here — the kiosk must fall
+    // back to browser speech WITHOUT stalling the loop.
+    await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/tts/, (route) => route.fulfill({
+      status: 503, contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
+      body: JSON.stringify({ ok: false, error: 'tts_unavailable' }) }));
+    // office endpoint mock (same context route already covers the origin —
+    // extend the handler map by re-routing)
+    const officeTurns = [];
+    await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/turn/, async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      officeTurns.push(body);
+      const respond = (json) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }, body: JSON.stringify(json) });
+      if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: { name: 'Ava', faceImage: null } });
+      return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 1, total: 1 } });
+    });
+    await page.evaluate(() => window.__mlsAvatar.openKiosk());
+    await page.waitForFunction(() => {
+      const k = document.getElementById('mlsAvKiosk');
+      return !!k && window.__spoken.some((t) => /What brings you in today/.test(t)) && window.__recs.length >= 1;
+    }, null, { timeout: 8000 });
+    const kioskShape = await page.evaluate(() => {
+      const k = document.getElementById('mlsAvKiosk');
+      const cs = getComputedStyle(k);
+      const svg = k.querySelector('#mlsAvKioskFace svg');
+      return { fixed: cs.position === 'fixed', full: k.getBoundingClientRect().width >= window.innerWidth - 2,
+        opaque: /gradient|rgb/.test(cs.backgroundImage + cs.backgroundColor),
+        say: document.getElementById('mlsAvKioskSay').textContent,
+        // av-5.0.0: the LIVING face — drawn parts present, mood driven
+        face: !!(svg && svg.querySelector('.fMouth') && svg.querySelector('.fEyeL') && svg.querySelector('.fBrowR')),
+        mood: svg ? svg.getAttribute('data-mood') : null,
+        fs: window.__fsReqs >= 1 };
+    });
+    scenario('B9a the kiosk is full-screen, opaque, speaks and listens', kioskShape.fixed && kioskShape.full && kioskShape.opaque && /What brings you in/.test(kioskShape.say), JSON.stringify(kioskShape).slice(0, 160));
+    scenario('B9c the living face renders with expressions and true fullscreen was requested', kioskShape.face && !!kioskShape.mood && kioskShape.fs, JSON.stringify({ face: kioskShape.face, mood: kioskShape.mood, fs: kioskShape.fs }));
+    await page.evaluate(() => {
+      const rec = window.__recs[window.__recs.length - 1];
+      const result = [{ transcript: 'My shoulder aches at night.' }]; result.isFinal = true;
+      rec.onresult({ resultIndex: 0, results: [result] });
+      rec.stop();
+    });
+    await page.waitForFunction(() => !document.getElementById('mlsAvKiosk'), null, { timeout: 15000 });
+    const officeOk = officeTurns.some((t) => t.answer === 'My shoulder aches at night.' && t.patientExternalId === 'ext-9' && t.answerNonce)
+      && officeTurns.every((t) => t.patientExternalId === 'ext-9');
+    scenario('B9b the spoken office answer files to the ACTIVE patient nonce-safe, kiosk closes on done', officeOk, officeOk ? null : JSON.stringify(officeTurns).slice(0, 200));
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }
