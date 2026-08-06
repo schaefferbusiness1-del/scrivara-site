@@ -179,7 +179,40 @@ const letters = (s) => (String(s).match(/[A-Za-z]/g) || []).length;
 ok(letters(proseOut) >= letters(proseOnly) * 0.75,
   'a junk-free document never loses a quarter of its letters');
 
+/* ------------------------------------------------------------------ 6. the
+   identity gate must accept the STRIPPED text.
+
+   b897 passed _tplTextForDraft(tpl.text) to the generator, whose
+   resolveSelectedTemplate compared the stored text with what it was handed by
+   RAW BYTE EQUALITY. For exactly the dirty templates the strip targets the two
+   differ, so the draft was REFUSED as "the selected template changed before
+   drafting" — blaming the doctor for an edit he never made, with a remedy that
+   could not work, and a code draft-all treats as terminal. The feature was dead
+   on arrival for its own use case.
+
+   The gate's job is "is this still the selected template", not "are these bytes
+   identical". These pin the property both ways. */
+const norm = (v) => {
+  try { return typeof _tplTextForDraft === 'function' ? String(_tplTextForDraft(v)) : String(v); }
+  catch (e) { return String(v); }
+};
+ok(_tplTextForDraft(dirty) !== dirty,
+  'the strip really does change the bytes for a dirty template (else this gate proves nothing)');
+ok(norm(dirty) === norm(_tplTextForDraft(dirty)),
+  'a Word-junk template compares EQUAL to its own stripped form — it must still draft');
+ok(_tplTextForDraft(_tplTextForDraft(dirty)) === _tplTextForDraft(dirty),
+  'the strip is idempotent, which is what makes the normalised comparison sound');
+ok(norm(dirty) !== norm(BLOCK_TEMPLATE.replace('Depo-Medrol 80 mg', 'Depo-Medrol 40 mg')),
+  'a GENUINE edit is still detected — normalising must not blind the staleness check');
+
+/* the shipped gate must actually use the normalised comparison */
+const oniSrc = fs.readFileSync(path.join(ROOT, 'feat_mls_opnote_integrity.js'), 'utf8');
+ok(/_normTpl\(t\.text\)\s*!==\s*_normTpl\(tplText\)/.test(oniSrc),
+  'resolveSelectedTemplate compares NORMALISED template text, not raw bytes');
+ok(!/if\(S\(t\.text\)!==S\(tplText\)\)/.test(oniSrc),
+  'the raw byte-equality comparison is gone from the identity gate');
+
 console.log(failures === 0
-  ? 'PASS tpl word-junk strip: Word binary removed, and every clinical line — dose, level, code, disposition, attestation — survives'
+  ? 'PASS tpl word-junk strip: Word binary removed, every clinical line survives, and a dirty template still passes the draft identity gate'
   : 'FAIL tpl-word-junk: ' + failures + ' assertion(s) failed.');
 process.exit(failures === 0 ? 0 : 1);

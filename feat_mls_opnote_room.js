@@ -439,12 +439,24 @@
     /* b899 — typing in the filter rebuilds this rail, and innerHTML replacement
        destroys focus mid-word. Remember focus + caret, restore after. */
     var hadFocus = document.activeElement && document.activeElement.id === 'oprTplSearch';
+    var selStart = RAIL_FILTER.length, selEnd = RAIL_FILTER.length;
+    if (hadFocus) {
+      try {
+        var _a = document.activeElement;
+        if (_a.selectionStart != null) { selStart = _a.selectionStart; selEnd = _a.selectionEnd; }
+      } catch (eSel) {}
+    }
     rail.innerHTML = h;
     var searchInp = $('oprTplSearch');
     if (searchInp) {
       searchInp.value = RAIL_FILTER;
       searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
-      if (hadFocus) { try { searchInp.focus({ preventScroll: true }); searchInp.setSelectionRange(searchInp.value.length, searchInp.value.length); } catch (eF) {} }
+      /* b905 — RESTORE WHERE THE CARET WAS, NOT THE END OF THE LINE. The rebuild
+         destroys and recreates this input on every keystroke, and jumping to
+         value.length meant any correction made mid-string silently landed at
+         the end instead: type "lumbar", click before the "l", type a character,
+         and it appended. Measured live: caret at 4 came back at 7. */
+      if (hadFocus) { try { searchInp.focus({ preventScroll: true }); searchInp.setSelectionRange(selStart, selEnd); } catch (eF) {} }
     }
 
     /* One delegated listener, re-attached with every innerHTML rebuild - the
