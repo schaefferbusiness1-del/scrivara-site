@@ -25,7 +25,30 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-5.2.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.3.0'"), 'version token moved without updating this contract');
+/* av-5.3.0 — the customizable face, the retired preview, and the six defects
+   an adversarial review caught BEFORE this train reached a patient:
+   1. kiosk.pinSet is TRI-STATE and unknown means LOCKED (it used to fail open,
+      dropping a patient into the doctor's app at completion);
+   2. a non-2xx turn is never walked as success (it used to speak '' forever);
+   3. the silence watchdog RE-ARMS instead of bailing on one heard interim, and
+      a dead recogniser reports itself, so the loop cannot freeze;
+   4. filing a summary requires the refetch to actually FIND the row;
+   5. every staff exit closes the interview server-side, or the answers strand;
+   6. a malformed exit PIN is refused in the form, not silently dropped. */
+assert(source.includes('function faceLookSafe'), 'the face-look whitelist was removed — raw values would reach SVG attributes');
+assert(source.includes('function makeFace') && source.includes('.fLidL'), 'the eyelid acting was removed');
+assert(source.includes('mlsAvLook_hairStyle') || source.includes("pickControl('hairStyle'"), 'the appearance studio lost its hair control');
+assert(source.includes('🪄 Match my photo'), 'the derive-from-photo button was removed');
+assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen appearance');
+assert(source.includes('kiosk.pinSet === false'), 'the exit gate must compare === false — unknown means LOCKED');
+assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN state as UNKNOWN, never as unlocked');
+assert(source.includes('if (!r.ok || j.ok === false)'), 'a non-2xx turn is being walked as a successful turn again');
+assert(source.includes('function kioskEndForStaff'), 'staff exits no longer close the interview server-side');
+assert(source.includes('function kioskWatchdog'), 'the re-arming silence watchdog was removed');
+assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longer reports a dead recogniser');
+assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
+assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
 /* av-5.2.0 — smilier, faster, self-ending:
    the 1.3s quiet threshold keeps turns snappy, three fruitless listens end
    the interview politely THROUGH the server (summary still generates), and a
@@ -45,8 +68,8 @@ assert(!source.includes('mlsAvKioskDone'), 'the patient answer button is back �
 assert(!source.includes('Hear that again'), 'the repeat button is back — saying "repeat that" is the supported path');
 assert(!source.includes('Prefer typing?'), 'the typing toggle button is back — the typed row self-appears on mic failure only');
 assert(source.includes("'/api/avatar/office/unlock'"), 'the exit-PIN verification call was removed');
-assert(source.includes('if (!kiosk.pinSet) { kioskClose(\'ended\'); return; }'), 'End must still close immediately when no PIN is configured');
-assert(source.includes('av.exitPinSet === true'), 'the kiosk no longer learns whether a PIN exists');
+assert(source.includes('if (kiosk.pinSet === false) { kioskEndForStaff(\'ended\'); return; }'), 'End must still close immediately when no PIN is configured');
+assert(source.includes("typeof av.exitPinSet === 'boolean'"), 'the kiosk no longer learns whether a PIN exists');
 assert(source.includes("exitPin: pinInput.value.trim()"), 'Setup no longer saves the exit PIN');
 assert(source.includes("av.faceMode === 'photo'"), 'the photo face mode was removed');
 assert(source.includes('mlsAvKBreathe'), 'the idle breathing animation was removed');
@@ -129,8 +152,12 @@ assert(source.includes("gid('visitView')"), 'the Visit-page card lost its anchor
    the fold — the card now leads the visit view. (The app's top patient banner
    #mlsCtxBar is a different element and stays untouched.) */
 assert(!source.includes('view.appendChild(card)'), 'the Visit card regressed to the below-the-fold bottom placement');
-/* av-1.2.0: the preview walks the UNSAVED form values entirely locally. */
-assert(source.includes('Nothing was saved or sent'), 'the preview lost its nothing-saved honesty line');
+/* av-5.3.0: the typed interview preview is GONE by owner order — it demoed a
+   chat transcript the voice product no longer resembles. Setup must not grow
+   another fake-conversation surface; the real kiosk is the only rehearsal. */
+assert(!source.includes('Preview the interview'), 'the retired typed interview preview is back');
+assert(!source.includes('Nothing was saved or sent'), 'the retired preview left its honesty line behind');
+assert(!source.includes('Type a sample answer'), 'the retired preview transcript box is back');
 assert(source.includes('window.__mlsAvatar.lastReady'), 'the ready cache for the Copilot snapshot was removed');
 assert(source.includes('total: (rows || []).length'), 'the cache lost its TRUE total (the list is a sample)');
 assert(!source.includes("Promise.reject(new Error('clipboard unavailable'))"), 'the eager rejected-promise fallback is back (unhandled rejection on every successful copy)');
@@ -144,7 +171,7 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av520";
+const marker = "feat_mls_avatar.js?v=20260806av530";
 assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
@@ -200,7 +227,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.2.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

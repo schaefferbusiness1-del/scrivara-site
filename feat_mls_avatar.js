@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.2.0';
+  var VERSION = 'av-5.3.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -399,6 +399,10 @@
       if (then) safe(then);
     }
     var t = String(text == null ? '' : text);
+    /* nothing to say: hand straight off. Speaking '' used to POST an empty
+       body to the TTS proxy, take its 400, and trip the 2-minute circuit
+       breaker — one blank turn downgraded the voice for the whole visit. */
+    if (!t.trim()) { finish(); return; }
     var started = false;
     /* fetch guard: even a hung TTS request may not strand the loop — and a
        LATE fetch result must never start a second voice over the fallback. */
@@ -439,7 +443,14 @@
       synth.speak(u);
     } catch (e) { finish(); }
   }
-  function pvListen(onFinal, onInterim) {
+  /* onDead fires when the recogniser TERMINATES on its own with nothing to
+     submit (Chrome's speech service is network-backed: a `network`/`no-speech`
+     error is ordinary). Without it the caller cannot tell "still listening"
+     from "microphone is dead", and a kiosk that guesses wrong freezes with the
+     listening halo still animating. Our own teardown never fires it:
+     pvStopVoice nulls the handlers before stop(), and submit() nulls pvRec
+     before onFinal. */
+  function pvListen(onFinal, onInterim, onDead) {
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) return false;
     pvStopVoice();
@@ -464,8 +475,8 @@
       if (onInterim) onInterim((finalText + ' ' + interim).trim());
       armQuiet();
     };
-    rec.onerror = function () { if (pvRec === rec) pvRec = null; };
-    rec.onend = function () { if (pvRec === rec) { if (finalText.trim()) submit(); else pvRec = null; } };
+    rec.onerror = function () { if (pvRec === rec) { pvRec = null; if (onDead) safe(onDead); } };
+    rec.onend = function () { if (pvRec === rec) { if (finalText.trim()) submit(); else { pvRec = null; if (onDead) safe(onDead); } } };
     try { rec.start(); return true; } catch (e) { pvRec = null; return false; }
   }
 
@@ -476,11 +487,31 @@
      a natural cycle while browser speech runs). Tinted from the doctor's
      portrait when one is saved. No ids inside the SVG — every part is
      class-scoped, so the Setup preview and the kiosk can coexist. ========= */
-  var FACE_LOOK = { skin: '#f0c8a0', hair: '#4e3b2a', shirt: '#2E6A4B', lip: '#a95f47' };
+  /* av-5.3.0 — the face is now a CHARACTER the doctor owns: colours, hair,
+     glasses and beard are all settable, and "Match my photo" derives them
+     from the portrait so it genuinely resembles them. Every part is
+     class-scoped (no ids) so several faces can live on one page. */
+  var FACE_LOOK = { skin: '#f0c8a0', hair: '#4e3b2a', shirt: '#2E6A4B', lip: '#a95f47',
+    eyes: '#4a3423', hairStyle: 'short', glasses: false, beard: 'none' };
+  var FACE_HAIR_STYLES = ['short', 'wavy', 'long', 'bun', 'buzz', 'bald'];
+  var FACE_BEARDS = ['none', 'stubble', 'beard'];
+  function faceLookSafe(look) {
+    var l = {}, src = look || {};
+    function hex(v, dflt) { return /^#[0-9a-fA-F]{6}$/.test(String(v)) ? String(v) : dflt; }
+    l.skin = hex(src.skin, FACE_LOOK.skin);
+    l.hair = hex(src.hair, FACE_LOOK.hair);
+    l.shirt = hex(src.shirt, FACE_LOOK.shirt);
+    l.lip = hex(src.lip, FACE_LOOK.lip);
+    l.eyes = hex(src.eyes, FACE_LOOK.eyes);
+    l.hairStyle = FACE_HAIR_STYLES.indexOf(src.hairStyle) >= 0 ? src.hairStyle : 'short';
+    l.beard = FACE_BEARDS.indexOf(src.beard) >= 0 ? src.beard : 'none';
+    l.glasses = src.glasses === true;
+    return l;
+  }
   var FACE_MOUTHS = {
     /* av-5.2.0: a genuinely warm resting smile — the owner asked for smilier */
     smile:   'M76 130 Q100 149 124 130 Q100 141 76 130',
-    grin:    'M72 128 Q100 156 128 128 Q100 142 72 128',
+    grin:    'M70 126 Q100 162 130 126 Q100 140 70 126',
     soft:    'M84 134 Q100 141 116 134 Q100 138 84 134',
     concern: 'M82 140 Q100 131 118 140 Q100 137 82 140',
     o:       'M91 132 Q100 126 109 132 Q109 146 100 147 Q91 146 91 132',
@@ -488,30 +519,73 @@
     open2:   'M83 129 Q100 136 117 129 Q100 158 83 129',
     open3:   'M79 127 Q100 134 121 127 Q100 167 79 127'
   };
+  var FACE_HAIR_PATHS = {
+    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z',
+    wavy:  'M42 94 Q38 28 100 26 Q162 28 158 94 Q152 74 146 84 Q140 62 130 74 Q124 52 112 62 Q104 44 92 58 Q80 46 72 64 Q62 56 58 76 Q50 70 42 94 Z',
+    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z',
+    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q154 62 134 56 Q136 46 112 46 Q92 44 76 54 Q58 58 60 72 Q48 74 46 90 Z',
+    buzz:  'M46 90 Q46 40 100 38 Q154 40 154 90 Q150 62 132 58 Q118 52 100 52 Q82 52 68 58 Q50 62 46 90 Z',
+    bald:  ''
+  };
   function faceSvg(look) {
-    look = look || FACE_LOOK;
+    look = faceLookSafe(look || FACE_LOOK);
     function eye(cx, side) {
       return '<g class="fEye' + side + '" style="transform-box:fill-box;transform-origin:center;transition:transform .12s ease">' +
         '<ellipse cx="' + cx + '" cy="94" rx="11.5" ry="12.5" fill="#fff"/>' +
-        '<g class="fPupil' + side + '" style="transition:transform .5s ease">' +
-          '<circle cx="' + cx + '" cy="95" r="6.2" fill="#4a3423"/>' +
-          '<circle cx="' + (cx + 2) + '" cy="92.6" r="2" fill="#fff"/>' +
-        '</g></g>';
+        '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
+          '<circle cx="' + cx + '" cy="95" r="7" fill="' + look.eyes + '"/>' +
+          '<circle cx="' + cx + '" cy="95" r="2.5" fill="#1d1710"/>' +
+          '<circle cx="' + (cx + 2.4) + '" cy="92.2" r="2.1" fill="#fff"/>' +
+        '</g>' +
+        /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile —
+           the single strongest cue that a face means it */
+        '<path class="fLow' + side + '" d="M' + (cx - 12) + ' 96 q12 12 24 0 v18 h-24 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
+        /* upper lid: a skin-coloured shutter that DROPS for sleepy/caring
+           looks and lifts for surprise — real eyelid acting, not just scale */
+        '<path class="fLid' + side + '" d="M' + (cx - 12) + ' 94 a12 12 0 0 1 24 0 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        '</g>';
     }
+    var back = '';
+    if (look.hairStyle === 'long') {
+      back = '<path class="fHairBack" d="M40 96 Q34 168 56 178 Q48 120 52 96 Z M160 96 Q166 168 144 178 Q152 120 148 96 Z" fill="' + look.hair + '"/>';
+    } else if (look.hairStyle === 'bun') {
+      back = '<circle class="fHairBack" cx="100" cy="30" r="20" fill="' + look.hair + '"/>';
+    }
+    var hairPath = FACE_HAIR_PATHS[look.hairStyle] || FACE_HAIR_PATHS.short;
+    var hair = hairPath ? '<path class="fHair" d="' + hairPath + '" fill="' + look.hair + '"/>' : '';
+    var beard = '';
+    if (look.beard === 'stubble') {
+      beard = '<path class="fBeard" d="M52 108 Q56 160 100 164 Q144 160 148 108 Q140 150 100 152 Q60 150 52 108 Z" fill="' + look.hair + '" opacity=".28"/>';
+    } else if (look.beard === 'beard') {
+      beard = '<path class="fBeard" d="M50 104 Q54 164 100 168 Q146 164 150 104 Q142 148 100 150 Q58 148 50 104 Z" fill="' + look.hair + '" opacity=".92"/>' +
+        '<path class="fStache" d="M80 124 Q100 118 120 124 Q100 130 80 124 Z" fill="' + look.hair + '" opacity=".92"/>';
+    }
+    var glasses = look.glasses
+      ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
+          '<rect x="55" y="80" width="32" height="28" rx="10"/>' +
+          '<rect x="113" y="80" width="32" height="28" rx="10"/>' +
+          '<path d="M87 92 Q100 88 113 92"/><path d="M55 90 L42 94"/><path d="M145 90 L158 94"/>' +
+        '</g>'
+      : '';
     return '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" data-mood="idle" style="width:100%;height:100%;display:block">' +
       '<ellipse class="fShirt" cx="100" cy="206" rx="74" ry="50" fill="' + look.shirt + '"/>' +
+      back +
       '<g class="fHead" style="transform-box:fill-box;transform-origin:50% 62%;transition:transform .45s ease">' +
         '<ellipse class="fSkin" cx="42" cy="100" rx="9" ry="13" fill="' + look.skin + '"/>' +
         '<ellipse class="fSkin" cx="158" cy="100" rx="9" ry="13" fill="' + look.skin + '"/>' +
         '<ellipse class="fSkin fFace" cx="100" cy="98" rx="58" ry="66" fill="' + look.skin + '"/>' +
-        '<path class="fHair" d="M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z" fill="' + look.hair + '"/>' +
-        '<circle class="fBlush" cx="63" cy="119" r="9" fill="#e07a5f" opacity=".22"/>' +
-        '<circle class="fBlush" cx="137" cy="119" r="9" fill="#e07a5f" opacity=".22"/>' +
+        beard + hair +
+        '<circle class="fBlush" cx="63" cy="119" r="9" fill="#e07a5f" opacity=".22" style="transition:opacity .4s ease"/>' +
+        '<circle class="fBlush" cx="137" cy="119" r="9" fill="#e07a5f" opacity=".22" style="transition:opacity .4s ease"/>' +
         '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M58 78 Q70 72 84 77" stroke="' + look.hair + '" stroke-width="5" stroke-linecap="round" fill="none"/></g>' +
         '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M116 77 Q130 72 142 78" stroke="' + look.hair + '" stroke-width="5" stroke-linecap="round" fill="none"/></g>' +
-        eye(71, 'L') + eye(129, 'R') +
+        eye(71, 'L') + eye(129, 'R') + glasses +
         '<path class="fNose" d="M100 101 Q104 110 98 114" stroke="rgba(0,0,0,.15)" stroke-width="3" stroke-linecap="round" fill="none"/>' +
-        '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
+        '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
+          '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
+          '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="rgba(0,0,0,.13)" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="rgba(0,0,0,.13)" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+        '</g>' +
       '</g></svg>';
   }
   function makeFace(mount, look) {
@@ -522,7 +596,10 @@
     function q(sel) { return root.querySelector(sel); }
     var head = q('.fHead'), browL = q('.fBrowL'), browR = q('.fBrowR'),
       eyeL = q('.fEyeL'), eyeR = q('.fEyeR'), pupL = q('.fPupilL'), pupR = q('.fPupilR'),
-      mouth = q('.fMouth');
+      lidL = q('.fLidL'), lidR = q('.fLidR'), lowL = q('.fLowL'), lowR = q('.fLowR'),
+      mouth = q('.fMouth'), mouthWrap = q('.fMouthWrap'),
+      dimpleL = q('.fDimpleL'), dimpleR = q('.fDimpleR'),
+      blush = root.querySelectorAll('.fBlush');
     var timers = [], dead = false, cycling = false;
     var moodNow = 'idle', caringNow = false, happyNow = false;
     var reduced = safe(function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }, false);
@@ -532,14 +609,34 @@
     }
     function setMouth(shape) { if (mouth) mouth.setAttribute('d', FACE_MOUTHS[shape] || FACE_MOUTHS.smile); }
     function baseMouth() { return caringNow ? 'concern' : happyNow ? 'grin' : moodNow === 'listening' ? 'soft' : 'smile'; }
-    function eyesBase() { return happyNow ? 'scaleY(.6)' : ''; }
+    function eyesBase() { return happyNow ? 'scaleY(.62)' : ''; }
+    /* the upper lids do real acting: a genuine smile RAISES the cheek and
+       narrows the eye (Duchenne), concern drops the lid, thinking half-closes
+       one — the difference between a mask and a face. */
+    function lidBase() {
+      if (happyNow) return 0.34;
+      if (caringNow) return 0.30;
+      if (moodNow === 'thinking') return 0.22;
+      return 0.06;
+    }
+    function applyLids() {
+      var v = lidBase();
+      if (lidL) lidL.style.transform = 'scaleY(' + v + ')';
+      if (lidR) lidR.style.transform = 'scaleY(' + (moodNow === 'thinking' ? Math.min(0.5, v + 0.16) : v) + ')';
+      /* smiling eyes: the lower lid climbs only on a real smile */
+      var low = happyNow ? 1 : caringNow ? 0.30 : 0.02;
+      if (lowL) lowL.style.transform = 'scaleY(' + low + ')';
+      if (lowR) lowR.style.transform = 'scaleY(' + low + ')';
+    }
     function blink() {
       if (dead) return;
-      if (!reduced && eyeL && eyeR) {
-        eyeL.style.transform = 'scaleY(.08)'; eyeR.style.transform = 'scaleY(.08)';
-        later(function () { eyeL.style.transform = eyesBase(); eyeR.style.transform = eyesBase(); }, 130);
+      if (!reduced && lidL && lidR) {
+        lidL.style.transform = 'scaleY(1)'; lidR.style.transform = 'scaleY(1)';
+        later(applyLids, 120);
       }
-      later(blink, 2600 + Math.random() * 3200);
+      /* the occasional double-blink reads as alive, not mechanical */
+      var again = Math.random() < 0.18;
+      later(blink, again ? 260 : (2600 + Math.random() * 3200));
     }
     function wander() {
       if (dead) return;
@@ -565,29 +662,49 @@
         moodNow === 'thinking' ? 'rotate(-1.6deg) translateY(-2px)' :
         caringNow ? 'rotate(1.2deg)' : '';
       if (eyeL && eyeR) { eyeL.style.transform = eyesBase(); eyeR.style.transform = eyesBase(); }
+      applyLids();
+      /* a real smile reaches the cheeks and dimples; concern drains them */
+      var warm = happyNow ? '.42' : caringNow ? '.12' : '.22';
+      Array.prototype.forEach.call(blush, function (n) { n.style.opacity = warm; });
+      if (dimpleL) dimpleL.style.opacity = happyNow ? '1' : '0';
+      if (dimpleR) dimpleR.style.opacity = happyNow ? '1' : '0';
       if (!cycling) setMouth(baseMouth());
     }
     function talk(level) {
       /* level 0..1 = live amplitude from the natural voice; -1 = stop */
       if (dead || !mouth) return;
-      if (level < 0) { setMouth(baseMouth()); return; }
+      if (level < 0) { setMouth(baseMouth()); if (mouthWrap) mouthWrap.style.transform = ''; return; }
       setMouth(level > 0.62 ? 'open3' : level > 0.34 ? 'open2' : level > 0.1 ? 'open1' : Math.random() < 0.2 ? 'o' : 'soft');
+      /* the jaw travels with the voice — the mouth shape alone reads rubbery */
+      if (mouthWrap && !reduced) mouthWrap.style.transform = 'translateY(' + (level * 2.6).toFixed(2) + 'px)';
     }
     function talkCycle(on) {
       /* browser-speech fallback carries no amplitude — cycle naturally */
       cycling = !!on;
-      if (!on) { setMouth(baseMouth()); return; }
+      if (!on) { setMouth(baseMouth()); if (mouthWrap) mouthWrap.style.transform = ''; return; }
       (function step() {
         if (!cycling || dead) return;
         setMouth(['open1', 'open2', 'soft', 'open3', 'o', 'open1'][Math.floor(Math.random() * 6)]);
         later(step, 95 + Math.random() * 70);
       })();
     }
+    /* A colour-only retint cannot add glasses, a beard or a different hair
+       cut, so a full look change RE-RENDERS and re-binds — then replays the
+       current mood so the face never flickers back to neutral. */
     function retint(lk) {
       if (!lk) return;
-      Array.prototype.forEach.call(root.querySelectorAll('.fSkin'), function (n) { n.setAttribute('fill', lk.skin); });
-      var hair = root.querySelector('.fHair'); if (hair) hair.setAttribute('fill', lk.hair);
-      Array.prototype.forEach.call(root.querySelectorAll('.fBrowL path,.fBrowR path'), function (n) { n.setAttribute('stroke', lk.hair); });
+      var keep = { state: moodNow, caring: caringNow, happy: happyNow };
+      mount.innerHTML = faceSvg(lk);
+      var fresh = mount.querySelector('svg');
+      if (!fresh) return;
+      root = fresh;
+      head = q('.fHead'); browL = q('.fBrowL'); browR = q('.fBrowR');
+      eyeL = q('.fEyeL'); eyeR = q('.fEyeR'); pupL = q('.fPupilL'); pupR = q('.fPupilR');
+      lidL = q('.fLidL'); lidR = q('.fLidR'); lowL = q('.fLowL'); lowR = q('.fLowR');
+      mouth = q('.fMouth'); mouthWrap = q('.fMouthWrap');
+      dimpleL = q('.fDimpleL'); dimpleR = q('.fDimpleR');
+      blush = root.querySelectorAll('.fBlush');
+      mood(keep.state, keep.caring, keep.happy);
     }
     function destroy() {
       dead = true; cycling = false;
@@ -599,26 +716,42 @@
     return { mood: mood, talk: talk, talkCycle: talkCycle, retint: retint, destroy: destroy, node: root };
   }
   function faceTintFromPortrait(dataUrl, then) {
-    /* "based off the doctor's look": sample the saved portrait for hair and
-       skin and paint the character with them. Fails safe to the defaults. */
+    /* "actually based off your face": sample the saved portrait for hair and
+       skin tone AND estimate the hair cut, then hand back a full look the
+       doctor can fine-tune by hand. Fails safe to the defaults — a bad guess
+       must never produce a stranger. */
     if (!dataUrl || String(dataUrl).indexOf('data:image/') !== 0) { then(null); return; }
     var img = new Image();
     img.onload = function () {
       then(safe(function () {
-        var c = document.createElement('canvas'); c.width = 24; c.height = 24;
-        var x = c.getContext('2d'); x.drawImage(img, 0, 0, 24, 24);
-        var d = x.getImageData(0, 0, 24, 24).data;
+        var N = 32;
+        var c = document.createElement('canvas'); c.width = N; c.height = N;
+        var x = c.getContext('2d'); x.drawImage(img, 0, 0, N, N);
+        var d = x.getImageData(0, 0, N, N).data;
+        function at(xx, yy) { var i = (yy * N + xx) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+        function lum(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
         function avg(x0, y0, x1, y1) {
           var r = 0, g = 0, b = 0, n = 0;
-          for (var yy = y0; yy < y1; yy++) for (var xx = x0; xx < x1; xx++) { var i = (yy * 24 + xx) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+          for (var yy = y0; yy < y1; yy++) for (var xx = x0; xx < x1; xx++) { var p = at(xx, yy); r += p[0]; g += p[1]; b += p[2]; n++; }
           return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
         }
         function hex(c3) { return '#' + c3.map(function (v) { return ('0' + Math.max(0, Math.min(255, v)).toString(16)).slice(-2); }).join(''); }
-        var hair = avg(6, 0, 18, 5), skin = avg(8, 11, 16, 19);
-        var skinLum = (skin[0] * 3 + skin[1] * 4 + skin[2]) / 8, hairLum = (hair[0] * 3 + hair[1] * 4 + hair[2]) / 8;
-        /* a usable sample: skin brighter than hair and not shadow-dark */
-        if (skinLum < 70 || skinLum <= hairLum + 8) return null;
-        return { skin: hex(skin), hair: hex(hair), shirt: FACE_LOOK.shirt, lip: FACE_LOOK.lip };
+        var hair = avg(9, 1, 23, 7), skin = avg(12, 15, 20, 25);
+        var skinLum = lum(skin), hairLum = lum(hair);
+        if (skinLum < 70 || skinLum <= hairLum + 8) return null;   /* unusable sample */
+        /* hair CUT, guessed honestly from where hair-dark pixels sit:
+           a dark crown means hair at all; dark low side columns mean length. */
+        var crown = 0, sides = 0, crownN = 0, sidesN = 0;
+        var thresh = (skinLum + hairLum) / 2;
+        for (var xx = 6; xx < 26; xx++) for (var yy = 0; yy < 6; yy++) { crownN++; if (lum(at(xx, yy)) < thresh) crown++; }
+        for (var yy2 = 18; yy2 < 30; yy2++) {
+          for (var xx2 = 0; xx2 < 5; xx2++) { sidesN++; if (lum(at(xx2, yy2)) < thresh) sides++; }
+          for (var xx3 = 27; xx3 < 32; xx3++) { sidesN++; if (lum(at(xx3, yy2)) < thresh) sides++; }
+        }
+        var crownRatio = crownN ? crown / crownN : 0, sideRatio = sidesN ? sides / sidesN : 0;
+        var style = crownRatio < 0.18 ? 'bald' : crownRatio < 0.42 ? 'buzz' : sideRatio > 0.42 ? 'long' : 'short';
+        return { skin: hex(skin), hair: hex(hair), shirt: FACE_LOOK.shirt, lip: FACE_LOOK.lip,
+          eyes: FACE_LOOK.eyes, hairStyle: style, glasses: false, beard: 'none' };
       }, null));
     };
     img.onerror = function () { then(null); };
@@ -730,14 +863,14 @@
     ctx.putImageData(img, 0, 0);
     return canvas.toDataURL('image/jpeg', 0.82);
   }
-  function facePreviewNode(dataUrl) {
+  function facePreviewNode(dataUrl, look) {
     var wrap = make('div', '');
     wrap.style.cssText = 'width:72px;height:72px;border-radius:999px;overflow:hidden;border:2px solid #E7E5DD;background:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:34px';
     if (dataUrl && String(dataUrl).indexOf('data:image/') === 0) {
       var img = document.createElement('img'); img.alt = ''; img.src = dataUrl;
       img.style.cssText = 'width:100%;height:100%;object-fit:cover';
       wrap.appendChild(img);
-    } else wrap.innerHTML = faceSvg(null); /* the drawn character, never a bare emoji */
+    } else wrap.innerHTML = faceSvg(look || null); /* the drawn character, never a bare emoji */
     return wrap;
   }
 
@@ -833,6 +966,101 @@
         faceModeSelect.appendChild(o);
       });
 
+      /* av-5.3.0 — THE APPEARANCE STUDIO. "Match my photo" derives the look
+         from the portrait the doctor captured; every part is then editable by
+         hand, with the real animated face previewing every change live. */
+      var lookNow = faceLookSafe(cfg.faceLook || null);
+      var lookLabel = make('label', '', 'Appearance — build the face patients meet');
+      var lookWrap = make('div', '');
+      lookWrap.style.cssText = 'display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;border:1px solid #E7E5DD;border-radius:14px;padding:12px;background:#FAF9F5';
+      var lookStage = make('div', '');
+      lookStage.id = 'mlsAvLookStage';
+      lookStage.style.cssText = 'width:132px;height:132px;border-radius:999px;overflow:hidden;background:radial-gradient(circle at 50% 38%,#fff,#f2f4ef);border:3px solid #fff;box-shadow:0 8px 24px rgba(32,64,52,.16);flex:0 0 auto';
+      var lookCtl = null;
+      var lookGrid = make('div', '');
+      lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
+      function lookApply() { if (lookCtl) safe(function () { lookCtl.retint(lookNow); }); }
+      function lookRow(labelText, node) {
+        var row = make('div', '');
+        row.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+        var l = make('span', '', labelText);
+        l.style.cssText = 'font:600 11.5px system-ui;color:#69736d';
+        row.appendChild(l); row.appendChild(node);
+        lookGrid.appendChild(row);
+        return row;
+      }
+      function colourControl(key, labelText) {
+        var input = document.createElement('input');
+        input.type = 'color'; input.value = lookNow[key];
+        input.id = 'mlsAvLook_' + key;
+        input.style.cssText = 'width:100%;height:32px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer';
+        input.addEventListener('input', function () { lookNow[key] = input.value; lookApply(); });
+        lookRow(labelText, input);
+        return input;
+      }
+      function pickControl(key, labelText, options) {
+        var sel = document.createElement('select');
+        sel.id = 'mlsAvLook_' + key;
+        sel.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:8px;padding:7px 8px;font:12.5px system-ui;background:#fff';
+        options.forEach(function (opt) {
+          var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+          if (lookNow[key] === opt[0]) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', function () { lookNow[key] = sel.value; lookApply(); });
+        lookRow(labelText, sel);
+        return sel;
+      }
+      var skinPick = colourControl('skin', 'Skin');
+      var hairPick = colourControl('hair', 'Hair');
+      var eyesPick = colourControl('eyes', 'Eyes');
+      colourControl('shirt', 'Scrubs / top');
+      var stylePick = pickControl('hairStyle', 'Hair', [['short', 'Short'], ['wavy', 'Wavy'], ['long', 'Long'], ['bun', 'Tied back'], ['buzz', 'Buzzed'], ['bald', 'None']]);
+      var beardPick = pickControl('beard', 'Facial hair', [['none', 'Clean-shaven'], ['stubble', 'Stubble'], ['beard', 'Beard']]);
+      var glassesWrap = make('label', '');
+      glassesWrap.style.cssText = 'display:flex;align-items:center;gap:7px;font:600 12.5px system-ui;color:#204034;margin-top:16px';
+      var glassesBox = document.createElement('input');
+      glassesBox.type = 'checkbox'; glassesBox.id = 'mlsAvLook_glasses'; glassesBox.checked = lookNow.glasses === true;
+      glassesBox.addEventListener('change', function () { lookNow.glasses = glassesBox.checked; lookApply(); });
+      glassesWrap.appendChild(glassesBox); glassesWrap.appendChild(document.createTextNode('Glasses'));
+      lookGrid.appendChild(glassesWrap);
+      var lookActions = make('div', 'mlsAvActions');
+      lookActions.style.marginTop = '4px';
+      var matchBtn = make('button', 'mlsAvAction', '🪄 Match my photo');
+      matchBtn.type = 'button';
+      var lookNote = make('div', 'mlsAvMeta', '');
+      matchBtn.addEventListener('click', function () {
+        var src = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        if (!src) { lookNote.textContent = 'Capture your photo above first, then Match my photo.'; return; }
+        lookNote.textContent = 'Reading your photo…';
+        faceTintFromPortrait(src, function (look) {
+          if (!look) { lookNote.textContent = 'That photo was too dark or too flat to read — set the colours by hand.'; return; }
+          /* auto-derives colour and cut; the doctor's own glasses/beard
+             choices are kept — those cannot be read from a stylized portrait */
+          look.glasses = lookNow.glasses; look.beard = lookNow.beard; look.shirt = lookNow.shirt;
+          lookNow = faceLookSafe(look);
+          skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
+          stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+          lookApply();
+          lookNote.textContent = 'Matched from your photo — adjust anything above to fine-tune.';
+        });
+      });
+      var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
+      moodBtn.type = 'button';
+      moodBtn.addEventListener('click', function () {
+        if (!lookCtl) return;
+        var reel = [['happy', 'Greeting'], ['listening', 'Listening'], ['thinking', 'Thinking'], ['caring', 'When it hurts'], ['idle', 'Resting']], i = 0;
+        (function step() {
+          if (i >= reel.length) { lookCtl.mood('idle', false, false); lookNote.textContent = ''; return; }
+          var m = reel[i++];
+          lookCtl.mood(m[0] === 'happy' || m[0] === 'caring' ? 'speaking' : m[0], m[0] === 'caring', m[0] === 'happy');
+          lookNote.textContent = m[1];
+          setTimeout(step, 1400);
+        })();
+      });
+      lookActions.appendChild(matchBtn); lookActions.appendChild(moodBtn);
+      lookWrap.appendChild(lookStage); lookWrap.appendChild(lookGrid);
+
       /* av-5.1.0: the kiosk exit PIN — End interview asks for it, so a
          patient holding the screen cannot exit into the app */
       var pinLabel = make('label', '', 'Kiosk exit PIN — required to end an office interview (4-8 digits; blank = off)');
@@ -924,69 +1152,39 @@
       var status = make('div', 'mlsAvMeta', '');
       saveBtn.addEventListener('click', function () {
         var questions = qValues();
+        /* The server DROPS a malformed PIN to '' by design. Saving silently and
+           reporting success let a doctor type "123", believe the kiosk was
+           locked, and run it unlocked — so refuse here instead. */
+        var wantPin = pinInput.value.trim();
+        if (wantPin && !/^\d{4,8}$/.test(wantPin)) {
+          status.textContent = 'The exit PIN must be 4 to 8 digits — nothing was saved.';
+          safe(function () { pinInput.focus(); });
+          return;
+        }
         saveBtn.disabled = true; status.textContent = 'Saving…';
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
           tone: toneSelect.value,
           voice: voiceSelect.value,
           faceMode: faceModeSelect.value,
+          faceLook: lookNow,
           exitPin: pinInput.value.trim(),
           faceImage: pendingFace === undefined ? (cfg.faceImage || '') : pendingFace }) })
           .then(function (r2) {
             saveBtn.disabled = false;
-            status.textContent = (r2.ok && r2.json && r2.json.ok)
-              ? (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.')
-              : 'Could not save — check your connection and try again.';
+            if (r2.ok && r2.json && r2.json.ok) {
+              /* read the AUTHORITATIVE echo — what the server actually stored */
+              var saved = r2.json.config || {};
+              pinInput.value = saved.exitPin || '';
+              status.textContent =
+                (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.') +
+                (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.');
+            } else status.textContent = 'Could not save — check your connection and try again.';
           }, function () { saveBtn.disabled = false; status.textContent = 'Could not save — check your connection and try again.'; });
       });
-      /* av-1.2.0: PREVIEW — walk the interview exactly as a patient would see
-         the scripted flow, from the UNSAVED form values, entirely local (no
-         network, no session, nothing stored). The live interview adds AI
-         follow-ups on top of this script. */
-      var previewBtn = make('button', 'mlsAvAction', 'Preview the interview');
-      previewBtn.type = 'button';
-      var previewHost = make('div', '');
-      previewBtn.addEventListener('click', function () {
-        var questions = qValues();
-        previewHost.innerHTML = '';
-        if (!questions.length) { previewHost.appendChild(make('div', 'mlsAvNotice', 'Write at least one question above, then preview.')); return; }
-        var log = make('div', 'mlsAvSummary'); log.style.maxHeight = '260px';
-        var idx = 0;
-        function sayLine(who, text) { var d = make('div', '', who + ': ' + text); d.style.margin = '4px 0'; if (who !== 'You') d.style.fontWeight = '600'; log.appendChild(d); log.scrollTop = log.scrollHeight; }
-        var avName = nameInput.value.trim() || 'Ava';
-        /* av-2.1.0: the preview TALKS like the real thing — spoken question,
-           then listening; a spoken answer fills the box and advances. */
-        function speakAndListen(text) {
-          pvSpeak(text, function () {
-            pvListen(function (finalText) { inp.value = finalText; advance(); },
-              function (interim) { inp.value = interim; });
-          });
-        }
-        var greeting = 'Hi, I\'m ' + avName + '. ' + (introInput.value.trim() ? introInput.value.trim() + ' ' : '') + 'This takes just a few minutes. ' + questions[0];
-        sayLine(avName, greeting);
-        speakAndListen(greeting);
-        var row = make('div', ''); row.style.cssText = 'display:flex;gap:8px;margin-top:6px';
-        var inp = make('input'); inp.placeholder = 'Type a sample answer…'; inp.style.cssText = 'flex:1;border:1px solid #d7ded9;border-radius:10px;padding:8px 10px;font:13px system-ui';
-        var send = make('button', 'mlsAvAction', 'Send'); send.type = 'button';
-        function advance() {
-          var v = inp.value.trim(); if (!v) return;
-          pvStopVoice();
-          sayLine('You', v); inp.value = '';
-          idx++;
-          if (idx < questions.length) { var nextQ = 'Thanks. ' + questions[idx]; sayLine(avName, nextQ); speakAndListen(nextQ); }
-          else {
-            var doneMsg = 'That covers everything — thank you! Your answers are on their way to your care team.';
-            sayLine(avName, doneMsg);
-            pvSpeak(doneMsg, null);
-            inp.disabled = true; send.disabled = true;
-            previewHost.appendChild(make('div', 'mlsAvMeta', 'Preview complete (' + questions.length + ' questions). Nothing was saved or sent. The live interview also asks smart follow-ups when answers need detail.'));
-          }
-        }
-        send.addEventListener('click', advance);
-        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); advance(); } });
-        row.appendChild(inp); row.appendChild(send);
-        previewHost.appendChild(log); previewHost.appendChild(row);
-        inp.focus();
-      });
+      /* av-5.3.0 — the typed rehearsal log is GONE by owner order ("GET RIDE
+         OF THEAT AWEFUL ... BUTTON ON THE OLD AWERFUL SYSTEM"). It demoed a
+         chat transcript the voice product no longer resembles. The real thing
+         is one tap away: Visit → Start check-in interview. */
 
       form.appendChild(section('1 · Identity', 'Who greets your patients — the name, the tone, and your face.'));
       form.appendChild(nameLabel); form.appendChild(nameInput);
@@ -995,16 +1193,21 @@
       form.appendChild(voiceLabel); form.appendChild(voiceRow);
       form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
       form.appendChild(faceModeLabel); form.appendChild(faceModeSelect);
+      form.appendChild(lookLabel); form.appendChild(lookWrap);
+      form.appendChild(lookActions); form.appendChild(lookNote);
       form.appendChild(pinLabel); form.appendChild(pinInput);
       form.appendChild(section('2 · Questions', 'Asked in order. The avatar adds its own smart follow-ups when an answer needs detail.'));
       form.appendChild(qList); form.appendChild(addQBtn);
       form.appendChild(starterNote); form.appendChild(starters);
-      form.appendChild(section('3 · Save & try it', 'Preview walks the interview exactly as a patient sees the script — nothing is saved or sent by the preview.'));
+      form.appendChild(section('3 · Save', 'Save, then try the real thing: open a patient, go to Visit, and tap “Start check-in interview”.'));
       var btnRow = make('div', 'mlsAvActions');
-      btnRow.appendChild(saveBtn); btnRow.appendChild(previewBtn);
+      btnRow.appendChild(saveBtn);
       form.appendChild(btnRow); form.appendChild(status);
-      form.appendChild(previewHost);
       host.appendChild(form);
+      /* mount the living preview only once the form is in the document, so the
+         face measures and animates from its first frame */
+      lookCtl = makeFace(lookStage, lookNow);
+      if (lookCtl) lookCtl.mood('idle', false, true);
     }, function () {
       notice.textContent = 'Setup is temporarily unavailable — try again in a moment.';
     });
@@ -1161,6 +1364,7 @@
   function kioskClose(reason) {
     pvStopVoice();
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
     kiosk.open = false; kiosk.busy = false;
     if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
     safe(function () { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {}); });
@@ -1186,10 +1390,17 @@
       kiosk.busy = false;
       if (!kiosk.open) return;
       var j = r.json || {};
-      if (j.ok === false) {
-        kioskSetSay(j.message || 'Something went wrong — the doctor will be right with you.');
-        kioskMood('speaking', j.message || '');
-        pvSpeak(j.message || 'Something went wrong.', null);
+      /* A non-2xx that carries no {ok:false} — a 401, a 402 gate, a 429 whose
+         body never parsed — must NEVER be walked as a successful turn: that
+         path threw away the retry nonce and spoke an EMPTY string at the
+         patient, then reopened the mic on a blank face forever. Any refusal
+         keeps the answer resendable and re-opens the mic. */
+      if (!r.ok || j.ok === false) {
+        if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
+        var msg = j.message || 'The connection hiccuped — your last answer is safe to say again.';
+        kioskSetSay(msg);
+        kioskMood('speaking', msg);
+        pvSpeak(msg, function () { kioskListen(); });
         return;
       }
       kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
@@ -1231,6 +1442,15 @@
     }, function (interim) {
       heardAnything = heardAnything || !!interim.trim();
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
+    }, function () {
+      /* the recogniser died on its own with nothing to submit — re-open the
+         mic. The small delay keeps Chrome's routine `no-speech` error from
+         becoming a hot restart loop. */
+      if (kiosk.deadTimer) safe(function () { clearTimeout(kiosk.deadTimer); });
+      kiosk.deadTimer = setTimeout(function () {
+        kiosk.deadTimer = null;
+        if (kiosk.open && !kiosk.busy && !kiosk.completed) kioskListen();
+      }, 400);
     });
     if (!started) {
       kiosk.mic = false;
@@ -1240,10 +1460,22 @@
     }
     /* HANDS-FREE SAFETY NET: silence gets ONE warm nudge per question, and a
        hard stall (recognition alive but nothing ever heard) re-opens the mic
-       — this loop can never quietly die into a frozen screen. */
+       — this loop can never quietly die into a frozen screen.
+       The watchdog is UNCONDITIONAL: it used to return the moment anything was
+       heard, and `heardAnything` latches on a single interim — a cough, a
+       waiting-room voice, an "um". A recogniser that then died left no timer,
+       no mic and no counter, and the kiosk froze with the halo still running.
+       Now a heard-something cycle RE-ARMS instead of bailing. */
     if (kiosk.nudgeTimer) safe(function () { clearTimeout(kiosk.nudgeTimer); });
-    kiosk.nudgeTimer = setTimeout(function () {
-      if (!kiosk.open || kiosk.busy || heardAnything) return;
+    function kioskWatchdog() {
+      if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+      if (heardAnything) {
+        /* they are talking (or the room is) — keep watching, never give up
+           the only timer that can revive this question. */
+        heardAnything = false;
+        kiosk.nudgeTimer = setTimeout(kioskWatchdog, 9000);
+        return;
+      }
       /* av-5.2.0: an interview can never run forever — three fruitless listens
          (~30s of silence) end it politely, and the summary still generates
          over whatever was said. */
@@ -1262,14 +1494,20 @@
         pvStopVoice();
         kioskListen();
       }
-    }, 9000);
+    }
+    kiosk.nudgeTimer = setTimeout(kioskWatchdog, 9000);
   }
   /* Natural completion must not expose the app either — with a PIN set, the
-     finished kiosk RESTS ("hand the screen back") until staff unlock it. */
+     finished kiosk RESTS ("hand the screen back") until staff unlock it.
+     kiosk.pinSet is TRI-STATE: true / false / null-unknown. Unknown is treated
+     as LOCKED. It used to be seeded false and only ever raised from the
+     answer-less first turn, so one dropped first request left the flag false
+     for the whole interview and the finished kiosk auto-exited fullscreen into
+     the doctor's app — the whole roster, in front of a patient. */
   function kioskFinish() {
     if (!kiosk.open) return;
     kiosk.completed = true;
-    if (!kiosk.pinSet) { kioskClose('done'); return; }
+    if (kiosk.pinSet === false) { kioskClose('done'); return; }
     pvStopVoice();
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you! Please hand the screen back to the team.');
@@ -1281,15 +1519,40 @@
      verified SERVER-side (it never rides to the client); no PIN configured =
      End closes immediately, and Setup encourages setting one. */
   function kioskRequestEnd() {
-    if (!kiosk.pinSet) { kioskClose('ended'); return; }
+    if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
     pvStopVoice();
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     var pad = gid('mlsAvKioskPin'), input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg');
-    if (!pad) { kioskClose('ended'); return; }
+    if (!pad) { kioskEndForStaff('ended'); return; }
     if (msg) msg.textContent = '';
     if (input) input.value = '';
     pad.style.display = 'flex';
     if (input) safe(function () { input.focus(); });
+    if (kiosk.pinSet === null) {
+      /* We never learned whether this practice has a PIN (a dropped first
+         turn). Ask the server — it answers unset:true for a no-PIN practice,
+         so that office still exits in one tap, and an unreachable server
+         leaves the gate CLOSED rather than open. */
+      api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: '' }) }).then(function (r) {
+        if (r.ok && r.json && r.json.ok && r.json.unset === true) { kiosk.pinSet = false; kioskEndForStaff('ended'); }
+        else if (r.ok && r.json) { kiosk.pinSet = true; }
+      }, function () {});
+    }
+  }
+  /* Staff leaving must CLOSE the interview server-side, or the row sits
+     'active' forever: both inbox queries are status-filtered, the session id
+     is not persisted, and the patient's answers become invisible in every
+     surface. Fire-and-forget — the request completes after the overlay goes,
+     and the backend closes honestly and still runs the summary pipeline. */
+  function kioskEndForStaff(reason) {
+    if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) {
+      safe(function () {
+        api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
+          clientSessionId: kiosk.sid, patientExternalId: kiosk.ext, finish: true }) })
+          .then(function () { refreshCount(true); }, function () {});
+      });
+    }
+    kioskClose(reason);
   }
   function kioskPinSubmit() {
     var input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg'), go = gid('mlsAvKioskPinGo');
@@ -1304,7 +1567,7 @@
            Never on the no-PIN auto-close path, where the patient may still
            be holding the screen. */
         var showSummary = kiosk.completed === true;
-        kioskClose('ended');
+        kioskEndForStaff('ended');
         if (showSummary) safe(function () { open(); });
         return;
       }
@@ -1333,7 +1596,9 @@
   function kioskSetIdentity(av) {
     var name = gid('mlsAvKioskName');
     if (name && av && av.name) name.textContent = av.name;
-    if (av && av.exitPinSet === true) kiosk.pinSet = true;
+    /* explicit — an identity payload that says "no PIN" must be able to LOWER
+       the gate, and only a real payload resolves the unknown state */
+    if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
     var hasPhoto = av && typeof av.faceImage === 'string' && av.faceImage.indexOf('data:image/') === 0;
     if (hasPhoto && av.faceMode === 'photo') {
       /* the doctor chose THEIR stylized photo as the face — motion animations
@@ -1345,9 +1610,15 @@
         var mount = gid('mlsAvKioskFace');
         if (mount) { mount.innerHTML = ''; var img = document.createElement('img'); img.alt = ''; img.src = av.faceImage; mount.appendChild(img); }
       }
+    } else if (av && av.faceLook && !kiosk.tinted) {
+      /* drawn mode: the doctor's SAVED appearance wins — colours, hair cut,
+         glasses, facial hair — and the full expression range survives */
+      kiosk.tinted = true;
+      kiosk.look = faceLookSafe(av.faceLook);
+      if (kiosk.face) safe(function () { kiosk.face.retint(kiosk.look); });
     } else if (hasPhoto && !kiosk.tinted) {
-      /* drawn mode: the portrait TINTS the character (hair + skin sampled)
-         so the full facial animation survives */
+      /* no saved appearance yet: derive one from the portrait so the face
+         still resembles the doctor on day one */
       kiosk.tinted = true;
       faceTintFromPortrait(av.faceImage, function (look) {
         if (look && kiosk.face) { kiosk.look = look; kiosk.face.retint(look); }
@@ -1360,7 +1631,8 @@
     if (kiosk.open) return;
     kioskStyle(); style();
     kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
-    kiosk.pinSet = false; kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
+    kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
+    kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -1541,9 +1813,18 @@
         api('/api/avatar/checkins?status=ready').then(function (r) {
           button.disabled = false; button.textContent = was;
           var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : [];
-          for (var j = 0; j < rows.length; j++) if (rows[j].id === detail.id) { detail.summary = rows[j].summary; detail.ready_at = rows[j].ready_at; break; }
-          if (detail.summary) { needSummary = false; run(); }
-          else toast('Could not load the full summary — open All check-ins and use it from there.');
+          /* The refetch must be PROVEN, not assumed: detail.summary was already
+             pre-seeded with the 4000-char cache truncation, so testing it after
+             a failed refetch (non-2xx, or a colleague already marked the row
+             seen) passed on the STALE cut — filing a mid-sentence slice into
+             the chart, where the stamp guard then blocks the real summary
+             forever, under a toast that said it worked. */
+          var found = null;
+          for (var j = 0; j < rows.length; j++) if (rows[j].id === detail.id) { found = rows[j]; break; }
+          if (found && found.summary) {
+            detail.summary = found.summary; detail.ready_at = found.ready_at;
+            needSummary = false; run();
+          } else toast('Could not load the full summary — open All check-ins and use it from there.');
         }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
       }
       actions.appendChild(visitButton('Add to visit transcript', true, function (b) {
@@ -1606,7 +1887,7 @@
     lifecycleBound = [];
     if (visBound) { safe(function () { document.removeEventListener('visibilitychange', onVisibility, false); }); visBound = false; }
     close();
-    kioskClose('ended');
+    kioskEndForStaff('ended');
     var kioskStyleNode = gid('mlsAvKioskStyle'); if (kioskStyleNode && kioskStyleNode.parentNode) kioskStyleNode.parentNode.removeChild(kioskStyleNode);
     var button = gid(BUTTON_ID); if (button && button.parentNode) button.parentNode.removeChild(button);
     var visitCard = gid('mlsAvVisitCard'); if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
@@ -1621,7 +1902,10 @@
     open: open,
     close: close,
     openKiosk: openKiosk,
-    closeKiosk: function () { kioskClose('ended'); },
+    closeKiosk: function () { kioskEndForStaff('ended'); },
+    /* diagnostics: render the drawn character anywhere, so a look can be
+       inspected (and pinned) without opening a kiosk in front of a patient */
+    faceDemo: function (mount, look) { return makeFace(mount, faceLookSafe(look)); },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,

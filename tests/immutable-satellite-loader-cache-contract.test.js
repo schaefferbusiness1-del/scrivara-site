@@ -100,7 +100,10 @@ const assets = [
      av-5.2.0 (round 11, same day): warmer smile, 1.3s quiet threshold,
      silence auto-finish, summary-on-unlock. av510 rode main in b895/b896 and
      may be briefly served when the Pages queue clears — it retires here. */
-  ['feat_mls_avatar.js', '20260806av520', '20260806av510'],
+  /* 2026-08-06 av-5.3.0: the customizable face (colours, hair, glasses, beard,
+     derived from the doctor's photo), the retired typed preview, and six
+     adversarial-review repairs incl. the fail-OPEN exit gate. */
+  ['feat_mls_avatar.js', '20260806av530', '20260806av520'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
