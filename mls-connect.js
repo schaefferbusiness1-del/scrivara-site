@@ -15431,7 +15431,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        whole library and every rail card told him to re-process work that had
        just been processed. */
     if (t.created) return { cls: "ok", label: "\u2713 imported " + new Date(t.created).toLocaleDateString() + " \u2014 current AI" };
-    return { cls: "legacy", label: "\u25CB processed by an earlier AI pass \u2014 re-process to refresh" };
+    /* b904 — "EVERY creation path stamps created" WAS WRONG, and the live
+       library proved it: 0 of the owner's 96 templates carried the stamp,
+       because the cloud import maps a FIXED field list that silently dropped
+       it (feat_mls_template_library importBody, which now carries it forward).
+       So the b900 label fix changed nothing on his screen - every card still
+       told him to re-process a library he had imported minutes earlier.
+       The deeper error was treating "no stamp" as evidence of staleness. It is
+       evidence of nothing. Every real symptom of a bad or outdated extraction
+       is already caught above: too short, unreadable, no keywords. A template
+       that passes all of those is USABLE, and telling the doctor to re-process
+       it is noise dressed as advice. */
+    return { cls: "ok", label: "✓ ready — keywords set, auto-matching enabled" };
   }
 
   /* ---------- backend helpers (the app's own base/token fns) --------------- */

@@ -16081,6 +16081,21 @@ function _opTomorrowDateStr(){ var d=new Date(_acctTodayKey()+'T12:00'); d.setDa
 /* Score templates against a procedure description; return them best-first. */
 function _opRankTemplates(procedure){
   var procL=String(procedure||'').toLowerCase();
+  /* b904 — THE SHORT LEVEL FORM COULD NOT REACH THE LEVEL BONUS. A QA gate
+     traced this to the containment loop below: it tests single tokens
+     ('l4','l5'), and "l4-5" contains "l4" but NOT "l5", so "Left L3-L4" and
+     "Left L4-L5" both scored +2 and the tie fell to library order — measured
+     live as 167 vs 167, picking the WRONG LEVEL silently. The long form works
+     precisely because it carries both tokens (173 vs 167).
+     Rewrite to the long form AND emit each level as its own token, so the
+     bonus below can see them. Same shape fixes c5-6, c6-7 and t12-l1; "l5-1"
+     is the sacral crossing and becomes l5-s1. */
+  procL = procL.replace(/\b([clts])(\d{1,2})\s*[-–—\/]\s*(\d{1,2})\b/g, function(m, ltr, a, b){
+    var na=+a, nb=+b;
+    if(ltr==='l' && na===5 && nb===1) return 'l5-s1 l5 s1';
+    if(nb===na+1) return ltr+a+'-'+ltr+b+' '+ltr+a+' '+ltr+b;
+    return m;
+  });
   /* b903 — THE REAL SCHEDULE SPEAKS IN ABBREVIATIONS. Measured on the owner's
      live day (18 rows): "R SI Joint injection", "B/L L4 TF ESI", "BL L2, L3,
      L4 MBB #2", "L4MB & L5 DR B", "Caudal ESI" — while template names and
