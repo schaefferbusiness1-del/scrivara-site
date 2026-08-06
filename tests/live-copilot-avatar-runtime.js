@@ -372,13 +372,14 @@ const server = http.createServer((req, res) => {
     // office endpoint mock (same context route already covers the origin —
     // extend the handler map by re-routing)
     const officeTurns = [];
+    /* av-5.3.0: identity (incl. exitPinSet + the saved look) rides EVERY turn.
+       Hoisted so the cold-start scenario below can reuse it. */
+    const identity = { name: 'Ava', faceMode: 'drawn', exitPinSet: true,
+      faceLook: { skin: '#e8b98a', hair: '#2b2118', shirt: '#2E6A4B', lip: '#a95f47', eyes: '#3b6ea5', hairStyle: 'long', glasses: true, beard: 'none' } };
     await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/turn/, async (route) => {
       const body = JSON.parse(route.request().postData() || '{}');
       officeTurns.push(body);
       const respond = (json) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }, body: JSON.stringify(json) });
-      /* av-5.3.0: identity (incl. exitPinSet + the saved look) rides EVERY turn */
-      const identity = { name: 'Ava', faceMode: 'drawn', exitPinSet: true,
-        faceLook: { skin: '#e8b98a', hair: '#2b2118', shirt: '#2E6A4B', lip: '#a95f47', eyes: '#3b6ea5', hairStyle: 'long', glasses: true, beard: 'none' } };
       if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: Object.assign({ faceImage: null }, identity) });
       return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 1, total: 1 }, avatar: identity });
     });
@@ -451,6 +452,118 @@ const server = http.createServer((req, res) => {
     const officeOk = officeTurns.some((t) => t.answer === 'My shoulder aches at night.' && t.patientExternalId === 'ext-9' && t.answerNonce)
       && officeTurns.every((t) => t.patientExternalId === 'ext-9') && unlockCalls.includes('4321');
     scenario('B9b the spoken office answer files to the ACTIVE patient nonce-safe; completion rests until the PIN closes it', officeOk, officeOk ? null : JSON.stringify(officeTurns).slice(0, 200));
+
+    /* B9f — THE REGRESSION THAT THIS HARNESS PREVIOUSLY COULD NOT CATCH.
+       Until now the office mock ALWAYS answered the first turn with
+       exitPinSet:true, so no scenario could ever reach "End interview" before
+       a successful identity. That blind spot is exactly how the fail-OPEN exit
+       gate shipped in b895/b898: the kiosk seeded pinSet=false and only ever
+       raised it from a successful turn, so a cold-start 502 — whose HTML body
+       makes response.json() throw, leaving j.ok UNDEFINED rather than false —
+       left the gate open for the whole interview and the finished kiosk
+       auto-exited fullscreen into the doctor's app.
+       Now the FIRST turn is a Render-style 502 with an HTML body, and the
+       contract is: the kiosk must not treat it as success, must keep the
+       answer resendable, must re-open the mic, and END MUST STILL GATE. */
+    let coldStartServed = false;
+    await page.unroute(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/turn/);
+    await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/turn/, async (route) => {
+      if (!coldStartServed) {
+        coldStartServed = true;
+        return route.fulfill({ status: 502, contentType: 'text/html',
+          headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
+          body: '<html><body>Bad Gateway</body></html>' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
+        body: JSON.stringify({ ok: true, say: 'Hi again! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: identity }) });
+    });
+    const recsBefore = await page.evaluate(() => window.__recs.length);
+    await page.evaluate(() => window.__mlsAvatar.openKiosk());
+    await page.waitForFunction((n) => {
+      const say = document.getElementById('mlsAvKioskSay');
+      return !!document.getElementById('mlsAvKiosk') && !!say && say.textContent.length > 0 && window.__recs.length > n;
+    }, recsBefore, { timeout: 10000 });
+    const coldState = await page.evaluate(() => ({
+      say: document.getElementById('mlsAvKioskSay').textContent,
+      open: !!document.getElementById('mlsAvKiosk')
+    }));
+    // the decisive assertion: End must NOT close the kiosk while the PIN state
+    // is unknown — it must raise the staff pad instead.
+    await page.evaluate(() => document.getElementById('mlsAvKioskEnd').click());
+    await page.waitForTimeout(300);
+    const gatedAfterColdStart = await page.evaluate(() => ({
+      stillOpen: !!document.getElementById('mlsAvKiosk'),
+      padUp: !!document.getElementById('mlsAvKioskPin') && getComputedStyle(document.getElementById('mlsAvKioskPin')).display !== 'none'
+    }));
+    const coldOk = coldState.open && coldState.say.length > 0 && !/^\s*$/.test(coldState.say)
+      && gatedAfterColdStart.stillOpen && gatedAfterColdStart.padUp;
+    scenario('B9f a cold-start 502 (HTML body, j.ok undefined) never opens the exit gate and never speaks an empty line',
+      coldOk, JSON.stringify({ coldState, gatedAfterColdStart }));
+    await page.evaluate(() => { const p = document.getElementById('mlsAvKioskPinInput'); if (p) { p.value = '4321'; document.getElementById('mlsAvKioskPinGo').click(); } });
+    await page.waitForFunction(() => !document.getElementById('mlsAvKiosk'), null, { timeout: 8000 }).catch(() => {});
+
+    /* B9g / B9h — THE SELF-END, on the path that had none and under a server
+       that refuses. Time is driven by the clock API, so these are exact, not
+       flaky sleeps. Both were confirmed defects in b898:
+         G1: the watchdog was armed only AFTER the mic-unavailable early
+             return, so a TYPED interview never ended and never summarised.
+         G3: the finish turn carries no answer, so kiosk.silent never reset —
+             a server that does not honour finish had every nudge re-fire it
+             forever. */
+    {
+      const ctx2 = await browser.newContext();
+      const p2 = await ctx2.newPage();
+      await p2.clock.install();
+      await p2.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, (route) => route.abort());
+      const turns2 = [];
+      let refuseAll = false;
+      await p2.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/turn/, async (route) => {
+        const body = JSON.parse(route.request().postData() || '{}');
+        turns2.push(body);
+        const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
+        if (refuseAll) return route.fulfill({ status: 502, contentType: 'text/html', headers: cors, body: '<html>Bad Gateway</html>' });
+        return route.fulfill({ status: 200, contentType: 'application/json', headers: cors,
+          body: JSON.stringify({ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 }, avatar: identity }) });
+      });
+      await p2.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/tts/, (route) => route.fulfill({ status: 503, contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }, body: JSON.stringify({ ok: false }) }));
+      await p2.setContent('<div id="host"></div>');
+      await p2.evaluate(() => {
+        window.__spoken = [];
+        Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+          speak: (u) => { window.__spoken.push(u.text); setTimeout(() => { try { u.onend && u.onend(); } catch (e) {} }, 5); }, cancel: () => {} } });
+        Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: function (t) { this.text = String(t); } });
+        window.getActivePtId = () => 'ext-9';
+        window.getPatients = () => [{ id: 'ext-9', name: 'Test, Patient' }];
+        window.toast = () => {};
+        // MIC BLOCKED — this is the typed-mode path that never self-ended
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+          getUserMedia: () => Promise.reject(new Error('denied')) } });
+        document.documentElement.requestFullscreen = () => Promise.resolve();
+      });
+      await p2.addScriptTag({ path: path.join(root, 'feat_mls_avatar.js') });
+      await p2.evaluate(() => window.__mlsAvatar.openKiosk());
+      await p2.waitForFunction(() => !!document.getElementById('mlsAvKiosk'), null, { timeout: 8000 });
+      const typedMode = await p2.evaluate(() => getComputedStyle(document.getElementById('mlsAvKioskTypeRow')).display === 'flex');
+      // idle in typed mode: 3 x 20s cycles must reach the finish turn
+      for (let i = 0; i < 4; i++) { await p2.clock.runFor(20000); await p2.waitForTimeout(60); }
+      const finishSent = turns2.some((t) => t.finish === true);
+      scenario('B9g a TYPED-mode interview (mic blocked) still self-ends and sends finish:true', typedMode && finishSent,
+        JSON.stringify({ typedMode, turns: turns2.map((t) => (t.finish ? 'finish' : t.answer ? 'answer' : 'start')) }));
+
+      // now refuse everything: the finish must be BOUNDED, not re-fired forever
+      refuseAll = true;
+      const beforeCount = turns2.filter((t) => t.finish === true).length;
+      for (let i = 0; i < 8; i++) { await p2.clock.runFor(20000); await p2.waitForTimeout(60); }
+      const afterCount = turns2.filter((t) => t.finish === true).length;
+      const stopped = await p2.evaluate(() => (document.getElementById('mlsAvKioskSay') || {}).textContent || '');
+      const bounded = (afterCount - beforeCount) <= 3 && /hand the screen back|stop here/i.test(stopped);
+      scenario('B9h a server that never honours finish cannot make the kiosk loop forever — it stops honestly and bounded',
+        bounded, JSON.stringify({ beforeCount, afterCount, stopped: stopped.slice(0, 80) }));
+      await ctx2.close();
+    }
+
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }

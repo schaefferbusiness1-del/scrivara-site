@@ -1378,13 +1378,19 @@
   function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
   function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
+    /* A FINISHED interview accepts nothing more. The typed row stays on screen
+       in mic-off mode, so without this a patient could Send into a completed
+       session: the server answers "this check-in is already complete", which
+       overwrote the rest screen and re-spoke at them. Only the staff exit
+       moves a finished kiosk. */
+    if (kiosk.completed && !finish) return;
     kiosk.busy = true;
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     pvStopVoice();
     kioskMood('thinking', '', answer);
     var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
-    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; }
+    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
       kiosk.busy = false;
@@ -1424,15 +1430,79 @@
       kioskListen();
     });
   }
+  /* THE SELF-END WATCHDOG — armed on EVERY waiting path, not just the voice
+     one. It used to be armed only after kioskListen's microphone-unavailable
+     early return, so a typed-mode interview (mic blocked or absent — exactly
+     the fallback the typed row exists for) never self-ended and never produced
+     a summary. Activity lives on `kiosk.heard` so BOTH speech interims and
+     typing can reset it. */
+  function kioskArmWatchdog(ms) {
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); }
+    kiosk.nudgeTimer = setTimeout(kioskWatchdog, ms || 9000);
+  }
+  function kioskWatchdog() {
+    if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    var typed = (kiosk.mic === false);
+    var wait = typed ? 20000 : 9000;   /* typing is slower than talking */
+    if (kiosk.heard) {
+      /* they are talking or typing (or the room is) — keep watching, and never
+         give up the only timer that can revive this question. This guard used
+         to RETURN, so one cough permanently disarmed the self-end. */
+      kiosk.heard = false;
+      kioskArmWatchdog(wait);
+      return;
+    }
+    kiosk.silent = (kiosk.silent || 0) + 1;
+    if (kiosk.silent >= 3) {
+      /* BOUNDED: the auto-finish turn carries no answer, so kiosk.silent is
+         never reset by it. Without a cap, a server that does not honour
+         `finish` (or a fetch that rejects, or a cold-start 502 whose j.ok is
+         undefined) had every 9s nudge re-fire the finish forever — the exact
+         runaway this feature exists to prevent, burning backend calls. */
+      kiosk.finishTries = (kiosk.finishTries || 0) + 1;
+      if (kiosk.finishTries > 2) { kioskStopBounded(); return; }
+      pvStopVoice();
+      kioskTurn(null, null, true);
+      return;
+    }
+    if (kiosk.nudgedFor !== kiosk.lastSay) {
+      kiosk.nudgedFor = kiosk.lastSay;
+      pvStopVoice();
+      kioskMood('speaking', '');
+      pvSpeak('Take your time — whenever you\'re ready, just start talking.', function () { kioskListen(); });
+    } else {
+      pvStopVoice();
+      kioskListen();
+    }
+  }
+  /* The client gives up HONESTLY: it never claims the check-in was saved, it
+     stops calling the server, and it still refuses to expose the app — a
+     PIN-gated office rests for staff exactly as a normal completion does. */
+  function kioskStopBounded() {
+    pvStopVoice();
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    kiosk.completed = true;
+    kioskMood('speaking', 'thank you');
+    kioskSetSay('Thanks — we\'ll stop here. Please hand the screen back to the team.');
+    var iv = gid('mlsAvKioskInterim');
+    if (iv) iv.textContent = 'Staff: the check-in could not reach the server — end the interview and check the connection.';
+    var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    if (kiosk.pinSet === false) {
+      safe(function () { if (isFn(window.toast)) window.toast('The check-in stopped early — the server could not be reached.', ''); });
+      kioskClose('ended');
+    }
+  }
   function kioskListen() {
-    if (!kiosk.open || kiosk.busy) return;
+    if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     if (kiosk.mic === false) {
       var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
       var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
+      kioskArmWatchdog(20000);   /* typed mode self-ends too */
       return;
     }
     kioskMood('listening', kiosk.lastSay);
-    var heardAnything = false;
+    kiosk.heard = false;
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
       if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
@@ -1440,7 +1510,7 @@
       kiosk.lastTry = { answer: finalText, nonce: reuse };
       kioskTurn(finalText, reuse);
     }, function (interim) {
-      heardAnything = heardAnything || !!interim.trim();
+      if (interim.trim()) kiosk.heard = true;
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
     }, function () {
       /* the recogniser died on its own with nothing to submit — re-open the
@@ -1456,46 +1526,10 @@
       kiosk.mic = false;
       var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'The microphone is not available here — typing works below.';
+      kioskArmWatchdog(20000);   /* a failed mic start must still self-end */
       return;
     }
-    /* HANDS-FREE SAFETY NET: silence gets ONE warm nudge per question, and a
-       hard stall (recognition alive but nothing ever heard) re-opens the mic
-       — this loop can never quietly die into a frozen screen.
-       The watchdog is UNCONDITIONAL: it used to return the moment anything was
-       heard, and `heardAnything` latches on a single interim — a cough, a
-       waiting-room voice, an "um". A recogniser that then died left no timer,
-       no mic and no counter, and the kiosk froze with the halo still running.
-       Now a heard-something cycle RE-ARMS instead of bailing. */
-    if (kiosk.nudgeTimer) safe(function () { clearTimeout(kiosk.nudgeTimer); });
-    function kioskWatchdog() {
-      if (!kiosk.open || kiosk.busy || kiosk.completed) return;
-      if (heardAnything) {
-        /* they are talking (or the room is) — keep watching, never give up
-           the only timer that can revive this question. */
-        heardAnything = false;
-        kiosk.nudgeTimer = setTimeout(kioskWatchdog, 9000);
-        return;
-      }
-      /* av-5.2.0: an interview can never run forever — three fruitless listens
-         (~30s of silence) end it politely, and the summary still generates
-         over whatever was said. */
-      kiosk.silent = (kiosk.silent || 0) + 1;
-      if (kiosk.silent >= 3) {
-        pvStopVoice();
-        kioskTurn(null, null, true);
-        return;
-      }
-      if (kiosk.nudgedFor !== kiosk.lastSay) {
-        kiosk.nudgedFor = kiosk.lastSay;
-        pvStopVoice();
-        kioskMood('speaking', '');
-        pvSpeak('Take your time — whenever you\'re ready, just start talking.', function () { kioskListen(); });
-      } else {
-        pvStopVoice();
-        kioskListen();
-      }
-    }
-    kiosk.nudgeTimer = setTimeout(kioskWatchdog, 9000);
+    kioskArmWatchdog(9000);
   }
   /* Natural completion must not expose the app either — with a PIN set, the
      finished kiosk RESTS ("hand the screen back") until staff unlock it.
@@ -1633,6 +1667,7 @@
     kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
+    kiosk.finishTries = 0; kiosk.heard = false;
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -1677,6 +1712,9 @@
     }
     root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskTypedSubmit);
     root.querySelector('#mlsAvKioskInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } });
+    /* typing IS activity — it must reset the self-end watchdog the same way
+       speech does, or a slow typist gets cut off mid-answer */
+    root.querySelector('#mlsAvKioskInput').addEventListener('input', function () { kiosk.heard = true; });
     /* the LIVING face */
     kiosk.face = makeFace(gid('mlsAvKioskFace'), kiosk.look || null);
     /* TRUE fullscreen + the audio engine, both on the doctor's click (the

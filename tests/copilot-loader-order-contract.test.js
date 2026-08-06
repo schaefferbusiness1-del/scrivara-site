@@ -13,7 +13,7 @@ const expected = [
   ['feat_mls_asst_fix.js', '20260802asst145'],
   /* 2026-08-05: ca-2.1.1 — agentic-kind delegation plus the still-loading
      guard (no keyword-guess navigation before the Power module lands). */
-  ['feat_mls_copilot_actions.js', '20260805ca211'],
+  ['feat_mls_copilot_actions.js', "'+(window.__MLS_AV||Date.now())"],
   /* 2026-08-05: cpw-1.2.0 — round 2: the snapshot also carries avatarCheckins
      from the avatar module's event-driven cache, staleness declared. */
   ['feat_mls_copilot_power.js', '20260805cpw130'],
