@@ -299,6 +299,7 @@ const tests = [
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
   'template-library-runtime.test.js',
+  'template-recognition-bounded-concurrency.test.js',
   'staging-history-writeflow-parity.test.js',
   'active-patient-sync-status.test.js',
   'voice-pill-persistence-runtime.test.js',

@@ -17345,9 +17345,73 @@ function _tplSeedKeywords(t){
     .filter(function(w,ix,arr){ return arr.indexOf(w)===ix; })
     .slice(0,10);
 }
+/* ── Recognition concurrency ───────────────────────────────────────────────
+   b890 — every /api/templates/split call ran STRICTLY SERIAL. A 90-file batch
+   in which many files look multi-form is 90+ sequential AI round-trips, so the
+   doctor watched a truthful bar crawl for minutes. Recognition now runs
+   through a bounded pool. Two rules keep the outcome identical to the serial
+   run, byte for byte:
+
+     • Every unit of work writes into its OWN sink array and the sinks are
+       concatenated in INPUT order. Completion order therefore cannot reorder
+       the review list, flip which copy the first-wins dedupe keeps, or shift
+       the checkbox row indices bound to _tplPendingSplit[i].
+     • _TPL_AI_LIMIT bounds in-flight fetches GLOBALLY — files and chunks draw
+       on one budget — so a chunk pool nested inside a file pool still cannot
+       put more than _TPL_AI_LIMIT requests on the wire. */
+var _TPL_AI_LIMIT=4;
+var _tplAiInFlight=0, _tplAiWaiters=[], _tplAiOff=false, _tplRecogFound=0;
+function _tplAiSlot(){
+  if(_tplAiInFlight<_TPL_AI_LIMIT){ _tplAiInFlight++; return Promise.resolve(); }
+  return new Promise(function(res){ _tplAiWaiters.push(res); });
+}
+function _tplAiRelease(){
+  var next=_tplAiWaiters.shift();
+  if(next) next(); else _tplAiInFlight=Math.max(0,_tplAiInFlight-1);   // hand the slot on, don't free then re-take it
+}
+/* Run task(item,index) over items with at most `limit` in flight, results in
+   INPUT order. A task that throws yields undefined; every caller reads that as
+   "recognition produced nothing here" and falls back — never as a lost file. */
+async function _tplPool(items, limit, task){
+  items=items||[];
+  var out=new Array(items.length), next=0;
+  var lanes=Math.max(1, Math.min(limit|0||1, items.length||1)), runners=[];
+  for(var w=0; w<lanes; w++){
+    runners.push((async function(){
+      for(var ix=next++; ix<items.length; ix=next++){
+        try{ out[ix]=await task(items[ix], ix); }catch(e){ out[ix]=undefined; }
+      }
+    })());
+  }
+  await Promise.all(runners);
+  return out;
+}
+/* One slot-limited /api/templates/split round-trip. Returns the rows it found,
+   [] when it found none, or null when the AI is unavailable for this account. */
+async function _tplSplitChunk(chunk){
+  if(_tplAiOff) return null;
+  await _tplAiSlot();
+  try{
+    if(_tplAiOff) return null;
+    var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunk})});
+    var d=await r.json().catch(function(){return {};});
+    /* 403 = this account has no AI split. The serial loop broke out of the
+       file's remaining chunks and let the keep-fallback own the file; the
+       latch spares the REST of the batch the same refusal. Every file still
+       lands through its own fallback, so the rows are identical — just without
+       89 more round-trips to be told no. Reset per run, never sticky. */
+    if(r.status===403){ _tplAiOff=true; return null; }
+    if(r.ok && d.templates && d.templates.length) return d.templates;
+    return [];
+  }catch(e){ return []; }
+  finally{ _tplAiRelease(); }
+}
+/* Truthful running total while sinks are still detached from _tplPendingSplit. */
+function _tplFoundSoFar(out){ return out===_tplPendingSplit ? out.length : (_tplRecogFound+out.length); }
 async function tplMultiFile(ev){
   var files=ev.target&&ev.target.files?Array.prototype.slice.call(ev.target.files):[]; try{ ev.target.value=''; }catch(e){}
   if(!files.length) return;
+  _tplAiOff=false; _tplRecogFound=0;
   document.getElementById('tplMultiResult').innerHTML='';
   var perFileText=[], unreadable=0; _tplUnreadableRows=[];
   for(var fi=0; fi<files.length; fi++){
@@ -17372,20 +17436,38 @@ async function tplMultiFile(ev){
     // BATCH of files → EACH file is ONE template (named by note TYPE). Only AI-split a file that
     // genuinely holds multiple forms — so 50 op-note files reliably become up to 50 templates.
     _tplPendingSplit=[];
-    for(var i=0;i<perFileText.length;i++){
-      var p=perFileText[i];
-      /* b889 — this loop used to run SILENT: the status froze on "Reading
-         files… N/N" while any file that looked multi-form went through the
-         serial AI splitter for minutes. Every file now announces itself, and
-         _tplPhaseTick lets the template-library progress card draw the
-         recognition bar. */
-      _tplMultiStatus('✨ Recognizing templates… '+(i+1)+'/'+perFileText.length+' ('+p.name+') · '+_tplPendingSplit.length+' found so far');
-      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', i, perFileText.length, p.name, _tplPendingSplit.length); }catch(e){}
-      var meta=_tplParseMeta(p.text);
-      if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
-      else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name); }
-      else { _tplPendingSplit.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
-    }
+    /* b889 — this loop used to run SILENT: the status froze on "Reading
+       files… N/N" while any file that looked multi-form went through the
+       serial AI splitter for minutes. Every file now announces itself, and
+       _tplPhaseTick lets the template-library progress card draw the
+       recognition bar.
+       b890 — the files are recognized through the bounded pool. The counters
+       below tick on COMPLETION, never on dispatch: with several files in
+       flight, "42/90" has to mean 42 files finished, not 42 files started. */
+    var recDone=0, recTotal=perFileText.length;
+    var recTick=function(label){
+      _tplMultiStatus('✨ Recognizing templates… '+recDone+'/'+recTotal+(label?(' ('+label+')'):'')+' · '+_tplRecogFound+' found so far');
+      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', recDone, recTotal, label||'file', _tplRecogFound); }catch(e){}
+    };
+    recTick(perFileText[0].name);
+    var fileSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
+      var sink=[];
+      try{
+        var meta=_tplParseMeta(p.text);
+        if(meta.name){ sink.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
+        else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name, sink); }
+        else { sink.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
+      }catch(e){}
+      /* b889's law holds under concurrency too: a file that recognized to
+         nothing is kept whole, never dropped. */
+      if(!sink.length && String(p.text||'').trim()){
+        var nm=p.name; try{ nm=_tplTypeName(p.text, p.name); }catch(e){}
+        sink.push({ name:nm, text:p.text, keep:true });
+      }
+      recDone++; _tplRecogFound+=sink.length; recTick(p.name);
+      return sink;
+    });
+    fileSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
     _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by type (explicit metadata names win)
     var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=batchInfo.list;
@@ -17398,11 +17480,19 @@ async function tplMultiFile(ev){
        duplicates are reported instead of dropped. */
     if(!backendMode()||!bkToken()){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
     _tplPendingSplit=[];
-    for(var j=0;j<perFileText.length;j++){
-      _tplMultiStatus('✨ Recognizing templates… file '+(j+1)+'/'+perFileText.length+' ('+_tplPendingSplit.length+' found so far)');
-      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', j, perFileText.length, perFileText[j].name, _tplPendingSplit.length); }catch(e){}
-      await _tplSplitOneInto(perFileText[j].text, perFileText[j].name);
-    }
+    var pairDone=0, pairTotal=perFileText.length;
+    var pairTick=function(label){
+      _tplMultiStatus('✨ Recognizing templates… file '+pairDone+'/'+pairTotal+(label?(' ('+label+')'):'')+' ('+_tplRecogFound+' found so far)');
+      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', pairDone, pairTotal, label||'file', _tplRecogFound); }catch(e){}
+    };
+    pairTick(perFileText[0].name);
+    var pairSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
+      var sink=[];
+      try{ await _tplSplitOneInto(p.text, p.name, sink); }catch(e){}
+      pairDone++; _tplRecogFound+=sink.length; pairTick(p.name);
+      return sink;
+    });
+    pairSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
     _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });
     var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=pairInfo.list;
@@ -17434,27 +17524,32 @@ function _tplDedupeTemplates(arr){
   return _tplDedupeTemplatesInfo(arr).list;
 }
 /* Split ONE document's text (chunked) and push results into _tplPendingSplit. */
-async function _tplSplitOneInto(text, fallbackName){
+/* `sink` (b890) is the caller's private accumulator; omit it and this writes
+   straight into _tplPendingSplit exactly as it always has. */
+async function _tplSplitOneInto(text, fallbackName, sink){
+  var out=sink||_tplPendingSplit;
   /* Explicit Name:/Keywords: metadata makes the file self-describing — one
      template, named by its metadata, body cleaned; no AI round-trip needed. */
   var meta=_tplParseMeta(text);
-  if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
+  if(meta.name){ out.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
   var chunks=_tplChunk(text, 6000);
-  var before=_tplPendingSplit.length;
-  for(var ci=0; ci<chunks.length; ci++){
-    /* b889 — a single long file splits into many chunks and each is a serial
-       AI round-trip; without this, one big file reads as a total stall. */
-    if(chunks.length>1) _tplMultiStatus('✨ Recognizing templates… '+String(fallbackName||'file')+' · part '+(ci+1)+'/'+chunks.length+' ('+_tplPendingSplit.length+' found so far)');
-    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize-part', ci, chunks.length, String(fallbackName||'file'), _tplPendingSplit.length); }catch(e){}
-    try{
-      var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
-      var d=await r.json().catch(function(){return {};});
-      if(r.status===403) break;   // AI split unavailable on this account — the per-file fallback below still keeps the file
-      if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||fallbackName||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
-    }catch(e){}
-  }
+  var before=out.length;
+  /* b889 — a single long file splits into many chunks and each was a serial AI
+     round-trip; without a status per part, one big file reads as a total stall.
+     b890 — the parts run through the same globally-bounded pool, and their rows
+     are appended in CHUNK order afterwards, so a fast part 7 can never jump
+     ahead of a slow part 2 in the reviewed list. */
+  var parts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
+    if(chunks.length>1) _tplMultiStatus('✨ Recognizing templates… '+String(fallbackName||'file')+' · part '+(ci+1)+'/'+chunks.length+' ('+_tplFoundSoFar(out)+' found so far)');
+    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize-part', ci, chunks.length, String(fallbackName||'file'), _tplFoundSoFar(out)); }catch(e){}
+    return await _tplSplitChunk(chunk);
+  });
+  parts.forEach(function(rows){
+    if(!rows) return;   // null = AI unavailable (403); the keep-fallback below owns the file
+    rows.forEach(function(t){ out.push({ name:String(t.name||fallbackName||('Template '+(out.length+1))), text:String(t.text||''), keep:true }); });
+  });
   // If the AI found nothing in this file, keep the file itself as a single template.
-  if(_tplPendingSplit.length===before && text.trim()){ _tplPendingSplit.push({ name:fallbackName||('Template '+(_tplPendingSplit.length+1)), text:text.trim(), keep:true }); }
+  if(out.length===before && text.trim()){ out.push({ name:fallbackName||('Template '+(out.length+1)), text:text.trim(), keep:true }); }
 }
 /* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
    (files were joined with \f) — never a dead end that demands a sign-in. */
@@ -17476,17 +17571,24 @@ function _tplPerFileFallback(text){
 async function tplAiSplit(text){
   if(!backendMode()||!bkToken()){ _tplPerFileFallback(text); return; }
   var chunks=_tplChunk(text, 6000);
-  _tplPendingSplit=[];
-  for(var ci=0; ci<chunks.length; ci++){
-    _tplMultiStatus('✨ Recognizing templates… part '+(ci+1)+'/'+chunks.length+' ('+_tplPendingSplit.length+' found so far)');
-    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', ci, chunks.length, 'part '+(ci+1), _tplPendingSplit.length); }catch(e){}
-    try{
-      var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
-      var d=await r.json().catch(function(){return {};});
-      if(r.status===403) break;   // AI split unavailable on this account — fall through to the per-file fallback
-      if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
-    }catch(e){}
-  }
+  _tplPendingSplit=[]; _tplAiOff=false; _tplRecogFound=0;
+  /* b890 — one giant PDF is many chunks and every chunk was its own serial
+     round-trip. Same bounded pool, same chunk-ordered append. */
+  var aiDone=0;
+  var aiTick=function(ci){
+    _tplMultiStatus('✨ Recognizing templates… part '+aiDone+'/'+chunks.length+' ('+_tplRecogFound+' found so far)');
+    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', aiDone, chunks.length, 'part '+((ci||0)+1), _tplRecogFound); }catch(e){}
+  };
+  aiTick(0);
+  var aiParts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
+    var rows=await _tplSplitChunk(chunk);
+    aiDone++; _tplRecogFound+=(rows&&rows.length)||0; aiTick(ci);
+    return rows;
+  });
+  aiParts.forEach(function(rows){
+    if(!rows) return;   // null = AI unavailable (403) → _tplPerFileFallback below
+    rows.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); });
+  });
   _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by note TYPE, not patient (explicit metadata names win)
   var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=aiInfo.list;
