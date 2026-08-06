@@ -12,7 +12,17 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
  * versioned service-worker request is cache-first, so reusing the old token
  * would deterministically replay stale code for an existing clinician. */
 const assets = [
-  ['feat_athena_doctor.js', '20260719ad104', '20260714ad103'],
+  /* feat_athena_doctor.js left this list on 2026-08-06. Its loader no longer
+     carries a hand-maintained token at all — it uses the __MLS_AV form, so
+     there is nothing here to pin. It was removed the way the entry below for
+     feat_mls_redesign.js was ALMOST removed, and for the same measured reason:
+     the token last moved at b430 (2026-07-19) while the module changed at b770
+     and b803, so a returning clinician kept the b430 bytes cache-first and
+     b803's rewrite of the Athena failure warning never reached them.
+     tests/cache-token-cannot-go-stale.test.js could not catch it — the last
+     edit predates that suite's b844 seed, so the asset was skipped as
+     untouched. A literal token is only as good as the human bumping it; this
+     one now follows the build number and cannot go stale again. */
   ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
   ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],

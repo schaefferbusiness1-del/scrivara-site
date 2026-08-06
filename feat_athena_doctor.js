@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.0.3)
+ *  window.__mlsAthenaDoctor (v1.0.4)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -19,9 +19,10 @@
  *   2. Clearer success: after any Athena action an explicit honest result line
  *      ("✓ Pulled N visits from athenaOne") with counts, complementing the §58 save-verify
  *      banner (which separately confirms the data actually persisted).
- *   3. Wiring: a "🔧 Troubleshoot Athena" control by the status dot (and clicking the red dot),
- *      AND it auto-opens the diagnostic when a pull/search actually fails — so the user
- *      immediately sees WHY + the fix instead of a vague error.
+ *   3. Wiring: a "🔧 Troubleshoot Athena" control by the status dot (and clicking the red dot).
+ *      A FAILED pull/search raises NO toast (v1.0.4, owner's second request): the red
+ *      status dot is the signal, and the panel explains it when he asks. This module
+ *      still CLAIMS the failure notice so Clarity/Save Verify stay quiet too.
  *
  *  Self-contained, additive, idempotent, fully reversible: window.__mlsAthenaDoctor.revert().
  *  Diagnostics never request or receive PHI. A ready result means only worker
@@ -33,7 +34,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.0.3';
+  var VERSION = '1.0.4';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -556,42 +557,29 @@
       // owning workflow. Suppressing this duplicate does not conceal a
       // manual failure; unmarked standalone pulls still warn immediately.
       if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
-      // genuine failure — show honest line AND auto-open the diagnostic
+      /* 2026-08-06 — OWNER, second time of asking: "I hate this notification
+         just get rid of it." (First was 2026-07-30: "just get ride of this
+         notification its so annoying and wrong anyway".) That round kept the
+         bar and reworded it into precondition-specific lines. He came back
+         with a screenshot of the generic one. The orange bar is gone.
+
+         WHAT SIGNALS FAILURE NOW: the red #mlsAthenaStatusDot and the
+         🔧 Troubleshoot Athena button, which are durable and silent, and the
+         diagnostic panel still walks the whole chain on demand. Nothing else
+         about failure handling changed.
+
+         THIS MODULE MUST STAY THE NOTICE OWNER. markPullNoticeHandled below
+         and `ownsPullNotices: true` (:710) are exactly what make
+         feat_athena_clarity.js:227 and feat_save_verify.js:515 stand down.
+         Removing the claim along with the toast would not delete an orange
+         bar — it would hand the same bar to two other modules. Claim it, and
+         then say nothing.
+
+         _activeManualFailure is deliberately NOT set any more. Its only job
+         was to stop an unrelated success line from erasing a still-visible
+         warning; with no warning on screen it would silently swallow honest
+         "✓ Pulled N visits" toasts instead. */
       markPullNoticeHandled(d, 'doctor');
-      var ref = manualFailureRef(d, kind);
-      /* 2026-07-30 — OWNER: "just get ride of this notification its so annoying
-         and wrong anyway". Both halves of that are true, and both are fixed
-         here rather than by deleting the warning.
-
-         WRONG: resultMeta treats any result whose ok !== true as a breakage
-         (:425), but the reason vocabulary is mostly PRECONDITIONS - no-tab,
-         no-ext, provider-required, readonly. For every one of those "re-run"
-         is the wrong advice: re-running without athenaOne open fails again,
-         identically. The line now names the actual precondition and what to do.
-
-         ANNOYING: a warn toast never auto-retires (:623 retires only ok/info),
-         so one refused pull left an orange bar on screen indefinitely. It now
-         retires on a timer like every other notice, and the red status dot -
-         which is the durable signal - stays exactly as it was.
-
-         NOT DELETED, deliberately: tests/athena-pull-notification-ownership.js
-         :138 and tests/athena-pull-toast-lifecycle.js:104 both pin that a
-         MANUAL pull failure produces exactly one actionable warning. A doctor
-         who presses Pull and is told nothing believes the chart loaded. */
-      var why = String((m && m.stage) || '').toLowerCase();
-      var line;
-      if (/no-?(athena-?)?tab/.test(why)) line = '⚠ athenaOne isn\'t open in this browser — open it, sign in, then pull again. (Troubleshoot Athena)';
-      else if (/no-?ext|ext-?missing/.test(why)) line = '⚠ MLS Assist isn\'t answering — check the extension is installed and enabled. (Troubleshoot Athena)';
-      else if (/provider-?required/.test(why)) line = '⚠ Pick a provider first, then pull again. (Troubleshoot Athena)';
-      else if (/readonly|refused/.test(why)) line = '⚠ athenaOne refused that read — nothing was changed. Tap Troubleshoot Athena if it repeats.';
-      else line = '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…';
-      showToast('warn', line, {
-        key: kind + '|' + (m.stage || 'failed') + '|' + ref.requestId,
-        pullFailure: true,
-        requestId: ref.requestId,
-        resultKind: kind
-      });
-      _activeManualFailure = ref;
       autoTrigger({ ok: false, count: m.count, stage: m.stage });
     }
   }
