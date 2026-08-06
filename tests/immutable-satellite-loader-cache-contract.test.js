@@ -107,8 +107,16 @@ const assets = [
   /* 2026-08-06 av-5.3.0: the customizable face (colours, hair, glasses, beard,
      derived from the doctor's photo), the retired typed preview, and six
      adversarial-review repairs incl. the fail-OPEN exit gate. */
-  ['feat_mls_avatar.js', '20260806av530', '20260806av520'],
-  ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
+    /* av-5.3.1: cold-start hardening - a finished interview refuses further
+     answers, and the harness rejects the first turn with an HTML 502. */
+  ['feat_mls_avatar.js', '20260806av531', '20260806av530'],
+  /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
+     set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
+     that added `appControl` to the still-loading guard. Same calendar day, so
+     cache-token-cannot-go-stale (which compares DATES) was blind and the
+     owner's browser kept the 11:00 bytes, where an appControl fired before the
+     Power module landed NAVIGATED instead of waiting. The loader now follows
+     the build number, so there is no literal left to pin. */
 ];
 
 assert.strictEqual(new Set(assets.map(entry => entry[1])).size, assets.length,
