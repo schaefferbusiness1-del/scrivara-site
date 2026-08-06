@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.5.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var VERSION='tl-1.6.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
@@ -365,7 +365,7 @@
     box.innerHTML='<div class="tl-import-review"><b>Import preview — nothing saved yet</b>'+countsHtml(preview.counts)+'<div>Resulting set: '+preview.proposedTemplateCount+' template'+(preview.proposedTemplateCount===1?'':'s')+'.</div>'+
       (rejected.length?'<div style="color:#982c2c;margin-top:5px">'+rejected.map(function(x){return esc((x.name||'Row '+(x.index+1))+': '+x.reason);}).join('<br>')+'</div>':'')+
       '<label style="display:block;margin:8px 0"><input type="checkbox" id="tlActivateAfter" style="width:auto"> Activate this set after commit'+(preview.targetSetId?' (current selection remains active if already active)':'')+'</label>'+
-      '<button data-tl-import="commit" '+(preview.canCommit?'':'disabled')+'>Commit one recoverable version</button> <button data-tl-import="cancel">Cancel</button></div>';
+      '<button data-tl-import="commit" '+(preview.canCommit?'':'disabled')+'>💾 Save these templates now (one recoverable version)</button> <button data-tl-import="cancel">Cancel</button></div>';
     box.onclick=importClick;try{box.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}flashReview(box);
   }
 
@@ -425,10 +425,28 @@
       if(!hosted())return originals.tplAddSplit.apply(this,arguments);
       var self=this,args=arguments,btn=null;
       try{var box=byId('tplMultiResult');btn=box?box.querySelector('button[onclick*="tplAddSplit"]'):null;if(btn){btn.disabled=true;btn.textContent='⏳ Adding templates…';}}catch(e){}
-      /* Cloud preview failed (endpoint missing, session expired, server error):
-         nothing was saved server-side, so fall back to the proven device add —
-         the user's selection must never silently vanish. */
-      return previewImport().catch(function(){
+      /* tl-1.6.0 — ADD MEANS ADD. The owner imported 77 templates, read
+         "added: 77" on the card and walked away — but the card was a PREVIEW
+         and the 77 sat unsaved behind "Commit one recoverable version"
+         (his Saved list still showed 3). When the preview is CLEAN
+         (committable, nothing rejected, nothing removed) the second click
+         carries no decision, so commit immediately; the preview card only
+         parks when something genuinely needs judgment. previewImport() itself
+         still stops at pending — the runtime pins on preview/commit semantics
+         are untouched; only this click path chains them. */
+      return previewImport().then(function(preview){
+        try{
+          var c=(preview&&preview.counts)||{};
+          if(preview&&preview.canCommit&&state.pending&&!(Number(c.rejected)||0)&&!(Number(c.removed)||0)){
+            /* a commit failure (e.g. version conflict) has its own recovery UX
+               inside commitPending — it must NOT fall through to the device-add
+               fallback below, which exists for PREVIEW failures only (a commit
+               retried after a device add would double-import). */
+            return commitPending().catch(function(){ return null; });
+          }
+        }catch(e){}
+        return preview;
+      }).catch(function(){
         try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
         return originals.tplAddSplit.apply(self,args);
       }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
