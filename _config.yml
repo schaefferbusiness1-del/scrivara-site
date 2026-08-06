@@ -76,6 +76,26 @@ exclude:
   - "feat_mls_navfeat_keep.js"
   - "feat_mls_staff_hub.js"
   - "feat_mls_team_exact.js"
+  # 2026-08-06 — 14 feat modules the shipped app references ZERO times (grep of
+  # mls-connect.js + ScribeFlow.html at 408206ab), surfaced by the first
+  # Actions-run publication audit. Dead code has no business being served;
+  # excluding an unreferenced file cannot break the app. The three modules the
+  # app DOES load (avatar, copilot_power, tele_doctor) went into the reviewed
+  # inventory instead.
+  - "feat_mls_cal_athena_sync.js"
+  - "feat_mls_cal_fullwidth_providers.js"
+  - "feat_mls_cal_provider_roster.js"
+  - "feat_mls_day_agenda.js"
+  - "feat_mls_day_pace.js"
+  - "feat_mls_herotoday_fix.js"
+  - "feat_mls_lastseen_rows.js"
+  - "feat_mls_month_pull.js"
+  - "feat_mls_next_patient.js"
+  - "feat_mls_patientlock_b52.js"
+  - "feat_mls_problem_strip_hide.js"
+  - "feat_mls_problem_strip.js"
+  - "feat_mls_selected_day_sync.js"
+  - "feat_mls_send_portal_invite.js"
   - "manifest.json"
   - "background.js"
   - "inject_dom.js"
