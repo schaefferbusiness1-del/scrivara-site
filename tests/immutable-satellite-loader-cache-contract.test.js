@@ -80,7 +80,11 @@ const assets = [
      engine defeats Chrome's utterance GC (held refs + duration watchdog), mic
      preflight happens up front, and the kiosk becomes a hands-free loop with
      a silence nudge and stall recovery — it can never dead-end into typing. */
-  ['feat_mls_avatar.js', '20260805av400', '20260805av300'],
+  /* 2026-08-05 av-5.0.0 (owner: "speech is aweful... the aveitor isnt made...
+     no facial expretions"): the natural backend voice (OpenAI TTS proxy) with
+     amplitude lip-sync, a drawn SVG character with real expressions (blink,
+     gaze, brows, mouth), portrait tinting, and true requestFullscreen. */
+  ['feat_mls_avatar.js', '20260805av500', '20260805av400'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 

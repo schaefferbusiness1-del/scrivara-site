@@ -9115,7 +9115,7 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 965,
+   "line": 1259,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9129,7 @@
    "domId": "mlsAvKioskDone",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 974,
+   "line": 1268,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9143,7 @@
    "domId": "mlsAvKioskRepeat",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 975,
+   "line": 1269,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9157,7 @@
    "domId": "mlsAvKioskType",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 976,
+   "line": 1270,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9171,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 978,
+   "line": 1272,
    "gated": false,
    "handler": null
   },

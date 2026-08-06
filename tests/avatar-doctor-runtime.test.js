@@ -25,7 +25,24 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-4.0.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.0.0'"), 'version token moved without updating this contract');
+/* av-5.0.0 — natural voice + the living face + true fullscreen:
+   the backend TTS proxy speaks first (browser speech only as fallback, with a
+   circuit-breaker so an outage cannot stall every question), a LATE fetch
+   result can never start a second voice over the fallback, the drawn SVG
+   character carries real expressions (class-scoped parts, no ids), the
+   doctor's portrait TINTS the character instead of replacing it (expressions
+   must survive), and Start requests real fullscreen on the doctor's click. */
+assert(source.includes("'/api/avatar/office/tts'"), 'the natural-voice endpoint call was removed');
+assert(source.includes('ttsDownUntil = Date.now() + 120000'), 'the TTS circuit-breaker was removed — an outage would stall every question by the fetch timeout');
+assert(/if \(mySeq !== pvSpeakSeq \|\| finished \|\| started\) return;/.test(source), 'the late-TTS double-voice guard was removed');
+assert(source.includes('function makeFace'), 'the living face engine was removed');
+assert(source.includes('function faceTintFromPortrait'), 'portrait tinting was removed — the face would stop following the doctor\'s look');
+assert(!/mlsAvKioskFace"><\/div>[\s\S]{0,400}appendChild\(img\)/.test(source), 'sanity: nothing re-installs a photo INSTEAD of the drawn face in the kiosk');
+assert(source.includes('requestFullscreen'), 'true fullscreen on Start was removed');
+assert(/function kioskClose[\s\S]{0,600}exitFullscreen/.test(source), 'closing the kiosk must leave fullscreen');
+assert(source.includes('createMediaElementSource'), 'amplitude lip-sync was removed');
+assert(source.includes("'coral', 'Coral — warm & caring (default)'"), 'the voice picker was removed from Setup');
 /* av-4.0.0 — the unbreakable voice loop:
    held utterance refs + duration watchdog (Chrome GCs utterances mid-sentence
    and onend never fires — the "it makes me type and hit Send" killer), mic
@@ -101,8 +118,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260805av400";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av400 loader');
+const marker = "feat_mls_avatar.js?v=20260805av500";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av500 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -157,7 +174,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-4.0.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.0.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

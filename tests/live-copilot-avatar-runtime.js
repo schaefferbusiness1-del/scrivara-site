@@ -359,7 +359,16 @@ const server = http.createServer((req, res) => {
       // mic preflight granted instantly (no permission UI in the harness)
       Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
         getUserMedia: () => Promise.resolve({ getTracks: () => [] }) } });
+      // av-5.0.0: record the true-fullscreen request (no gesture in a harness)
+      window.__fsReqs = 0;
+      document.documentElement.requestFullscreen = () => { window.__fsReqs++; return Promise.resolve(); };
     });
+    // av-5.0.0: natural-voice endpoint answers 503 here — the kiosk must fall
+    // back to browser speech WITHOUT stalling the loop.
+    await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/tts/, (route) => route.fulfill({
+      status: 503, contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
+      body: JSON.stringify({ ok: false, error: 'tts_unavailable' }) }));
     // office endpoint mock (same context route already covers the origin —
     // extend the handler map by re-routing)
     const officeTurns = [];
@@ -378,11 +387,17 @@ const server = http.createServer((req, res) => {
     const kioskShape = await page.evaluate(() => {
       const k = document.getElementById('mlsAvKiosk');
       const cs = getComputedStyle(k);
+      const svg = k.querySelector('#mlsAvKioskFace svg');
       return { fixed: cs.position === 'fixed', full: k.getBoundingClientRect().width >= window.innerWidth - 2,
         opaque: /gradient|rgb/.test(cs.backgroundImage + cs.backgroundColor),
-        say: document.getElementById('mlsAvKioskSay').textContent };
+        say: document.getElementById('mlsAvKioskSay').textContent,
+        // av-5.0.0: the LIVING face — drawn parts present, mood driven
+        face: !!(svg && svg.querySelector('.fMouth') && svg.querySelector('.fEyeL') && svg.querySelector('.fBrowR')),
+        mood: svg ? svg.getAttribute('data-mood') : null,
+        fs: window.__fsReqs >= 1 };
     });
     scenario('B9a the kiosk is full-screen, opaque, speaks and listens', kioskShape.fixed && kioskShape.full && kioskShape.opaque && /What brings you in/.test(kioskShape.say), JSON.stringify(kioskShape).slice(0, 160));
+    scenario('B9c the living face renders with expressions and true fullscreen was requested', kioskShape.face && !!kioskShape.mood && kioskShape.fs, JSON.stringify({ face: kioskShape.face, mood: kioskShape.mood, fs: kioskShape.fs }));
     await page.evaluate(() => {
       const rec = window.__recs[window.__recs.length - 1];
       const result = [{ transcript: 'My shoulder aches at night.' }]; result.isFinal = true;
