@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.18";
+  var VERSION = "si-1.7.19";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -304,6 +304,32 @@
     tokens.sort();
     return tokens.join("|");
   }
+  /* mdx-2.0.0: the credential portion of a provider label, for the same-name
+     echo test in scopeProviderRows. Prefer the roster's own credential-aware
+     equivalentKey ("base|credential|staff") when the entry carries one - that
+     parse already knows a surname like "Do" from the DO credential. Otherwise
+     read only the TRAILING credential tokens off the display name. Titles
+     ("Dr") never count: a title cannot distinguish two humans. Empty means "no
+     credential stated", which conflicts with nothing. */
+  var PROVIDER_CRED_TOKENS = {
+    md: 1, do: 1, np: 1, pa: 1, pac: 1, aprn: 1, fnp: 1, fnpc: 1, dnp: 1,
+    rn: 1, crnp: 1, cnp: 1, dpm: 1, dds: 1, dmd: 1, phd: 1, mbbs: 1, od: 1
+  };
+  function providerCredentialSignature(entry) {
+    var eq = String(entry && entry.equivalentKey || "");
+    if (eq.indexOf("|") >= 0) return String(eq.split("|")[1] || "").trim().toLowerCase();
+    var toks = String(entry && entry.name || "").toLowerCase()
+      .replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(Boolean);
+    var sig = [];
+    for (var i = toks.length - 1; i >= 0; i--) {
+      var t = toks[i];
+      if (t === "c" && sig.length === 0) continue; /* the "-C" tail of PA-C */
+      if (PROVIDER_CRED_TOKENS[t] !== 1) break;
+      if (sig.indexOf(t) < 0) sig.push(t);
+    }
+    sig.sort();
+    return sig.join("+");
+  }
   function providerRequest(raw) {
     var obj = raw && typeof raw === "object" ? raw : null;
     var name = String(obj ? (obj.name || obj.displayName || obj.provider || "") : (raw || "")).trim();
@@ -552,6 +578,12 @@
          report previously could not tell apart. */
       requireStableId: false,
       canonicalNameFallback: false,
+      /* mdx-2.0.0: WHY the name fallback did or did not engage, so the next
+         emailed report names the arm instead of a bare false. PHI-free:
+         constant strings and counts only. */
+      canonicalNameFallbackBasis: "",
+      rosterSameNameCount: 0,
+      sameNameConflictKinds: [],
       nameMatchedIdMissingRows: 0,
       unattributedDetail: []
     };
@@ -607,19 +639,57 @@
     var matching = [];
     var requireStableId = !!(req.id && req.rosterVerified);
     var canonicalNameFallback = false;
+    var fallbackBasis = "";
+    var sameNameCount = 0;
+    var conflictKinds = [];
     if (requireStableId) {
       var canonicalRoster = safe(function () {
         var api = window.__mlsProviderRoster;
         return api && isFn(api.list) ? (api.list() || []) : [];
       }, []) || [];
       var canonicalSameName = canonicalRoster.filter(function (entry) { return providerKey(entry && entry.name) === req.key; });
-      canonicalNameFallback = canonicalSameName.length === 1 && (
-        (req.id && String(canonicalSameName[0].id || "").trim().toLowerCase() === String(req.id).trim().toLowerCase()) ||
-        (req.stableKey && String(canonicalSameName[0].stableKey || canonicalSameName[0].stable_key || "") === req.stableKey)
-      );
+      sameNameCount = canonicalSameName.length;
+      /* mdx-2.0.0 (field report #2, Mac, 2026-08-06, b894, ext 3.0.45): that
+         athenaOne skin renders schedule rows AND roster strings with display
+         names only - no structured provider id anywhere - so roster ingest
+         keeps a credential-less display echo of the clinician beside the real
+         entry. providerKey() strips credentials while the roster's own
+         equivalentKey keeps them, so the echo can never collapse upstream, the
+         old `length === 1` demand here was unsatisfiable on that machine, and
+         every selected-mode pull refused provider-incomplete on a COMPLETE
+         20/20 grid. Owner order 2026-08-06: "default to just name if it has
+         to but make sure everything else still works." So: the name fallback
+         engages when the requested clinician is listed and every OTHER
+         same-name entry is provably a display echo of that same clinician -
+         no independent structured id, no independent non-legacy stableKey,
+         and no conflicting credential. The moment any same-name entry could
+         be a second real clinician, this refuses exactly as before, and the
+         receipt now names which arm decided. */
+      var wantIdLc = String(req.id || "").trim().toLowerCase();
+      var wantSk = String(req.stableKey || "");
+      var requestedListed = false;
+      var credSigs = {};
+      canonicalSameName.forEach(function (entry) {
+        var eId = String(entry && entry.id != null ? entry.id : "").trim().toLowerCase();
+        var eSk = String(entry && (entry.stableKey || entry.stable_key) || "");
+        var sig = providerCredentialSignature(entry);
+        if (sig) credSigs[sig] = 1;
+        if ((eId && eId === wantIdLc) || (wantSk && eSk && eSk === wantSk)) { requestedListed = true; return; }
+        if (eId && conflictKinds.indexOf("independent-id") < 0) conflictKinds.push("independent-id");
+        if (eSk && eSk !== wantSk && !/^legacy-name:/.test(eSk) && conflictKinds.indexOf("independent-structured-key") < 0) conflictKinds.push("independent-structured-key");
+      });
+      if (Object.keys(credSigs).length > 1 && conflictKinds.indexOf("credential-conflict") < 0) conflictKinds.push("credential-conflict");
+      canonicalNameFallback = requestedListed && conflictKinds.length === 0;
+      fallbackBasis = canonicalNameFallback
+        ? (sameNameCount === 1 ? "roster-unique" : "roster-echo-collapsed")
+        : (sameNameCount === 0 ? "requested-name-not-listed"
+          : (requestedListed ? "same-name-identity-conflict" : "requested-entry-not-listed"));
     }
     receipt.requireStableId = requireStableId;
     receipt.canonicalNameFallback = canonicalNameFallback;
+    receipt.canonicalNameFallbackBasis = fallbackBasis;
+    receipt.rosterSameNameCount = sameNameCount;
+    receipt.sameNameConflictKinds = conflictKinds;
     rows.forEach(function (r) {
       var k = providerKey(r && r.provider), rowId = String(rowProviderId(r) || "").trim().toLowerCase();
       var wantId = String(req.id || "").trim().toLowerCase();
@@ -4092,8 +4162,14 @@
                  carries the per-row detail. */
               var pRec = res.providerReceipt || {};
               var pUn = Number(pRec.unattributedRows || 0), pSrc = Number(pRec.sourceRows || 0), pNim = Number(pRec.nameMatchedIdMissingRows || 0);
+              /* mdx-2.0.0: with the same-clinician echo collapse shipped, a
+                 name-matched refusal that still fires means the roster truly
+                 could not clear the name - say which way, honestly. */
+              var pBasis = String(pRec.canonicalNameFallbackBasis || "");
               var incompleteMsg = pNim > 0 && pNim === pUn
-                ? (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name, but athenaOne exposed no structured provider id on them, so another clinician with the same display name cannot be ruled out. Nothing was imported. Open the full Day view once so the rows carry ids, then pull again - and if this repeats, use the error-report button so the rows are named.")
+                ? (pBasis === "same-name-identity-conflict"
+                  ? (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name only, and MLS's verified roster carries more than one distinct clinician under that name, so a name alone cannot pick between them. Nothing was imported. Choose the exact clinician in Choose a provider, or open the full Day view once so the rows carry structured ids, then pull again - and if this repeats, use the error-report button so the rows are named.")
+                  : (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name, but athenaOne exposed no structured provider id on them and MLS's roster could not clear the name (" + (pBasis || "no-basis") + "), so another clinician with the same display name cannot be ruled out. Nothing was imported. Open the full Day view once so the rows carry ids, then pull again - and if this repeats, use the error-report button so the rows are named."))
                 : ((pUn || "Some") + " of " + (pSrc || "the") + " schedule rows carry no provider identity MLS can verify, even though the day grid finished loading. Nothing was imported - filing those rows would risk the wrong chart. Pull again with the provider column visible in the Day view; if this repeats, use the error-report button so the rows are named.");
               onStatus(providerReason === "provider-incomplete"
                 ? incompleteMsg

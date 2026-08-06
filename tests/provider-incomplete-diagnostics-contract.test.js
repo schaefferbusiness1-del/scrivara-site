@@ -100,6 +100,8 @@ assert.strictEqual(dupRefusal.receipt.nameMatchedIdMissingRows, 1,
   'the name-matched-but-id-missing shape must be counted apart from blank rows');
 assert.strictEqual(dupRefusal.receipt.canonicalNameFallback, false,
   'no canonical roster entry for this name means no name fallback');
+assert.strictEqual(dupRefusal.receipt.canonicalNameFallbackBasis, 'requested-name-not-listed',
+  'mdx-2.0.0: the receipt must name WHY the fallback stayed off');
 const d1 = dupRefusal.receipt.unattributedDetail[0];
 assert.strictEqual(d1.shape, 'selected-name-no-structured-id');
 assert.strictEqual(d1.hasName, true);
@@ -145,7 +147,7 @@ assert(branchRegion.includes('use the error-report button so the rows are named'
 /* ---- 6. the emailed error report now carries the provider receipt --------- */
 const pick = connectSource.match(/providerReceipt: dsPick\(res\.providerReceipt, \[([^\]]+)\]\)/);
 assert(pick, 'dsDiagReport must include the provider receipt');
-for (const field of ['unattributedRows', 'nameMatchedIdMissingRows', 'requireStableId', 'canonicalNameFallback', 'unattributedDetail', 'discoveredProviders']) {
+for (const field of ['unattributedRows', 'nameMatchedIdMissingRows', 'requireStableId', 'canonicalNameFallback', 'canonicalNameFallbackBasis', 'rosterSameNameCount', 'sameNameConflictKinds', 'unattributedDetail', 'discoveredProviders']) {
   assert(pick[1].includes("'" + field + "'"), 'error report provider receipt must carry ' + field);
 }
 
@@ -172,5 +174,112 @@ for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
 assert(connectSource.includes('__mlsExtDlCardWired'), 'the drift refresher must be wired exactly once');
 assert(connectSource.includes("fetch('extension-version.json?nc="), 'the refresher must read the manifest, never invent a version');
 assert(connectSource.includes("getElementById('extDlNotes')"), 'the refresher must also refresh the What\'s-new text from the manifest');
+
+/* ---- 8. mdx-2.0.0 - the same-clinician roster echo no longer blocks the name
+   fallback. Field report #2 (Mac, 2026-08-06, b894, ext 3.0.45): 20/20 rows
+   `selected-name-no-structured-id`, requireStableId true, canonicalNameFallback
+   false - that athenaOne skin renders names with no structured id anywhere, so
+   roster ingest kept a credential-less display echo of the SAME clinician
+   beside the real entry and the old `length === 1` demand was unsatisfiable on
+   that machine forever. Owner order: "default to just name if it has to but
+   make sure everything else still works." The fallback engages only when every
+   other same-name entry is provably an echo of the REQUESTED clinician; a
+   possible second real clinician still refuses exactly as before. ------------ */
+const mattRows = [];
+for (let i = 0; i < 20; i++) mattRows.push({ name: 'Mac Patient ' + i, provider: 'Matthew Schaeffer', time: (7 + (i % 10)) + ':' + (i % 2 ? '30' : '00') });
+const mattRequest = { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', rosterVerified: true };
+const mattResponse = { receipt: { complete: true, authoritativeEmpty: false }, providers: ['Matthew Schaeffer, MD'] };
+
+/* 8a. the b894 replay: real entry + credential-less echo of the same human */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' },
+    { id: '', stableKey: 'legacy-name:matthew schaeffer|md', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' },
+    { id: '8', stableKey: 'backend:8', name: 'Michael Schaeffer, MD', equivalentKey: 'michael schaeffer|md' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const echoCured = api._scopeProviderRows(mattRows, mattRequest, mattResponse);
+assert.strictEqual(echoCured.complete, true,
+  'a credential-less display echo of the SAME clinician must not block the name fallback: ' + JSON.stringify(echoCured.receipt));
+assert.strictEqual(echoCured.reason, 'provider-complete');
+assert.strictEqual(echoCured.rows.length, 20, 'every name-matched row imports once the echo collapses');
+assert.strictEqual(echoCured.receipt.canonicalNameFallback, true);
+assert.strictEqual(echoCured.receipt.canonicalNameFallbackBasis, 'roster-echo-collapsed');
+assert.strictEqual(echoCured.receipt.rosterSameNameCount, 2);
+assert.strictEqual(echoCured.receipt.sameNameConflictKinds.length, 0,
+  'no conflict kinds for a pure echo (vm-realm arrays: compare by length, never deepStrictEqual)');
+assert.strictEqual(echoCured.receipt.unattributedRows, 0);
+assert.strictEqual(echoCured.receipt.nameMatchedIdMissingRows, 0, 'attributed rows are not unattributed');
+assert(!JSON.stringify(echoCured.receipt).includes('Mac Patient'), 'the provider receipt stays PHI-free');
+
+/* 8b. a second REAL clinician (independent structured id) still refuses */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' },
+    { id: '99', stableKey: 'backend:99', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const twoReal = api._scopeProviderRows(mattRows,
+  { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer, MD', rosterVerified: true }, mattResponse);
+assert.strictEqual(twoReal.complete, false, 'two distinct same-name clinicians must refuse exactly as before');
+assert.strictEqual(twoReal.reason, 'provider-incomplete');
+assert.strictEqual(twoReal.rows.length, 0, 'a refusal imports nothing');
+assert.strictEqual(twoReal.receipt.canonicalNameFallback, false);
+assert.strictEqual(twoReal.receipt.canonicalNameFallbackBasis, 'same-name-identity-conflict');
+assert(twoReal.receipt.sameNameConflictKinds.includes('independent-id'));
+assert.strictEqual(twoReal.receipt.nameMatchedIdMissingRows, 20);
+
+/* 8c. credential conflict among id-less echoes (MD vs DO) still refuses */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' },
+    { id: '', stableKey: 'legacy-name:matthew schaeffer|md', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' },
+    { id: '', stableKey: 'legacy-name:matthew schaeffer|do', name: 'Matthew Schaeffer, DO', equivalentKey: 'matthew schaeffer|do' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const credClash = api._scopeProviderRows(mattRows, mattRequest, mattResponse);
+assert.strictEqual(credClash.complete, false, 'MD vs DO under one stripped name is possibly two humans - refuse');
+assert.strictEqual(credClash.receipt.canonicalNameFallback, false);
+assert.strictEqual(credClash.receipt.canonicalNameFallbackBasis, 'same-name-identity-conflict');
+assert(credClash.receipt.sameNameConflictKinds.includes('credential-conflict'));
+
+/* 8d. entries WITHOUT equivalentKey use the trailing-credential name parse */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer' },
+    { id: '', stableKey: 'legacy-name:x', name: 'Matthew Schaeffer, DO' },
+    { id: '', stableKey: 'legacy-name:y', name: 'Matthew Schaeffer, MD' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const scanClash = api._scopeProviderRows(mattRows, mattRequest, mattResponse);
+assert.strictEqual(scanClash.complete, false, 'the name-parse fallback must also see the MD/DO conflict');
+assert(scanClash.receipt.sameNameConflictKinds.includes('credential-conflict'));
+
+/* 8e. the plain unique-name roster keeps working and names its basis */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: 7, stableKey: 'backend:7', rosterVerified: true, name: 'Matthew Schaeffer, MD' },
+    { id: 8, stableKey: 'backend:8', rosterVerified: true, name: 'Michael Schaeffer, MD' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const unique = api._scopeProviderRows(
+  [{ name: 'Solo Patient', provider: 'Matthew Schaeffer, MD', time: '9:00 AM' }],
+  { id: '7', stableKey: 'backend:7', name: 'Matthew Schaeffer, MD', rosterVerified: true },
+  mattResponse
+);
+assert.strictEqual(unique.complete, true, 'the pre-existing unique-name fallback is unchanged');
+assert.strictEqual(unique.receipt.canonicalNameFallback, true);
+assert.strictEqual(unique.receipt.canonicalNameFallbackBasis, 'roster-unique');
+assert.strictEqual(unique.receipt.rosterSameNameCount, 1);
 
 console.log('provider-incomplete-diagnostics-contract: PASS');
