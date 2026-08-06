@@ -25,7 +25,17 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-5.1.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.2.0'"), 'version token moved without updating this contract');
+/* av-5.2.0 — smilier, faster, self-ending:
+   the 1.3s quiet threshold keeps turns snappy, three fruitless listens end
+   the interview politely THROUGH the server (summary still generates), and a
+   PIN-verified unlock of a completed interview opens the Ready inbox so the
+   doctor reads the summary immediately — never on the no-PIN path. */
+assert(source.includes('}, 1300); }'), 'the snappy quiet threshold was removed');
+assert(source.includes('kiosk.silent >= 3'), 'the silence auto-finish was removed — an abandoned interview would run forever');
+assert(source.includes('kioskTurn(null, null, true)'), 'the auto-finish must close THROUGH the server so the summary still generates');
+assert(source.includes('if (finish) body.finish = true;'), 'the finish flag no longer reaches the server');
+assert(/showSummary = kiosk\.completed === true;[\s\S]{0,200}open\(\)/.test(source), 'the summary-on-unlock hand-off was removed');
 /* av-5.1.0 — the conversation IS the interface:
    no patient buttons (typed row self-appears only when the mic is off), End
    interview gates behind a SERVER-verified exit PIN (the digits never ride to
@@ -134,7 +144,7 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av510";
+const marker = "feat_mls_avatar.js?v=20260806av520";
 assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
@@ -190,7 +200,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.1.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.2.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

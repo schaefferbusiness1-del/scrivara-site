@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.1.0';
+  var VERSION = 'av-5.2.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -406,7 +406,7 @@
       if (mySeq !== pvSpeakSeq || started) return;
       started = true;
       pvSpeakSynth(t, mySeq, finish);
-    }, 8000);
+    }, 5000);
     ttsFetchUrl(t, voiceOverride).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
@@ -452,7 +452,8 @@
       if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }
       if (v && onFinal) onFinal(v);
     }
-    function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 2000); }
+    /* av-5.2.0: 1.3s of quiet after real speech submits — snappier turns */
+    function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 1300); }
     rec.onresult = function (ev) {
       var interim = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
@@ -477,8 +478,9 @@
      class-scoped, so the Setup preview and the kiosk can coexist. ========= */
   var FACE_LOOK = { skin: '#f0c8a0', hair: '#4e3b2a', shirt: '#2E6A4B', lip: '#a95f47' };
   var FACE_MOUTHS = {
-    smile:   'M78 132 Q100 145 122 132 Q100 140 78 132',
-    grin:    'M74 129 Q100 153 126 129 Q100 141 74 129',
+    /* av-5.2.0: a genuinely warm resting smile — the owner asked for smilier */
+    smile:   'M76 130 Q100 149 124 130 Q100 141 76 130',
+    grin:    'M72 128 Q100 156 128 128 Q100 142 72 128',
     soft:    'M84 134 Q100 141 116 134 Q100 138 84 134',
     concern: 'M82 140 Q100 131 118 140 Q100 137 82 140',
     o:       'M91 132 Q100 126 109 132 Q109 146 100 147 Q91 146 91 132',
@@ -503,8 +505,8 @@
         '<ellipse class="fSkin" cx="158" cy="100" rx="9" ry="13" fill="' + look.skin + '"/>' +
         '<ellipse class="fSkin fFace" cx="100" cy="98" rx="58" ry="66" fill="' + look.skin + '"/>' +
         '<path class="fHair" d="M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z" fill="' + look.hair + '"/>' +
-        '<circle class="fBlush" cx="63" cy="119" r="9" fill="#e07a5f" opacity=".16"/>' +
-        '<circle class="fBlush" cx="137" cy="119" r="9" fill="#e07a5f" opacity=".16"/>' +
+        '<circle class="fBlush" cx="63" cy="119" r="9" fill="#e07a5f" opacity=".22"/>' +
+        '<circle class="fBlush" cx="137" cy="119" r="9" fill="#e07a5f" opacity=".22"/>' +
         '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M58 78 Q70 72 84 77" stroke="' + look.hair + '" stroke-width="5" stroke-linecap="round" fill="none"/></g>' +
         '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M116 77 Q130 72 142 78" stroke="' + look.hair + '" stroke-width="5" stroke-linecap="round" fill="none"/></g>' +
         eye(71, 'L') + eye(129, 'R') +
@@ -1149,7 +1151,7 @@
     var root = gid('mlsAvKiosk'); if (!root) return;
     ['speaking', 'listening', 'thinking', 'caring', 'happy'].forEach(function (c) { root.classList.remove(c); });
     var caring = /pain|hurt|worse|can't|cannot|scared|worried|sad|tired|sick/i.test(String(answer || '') + ' ' + String(say || ''));
-    var happy = /thank|welcome|great|covers everything|hi[!,. ]|hello/i.test(String(say || ''));
+    var happy = /thank|welcome|great|wonderful|glad|nice|perfect|all set|covers everything|see you|good (morning|afternoon|evening)|hi[!,. ]|hello/i.test(String(say || ''));
     if (state === 'speaking') { root.classList.add('speaking'); if (caring) root.classList.add('caring'); else if (happy) root.classList.add('happy'); }
     else if (state === 'listening') { root.classList.add('listening'); if (caring) root.classList.add('caring'); }
     else if (state === 'thinking') root.classList.add('thinking');
@@ -1170,7 +1172,7 @@
     kiosk.completed = false;
   }
   function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
-  function kioskTurn(answer, nonce) {
+  function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
     kiosk.busy = true;
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
@@ -1178,7 +1180,8 @@
     kioskMood('thinking', '', answer);
     var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
-    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); }
+    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; }
+    if (finish) body.finish = true;
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
       kiosk.busy = false;
       if (!kiosk.open) return;
@@ -1241,6 +1244,15 @@
     if (kiosk.nudgeTimer) safe(function () { clearTimeout(kiosk.nudgeTimer); });
     kiosk.nudgeTimer = setTimeout(function () {
       if (!kiosk.open || kiosk.busy || heardAnything) return;
+      /* av-5.2.0: an interview can never run forever — three fruitless listens
+         (~30s of silence) end it politely, and the summary still generates
+         over whatever was said. */
+      kiosk.silent = (kiosk.silent || 0) + 1;
+      if (kiosk.silent >= 3) {
+        pvStopVoice();
+        kioskTurn(null, null, true);
+        return;
+      }
       if (kiosk.nudgedFor !== kiosk.lastSay) {
         kiosk.nudgedFor = kiosk.lastSay;
         pvStopVoice();
@@ -1286,7 +1298,16 @@
     if (go) go.disabled = true;
     api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: pin }) }).then(function (r) {
       if (go) go.disabled = false;
-      if (r.ok && r.json && r.json.ok) { kioskClose('ended'); return; }
+      if (r.ok && r.json && r.json.ok) {
+        /* staff just proved themselves — a COMPLETED interview hands the
+           doctor the summary immediately (the Ready inbox, fresh row on top).
+           Never on the no-PIN auto-close path, where the patient may still
+           be holding the screen. */
+        var showSummary = kiosk.completed === true;
+        kioskClose('ended');
+        if (showSummary) safe(function () { open(); });
+        return;
+      }
       if (msg) msg.textContent = (r.json && r.json.message) || 'That PIN isn\'t right — try again.';
       if (input) { input.value = ''; safe(function () { input.focus(); }); }
     }, function () {
@@ -1339,7 +1360,7 @@
     if (kiosk.open) return;
     kioskStyle(); style();
     kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
-    kiosk.pinSet = false; kiosk.photoFace = false; kiosk.completed = false;
+    kiosk.pinSet = false; kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
